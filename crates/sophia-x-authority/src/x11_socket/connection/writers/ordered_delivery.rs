@@ -453,7 +453,32 @@ fn serve_one_ordered_delivery(
             Err(X11OrderedTakeRefusal::InFlight) => return X11OrderedServeStep::Advanced,
         }
     }
-    match write_one_ordered_frame(socket, in_flight, byte_order, sequence) {
+    let written = write_one_ordered_frame(socket, in_flight, byte_order, sequence);
+    // READ-ONLY ACCEPTANCE OBSERVATION, of the writer's own progress: which
+    // delivery this socket was serving, how many frames it owes, how far
+    // through them it is, which frame just went out whole, and the failure
+    // that ended the attempt if one did. A case cannot otherwise tell a
+    // prefix of the delivery that stalled from whole frames of the deliveries
+    // before it, and inferring one from the other is exactly the claim that
+    // must not be invented. Records and returns: no phase, custody, outcome
+    // or control flow here depends on it.
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::observed_ordered_frame(
+        std::os::fd::AsRawFd::as_raw_fd(socket),
+        in_flight
+            .as_ref()
+            .and_then(|held| held.delivery().emission().delivery()),
+        in_flight
+            .as_ref()
+            .map_or(0, |held| held.delivery().emission().frame_count()),
+        in_flight.as_ref().map_or(0, |held| held.frame_index()),
+        match &written {
+            Ok(X11OrderedWriteStep::Advanced { frame }) => Some(*frame),
+            _ => None,
+        },
+        written.as_ref().err().map(|failure| format!("{failure:?}")),
+    );
+    match written {
         Ok(X11OrderedWriteStep::Advanced { .. }) => X11OrderedServeStep::Advanced,
         Ok(X11OrderedWriteStep::Wrote) => {
             // ANSWERED FIRST, RETIRED AFTER. Every frame has gone, and the
