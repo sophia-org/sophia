@@ -231,7 +231,13 @@ pub struct PrivateInputOutcome {
     /// committed by the coordinator and refused or never reached by the order,
     /// so it is owed and yet appears nowhere in the settlement the X store
     /// reports. An outcome that showed only the store would call this nothing.
-    pub bridge_undelivered: usize,
+    /// Work taken from the channel and never handed to the X store, across
+    /// every phase the bridge owns.
+    ///
+    /// `None` MEANS UNREADABLE, NOT NONE OWED. A poisoned bridge reported as
+    /// zero would read exactly like a bridge that owed nothing, which is the
+    /// one reading that must never be produced by a failure to look.
+    pub bridge_undelivered: Option<usize>,
 }
 
 impl core::fmt::Debug for PrivateInputOutcome {
@@ -275,7 +281,9 @@ impl PrivateInputOutcome {
             || settlement.reserved_credits.is_some_and(|held| held > 0)
             || settlement.owed.is_some_and(|held| held > 0)
             || settlement.indeterminate.is_some_and(|held| held > 0)
-            || self.bridge_undelivered > 0;
+            // Unreadable retains, for the same reason an unreadable
+            // settlement does: nothing has been shown to be finished.
+            || self.bridge_undelivered.is_none_or(|owed| owed > 0);
         self.retained = outstanding.then_some(runtime);
         self
     }
@@ -573,6 +581,24 @@ impl PrivateInputHandle {
         &self,
         within: Duration,
     ) -> Vec<XAuthorityObservedTransactionBatch> {
+        self.drain_transactions_limited(within, PRIVATE_INPUT_DRAIN_BOUND)
+    }
+
+    /// Take at most `limit` batches, however long the drain bound is.
+    ///
+    /// THE CALLER'S REMAINING ROOM IS THE LIMIT THAT MATTERS. Asking whether
+    /// there was any room and then taking a whole drain bound's worth is how a
+    /// bounded queue reaches half again its bound: room for one is not room for
+    /// two hundred and fifty six.
+    pub fn drain_transactions_limited(
+        &self,
+        within: Duration,
+        limit: usize,
+    ) -> Vec<XAuthorityObservedTransactionBatch> {
+        let limit = limit.min(PRIVATE_INPUT_DRAIN_BOUND);
+        if limit == 0 {
+            return Vec::new();
+        }
         let Ok(held) = self.runtime.transactions.lock() else {
             return Vec::new();
         };
@@ -580,10 +606,7 @@ impl PrivateInputHandle {
         if let Ok(first) = held.recv_timeout(within) {
             taken.push(first);
         }
-        taken.extend(
-            held.try_iter()
-                .take(PRIVATE_INPUT_DRAIN_BOUND - taken.len()),
-        );
+        taken.extend(held.try_iter().take(limit - taken.len()));
         taken
     }
 
@@ -592,6 +615,25 @@ impl PrivateInputHandle {
         connection: PrivateInputConnection,
         action: PrivateInputAction,
     ) -> Result<PrivateInputSubmitted, PrivateInputControlError> {
+        // THE WHOLE IDENTITY IS CHECKED, NOT JUST THE CLIENT. A client number
+        // is reused by a successor connection, so matching on it alone would
+        // let a control minted against a connection that has since ended be
+        // served to whoever now holds that number. The admission and the
+        // connection generation are what make this connection this one, and a
+        // stale connection is refused before any identity is spent on it.
+        let live = self
+            .runtime
+            .participant
+            .admitted()
+            .map_err(|_| PrivateInputControlError::Unavailable)?;
+        if !live.iter().any(|seen| {
+            seen.client == connection.client
+                && seen.admission == connection.admission
+                && seen.connection_generation == connection.connection_generation
+                && !seen.closed
+        }) {
+            return Err(PrivateInputControlError::ConnectionGone);
+        }
         // Exhaustion is refused before the command is built, so no control is
         // ever submitted under an identity another one already holds.
         let transaction = self

@@ -1150,6 +1150,8 @@ include!("tests/private_worker_attachment_exits.rs");
 include!("tests/private_failed_retention.rs");
 include!("tests/private_deferred_cleanup.rs");
 include!("tests/private_deferred_cleanup_service.rs");
+#[path = "../../tests/support/private_exclusive_bind.rs"]
+mod private_exclusive_bind;
 #[path = "../../tests/support/private_maintenance_scheduler.rs"]
 mod private_maintenance_scheduler;
 #[path = "../../tests/support/private_retained_drive.rs"]

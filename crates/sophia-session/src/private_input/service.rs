@@ -541,11 +541,7 @@ impl PrivateInputRuntime {
         // COMMITTED WORK THE ORDER NEVER TOOK. The X store has never seen it,
         // so it appears in no settlement reading; counting it here is what
         // stops a stop from looking finished while this is still owed.
-        let bridge_undelivered = self
-            .bridge
-            .lock()
-            .map(|held| held.outstanding())
-            .unwrap_or(0);
+        let bridge_undelivered = self.bridge.lock().map(|held| held.outstanding()).ok();
         let mut outcome = PrivateInputOutcome {
             service_thread,
             settlement,

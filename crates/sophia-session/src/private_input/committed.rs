@@ -171,11 +171,14 @@ impl PrivateInputHandle {
             pump_bridge(&mut bridge, producer, &lease, &live, &mut report);
         }
 
-        // NEW WORK ONLY WHILE INTAKE HAS ROOM. Whatever is left unread stays in
-        // its own channel, which is a queue already and does not need a second
-        // copy of itself here.
-        if bridge.intake.len() < PRIVATE_INPUT_BRIDGE_BOUND {
-            let batches = self.drain_transactions_within(within);
+        // NEW WORK ONLY INTO THE ROOM THAT ACTUALLY REMAINS. Asking whether
+        // intake was under its bound and then taking a whole drain bound's
+        // worth let a queue bounded at 256 reach 511. Whatever is left unread
+        // stays in its own channel, which is a queue already and does not need
+        // a second copy of itself here.
+        let room = PRIVATE_INPUT_BRIDGE_BOUND.saturating_sub(bridge.intake.len());
+        if room > 0 {
+            let batches = self.drain_transactions_limited(within, room);
             report.batches_observed = batches.len();
             bridge.intake.extend(batches);
         }
@@ -262,9 +265,16 @@ impl PrivateInputHandle {
                 return Ok(false);
             }
             let decision = staged.decisions[staged.cursor];
-            let Some((kind, connection)) = classify(
+            // DECIDED WITHOUT MOVING THE LEDGER. An earlier version recorded
+            // the admission or the withdrawal here, before it knew whether a
+            // transaction identity or a command existed for it. A failed mint
+            // then left the ledger describing a surface as admitted that had
+            // never been admitted, or as withdrawn while its entry was still
+            // staged -- a ledger and a staged decision describing different
+            // phases of the same work. Nothing moves until the entry is real.
+            let Some((kind, connection)) = decide(
                 &staged.batch,
-                &mut admitted,
+                &admitted,
                 live,
                 decision.surface,
                 decision.withdrawal,
@@ -273,9 +283,8 @@ impl PrivateInputHandle {
                 continue;
             };
             let Some(transaction) = self.runtime.next_transaction() else {
-                // TERMINAL, AND THE WORK STAYS STAGED. Nothing is submitted
-                // without an identity to answer for it, and the remainder is
-                // still counted as owed at stop.
+                // TERMINAL, AND THE WORK STAYS STAGED, with the ledger
+                // untouched so a later call decides it exactly as this one did.
                 report.refused.push(PrivateInputControlError::Exhausted);
                 return Ok(false);
             };
@@ -292,6 +301,8 @@ impl PrivateInputHandle {
                     continue;
                 }
             };
+            // The entry exists, so now the ledger may follow it.
+            apply_ledger(&mut admitted, decision.surface, kind, connection);
             bridge.entries.push_back(PrivateInputBridgeEntry {
                 committed_transaction: decision.committed_transaction,
                 surface: decision.surface,
@@ -389,11 +400,11 @@ fn commit_batch(
 
 /// Decide which effect this surface calls for and which connection owns it.
 ///
-/// THE LEDGER MOVES HERE, one effect at a time, so two commits of the same
-/// surface in one call cannot both be admissions.
-fn classify(
+/// READS THE LEDGER, NEVER MOVES IT. Moving it is [`apply_ledger`], which runs
+/// only once the entry this decision produces actually exists.
+fn decide(
     batch: &XAuthorityObservedTransactionBatch,
-    admitted: &mut BTreeMap<SurfaceId, PrivateInputConnection>,
+    admitted: &BTreeMap<SurfaceId, PrivateInputConnection>,
     live: &[PrivateAdmittedConnection],
     surface: SurfaceId,
     withdrawal: bool,
@@ -402,8 +413,8 @@ fn classify(
         // THE ROUTE THAT ADMITTED IT, not one read from the withdrawing batch,
         // which no longer carries it.
         return admitted
-            .remove(&surface)
-            .map(|connection| (XAuthorityControlKind::WithdrawSurface, connection));
+            .get(&surface)
+            .map(|connection| (XAuthorityControlKind::WithdrawSurface, *connection));
     }
     let route = batch
         .surface_routes
@@ -430,8 +441,27 @@ fn classify(
         }
         _ => XAuthorityControlKind::AdmitSurface,
     };
-    admitted.insert(surface, connection);
     Some((kind, connection))
+}
+
+/// Move the ledger to match an effect that has actually been staged.
+///
+/// One effect at a time, so two commits of the same surface in one call cannot
+/// both be admissions.
+fn apply_ledger(
+    admitted: &mut BTreeMap<SurfaceId, PrivateInputConnection>,
+    surface: SurfaceId,
+    kind: XAuthorityControlKind,
+    connection: PrivateInputConnection,
+) {
+    match kind {
+        XAuthorityControlKind::WithdrawSurface => {
+            admitted.remove(&surface);
+        }
+        _ => {
+            admitted.insert(surface, connection);
+        }
+    }
 }
 
 /// The command one classified decision is delivered as.
