@@ -36,6 +36,10 @@ pub use handle::{
     PrivateInputService, PrivateInputSettlement, PrivateInputStatus, PrivateInputThreadJoin,
     PrivateInputTopologyRefusal, PrivateInputUnavailable, PrivateInputWaitExpired,
 };
+#[cfg(test)]
+#[path = "../tests/support/private_input_session.rs"]
+mod tests;
+
 pub use submission::{
     PrivateInputAccepted, PrivateInputConnection, PrivateInputSubmission, PrivateInputSubmitError,
 };
