@@ -970,6 +970,9 @@ fn route_input_events_with_launcher(
                     if !switcher && !help && let Some((capture,keyboard))=launcher.as_mut() {
                         let (text,clear)=launcher_text.as_ref().map_or((None,false),|(text,clear)|(text.as_deref(),*clear));
                         let(consumed,input)=capture.route(&event,text,pointer.position(),clear,keyboard.command_modifier_active());
+                        if input.as_ref().is_some_and(|event| matches!(event.input, sophia_engine::LauncherInput::CaptureCapacityExceeded)) {
+                            return Err("native launcher capture capacity exhausted".into());
+                        }
                         report.launcher_events.extend(input);
                         if consumed {key_repeat.cancel_seat(event.seat);continue;}
                     }
@@ -1180,7 +1183,7 @@ fn route_input_events_with_launcher(
                         report.pointer_axes_observed.saturating_add(1);
                 }
                 if !control_plane_applied && let Some((capture,_))=launcher.as_mut() {
-                    if capture.active() && matches!(kind,sophia_protocol::InputEventKind::PointerMotion){
+                    if capture.active() && !capture.native_active() && matches!(kind,sophia_protocol::InputEventKind::PointerMotion){
                         let focused=focus.focused_surface(event.seat);
                         let (_, placement)=place_pointer_event_for_routing(&mut event,focused,input_layers,pointer,false);
                         record_pointer_boundary_placement(&mut report, kind, placement);
@@ -1268,6 +1271,15 @@ fn route_input_events_with_launcher(
                         input_output,
                         input_presentation_epoch,
                     );
+                let native_focus = launcher.as_ref().and_then(|(capture, _)| capture.native_binding());
+                let content_binding = if let Some(native) = native_focus {
+                    content_binding.iter().find(|binding| binding.grant == native.grant
+                        && binding.output == native.output
+                        && binding.candidate_generation == native.candidate_generation
+                        && binding.presentation_epoch == native.presentation_epoch
+                        && binding.interaction_generation == native.interaction_generation)
+                        .map(std::slice::from_ref).unwrap_or(&[])
+                } else { content_binding };
                 let descriptor_occlusion = descriptor_occlusion.or_else(|| {
                     input_projections.into_iter().flatten().filter(|p|Some(p.output)==input_output).flat_map(|p|p.tab_occlusions.iter()).find(|r| {
                         event.global_position.is_some_and(|p| p.x >= f64::from(r.x) && p.y >= f64::from(r.y) && p.x < f64::from(r.x)+f64::from(r.width) && p.y < f64::from(r.y)+f64::from(r.height) && !input_layers.iter().any(|l| p.x >= f64::from(l.geometry.x) && p.y >= f64::from(l.geometry.y) && p.x < f64::from(l.geometry.x)+f64::from(l.geometry.width) && p.y < f64::from(l.geometry.y)+f64::from(l.geometry.height)))
@@ -1281,7 +1293,7 @@ fn route_input_events_with_launcher(
                         .as_deref()
                         .and_then(PointerFocusHandoffState::target)
                         .is_some();
-                if pointer_routing_enabled
+                if pointer_routing_enabled && native_focus.is_none()
                     && let Some(state) = descriptor_captures.as_deref_mut()
                 {
                     let disposition = sophia_engine::resolve_presented_chrome_pointer_event(
@@ -1333,7 +1345,7 @@ fn route_input_events_with_launcher(
                         }
                     }
                 }
-                if pointer_routing_enabled
+                if pointer_routing_enabled && native_focus.is_none()
                     && let Some(state) = chrome_captures.as_deref_mut()
                 {
                     let disposition = sophia_engine::resolve_chrome_pointer_event(
@@ -1432,6 +1444,14 @@ fn route_input_events_with_launcher(
                                 report.chrome_events_consumed.saturating_add(1);
                             continue;
                         }
+                    }
+                }
+                if !control_plane_applied && !application_owned && let Some((capture, _)) = launcher.as_mut() {
+                    let (consumed, input) = capture.route_native_pointer_fallback(&event)?;
+                    report.launcher_events.extend(input);
+                    if consumed {
+                        report.chrome_events_consumed = report.chrome_events_consumed.saturating_add(1);
+                        continue;
                     }
                 }
                 if let Some(gesture) = floating_gesture.as_deref_mut() {

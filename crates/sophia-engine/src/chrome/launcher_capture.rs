@@ -1,5 +1,7 @@
 use sophia_protocol::{DeviceId, InputEventKind, InputEventPacket, OutputId, Point, Rect, SeatId};
 use std::collections::BTreeSet;
+mod native;
+pub use native::NativeLauncherCommand;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LauncherInput {
@@ -10,6 +12,11 @@ pub enum LauncherInput {
     Previous,
     Activate(u16),
     Dismiss,
+    Native {
+        binding: sophia_protocol::NativeLauncherBinding,
+        command: NativeLauncherCommand,
+    },
+    CaptureCapacityExceeded,
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LauncherInputEvent {
@@ -23,6 +30,7 @@ pub struct LauncherInputEvent {
 #[derive(Default)]
 pub struct LauncherCapture {
     identity: Option<(OutputId, u64)>,
+    native: Option<sophia_protocol::NativeLauncherBinding>,
     targets: Vec<(u16, Rect)>,
     selected: u16,
     blocked: bool,
@@ -38,6 +46,7 @@ impl LauncherCapture {
         targets: &[(u16, Rect)],
         blocked: bool,
     ) {
+        self.native = None;
         if identity != self.identity {
             self.pointer_press = None;
             self.wheel = 0;
@@ -56,7 +65,7 @@ impl LauncherCapture {
         );
     }
     pub fn active(&self) -> bool {
-        self.identity.is_some()
+        self.identity.is_some() || self.native.is_some()
     }
     pub fn route(
         &mut self,
@@ -66,6 +75,9 @@ impl LauncherCapture {
         clear: bool,
         command_modifier: bool,
     ) -> (bool, Option<LauncherInputEvent>) {
+        if let Some(binding) = self.native {
+            return self.route_native(binding, event, text, clear, command_modifier);
+        }
         let id = match event.kind {
             InputEventKind::Key { keycode, pressed } => Some((false, keycode, pressed)),
             InputEventKind::PointerButton { button, pressed } => Some((true, button, pressed)),

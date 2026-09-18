@@ -174,3 +174,117 @@ fn check_virtual_terminal_handoff(capture_active: bool) {
     assert!(!keyboard.command_modifier_active());
     assert_eq!(keyboard.observe(30, true, true).0, Some("a".to_owned()));
 }
+
+#[test]
+fn native_capture_uses_real_text_composition_and_retains_modal_pointer_accounting() {
+    use sophia_engine::NativeLauncherCommand;
+    use sophia_protocol::{
+        ContentAllocationId, ContentGrant, ContentOutputId, NativeLauncherBinding,
+        NativeLauncherInputKind,
+    };
+    let binding = NativeLauncherBinding {
+        grant: ContentGrant {
+            connection_epoch: 4,
+            content_grant_epoch: 9,
+        },
+        opening: 3,
+        output: ContentOutputId {
+            id: 1,
+            generation: 1,
+        },
+        allocation: ContentAllocationId {
+            id: 5,
+            generation: 2,
+        },
+        catalog_generation: 7,
+        candidate_generation: 11,
+        presentation_epoch: 13,
+        interaction_generation: 1,
+        state_revision: 8,
+        focus_lease: 6,
+    };
+    let mut capture = LauncherCapture::default();
+    capture.present_native(Some(binding)); // supplied retirement/focus; no native renderer
+    let mut keyboard = LauncherKeyboard::new(
+        "evdev",
+        "pc105",
+        "us",
+        "",
+        "",
+        std::ffi::OsStr::new("C.UTF-8"),
+    )
+    .unwrap();
+    let kinds = [
+        InputEventKind::Key {
+            keycode: 30,
+            pressed: true,
+        },
+        InputEventKind::Key {
+            keycode: 30,
+            pressed: false,
+        },
+        InputEventKind::Key {
+            keycode: 28,
+            pressed: true,
+        },
+        InputEventKind::Key {
+            keycode: 28,
+            pressed: false,
+        },
+        InputEventKind::PointerMotion,
+        InputEventKind::PointerButton {
+            button: 272,
+            pressed: true,
+        },
+        InputEventKind::PointerButton {
+            button: 272,
+            pressed: false,
+        },
+        InputEventKind::PointerAxis {
+            horizontal_v120: 0,
+            vertical_v120: 120,
+        },
+    ];
+    let events = kinds
+        .into_iter()
+        .enumerate()
+        .map(|(index, kind)| InputEventPacket {
+            serial: index as u64 + 1,
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(1),
+            time_msec: 1,
+            kind,
+            global_position: Some(Point { x: 10.0, y: 20.0 }),
+            target_surface: None,
+            local_position: None,
+        })
+        .collect();
+    let mut pointer = SessionPointerPlacement::default();
+    let report = route_overlay_input(events, &mut capture, &mut keyboard, &mut pointer);
+    assert_eq!(pointer.position(), Some(Point { x: 10.0, y: 20.0 }));
+    assert_eq!(report.launcher_events.len(), 3);
+    for (record, (kind, text)) in report.launcher_events.iter().zip([
+        (NativeLauncherInputKind::Text, "a"),
+        (NativeLauncherInputKind::Accept, ""),
+        (NativeLauncherInputKind::Next, ""),
+    ]) {
+        assert_eq!(
+            record.input,
+            LauncherInput::Native {
+                binding,
+                command: NativeLauncherCommand::Input {
+                    kind,
+                    text: text.into()
+                }
+            }
+        );
+    }
+    assert_eq!(report.pointer_events, 4);
+    assert_eq!(report.pointer_buttons_observed, 2);
+    assert_eq!(report.pointer_axes_observed, 1);
+    assert_eq!(report.chrome_events_consumed, 3); // release suppressed at first capture visit
+    assert!(report.policy_inputs.is_empty());
+    assert!(report.content_activations.is_empty());
+    assert_eq!(report.pointer_routed, 0);
+    assert_eq!(report.keys_routed, 0);
+}

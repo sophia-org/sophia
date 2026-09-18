@@ -931,3 +931,34 @@ Keyboard/pointer semantic input, execution, full close/reopen, successful
 protected native-client composition and physical harness enablement remain
 unfinished. The public configuration refusal stays closed. No canonical gate,
 hardware, native display, push, installation or lom-test readiness claim.
+
+## Native focus capture and shared input routing checkpoint
+
+The Engine capture now accepts an exact native focus binding and emits semantic
+text/navigation/Accept or an explicit Session dismissal command. It does not
+invent a selected row. Consumed key/button sequences survive focus replacement
+and revocation; the bounded sequence inventory refuses exhaustion. Session
+continues using the real XKB composition path. Native pointer routing selects
+only the exact focused content binding, allows its presented target resolver to
+run first, and consumes otherwise unclaimed pointer events at a modal barrier.
+It preserves application-owned sequences and ordinary cursor accounting rather
+than routing a new press through the launcher to an application. Legacy input
+refuses accidentally forwarded native commands explicitly.
+
+Device-hidden evidence `.artifacts/bemenu-native-capture/`: Session 475 PASS,
+14 ignored; existing launcher 4 PASS; native capture 4 PASS. The Engine library
+contains zero unit tests and contributes no passes. Strict affected Clippy,
+layout and formatting pass. The shared Session routing control uses actual XKB
+and cursor accounting with a supplied native focus; it has no application
+surface or native content target and is not a proof of those delivery paths.
+The Engine controls exercise exact binding, Unicode, navigation, modal fallback,
+replacement, revocation and capacity. A separately compiled mutation clearing
+consumed sequences on native focus replacement fails the exact replacement/
+revocation control; source restoration is recorded in
+`.artifacts/bemenu-native-capture-mutant/result.json`.
+
+This capture is not yet armed by the production component service. Live focus
+synchronization, semantic input/ACK dispatch, pointer action admission, catalog
+execution, close/reopen and protected child integration remain next. The public
+configuration refusal remains closed. No canonical, hardware, native launch,
+push, installation or lom-test readiness is claimed by this checkpoint.

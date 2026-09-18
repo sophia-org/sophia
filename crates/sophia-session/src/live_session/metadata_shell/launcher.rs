@@ -125,6 +125,9 @@ impl LiveMetadataShell {
             return Ok(());
         }
         let operation = match &event.input {
+            I::Native { .. } | I::CaptureCapacityExceeded => {
+                return Err("native capture reached legacy launcher".into());
+            }
             I::Text(text) => {
                 if l.query.len() + text.len() > SOPHIA_SHELL_MAX_QUERY_BYTES {
                     return Ok(());
