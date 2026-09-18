@@ -3,6 +3,9 @@ use super::{catalog, evidence, identity, types::*};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+mod binaries;
+pub(super) use binaries::{AuxiliaryBinary, build_auxiliary};
+
 pub(super) const CASES: [&str; 8] = [
     "M4.construction",
     "M4.authorization",
@@ -48,12 +51,20 @@ pub(super) fn bindings(gate: Gate, path: &Path) -> Result<Bindings, String> {
     let value: Bindings = identity::read_json(path)?;
     if value.schema != 1
         || value.cases.iter().any(|(case, test)| {
-            !CASES.contains(&case.as_str()) || case.strip_prefix("M4.") != Some(test.as_str())
+            !CASES.contains(&case.as_str()) || expected_test(case) != Some(test.as_str())
         })
     {
-        return Err("M4 bindings require their exact dedicated Session integration tests".into());
+        return Err("M4 bindings require their exact dedicated Session or gate tests".into());
     }
     Ok(value)
+}
+
+fn expected_test(case: &str) -> Option<&str> {
+    match case {
+        "M4.lifetime" => Some("private_input::tests::lifetime"),
+        "M4.evidence_integrity" => Some("m3_acceptance::m4_integrity::evidence_integrity"),
+        _ => case.strip_prefix("M4."),
+    }
 }
 
 pub(super) fn overall(gate: Gate, rows: &[CaseResult]) -> Result<Verdict, String> {
@@ -97,6 +108,7 @@ pub(super) fn validate_binary(report: &Report, output: &Path) -> Result<(), Stri
     {
         return Err("M4 private host identity changed after contained execution".into());
     }
+    binaries::validate_auxiliary(report, output)?;
     Ok(())
 }
 

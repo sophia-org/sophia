@@ -45,3 +45,6 @@ mod tests;
 
 #[path = "../tests/support/m4_acceptance.rs"]
 mod m4_tests;
+
+#[path = "../tests/support/m4_integrity.rs"]
+mod m4_integrity;

@@ -64,21 +64,34 @@ fn validate_containment(record: &Containment, config: &Config) -> Result<(), Str
 
 pub(super) fn validate_report(report: &Report, config: &Config, path: &Path) -> Result<(), String> {
     super::components::validate(report, config)?;
+    validate_identity(report, config, path)?;
+    if !report.source_attested_inside || !report.source_unchanged_after {
+        return Err("source completion attestation absent".into());
+    }
+    validate_completion(report, config)
+}
+
+pub(super) fn validate_identity(
+    report: &Report,
+    config: &Config,
+    path: &Path,
+) -> Result<(), String> {
     if report.schema != 1
         || report.run_id != config.run_id
         || report.config_sha256 != identity::digest(path)?
-        || report.source.commit != config.source.commit
-        || report.source.content_sha256 != config.source.content_sha256
+        || report.source != config.source
         || report.build_target_namespace != config.build_target_namespace
         || config.build_target_namespace
             != super::host::target_namespace(&config.source.content_sha256)?
-        || !report.source_attested_inside
-        || !report.source_unchanged_after
     {
         return Err(
             "source, configuration or completion identity differs from the requested run".into(),
         );
     }
+    Ok(())
+}
+
+fn validate_completion(report: &Report, config: &Config) -> Result<(), String> {
     let record = report
         .containment
         .as_ref()
@@ -244,7 +257,8 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
     } else if config.component_suite.is_some() {
         super::components::execute(config, report, &binary, &available)?;
     } else {
-        cases(config, inventory, report, &binary, &available)?;
+        let auxiliary = super::m4::build_auxiliary(config, report)?;
+        cases(config, inventory, report, &binary, &available, &auxiliary)?;
     }
     if identity::contents(Path::new(SOURCE))? != config.source.content_sha256 {
         return Err("snapshot contents changed during contained execution".into());
@@ -253,7 +267,7 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
     Ok(())
 }
 
-fn cargo() -> Command {
+pub(super) fn cargo() -> Command {
     let mut command = process::private_command("/work/toolchain/bin/cargo");
     command
         .current_dir(SOURCE)
@@ -456,6 +470,7 @@ fn cases(
     report: &mut Report,
     binary: &Path,
     available: &BTreeSet<&str>,
+    auxiliary: &std::collections::BTreeMap<String, super::m4::AuxiliaryBinary>,
 ) -> Result<(), String> {
     let bindings = super::m4::bindings(
         config.gate,
@@ -470,7 +485,13 @@ fn cases(
         };
         let result = &mut report.cases[index];
         result.test = Some(exact.clone());
-        if !available.contains(exact.as_str()) {
+        let (case_binary, case_available): (&Path, bool) =
+            if let Some(other) = auxiliary.get(&row.case) {
+                (&other.path, other.tests.contains(exact))
+            } else {
+                (binary, available.contains(exact.as_str()))
+            };
+        if !case_available {
             result.reason = "bound integrated test absent from the built binary".into();
             continue;
         }
@@ -478,7 +499,12 @@ fn cases(
             return Err("binary changed between cases".into());
         }
         let log = Path::new(EVIDENCE).join(format!("{}.log", row.case));
-        let mut command = process::private_command(binary);
+        if let Some(other) = auxiliary.get(&row.case)
+            && identity::digest(case_binary)? != other.sha256
+        {
+            return Err("auxiliary binary changed before its case".into());
+        }
+        let mut command = process::private_command(case_binary);
         command.args([
             exact,
             "--exact",
@@ -516,6 +542,11 @@ fn cases(
             }
         }
         result.execution = Some(run);
+        if let Some(other) = auxiliary.get(&row.case)
+            && identity::digest(case_binary)? != other.sha256
+        {
+            return Err("auxiliary binary changed during its case".into());
+        }
         report.overall = super::m4::overall(config.gate, &report.cases)?;
         save(report)?;
     }

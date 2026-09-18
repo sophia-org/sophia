@@ -148,6 +148,7 @@ impl Options {
             session_generation: self.session_generation,
             profile: sophia_protocol::NamespaceProfile::Confined,
             capabilities: sophia_protocol::NamespaceCapabilities::NONE,
+            frame_clock: sophia_engine::DeterministicFrameClock::new(1, 16),
             binding: SeatBinding::new(instance, SeatId::from_raw(1)),
             cookie: PrivateInputInstanceCookie { instance, cookie },
             grants: self.grants,

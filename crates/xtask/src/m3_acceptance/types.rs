@@ -84,7 +84,7 @@ pub(super) struct CaseResult {
     pub evidence: Option<CaseEvidence>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct SourceIdentity {
     pub commit: String,
     pub tree: String,

@@ -33,6 +33,7 @@ pub fn config(socket: &Path, grants: PrivateInputGrantPolicy) -> PrivateInputCon
         session_generation: 1,
         profile: sophia_protocol::NamespaceProfile::Confined,
         capabilities: sophia_protocol::NamespaceCapabilities::NONE,
+        frame_clock: sophia_engine::DeterministicFrameClock::new(1, 16),
         socket_path: socket.to_owned(),
         namespace: NamespaceId::from_raw(731),
         binding: SeatBinding::new(instance, SeatId::from_raw(1)),

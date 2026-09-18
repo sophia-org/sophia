@@ -5,6 +5,7 @@
     "M4.authorization": "authorization",
     "M4.connection_identity": "connection_identity",
     "M4.containment": "containment",
-    "M4.no_ambient_fallback": "no_ambient_fallback"
+    "M4.no_ambient_fallback": "no_ambient_fallback",
+    "M4.evidence_integrity": "m3_acceptance::m4_integrity::evidence_integrity"
   }
 }
