@@ -637,6 +637,57 @@ pub fn run_x_server_frontend_private_until_stopped(
     )
 }
 
+/// What a caller supplies to serve a private frontend it already holds.
+///
+/// A bundle rather than loose arguments, so the method below stays inside the
+/// argument count the style guide allows without an exemption, and so a caller
+/// assembles the service's channels in one place instead of at a call site.
+/// Nothing here is the broker or a raw client sender: those stay inside the
+/// frontend, which is the whole point of handing one over rather than its
+/// parts.
+#[cfg(unix)]
+pub struct PrivateServiceBinding {
+    pub config: XServerFrontendConfig,
+    pub transactions: SyncSender<XAuthorityObservedTransactionBatch>,
+    pub commands: Receiver<XServerFrontendServiceCommand>,
+    pub producers: PrivateProducerPort,
+    pub backpressure: Arc<XAuthorityBackpressureObserver>,
+}
+
+#[cfg(unix)]
+impl PrivateXServerFrontend {
+    /// Serve this frontend until it is stopped.
+    ///
+    /// FOR A CALLER THAT ALREADY HOLDS THE FRONTEND. The convenience entry
+    /// beside this one builds the frontend from its parts and never hands it
+    /// back, so a caller that must read the boundary it is about to serve --
+    /// Session, which keeps the admission participant -- cannot use it. This
+    /// takes the frontend the caller constructed and made its own arrangements
+    /// against.
+    ///
+    /// Every check the other path performs still runs: this forwards to the
+    /// same internal service, which refuses a lease that is not on the owner
+    /// keeping this frontend's registry, and refuses an execution keeper that
+    /// already retains an invocation, both before anything is bound.
+    pub fn serve_until_stopped(
+        self,
+        service: &PrivateServiceLease<'_>,
+        execution: &mut PrivateServiceExecutionKeeper,
+        binding: PrivateServiceBinding,
+    ) -> Result<PrivateServiceReturn, PrivateServiceFailure> {
+        serve_private_frontend_until_stopped(
+            self,
+            service,
+            execution,
+            binding.config,
+            binding.transactions,
+            binding.commands,
+            binding.producers,
+            binding.backpressure,
+        )
+    }
+}
+
 /// The service over an already-made private frontend and a lease.
 ///
 /// Separated from the entry point so that a lease on the wrong owner is a

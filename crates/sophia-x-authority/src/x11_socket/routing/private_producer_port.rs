@@ -54,6 +54,8 @@ enum PrivateProducerAsk {
     Ingress {
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
+        /// The admission the asker meant, checked where the grant is issued.
+        expected: Option<sophia_protocol::ClientAdmissionId>,
     },
 }
 
@@ -182,13 +184,53 @@ impl PrivateProducerAccess {
 
     /// An ingress for one admitted connection, issued by the runner under the
     /// service's lease.
+    /// An ingress for a client number, against whatever admission is current.
+    ///
+    /// The older shape, kept for callers that have no admission in hand. A
+    /// client number is reused, so between choosing one and being answered a
+    /// successor can take it; this issues against the successor. Prefer
+    /// `ingress_for_admission` wherever the admission is known.
     pub fn ingress_for(
         &self,
         service: &PrivateServiceLease<'_>,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateIngress, PrivateProducerRefusal> {
-        match self.ask(service, PrivateProducerAsk::Ingress { client, device })? {
+        self.issue_ingress(service, client, device, None)
+    }
+
+    /// An ingress for one exact admission.
+    ///
+    /// THE ADMISSION TRAVELS WITH THE ASK. The check happens inside the act
+    /// that issues the grant, so a connection that ended after the caller read
+    /// the boundary cannot have its number answered on behalf of whoever took
+    /// it next. A mismatch is refused as `DifferentAdmission` rather than
+    /// served.
+    pub fn ingress_for_admission(
+        &self,
+        service: &PrivateServiceLease<'_>,
+        client: XServerFrontendClientId,
+        device: sophia_protocol::DeviceId,
+        expected: sophia_protocol::ClientAdmissionId,
+    ) -> Result<PrivateIngress, PrivateProducerRefusal> {
+        self.issue_ingress(service, client, device, Some(expected))
+    }
+
+    fn issue_ingress(
+        &self,
+        service: &PrivateServiceLease<'_>,
+        client: XServerFrontendClientId,
+        device: sophia_protocol::DeviceId,
+        expected: Option<sophia_protocol::ClientAdmissionId>,
+    ) -> Result<PrivateIngress, PrivateProducerRefusal> {
+        match self.ask(
+            service,
+            PrivateProducerAsk::Ingress {
+                client,
+                device,
+                expected,
+            },
+        )? {
             PrivateProducerIssued::Ingress(ingress) => Ok(*ingress),
             PrivateProducerIssued::Control(_) => Err(PrivateProducerRefusal::Unanswered),
         }
@@ -293,8 +335,12 @@ impl PrivateProducerPort {
                         .control_producer(service)
                         .map(|producer| PrivateProducerIssued::Control(Box::new(producer)))
                         .map_err(PrivateProducerRefusal::Runner),
-                    PrivateProducerAsk::Ingress { client, device } => runner
-                        .ingress_for(service, client, device)
+                    PrivateProducerAsk::Ingress {
+                        client,
+                        device,
+                        expected,
+                    } => runner
+                        .ingress_for_admission(service, client, device, expected)
                         .map(|ingress| PrivateProducerIssued::Ingress(Box::new(ingress)))
                         .map_err(PrivateProducerRefusal::Runner),
                 }

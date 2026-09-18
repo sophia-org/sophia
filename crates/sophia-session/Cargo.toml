@@ -11,6 +11,7 @@ sophia-backend-live = { path = "../sophia-backend-live", optional = true, defaul
 sophia-broker = { path = "../sophia-broker" }
 sophia-config = { path = "../sophia-config" }
 sophia-engine = { path = "../sophia-engine" }
+sophia-input-authority = { path = "../sophia-input-authority" }
 sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
@@ -24,6 +25,7 @@ rustix = { version = "1.1", default-features = false, features = ["process", "ra
 x11rb = "0.13.1"
 
 [dev-dependencies]
+sophia-conformance = { path = "../sophia-conformance" }
 sophia-shell-client = { path = "../sophia-shell-client" }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
 

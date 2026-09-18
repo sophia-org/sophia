@@ -114,6 +114,26 @@ pub struct PrivateAdmissionParticipant {
     lifecycle: Arc<std::sync::OnceLock<std::sync::Weak<PrivateLifecycleCore>>>,
 }
 
+/// One admitted connection, reported as the boundary currently has it.
+///
+/// EXACT, NOT APPROXIMATE. The admission id and the connection generation are
+/// carried whole so a caller can tell this connection from a later one that
+/// reused its number. Nothing here is a capability: see `admitted`.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrivateAdmittedConnection {
+    pub client: XServerFrontendClientId,
+    pub admission: sophia_protocol::ClientAdmissionId,
+    pub namespace: NamespaceId,
+    pub connection_generation: u64,
+    /// Admitted once and since closed. Kept apart from absence, because a
+    /// connection that was never admitted and one that has ended are different
+    /// answers to "may this be acted on".
+    pub closed: bool,
+    pub lifecycle_open: bool,
+    pub grants: usize,
+}
+
 /// Why the participant refused.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,6 +189,43 @@ impl PrivateAdmissionParticipant {
                 Ok(act(authority, issuer, &mut bindings))
             })
             .map_err(|_| PrivateAdmissionRefusal::Unreachable)?
+    }
+
+    /// What this boundary currently has admitted, as facts rather than rights.
+    ///
+    /// NAMING A CONNECTION IS NOT AUTHORITY OVER IT. A holder of these rows can
+    /// say which client a real authenticated connection became and which exact
+    /// admission it carries; it cannot act with any of it. Every issuance and
+    /// every submission still revalidates the exact admission under this same
+    /// boundary, so a row that has gone stale between the read and the act is
+    /// refused there rather than honoured here.
+    ///
+    /// Read under the existing order, common first and the bindings beneath it,
+    /// through the same helper every other path uses. A reader that took the
+    /// bindings alone would be a second order over the same two locks.
+    ///
+    /// Bounded by construction: the map holds at most the configured
+    /// `max_concurrent_clients`, so this allocates no more than admission
+    /// already does.
+    pub fn admitted(&self) -> Result<Vec<PrivateAdmittedConnection>, PrivateAdmissionRefusal> {
+        self.under_boundary(|_authority, _issuer, bindings| {
+            bindings
+                .bound
+                .iter()
+                .map(|(client, bound)| PrivateAdmittedConnection {
+                    client: *client,
+                    admission: bound.admission,
+                    namespace: bound.namespace,
+                    connection_generation: bound.generation,
+                    closed: bound.closed,
+                    lifecycle_open: bound
+                        .lifecycle
+                        .as_ref()
+                        .is_none_or(PrivateLifecycleGate::is_open),
+                    grants: bound.grants.len(),
+                })
+                .collect()
+        })
     }
 
     /// Admit one client to the private boundary.
@@ -313,16 +370,35 @@ impl PrivateAdmissionParticipant {
     /// The grant is issued and recorded on the binding in one pass under
     /// common, so there is no moment where a grant exists that revocation
     /// would not find.
+    /// Issue a reservation capability for one admitted client.
+    ///
+    /// `expected` NAMES THE ADMISSION THE CALLER MEANT, and is checked here
+    /// rather than before the call. A client number is reused: a caller that
+    /// read the boundary, chose a number, and asked for a capability has an
+    /// interval in which that number's connection can end and a successor take
+    /// it. Checking outside this act cannot close that interval, because the
+    /// binding can change between the check and the issue. Checked inside the
+    /// same act that issues the grant, a successor is refused.
+    ///
+    /// `None` keeps the older trusted behaviour, which issues against whatever
+    /// binding is current. Callers that know which admission they mean should
+    /// say so.
+    /// Issue against whichever admission is current for this client number.
+    ///
     fn issue_role(
         &self,
         submit: sophia_input_authority::SubmitHandle,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
+        expected: Option<sophia_protocol::ClientAdmissionId>,
     ) -> Result<PrivateReservationRole, PrivateAdmissionRefusal> {
         self.under_boundary(|authority, issuer, bindings| {
             let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed && bound.lifecycle.as_ref().is_none_or(PrivateLifecycleGate::is_open)) else {
                 return Err(PrivateAdmissionRefusal::NotAdmitted);
             };
+            if expected.is_some_and(|expected| expected != bound.admission) {
+                return Err(PrivateAdmissionRefusal::DifferentAdmission);
+            }
             let connection = sophia_input_authority::ConnectionIdentity {
                 recipient: client.raw(),
                 connection_generation: bound.generation,

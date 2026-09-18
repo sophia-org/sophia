@@ -521,12 +521,22 @@ impl PrivatePreparedRunner {
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateIngress, PrivateServiceRefusal> {
+        self.ingress_for_admission(service, client, device, None)
+    }
+
+    pub fn ingress_for_admission(
+        &mut self,
+        service: &PrivateServiceLease<'_>,
+        client: XServerFrontendClientId,
+        device: sophia_protocol::DeviceId,
+        expected: Option<sophia_protocol::ClientAdmissionId>,
+    ) -> Result<PrivateIngress, PrivateServiceRefusal> {
         let frontend = self.frontend.as_mut().expect("live runner");
         if !frontend.broker.registry.leased_by(service) {
             return Err(PrivateServiceRefusal::ForeignServiceOwner);
         }
         frontend
-            .ingress_for(client, device)
+            .ingress_for_admission(client, device, expected)
             .map_err(PrivateServiceRefusal::Admission)
     }
 

@@ -767,17 +767,29 @@ impl PrivateXServerFrontend {
     ///
     /// Issuing the capability is an origin act, so it happens on this side of
     /// the handover rather than being something the producer asks for.
+    /// Issued against whichever admission is current. Production names one
+    /// instead, so only controls reach this.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn reservation_role(
         &self,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
+    ) -> Result<PrivateReservationRole, PrivateAdmissionRefusal> {
+        self.reservation_role_for(client, device, None)
+    }
+
+    pub(crate) fn reservation_role_for(
+        &self,
+        client: XServerFrontendClientId,
+        device: sophia_protocol::DeviceId,
+        expected: Option<sophia_protocol::ClientAdmissionId>,
     ) -> Result<PrivateReservationRole, PrivateAdmissionRefusal> {
         // Issued only against a live binding, and recorded on it. A capability
         // issued for a client this boundary has not admitted would be a grant
         // nothing could later revoke, because revocation retires what an
         // admission authorised rather than sweeping the authority.
         self.participant
-            .issue_role(self.submit, client, device)
+            .issue_role(self.submit, client, device, expected)
     }
 
     /// Settle what each abandoned operation is owed, while this instance is

@@ -110,6 +110,10 @@ fn the_port_answers_a_vanished_requester_without_blocking_and_refuses_a_foreign_
             ask: PrivateProducerAsk::Ingress {
                 client: XServerFrontendClientId::from_raw(9000),
                 device: DeviceId::from_raw(1),
+                // This control is about a foreign owner being refused before
+                // anything is issued, so it names no admission and the
+                // refusal it expects happens before one would be checked.
+                expected: None,
             },
             reply,
         })

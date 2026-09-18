@@ -46,10 +46,22 @@ impl PrivateXServerFrontend {
     /// origin's side of the handover, and what the producer receives is the
     /// right to reserve and to observe its own outcomes -- never the authority
     /// and never the issuer.
+    /// Against whichever admission is current. Production names one instead,
+    /// so only controls reach this.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn ingress_for(
         &mut self,
         client: XServerFrontendClientId,
         device: sophia_protocol::DeviceId,
+    ) -> Result<PrivateIngress, PrivateAdmissionRefusal> {
+        self.ingress_for_admission(client, device, None)
+    }
+
+    pub(crate) fn ingress_for_admission(
+        &mut self,
+        client: XServerFrontendClientId,
+        device: sophia_protocol::DeviceId,
+        expected: Option<sophia_protocol::ClientAdmissionId>,
     ) -> Result<PrivateIngress, PrivateAdmissionRefusal> {
         if !self.admission.lifecycle_open() {
             return Err(PrivateAdmissionRefusal::Unreachable);
@@ -62,7 +74,7 @@ impl PrivateXServerFrontend {
         Ok(PrivateIngress {
             sender: self.broker.routed_input_sender(),
             admission: Arc::clone(&self.admission),
-            role: Some(self.reservation_role(client, device)?),
+            role: Some(self.reservation_role_for(client, device, expected)?),
             requests: Arc::new(std::sync::atomic::AtomicU64::new(1)),
         })
     }
