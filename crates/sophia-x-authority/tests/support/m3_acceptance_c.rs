@@ -764,3 +764,491 @@ fn c_interrupted_ownership() {
         &actors,
     );
 }
+
+/// The actual service's own shared admission, taken from inside its frame.
+///
+/// LABELLED TEST-ONLY SEAM, and a read: the hook clones the handle the running
+/// service is using and returns, so nothing is substituted for it.
+fn admission_of(service: &LifecycleService) -> Arc<SharedAdmission> {
+    let (found, taken) = sync_channel(1);
+    arm_runner(
+        &service.registry,
+        Box::new(move |runner, _| {
+            found
+                .send(Arc::clone(&runner.frontend().admission))
+                .expect("the case is waiting for this handle");
+        }),
+    );
+    taken
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the actual service's own admission")
+}
+
+/// Poison one lock and nothing else, through a caught unwind.
+fn poison_lock<T>(lock: &Mutex<T>, what: &'static str) {
+    let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = lock.lock().expect("a readable lock before this case poisons it");
+        panic!("labelled acceptance poison of {what}");
+    }));
+    assert!(poisoned.is_err(), "the poisoning unwind happened here");
+    assert!(lock.is_poisoned(), "{what} is now unreadable");
+}
+
+#[test]
+fn c_poison() {
+    let store = PrivateSettlementOwner::with_capacity(C_RESERVATION_BOUND);
+    let mut service =
+        LifecycleService::launch_over_store("c-poison", 12020, None, false, 1, store.clone());
+    service.start();
+    let (mut peer, custody) = service.connect();
+    let (surface, sequence, ingress) = focus_window(&service, &mut peer, 0x320401, 12020);
+    let client = custody.cleanup_record().client;
+    let delivered = press_and_release(
+        &service,
+        &ingress,
+        &mut peer,
+        surface,
+        sequence,
+        0x320401,
+        12030,
+    );
+    assert!(waited_for(|| store.reserved() == Some(0)));
+
+    let admission = admission_of(&service);
+    let producers = leased_producers(&service, client, C_PRODUCERS);
+    let held = hold_runner(&service);
+    let entered = held.entered();
+    // One credit is deliberately left free, so what the next send meets is the
+    // unreadable order itself rather than the store's bound in front of it.
+    let (accepted, refusal) =
+        fill_until_refused(&service, &producers, surface, 12200, C_RESERVATION_BOUND - 1);
+    assert_eq!(accepted, C_RESERVATION_BOUND - 1);
+    assert_eq!(refusal, None, "the store still has a credit to give");
+    let charged_before = store.reserved();
+    assert_eq!(charged_before, Some(C_RESERVATION_BOUND - 1));
+
+    // THE ORDER ITSELF BECOMES UNREADABLE while it holds accepted work. Not
+    // drained, not closed: unreadable, which is a different fact from empty.
+    poison_lock(&admission.ready, "the actual shared order");
+
+    // A producer meeting an unreadable order is refused, and told so: nothing
+    // is accepted, and the refusal is not saturation or a closed consumer.
+    // A producer whose own grant is free, so what it meets is the order.
+    let after_poison = producers[accepted]
+        .submit(
+            &service.owner.lease(),
+            button_to(
+                surface,
+                XAuthorityInputDeliveryId::from_raw(12290),
+                272,
+                false,
+            ),
+        )
+        .map_err(|refusal| refusal_name(&refusal))
+        .expect_err("an unreadable order accepts nothing");
+    assert_eq!(
+        after_poison, "Unavailable",
+        "an unreachable order and a full one are different answers"
+    );
+    assert_eq!(
+        store.reserved(),
+        charged_before,
+        "the refused send took no credit and released none"
+    );
+
+    held.release();
+    let closed = service.closed();
+
+    // THE UNREADABLE QUEUE IS RETAINED AS WHAT IT IS. It is not reported
+    // drained, and its instance is not reported settled.
+    let failed_instances = store.failed_instances();
+    let failure_slots = store.failure_slots_charged();
+    let charged_after = store.reserved();
+    let owed = store.owed();
+    let terminal = store.terminal_inventories();
+    assert_eq!(
+        failed_instances,
+        Some(1),
+        "the instance whose order could not be read is kept, not counted and dropped"
+    );
+    assert_eq!(
+        failure_slots,
+        Some(1),
+        "its failure slot, reserved before exposure, is still charged"
+    );
+    assert!(
+        charged_after.is_some_and(|charged| charged >= accepted),
+        "accepted work behind an unreadable order keeps every credit it took: {charged_after:?}"
+    );
+    assert!(
+        owed.is_some() && terminal.is_some(),
+        "the store still answers; unreadable elsewhere is not unreadable here"
+    );
+
+    let legible = json!({
+        "order_poisoned": true,
+        "producer_refusal_after_poison": after_poison,
+        "charged_before_poison": charged_before,
+        "charged_after_exit": charged_after,
+        "failed_instances": failed_instances,
+        "failure_slots_charged": failure_slots,
+        "owed": owed,
+        "terminal_inventories": terminal,
+        "closed_error": closed.error.clone(),
+        "held_on": format!("{entered:?}"),
+        "actual_delivery_before_poison": delivered,
+    });
+    let actors = service.finish(&[custody]);
+
+    // THE STORE ITSELF, made unreadable. Every reader now says it cannot say,
+    // rather than answering nothing owed; the credits are still there.
+    let readable_before = (store.reserved(), store.owed(), store.outstanding());
+    poison_lock(&store.inner, "the actual settlement store");
+    let readable_after = (store.reserved(), store.owed(), store.outstanding());
+    let through_poison = {
+        let records = store.records_even_if_poisoned();
+        (records.reserved, records.held.len(), records.failed.len())
+    };
+    assert_eq!(
+        readable_after,
+        (None, None, None),
+        "an unreadable store says so rather than answering zero"
+    );
+    assert_eq!(
+        through_poison.0,
+        readable_before.0.expect("readable before"),
+        "the credits an unreadable store holds are exactly the ones it held"
+    );
+    assert!(
+        through_poison.2 >= 1,
+        "and the failed instance it was keeping is still kept"
+    );
+
+    emit_case(
+        "C.poison",
+        &[
+            (
+                "unreadable_remains_legible",
+                json!({
+                    "order": legible.clone(),
+                    "store_readable_before": format!("{readable_before:?}"),
+                    "store_readable_after": format!("{readable_after:?}"),
+                    "store_through_poison_reserved_held_failed": format!("{through_poison:?}"),
+                }),
+            ),
+            (
+                "unreadable_keeps_capacity",
+                json!({
+                    "accepted_behind_unreadable_order": accepted,
+                    "charged_before_poison": charged_before,
+                    "charged_after_exit": charged_after,
+                    "failure_slot_still_charged": failure_slots,
+                    "store_credits_through_poison": through_poison.0,
+                }),
+            ),
+            (
+                "unreadable_is_not_settled",
+                json!({
+                    "failed_instances_retained": failed_instances,
+                    "refusal_is_unavailable_not_saturated": after_poison,
+                    "store_answers_none_not_zero": format!("{readable_after:?}"),
+                    "retained_failed_through_poison": through_poison.2,
+                }),
+            ),
+        ],
+        &actors,
+    );
+}
+
+#[test]
+fn c_exact_origin() {
+    // TWO ACTUAL INVOCATIONS, each over its own owner and store, so the
+    // origins really are different rather than two names for one.
+    let store_a = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let store_b = PrivateSettlementOwner::with_capacity(C_DEEP_BOUND);
+    let mut first =
+        LifecycleService::launch_over_store("c-origin-a", 12040, None, false, 1, store_a.clone());
+    let mut second =
+        LifecycleService::launch_over_store("c-origin-b", 12041, None, false, 1, store_b.clone());
+    first.start();
+    second.start();
+    let (mut peer_a, custody_a) = first.connect();
+    let (mut peer_b, custody_b) = second.connect();
+    let (surface_a, sequence_a, ingress_a) = focus_window(&first, &mut peer_a, 0x320501, 12040);
+    let (surface_b, _sequence_b, ingress_b) = focus_window(&second, &mut peer_b, 0x320601, 12041);
+    let client_a = custody_a.cleanup_record().client;
+    let client_b = custody_b.cleanup_record().client;
+
+    // A COLLIDING LOCAL IDENTITY. Both invocations numbered their connection
+    // the same; what tells them apart is the origin, never the number.
+    assert_eq!(client_a, client_b, "the two invocations collide on the number");
+    assert!(
+        !Arc::ptr_eq(&first.registry.clients, &second.registry.clients),
+        "and are still different origins"
+    );
+
+    // A FOREIGN KEEPER IS REFUSED AT EVERY ACCEPTANCE, on the association and
+    // not on the work: nothing is accepted, reserved or consumed.
+    let foreign_input = ingress_b
+        .submit(
+            &first.owner.lease(),
+            button_to(
+                surface_b,
+                XAuthorityInputDeliveryId::from_raw(12290),
+                272,
+                false,
+            ),
+        )
+        .map_err(|refusal| refusal_name(&refusal))
+        .expect_err("a producer will not accept work for a keeper that is not its own");
+    assert_eq!(foreign_input, "ForeignServiceOwner");
+    let foreign_control = second
+        .access
+        .control_producer(&first.owner.lease())
+        .map(|_| ())
+        .expect_err("nor will the port issue a control producer to a foreign keeper");
+    assert!(
+        matches!(foreign_control, PrivateProducerRefusal::ForeignServiceOwner),
+        "{foreign_control:?}"
+    );
+    // The same request, offered to its own keeper, is accepted: what was
+    // refused above is the association and nothing about the work.
+    ingress_b
+        .submit(
+            &second.owner.lease(),
+            button_to(
+                surface_b,
+                XAuthorityInputDeliveryId::from_raw(12291),
+                272,
+                false,
+            ),
+        )
+        .expect("its own keeper accepts the very same request");
+    let charged_b_unmoved = store_a.reserved();
+    assert_eq!(
+        charged_b_unmoved,
+        Some(0),
+        "the other origin's store was neither charged nor credited by any of this"
+    );
+
+    // A COLLIDING NUMBER CANNOT REACH THE OTHER ORIGIN'S CUSTODY either.
+    let foreign_turn_refusal = {
+        let (found, taken) = sync_channel(1);
+        let foreign = Arc::clone(&second.owner);
+        arm_runner(
+            &first.registry,
+            Box::new(move |runner, _| {
+                let refusal = runner
+                    .service_turn(&foreign.lease())
+                    .map(|_| String::from("accepted"))
+                    .unwrap_or_else(|error| format!("{error:?}"));
+                found.send(refusal).expect("the case is waiting");
+            }),
+        );
+        taken
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the actual runner answered a foreign lease")
+    };
+    assert!(
+        foreign_turn_refusal.contains("ForeignServiceOwner"),
+        "the turn itself refuses a foreign keeper: {foreign_turn_refusal}"
+    );
+
+    // NATIVE SIBLING-GRAB CONTINUATION, through the actual source and writer.
+    // The first release keeps the shared activation while the other button
+    // holds it, and is answered only once the final retirement is visited.
+    let mut submitted = Vec::new();
+    let mut events = Vec::new();
+    for (delivery, button) in [(12300, 272), (12301, 274)] {
+        submitted.push(
+            ingress_a
+                .submit(
+                    &first.owner.lease(),
+                    button_to(
+                        surface_a,
+                        XAuthorityInputDeliveryId::from_raw(delivery),
+                        button,
+                        true,
+                    ),
+                )
+                .is_ok(),
+        );
+        events.push(read_event(&mut peer_a, 3));
+    }
+    submitted.push(
+        ingress_a
+            .submit(
+                &first.owner.lease(),
+                button_to(
+                    surface_a,
+                    XAuthorityInputDeliveryId::from_raw(12302),
+                    272,
+                    false,
+                ),
+            )
+            .is_ok(),
+    );
+    let early_wire = read_event(&mut peer_a, 1);
+    let early_answer = delivery_cell(&first.registry, 12302).and_then(|cell| cell.answer());
+    assert_eq!(
+        early_wire, None,
+        "a release still required by another button sends nothing"
+    );
+    assert_eq!(
+        early_answer, None,
+        "and its own recipient half is unanswered too"
+    );
+    submitted.push(
+        ingress_a
+            .submit(
+                &first.owner.lease(),
+                button_to(
+                    surface_a,
+                    XAuthorityInputDeliveryId::from_raw(12303),
+                    274,
+                    false,
+                ),
+            )
+            .is_ok(),
+    );
+    events.push(read_event(&mut peer_a, 3));
+    events.push(read_event(&mut peer_a, 3));
+    assert!(submitted.iter().all(|accepted| *accepted), "{submitted:?}");
+    assert_eq!(
+        events,
+        vec![
+            Some(expected_chord_event(true, sequence_a, 0x320501, 1, 0)),
+            Some(expected_chord_event(true, sequence_a, 0x320501, 2, 1 << 8)),
+            Some(expected_chord_event(
+                false,
+                sequence_a,
+                0x320501,
+                1,
+                (1 << 8) | (1 << 9)
+            )),
+            Some(expected_chord_event(false, sequence_a, 0x320501, 2, 1 << 9)),
+        ],
+        "the continuation delivered both releases in the order the source decided"
+    );
+    let answers: Vec<_> = [12300, 12301, 12302, 12303]
+        .into_iter()
+        .map(|delivery| {
+            delivery_cell(&first.registry, delivery).and_then(|cell| {
+                waited_for(|| cell.answer().is_some());
+                cell.answer().map(|answer| answer.outcome)
+            })
+        })
+        .collect();
+    assert_eq!(
+        answers,
+        vec![Some(XAuthorityInputDeliveryOutcome::Flushed); 4],
+        "every half of the shared activation was answered by an actual receipt"
+    );
+
+    second.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed_b = second.closed();
+    first.command(XServerFrontendServiceCommand::StopAndDisconnect);
+    let closed_a = first.closed();
+    let joined = closed_a
+        .order
+        .expect("the first invocation returned its tally")
+        .activations_joined;
+    assert!(
+        joined >= 1,
+        "the sibling grab's retirement was visited by the actual runner, not inferred"
+    );
+
+    // REPEATED RECOVERY KEEPS WHAT IT HOLDS. Restoring and driving again
+    // answers nothing further, releases no credit and renames no outcome.
+    let restored_first = store_a.restore_interrupted();
+    let credits_first = store_a.reserved();
+    let executions_first = store_a.retained_executions();
+    let restored_second = store_a.restore_interrupted();
+    let credits_second = store_a.reserved();
+    let executions_second = store_a.retained_executions();
+    assert_eq!(
+        restored_second, 0,
+        "an interrupted sweep is returned once, not repeatedly"
+    );
+    assert_eq!(credits_first, credits_second);
+    assert_eq!(executions_first, executions_second);
+    let drive_first = store_a.drive();
+    let credits_after_drive = store_a.reserved();
+    let drive_second = store_a.drive();
+    assert!(
+        drive_first.readable && drive_second.readable,
+        "a drive that could not look says so"
+    );
+    assert_eq!(
+        drive_second.answered, 0,
+        "the second drive answered nothing the first had already answered"
+    );
+    assert_eq!(
+        store_a.reserved(),
+        credits_after_drive,
+        "and released no further credit"
+    );
+    assert_eq!(
+        store_a.retained_executions(),
+        executions_second,
+        "the retained outcome identity is unchanged by repeating the recovery"
+    );
+
+    let first_origin = format!("{:p}", Arc::as_ptr(&first.registry.clients));
+    let second_origin = format!("{:p}", Arc::as_ptr(&second.registry.clients));
+    let mut actors = first.finish(&[custody_a]);
+    actors.extend(second.finish(&[custody_b]));
+    emit_case(
+        "C.exact_origin",
+        &[
+            (
+                "foreign_origin",
+                json!({
+                    "input_refusal": foreign_input,
+                    "control_refusal": format!("{foreign_control:?}"),
+                    "turn_refusal": foreign_turn_refusal,
+                    "same_request_accepted_by_own_keeper": true,
+                    "other_store_untouched": charged_b_unmoved,
+                }),
+            ),
+            (
+                "colliding_origin",
+                json!({
+                    "client_number": client_a.0,
+                    "same_number_on_both": client_a == client_b,
+                    "distinct_client_tables": true,
+                    "first_origin": first_origin,
+                    "second_origin": second_origin,
+                    "closed_second": format!("{:?}", closed_b.order),
+                }),
+            ),
+            (
+                "repeated_recovery_identity_and_credit",
+                json!({
+                    "restore_first": restored_first,
+                    "restore_second": restored_second,
+                    "credits_first": credits_first,
+                    "credits_second": credits_second,
+                    "drive_first": format!("{drive_first:?}"),
+                    "drive_second": format!("{drive_second:?}"),
+                    "executions": format!("{executions_second:?}"),
+                }),
+            ),
+            (
+                "native_sibling_grab_continuation",
+                json!({
+                    "early_release_wire": early_wire.map(|bytes| bytes.to_vec()),
+                    "early_release_answer": early_answer.map(|answer| format!("{answer:?}")),
+                    "chord_bytes": events
+                        .iter()
+                        .map(|event| event.map(|bytes| bytes.to_vec()))
+                        .collect::<Vec<_>>(),
+                    "receipts": format!("{answers:?}"),
+                    "activations_joined": joined,
+                    "order": format!("{:?}", closed_a.order),
+                }),
+            ),
+        ],
+        &actors,
+    );
+}
