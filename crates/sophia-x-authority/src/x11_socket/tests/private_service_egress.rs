@@ -102,14 +102,11 @@ fn an_unwind_inside_the_private_service_keeps_the_unsent_raster_envelope() {
     // An unwind returns nothing, so the service's own account is empty; the
     // store's is what a reader gets.
     assert!(reported.is_empty());
-    assert_eq!(after.unresolved_egress.len(), 1, "exactly the one unsent envelope is retained");
-    assert_eq!(after.unresolved_transactions.len(), 1);
-    let envelope = &after.unresolved_egress[0];
-    let batch = envelope.batch.as_ref().expect("an unsent envelope still holds its batch");
-    assert!(envelope.observed_batch, "and it is the observed raster batch");
-    assert_eq!(batch.transactions.len(), 1);
-    assert_eq!(batch.transactions[0].surface, surface, "naming the surface the requirement was for");
-    assert!(!batch.raster_responses.is_empty());
+    assert_eq!(after.shelf.len(), 1, "exactly the one unsent envelope is retained");
+    let entry = &after.shelf[0];
+    assert!(entry.holds_batch, "an unsent envelope still holds its batch");
+    assert!(entry.observed_batch, "and it is the observed raster batch");
+    assert_eq!(entry.surface, Some(surface), "naming the surface the requirement was for");
     assert!(
         transactions.try_recv().is_ok(),
         "the transport still holds the worker's item, so the raster batch was never accepted"
@@ -172,10 +169,7 @@ fn an_unwind_after_the_transport_accepted_the_batch_retains_nothing_as_unsent() 
     }
     assert!(unwound, "the injected panic unwound the operation after acceptance");
     assert!(client_ended);
-    assert!(
-        after.unresolved_egress.is_empty(),
-        "a batch the transport took is not shelved as unsent"
-    );
+    assert!(after.shelf.is_empty(), "a batch the transport took is not shelved as unsent");
     assert!(reported.is_empty());
     assert!(
         delivered.iter().any(|batch| !batch.raster_responses.is_empty()
@@ -235,10 +229,9 @@ fn an_error_while_a_raster_envelope_waits_cancels_its_wait_and_retains_it() {
         "the pending envelope's wait was cancelled and reported"
     );
     assert_unresolved_accounted(&reported, &after);
-    assert_eq!(after.unresolved_egress.len(), 1);
-    let envelope = &after.unresolved_egress[0];
-    assert!(envelope.batch.is_some(), "cancelling a wait does not deliver the batch");
-    assert_eq!(envelope.batch.as_ref().expect("held").transactions[0].surface, surface);
+    assert_eq!(after.shelf.len(), 1);
+    assert!(after.shelf[0].holds_batch, "cancelling a wait does not deliver the batch");
+    assert_eq!(after.shelf[0].surface, Some(surface));
     assert_kept_exactly_one(&after);
     assert_released(&after);
     let _ = std::fs::remove_file(&socket_path);
@@ -367,10 +360,9 @@ fn stop_with_a_waiting_envelope(
     // CANCELLING THE WAIT IS NOT DELIVERING THE BATCH: it is still unsent, so
     // it is on the shelf, and the service says so by transaction.
     assert_unresolved_accounted(&reported, &after);
-    assert_eq!(after.unresolved_egress.len(), 1, "the unsent envelope survives an ordinary stop");
-    let envelope = &after.unresolved_egress[0];
-    assert!(envelope.batch.is_some());
-    assert_eq!(envelope.batch.as_ref().expect("held").transactions[0].surface, surface);
+    assert_eq!(after.shelf.len(), 1, "the unsent envelope survives an ordinary stop");
+    assert!(after.shelf[0].holds_batch);
+    assert_eq!(after.shelf[0].surface, Some(surface));
     assert!(
         transactions.try_recv().is_ok(),
         "the transport still holds the worker's item: the batch was never accepted"
@@ -449,8 +441,8 @@ fn a_shutdown_report_that_unwinds_during_a_stop_still_keeps_the_envelope() {
     assert!(unwound, "the cancellation report unwound the operation");
     assert!(client_ended, "the guard's Drop collected the worker");
     assert!(reported.is_empty());
-    assert_eq!(after.unresolved_egress.len(), 1, "the envelope survives the unwind");
-    assert_eq!(after.unresolved_egress[0].batch.as_ref().expect("held").transactions[0].surface, surface);
+    assert_eq!(after.shelf.len(), 1, "the envelope survives the unwind");
+    assert_eq!(after.shelf[0].surface, Some(surface));
     assert_kept_exactly_one(&after);
     assert_same_custody(before, &after);
     assert_released(&after);
@@ -520,11 +512,13 @@ fn a_cancelled_submission_keeps_its_batch_in_the_slot() {
 
 #[test]
 fn the_shelf_keeps_its_charge_on_the_store_until_taken() {
-    // ONE ORIGINAL STORE, CAPACITY ONE, THREE INVOCATIONS. The first leaves
-    // an unsent envelope on the shelf and its launch owner goes. The second
+    // ONE ORIGINAL STORE, CAPACITY ONE, TWO INVOCATIONS. The first leaves an
+    // unsent envelope on the shelf and its launch owner goes. The second
     // cannot even construct a frontend: the shelved envelope keeps the one
-    // failure slot charged. Only after a reader takes the shelf does a third
-    // construct and serve. The shelf never allocates past its capacity.
+    // failure slot charged, and NOTHING releases it -- no reader takes the
+    // work out, because taking would uncharge it, and accounting for retained
+    // egress is a disposition this store does not have. The shelf never
+    // allocates past its capacity.
     let namespace = NamespaceId::from_raw(9315);
     let durable = Arc::new(PrivateSettlementOwner::with_capacity(1));
     assert_eq!(durable.unresolved_egress_capacity(), Some(1));
@@ -587,7 +581,13 @@ fn the_shelf_keeps_its_charge_on_the_store_until_taken() {
     assert_eq!(durable.unresolved_egress(), Some(1));
     assert_eq!(durable.unresolved_egress_capacity(), Some(1), "no allocation past the reserved capacity");
 
-    // Second invocation: refused at construction, before any exposure.
+    // Second invocation: refused at construction, before any exposure, with
+    // the exact work still on the shelf under the first invocation's number.
+    let shelf = read_shelf(&durable);
+    assert_eq!(shelf.len(), 1);
+    assert!(shelf[0].holds_batch);
+    assert_eq!(shelf[0].surface, Some(surface));
+    assert_eq!(shelf[0].obligation.instance, 1, "the first reservation's number");
     let owner_two = service_owner(&durable, 4);
     let refused = crate::PrivateXServerFrontend::new(private_service_parts(4), &owner_two);
     let Err((refusal, parts)) = refused else {
@@ -596,28 +596,111 @@ fn the_shelf_keeps_its_charge_on_the_store_until_taken() {
     assert!(matches!(refusal, AdmissionRefusal::Saturated), "{refusal:?}");
     assert_eq!(parts.max_concurrent_clients.get(), 4);
     drop((parts, owner_two));
-
-    // A reader takes the shelf; the charge goes with it.
-    let taken = durable.take_unresolved_egress();
-    assert_eq!(taken.len(), 1);
-    assert_eq!(taken[0].batch.as_ref().expect("held").transactions[0].surface, surface);
-    assert_eq!(durable.unresolved_egress(), Some(0));
+    // Reading the shelf changed nothing: still charged, still refused.
+    assert_eq!(read_shelf(&durable), shelf);
+    assert_eq!(durable.unresolved_egress(), Some(1));
     assert_eq!(durable.unresolved_egress_capacity(), Some(1));
+    let owner_again = service_owner(&durable, 4);
+    assert!(
+        crate::PrivateXServerFrontend::new(private_service_parts(4), &owner_again).is_err(),
+        "no reader uncharged the retained work"
+    );
+    drop((owner_again, durable));
+}
 
-    // Third invocation: constructs, serves a connection, stops.
-    let owner_three = service_owner(&durable, 4);
-    let third = crate::PrivateXServerFrontend::new(private_service_parts(4), &owner_three)
-        .unwrap_or_else(|(refusal, _)| panic!("after the shelf is taken: {refusal:?}"));
-    drop(third.shutdown());
-    drop(owner_three);
+#[test]
+fn obligations_from_two_invocations_stay_distinct_after_their_frames_are_gone() {
+    // TWO INVOCATIONS, ONE STORE OF CAPACITY TWO, EACH LEAVING AN UNSENT
+    // ENVELOPE. Each frontend numbers its transactions from one, so both
+    // envelopes carry the same transaction number; what tells them apart --
+    // after both launch scopes have returned and their frontends are gone --
+    // is the instance number each reservation was given before exposure.
+    let namespace = NamespaceId::from_raw(9317);
+    let durable = Arc::new(PrivateSettlementOwner::with_capacity(2));
+    let mut returned = Vec::new();
+    for round in 0..2u32 {
+        let socket_path = private_service_socket(&format!("distinct-{round}"));
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let observer = recording_observer(Arc::clone(&seen), None, Arc::new(Mutex::new(None)));
+        let (transaction_sender, transactions) = sync_channel(1);
+        let (commands, service_commands) = sync_channel(4);
+        let (handles_out, handles_in) = channel();
+        let store = Arc::clone(&durable);
+        let path = socket_path.clone();
+        let (done, finished) = channel();
+        let launch = std::thread::spawn(move || {
+            let owner = service_owner(&store, 4);
+            let private = crate::PrivateXServerFrontend::new(private_service_parts(4), &owner)
+                .unwrap_or_else(|(refusal, _)| panic!("frontend {round}: {refusal:?}"));
+            let _ = handles_out.send(Handles {
+                registry: private.broker.registry.clone(),
+                raster: private.broker.raster_router(),
+            });
+            let lease = owner.lease();
+            let outcome = serve_private_frontend_until_stopped(
+                private,
+                &lease,
+                private_service_config(&path, namespace, 4),
+                transaction_sender,
+                service_commands,
+                observer,
+            );
+            let _ = done.send(());
+            match outcome {
+                Err(PrivateServiceFailure::Failed {
+                    unresolved_egress, ..
+                }) => unresolved_egress,
+                other => panic!("an error with a pending envelope: {:?}", other.err()),
+            }
+        });
+        let handles = handles_in.recv_timeout(Duration::from_secs(15)).expect("built");
+        let mut client = connect_private_client(&socket_path);
+        handshake(&mut client);
+        let surface = draw_and_learn_surface(&mut client, &transactions);
+        assert!(waited_for(|| saw_kind(&seen, XAuthorityBackpressureTelemetryKind::Wait, true)));
+        let waits_before = seen.lock().expect("readable").len();
+        handles.raster.try_route(raster_requirement_for(surface)).expect("queued");
+        assert!(waited_for(|| saw_service_wait(&seen, waits_before)));
+        let (acknowledgement, acknowledged) = sync_channel(1);
+        drop(acknowledged);
+        commands
+            .send(XServerFrontendServiceCommand::UpdateOutputTopology {
+                snapshot: sophia_protocol::OutputTopologySnapshot {
+                    generation: 1,
+                    primary: sophia_protocol::OutputId::from_raw(1),
+                    outputs: Vec::new(),
+                },
+                acknowledgement,
+            })
+            .expect("listening");
+        assert!(eof_within(&mut client, 3));
+        assert!(finished.recv_timeout(Duration::from_secs(15)).is_ok(), "invocation {round} returned");
+        returned.push(launch.join().expect("joined"));
+        drop(handles);
+        let _ = std::fs::remove_file(&socket_path);
+    }
+    assert_eq!(returned[0].len(), 1);
+    assert_eq!(returned[1].len(), 1);
+    assert_eq!(
+        returned[0][0].transaction, returned[1][0].transaction,
+        "each frontend numbered its transactions from one: the numbers collide"
+    );
+    assert_ne!(returned[0][0].instance, returned[1][0].instance, "the invocations do not");
+    assert_eq!(
+        durable.unresolved_egress_obligations().expect("readable"),
+        vec![returned[0][0], returned[1][0]],
+        "the store names each obligation by the invocation that left it"
+    );
     drop(durable);
 }
 
 #[test]
 fn an_invocation_that_owes_no_retained_egress_releases_its_charge_for_reuse() {
     // THE OTHER HALF OF THE BOUND: a service that shelved nothing gives its
-    // failure slot back when it closes, and the next construction over the
+    // failure slot back when it closes, and the next CONSTRUCTION over the
     // same capacity-one store succeeds without anyone taking anything.
+    // Construction is what capacity admission decides; nothing is served by
+    // the second frontend here.
     let namespace = NamespaceId::from_raw(9316);
     let socket_path = private_service_socket("charge-reuse");
     let durable = PrivateSettlementOwner::with_capacity(1);

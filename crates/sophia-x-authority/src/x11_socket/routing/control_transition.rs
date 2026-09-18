@@ -264,6 +264,9 @@ pub struct PrivateXServerFrontend {
     /// the queue when it does. Holding it past either would leak a slot that
     /// another instance could have used.
     failure_slot_held: bool,
+    /// The number the store gave this instance's reservation. Retained
+    /// egress is shelved under it; a return names it.
+    instance: u64,
     /// Work that has been routed but not yet terminally answered.
     ///
     /// A credit belongs to its work until the work reaches a real terminal
@@ -433,9 +436,12 @@ impl PrivateXServerFrontend {
             Err(_) => return Err((AdmissionRefusal::Unavailable, parts)),
         };
         // Before anything is exposed, and before the parts are taken apart.
-        if let Err(refusal) = durable.reserve_failure_slot() {
-            return Err((refusal, parts));
-        }
+        // THE INSTANCE NUMBER COMES WITH THE RESERVATION, before exposure,
+        // and names this invocation in anything it leaves behind.
+        let instance = match durable.reserve_failure_slot() {
+            Ok(instance) => instance,
+            Err(refusal) => return Err((refusal, parts)),
+        };
         // Also before anything is exposed: the number of connections that may
         // hold a place at once is this instance's declared client limit, and
         // it has to be in force before a registry built below can publish a
@@ -599,6 +605,7 @@ impl PrivateXServerFrontend {
             outstanding: Vec::with_capacity(capacity),
             settled: false,
             failed: false,
+            instance,
             failure_slot_held: true,
             participant,
             controller,

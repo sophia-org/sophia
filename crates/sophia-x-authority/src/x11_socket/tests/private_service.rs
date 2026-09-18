@@ -208,9 +208,42 @@ struct AfterService {
     custodies_kept: usize,
     kept: Option<CustodyIdentity>,
     kept_number_right: bool,
-    unresolved_egress: Vec<XAuthorityBoundedEgressEnvelope>,
-    unresolved_transactions: Vec<TransactionId>,
+    /// The store's shelf, read without taking: each obligation, whether its
+    /// envelope still holds a batch, whether that batch was observed, and
+    /// the surface it names. The work and its charge stay in the store.
+    shelf: Vec<ShelvedEgress>,
     custody: Option<std::sync::Weak<PrivateEvidenceCustody>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ShelvedEgress {
+    obligation: PrivateUnresolvedEgress,
+    holds_batch: bool,
+    observed_batch: bool,
+    surface: Option<SurfaceId>,
+}
+
+fn read_shelf(durable: &PrivateSettlementOwner) -> Vec<ShelvedEgress> {
+    durable
+        .with_unresolved_egress(|entries| {
+            entries
+                .iter()
+                .map(|(instance, envelope)| ShelvedEgress {
+                    obligation: PrivateUnresolvedEgress {
+                        instance: *instance,
+                        transaction: envelope.transaction,
+                    },
+                    holds_batch: envelope.batch.is_some(),
+                    observed_batch: envelope.observed_batch,
+                    surface: envelope
+                        .batch
+                        .as_ref()
+                        .and_then(|batch| batch.transactions.first())
+                        .map(|transaction| transaction.surface),
+                })
+                .collect()
+        })
+        .expect("a readable store")
 }
 
 fn inspect_after(owner: &PrivateServiceOwner, durable: &PrivateSettlementOwner) -> AfterService {
@@ -220,10 +253,7 @@ fn inspect_after(owner: &PrivateServiceOwner, durable: &PrivateSettlementOwner) 
         custodies_kept: kept.taken,
         kept: first.map(custody_identity),
         kept_number_right: first.is_some_and(|custody| custody.cleanup_record().number.get().is_some()),
-        unresolved_transactions: durable
-            .unresolved_egress_transactions()
-            .expect("a readable store"),
-        unresolved_egress: durable.take_unresolved_egress(),
+        shelf: read_shelf(durable),
         custody: first.map(Arc::downgrade),
     }
 }
@@ -336,15 +366,11 @@ fn assert_same_custody(before: CustodyIdentity, after: &AfterService) {
 }
 
 /// The service's own account of what it left unsent agrees with the store's
-/// shelf, transaction by transaction.
-fn assert_unresolved_accounted(reported: &[TransactionId], after: &AfterService) {
-    assert_eq!(reported, after.unresolved_transactions.as_slice());
-    let shelved: Vec<TransactionId> = after
-        .unresolved_egress
-        .iter()
-        .map(|envelope| envelope.transaction)
-        .collect();
-    assert_eq!(shelved, after.unresolved_transactions);
+/// shelf, obligation by obligation -- invocation and transaction both.
+fn assert_unresolved_accounted(reported: &[PrivateUnresolvedEgress], after: &AfterService) {
+    let shelved: Vec<PrivateUnresolvedEgress> =
+        after.shelf.iter().map(|entry| entry.obligation).collect();
+    assert_eq!(reported, shelved.as_slice());
 }
 
 fn assert_released(after: &AfterService) {
@@ -384,7 +410,7 @@ fn a_private_service_admits_a_real_connection_and_stops_in_order() {
     assert!(ok, "an ordinary stop returns the settlement");
     assert_kept_exactly_one(&after);
     assert_unresolved_accounted(&reported.expect("returned"), &after);
-    assert!(after.unresolved_egress.is_empty());
+    assert!(after.shelf.is_empty());
     assert_released(&after);
     let _ = std::fs::remove_file(&socket_path);
 }
@@ -476,7 +502,7 @@ fn an_error_after_a_connection_exists_collects_a_worker_blocked_on_egress() {
         "the transport still holds the worker's item: this control drained nothing"
     );
     assert_kept_exactly_one(&after);
-    assert!(after.unresolved_egress.is_empty(), "no raster envelope was pending");
+    assert!(after.shelf.is_empty(), "no raster envelope was pending");
     assert_released(&after);
     let _ = std::fs::remove_file(&socket_path);
 }
@@ -484,7 +510,7 @@ fn an_error_after_a_connection_exists_collects_a_worker_blocked_on_egress() {
 /// A launched service over a pre-built frontend, with what the test thread
 /// drives it through.
 struct Launched {
-    handle: std::thread::JoinHandle<(bool, Option<String>, Vec<TransactionId>, AfterService)>,
+    handle: std::thread::JoinHandle<(bool, Option<String>, Vec<PrivateUnresolvedEgress>, AfterService)>,
     finished: Receiver<()>,
     handles: Handles,
     commands: SyncSender<XServerFrontendServiceCommand>,
@@ -716,7 +742,7 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
         "and the private frontend's own fallback has not run before that worker is joined"
     );
     assert_eq!(occupancy_after, 0);
-    assert_eq!(after.unresolved_egress.len(), 1, "and the unsent raster envelope is retained");
+    assert_eq!(after.shelf.len(), 1, "and the unsent raster envelope is retained");
     drop(transactions);
     let _ = std::fs::remove_file(&socket_path);
 }

@@ -34,7 +34,13 @@ struct AbandonedSettlements {
     /// frame that was sending it is gone. Plain data with no path back to
     /// this store, bounded by one pending raster envelope per invocation.
     /// Nothing here settles, retries or publishes it; a reader takes it.
-    unresolved_egress: Vec<XAuthorityBoundedEgressEnvelope>,
+    unresolved_egress: Vec<(u64, XAuthorityBoundedEgressEnvelope)>,
+    /// The number the next instance reservation is given. Minted on the
+    /// existing reservation, before exposure, and never reused, so a
+    /// retained obligation names the invocation that left it even after
+    /// that invocation's frames and handles are gone. A counter, not a
+    /// history: nothing is kept per number.
+    next_instance: u64,
     /// Obligations a sweep is part-way through.
     ///
     /// Owned here rather than in a local, so a sweep that unwinds leaves them
@@ -263,6 +269,7 @@ impl PrivateSettlementOwner {
             inner: Arc::new(Mutex::new(AbandonedSettlements {
                 held: Vec::with_capacity(capacity),
                 unresolved_egress: Vec::with_capacity(capacity),
+                next_instance: 1,
                 in_flight: Vec::with_capacity(capacity),
                 outstanding_in_flight: Vec::with_capacity(capacity),
                 failed_in_flight: Vec::with_capacity(capacity),
@@ -333,16 +340,18 @@ impl PrivateSettlementOwner {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Keep authority egress a service could not resolve.
+    /// Keep authority egress a service could not resolve, under the
+    /// invocation that left it.
     ///
     /// NEVER REFUSED, AND NEVER ALLOCATING. The shelf was sized to this
     /// store's failure capacity when the store was made, and a service
     /// shelves only while it still holds the failure slot it reserved at
     /// construction -- so there is always room for what it shelves. From
     /// then on the shelved envelope keeps that charge: `reserve_failure_slot`
-    /// counts it until a reader takes it. Accepted work is not lost to a
-    /// refusal here; the refusal happens at the next construction instead.
-    fn retain_unresolved_egress(&self, envelope: XAuthorityBoundedEgressEnvelope) {
+    /// counts it. NOTHING HERE RELEASES IT: no reader takes the work out, so
+    /// no reader uncharges it. Accounting for retained egress is a
+    /// disposition this store does not have.
+    fn retain_unresolved_egress(&self, instance: u64, envelope: XAuthorityBoundedEgressEnvelope) {
         let mut held = match self.inner.lock() {
             Ok(held) => held,
             Err(poisoned) => poisoned.into_inner(),
@@ -351,7 +360,7 @@ impl PrivateSettlementOwner {
             held.unresolved_egress.len() < held.unresolved_egress.capacity(),
             "a shelving service holds a failure slot, so the shelf has room"
         );
-        held.unresolved_egress.push(envelope);
+        held.unresolved_egress.push((instance, envelope));
     }
 
     /// How much unresolved egress this store is keeping; `None` if unreadable.
@@ -359,16 +368,20 @@ impl PrivateSettlementOwner {
         Some(self.inner.lock().ok()?.unresolved_egress.len())
     }
 
-    /// Which transactions the unresolved egress is for, in the order it was
-    /// shelved: the exact identity of what a service left unsent.
-    pub fn unresolved_egress_transactions(&self) -> Option<Vec<TransactionId>> {
+    /// Every retained obligation, named exactly: the invocation that left it
+    /// and the transaction it was for, in the order shelved. Two invocations'
+    /// same-numbered transactions are two obligations.
+    pub fn unresolved_egress_obligations(&self) -> Option<Vec<PrivateUnresolvedEgress>> {
         Some(
             self.inner
                 .lock()
                 .ok()?
                 .unresolved_egress
                 .iter()
-                .map(|envelope| envelope.transaction)
+                .map(|(instance, envelope)| PrivateUnresolvedEgress {
+                    instance: *instance,
+                    transaction: envelope.transaction,
+                })
                 .collect(),
         )
     }
@@ -379,15 +392,14 @@ impl PrivateSettlementOwner {
         Some(self.inner.lock().ok()?.unresolved_egress.capacity())
     }
 
-    /// Take the unresolved egress out, for a reader that will account for it.
-    /// The charge it held on the failure bound goes with it; the reserved
-    /// space stays.
+    /// Read the retained egress without taking it: the work and its charge
+    /// stay where they are.
     #[cfg_attr(not(test), allow(dead_code))] // Read by the controls; production only shelves.
-    fn take_unresolved_egress(&self) -> Vec<XAuthorityBoundedEgressEnvelope> {
-        match self.inner.lock() {
-            Ok(mut held) => held.unresolved_egress.drain(..).collect(),
-            Err(poisoned) => poisoned.into_inner().unresolved_egress.drain(..).collect(),
-        }
+    fn with_unresolved_egress<T>(
+        &self,
+        read: impl FnOnce(&[(u64, XAuthorityBoundedEgressEnvelope)]) -> T,
+    ) -> Option<T> {
+        Some(read(&self.inner.lock().ok()?.unresolved_egress))
     }
 
     /// How many operations are waiting for someone to drive them.
@@ -554,7 +566,7 @@ impl PrivateSettlementOwner {
     ///
     /// Taken before exposure, so an instance that exists can always hand over
     /// its queue if it fails. An instance that cannot get one is never built.
-    fn reserve_failure_slot(&self) -> Result<(), AdmissionRefusal> {
+    fn reserve_failure_slot(&self) -> Result<u64, AdmissionRefusal> {
         let Ok(mut held) = self.inner.lock() else {
             return Err(AdmissionRefusal::Unavailable);
         };
@@ -571,7 +583,9 @@ impl PrivateSettlementOwner {
             return Err(AdmissionRefusal::Saturated);
         }
         held.failure_slots = held.failure_slots.saturating_add(1);
-        Ok(())
+        let instance = held.next_instance;
+        held.next_instance = held.next_instance.saturating_add(1);
+        Ok(instance)
     }
 
     /// Release a failure slot whose instance closed without failing, or whose

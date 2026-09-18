@@ -296,6 +296,16 @@ fn drive_routed_service(
     }
 }
 
+/// One retained obligation: the invocation that left it -- the number its
+/// store gave its reservation, before exposure -- and the transaction it was
+/// for. Transactions restart per frontend; the pair does not.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrivateUnresolvedEgress {
+    pub instance: u64,
+    pub transaction: TransactionId,
+}
+
 /// What a private service invocation returns when it ran to a stop.
 ///
 /// THE UNRESOLVED PART IS EXPLICIT. The settlement accounts for the private
@@ -306,8 +316,8 @@ fn drive_routed_service(
 #[cfg(unix)]
 pub struct PrivateServiceReturn {
     pub settlement: PrivateSettlement,
-    /// The transactions this invocation left unsent on the store's shelf.
-    pub unresolved_egress: Vec<TransactionId>,
+    /// The obligations this invocation left unsent on the store's shelf.
+    pub unresolved_egress: Vec<PrivateUnresolvedEgress>,
 }
 
 /// Why a private service invocation did not return a settlement.
@@ -327,8 +337,8 @@ pub enum PrivateServiceFailure {
         error: X11SetupSocketError,
         /// Boxed only for size; it is the same handle a success returns.
         settlement: Box<PrivateSettlement>,
-        /// The transactions this invocation left unsent on the store's shelf.
-        unresolved_egress: Vec<TransactionId>,
+        /// The obligations this invocation left unsent on the store's shelf.
+        unresolved_egress: Vec<PrivateUnresolvedEgress>,
     },
 }
 
@@ -367,6 +377,8 @@ struct PrivateServiceCollection<'s> {
     /// Where unresolved egress goes when this frame ends: the store the
     /// leased owner is established over, which outlives the invocation.
     store: &'s PrivateSettlementOwner,
+    /// The invocation any retained egress is shelved under.
+    instance: u64,
     collected: bool,
 }
 
@@ -385,13 +397,16 @@ impl PrivateServiceCollection<'_> {
     /// WAY: cancelling a wait (where that is done) publishes that the batch
     /// was not delivered; shelving grants no replay; a reader accounts for
     /// what it takes.
-    fn retain_pending(&mut self) -> Vec<TransactionId> {
+    fn retain_pending(&mut self) -> Vec<PrivateUnresolvedEgress> {
         if let Some(envelope) = self.pending_raster_egress.take()
             && envelope.batch.is_some()
         {
-            let transaction = envelope.transaction;
-            self.store.retain_unresolved_egress(envelope);
-            return vec![transaction];
+            let obligation = PrivateUnresolvedEgress {
+                instance: self.instance,
+                transaction: envelope.transaction,
+            };
+            self.store.retain_unresolved_egress(self.instance, envelope);
+            return vec![obligation];
         }
         Vec::new()
     }
@@ -405,7 +420,7 @@ impl PrivateServiceCollection<'_> {
     /// first; the ordinary stop keeps a draining worker's egress, as the
     /// public path does, while an error or an unwind cancels it so that
     /// collection cannot depend on a receiver anybody drains.
-    fn collect(&mut self, unblock: bool) -> (Vec<String>, Vec<TransactionId>) {
+    fn collect(&mut self, unblock: bool) -> (Vec<String>, Vec<PrivateUnresolvedEgress>) {
         let mut failures = Vec::new();
         if unblock {
             self.egress.cancel();
@@ -592,6 +607,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
         egress: ordered_egress.clone(),
         pending_raster_egress: None,
         store: service.store(),
+        instance: private.instance,
         collected: false,
     };
     let service_result = {
