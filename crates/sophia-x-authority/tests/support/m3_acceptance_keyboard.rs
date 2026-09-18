@@ -27,6 +27,34 @@ fn b_applied_focus() {
             runner.service_turn(lease).unwrap();
             try_key.wait();
             for _ in 0..100 {
+                runner.execute_accounted_step().unwrap();
+                if !runner.frontend().terminal.turn.is_empty() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let Some(PrivateOrderedItem::Refused {
+                refusal,
+                custody,
+                sequence,
+                ..
+            }) = runner.frontend().terminal.turn.last()
+            else {
+                panic!("the original pending-focus input must be refused");
+            };
+            assert!(matches!(
+                refusal,
+                PrivateExecutionRefusal::Native(private_native::Refusal::Resolution(
+                    PrivateAppliedRefusal::Unpublished
+                ))
+            ));
+            let completion = custody.observe().unwrap();
+            assert!(matches!(
+                completion,
+                Some(sophia_input_authority::RequestCompletion::Refused(_))
+            ));
+            let evidence = json!({"refusal":format!("{refusal:?}"),"completion":format!("{completion:?}"),"token":format!("{:?}",custody.token()),"sequence":format!("{sequence:?}")});
+            for _ in 0..100 {
                 runner.service_turn(lease).unwrap();
                 let cell = delivery_cell(&runner.frontend().broker.registry, 112001).unwrap();
                 if cell.answer().is_some() {
@@ -34,7 +62,7 @@ fn b_applied_focus() {
                 }
                 std::thread::sleep(Duration::from_millis(1));
             }
-            pending_done.send(()).unwrap();
+            pending_done.send(evidence).unwrap();
         }),
     );
     allow_focus_route.entered();
@@ -72,7 +100,7 @@ fn b_applied_focus() {
         .unwrap();
     let refused = delivery_cell(&service.registry, 112001).unwrap();
     allow_key.release();
-    pending_observed
+    let refused_source = pending_observed
         .recv_timeout(Duration::from_secs(5))
         .unwrap();
     assert!(waited_for(|| refused.answer().is_some()));
@@ -80,7 +108,7 @@ fn b_applied_focus() {
         refused.answer().unwrap().outcome,
         XAuthorityInputDeliveryOutcome::RouteRejected
     );
-    let pending = json!({"writer":format!("{focus_worker:?}"),"queued_focus":112000,"key_cell":Arc::as_ptr(&refused) as usize,"outcome":"RouteRejected","published":false});
+    let pending = json!({"source":refused_source,"writer":format!("{focus_worker:?}"),"queued_focus":112000,"key_cell":Arc::as_ptr(&refused) as usize,"outcome":"RouteRejected","published":false});
     release.release();
     assert_eq!(
         ack_for(&service.acks, 112000)
