@@ -88,6 +88,15 @@ pub(super) fn validate_binary(report: &Report, output: &Path) -> Result<(), Stri
     {
         return Err("M4 activation probe identity changed after contained execution".into());
     }
+    if report.purpose == "m4_acceptance"
+        && (binary["private_host"]["path"] != "evidence/native-input-conformance-host"
+            || binary["private_host"]["sha256"].as_str()
+                != Some(&identity::digest(
+                    &output.join("evidence/native-input-conformance-host"),
+                )?))
+    {
+        return Err("M4 private host identity changed after contained execution".into());
+    }
     Ok(())
 }
 

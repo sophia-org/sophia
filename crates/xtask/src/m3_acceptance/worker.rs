@@ -227,6 +227,9 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
     let binary = build(config, report)?;
     if config.gate == Gate::M4 {
         build_activation_probe(config, report)?;
+        if !config.self_test {
+            build_private_host(config, report)?;
+        }
     }
     let listed = process::capture(
         process::private_command(&binary).args(["--list", "--format=terse"]),
@@ -294,6 +297,39 @@ fn build_activation_probe(config: &Config, report: &mut Report) -> Result<(), St
         .ok_or("test binary identity missing")?;
     binary["activation_probe"] = serde_json::json!({
         "path":"evidence/private-instance-probe", "sha256":identity::digest(&path)?
+    });
+    save(report)
+}
+
+fn build_private_host(config: &Config, report: &mut Report) -> Result<(), String> {
+    let built = process::run(
+        cargo().args([
+            "build",
+            "--offline",
+            "--locked",
+            "-p",
+            "sophia-session",
+            "--example",
+            "native_input_conformance_host",
+        ]),
+        &Path::new(EVIDENCE).join("private-host-build.log"),
+        Duration::from_secs(config.build_timeout),
+    )?;
+    if !built.clean() {
+        return Err("private Session host build failed or leaked a process".into());
+    }
+    let path = Path::new(EVIDENCE).join("native-input-conformance-host");
+    std::fs::copy(
+        "/work/target/debug/examples/native_input_conformance_host",
+        &path,
+    )
+    .map_err(|e| e.to_string())?;
+    let binary = report
+        .binary
+        .as_mut()
+        .ok_or("test binary identity missing")?;
+    binary["private_host"] = json!({
+        "path":"evidence/native-input-conformance-host", "sha256":identity::digest(&path)?
     });
     save(report)
 }
@@ -442,17 +478,18 @@ fn cases(
             return Err("binary changed between cases".into());
         }
         let log = Path::new(EVIDENCE).join(format!("{}.log", row.case));
-        let run = process::run(
-            process::private_command(binary).args([
-                exact,
-                "--exact",
-                "--test-threads=1",
-                "--show-output",
-                "--color=never",
-            ]),
-            &log,
-            Duration::from_secs(config.case_timeout),
-        )?;
+        let mut command = process::private_command(binary);
+        command.args([
+            exact,
+            "--exact",
+            "--test-threads=1",
+            "--show-output",
+            "--color=never",
+        ]);
+        if config.gate == Gate::M4 {
+            command.arg("--include-ignored");
+        }
+        let run = process::run(&mut command, &log, Duration::from_secs(config.case_timeout))?;
         let text = std::fs::read_to_string(log).map_err(|e| e.to_string())?;
         match super::m4::validate_case(config.gate, row, exact, &run, &text) {
             Ok(evidence) => {
