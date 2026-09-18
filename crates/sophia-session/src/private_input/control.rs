@@ -12,8 +12,8 @@
 //! false. A closed set constrains which commands exist, not whether the state
 //! they describe was ever committed, and a caller could have asked for a
 //! configure with any geometry at any time. The commitment is now structural:
-//! there is no public constructor for a committed effect, and the only way one
-//! exists is for the coordinator to have produced it.
+//! a committed effect has private fields, so the only way one exists is for
+//! the coordinator to have produced it.
 
 use sophia_protocol::{Rect, SurfaceId, TransactionId};
 use sophia_x_authority::XAuthorityControlKind;
@@ -75,26 +75,74 @@ pub enum PrivateInputControlError {
 
 /// One effect the coordinator committed, and what Session did with it.
 ///
-/// NO PUBLIC CONSTRUCTOR, ON PURPOSE. A value of this type exists only because
-/// `apply_committed` produced it from a `TransactionCommit` whose outcome was
-/// `Committed`, and its geometry is read from the coordinator's committed
-/// surface state rather than supplied. A caller cannot build one and cannot
-/// therefore route a map or a configure that nothing committed.
+/// UNFORGEABLE, NOT MERELY UNDOCUMENTED. An earlier version said there was no
+/// public constructor while leaving every field public, which is not the same
+/// thing: a struct with public fields is constructible by writing it out. The
+/// fields are private and read through methods, so the only way a value of
+/// this type exists is for `apply_committed` to have built it from a
+/// `TransactionCommit` whose outcome was `Committed`, with geometry taken from
+/// the coordinator's committed surface state.
+///
+/// It is still report data, and nothing accepts it back. No path anywhere
+/// treats being handed one of these as authority to route anything.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PrivateInputCommittedEffect {
+    committed_transaction: TransactionId,
+    surface: SurfaceId,
+    kind: XAuthorityControlKind,
+    geometry: Option<Rect>,
+    submitted: Option<PrivateInputSubmitted>,
+}
+
+impl PrivateInputCommittedEffect {
+    #[expect(
+        dead_code,
+        reason = "built by apply_committed; the unfulfilled expectation is what removes this"
+    )]
+    pub(super) fn new(
+        committed_transaction: TransactionId,
+        surface: SurfaceId,
+        kind: XAuthorityControlKind,
+        geometry: Option<Rect>,
+        submitted: Option<PrivateInputSubmitted>,
+    ) -> Self {
+        Self {
+            committed_transaction,
+            surface,
+            kind,
+            geometry,
+            submitted,
+        }
+    }
+
     /// The authority transaction the coordinator committed.
-    pub committed_transaction: TransactionId,
-    pub surface: SurfaceId,
-    /// Which effect the commit called for. A surface the commit applied is a
-    /// map or a configure depending on whether it was already mapped; a
-    /// surface the intake removed is a withdrawal, which is the existing
-    /// cleanup disposition rather than a separate operation invented here.
-    pub kind: XAuthorityControlKind,
+    pub fn committed_transaction(&self) -> TransactionId {
+        self.committed_transaction
+    }
+
+    pub fn surface(&self) -> SurfaceId {
+        self.surface
+    }
+
+    /// Which effect the commit called for. A surface committed for the first
+    /// time in its current incarnation is an admission; a later committed
+    /// update to that same still-live incarnation is a configure; a surface
+    /// the intake removed is a withdrawal, which is the existing cleanup
+    /// disposition rather than an operation invented here.
+    pub fn kind(&self) -> XAuthorityControlKind {
+        self.kind
+    }
+
     /// The committed geometry, read from the coordinator's committed surface
     /// state. `None` for a withdrawal, which commits no geometry.
-    pub geometry: Option<Rect>,
+    pub fn geometry(&self) -> Option<Rect> {
+        self.geometry
+    }
+
     /// What the order took for it, when it took it.
-    pub submitted: Option<PrivateInputSubmitted>,
+    pub fn submitted(&self) -> Option<PrivateInputSubmitted> {
+        self.submitted
+    }
 }
 
 /// What one coordinator step did.
