@@ -2,6 +2,11 @@
 
 use super::*;
 
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/ordered_freeze.rs"
+));
+
 fn implicit(owner: u64) -> XActiveInputGrab {
     XActiveInputGrab {
         owner,

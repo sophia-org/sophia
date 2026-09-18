@@ -59,8 +59,7 @@ impl PreparedKeyboardPress<'_> {
             state.keyboard_activation = KeyboardActivationState::Changing;
             state.keyboard = Some(activation.recipient);
             state.keyboard_passive_detail = activation.trigger;
-            state.keyboard_frozen = activation.recipient.keyboard_mode == 0;
-            state.pointer_frozen |= activation.recipient.pointer_mode == 0;
+            state.freeze.activate_keyboard(Some(activation.stamp), activation.recipient);
             state.keyboard_activation = KeyboardActivationState::Applied(activation.stamp);
         }
         self.selected
@@ -97,7 +96,7 @@ impl XInputAuthorityState {
                 KeyboardActivationRefusal::NamespaceUnprepared => R::NamespaceUnprepared,
                 KeyboardActivationRefusal::ProvenanceUnavailable => R::ProvenanceUnavailable,
             })?;
-        if state.keyboard_frozen {
+        if state.freeze.frozen(FREEZE_KEYBOARD) {
             // Frozen logical input needs the ordered StateOnly/thaw path;
             // a new key cannot silently clear another grab's contribution.
             return Err(R::KeyboardFrozen);

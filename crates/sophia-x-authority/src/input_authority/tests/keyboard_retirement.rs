@@ -190,8 +190,12 @@ fn frozen_or_leased_activation_requires_its_own_reconciliation() {
     keyboard.map_evdev_key(30, false).unwrap();
     for (pointer_frozen, keyboard_frozen) in [(true, false), (false, true)] {
         let state = authority.namespaces.get_mut(&namespace()).unwrap();
-        state.pointer_frozen = pointer_frozen;
-        state.keyboard_frozen = keyboard_frozen;
+        let mut grab = activation.recipient();
+        grab.pointer_mode = u8::from(!pointer_frozen);
+        grab.keyboard_mode = u8::from(!keyboard_frozen);
+        state
+            .freeze
+            .activate_keyboard(Some(activation.stamp()), grab);
         assert_eq!(
             authority.retire_keyboard_activation(namespace(), activation.stamp(), 38, &keyboard),
             R::SynchronousUnproved
@@ -203,8 +207,7 @@ fn frozen_or_leased_activation_requires_its_own_reconciliation() {
     }
     for (pointer_mode, keyboard_mode) in [(0, 1), (1, 0)] {
         let state = authority.namespaces.get_mut(&namespace()).unwrap();
-        state.pointer_frozen = false;
-        state.keyboard_frozen = false;
+        state.freeze = OrderedFreezeState::default();
         let grab = state.keyboard.as_mut().unwrap();
         grab.pointer_mode = pointer_mode;
         grab.keyboard_mode = keyboard_mode;
@@ -214,8 +217,7 @@ fn frozen_or_leased_activation_requires_its_own_reconciliation() {
         );
     }
     let state = authority.namespaces.get_mut(&namespace()).unwrap();
-    state.pointer_frozen = false;
-    state.keyboard_frozen = false;
+    state.freeze = OrderedFreezeState::default();
     state.keyboard.as_mut().unwrap().pointer_mode = 1;
     state.keyboard.as_mut().unwrap().keyboard_mode = 1;
     // A route lease can be present on a retained active grab. Retirement may

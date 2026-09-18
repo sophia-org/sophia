@@ -119,8 +119,7 @@ impl PreparedPointerPress<'_> {
             state.pointer = Some(self.selected);
             state.pointer_implicit = implicit;
             state.pointer_passive_detail = (!implicit).then_some(button);
-            state.pointer_frozen = self.selected.pointer_mode == 0;
-            state.keyboard_frozen |= self.selected.keyboard_mode == 0;
+            state.freeze.activate_pointer(Some(self.stamp), self.selected);
             state.pointer_activation = PointerActivationState::Applied(self.stamp);
         }
         PointerActivationCommit {
@@ -215,7 +214,7 @@ impl XInputAuthorityState {
         if !state.pointer_implicit && state.pointer_passive_detail.is_none() { return R::Explicit; }
         if grab.route_lease.is_some() { return R::LeaseUnproved; }
         if grab.pointer_mode == 0 || grab.keyboard_mode == 0
-            || state.pointer_frozen || state.keyboard_frozen { return R::SynchronousUnproved; }
+            || state.freeze.frozen(FREEZE_POINTER | FREEZE_KEYBOARD) { return R::SynchronousUnproved; }
         if pointer.button_is_pressed(released_button)
             || (state.pointer_implicit && !pointer.all_buttons_released())
             || (!state.pointer_implicit && state.pointer_passive_detail != Some(released_button)) {
@@ -225,7 +224,7 @@ impl XInputAuthorityState {
         state.pointer = None;
         state.pointer_implicit = false;
         state.pointer_passive_detail = None;
-        state.pointer_frozen = false;
+        state.freeze.pointer = None;
         state.pointer_activation = PointerActivationState::Absent;
         R::Retired
     }

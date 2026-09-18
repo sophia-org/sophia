@@ -54,8 +54,7 @@ impl XInputAuthorityState {
         }
         if grab.pointer_mode == 0
             || grab.keyboard_mode == 0
-            || state.pointer_frozen
-            || state.keyboard_frozen
+            || state.freeze.frozen(FREEZE_POINTER | FREEZE_KEYBOARD)
         {
             return R::SynchronousUnproved;
         }
@@ -72,6 +71,7 @@ impl XInputAuthorityState {
         state.keyboard_activation = KeyboardActivationState::Changing;
         state.keyboard = None;
         state.keyboard_passive_detail = None;
+        state.freeze.keyboard = None;
         // Both freeze contributions were proved absent above. Do not clear a
         // pointer grab, its provenance, or any unrelated query contribution.
         state.keyboard_activation = KeyboardActivationState::Absent;
