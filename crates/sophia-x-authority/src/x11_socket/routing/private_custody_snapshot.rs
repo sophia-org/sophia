@@ -131,14 +131,28 @@ impl PrivateServiceOwner {
         };
         let places = kept.places.len();
         let taken = kept.taken;
-        let mut rows = Vec::new();
-        for (place, held) in kept.places.iter().enumerate() {
-            let Some(custody) = held.as_ref() else {
-                continue;
-            };
-            rows.push(custody.snapshot_row(place));
-        }
+        // THE INVENTORY LOCK IS RELEASED BEFORE ANY SLOT IS READ. Holding it
+        // while reaching into each custody's own slot would nest two locks that
+        // nothing else nests, and would block every admission and revocation on
+        // whichever slot happened to be held. The occupied custodies are
+        // cloned out -- a bounded list, since the inventory is sized to the
+        // store's declared connection bound -- and read afterwards.
+        //
+        // Each row is therefore a snapshot of its own place rather than one
+        // instant across all of them, which is what this is for: a controller
+        // asking what each place holds, not a claim that they were all like
+        // that at once.
+        let found: Vec<(usize, Arc<PrivateEvidenceCustody>)> = kept
+            .places
+            .iter()
+            .enumerate()
+            .filter_map(|(place, held)| held.as_ref().map(|custody| (place, Arc::clone(custody))))
+            .collect();
         drop(kept);
+        let rows = found
+            .into_iter()
+            .map(|(place, custody)| custody.snapshot_row(place))
+            .collect();
         Ok(PrivateCustodySnapshot {
             places,
             taken,
