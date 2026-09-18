@@ -10,6 +10,12 @@ fn state_only_fixture(client: u64) -> PreparedOrderedFixture {
     // Actual pointer source operations establish its query observation. The
     // active keyboard grab selects the fixture's real registered endpoint.
     attempt_release(&mut f, client * 100, 272);
+    {
+        let private = f.runner.frontend.as_mut().unwrap();
+        assert_eq!(private.dispatch_one_press(), Some(true));
+        assert_eq!(private.record_one_native(), Some(true));
+        assert_eq!(private.attempt_one_delivery(), Some(true));
+    }
     f.selections
         .lock()
         .unwrap()
@@ -79,6 +85,10 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
 
     let press = state_only_execute(&mut f, None, key_service_route(surface, 997811, 42, true));
     assert!(press.first_press && press.keyboard_applied);
+    assert_eq!(
+        f.runner.frontend.as_mut().unwrap().dispatch_one_press(),
+        Some(true)
+    );
     let joined = state_only_execute(
         &mut f,
         Some(&secondary),
@@ -126,7 +136,6 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
     );
     assert!(release.delivery.is_none() && release.custody.completion.is_none());
     assert!(release.custody.attempt.is_none() && release.custody.pending.is_none());
-    assert!(!release.owes_delivery_attempt());
     let held = release.native.as_mut().unwrap().key_mut().unwrap();
     assert_eq!(
         held.release_disposition(),
@@ -134,7 +143,16 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
     );
     assert!(held.release_xkb_applied() && held.take_release_emission().is_none());
     assert_eq!(held.proof().unwrap().incarnation(), release.incarnation);
-    held.proof().unwrap().record_native().unwrap();
+    assert!(release.record_native_once());
+    assert_eq!(
+        release.press_custody.as_ref().unwrap().dispatch,
+        PrivateDispatchPhase::Enqueued
+    );
+    assert!(release.native_recorded);
+    assert!(
+        !release.owes_delivery_attempt(),
+        "suppressed release cannot spend a writer attempt even after native proof and press handover"
+    );
     let original = release.incarnation;
     let debt = private
         .authority()
