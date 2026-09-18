@@ -100,6 +100,35 @@ impl NativeLauncherContentService {
         Ok(true)
     }
 
+    /// Deadline visits continue when there is no local input left. A completed
+    /// transport close is adopted into the same pixel/resource close owner.
+    /// Returned transport errors remain connection failures at the caller;
+    /// they never mean the old native pixels have disappeared.
+    pub fn service_input_deadlines(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        transaction: TransactionId,
+        now_usec: u64,
+    ) -> Result<bool, ShellTransportError> {
+        self.validate(transport)?;
+        if self.closing.is_some() {
+            return Ok(true);
+        }
+        let Some((opening, _)) = transport.native_launcher_state() else {
+            return Ok(false);
+        };
+        if !transport.service_native_launcher_deadlines(opening, transaction, now_usec)? {
+            return Ok(false);
+        }
+        self.begin_close(
+            transport,
+            opening,
+            transaction,
+            sophia_protocol::ContentReason::Timeout,
+        )?;
+        Ok(true)
+    }
+
     pub fn pending_inputs(&self) -> usize {
         self.inputs.len()
     }

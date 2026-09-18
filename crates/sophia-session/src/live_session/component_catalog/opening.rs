@@ -82,6 +82,9 @@ impl ComponentCatalog {
             .and_then(|seconds| seconds.checked_add(u64::try_from(clock.tv_nsec).ok()? / 1_000))
             .ok_or("native input monotonic clock overflow")?;
         content.service_inputs(transport, now_usec)?;
+        if content.service_input_deadlines(transport, transaction()?, now_usec)? {
+            return Ok(());
+        }
         content.service_open(
             transport,
             publication

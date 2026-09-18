@@ -351,3 +351,92 @@ fn captured_text_and_escape_use_shared_dispatch_with_exact_focus_and_real_fifo()
     };
     assert_eq!(transaction, tx(102));
 }
+
+#[test]
+fn idle_missing_ack_closes_exact_opening_after_local_input_has_transferred() {
+    let mut h = Harness::new();
+    let mut owner =
+        NativeLauncherContentService::new(&h.peer.transport.connection(&mut h.epochs)).unwrap();
+    assert!(
+        owner
+            .queue_input(
+                &h.peer.transport.connection(&mut h.epochs),
+                h.focus,
+                tx(100),
+                NativeLauncherInputKind::Text,
+                "x",
+                1000
+            )
+            .unwrap()
+    );
+    assert_eq!(
+        owner
+            .service_inputs(&mut h.peer.transport.connection(&mut h.epochs), 1001)
+            .unwrap(),
+        1
+    );
+    assert_eq!(owner.pending_inputs(), 0);
+    let deadline = 1001 + u64::from(limits().action_ack_timeout_ms) * 1000;
+    assert!(
+        !owner
+            .service_input_deadlines(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                tx(101),
+                deadline - 1
+            )
+            .unwrap()
+    );
+    assert!(
+        owner
+            .service_input_deadlines(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                tx(102),
+                deadline
+            )
+            .unwrap()
+    );
+    assert!(
+        owner
+            .service_input_deadlines(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                tx(103),
+                deadline + 1
+            )
+            .unwrap()
+    );
+    assert!(
+        h.peer
+            .transport
+            .connection(&mut h.epochs)
+            .native_launcher_focus()
+            .is_none()
+    );
+    let closed = h
+        .peer
+        .transport
+        .connection(&mut h.epochs)
+        .native_launcher_closed_opening()
+        .unwrap();
+    assert_eq!(closed.opening, h.focus.opening);
+    assert_eq!(closed.grant, h.focus.grant);
+    h.peer.transport.poll_io(&mut h.epochs).unwrap();
+    assert!(matches!(
+        decode_shell_native_launcher_frame(&h.peer.read())
+            .unwrap()
+            .1,
+        ShellNativeLauncherRecord::Input(_)
+    ));
+    assert!(matches!(
+        decode_shell_native_launcher_frame(&h.peer.read())
+            .unwrap()
+            .1,
+        ShellNativeLauncherRecord::FocusRevoked(_)
+    ));
+    let (transaction, ShellNativeLauncherRecord::Closed(closed)) =
+        decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+    else {
+        panic!("close")
+    };
+    assert_eq!(transaction, tx(102));
+    assert_eq!(closed.reason, ContentReason::Timeout as u16);
+}

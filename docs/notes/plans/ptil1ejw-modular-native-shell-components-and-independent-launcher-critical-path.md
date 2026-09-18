@@ -1056,3 +1056,25 @@ full exact-source canonical and lom-test preparation. In particular queue drain
 alone does not service a deadline after the last local input transfers. This
 checkpoint does not claim complete input acceptance or native readiness. No
 push, install, live display, GPU or VT action.
+
+## Idle input deadline service
+
+Every active connected native content visit now services the transport's exact
+ACK/Accept deadlines even after its local semantic queue drains. A successful
+transport timeout close is adopted by the existing pixel/resource close owner;
+the next visit must still establish removal and settlement before reopening.
+Transport errors remain exact-connection recovery, never evidence of absent
+pixels. The deadline helper does not reissue a close after its owner is retained.
+
+`.artifacts/bemenu-native-idle-deadline/`: Session 475 PASS/14 ignored and input
+owner 5 PASS in the device-hidden harness; strict Session Clippy, layout and
+formatting PASS. The new private-socket control transfers its only input, checks
+no close before the negotiated ACK deadline, then receives the exact Timeout
+close transaction at the deadline with no new input. Repeated service retains
+that close. It supplies presentation/protection and time; it neither waits on a
+physical keyboard nor proves native pixel removal. The compiled empty-local-
+queue deadline bypass fails this test; source is restored in
+`.artifacts/bemenu-native-idle-deadline-mutant/`. Optional missing loader-cache
+activation diagnostics remain in the retained successful test log. No canonical
+or hardware evidence, push, install or lom-test readiness. Pointer action and
+connected catalog execution remain next; configuration stays guarded.
