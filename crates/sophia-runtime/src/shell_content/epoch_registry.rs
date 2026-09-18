@@ -11,6 +11,7 @@ pub struct ContentEpochRegistry {
     active: Vec<ContentEpoch>,
     retired: Vec<ContentEpoch>,
     last_grant: ContentGrant,
+    max_active_epochs: usize,
     max_bytes: u64,
     max_backing_bytes: u64,
 }
@@ -55,7 +56,8 @@ impl ContentEpoch {
 }
 
 impl ContentEpochRegistry {
-    pub const MAX_ACTIVE_EPOCHS: usize = 2;
+    pub const MAX_ACTIVE_EPOCHS: usize = 3;
+    pub const DEFAULT_ACTIVE_EPOCHS: usize = 2;
     pub const MAX_RETAINED_EPOCHS: usize = 16;
 
     /// Legacy caller chooses its next connection identity. The content epoch
@@ -79,11 +81,24 @@ impl ContentEpochRegistry {
     }
 
     pub fn new(max_bytes: u64) -> Result<Self, ContentStoreError> {
-        if max_bytes == 0 || max_bytes > 64 * 1024 * 1024 {
+        Self::with_active_capacity(max_bytes, Self::DEFAULT_ACTIVE_EPOCHS)
+    }
+
+    /// Explicit owner capacity, independent of client roles or permissions.
+    /// Increasing count never increases the aggregate byte or retirement budget.
+    pub fn with_active_capacity(
+        max_bytes: u64,
+        max_active_epochs: usize,
+    ) -> Result<Self, ContentStoreError> {
+        if max_bytes == 0
+            || max_bytes > 64 * 1024 * 1024
+            || !(1..=Self::MAX_ACTIVE_EPOCHS).contains(&max_active_epochs)
+        {
             return Err(ContentStoreError::Budget);
         }
         Ok(Self {
-            active: Vec::with_capacity(Self::MAX_ACTIVE_EPOCHS),
+            active: Vec::with_capacity(max_active_epochs),
+            max_active_epochs,
             retired: Vec::with_capacity(Self::MAX_RETAINED_EPOCHS),
             last_grant: ContentGrant::default(),
             max_bytes,
@@ -104,7 +119,7 @@ impl ContentEpochRegistry {
         profile: ContentStoreProfile,
     ) -> Result<(), ContentStoreError> {
         self.collect();
-        if self.active.len() == Self::MAX_ACTIVE_EPOCHS
+        if self.active.len() == self.max_active_epochs
             || self.active.len() + self.retired.len() >= Self::MAX_RETAINED_EPOCHS
         {
             return Err(ContentStoreError::Budget);

@@ -393,3 +393,57 @@ fn refused_replacement_and_wrong_connection_preserve_prelaunch_owner() {
     a.disconnect(&mut registry);
     assert!(registry.accounting().quiescent());
 }
+
+#[test]
+fn explicit_three_owner_capacity_preserves_budget_and_neighbor_progress() {
+    assert!(ContentEpochRegistry::with_active_capacity(64 * MIB, 0).is_err());
+    assert!(ContentEpochRegistry::with_active_capacity(64 * MIB, 4).is_err());
+    let bounded = |epoch| {
+        let mut value = limits(epoch, true);
+        value.max_staging_bytes = 4 * MIB;
+        value.max_resident_bytes = if epoch == 1 { 12 * MIB } else { 8 * MIB };
+        value.max_retiring_bytes = 8 * MIB;
+        value
+    };
+    let mut legacy = ContentEpochRegistry::new(64 * MIB).unwrap();
+    legacy.admit(bounded(1)).unwrap();
+    legacy.admit(bounded(2)).unwrap();
+    assert_eq!(legacy.admit(bounded(3)), Err(ContentStoreError::Budget));
+
+    let mut registry = ContentEpochRegistry::with_active_capacity(64 * MIB, 3).unwrap();
+    let mut peers: [_; 3] = std::array::from_fn(|_| Component::new());
+    let mut held = Vec::new();
+    for (index, peer) in peers.iter_mut().enumerate() {
+        let budget = bounded(index as u64 + 1);
+        peer.transport
+            .reserve_content(&mut registry, budget.clone())
+            .unwrap();
+        peer.connect(&mut registry, budget.clone());
+        peer.send_upload(budget.grant, 1, 30 + index as u8);
+        held.push(peer.uploaded(&mut registry, budget.grant, 1, 0));
+    }
+    assert_eq!(registry.reserved_bytes(), 64 * MIB);
+    assert_eq!(registry.admit(bounded(4)), Err(ContentStoreError::Budget));
+    peers[2].disconnect(&mut registry);
+    assert_eq!(registry.retired_bytes(), 4);
+    assert_eq!(registry.admit(bounded(4)), Err(ContentStoreError::Budget));
+    for (index, peer) in peers[..2].iter_mut().enumerate() {
+        let grant = bounded(index as u64 + 1).grant;
+        peer.send_upload(grant, 2, 80 + index as u8);
+        let pixels = peer.uploaded(&mut registry, grant, 2, 1);
+        assert_eq!(pixels.bytes(), [80 + index as u8, 0, 0, 255]);
+    }
+    drop(held.pop());
+    registry.collect();
+    assert_eq!(registry.retired_bytes(), 0);
+    registry.admit(bounded(4)).unwrap();
+    assert_eq!(registry.reserved_bytes(), 64 * MIB);
+    assert!(registry.resources(bounded(3).grant).is_none());
+    assert!(registry.disconnect(bounded(4).grant));
+    for peer in &mut peers[..2] {
+        peer.disconnect(&mut registry);
+    }
+    drop(held);
+    registry.collect();
+    assert!(registry.accounting().quiescent());
+}
