@@ -2,6 +2,10 @@
 macro_rules! drain_physical_input {
     ($routing_mode:expr) => {{
         synchronize_wm_pointer_epoch!();
+        if let Some(components) = shell_components.as_mut() {
+            component_service::synchronize_native_capture(components, &mut launcher_capture, &mut launcher_keyboard)?;
+            if launcher_capture.active() { key_repeat.cancel_all(); }
+        }
         let emergency_exit = false;
         let lease_updates = drain_application_route_lease_updates(
             route_lease_update_receiver,
@@ -515,6 +519,11 @@ macro_rules! drain_physical_input {
                 if !shell.is_tab_action(action) {
                     shell.revoke_interaction();descriptor_captures.cancel_all();
                     if let Some(runtime)=runtime.as_mut(){runtime.revoke_descriptor_overlay_interaction();}
+                }
+            }
+            if let Some(components) = shell_components.as_mut() {
+                for event in &report.launcher_events {
+                    component_service::dispatch_native_input(components, component_catalog, event)?;
                 }
             }
             if let Some(shell)=metadata_shell.as_mut() {

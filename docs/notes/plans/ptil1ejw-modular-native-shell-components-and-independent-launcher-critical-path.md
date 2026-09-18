@@ -1019,3 +1019,40 @@ executions complete. No real seat event, protected Bemenu process, native
 replacement presentation, canonical gate or physical readiness is established.
 Capture synchronization/dispatch and actual execution remain unjoined; the
 configuration guard stays closed. No push, installation or hardware action.
+
+## Physical capture dispatch and composition scope
+
+The independent-component physical drain now synchronizes capture from the
+currently connected native transport's exact focus, and routes its semantic
+reports through the same native content dispatch method used by the socket
+fixture. The dispatcher refuses stale outer output/presentation or binding
+without an effect. It captures text in the bounded input owner and sends Escape
+through exact retained close; close queue refusal retains that obligation. Input
+owner overflow or another transport failure retires only the matching component
+attempt. Transaction allocation is checked and shared with catalog publication.
+No M3 or X-authority path changes.
+
+Engine composition is reset when native grant, opening or output identity
+changes, not on candidate/focus-lease refresh within the same opening. The real
+XKB dead-key control observes an accented character across a candidate refresh
+and an ordinary character across each ownership change. This preserves keyboard
+state while preventing unfinished composition from crossing an opening.
+
+`.artifacts/bemenu-native-dispatch/`: device-hidden Session 475 PASS/14 ignored,
+native input owner 4 PASS and Engine native capture 5 PASS; strict affected
+Clippy, layout and formatting pass. The new dispatch control produces commands
+through actual Engine capture, uses the shared Session dispatcher and real
+private transport, rejects stale/duplicate closed captures, and checks exact
+text/Escape FIFO transactions. Focus/presentation/protection are supplied; it
+does not run the physical owner loop or a protected Bemenu child. The compiled
+omitted-presentation-check mutation fails that control; restored evidence is in
+`.artifacts/bemenu-native-dispatch-mutant/`. The optional loader-cache activation
+diagnostic remains retained separately from successful hidden test execution.
+
+Still required before enabling configuration: pointer action dispatch and ACK/
+activation service, connected catalog execution and child adoption, idle input
+ACK/Accept deadline service into the retained close owner, protected integration,
+full exact-source canonical and lom-test preparation. In particular queue drain
+alone does not service a deadline after the last local input transfers. This
+checkpoint does not claim complete input acceptance or native readiness. No
+push, install, live display, GPU or VT action.

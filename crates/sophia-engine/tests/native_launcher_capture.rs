@@ -219,3 +219,37 @@ fn bounded_sequence_inventory_reports_exhaustion_before_an_untracked_capture() {
     };
     assert!(capture.route_native_pointer_fallback(&excess).is_err());
 }
+
+#[test]
+fn native_compose_survives_candidate_refresh_but_not_opening_or_grant_replacement() {
+    use sophia_engine::LauncherKeyboard;
+    for replacement in 0..4 {
+        let mut keyboard = LauncherKeyboard::new(
+            "evdev",
+            "pc105",
+            "us",
+            "intl",
+            "",
+            std::ffi::OsStr::new("C.UTF-8"),
+        )
+        .unwrap();
+        let mut capture = LauncherCapture::default();
+        keyboard.synchronize_native_focus(&mut capture, Some(binding()));
+        assert_eq!(keyboard.observe(40, true, true).0, None); // dead acute
+        keyboard.observe(40, false, true);
+        let mut next = binding();
+        next.candidate_generation += 1;
+        next.focus_lease += 1;
+        match replacement {
+            1 => next.opening += 1,
+            2 => next.grant.content_grant_epoch += 1,
+            3 => next.output.generation += 1,
+            _ => {}
+        }
+        keyboard.synchronize_native_focus(&mut capture, Some(next));
+        assert_eq!(
+            keyboard.observe(30, true, true).0.as_deref(),
+            Some(if replacement == 0 { "á" } else { "a" })
+        );
+    }
+}

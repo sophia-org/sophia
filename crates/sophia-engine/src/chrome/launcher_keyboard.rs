@@ -35,6 +35,22 @@ impl LauncherKeyboard {
             compose,
         })
     }
+    /// Keep compose state within one opening, including candidate/focus refresh.
+    /// Grant/output/opening replacement must not commit a previous dead key.
+    pub fn synchronize_native_focus(
+        &mut self,
+        capture: &mut super::LauncherCapture,
+        binding: Option<sophia_protocol::NativeLauncherBinding>,
+    ) {
+        let owner = |b: sophia_protocol::NativeLauncherBinding| (b.grant, b.output, b.opening);
+        if capture.native_binding().map(owner) != binding.map(owner)
+            && let Some(compose) = self.compose.as_mut()
+        {
+            compose.reset();
+        }
+        capture.present_native(binding);
+    }
+
     pub fn command_modifier_active(&self) -> bool {
         [xkb::MOD_NAME_CTRL, xkb::MOD_NAME_ALT, xkb::MOD_NAME_LOGO]
             .iter()

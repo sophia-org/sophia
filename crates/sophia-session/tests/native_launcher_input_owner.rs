@@ -245,3 +245,109 @@ fn exact_close_cancels_only_local_input_and_preserves_issued_receipt_ownership()
         ShellNativeLauncherRecord::Closed(_)
     ));
 }
+
+#[test]
+fn captured_text_and_escape_use_shared_dispatch_with_exact_focus_and_real_fifo() {
+    let mut h = Harness::new();
+    let mut owner =
+        NativeLauncherContentService::new(&h.peer.transport.connection(&mut h.epochs)).unwrap();
+    let mut capture = sophia_engine::LauncherCapture::default();
+    capture.present_native(Some(h.focus));
+    let key = |keycode| InputEventPacket {
+        serial: 1,
+        seat: SeatId::from_raw(1),
+        device: DeviceId::from_raw(2),
+        time_msec: 1,
+        kind: InputEventKind::Key {
+            keycode,
+            pressed: true,
+        },
+        global_position: None,
+        target_surface: None,
+        local_position: None,
+    };
+    let text = capture
+        .route(&key(30), Some("λ"), None, false, false)
+        .1
+        .unwrap();
+    let mut stale = text.clone();
+    stale.presentation_epoch += 1;
+    assert!(
+        !owner
+            .dispatch_capture(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                &stale,
+                tx(100),
+                1000
+            )
+            .unwrap()
+    );
+    assert_eq!(owner.pending_inputs(), 0);
+    assert!(
+        owner
+            .dispatch_capture(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                &text,
+                tx(101),
+                1000
+            )
+            .unwrap()
+    );
+    assert_eq!(
+        owner
+            .service_inputs(&mut h.peer.transport.connection(&mut h.epochs), 1001)
+            .unwrap(),
+        1
+    );
+    let escape = capture.route(&key(1), None, None, false, false).1.unwrap();
+    assert!(
+        owner
+            .dispatch_capture(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                &escape,
+                tx(102),
+                1002
+            )
+            .unwrap()
+    );
+    assert!(
+        !owner
+            .dispatch_capture(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                &escape,
+                tx(103),
+                1003
+            )
+            .unwrap()
+    );
+    assert!(
+        !owner
+            .dispatch_capture(
+                &mut h.peer.transport.connection(&mut h.epochs),
+                &text,
+                tx(104),
+                1004
+            )
+            .unwrap()
+    );
+    h.peer.transport.poll_io(&mut h.epochs).unwrap();
+    let (transaction, ShellNativeLauncherRecord::Input(input)) =
+        decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+    else {
+        panic!("input")
+    };
+    assert_eq!(transaction, tx(101));
+    assert_eq!(input.text, "λ");
+    assert!(matches!(
+        decode_shell_native_launcher_frame(&h.peer.read())
+            .unwrap()
+            .1,
+        ShellNativeLauncherRecord::FocusRevoked(_)
+    ));
+    let (transaction, ShellNativeLauncherRecord::Closed(_)) =
+        decode_shell_native_launcher_frame(&h.peer.read()).unwrap()
+    else {
+        panic!("close")
+    };
+    assert_eq!(transaction, tx(102));
+}

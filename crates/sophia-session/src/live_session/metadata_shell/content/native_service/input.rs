@@ -11,6 +11,52 @@ pub(super) struct PendingInput {
 }
 
 impl NativeLauncherContentService {
+    /// Shared physical capture dispatch. Stale captures have no effect; overflow
+    /// is explicit so the connection owner can retire this peer without losing
+    /// committed input silently. Escape enters the existing retained close.
+    pub fn dispatch_capture(
+        &mut self,
+        transport: &mut ShellTransportConnection<'_>,
+        event: &sophia_engine::LauncherInputEvent,
+        transaction: TransactionId,
+        now_usec: u64,
+    ) -> Result<bool, ShellTransportError> {
+        self.validate(transport)?;
+        let sophia_engine::LauncherInput::Native { binding, command } = &event.input else {
+            return Err(ShellTransportError::WrongActivation);
+        };
+        if transport.native_launcher_focus() != Some(*binding)
+            || event.output.raw() != binding.output.id
+            || event.presentation_epoch != binding.presentation_epoch
+        {
+            return Ok(false);
+        }
+        match command {
+            sophia_engine::NativeLauncherCommand::Input { kind, text } => {
+                if self.queue_input(transport, *binding, transaction, *kind, text, now_usec)? {
+                    Ok(true)
+                } else {
+                    Err(ShellTransportError::ContentQueueSaturated)
+                }
+            }
+            sophia_engine::NativeLauncherCommand::Dismiss => {
+                let opening = transport
+                    .native_launcher_state()
+                    .ok_or(ShellTransportError::WrongActivation)?
+                    .0;
+                match self.begin_close(
+                    transport,
+                    opening,
+                    transaction,
+                    sophia_protocol::ContentReason::Cancelled,
+                ) {
+                    Ok(()) | Err(ShellTransportError::ContentQueueSaturated) => Ok(true),
+                    Err(error) => Err(error),
+                }
+            }
+        }
+    }
+
     /// Refusal leaves the caller's input untouched. Admission captures the exact
     /// focus, never a future row or a replacement focus. The live caller retires
     /// an overflowing peer rather than silently dropping committed text.

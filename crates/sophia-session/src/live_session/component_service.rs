@@ -1,7 +1,9 @@
 //! Owner-loop service of independently negotiated component roles.
 use super::*;
+mod native_input;
 use metadata_shell::component_session::{ShellComponentService, ShellComponentSession};
 use metadata_shell::indicators::IndicatorServiceError;
+pub(super) use native_input::{dispatch_native_input, synchronize_native_capture};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn service_components(

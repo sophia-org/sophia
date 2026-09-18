@@ -21,6 +21,14 @@ pub(super) struct ComponentCatalog {
     next_opening: u64,
 }
 impl ComponentCatalog {
+    pub(super) fn mint_transaction(&mut self) -> Result<TransactionId, Box<dyn std::error::Error>> {
+        self.next_transaction = self
+            .next_transaction
+            .checked_add(1)
+            .ok_or("native transaction exhausted")?;
+        Ok(TransactionId::from_raw(self.next_transaction))
+    }
+
     /// Initial scan only. Native peer publication and execution are joined by
     /// their connected-owner service; scanning itself grants neither authority.
     pub(super) fn visit_scan(
