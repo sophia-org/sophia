@@ -59,6 +59,9 @@ pub struct PrivateAuthorityController {
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrivateAuthorityRefusal {
+    /// A previous attempt entered execution without returning a guarded
+    /// completion or effect-free deferral. It cannot be tried again.
+    RequestUnresolved,
     /// Nothing currently admitted answers for this work. Not a refusal by the
     /// authority: the question of who is admitted was asked and came back
     /// empty, which is different from an authority that declined.
@@ -498,8 +501,8 @@ pub struct PrivateOutstandingRequest {
     observed: std::cell::Cell<bool>,
     /// How far this request got.
     ///
-    /// Three states rather than two, because "did not finish" and "never
-    /// started" are different facts and only one of them is safe to discard.
+    /// An unexposed reservation, an interrupted attempt, a proved effect-free
+    /// deferral and a terminal result have different retention obligations.
     phase: std::cell::Cell<PrivateRequestPhase>,
 }
 
@@ -515,6 +518,10 @@ enum PrivateRequestPhase {
     /// relabelled as an outcome. An absent completion is not proof that
     /// nothing ran.
     Entered,
+    /// Common explicitly returned without consuming the permit or applying
+    /// an effect. The accepted original request remains outstanding; losing
+    /// its adapter owner must not silently dispose of that reservation.
+    DeferredBeforeEffect,
     /// Execution returned. The cell holds a terminal outcome, and reclaiming
     /// the slot would erase what happened.
     Settled,
@@ -574,6 +581,11 @@ impl PrivateOutstandingRequest {
         self.phase.set(PrivateRequestPhase::Settled);
     }
 
+    /// Only the authority's guarded Deferred answer can make this transition.
+    fn deferred_before_effect(&self) {
+        self.phase.set(PrivateRequestPhase::DeferredBeforeEffect);
+    }
+
     /// Observe the outcome of this request, and only this one.
     ///
     /// This is what frees the grant's one cell, so the next request on it can
@@ -610,7 +622,8 @@ impl Drop for PrivateOutstandingRequest {
             // back costs nobody an outcome and leaving it costs the grant its
             // only one.
             PrivateRequestPhase::Unused => self.controller.dispose_unpublished(self.token),
-            // Entered and never returned, or returned with an outcome. Neither
+            // Entered without returning, guarded deferral of accepted work,
+            // or returned with an outcome. None
             // may be discarded to reclaim a slot: one holds a terminal outcome
             // that discarding would erase, and the other holds a question
             // nobody can answer -- and answering it by removing the record
@@ -619,7 +632,9 @@ impl Drop for PrivateOutstandingRequest {
             // establish that. Retiring either is a separate act by whoever can
             // establish the departure or the settlement, and until then the
             // cell costs capacity rather than an answer.
-            PrivateRequestPhase::Entered | PrivateRequestPhase::Settled => {}
+            PrivateRequestPhase::Entered
+            | PrivateRequestPhase::DeferredBeforeEffect
+            | PrivateRequestPhase::Settled => {}
         }
     }
 }

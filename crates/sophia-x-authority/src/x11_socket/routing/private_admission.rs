@@ -477,7 +477,8 @@ impl PrivateIngress {
                                 sophia_input_authority::CapacityError::IdentityExhausted,
                             ),
                         ) => PrivateSendError::Exhausted(envelope.route),
-                        PrivateAuthorityRefusal::Unreachable => {
+                        PrivateAuthorityRefusal::Unreachable
+                        | PrivateAuthorityRefusal::RequestUnresolved => {
                             PrivateSendError::Unavailable(envelope.route)
                         }
                         // Reserving asks the authority, not the registry, so

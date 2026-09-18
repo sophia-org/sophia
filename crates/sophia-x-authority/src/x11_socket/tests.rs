@@ -1175,6 +1175,11 @@ include!(concat!(
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_request_deferral.rs"
+));
+
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/support/dispatch_ticket_failure.rs"
 ));
 

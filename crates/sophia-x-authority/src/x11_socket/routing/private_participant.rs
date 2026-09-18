@@ -398,6 +398,39 @@ impl PrivateAdmissionParticipant {
         Result<sophia_input_authority::RequestCompletion, PrivateAuthorityRefusal>,
         PrivateAdmissionRefusal,
     > {
+        self.execute_current_or_defer(outstanding, client, |permit, bindings| {
+            act(permit, bindings).map(|()| sophia_input_authority::ExecutionDisposition::Complete)
+        })
+        .map(|result| {
+            result.map(|execution| match execution {
+                sophia_input_authority::RequestExecution::Completed(completion) => completion,
+                sophia_input_authority::RequestExecution::Deferred => {
+                    unreachable!("the completing wrapper never requests guarded deferral")
+                }
+            })
+        })
+    }
+
+    /// Retain the exact accepted request when its guarded source proves it
+    /// cannot run yet. No current stamp or replacement reservation is minted.
+    fn execute_current_or_defer(
+        &self,
+        outstanding: &PrivateOutstandingRequest,
+        client: XServerFrontendClientId,
+        act: impl FnOnce(
+            &mut sophia_input_authority::ExecutionPermit<'_>,
+            &PrivateAdmissionBindings,
+        ) -> Result<
+            sophia_input_authority::ExecutionDisposition,
+            sophia_input_authority::RegistrationError,
+        >,
+    ) -> Result<
+        Result<sophia_input_authority::RequestExecution, PrivateAuthorityRefusal>,
+        PrivateAdmissionRefusal,
+    > {
+        if outstanding.phase.get() == PrivateRequestPhase::Entered {
+            return Ok(Err(PrivateAuthorityRefusal::RequestUnresolved));
+        }
         self.under_boundary(|authority, issuer, bindings| {
             let Some(bound) = bindings.bound.get(&client).filter(|bound| !bound.closed && bound.lifecycle.as_ref().is_none_or(PrivateLifecycleGate::is_open)) else {
                 // Revoked, or never admitted here. Refused before any effect.
@@ -419,13 +452,16 @@ impl PrivateAdmissionParticipant {
             // not evidence the submitter can supply about somebody else.
             let held: &PrivateAdmissionBindings = bindings;
             Ok(authority
-                .execute_reserved(issuer, outstanding.token(), current, |permit| {
+                .execute_reserved_or_defer(issuer, outstanding.token(), current, |permit| {
                     // Written before the caller's work can take effect or
                     // unwind.
                     outstanding.entering();
                     act(permit, held)
                 })
-                .inspect(|_| outstanding.settled())
+                .inspect(|execution| match execution {
+                    sophia_input_authority::RequestExecution::Completed(_) => outstanding.settled(),
+                    sophia_input_authority::RequestExecution::Deferred => outstanding.deferred_before_effect(),
+                })
                 .map_err(PrivateAuthorityRefusal::Authority))
         })?
     }
