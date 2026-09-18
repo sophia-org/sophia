@@ -1679,3 +1679,10 @@ Workspace state stays WM-owned. Smoke acceptance now requires each supervised
 launch's exact first surface to reach a matching committed output, in addition
 to process start/clean exit and independent component lifetimes. Native
 acceptance remains pending; private socket tests cannot close it.
+
+The subsequent `20260918T165507Z` run recorded matching logical placement but
+terminated on an oversized runtime observation batch. The [runtime batching
+investigation](../investigations/chc18alj-completed-runtime-observations-must-be-chunked-without-dropping-work.md)
+records the device-free reproduction and lossless bounded-decoding repair.
+Three-component acceptance requires a fresh clean attended result; neither
+placement matches nor deterministic tests turn that failed capture into a pass.

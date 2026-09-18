@@ -348,3 +348,38 @@ fn live_chrome_runtime_adapter_counts_metadata_updates() {
         SessionRuntimeObservation::ChromeCommandsReady { count: 2 }
     );
 }
+#[test]
+fn live_runtime_driver_preserves_oversized_commit_and_retirement_bursts() {
+    for count in [63, 64, 65, 193] {
+        let engine = HeadlessEngine::default();
+        let output = engine.output();
+        let mut driver = HeadlessSessionDriver::new(engine);
+        let mut adapter = LiveRuntimeDriverAdapter::from_intake(LiveRuntimeDriverIntake {
+            x_event_count: 1,
+            authority_commits: (0..count)
+                .map(|index| TransactionCommit {
+                    transaction: TransactionId::from_raw(index + 1),
+                    outcome: TransactionOutcome::Committed,
+                    applied_surfaces: vec![SurfaceId::new(7, 1)],
+                })
+                .collect(),
+            authority_batches: Vec::new(),
+            wm_update: None,
+            portal_commands: Vec::new(),
+            chrome_command_count: 0,
+            layers: vec![test_layer(7, 0, 0, Region::empty())],
+            committed_surfaces: Vec::new(),
+            scanout_submit_state: Some(RuntimeScanoutState::Submitted),
+            scanout_lifecycle_states: vec![RuntimeScanoutState::Retired; count as usize],
+        });
+        let report = driver.run_with_adapter(output.id, 94, &mut adapter).unwrap();
+        assert_eq!(report.runtime_state.authority_transactions_committed, count);
+        assert_eq!(report.runtime_state.authority_surfaces_applied, count);
+        assert_eq!(report.runtime_state.scanout_retirements, count);
+        assert_eq!(report.runtime_state.x_events_polled, 1);
+        assert_eq!(report.runtime_state.frames_rendered, 1);
+        assert_eq!(report.runtime_state.scanout_submissions, 1);
+        assert_eq!(report.runtime_state.in_flight_scanouts, 1);
+        assert_eq!(report.runtime_state.phase, SessionRuntimePhase::Idle);
+    }
+}

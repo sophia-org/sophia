@@ -130,10 +130,30 @@ impl HeadlessSessionCommandExecutor<'_> {
         &mut self,
         observations: impl IntoIterator<Item = SessionRuntimeObservation>,
     ) -> Result<(), EngineError> {
-        let report = self
-            .runtime
-            .step_observations(observations)
-            .map_err(EngineError::RuntimeObservation)?;
+        // Adapter intake describes work already completed, and one atomic
+        // authority batch or scanout drain can exceed the bounded runtime
+        // batch limit. Validate bounded chunks without splitting that work or
+        // discarding its observations. Validate the entire intake first so a
+        // malformed late record cannot partially change runtime state.
+        let mut observations = observations.into_iter().peekable();
+        let mut batches = Vec::new();
+        while observations.peek().is_some() {
+            batches.push(
+                sophia_runtime::SessionRuntimeEventBatch::from_observations(
+                    observations
+                        .by_ref()
+                        .take(sophia_runtime::MAX_SESSION_RUNTIME_OBSERVATION_BATCH),
+                )
+                .map_err(EngineError::RuntimeObservation)?,
+            );
+        }
+        // Reduce in source order, then schedule commands once. Reversing each
+        // chunk onto the command stack would execute the last chunk first.
+        let report = self.runtime.step(
+            batches
+                .into_iter()
+                .flat_map(sophia_runtime::SessionRuntimeEventBatch::into_events),
+        );
         self.runtime_commands
             .extend(report.commands.iter().copied());
         self.pending_commands
