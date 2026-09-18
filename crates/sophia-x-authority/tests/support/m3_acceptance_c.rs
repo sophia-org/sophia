@@ -705,6 +705,18 @@ fn c_interrupted_ownership() {
             retained.holds >= 1,
             "{kind}: the original held key is retained, unresolved: {retained:?}"
         );
+        assert_eq!(
+            retained.terminal_inventories, 1,
+            "{kind}: exactly this invocation's inventory reached the store, whole: {retained:?}"
+        );
+        assert!(
+            retained.settling >= 1,
+            "{kind}: the release that ends the held key is retained beside it, not settled: {retained:?}"
+        );
+        assert!(
+            !retained.pending_custody,
+            "{kind}: no half-taken pending custody was left behind by the interruption: {retained:?}"
+        );
         assert!(
             retained.charged.is_some(),
             "{kind}: the store says what it holds rather than answering zero for unreadable"
@@ -737,6 +749,9 @@ fn c_interrupted_ownership() {
             "original_modifiers_after_exit": closed.modifiers,
             "custody_identity": format!("{identity:?}"),
             "retained": format!("{retained:?}"),
+            "retained_inventories": retained.terminal_inventories,
+            "retained_settling": retained.settling,
+            "retained_pending_custody": retained.pending_custody,
             "original_cells_answered": answered,
             "original_cells_held": cells.len(),
             "closed_error": closed.error.clone(),
