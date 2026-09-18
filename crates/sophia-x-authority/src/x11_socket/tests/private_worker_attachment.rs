@@ -163,6 +163,14 @@ struct WorkerSeen {
     number: Option<PrivateNumberStanding>,
     row: bool,
     readiness: bool,
+    /// Where the custody's deferred cleanup stands, its home's standing,
+    /// whether its gate is fenced, what the home's evidence says of the
+    /// worker, and whether its maintenance obligation is committed.
+    deferred: PrivateDeferredCleanupStanding,
+    home: Option<PrivateHomeStanding>,
+    gate_fenced: bool,
+    home_worker: Option<PrivateOrderedWorkerExit>,
+    committed: bool,
 }
 
 fn observe_worker(
@@ -198,6 +206,39 @@ fn observe_worker(
             .map(|clients| clients.contains_key(&client))
             .unwrap_or(false),
         readiness: record.worker_readiness().is_some(),
+        deferred: custody.deferred_cleanup_standing(),
+        // Also by `try_lock`: `standing()` would wait behind the same visit.
+        home: record
+            .ordered_home
+            .state
+            .try_lock()
+            .ok()
+            .map(|state| state.standing),
+        gate_fenced: custody
+            .gate()
+            .fenced
+            .lock()
+            .map(|fenced| *fenced)
+            .unwrap_or_else(|poisoned| *poisoned.into_inner()),
+        // Read with `try_lock`, never by borrowing: a borrow would wait
+        // behind a serving visit that holds the home across a blocked write.
+        home_worker: record
+            .ordered_home
+            .state
+            .try_lock()
+            .ok()
+            .and_then(|state| {
+                state.payload.as_ref().map(|continuation| match continuation {
+                    PrivateOrderedContinuation::Setup { evidence, .. }
+                    | PrivateOrderedContinuation::Serving { evidence, .. } => {
+                        evidence.worker.clone()
+                    }
+                })
+            }),
+        committed: custody
+            .store()
+            .committed_obligation(custody.identity().index)
+            .is_some(),
     }
 }
 
@@ -208,6 +249,8 @@ struct AttachedOutcome {
     error: Option<String>,
     workers: Vec<PrivateWorkerCollection>,
     uncollected: Vec<usize>,
+    /// What each custody's deferred cleanup visit answered, from the return.
+    maintenance: Vec<PrivateDeferredCleanupOutcome>,
     /// What an explicit `shutdown()` of an `Uncollected` frontend answered,
     /// when the launch chose to call it.
     shutdown_retained: Option<RetentionSeen>,
@@ -304,9 +347,19 @@ fn launch_attached_with(
         }));
         let unwound = outcome.is_err();
         let mut shutdown_retained = None;
+        let mut maintenance = Vec::new();
         let (ok, error, workers, uncollected) = match outcome.ok() {
-            Some(Ok(ret)) => (Some(true), None, ret.workers, Vec::new()),
-            Some(Err(PrivateServiceFailure::Failed { error, workers, .. })) => {
+            Some(Ok(ret)) => {
+                maintenance = ret.maintenance;
+                (Some(true), None, ret.workers, Vec::new())
+            }
+            Some(Err(PrivateServiceFailure::Failed {
+                error,
+                workers,
+                maintenance: reported,
+                ..
+            })) => {
+                maintenance = reported;
                 (Some(false), Some(error.to_string()), workers, Vec::new())
             }
             Some(Err(PrivateServiceFailure::Uncollected {
@@ -315,8 +368,10 @@ fn launch_attached_with(
                 uncollected,
                 frontend,
                 collection_failures,
+                maintenance: reported,
                 ..
             })) => {
+                maintenance = reported;
                 // THE RETURNED FRONTEND IS DISPOSED OF HERE, inside the scope,
                 // with the owner alive: dropped, or shut down explicitly.
                 match disposal {
@@ -355,6 +410,7 @@ fn launch_attached_with(
             error,
             workers,
             uncollected,
+            maintenance,
             shutdown_retained,
             after,
         }
@@ -401,8 +457,38 @@ fn assert_collected_running(seen: &WorkerSeen, what: &str) {
         )),
         "{what}: the connection's own destruction deferred over its running worker"
     );
+    // THE DEFERRED CLEANUP RAN AFTER THE JOIN: the custody's own fence was
+    // recorded, the obligation committed, the home retained with the joined
+    // worker named in its evidence, and the namespace cleanup established
+    // -- which is what gave the number back and removed the row. The
+    // destruction decision itself is not rewritten.
+    let PrivateDeferredCleanupStanding::Done(report) = seen.deferred else {
+        panic!("{what}: the deferred cleanup ran to its end: {:?}", seen.deferred)
+    };
+    assert_eq!(report.closure, PrivateHandoverFence::Established, "{what}");
+    assert!(report.committed, "{what}: the maintenance obligation is committed");
+    assert_eq!(report.namespace, PrivateNamespaceClearance::Established, "{what}");
+    assert!(seen.committed, "{what}: the store holds the committed obligation");
+    assert_eq!(seen.home, Some(PrivateHomeStanding::Retained), "{what}: the home is retained");
+    assert!(seen.gate_fenced, "{what}: the gate is fenced");
+    assert!(
+        matches!(seen.home_worker, Some(PrivateOrderedWorkerExit::Joined(_))),
+        "{what}: the home names the joined worker: {:?}",
+        seen.home_worker
+    );
+    assert_eq!(seen.number, None, "{what}: the completed namespace cleanup released the number");
+    assert!(!seen.row, "{what}: and removed the row");
+}
+
+/// The same, for a worker whose deferred cleanup must NOT have run: number
+/// still held, row still present, home live, nothing committed. Whether it
+/// was joined is the caller's to say.
+fn assert_collected_but_owed(seen: &WorkerSeen, what: &str) {
+    assert_eq!(seen.attachment, Some(PrivateAttachment::Started), "{what}");
     assert_eq!(seen.number, Some(PrivateNumberStanding::Held), "{what}: the number stays");
-    assert!(seen.row, "{what}: the row is the custodian's to remove");
+    assert!(seen.row, "{what}: the row is still the custodian's");
+    assert!(!seen.committed, "{what}: nothing committed");
+    assert_eq!(seen.home, Some(PrivateHomeStanding::Live), "{what}: the home is not retained");
 }
 
 fn one_collected(outcome: &AttachedOutcome, what: &str) -> PrivateWorkerCollection {
@@ -411,6 +497,16 @@ fn one_collected(outcome: &AttachedOutcome, what: &str) -> PrivateWorkerCollecti
     let collected = outcome.workers[0];
     assert!(collected.joined, "{what}: the collection joined it");
     assert_eq!(collected.join, Some(PrivateJoinKind::Returned), "{what}");
+    assert_eq!(outcome.maintenance.len(), 1, "{what}: one deferred cleanup visit reported");
+    assert_eq!(outcome.maintenance[0].place, collected.place);
+    match outcome.maintenance[0].result {
+        Ok(report) => {
+            assert_eq!(report.closure, PrivateHandoverFence::Established, "{what}");
+            assert!(report.committed, "{what}");
+            assert_eq!(report.namespace, PrivateNamespaceClearance::Established, "{what}");
+        }
+        Err(refusal) => panic!("{what}: the deferred cleanup was refused: {refusal:?}"),
+    }
     collected
 }
 
@@ -674,4 +770,116 @@ fn a_big_endian_connection_with_an_established_sequence_gets_frames_the_wire_its
     one_collected(&outcome, "big-endian stop");
     assert_collected_running(&seen, "big-endian stop");
     let _ = std::fs::remove_file(&socket_path);
+}
+
+/// A hook armed for one point of the next deferred-cleanup visit on this
+/// thread.
+type StagedCleanupHook = (PrivateDeferredCleanupPoint, Box<dyn FnOnce()>);
+
+thread_local! {
+    /// STAGE-ONLY SCHEDULING HOOK for the deferred cleanup: what the visit
+    /// runs on this thread once, at the named point. Armed by controls that
+    /// visit on their own thread; the service's own visits run unarmed.
+    static STAGE_DEFERRED_CLEANUP: std::cell::RefCell<Option<StagedCleanupHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Fire the staged deferred-cleanup hook if it is armed for this point.
+pub(super) fn stage_deferred_cleanup(point: PrivateDeferredCleanupPoint) {
+    let armed = STAGE_DEFERRED_CLEANUP
+        .try_with(|slot| {
+            let mut held = slot.borrow_mut();
+            if held.as_ref().is_some_and(|(at, _)| *at == point) {
+                held.take().map(|(_, hook)| hook)
+            } else {
+                None
+            }
+        })
+        .ok()
+        .flatten();
+    if let Some(hook) = armed {
+        hook();
+    }
+}
+
+/// Arm the deferred-cleanup hook at a point, for the next visit on this
+/// thread.
+fn stage_deferred_cleanup_at(point: PrivateDeferredCleanupPoint, hook: impl FnOnce() + 'static) {
+    STAGE_DEFERRED_CLEANUP.with(|slot| *slot.borrow_mut() = Some((point, Box::new(hook))));
+}
+
+/// STAGE-ONLY SCHEDULING HOOK for the dispatch: connections whose frame a
+/// control pauses right after their registration has gone. Keyed by the
+/// registry the connection was published in AND its client number: numbers
+/// repeat across the registries of services running in parallel, and a pause
+/// armed by number alone would be reached by another control's frame.
+static PAUSED_AFTER_REGISTRATION_DROP: Mutex<
+    Vec<(PausedFrame, Mutex<std::sync::mpsc::Receiver<()>>)>,
+> = Mutex::new(Vec::new());
+
+/// A frame a control paused: the registry it was published in, by the
+/// identity of that registry's client table, and its number there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PausedFrame {
+    registry: usize,
+    client: XServerFrontendClientId,
+}
+
+impl PausedFrame {
+    fn of(registry: &XServerFrontendRouteRegistry, client: XServerFrontendClientId) -> Self {
+        Self {
+            registry: Arc::as_ptr(&registry.clients) as usize,
+            client,
+        }
+    }
+}
+
+/// Fire the pause for this connection thread, if a control armed it: block
+/// until the control lets the frame go (bounded, as a harness limit). A
+/// connection without a registry can have no pause armed.
+pub(super) fn stage_after_registration_drop(
+    registry: Option<&XServerFrontendRouteRegistry>,
+    client: XServerFrontendClientId,
+) {
+    let Some(registry) = registry else {
+        return;
+    };
+    let frame = PausedFrame::of(registry, client);
+    let paused = {
+        let mut held = PAUSED_AFTER_REGISTRATION_DROP
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        held.iter()
+            .position(|(paused, _)| *paused == frame)
+            .map(|index| held.remove(index).1)
+    };
+    if let Some(release) = paused {
+        let release = release
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = release.recv_timeout(Duration::from_secs(20));
+    }
+}
+
+/// Whether an armed pause for this connection has not yet been reached.
+fn pause_pending(registry: &XServerFrontendRouteRegistry, client: XServerFrontendClientId) -> bool {
+    let frame = PausedFrame::of(registry, client);
+    PAUSED_AFTER_REGISTRATION_DROP
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .any(|(paused, _)| *paused == frame)
+}
+
+/// Arm the pause for a connection's thread; the returned sender releases it.
+fn pause_after_registration_drop(
+    registry: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+) -> SyncSender<()> {
+    let (release, paused) = sync_channel::<()>(1);
+    PAUSED_AFTER_REGISTRATION_DROP
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((PausedFrame::of(registry, client), Mutex::new(paused)));
+    release
 }

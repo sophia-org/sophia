@@ -92,6 +92,7 @@ include!("x11_socket/routing/private_cleanup_record.rs");
 include!("x11_socket/routing/private_departure_arbitration.rs");
 include!("x11_socket/routing/private_destruction.rs");
 include!("x11_socket/routing/private_worker_attachment.rs");
+include!("x11_socket/routing/private_deferred_cleanup.rs");
 include!("x11_socket/routing/private_number_custody.rs");
 include!("x11_socket/routing/private_worker_join.rs");
 include!("x11_socket/routing/private_fence_record.rs");

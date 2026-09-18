@@ -14,17 +14,35 @@
 /// read as the other.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 enum PrivateOrderedWorkerExit {
     /// NOBODY EVER STARTED ONE. There is nothing to join, and no join is
     /// manufactured to make the account look complete: a connection that was
     /// never served reaches retention by its own quiet path.
-    ///
-    /// The outcomes of a worker that did run -- returned, panicked, unknown --
-    /// belong to the spawn, which is not landed. They are not written here in
-    /// advance of the thing that would establish them.
     NeverStarted,
+    /// A WORKER RAN AND WAS JOINED, and its join evidence is named here.
+    ///
+    /// NAMED WEAKLY, NOT COPIED. What the join found -- returned, or the
+    /// exact panic payload -- stays in the custody's own join evidence, which
+    /// the original service owner keeps; this is the way to it, not a
+    /// summary of it, and it holds nothing alive. Written only by the
+    /// deferred cleanup that ran after that join, never in advance of it.
+    Joined(std::sync::Weak<PrivateJoinEvidence>),
 }
+
+#[cfg(unix)]
+impl PartialEq for PrivateOrderedWorkerExit {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::NeverStarted, Self::NeverStarted) => true,
+            (Self::Joined(mine), Self::Joined(theirs)) => std::sync::Weak::ptr_eq(mine, theirs),
+            _ => false,
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Eq for PrivateOrderedWorkerExit {}
 
 /// What is known about a connection's ordered output when it is retained.
 ///
@@ -41,7 +59,7 @@ enum PrivateOrderedWorkerExit {
 /// the home it was always in -- so what this exists for is the reading, not
 /// the move.
 #[cfg(unix)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct PrivateOrderedEvidence {
     /// What closing this connection's endpoint established, at teardown.
     ///

@@ -78,7 +78,8 @@ struct PrivateCommittedObligation {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[must_use]
-enum PrivateCommitted {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateCommitted {
     /// The obligation is in this connection's destination and the duty is the
     /// store's.
     ///

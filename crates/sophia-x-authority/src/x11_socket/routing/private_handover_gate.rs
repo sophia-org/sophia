@@ -36,7 +36,7 @@ pub(crate) struct PrivateHandoverGate {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Teardown drives closing; not attached yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PrivateHandoverFence {
+pub enum PrivateHandoverFence {
     /// This close made the closure, and no handover was in progress after it.
     Established,
     /// The closure was already made. Still a fence, and still exact.

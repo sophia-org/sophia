@@ -24539,7 +24539,7 @@ fn a_record_that_cannot_finish_says_which_things_are_stopping_it() {
         .expect("a readable store");
     let stuck = readings
         .iter()
-        .find_map(|(index, reading)| (*index == 0).then_some(reading))
+        .find_map(|(index, reading)| (*index == 0).then_some(reading.clone()))
         .expect("the connection that could not finish")
         .expect("and it is readable");
     assert_eq!(
@@ -24587,7 +24587,7 @@ fn a_reading_reports_an_ending_and_a_closure_that_were_established() {
     // Read before it is driven: closed, nothing ended yet, nothing held.
     let before = durable.retained_dispositions().expect("a readable store");
     assert_eq!(before.len(), 1);
-    let reading = before[0].1.expect("a readable record");
+    let reading = before[0].1.clone().expect("a readable record");
     assert_eq!(reading.closure, Some(PrivateHandoverFence::Established));
     assert_eq!(
         reading.ending,
@@ -24660,6 +24660,7 @@ fn serving_reading(
         .retained_dispositions()
         .expect("a readable store")[0]
         .1
+        .clone()
         .expect("a readable record");
     (durable, reading)
 }
@@ -25134,6 +25135,7 @@ fn a_close_with_no_attempts_left_says_so_and_is_not_retried() {
 
     let reading = durable.retained_dispositions().expect("a readable store")[0]
         .1
+        .clone()
         .expect("a readable record");
     assert!(
         reading.retries_exhausted,
@@ -25681,6 +25683,7 @@ fn a_promoted_connection_torn_down_without_a_worker_retains_what_it_is() {
     drop(private);
     let reading = durable.retained_dispositions().expect("a readable store")[0]
         .1
+        .clone()
         .expect("a readable record");
     assert_eq!(
         reading.closure,

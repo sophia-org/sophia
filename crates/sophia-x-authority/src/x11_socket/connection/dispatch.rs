@@ -2862,6 +2862,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // by type. A registration dropped before its writers are joined would
     // release the number under a by-number act still to come.
     drop(route_registration);
+    // STAGE-ONLY SCHEDULING HOOK, TEST BUILDS ONLY: the interval after this
+    // connection's registration has gone and before the rest of its frame --
+    // the disconnect observer, revocation, completion -- has run. A control
+    // that must show that a registration's destruction is not the frame's
+    // completion pauses the frame here; production builds compile nothing.
+    #[cfg(all(test, unix))]
+    routing_tests::stage_after_registration_drop(protocol_routing.as_ref(), client);
     let cleanup_observer_result = if release.removed_surfaces.is_empty()
         && release.released_dma_bufs.is_empty()
         && release.released_fences.is_empty()

@@ -226,6 +226,14 @@ struct AfterService {
     failure_slots: Option<usize>,
     /// The store's retained instances whose actor is uncollected, by places.
     uncollected_instances: Option<Vec<Vec<usize>>>,
+    /// Where the first custody's deferred cleanup stands, what its fence
+    /// recorded, whether its obligation is committed, its home's standing
+    /// and its number's standing, all read through the owner.
+    deferred_cleanup: Option<PrivateDeferredCleanupStanding>,
+    fence: Option<PrivateHandoverFence>,
+    committed: Option<bool>,
+    home: Option<PrivateHomeStanding>,
+    number: Option<Option<PrivateNumberStanding>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -287,6 +295,23 @@ fn inspect_after(owner: &PrivateServiceOwner, durable: &PrivateSettlementOwner) 
         failed_instances: durable.failed_instances(),
         failure_slots: durable.failure_slots_charged(),
         uncollected_instances: durable.uncollected_instances(),
+        deferred_cleanup: first.map(|custody| custody.deferred_cleanup_standing()),
+        fence: first.and_then(|custody| custody.fence_evidence().fence()),
+        committed: first.map(|custody| {
+            custody
+                .store()
+                .committed_obligation(custody.identity().index)
+                .is_some()
+        }),
+        home: first.map(|custody| custody.cleanup_record().ordered_home.standing()),
+        number: first.map(|custody| {
+            custody
+                .cleanup_record()
+                .number
+                .get()
+                .map(|right| right.occupancy.state_of(custody.cleanup_record().client))
+                .unwrap_or(None)
+        }),
     }
 }
 
@@ -727,12 +752,21 @@ fn an_error_joins_every_worker_before_the_private_frontend_is_finalised() {
         "and the private frontend is not finalised before that worker is joined"
     );
     assert!(error.is_some(), "the injected error is preserved");
-    // THE NUMBER STAYS WITH THE DEFERRED DUTY. The connection's own
-    // destruction found its registered worker running and deferred, and the
-    // service's collection joined that worker without executing the duty;
-    // the custody's join evidence, not a freed number, is what says the
-    // worker's ending completed before the service returned.
-    assert_eq!(occupancy_after, 1, "{after:?}");
+    // THE DEFERRED DUTY WAS DISCHARGED AFTER THE JOIN. The connection's own
+    // destruction found its registered worker running and deferred; the
+    // service collected that worker and then, with the join published and
+    // the fence recorded, ran the deferred cleanup, whose completed
+    // namespace cleanup gave the number back. The custody's join evidence is
+    // what says the worker's ending completed before the service returned.
+    assert_eq!(occupancy_after, 0, "{after:?}");
+    assert!(
+        matches!(after.deferred_cleanup, Some(PrivateDeferredCleanupStanding::Done(_))),
+        "{after:?}"
+    );
+    assert_eq!(after.fence, Some(PrivateHandoverFence::Established), "{after:?}");
+    assert_eq!(after.committed, Some(true), "the maintenance obligation is committed");
+    assert_eq!(after.home, Some(PrivateHomeStanding::Retained), "the home is retained, not drained");
+    assert_eq!(after.number, Some(None), "the completed namespace cleanup released the number");
     assert_eq!(after.attachment, Some(PrivateAttachment::Started));
     assert_eq!(
         after.standing,
@@ -802,9 +836,18 @@ fn an_unwind_joins_every_worker_before_the_private_frontend_is_finalised() {
         accepting_while_held,
         "and the private frontend's own fallback has not run before that worker is joined"
     );
-    // As in the error case: the number stays with the deferred duty, and the
-    // custody's join evidence says the worker was joined.
-    assert_eq!(occupancy_after, 1, "{after:?}");
+    // As in the error case: the deferred duty was discharged after the join
+    // by the unwinding guard, and the custody's join evidence says the
+    // worker was joined.
+    assert_eq!(occupancy_after, 0, "{after:?}");
+    assert!(
+        matches!(after.deferred_cleanup, Some(PrivateDeferredCleanupStanding::Done(_))),
+        "{after:?}"
+    );
+    assert_eq!(after.fence, Some(PrivateHandoverFence::Established), "{after:?}");
+    assert_eq!(after.committed, Some(true), "the maintenance obligation is committed");
+    assert_eq!(after.home, Some(PrivateHomeStanding::Retained), "the home is retained, not drained");
+    assert_eq!(after.number, Some(None), "the completed namespace cleanup released the number");
     assert_eq!(after.attachment, Some(PrivateAttachment::Started));
     assert_eq!(
         after.standing,

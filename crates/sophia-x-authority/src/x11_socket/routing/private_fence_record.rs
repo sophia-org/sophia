@@ -9,7 +9,7 @@
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrivateFencePhase {
+pub enum PrivateFencePhase {
     /// No attempt has entered this connection's gate through this record.
     NotAttempted,
     /// An eligible attempt claimed this record and may have entered the gate.

@@ -66,6 +66,14 @@ struct PrivateWorkerSource {
     /// ONE ATTEMPT PER SOURCE. A later visit finds this and does not respawn,
     /// replace or retry. Bounded storage on the source, not a history.
     attachment: std::sync::OnceLock<PrivateAttachment>,
+    /// Where this connection's deferred cleanup stands: not visited,
+    /// refused, claimed, or done.
+    ///
+    /// RESERVED WITH THE SOURCE, before exposure. The claim is taken here
+    /// before the first effect, so a repeat visit finds it and runs nothing
+    /// twice, and a visit interrupted after claiming leaves `Claimed`
+    /// standing -- visible uncertainty, not a completed cleanup.
+    deferred_cleanup: Mutex<PrivateDeferredCleanupStanding>,
     /// The gate this connection's queue was minted with.
     ///
     /// THE EXACT ONE, GIVEN TO THIS RESERVATION BEFORE THE ROW WENT IN. Not
@@ -155,6 +163,7 @@ impl PrivateEvidenceCustody {
                 exit: Arc::new(PrivateWorkerExit::unstarted()),
                 control: std::sync::OnceLock::new(),
                 attachment: std::sync::OnceLock::new(),
+                deferred_cleanup: Mutex::new(PrivateDeferredCleanupStanding::NotVisited),
                 cleanup,
                 departure: Mutex::new(PrivateDepartureState {
                     admitted: true,

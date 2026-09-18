@@ -22,11 +22,14 @@ fn home_held(custody: &PrivateEvidenceCustody) -> bool {
 /// already built keeps the interval between the first blocked frame and
 /// the observation well inside that bound. Count and time are harness
 /// limits, not product ones.
+/// Returns how many were accepted, whether the queue stayed full, and the
+/// completions and recoveries behind every capsule made, so what was never
+/// answered can be read after the service has gone.
 fn fill_until_blocked(
     registry: &XServerFrontendRouteRegistry,
     custody: &PrivateEvidenceCustody,
     first_delivery: u64,
-) -> (usize, bool) {
+) -> (usize, bool, Vec<(Arc<PrivateDeliveryCompletion>, InputRecovery)>) {
     let client = custody.cleanup_record().client;
     let sender = registry_sender(registry, client);
     let mut kept: Vec<(Arc<PrivateDeliveryCompletion>, InputRecovery)> = Vec::new();
@@ -44,8 +47,7 @@ fn fill_until_blocked(
         let mut full_since: Option<std::time::Instant> = None;
         loop {
             if std::time::Instant::now() > deadline {
-                std::mem::forget(kept);
-                return (sent, false);
+                return (sent, false, kept);
             }
             let notice = sender.arm_wake();
             match gated_send(&sender, capsule.take().expect("held")) {
@@ -59,21 +61,18 @@ fn fill_until_blocked(
                     let since = *full_since.get_or_insert_with(std::time::Instant::now);
                     if since.elapsed() > Duration::from_millis(400) {
                         // Full and staying full: the worker is not draining.
-                        std::mem::forget(kept);
-                        return (sent, true);
+                        return (sent, true, kept);
                     }
                     std::thread::sleep(Duration::from_millis(2));
                 }
                 Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
-                    std::mem::forget(kept);
-                    return (sent, false);
+                    return (sent, false, kept);
                 }
             }
         }
         sent += 1;
     }
-    std::mem::forget(kept);
-    (sent, false)
+    (sent, false, kept)
 }
 
 #[test]
@@ -85,7 +84,7 @@ fn a_service_stop_collects_a_worker_blocked_in_a_wire_write() {
     let registry = &launched.handles.registry;
     // THE WIRE FILLS FIRST. The client reads nothing, so the worker's frames
     // pile up until a send blocks inside its frame, holding the output.
-    let (sent, blocked) = fill_until_blocked(registry, &custody, 94050);
+    let (sent, blocked, cells) = fill_until_blocked(registry, &custody, 94050);
     let while_blocked = observe_worker(&custody, registry);
     let held = home_held(&custody);
     // The connection thread stays alive: its own teardown flushes under the
@@ -118,6 +117,22 @@ fn a_service_stop_collects_a_worker_blocked_in_a_wire_write() {
         "the interrupt freed the write at once, not after the blocked-send bound: {took:?}"
     );
     assert_collected_running(&seen, "blocked write");
+    // THE ACCEPTED ORDERED WORK IS RETAINED, NOT ANSWERED: the namespace
+    // cleanup gave the number back, and the capsules the worker accepted but
+    // never delivered stay in the retained home with their completions
+    // unanswered. Nothing drained them, nothing answered for them.
+    let unanswered = cells
+        .iter()
+        .filter(|(completion, _)| completion.answer().is_none())
+        .count();
+    assert!(
+        unanswered > 0 && unanswered <= sent,
+        "accepted work stays unanswered after the cleanup: {unanswered} of {sent}"
+    );
+    assert_eq!(seen.home, Some(PrivateHomeStanding::Retained), "in its original home");
+    // Kept as before: the cells are the fixture's to hold, never dropped
+    // into a recovery answer the control did not make.
+    std::mem::forget(cells);
     assert!(
         matches!(
             seen.exit,
@@ -322,6 +337,14 @@ fn stopping_one_origin_leaves_a_sibling_origin_on_the_same_owner_serving() {
     assert_eq!(b_during.life, PrivateWorkerLife::Running, "B's worker was untouched by A's stop");
     assert!(!b_during.left && b_during.handle_in_slot);
     assert_eq!(b_during.attachment, Some(PrivateAttachment::Started));
+    assert_eq!(
+        b_during.deferred,
+        PrivateDeferredCleanupStanding::NotVisited,
+        "A's exit visited none of B's custodies"
+    );
+    assert_eq!(b_during.standing, PrivateDestructionStanding::NotRequested);
+    assert_eq!(b_during.number, Some(PrivateNumberStanding::Held));
+    assert!(b_during.row && !b_during.gate_fenced && !b_during.committed, "{b_during:?}");
     assert_eq!(on_b_wire.as_deref(), Some(expected.as_slice()), "B still delivers");
     assert!(b_answered);
     assert!(b_ended);
@@ -496,7 +519,7 @@ fn a_worker_whose_handle_went_elsewhere_leaves_the_service_unfinalised_and_repor
     let seen = observe_worker(&custody, &launched.handles.registry);
     assert!(client_ended);
     assert_eq!(outcome.ok, Some(false));
-    let error = outcome.error.expect("the return says why");
+    let error = outcome.error.clone().expect("the return says why");
     assert!(error.starts_with("uncollected: None"), "not finalised, service error kept separate: {error}");
     assert_eq!(outcome.uncollected, vec![custody.identity().index]);
     assert_eq!(outcome.workers.len(), 1);
@@ -504,6 +527,10 @@ fn a_worker_whose_handle_went_elsewhere_leaves_the_service_unfinalised_and_repor
     assert_eq!(outcome.workers[0].join, None);
     assert_eq!(seen.life, PrivateWorkerLife::HandedToJoiner);
     assert_eq!(seen.join_phase, PrivateReapingPhase::NotBegun, "no custody join was published");
+    // THE DEFERRED DUTY IS OWED, NOT DISCHARGED: handed on without this
+    // custody's join, the visit refuses and touches nothing, and the joiner
+    // elsewhere collecting the handle lifts none of it.
+    assert_owed_for_want_of_a_join(&outcome, &seen, custody.identity().index, "handed on");
     assert_eq!(outcome.after.custodies_kept, 1, "the actor stays admitted in the owner's custody");
     // THE RETURN WAS DROPPED INSIDE THE SCOPE, and the instance was retained
     // rather than settled: one failed instance in the store, its failure
@@ -545,9 +572,11 @@ fn shutting_down_an_uncollected_frontend_retains_it_rather_than_settling() {
     let client_ended = eof_within(&mut client, 3);
     let outcome = launch_outcome(launched.handle, &launched.finished, false, "uncollected shutdown");
     handle.join().expect("the worker returned");
+    let seen = observe_worker(&custody, &launched.handles.registry);
     assert!(client_ended);
     assert_eq!(outcome.uncollected, vec![custody.identity().index]);
     let place = custody.identity().index;
+    assert_owed_for_want_of_a_join(&outcome, &seen, place, "uncollected shutdown");
     assert_eq!(
         outcome.shutdown_retained,
         Some(RetentionSeen {
@@ -606,6 +635,16 @@ fn an_unwind_over_an_uncollected_actor_retains_the_instance_rather_than_settling
     assert!(client_ended, "the guard's Drop stopped and interrupted the connection");
     assert_eq!(seen.life, PrivateWorkerLife::HandedToJoiner);
     assert_eq!(seen.join_phase, PrivateReapingPhase::NotBegun, "the guard could not join it");
+    // The unwind returns nothing; the guard's own visit left its refusal
+    // on the custody, where the owner reads it.
+    assert_eq!(
+        seen.deferred,
+        PrivateDeferredCleanupStanding::Refused {
+            refusal: PrivateDeferredCleanupRefusal::JoinUnpublished,
+            progress: PrivateDeferredCleanupProgress::default(),
+        }
+    );
+    assert_collected_but_owed(&seen, "uncollected unwind");
     // NOTHING WAS RETURNED, AND STILL NOTHING WAS SETTLED OVER THE ACTOR: the
     // unwinding frontend's own disposal retained the instance.
     assert_eq!(outcome.after.failed_instances, Some(1), "retained as a failed instance");
@@ -695,6 +734,16 @@ fn two_connections_on_one_origin_each_get_their_own_worker_and_are_both_collecte
     assert_eq!(places, expected);
     assert_collected_running(&seen_1, "first");
     assert_collected_running(&seen_2, "second");
+    let mut visited: Vec<usize> = outcome
+        .maintenance
+        .iter()
+        .map(|visit| {
+            assert!(visit.result.is_ok(), "each discharged its own: {visit:?}");
+            visit.place
+        })
+        .collect();
+    visited.sort_unstable();
+    assert_eq!(visited, expected, "one visit per custody, by its own place");
     assert_eq!(outcome.after.custodies_kept, 2);
     let _ = std::fs::remove_file(&socket_path);
 }
@@ -711,7 +760,9 @@ fn the_owned_interrupt_frees_a_registered_worker_blocked_in_a_write_the_home_hol
     assert_eq!(attach_ready_workers(frontend, &lease), 1, "the fixture's worker starts");
     // THE PEER READS NOTHING, so the worker's frames pile up until a send
     // blocks inside its frame, holding the home's output.
-    let (sent, blocked) = fill_until_blocked(registry, &custody, 94130);
+    let (sent, blocked, cells) = fill_until_blocked(registry, &custody, 94130);
+    // Kept as before: the fixture's to hold, dropped into no answer.
+    std::mem::forget(cells);
     let while_blocked = observe_worker(&custody, registry);
     let held = home_held(&custody);
     // THE COLLECTION'S OWN STOP AND INTERRUPT, and nothing else: no connection

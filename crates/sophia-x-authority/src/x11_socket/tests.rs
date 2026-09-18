@@ -1148,6 +1148,8 @@ include!("tests/private_destruction_deferral.rs");
 include!("tests/private_worker_attachment.rs");
 include!("tests/private_worker_attachment_exits.rs");
 include!("tests/private_failed_retention.rs");
+include!("tests/private_deferred_cleanup.rs");
+include!("tests/private_deferred_cleanup_service.rs");
 
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),

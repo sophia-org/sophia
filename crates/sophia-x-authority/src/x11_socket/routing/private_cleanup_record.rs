@@ -18,6 +18,24 @@
 // executes nothing, and a record retained after its registration has gone does
 // not repeat what that registration already did.
 
+/// What one connection's number-keyed cleanup established.
+///
+/// `Established` is the only answer that gave the number back. Every other
+/// answer leaves the number where it was: unpublished, somebody else's, or
+/// excluded as `Unestablished`, which nothing here resolves.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivateNamespaceClearance {
+    /// No row was ever published under this number.
+    NothingPublished,
+    /// This record is not the number's held occupant; no effect ran.
+    NotTheOccupant,
+    /// Every number-keyed effect was performed and the number went back.
+    Established,
+    /// An effect could not be performed; the number stays excluded.
+    Unestablished,
+}
+
 /// One connection's teardown responsibility.
 ///
 /// ITS CAPABILITIES ARE THE CONNECTION'S OWN, captured with its reservation
@@ -381,7 +399,19 @@ impl PrivateCleanupRecord {
         // is written this way for when a driver receives from that queue,
         // where it will separate.
         self.retain_ordered_continuation();
+        let _ = self.clear_namespace_under_number();
+    }
 
+    /// The number-keyed effects of one connection's cleanup, inside its
+    /// number's interval, reporting what they established.
+    ///
+    /// THE ONE BODY BOTH PATHS SHARE. The never-started synchronous
+    /// destruction runs it right after retaining its continuation; the
+    /// deferred cleanup that follows a joined worker runs it after its own
+    /// fence, evidence and commitment. Neither path changes what it does or
+    /// how it reports: every effect below still reports into `established`,
+    /// and the number goes back only if all of them were performed.
+    fn clear_namespace_under_number(&self) -> PrivateNamespaceClearance {
         // THE NUMBER'S INTERVAL OPENS HERE, BEFORE THE FIRST EFFECT THAT ACTS
         // BY IT. The writer cancellation and the recovery disconnect below are
         // both keyed by the number, so a check placed any later -- at the row
@@ -400,10 +430,10 @@ impl PrivateCleanupRecord {
         let Some(number) = self.number.get() else {
             // Nothing was ever published under this number, so there is
             // nothing keyed by it to undo and nothing to give back.
-            return;
+            return PrivateNamespaceClearance::NothingPublished;
         };
         if !number.begin_clearing() {
-            return;
+            return PrivateNamespaceClearance::NotTheOccupant;
         }
         // Whether everything the number authorises was actually done. A
         // best-effort body returning is not that fact.
@@ -572,6 +602,11 @@ impl PrivateCleanupRecord {
         // Where it cannot be established the number stays this connection's
         // and says it is unfinished, which nothing here resolves.
         number.finish(established);
+        if established {
+            PrivateNamespaceClearance::Established
+        } else {
+            PrivateNamespaceClearance::Unestablished
+        }
     }
 
     /// Take back the reservations of a connection that was never exposed.

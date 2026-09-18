@@ -306,7 +306,7 @@ enum PrivateHolderPlace {
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by a caller that is not attached yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrivateHolderRefusal {
+pub enum PrivateHolderRefusal {
     /// No holder place free. Every place already has one, promised or made.
     Saturated,
     /// The store could not be read.

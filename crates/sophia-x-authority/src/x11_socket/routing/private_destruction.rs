@@ -28,7 +28,7 @@
 /// established at all.
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PrivateDestructionDeferral {
+pub enum PrivateDestructionDeferral {
     /// A worker was started and its handle is still in this connection's slot.
     WorkerRunning,
     /// A worker was started and its handle has gone to whoever joins it.

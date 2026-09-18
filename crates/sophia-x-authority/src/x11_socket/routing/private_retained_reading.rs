@@ -42,7 +42,7 @@ enum PrivateRetainedEnding {
 /// alternatives, and reporting either alone would lose the other.
 #[cfg(unix)]
 #[cfg_attr(not(test), allow(dead_code))] // Read by reporting that is not attached yet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct PrivateRetainedDisposition {
     /// What closing this connection's endpoint established, if anything.
     closure: Option<PrivateHandoverFence>,
@@ -96,7 +96,7 @@ impl PrivateOrderedContinuation {
                 retained,
                 refusal: _,
             } => (
-                *evidence,
+                evidence.clone(),
                 match (ended, ending_refused, accepted) {
                     (true, _, _) => PrivateRetainedEnding::Ended,
                     (false, Some(kind), _) => PrivateRetainedEnding::Refused(*kind),
@@ -113,7 +113,7 @@ impl PrivateOrderedContinuation {
                 false,
             ),
             Self::Serving { owner, evidence } => (
-                *evidence,
+                evidence.clone(),
                 // AN ESTABLISHED ENDING IS THE ENDING, whatever else is
                 // recorded beside it. More than one path ends a wire and they
                 // do not all leave a close record -- ending a part-written
@@ -169,7 +169,7 @@ impl PrivateOrderedContinuation {
         };
         PrivateRetainedDisposition {
             closure: evidence.fence,
-            worker: evidence.worker,
+            worker: evidence.worker.clone(),
             source_poisoned: evidence.source_poisoned,
             ending,
             drained,

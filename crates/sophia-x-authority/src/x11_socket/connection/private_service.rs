@@ -343,6 +343,10 @@ pub struct PrivateServiceReturn {
     /// its destruction request, its number and any deferred duty with the
     /// owner the caller kept.
     pub workers: Vec<PrivateWorkerCollection>,
+    /// What each custody's deferred cleanup visit established or refused,
+    /// after collection. A refusal here is an owned duty, readable through
+    /// the owner's custody; it is not a settled connection.
+    pub maintenance: Vec<PrivateDeferredCleanupOutcome>,
 }
 
 /// Why a private service invocation did not return a settlement.
@@ -365,6 +369,7 @@ pub enum PrivateServiceFailure {
         /// The obligations this invocation left unsent on the store's shelf.
         unresolved_egress: Vec<PrivateUnresolvedEgress>,
         workers: Vec<PrivateWorkerCollection>,
+        maintenance: Vec<PrivateDeferredCleanupOutcome>,
     },
     /// A registered worker this invocation started was not joined by its
     /// collection, so private state was NOT finalised over it.
@@ -383,6 +388,7 @@ pub enum PrivateServiceFailure {
         /// What cancellation, interruption and reporting failed with, kept
         /// beside the service's own error rather than folded into it.
         collection_failures: Vec<String>,
+        maintenance: Vec<PrivateDeferredCleanupOutcome>,
     },
 }
 
@@ -440,6 +446,9 @@ struct PrivateServiceCollection<'s, 'o> {
     workers: Vec<PrivateWorkerCollection>,
     /// Places whose worker this collection could not join.
     uncollected: Vec<usize>,
+    /// What visiting each custody's deferred cleanup after collection
+    /// established or refused.
+    maintenance: Vec<PrivateDeferredCleanupOutcome>,
     /// The instance's own record of the same, written here so that disposal
     /// -- after a return the caller drops, or after an unwind that returns
     /// nothing -- retains the instance rather than settling over the actor.
@@ -511,11 +520,27 @@ impl PrivateServiceCollection<'_, '_> {
         self.note_uncollected(&uncollected);
         self.workers = workers;
         self.uncollected = uncollected;
+        // THEN THE DEFERRED CLEANUPS, after every collection above and under
+        // this collection's own word that the connection frames are gone:
+        // each custody discharges its own where its prerequisites are
+        // established and refuses, visibly, where not.
+        let collected = self.connections_collected();
+        self.maintenance = run_deferred_cleanups(&self.service, &self.registry, collected.as_ref());
         // MARKED DONE ONLY AT THE END. A collection that unwound part-way
         // (the envelope cancellation reports to an observer that can panic)
         // is not a collection, and the guard below must still stop and wait.
         self.collected = true;
         (failures, unresolved)
+    }
+
+    /// The collection's word that this registry's connection frames are all
+    /// collected: minted only after the wait, and only when no frame is
+    /// still active. A wait that returned an error after reaping every
+    /// frame still mints it; one that returned without reaping does not.
+    fn connections_collected(&self) -> Option<PrivateConnectionsCollected> {
+        (self.frontend.active_client_worker_count() == 0).then(|| PrivateConnectionsCollected {
+            registry: Arc::clone(&self.registry.clients),
+        })
     }
 
     /// Leave the uncollected places with the instance itself.
@@ -569,6 +594,9 @@ impl Drop for PrivateServiceCollection<'_, '_> {
             self.note_uncollected(&uncollected);
             self.workers = workers;
             self.uncollected = uncollected;
+            let collected = self.connections_collected();
+            self.maintenance =
+                run_deferred_cleanups(&self.service, &self.registry, collected.as_ref());
             let _ = self.retain_pending();
             self.collected = true;
         }
@@ -641,6 +669,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             settlement: Box::new(settlement),
             unresolved_egress: Vec::new(),
             workers: Vec::new(),
+            maintenance: Vec::new(),
         });
     }
     let namespace = config.namespace();
@@ -653,6 +682,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
                 settlement: Box::new(settlement),
                 unresolved_egress: Vec::new(),
                 workers: Vec::new(),
+                maintenance: Vec::new(),
             });
         }
     };
@@ -671,6 +701,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             settlement: Box::new(settlement),
             unresolved_egress: Vec::new(),
             workers: Vec::new(),
+            maintenance: Vec::new(),
         });
     }
     // THE APPLIED REGISTRY IS PREPARED FOR THIS SERVICE'S NAMESPACE after the
@@ -687,6 +718,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             settlement: Box::new(settlement),
             unresolved_egress: Vec::new(),
             workers: Vec::new(),
+            maintenance: Vec::new(),
         });
     }
     let cancellation = Arc::new(AtomicBool::new(false));
@@ -727,6 +759,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
         registry: private.broker.registry.clone(),
         workers: Vec::new(),
         uncollected: Vec::new(),
+        maintenance: Vec::new(),
         uncollected_mark: private.uncollected_mark(),
     };
     let service_result = {
@@ -754,6 +787,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
     let (cleanup_failures, unresolved_egress) = collection.collect(service_result.is_err());
     let workers = std::mem::take(&mut collection.workers);
     let uncollected = std::mem::take(&mut collection.uncollected);
+    let maintenance = std::mem::take(&mut collection.maintenance);
     drop(observer);
     let report = ordered_egress.report();
     let status = if service_result.is_err() {
@@ -793,6 +827,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             workers,
             uncollected,
             collection_failures,
+            maintenance,
         });
     }
     let settlement = private.shutdown();
@@ -801,6 +836,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
             settlement,
             unresolved_egress,
             workers,
+            maintenance,
         }),
         (Ok(()), Ok(_)) => Err(PrivateServiceFailure::Failed {
             error: X11SetupSocketError::new("private service stopped, but collection failed")
@@ -808,12 +844,14 @@ pub(crate) fn serve_private_frontend_until_stopped(
             settlement: Box::new(settlement),
             unresolved_egress,
             workers,
+            maintenance,
         }),
         (Ok(()), Err(error)) => Err(PrivateServiceFailure::Failed {
             error: error.with_cleanup_failures(cleanup_failures),
             settlement: Box::new(settlement),
             unresolved_egress,
             workers,
+            maintenance,
         }),
         (Err(original), report) => {
             let mut cleanup_failures = cleanup_failures;
@@ -825,6 +863,7 @@ pub(crate) fn serve_private_frontend_until_stopped(
                 settlement: Box::new(settlement),
                 unresolved_egress,
                 workers,
+                maintenance,
             })
         }
     }
