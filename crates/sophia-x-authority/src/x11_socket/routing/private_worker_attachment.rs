@@ -292,7 +292,7 @@ fn attach_ready_workers(
         let sequence = Arc::clone(&readiness.sequence);
         let byte_order = readiness.byte_order;
         let name = format!("x11-ordered-output-{}", record.client.raw());
-        let outcome = context.start(move || {
+        let spawn = move || {
             std::thread::Builder::new().name(name).spawn(move || {
                 let _ = PrivateWorkerBody {
                     home: &home,
@@ -305,7 +305,11 @@ fn attach_ready_workers(
                 }
                 .run();
             })
-        });
+        };
+        #[cfg(not(test))]
+        let outcome = context.start(spawn);
+        #[cfg(all(test, unix))]
+        let outcome = routing_tests::m3_acceptance::acceptance_start(&context, &pin, spawn);
         let attachment = match outcome {
             PrivateStartupOutcome::Started => {
                 started += 1;

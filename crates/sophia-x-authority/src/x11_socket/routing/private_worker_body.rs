@@ -227,6 +227,8 @@ impl PrivateWorkerBody<'_> {
         // ARMED FIRST, so nothing between here and the return can leave
         // without saying so.
         let _leaving = PrivateWorkerLeaving(self.exit);
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::worker_body_entry(self.home);
         let outcome = self.serve();
         // THE CLASSIFICATION BEFORE THE DEPARTURE. `_leaving` publishes as it
         // drops, after this; a reader that saw the departure first could find

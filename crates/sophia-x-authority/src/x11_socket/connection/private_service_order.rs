@@ -149,11 +149,15 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
     /// turn that moved nothing, not an error; a route error is the loop's
     /// error, as the unprepared route's was.
     fn serve_order(&mut self) -> Result<usize, X11SetupSocketError> {
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::before_service_turn(self.runner, self.service);
         let progress = self
             .runner
             .service_turn(self.service)
             .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
         self.order.record(&progress);
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::after_service_turn(&self.runner.frontend().broker.registry, &progress);
         Ok(usize::from(PrivatePreparedRunner::advanced(&progress)))
     }
     fn attach_ready(&mut self) -> Result<usize, X11SetupSocketError> {

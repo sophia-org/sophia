@@ -1154,6 +1154,9 @@ include!("tests/private_deferred_cleanup_service.rs");
 mod private_maintenance_scheduler;
 #[path = "../../tests/support/private_retained_drive.rs"]
 mod private_retained_drive;
+
+#[path = "../../tests/support/m3_acceptance.rs"]
+pub(super) mod m3_acceptance;
 include!("tests/private_producer_service.rs");
 include!("tests/private_producer_port.rs");
 include!("tests/private_producer_exits.rs");

@@ -746,6 +746,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::writers_started(writers, protocol_routing.as_ref());
     writers.control = control_channels
         .map(|channels| {
             spawn_x11_control_writer(
@@ -772,6 +774,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::writers_started(writers, protocol_routing.as_ref());
     writers.protocol = protocol_receiver
         .map(|receiver| {
             spawn_x11_protocol_event_writer(
@@ -785,6 +789,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             )
         })
         .transpose()?;
+    #[cfg(all(test, unix))]
+    routing_tests::m3_acceptance::writers_started(writers, protocol_routing.as_ref());
     state.register_client(client_lease)?;
     if let Some((worker_id, sender)) = worker_admission
         && let Some(lease) = admission_lease.as_ref()

@@ -154,12 +154,16 @@ impl X11ClientWriters {
             outcome: Ok(()),
         };
         for (thread, what) in joins.into_iter().flatten() {
+            #[cfg(all(test, unix))]
+            let identity = thread.thread().id();
             let joined = match thread.join() {
                 Ok(result) => result,
                 Err(_) => Err(X11SetupSocketError::new(format!(
                     "X11 {what} writer thread panicked"
                 ))),
             };
+            #[cfg(all(test, unix))]
+            routing_tests::m3_acceptance::actor_joined(identity);
             shutdown.joined = shutdown.joined.saturating_add(1);
             if shutdown.outcome.is_ok() {
                 shutdown.outcome = joined;

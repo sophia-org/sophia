@@ -408,6 +408,8 @@ impl<'a> PrivateReapingRecord<'a> {
         // THE JOIN, WITH NOTHING HELD. The slot's guard went inside the hand-over
         // above; this record is not locked and never was; the exit record is not
         // touched until afterwards.
+        #[cfg(all(test, unix))]
+        let thread = handle.thread().id();
         let joined = handle.join();
 
         // RETAINED BEFORE ANYTHING ELSE. No allocation, no acquisition, no
@@ -426,6 +428,8 @@ impl<'a> PrivateReapingRecord<'a> {
         // writing it after the result is what stops anyone seeing `Joined` over
         // storage that is still empty.
         self.evidence.phase.store(2, Ordering::Release);
+        #[cfg(all(test, unix))]
+        routing_tests::m3_acceptance::actor_joined(thread);
 
         // THE EXIT RECORD IS READ LAST, and never as a condition of any of the
         // above. What a body left is its own evidence: a join that returned does

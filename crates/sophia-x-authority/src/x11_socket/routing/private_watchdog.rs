@@ -311,10 +311,10 @@ impl PrivateWatchdogOwner {
         }
         Some(self.supervisor.take().expect("finished supervisor").join())
     }
-}
 
-impl Drop for PrivateWatchdogOwner {
-    fn drop(&mut self) {
+    /// End this supervisor while retaining its handle for nonblocking reaping.
+    /// This never joins or waits for an execution worker.
+    pub(crate) fn request_shutdown(&self) -> Option<std::thread::ThreadId> {
         let mut inventory = self.shared.lock();
         if inventory.active.is_some() {
             self.shared
@@ -323,6 +323,13 @@ impl Drop for PrivateWatchdogOwner {
         inventory.stop = true;
         self.shared.closed.store(true, Ordering::Release);
         self.shared.changed.notify_all();
+        self.supervisor.as_ref().map(|thread| thread.thread().id())
+    }
+}
+
+impl Drop for PrivateWatchdogOwner {
+    fn drop(&mut self) {
+        let _ = self.request_shutdown();
         // The JoinHandle detaches on field destruction. The thread owns
         // Shared until it exits and takes no execution lock to do so.
     }

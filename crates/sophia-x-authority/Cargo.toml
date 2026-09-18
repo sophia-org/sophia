@@ -15,6 +15,9 @@ sophia-sysv-shm = { path = "../sophia-sysv-shm" }
 xkbcommon = "0.8"
 tracing.workspace = true
 
+[dev-dependencies]
+serde_json = "1"
+
 [lints]
 workspace = true
 
