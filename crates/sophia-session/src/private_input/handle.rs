@@ -14,6 +14,14 @@ use super::admission::PrivateInputIssueRefusal;
 use super::control::{PrivateInputAction, PrivateInputControlError, PrivateInputSubmitted};
 use super::submission::{PrivateInputConnection, PrivateInputSubmission};
 
+/// The most one drain takes at once.
+///
+/// BOUNDED, AND THE TAIL STAYS QUEUED. A live producer can fill a channel as
+/// fast as a reader empties it, so draining until empty is a loop with no
+/// promise of ending. Whatever is left stays in its own channel for the next
+/// call rather than being dropped.
+pub const PRIVATE_INPUT_DRAIN_BOUND: usize = 256;
+
 /// A boundary or a record that could not be read.
 ///
 /// ITS OWN ANSWER, NEVER AN EMPTY ONE. A participant whose lock is poisoned
@@ -125,6 +133,10 @@ pub enum PrivateInputRefusal {
     ConstructionRefused(String),
     /// The namespace registry would not admit this service's namespace.
     Namespace(sophia_runtime::NamespaceRegistryError),
+    /// The configured topology names no output to serve. Refused rather than
+    /// substituted, because an invented output would commit geometry against a
+    /// screen nobody asked for.
+    Topology,
     /// The service thread could not be started.
     Thread(std::io::Error),
 }
@@ -237,13 +249,20 @@ impl PrivateInputOutcome {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PrivateInputStatus {
     pub readiness_is_ready: bool,
-    pub admitted: usize,
-    pub grants_issued: usize,
+    /// What the boundary currently holds. `None` is a boundary that could not
+    /// be read, which is not the same as one holding nothing.
+    pub admitted: Option<usize>,
+    pub grants_issued: Option<usize>,
     /// What the store is holding right now. These are counts for diagnosis and
     /// establish no settlement on their own; `stop` reports what was actually
     /// collected and retained.
     pub settlement: PrivateInputSettlement,
-    pub interrupted: bool,
+    /// Whether the budget was interrupted, when that is known.
+    ///
+    /// `None` WHILE THE SERVICE RUNS. An interruption is established by a
+    /// maintenance visit refusing, and those happen at stop. Reporting `false`
+    /// here would be a claim this has no way to make.
+    pub interrupted: Option<bool>,
 }
 
 /// The private input service, as Session stands it up.
@@ -313,13 +332,15 @@ impl PrivateInputHandle {
     }
 
     pub fn status(&self) -> PrivateInputStatus {
-        let admitted = self.runtime.participant.admitted().unwrap_or_default();
+        let admitted = self.runtime.participant.admitted().ok();
         PrivateInputStatus {
             readiness_is_ready: self.runtime.readiness() == PrivateInputReadiness::Ready,
-            admitted: admitted.len(),
-            grants_issued: admitted.iter().map(|seen| seen.grants).sum(),
+            admitted: admitted.as_ref().map(Vec::len),
+            grants_issued: admitted
+                .as_ref()
+                .map(|rows| rows.iter().map(|seen| seen.grants).sum()),
             settlement: self.runtime.settlement(),
-            interrupted: false,
+            interrupted: None,
         }
     }
 
@@ -378,7 +399,12 @@ impl PrivateInputHandle {
             .participant
             .admitted()
             .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
-        let client = super::admission::may_issue(
+        // THE ROW THE BOUNDARY MATCHED, not a generation read off the
+        // admission context. Those are different clocks: the auth provenance
+        // carries the session generation and a connection's generation is the
+        // boundary's own, so reporting one as the other would name a
+        // connection that never existed.
+        let seen = super::admission::may_issue(
             self.runtime.grants,
             &self.runtime.admitted,
             &self.runtime.registry,
@@ -390,7 +416,7 @@ impl PrivateInputHandle {
             .access
             .ingress_for_admission(
                 &self.runtime.owner.lease(),
-                client,
+                seen.client,
                 device,
                 context.client_id,
             )
@@ -399,9 +425,9 @@ impl PrivateInputHandle {
             Arc::clone(&self.runtime),
             ingress,
             PrivateInputConnection {
-                client,
-                admission: context.client_id,
-                connection_generation: context.auth_provenance.session_generation,
+                client: seen.client,
+                admission: seen.admission,
+                connection_generation: seen.connection_generation,
             },
             device,
         ))
@@ -441,7 +467,7 @@ impl PrivateInputHandle {
         self.runtime
             .deliveries
             .lock()
-            .map(|held| held.try_iter().collect())
+            .map(|held| held.try_iter().take(PRIVATE_INPUT_DRAIN_BOUND).collect())
             .unwrap_or_default()
     }
 
@@ -454,7 +480,10 @@ impl PrivateInputHandle {
         if let Ok(first) = held.recv_timeout(within) {
             taken.push(first);
         }
-        taken.extend(held.try_iter());
+        taken.extend(
+            held.try_iter()
+                .take(PRIVATE_INPUT_DRAIN_BOUND - taken.len()),
+        );
         taken
     }
 
@@ -467,7 +496,7 @@ impl PrivateInputHandle {
         self.runtime
             .acknowledgements
             .lock()
-            .map(|held| held.try_iter().collect())
+            .map(|held| held.try_iter().take(PRIVATE_INPUT_DRAIN_BOUND).collect())
             .unwrap_or_default()
     }
 
@@ -483,7 +512,10 @@ impl PrivateInputHandle {
         if let Ok(first) = held.recv_timeout(within) {
             taken.push(first);
         }
-        taken.extend(held.try_iter());
+        taken.extend(
+            held.try_iter()
+                .take(PRIVATE_INPUT_DRAIN_BOUND - taken.len()),
+        );
         taken
     }
 
@@ -496,7 +528,7 @@ impl PrivateInputHandle {
         self.runtime
             .transactions
             .lock()
-            .map(|held| held.try_iter().collect())
+            .map(|held| held.try_iter().take(PRIVATE_INPUT_DRAIN_BOUND).collect())
             .unwrap_or_default()
     }
 
@@ -512,7 +544,10 @@ impl PrivateInputHandle {
         if let Ok(first) = held.recv_timeout(within) {
             taken.push(first);
         }
-        taken.extend(held.try_iter());
+        taken.extend(
+            held.try_iter()
+                .take(PRIVATE_INPUT_DRAIN_BOUND - taken.len()),
+        );
         taken
     }
 

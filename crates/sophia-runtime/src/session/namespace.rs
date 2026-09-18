@@ -34,6 +34,47 @@ impl NamespaceRegistry {
         })
     }
 
+    /// A registry that already holds one explicit namespace.
+    ///
+    /// FOR A SERVICE TOLD WHICH NAMESPACE IT SERVES. `new` starts empty and
+    /// allocates ids itself, so a caller with a namespace it must serve has no
+    /// way to install it: admission would refuse every client as belonging to
+    /// an unknown namespace. Calling `create_namespace` until the allocator
+    /// happened to reach that id would be worse, minting namespaces nobody
+    /// asked for.
+    ///
+    /// The allocator is seeded past the given id, so a later creation cannot
+    /// hand the same one out again. A namespace at the end of the range is
+    /// refused rather than accepted with an allocator that would immediately
+    /// repeat it.
+    pub fn with_namespace(
+        session_generation: u64,
+        namespace: NamespaceContext,
+    ) -> Result<Self, NamespaceRegistryError> {
+        if session_generation == 0 {
+            return Err(NamespaceRegistryError::InvalidSessionGeneration);
+        }
+        if !namespace.is_valid() {
+            return Err(NamespaceRegistryError::UnknownNamespace {
+                namespace: namespace.id,
+            });
+        }
+        let namespace_ids = IdAllocator::seeded_past(namespace.id.raw()).ok_or(
+            NamespaceRegistryError::UnknownNamespace {
+                namespace: namespace.id,
+            },
+        )?;
+        let mut namespaces = BTreeMap::new();
+        namespaces.insert(namespace.id, namespace);
+        Ok(Self {
+            session_generation,
+            namespace_ids,
+            admission_ids: IdAllocator::new(),
+            namespaces,
+            admissions: BTreeMap::new(),
+        })
+    }
+
     pub const fn session_generation(&self) -> u64 {
         self.session_generation
     }

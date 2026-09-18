@@ -123,6 +123,20 @@ impl<T> IdAllocator<T> {
         }
     }
 
+    /// An allocator whose next identity is past this one.
+    ///
+    /// FOR A REGISTRY GIVEN AN EXPLICIT IDENTITY TO HOLD. Seeding past it is
+    /// what stops a later allocation handing the same number out again, which
+    /// would put two different things under one identity. `None` when there is
+    /// no number past it, because an allocator that cannot advance would do
+    /// exactly that on its first call.
+    pub fn seeded_past(used: u64) -> Option<Self> {
+        Some(Self {
+            next: used.checked_add(1)?,
+            _kind: PhantomData,
+        })
+    }
+
     pub fn next_raw(&mut self) -> u64 {
         let id = self.next;
         self.next = self

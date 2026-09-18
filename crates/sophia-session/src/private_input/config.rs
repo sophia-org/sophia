@@ -50,7 +50,18 @@ pub struct PrivateInputConfig {
     /// never reconstructs it from parts and never disagrees with the service
     /// about which socket it means.
     pub socket_path: PathBuf,
+    /// The namespace this service serves, stated rather than allocated.
+    ///
+    /// Installed into the registry at start, with the allocator seeded past it
+    /// so nothing later reuses it.
     pub namespace: NamespaceId,
+    /// What that namespace may request and publish.
+    ///
+    /// EXPLICIT, AND NO AMBIENT GRANT. A default would decide a security
+    /// question by omission; the caller states exactly what this namespace is
+    /// allowed to do.
+    pub profile: sophia_protocol::NamespaceProfile,
+    pub capabilities: sophia_protocol::NamespaceCapabilities,
     /// The session generation this service's namespace registry runs under.
     ///
     /// Stated rather than derived from the authority instance: they are

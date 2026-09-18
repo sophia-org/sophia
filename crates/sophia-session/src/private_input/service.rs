@@ -53,10 +53,21 @@ pub(super) struct PrivateInputRuntime {
     /// configure carries, so a caller cannot supply one and cannot seed
     /// applied state without a real transaction going through it.
     pub(super) coordinator: Mutex<sophia_engine::ProductionSessionCoordinator>,
-    /// Surfaces this service has already admitted, by their whole SurfaceId.
-    /// The id carries its own incarnation, so a surface destroyed and created
-    /// again is a different entry rather than a stale one.
-    pub(super) admitted_surfaces: Mutex<std::collections::BTreeSet<sophia_protocol::SurfaceId>>,
+    /// Surfaces this service has already admitted, with the exact connection
+    /// each was admitted for. Keyed by the whole SurfaceId, whose own
+    /// generation is the incarnation, so a surface destroyed and created again
+    /// is a new entry rather than a stale one. The connection is retained
+    /// because a withdrawing batch no longer carries the route that admitted
+    /// it.
+    pub(super) admitted_surfaces: Mutex<
+        std::collections::BTreeMap<sophia_protocol::SurfaceId, super::PrivateInputConnection>,
+    >,
+    /// Committed effects the order refused, kept whole for a later retry.
+    ///
+    /// RETAINED RATHER THAN RECOMMITTED. Rebuilding one would put the same
+    /// transaction through the coordinator twice; dropping it would lose
+    /// committed state that was never applied.
+    pub(super) pending_effects: Mutex<Vec<super::committed::PrivateInputPendingEffect>>,
     pub(super) owner: Arc<PrivateServiceOwner>,
     pub(super) store: PrivateSettlementOwner,
     pub(super) participant: PrivateAdmissionParticipant,
@@ -115,6 +126,8 @@ impl PrivateInputRuntime {
         let PrivateInputConfig {
             socket_path,
             namespace,
+            profile,
+            capabilities,
             binding,
             cookie,
             grants,
@@ -135,8 +148,17 @@ impl PrivateInputRuntime {
         )
         .map_err(PrivateInputRefusal::Capacity)?;
 
+        // THE NAMESPACE IS INSTALLED BEFORE ANYTHING SERVES. A registry built
+        // empty knows nothing of the namespace this service was told to serve,
+        // so every admission would be refused as belonging to an unknown one
+        // and no connection could ever be admitted.
+        let context = sophia_protocol::NamespaceContext::new(namespace, profile, capabilities)
+            .ok_or(PrivateInputRefusal::Namespace(
+                sophia_runtime::NamespaceRegistryError::UnknownNamespace { namespace },
+            ))?;
         let registry = Arc::new(Mutex::new(
-            NamespaceRegistry::new(session_generation).map_err(PrivateInputRefusal::Namespace)?,
+            NamespaceRegistry::with_namespace(session_generation, context)
+                .map_err(PrivateInputRefusal::Namespace)?,
         ));
         let admitted = Arc::new(Mutex::new(BTreeMap::new()));
         let policy = Arc::new(PrivateInputAdmissionPolicy::new(
@@ -145,6 +167,24 @@ impl PrivateInputRuntime {
             binding.instance(),
             Arc::clone(&admitted),
         ));
+
+        // THE ENGINE'S OUTPUT IS THE TOPOLOGY THIS SERVICE WAS GIVEN. A fixed
+        // deterministic output would have committed geometry against a size
+        // nobody configured, and the declared X topology would then be a claim
+        // about the Engine rather than a fact about it.
+        let primary = output_topology
+            .outputs
+            .iter()
+            .find(|entry| entry.output == output_topology.primary)
+            .or_else(|| output_topology.outputs.first())
+            .ok_or(PrivateInputRefusal::Topology)?;
+        let coordinator = sophia_engine::ProductionSessionCoordinator::new(
+            sophia_engine::HeadlessEngine::new(sophia_engine::HeadlessOutput {
+                id: primary.output,
+                size: primary.pixel_size,
+                scale: primary.scale,
+            }),
+        );
 
         let frontend_config = XServerFrontendConfig::new(&socket_path, namespace)
             .map_err(PrivateInputRefusal::Configuration)?
@@ -327,10 +367,9 @@ impl PrivateInputRuntime {
             deliveries: Mutex::new(deliveries),
             transactions: Mutex::new(transactions),
             closed: Mutex::new(closed),
-            coordinator: Mutex::new(sophia_engine::ProductionSessionCoordinator::new(
-                sophia_engine::HeadlessEngine::new(sophia_engine::HeadlessOutput::deterministic()),
-            )),
-            admitted_surfaces: Mutex::new(std::collections::BTreeSet::new()),
+            coordinator: Mutex::new(coordinator),
+            admitted_surfaces: Mutex::new(std::collections::BTreeMap::new()),
+            pending_effects: Mutex::new(Vec::new()),
             seat: binding.seat(),
             started: std::time::Instant::now(),
             next_delivery: AtomicU64::new(1),

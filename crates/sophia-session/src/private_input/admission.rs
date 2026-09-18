@@ -190,7 +190,7 @@ pub(super) fn may_issue(
     registry: &Mutex<NamespaceRegistry>,
     context: ClientAdmissionContext,
     live: &[sophia_x_authority::PrivateAdmittedConnection],
-) -> Result<sophia_x_authority::XServerFrontendClientId, PrivateInputIssueRefusal> {
+) -> Result<sophia_x_authority::PrivateAdmittedConnection, PrivateInputIssueRefusal> {
     if grants == PrivateInputGrantPolicy::Disabled {
         return Err(PrivateInputIssueRefusal::GrantsDisabled);
     }
@@ -222,6 +222,6 @@ pub(super) fn may_issue(
                 && !seen.closed
                 && seen.lifecycle_open
         })
-        .map(|seen| seen.client)
+        .copied()
         .ok_or(PrivateInputIssueRefusal::ConnectionGone)
 }
