@@ -64,6 +64,45 @@ are therefore indistinguishable at that boundary. This is a plausible trigger
 for the first stop, but it is not evidence for it, and it does not explain the
 repeated `start_failed` that follows.
 
+## The cause, isolated by experiment
+
+Changing the bar component's `gpu "direct"` to `gpu "denied"` in `desktop.kdl`
+and restarting the session **removes `start_failed` entirely**. On release
+`c5f064f6` the same session instead records, for slot 0:
+
+| record | count |
+| --- | --- |
+| `negotiated slot=0` | 38 |
+| `service_failed slot=0` | 37 |
+| `process_retired slot=0` | 38 |
+| `start_failed` | **0** |
+
+So the start failure was the per-component direct GPU grant, not the binary,
+the configuration, bubblewrap, or the sandbox lifetime that the refuted
+hypothesis proposed.
+
+`shell_gpu_device` (`live_session/render_devices.rs:76`) admits a device only
+when the active one is available, present in the admitted inventory, and
+**unambiguous** there. This host offers two:
+
+| node | PCI | device | |
+| --- | --- | --- | --- |
+| `card0` / `renderD128` | 03:00.0 | `0x744c` Navi 31 | RX 7900 GRE, discrete |
+| `card1` / `renderD129` | 16:00.0 | `0x164e` Raphael | integrated APU graphics |
+
+Both are `amdgpu`. Which of the three errors that function raises applies is
+still unknown, because all three travel in `reason=` and are reduced away —
+the gap this investigation is about. The shell GPU grant not resolving on a
+dual-GPU host is the defect to repair.
+
+Denying the grant is not a workaround. The bar then starts and negotiates but
+fails in service once per second, because the content it is there to present
+needs the access it was refused. The loop moves rather than stops.
+
+That shape also escapes the retry spacing added in `658dad52`: the backoff
+counts consecutive **start** failures, and here every start succeeds. A
+start-then-service-fail cycle is not spaced by it.
+
 ## Finding and resolution
 
 No cause is established, and the path that destroys it is now traced end to
@@ -114,12 +153,17 @@ boundary.
       under a new `start_backoff` status. The spacing never becomes infinite,
       so a condition that clears on its own can still bring the component up
       (`658dad52`).
-- [ ] **Find and fix why the Lom bar cannot start.** Nothing here establishes
-      it. The failure originates inside `processes.start` — either
-      `plan.prepare`, which builds the protection specification and
-      materialises the sandbox, or the spawn itself. Reproduce with the reason
-      visible: outside the supervisor no sink is installed, so `capture_line`
-      returns false and `session_stderr` falls through to a plain `eprintln!`.
+- [x] Establish why the Lom bar cannot start — the per-component direct GPU
+      grant. Denying it removes `start_failed` outright, which isolates the
+      cause by experiment rather than inference.
+- [ ] **Repair the shell GPU grant on a dual-GPU host.** `shell_gpu_device`
+      requires the active render device to be available, admitted and
+      unambiguous; this host presents a discrete Navi 31 and an integrated
+      Raphael, both `amdgpu`. Which of its three errors applies is still
+      unknown, since all three are reduced away.
+- [ ] Space a start-then-service-fail cycle. The backoff in `658dad52` counts
+      consecutive start failures, so a component that starts cleanly and then
+      fails in service is not spaced by it and still loops once a second.
 - [ ] Decide the approved start-failure cause codes and emit them, so the next
       occurrence is diagnosable from retained evidence rather than from a live
       reproduction.
