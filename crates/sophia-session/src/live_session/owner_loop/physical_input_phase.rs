@@ -1076,6 +1076,23 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if resource_sampler.is_due(sample_now) {
+            // Scheduling counters on the same cadence as the resource gauges.
+            //
+            // These also reach the completion record, but only there, and a
+            // session that has not ended yet cannot say whether it is meeting
+            // its own pacing. That made a live halving measurable from outside
+            // the session and not attributable from within it. Running totals
+            // rather than per-interval deltas, because two consecutive samples
+            // give the rate and a delta would lose the history.
+            crate::session_println!(
+                "sophia_live_cadence_sample schema=1 uptime_msec={} frame_interval_usec={} cadence_repaints={} cadence_deferred_batches={} merged_batches={} max_input_phase_msec={}",
+                u64::try_from(sample_now.duration_since(started).as_millis()).unwrap_or(u64::MAX),
+                primary_frame_interval.as_micros(),
+                metrics.cadence_repaints,
+                metrics.cadence_deferred_batches,
+                metrics.merged_batches,
+                metrics.max_input_phase.as_millis(),
+            );
             if let Some(shell) = metadata_shell.as_ref() {
                 shell.record_content_accounting();
             }

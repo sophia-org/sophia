@@ -880,3 +880,21 @@ fn the_scheduler_record_keeps_the_counters_that_explain_its_cadence() {
     let timing = "sophia_live_owner_timing schema=2 status=complete max_child_reap_msec=3 max_input_phase_msec=14";
     assert_eq!(reduced_record(timing), Some(timing.into()));
 }
+
+#[test]
+fn the_periodic_cadence_sample_survives_reduction_whole() {
+    // Emitted every five seconds beside the resource gauges, so a live session
+    // can be asked whether it is meeting its pacing. The completion record
+    // answers the same question only once the session has ended, which is no
+    // use while a client is visibly halving in front of you.
+    let sample = concat!(
+        "sophia_live_cadence_sample schema=1 uptime_msec=30000 frame_interval_usec=8333 ",
+        "cadence_repaints=3400 cadence_deferred_batches=120 merged_batches=88 ",
+        "max_input_phase_msec=4"
+    );
+    assert_eq!(reduced_record(sample), Some(sample.into()));
+    assert_eq!(
+        reduced_record(&format!("{sample} title=secret xid=7")),
+        Some(sample.into())
+    );
+}
