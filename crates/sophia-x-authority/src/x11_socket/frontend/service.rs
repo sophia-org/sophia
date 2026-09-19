@@ -48,9 +48,10 @@ impl XServerFrontend {
         config: XServerFrontendConfig,
         listener: UnixListener,
     ) -> Result<Self, X11SetupSocketError> {
-        let state = X11CoreSocketServerState::with_output_topology_and_xkb_config(
+        let state = X11CoreSocketServerState::with_output_topology_xkb_config_and_font_path(
             config.output_topology().clone(),
             config.xkb_config(),
+            config.font_path(),
         )?
         .with_optional_render_device_provider(config.render_device_provider())
         .with_optional_pixmap_allocator(config.pixmap_allocator());

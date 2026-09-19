@@ -309,6 +309,8 @@ pub enum XWireRequest {
         fontable: XResourceId,
         chars: Vec<u16>,
     },
+    SetFontPath,
+    GetFontPath,
     CreateColormap {
         alloc: u8,
         colormap: XResourceId,
@@ -397,7 +399,9 @@ pub enum XWireRequest {
     PolySegment {
         drawable: XResourceId,
         gc: XResourceId,
-        damage: Vec<Rect>,
+        /// Each segment's two endpoints, kept so the segments can be drawn
+        /// rather than only reported as dirty.
+        segments: Vec<(XPoint, XPoint)>,
     },
     PolyLine {
         drawable: XResourceId,
@@ -1313,6 +1317,17 @@ pub fn decode_x11_core_request(
         X_CLOSE_FONT => decode_close_font(context, bytes),
         X_QUERY_FONT => decode_query_font(context, bytes),
         X_QUERY_TEXT_EXTENTS => decode_query_text_extents(context, bytes),
+        // Decoded so the refusal is a proper protocol error rather than an
+        // unknown opcode. A client that dies on BadRequest -- xterm installs
+        // an error handler that exits -- must be able to ask and be told no.
+        X_SET_FONT_PATH => {
+            require_len(X_SET_FONT_PATH, X_SET_FONT_PATH_REQ_LEN, bytes.len())?;
+            Ok(XWireRequest::SetFontPath)
+        }
+        X_GET_FONT_PATH => {
+            require_exact_len(X_GET_FONT_PATH, X_GET_FONT_PATH_REQ_LEN, bytes.len())?;
+            Ok(XWireRequest::GetFontPath)
+        }
         X_LIST_FONTS => decode_list_fonts(context, bytes),
         X_LIST_FONTS_WITH_INFO => decode_list_fonts_with_info(context, bytes),
         X_CREATE_PIXMAP => decode_create_pixmap(context, bytes),

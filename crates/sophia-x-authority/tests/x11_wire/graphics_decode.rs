@@ -99,19 +99,12 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
         XWireRequest::PolySegment {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
-            damage: vec![
-                Rect {
-                    x: 5,
-                    y: 6,
-                    width: 11,
-                    height: 11,
-                },
-                Rect {
-                    x: 10,
-                    y: 24,
-                    width: 11,
-                    height: 7,
-                },
+            // The endpoints themselves, not a bounding box: the decoder used
+            // to keep only the dirty rectangle, which is why the segments
+            // could be reported and never drawn.
+            segments: vec![
+                (XPoint { x: 5, y: 6 }, XPoint { x: 15, y: 16 }),
+                (XPoint { x: 20, y: 30 }, XPoint { x: 10, y: 24 }),
             ],
         }
     );

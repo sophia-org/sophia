@@ -813,6 +813,25 @@ fn query_text_extents_request(byte_order: XByteOrder, fontable: u32, chars: &[u1
     out
 }
 
+/// A `SetFontPath` request naming one directory.
+fn set_font_path_request(byte_order: XByteOrder, directory: &str) -> Vec<u8> {
+    let body = 1 + directory.len();
+    let mut out = vec![51, 0];
+    push_u16(&mut out, byte_order, ((8 + padded_len_for_test(body)) / 4) as u16);
+    push_u16(&mut out, byte_order, 1);
+    push_u16(&mut out, byte_order, 0);
+    out.push(u8::try_from(directory.len()).unwrap());
+    out.extend_from_slice(directory.as_bytes());
+    pad_to_four(&mut out);
+    out
+}
+
+fn get_font_path_request(byte_order: XByteOrder) -> Vec<u8> {
+    let mut out = vec![52, 0];
+    push_u16(&mut out, byte_order, 1);
+    out
+}
+
 fn image_text8_request(
     byte_order: XByteOrder,
     drawable: u32,

@@ -22,6 +22,8 @@ fn dispatch_core_resource_request(
             | XWireRequest::ListFonts { .. }
             | XWireRequest::ListFontsWithInfo { .. }
             | XWireRequest::QueryTextExtents { .. }
+            | XWireRequest::SetFontPath
+            | XWireRequest::GetFontPath
             | XWireRequest::CreatePixmap { .. }
             | XWireRequest::FreePixmap { .. }
     ) {
@@ -463,6 +465,28 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
+        // The font path is session configuration. Refusing a client's attempt
+        // to change it is the safeguard that lets a host path be exposed at
+        // all: nothing a client sends can add a directory to search.
+        XWireRequest::SetFontPath => XDispatchResult {
+            response: None,
+            outputs: vec![XClientOutput::Error(crate::XClientError {
+                code: XErrorCode::BadAccess,
+                sequence: context.sequence,
+                resource_id: 0,
+                minor_code: 0,
+                major_code: context.major_opcode,
+            })],
+            metadata_candidates: Vec::new(),
+        },
+        XWireRequest::GetFontPath => XDispatchResult {
+            response: None,
+            outputs: vec![XClientOutput::Reply(XClientReply::GetFontPath {
+                sequence: context.sequence,
+                directories: runtime.font_path_names(),
+            })],
+            metadata_candidates: Vec::new(),
+        },
         XWireRequest::QueryTextExtents { fontable, ref chars } => {
             let output = match runtime.fontable_face(context.namespace, fontable) {
                 Ok(face) => XClientOutput::Reply(XClientReply::QueryTextExtents {

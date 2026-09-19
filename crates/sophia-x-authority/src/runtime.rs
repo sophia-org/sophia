@@ -373,6 +373,15 @@ impl XAuthorityRuntime {
         })
     }
 
+    /// Index a font path into this runtime's catalog.
+    ///
+    /// Done once, at construction, from session configuration. The catalog is
+    /// never reindexed afterwards, so a directory changing underneath a
+    /// running session cannot change what a client resolves.
+    pub fn index_font_path(&mut self, font_path: &[std::path::PathBuf]) {
+        self.font_catalog = crate::XFontCatalog::index(font_path);
+    }
+
     pub fn with_output_topology_and_xkb_config(
         output_topology: OutputTopologySnapshot,
         xkb_config: &crate::XkbRmlvoConfig,

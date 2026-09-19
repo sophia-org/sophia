@@ -221,9 +221,18 @@ impl X11CoreSocketServerState {
         output_topology: sophia_protocol::OutputTopologySnapshot,
         xkb_config: &crate::XkbRmlvoConfig,
     ) -> Result<Self, X11SetupSocketError> {
-        let runtime =
+        Self::with_output_topology_xkb_config_and_font_path(output_topology, xkb_config, &[])
+    }
+
+    pub fn with_output_topology_xkb_config_and_font_path(
+        output_topology: sophia_protocol::OutputTopologySnapshot,
+        xkb_config: &crate::XkbRmlvoConfig,
+        font_path: &[std::path::PathBuf],
+    ) -> Result<Self, X11SetupSocketError> {
+        let mut runtime =
             XAuthorityRuntime::with_output_topology_and_xkb_config(output_topology, xkb_config)
                 .map_err(|error| X11SetupSocketError::new(error.to_string()))?;
+        runtime.index_font_path(font_path);
         Ok(Self {
             runtime: Arc::new(Mutex::new(runtime)),
             ..Self::default()

@@ -27,6 +27,11 @@ pub struct XServerFrontendConfig {
     output_topology: sophia_protocol::OutputTopologySnapshot,
     xkb_config: crate::XkbRmlvoConfig,
     defer_policy_maps: bool,
+    /// Directories searched for core fonts, before the built-in element.
+    ///
+    /// Session configuration, never client configuration: `SetFontPath` is
+    /// refused, so nothing a client sends can add a directory here.
+    font_path: Vec<PathBuf>,
 }
 
 impl core::fmt::Debug for XServerFrontendConfig {
@@ -46,6 +51,7 @@ impl core::fmt::Debug for XServerFrontendConfig {
             .field("output_topology", &self.output_topology)
             .field("xkb_config", &self.xkb_config)
             .field("defer_policy_maps", &self.defer_policy_maps)
+            .field("font_path", &self.font_path)
             .finish()
     }
 }
@@ -93,6 +99,10 @@ impl XServerFrontendConfig {
             output_topology: sophia_protocol::OutputTopologySnapshot::deterministic(),
             xkb_config: crate::XkbRmlvoConfig::default(),
             defer_policy_maps: false,
+            // No directories by default. A frontend serves text from the
+            // built-in element until a session configures a path, which keeps
+            // every test and probe independent of what the host has installed.
+            font_path: Vec::new(),
         })
     }
 
@@ -175,6 +185,20 @@ impl XServerFrontendConfig {
     pub fn with_policy_map_deferred(mut self, deferred: bool) -> Self {
         self.defer_policy_maps = deferred;
         self
+    }
+
+    /// Replace the font path this frontend serves.
+    ///
+    /// An empty path is not an error: the built-in element always answers, so
+    /// a session configured with no directories still renders text.
+    #[must_use]
+    pub fn with_font_path(mut self, font_path: Vec<PathBuf>) -> Self {
+        self.font_path = font_path;
+        self
+    }
+
+    pub fn font_path(&self) -> &[PathBuf] {
+        &self.font_path
     }
 
     pub const fn policy_map_deferred(&self) -> bool {

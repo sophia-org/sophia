@@ -108,6 +108,40 @@ pub(super) fn apply_command(
             );
             Some(projected)
         }
+        XAuthorityRasterCommand::Segments { points, gc } => {
+            // Pairs, not a path: chunks rather than windows, so no line is
+            // drawn between one segment's end and the next one's start.
+            let gc = projected_gc(gc, density);
+            let mut painted: Option<Rect> = None;
+            let half_width = i32::from(gc.line_width.max(1)).saturating_add(1);
+            for pair in points.chunks_exact(2) {
+                for point in pair {
+                    let x = floor_edge(point.x, density);
+                    let y = floor_edge(point.y, density);
+                    let cell = Rect {
+                        x: x.saturating_sub(half_width),
+                        y: y.saturating_sub(half_width),
+                        width: half_width.saturating_mul(2).saturating_add(1),
+                        height: half_width.saturating_mul(2).saturating_add(1),
+                    };
+                    painted = Some(painted.map_or(cell, |bounds| union_rect(bounds, cell)));
+                }
+                draw_line(
+                    snapshot,
+                    crate::XPoint {
+                        x: i16::try_from(floor_edge(pair[0].x, density)).unwrap_or(i16::MAX),
+                        y: i16::try_from(floor_edge(pair[0].y, density)).unwrap_or(i16::MAX),
+                    },
+                    crate::XPoint {
+                        x: i16::try_from(floor_edge(pair[1].x, density)).unwrap_or(i16::MAX),
+                        y: i16::try_from(floor_edge(pair[1].y, density)).unwrap_or(i16::MAX),
+                    },
+                    i32::from(gc.line_width.max(1)),
+                    &gc,
+                );
+            }
+            painted
+        }
         XAuthorityRasterCommand::Lines { points, gc } => {
             let gc = projected_gc(gc, density);
             // The line rasteriser walks between projected endpoints and widens

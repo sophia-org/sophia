@@ -231,32 +231,39 @@ fn dispatch_core_drawing_request(
             }
         }
         XWireRequest::PolySegment {
-            drawable, damage, ..
+            drawable,
+            gc,
+            segments,
         } => {
+            // Each segment is its own two-point line: disjoint, so the ends do
+            // not join. xterm draws the VT100 line-drawing characters with
+            // this request when the font has no glyph for them, which is why
+            // recording damage without painting left the box characters
+            // missing from a terminal that otherwise looked right.
             let transaction = context.transaction;
-            if runtime
-                .validate_pixmap_access(context.namespace, drawable)
-                .is_ok()
-            {
-                return Handled(XDispatchResult {
-                    response: Some(XAuthorityResponsePacket::accepted(transaction)),
-                    outputs: Vec::new(),
-                    metadata_candidates: Vec::new(),
-                });
-            }
-            let mut region = Region::empty();
-            for rect in damage {
-                region.push(rect);
-            }
-            let response =
-                runtime.apply_core_draw(transaction, context.namespace, drawable, region);
+            let values = match core_draw_gc(context, runtime, drawable, gc) {
+                Ok(values) => values,
+                Err((error, code, resource)) => {
+                    return Handled(core_draw_validation_error(
+                        context, transaction, error, code, resource,
+                    ));
+                }
+            };
+            let response = runtime.apply_segment_draw(
+                transaction,
+                context.namespace,
+                drawable,
+                &segments,
+                &values,
+            );
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
                     error,
                     context.sequence,
                     context.major_opcode,
                     0,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
+                    u32::try_from(drawable.local.raw()).unwrap_or(0),
+                ))]
             } else {
                 Vec::new()
             };

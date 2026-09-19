@@ -1417,3 +1417,148 @@ fn x11_query_text_extents_measures_the_face_the_fontable_holds() {
         [XClientOutput::Error(error)] if error.code == XErrorCode::BadFont
     ));
 }
+
+#[test]
+fn a_client_cannot_change_the_font_path_but_may_read_it() {
+    // The refusal is the safeguard that makes exposing a host path
+    // defensible: the path is session configuration, and nothing a client
+    // sends can add a directory to search. It is answered as BadAccess rather
+    // than left undecoded, because a client that meets BadRequest may exit --
+    // xterm installs an error handler that does exactly that.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let request = decode_x11_core_request(
+        context(namespace, 980, XByteOrder::LittleEndian),
+        &set_font_path_request(XByteOrder::LittleEndian, "/tmp/fonts"),
+    )
+    .unwrap();
+    let refused = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 51),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        refused.outputs.as_slice(),
+        [XClientOutput::Error(error)] if error.code == XErrorCode::BadAccess
+    ));
+
+    let request = decode_x11_core_request(
+        context(namespace, 981, XByteOrder::LittleEndian),
+        &get_font_path_request(XByteOrder::LittleEndian),
+    )
+    .unwrap();
+    let path = dispatch_x11_wire_request(
+        dispatch_context(namespace, 2, XByteOrder::LittleEndian, 52),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = path.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded.len(), 1);
+    assert_eq!(encoded[0][0], 1, "a reply, not an error");
+    // With no directories configured the path is the built-in element alone,
+    // named the way the X server names its own.
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]), 1);
+    let len = usize::from(encoded[0][32]);
+    assert_eq!(&encoded[0][33..33 + len], b"built-ins");
+}
+
+#[test]
+fn poly_segment_paints_its_segments_rather_than_only_reporting_them() {
+    // xterm draws the VT100 line-drawing characters with this request when the
+    // font has no glyph for them. The handler used to record damage and paint
+    // nothing, so a terminal's box characters were simply absent.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    for (sequence, opcode, bytes) in [
+        (
+            1u16,
+            1u8,
+            create_window_request(XByteOrder::LittleEndian, 0x220181, 0, 0, 300, 200),
+        ),
+        (
+            2,
+            45,
+            open_font_request(XByteOrder::LittleEndian, 0x220183, "fixed"),
+        ),
+        (
+            3,
+            55,
+            // A white foreground, because the buffer starts black and a black
+            // line on it would be indistinguishable from painting nothing --
+            // which is the very failure this test exists to catch.
+            create_gc_values_request(
+                XByteOrder::LittleEndian,
+                0x220182,
+                0x220181,
+                3,
+                u32::MAX,
+                0x00ff_ffff,
+                0,
+                1,
+                0x220183,
+            ),
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence) + 985, XByteOrder::LittleEndian),
+            &bytes,
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+    }
+
+    let request = decode_x11_core_request(
+        context(namespace, 990, XByteOrder::LittleEndian),
+        &poly_segment_request(
+            XByteOrder::LittleEndian,
+            0x220181,
+            0x220182,
+            &[(10, 10, 40, 10), (10, 30, 10, 60)],
+        ),
+    )
+    .unwrap();
+    let drawn = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 66),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(drawn.outputs.is_empty(), "a valid draw is not an error");
+    let response = drawn.response.unwrap();
+    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+    assert_eq!(response.transactions.len(), 1);
+    let XAuthorityCpuBufferUpdate::Replace(snapshot) = runtime
+        .take_cpu_buffer_update()
+        .expect("the segments reached the raster")
+    else {
+        panic!("the first update replaces the buffer");
+    };
+    let painted = |x: usize, y: usize| -> bool {
+        let stride = usize::try_from(snapshot.stride).unwrap();
+        let at = y * stride + x * 4;
+        snapshot.bytes[at..at + 4].iter().any(|byte| *byte != 0)
+    };
+    assert!(painted(25, 10), "the horizontal segment");
+    assert!(painted(10, 45), "the vertical segment");
+    assert!(
+        !painted(25, 45),
+        "and nothing between them: the segments are disjoint, not a path"
+    );
+}

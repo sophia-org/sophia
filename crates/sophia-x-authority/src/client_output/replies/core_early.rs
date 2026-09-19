@@ -14,6 +14,7 @@ fn encode_core_early_reply(
             | XClientReply::QueryExtension { .. }
             | XClientReply::ListExtensions { .. }
             | XClientReply::ListFonts { .. }
+            | XClientReply::GetFontPath { .. }
             | XClientReply::ListFontsWithInfo { .. }
             | XClientReply::QueryBestSize { .. }
     ) {
@@ -199,7 +200,17 @@ fn encode_core_early_reply(
                     }
                     out
                 }
-                XClientReply::ListFonts { sequence, names } => {
+                // The same STRING8 list body as ListFonts, over directories
+                // rather than font names.
+                XClientReply::GetFontPath {
+                    sequence,
+                    directories,
+                }
+                | XClientReply::ListFonts {
+                    sequence,
+                    names: directories,
+                } => {
+                    let names = directories;
                     let names_len = names.iter().map(|name| 1 + name.len()).sum::<usize>();
                     let padded_names_len = padded_len(names_len);
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN + padded_names_len];

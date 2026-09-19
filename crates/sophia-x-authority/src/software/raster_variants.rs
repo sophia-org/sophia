@@ -160,6 +160,13 @@ pub(crate) enum XAuthorityRasterCommand {
         points: Vec<XRasterPoint>,
         gc: XGraphicsContextValues,
     },
+    /// Disjoint segments: each pair is its own line, and no line joins two
+    /// pairs. Distinct from `Lines` because flattening segments into one
+    /// polyline would draw a connecting line between every pair.
+    Segments {
+        points: Vec<XRasterPoint>,
+        gc: XGraphicsContextValues,
+    },
     Rectangles {
         rectangles: Vec<Rect>,
         gc: XGraphicsContextValues,
@@ -226,7 +233,7 @@ impl XAuthorityRasterCommand {
                 translate_gc_clip(gc, x, y);
             }
             Self::Clear { rect, .. } => translate_rect(rect),
-            Self::Lines { points, gc } => {
+            Self::Lines { points, gc } | Self::Segments { points, gc } => {
                 for point in points {
                     point.x = point.x.saturating_add(x);
                     point.y = point.y.saturating_add(y);
@@ -270,7 +277,7 @@ impl XAuthorityRasterCommand {
                 rects.len().saturating_mul(size_of::<Rect>()) + gc_bytes(gc)
             }
             Self::Clear { .. } => size_of::<Rect>() + size_of::<u32>(),
-            Self::Lines { points, gc } => {
+            Self::Lines { points, gc } | Self::Segments { points, gc } => {
                 points.len().saturating_mul(size_of::<XRasterPoint>()) + gc_bytes(gc)
             }
             Self::Rectangles { rectangles, gc } => {

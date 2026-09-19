@@ -99,9 +99,10 @@ pub fn run_x11_core_socket_server_once_config_traced_with_idle_timeout(
     observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     let listener = bind_x11_core_socket_server(config.socket_path())?;
-    let state = X11CoreSocketServerState::with_output_topology_and_xkb_config(
+    let state = X11CoreSocketServerState::with_output_topology_xkb_config_and_font_path(
         config.output_topology().clone(),
         config.xkb_config(),
+        config.font_path(),
     )?
     .with_optional_render_device_provider(config.render_device_provider())
         .with_optional_pixmap_allocator(config.pixmap_allocator());

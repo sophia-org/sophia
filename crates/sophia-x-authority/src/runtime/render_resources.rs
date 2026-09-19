@@ -773,6 +773,23 @@ impl XAuthorityRuntime {
     /// Resolution belongs to the catalog: this only decides what a failure
     /// means to the protocol. A name nothing publishes is a client error, not
     /// a session one.
+    /// The directories this frontend searches, for `GetFontPath`.
+    ///
+    /// The built-in element is named the way the X server names its own, so a
+    /// client sees a path it can make sense of rather than an empty list.
+    pub(crate) fn font_path_names(&self) -> Vec<String> {
+        self.font_catalog
+            .path()
+            .map(|root| root.display().to_string())
+            .chain(std::iter::once("built-ins".to_owned()))
+            .collect()
+    }
+
+    /// How many faces were opened and refused, for the session record.
+    pub fn font_counts(&self) -> (u64, u64) {
+        (self.font_catalog.opened(), self.font_catalog.refused())
+    }
+
     /// Names matching a pattern, for `ListFonts`.
     pub(crate) fn list_fonts(&self, pattern: &str, max_names: usize) -> Vec<String> {
         self.font_catalog.list(pattern, max_names)

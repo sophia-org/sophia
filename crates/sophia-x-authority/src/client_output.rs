@@ -791,6 +791,10 @@ pub enum XClientReply {
         sequence: u16,
         extents: crate::XTextExtents,
     },
+    GetFontPath {
+        sequence: u16,
+        directories: Vec<String>,
+    },
     GetProperty {
         sequence: u16,
         property_type: u32,

@@ -581,6 +581,31 @@ impl XSoftwareBufferStore {
         Some(image)
     }
 
+    /// Draw disjoint segments and report the rectangle they dirtied.
+    pub fn draw_segments(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        segments: &[(XPoint, XPoint)],
+        gc: &XGraphicsContextValues,
+    ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
+        let points: Vec<XPoint> = segments
+            .iter()
+            .flat_map(|(from, to)| [*from, *to])
+            .collect();
+        let damage = point_bounds(&points, gc.line_width)?;
+        let handle = self.allocate_handle();
+        let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let width = i32::from(gc.line_width.max(1));
+        for (from, to) in segments {
+            draw_line(buffer, *from, *to, width, gc);
+        }
+        let published_damage = Some(damage);
+        let result = finish_immutable_update(buffer, handle, replaced, published_damage);
+        self.note_export_damage(drawable, replaced, published_damage);
+        Some((result?, damage))
+    }
+
     pub fn draw_lines(
         &mut self,
         drawable: XResourceId,

@@ -228,25 +228,23 @@ fn decode_poly_segment(
             actual: bytes.len(),
         });
     }
-    let mut damage = Vec::with_capacity(segment_bytes.len() / 8);
+    let mut segments = Vec::with_capacity(segment_bytes.len() / 8);
     for segment in segment_bytes.chunks_exact(8) {
-        let x1 = i32::from(context.byte_order.i16(&segment[0..2]));
-        let y1 = i32::from(context.byte_order.i16(&segment[2..4]));
-        let x2 = i32::from(context.byte_order.i16(&segment[4..6]));
-        let y2 = i32::from(context.byte_order.i16(&segment[6..8]));
-        let x = x1.min(x2);
-        let y = y1.min(y2);
-        damage.push(Rect {
-            x,
-            y,
-            width: x1.max(x2).saturating_sub(x).saturating_add(1),
-            height: y1.max(y2).saturating_sub(y).saturating_add(1),
-        });
+        segments.push((
+            XPoint {
+                x: context.byte_order.i16(&segment[0..2]),
+                y: context.byte_order.i16(&segment[2..4]),
+            },
+            XPoint {
+                x: context.byte_order.i16(&segment[4..6]),
+                y: context.byte_order.i16(&segment[6..8]),
+            },
+        ));
     }
     Ok(XWireRequest::PolySegment {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
-        damage,
+        segments,
     })
 }
 
