@@ -108,12 +108,17 @@ pub(super) fn service_components(
         // retained start failure reduces to schema and status alone and cannot
         // name the component that failed. A failure raised before any slot was
         // selected has none to report.
+        // `reason` is free text and reduction drops it, so the refusal also
+        // carries an approved code. Without one a retained record says that a
+        // start failed and never why, which cost 841 records and a
+        // configuration change to answer once.
+        let cause = super::component_start_cause::classify(&error.to_string()).as_str();
         match components.last_start_slot() {
             Some(slot) => crate::session_eprintln!(
-                "sophia_shell_component schema=1 status=start_failed slot={slot} reason={error}"
+                "sophia_shell_component schema=1 status=start_failed slot={slot} cause={cause} reason={error}"
             ),
             None => crate::session_eprintln!(
-                "sophia_shell_component schema=1 status=start_failed reason={error}"
+                "sophia_shell_component schema=1 status=start_failed cause={cause} reason={error}"
             ),
         }
     }

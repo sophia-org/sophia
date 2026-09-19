@@ -89,6 +89,7 @@ mod authority_file;
 mod component_catalog;
 mod component_lifecycle;
 mod component_service;
+pub(crate) mod component_start_cause;
 mod cpu_visual_progress;
 pub(crate) mod direct_cursor_proof;
 pub(crate) mod direct_overlay_proof;

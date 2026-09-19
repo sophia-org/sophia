@@ -45,6 +45,11 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
                 | "input_failed"
                 | "input_rejected"
         ),
+        // The approved cause codes, taken from the module that emits them so
+        // the vocabulary cannot drift from the allowlist that admits it.
+        ("sophia_shell_component", "cause") => {
+            crate::live_session::component_start_cause::StartCause::ALL.contains(&value)
+        }
         ("sophia_shell_component", "role") => {
             matches!(value, "bar" | "application_launcher" | "dock")
         }
