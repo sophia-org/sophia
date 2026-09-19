@@ -31,6 +31,17 @@ service error, unwind, retained obligations — passed contained. The acceptance
 body composes the same control bodies the component suite runs, so the two
 cannot drift into disagreeing about what an exit must establish.
 
+## Master integration
+
+On 2026-09-19 local master fast-forwarded from `7d8b0175` to signed `76649895`
+— forty-nine commits, no merge commit — and was pushed to `origin/master`. The
+integrated tree was checked before the push: `clippy -D warnings --all-targets`
+on every package this work touched, `cargo fmt --all --check`, the layout gate
+and the Session lib suite all clean, each with its literal exit status.
+
+The branch `codex/m4-private-session` and its worktree are retired, along with
+`codex/m3-c-acceptance`, both fully merged with nothing unique.
+
 ## What the mutation negatives changed
 
 The seven compiled negatives the plan requires had never been run. When they

@@ -40,10 +40,19 @@ under the old ordering, after connection collection, and passes on the merged
 source. The [checkpoint record](../milestones/nywg1vat-m3-integrated-acceptance-checkpoint-and-remaining-c-controls.md)
 keeps the exact identities and the failed intermediate attempt.
 
-t093 stays open for M4–M6: the private Session host and XTEST adapter still
-need their own implementation and acceptance. Physical task t094 remains
-separate, and discovery remains disabled. Local master integration includes
-neither publication nor hardware acceptance.
+t093 stays open for M5–M6: the XTEST adapter still needs its own
+implementation and acceptance. Physical task t094 remains separate, and
+discovery remains disabled. Local master integration includes neither
+publication nor hardware acceptance.
+
+M4 is complete and integrated. On 2026-09-19 master fast-forwarded from
+`7d8b0175` to signed `76649895` and was pushed, carrying eight of eight M4
+acceptance cases with M3's twenty of twenty on that same source, twenty-seven
+component controls, and seven of seven compiled mutation negatives killed by
+their own targeted control. The
+[M4 milestone record](../milestones/pq4wr7xn-m4-private-session-acceptance-and-what-mutation-showed.md)
+states the result, the four regressions that were undetectable until those
+negatives ran, and the limits that remain.
 
 An earlier contained run on signed `a2bc967c` passed 18 of 20 with no failures,
 with C.indeterminate_send and C.control_cleanup then unbound and that aggregate
