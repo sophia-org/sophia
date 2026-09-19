@@ -118,11 +118,25 @@ cadence rule's judgement, which measures it directly.
 - [x] Physical, by hand, on the installed desktop at `a58800c3`: the pointer
       tracks normally over an idle Kitty window, which is the case the
       cursor-only commit exists for and the one the gate could have broken.
-- [ ] `cursor_only_total_msec` is zero on the rig, so the non-blocking
-      event-carrying commit stays unwarranted. Revisit only if a session that
-      idles differently shows quiet-time blocking.
-- [ ] Read the same counters from an installed Hagia session at teardown, to
-      confirm on the desktop what the rig showed.
+- [x] Read the same counters from an installed Hagia session at teardown. The
+      desktop does **not** repeat the rig's zero, and the difference is the
+      point: a 285-second Hagia session at `a58800c3` reported
+      `cursor_only_total_msec=9416` with `cursor_only_max_msec=8` -- 3.3% of
+      wall time spent in blocking cursor-only commits, each at most one 120Hz
+      vblank. The rig reads zero because `glxgears` never stops drawing, so
+      the gate never opens there; a desktop idles constantly, so it opens
+      often. These are the commits that move the pointer on an idle desktop,
+      which is the reason the commit exists and what TLC refuses the model
+      without.
+- [ ] Whether that 3.3% is worth removing. It is not obviously harmful: the
+      gate closes the moment a client draws, so at most one commit can straddle
+      the resumption of drawing, and the same session held 117.8 FPS under
+      continuous pointer motion with ordinary pointer feel. The non-blocking
+      event-carrying commit would remove it at the cost of teaching the
+      page-flip reader to ignore cursor completions and the owner to track a
+      second outstanding commit kind -- a redesign the model would need
+      reworking for. Warranted only if a latency measurement, not a wall-clock
+      share, shows it costing something.
 
 Open work is tracked as t120 in `todo.md`.
 
