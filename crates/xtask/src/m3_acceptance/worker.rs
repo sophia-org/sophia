@@ -203,6 +203,23 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
             return Err("contained compiler differs from the attested toolchain".into());
         }
     }
+    // A wrapper stands between cargo and the attested compiler, so it is held
+    // to the compiler's rule: the binary present inside must be the one the
+    // configuration names. The reverse direction matters just as much -- a run
+    // that was configured without a cache must not find one mounted.
+    match (
+        &config.build_cache_sha256,
+        Path::new("/work/build-cache-wrapper").exists(),
+    ) {
+        (Some(expected), true) => {
+            if identity::digest(Path::new("/work/build-cache-wrapper"))? != *expected {
+                return Err("contained build cache differs from the attested wrapper".into());
+            }
+        }
+        (Some(_), false) => return Err("attested build cache is absent from containment".into()),
+        (None, true) => return Err("unattested build cache is present in containment".into()),
+        (None, false) => {}
+    }
     if config.schema != 1
         || !config.source.clean
         || config.build_target_namespace
@@ -275,8 +292,16 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
 /// is raised only with a measured run behind it.
 const BUILD_JOBS: &str = "8";
 
-pub(super) fn cargo() -> Command {
+pub(super) fn cargo(config: &Config) -> Command {
     let mut command = process::private_command("/work/toolchain/bin/cargo");
+    if config.build_cache_sha256.is_some() {
+        // The wrapper was attested before the sandbox opened; XDG_CACHE_HOME
+        // is how it finds the store mounted beside the build target, since
+        // HOME here is not a writable path.
+        command
+            .env("RUSTC_WRAPPER", "/work/build-cache-wrapper")
+            .env("XDG_CACHE_HOME", "/work/build-cache");
+    }
     command
         .current_dir(SOURCE)
         .env("PATH", "/work/toolchain/bin:/usr/bin:/bin")
@@ -295,7 +320,7 @@ pub(super) fn cargo() -> Command {
 }
 
 fn build_activation_probe(config: &Config, report: &mut Report) -> Result<(), String> {
-    let mut command = cargo();
+    let mut command = cargo(config);
     command.args([
         "build",
         "--offline",
@@ -328,7 +353,7 @@ fn build_activation_probe(config: &Config, report: &mut Report) -> Result<(), St
 
 fn build_private_host(config: &Config, report: &mut Report) -> Result<(), String> {
     let built = process::run(
-        cargo().args([
+        cargo(config).args([
             "build",
             "--offline",
             "--locked",
@@ -377,7 +402,7 @@ fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
     } else {
         "sophia_x_authority"
     };
-    let mut command = cargo();
+    let mut command = cargo(config);
     command.args([
         "test",
         "--offline",

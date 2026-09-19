@@ -51,7 +51,7 @@ pub(in crate::m3_acceptance) fn build_auxiliary(
         if !bindings.cases.contains_key(target.case) {
             continue;
         }
-        let mut command = worker::cargo();
+        let mut command = worker::cargo(config);
         command.args([
             "test",
             "--offline",

@@ -157,6 +157,7 @@ fn execute(
     let harness = snapshot.join(gate.directory());
     let toolchain = identity::toolchain(repo, &opts.output)?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let wrapper = build_cache_wrapper()?;
     let config = Config {
         schema: 1,
         gate,
@@ -191,6 +192,7 @@ fn execute(
                 ))
             })
             .collect::<Result<_, String>>()?,
+        build_cache_sha256: wrapper.as_deref().map(identity::digest).transpose()?,
     };
     identity::json(&opts.output.join("config.json"), &config)?;
     let inventory = super::m4::inventory(gate, &harness.join("inventory.json"))?;
@@ -203,6 +205,7 @@ fn execute(
         &executable,
         &build_target,
         gate,
+        wrapper.as_deref(),
     );
     match outcome {
         Ok(execution) => {
@@ -301,6 +304,23 @@ pub(super) fn target_namespace(content_sha256: &str) -> Result<String, String> {
     Ok(format!("source-{content_sha256}"))
 }
 
+/// The compiler wrapper a contained build runs through, when one is asked for.
+///
+/// Off unless requested. Putting a cache in an attestation path is a decision
+/// someone makes, not something that switches itself on because a binary
+/// happens to be installed on the host.
+fn build_cache_wrapper() -> Result<Option<PathBuf>, String> {
+    match std::env::var("SOPHIA_ACCEPTANCE_BUILD_CACHE").as_deref() {
+        Ok("1" | "true" | "yes") => {}
+        _ => return Ok(None),
+    }
+    let wrapper = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|directory| directory.join("kache"))
+        .find(|path| path.is_file())
+        .ok_or("SOPHIA_ACCEPTANCE_BUILD_CACHE is set but kache is not on PATH")?;
+    wrapper.canonicalize().map(Some).map_err(|e| e.to_string())
+}
+
 fn launch(
     opts: &Options,
     source: &Path,
@@ -308,6 +328,7 @@ fn launch(
     executable: &Path,
     build_target: &Path,
     gate: Gate,
+    wrapper: Option<&Path>,
 ) -> Result<Execution, String> {
     let registry = opts.registry.canonicalize().map_err(|e| e.to_string())?;
     if ["cache", "index", "src"]
@@ -329,6 +350,18 @@ fn launch(
         (source.join("tools/probes/x11_conformance"), "/work/isolation", false),
         (source.join("tools/probes/m3_acceptance/containment.py"), "/work/containment.py", false),
     ].into_iter().map(|(source, destination, writable)| json!({"source":source,"destination":destination,"writable":writable})).collect::<Vec<_>>();
+    // The wrapper's store outlives the run, so it sits beside the build target
+    // namespaces under the same exclusive lock rather than inside the output
+    // directory, which must be new for every run.
+    let mut mounts = mounts;
+    if let Some(wrapper) = wrapper {
+        let store = opts.target.join("build-cache");
+        std::fs::create_dir_all(&store).map_err(|e| e.to_string())?;
+        mounts.push(
+            json!({"source":wrapper,"destination":"/work/build-cache-wrapper","writable":false}),
+        );
+        mounts.push(json!({"source":store,"destination":"/work/build-cache","writable":true}));
+    }
     let plan = opts.output.join("launch.json");
     let bwrap = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
         .map(|directory| directory.join("bwrap"))

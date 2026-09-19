@@ -115,6 +115,13 @@ pub(super) struct Config {
     pub bindings_sha256: String,
     pub xtask_sha256: String,
     pub toolchain_sha256: BTreeMap<String, String>,
+    /// Digest of the compiler wrapper this run built through, when one was
+    /// used. A cached build must not be indistinguishable from an uncached
+    /// one: the wrapper decides what the compiler is handed and what comes
+    /// back, so it belongs beside the compiler digests rather than nowhere.
+    /// Absent means the compiler ran directly, which is the default.
+    #[serde(default)]
+    pub build_cache_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
