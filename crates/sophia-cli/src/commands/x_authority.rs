@@ -322,6 +322,7 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
 }
 
 include!("x_authority/reports.rs");
+include!("x_authority/render_device_provider.rs");
 include!("x_authority/basic_smokes.rs");
 include!("x_authority/render_smoke.rs");
 mod truecolor_client;
