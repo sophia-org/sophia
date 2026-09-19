@@ -111,15 +111,18 @@ cadence rule's judgement, which measures it directly.
 - [x] TLC passes every invariant and the liveness property under the gate.
 - [x] Reporter regression check covers the rename, the new cost fields and a
       schema-7 record; conformance reads schema 7.
-- [ ] Physical: `just glxgears-shake` should show `cursor_only` near zero while
-      the client renders, `cursor_only_total_msec` near zero, client FPS toward
-      59.7 and `p95_frame_msec` near 16.7. If `cursor_only` stays high the gate
-      is not closing; if it is zero and the frame rate does not move, this note
-      misread the mechanism and should say so.
-- [ ] Physical, by hand: the pointer must still track promptly over a *static*
-      window — the idle case the cursor-only commit exists for.
-- [ ] If quiet-time blocking still shows in `cursor_only_total_msec`, the
-      non-blocking event-carrying commit becomes worth its redesign.
+- [x] Physical, on the rig: `cursor_only=0` and `cursor_only_total_msec=0`
+      against 234 before, `rides` up from 564 to 721, client 59.57 FPS against
+      a 59.68 idle baseline, and `p95_frame_msec` 16.686 -- one frame interval
+      where it had been exactly two. The report passes end to end.
+- [x] Physical, by hand, on the installed desktop at `a58800c3`: the pointer
+      tracks normally over an idle Kitty window, which is the case the
+      cursor-only commit exists for and the one the gate could have broken.
+- [ ] `cursor_only_total_msec` is zero on the rig, so the non-blocking
+      event-carrying commit stays unwarranted. Revisit only if a session that
+      idles differently shows quiet-time blocking.
+- [ ] Read the same counters from an installed Hagia session at teardown, to
+      confirm on the desktop what the rig showed.
 
 Open work is tracked as t120 in `todo.md`.
 

@@ -140,13 +140,11 @@ that integration is where the risk is.
 
 ## Validation and remaining work
 
-- [ ] Confirm the mechanism before repairing it. The scheduler counters are
-      admitted since `6042256c`, and
-      `tools/benchmark_sophia_glxgears_shake_tty3.sh` now drives a virtual
-      mouse at 1 kHz through the bounded benchmark, so one shaken run pairs
-      `client_mean_fps` with `cadence_deferred_batches` and `merged_batches`
-      and says whether the loop is spending turns on delivery or retiring
-      frames late.
+- [x] Confirm the mechanism before repairing it. The shake rig answered it:
+      per-event routing cost real frames (41.7 to 48.1 FPS recovered by
+      coalescing alone) but was not the whole cost, and `max_input_phase_msec`
+      fell to zero while the rest remained -- which is what pointed at the
+      cursor plane and became t120.
 - [x] Thread the coalescer and flush at the frame boundary. Landed; release is
       bounded by the frame interval as well as the pacer, because a session
       composing from client submissions requests almost no paced repaints and
@@ -155,12 +153,14 @@ that integration is where the risk is.
       coalescer in isolation: five tests drive it, covering one delivery per
       frame, release on the clock with no repaint requested, a button after its
       motion, and a crossing delivering both surfaces in order.
-- [ ] The reporter's rule -- at least 55 FPS with a p95 of at most 25 ms --
-      still fails under the scripted shake at 48.1 FPS and 33.4 ms. Closing
-      that gap is t120, not this note.
-- [ ] One manual hand-on-mouse run: the coalescer's tests say when it must
-      flush, but a scripted flood and a hand are not the same, and a fault here
-      presents as feel rather than as a failing test.
+- [x] The reporter's rule -- at least 55 FPS with a p95 of at most 25 ms --
+      passes under the scripted shake once t120's gate lands: 59.9 FPS at a
+      p95 of 16.7 ms, `status=pass` end to end.
+- [x] One manual hand-on-mouse run, on the installed desktop at `a58800c3`:
+      `glxgears` holds 117.8 FPS on the 120Hz head while the pointer moves --
+      the halving this note opened on (118 idle, 60 moving) is gone -- and
+      pointer feel is ordinary: motion inside Kitty and clicking inside the
+      browser both land as they should.
 
 Open work is tracked as t116 in `todo.md`.
 
