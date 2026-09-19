@@ -853,3 +853,30 @@ fn independent_component_evidence_is_bounded_and_payload_free() {
         Some("sophia_other".into())
     );
 }
+
+#[test]
+fn the_scheduler_record_keeps_the_counters_that_explain_its_cadence() {
+    // The record carried only its frame interval, because every other field
+    // ends in no suffix the measurement filter recognises. A session could
+    // therefore say it paced at 8.3ms and not whether it ever achieved that
+    // cadence -- so a halving under input load was measurable from outside the
+    // session and not attributable from within it.
+    let record = concat!(
+        "sophia_live_session_scheduler schema=2 authority_batches=1200 ",
+        "cpu_compositions=600 coalesced_batches=40 cadence_deferred_batches=300 ",
+        "cadence_repaints=590 frame_interval_usec=8333 merged_batches=80 max_merge_run=12"
+    );
+    assert_eq!(reduced_record(record), Some(record.into()));
+
+    // These are tallies of the owner loop's own turns. Nothing identifying may
+    // ride alongside them.
+    assert_eq!(
+        reduced_record(&format!("{record} title=secret xid=9 payload=1")),
+        Some(record.into())
+    );
+
+    // The owner timing record pairs with it and already survives on suffixes;
+    // pinned here so the pair stays readable together.
+    let timing = "sophia_live_owner_timing schema=2 status=complete max_child_reap_msec=3 max_input_phase_msec=14";
+    assert_eq!(reduced_record(timing), Some(timing.into()));
+}

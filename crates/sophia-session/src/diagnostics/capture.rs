@@ -442,6 +442,24 @@ pub fn reduced_record(line: &str) -> Option<String> {
                     | "restarts"
                     | "devices"
                     | "keyboards"
+                    // Owner-loop scheduling counters. Tallies of the loop's own
+                    // turns -- how often composition was deferred, how often it
+                    // repainted, how many authority batches merged -- with no
+                    // client, surface or application content in them.
+                    //
+                    // They were dropped for ending in no recognised suffix,
+                    // which left the scheduler record carrying only its frame
+                    // interval. A session could then say it paced at 8.3ms and
+                    // not whether it ever hit that cadence, so a halving under
+                    // input load could be measured from outside and not
+                    // attributed from within.
+                    | "authority_batches"
+                    | "cpu_compositions"
+                    | "coalesced_batches"
+                    | "cadence_deferred_batches"
+                    | "cadence_repaints"
+                    | "merged_batches"
+                    | "max_merge_run"
             );
         let numeric = measurement && !value.is_empty() && value.bytes().all(|c| c.is_ascii_digit());
         let digest = (key == "digest" || key.ends_with("sha256"))
