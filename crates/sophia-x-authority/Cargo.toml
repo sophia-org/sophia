@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+miniz_oxide.workspace = true
 rustix = { version = "1.1", default-features = false, features = ["event", "fs", "net", "std", "time"] }
 sophia-input-authority = { path = "../sophia-input-authority" }
 sophia-portal = { path = "../sophia-portal" }

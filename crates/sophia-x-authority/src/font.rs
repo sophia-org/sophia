@@ -21,9 +21,13 @@ pub const X_FIXED_6X13_CANONICAL_NAME: &str =
 pub const X_FIXED_6X13_UNICODE_NAME: &str =
     "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1";
 
+pub mod builtin;
+pub mod catalog;
+pub mod directory;
 mod fixed_6x13;
 pub mod metrics;
 pub mod pcf;
+pub mod xlfd;
 
 use fixed_6x13::X_FIXED_6X13_GLYPHS;
 
