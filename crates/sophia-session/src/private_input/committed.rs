@@ -196,7 +196,7 @@ impl PrivateInputHandle {
         // a second copy of itself here.
         let room = PRIVATE_INPUT_BRIDGE_BOUND.saturating_sub(bridge.intake.len());
         if room > 0 {
-            let batches = self.drain_transactions_limited(within, room);
+            let batches = self.try_drain_transactions_limited(within, room)?;
             report.batches_observed = batches.len();
             bridge.intake.extend(batches);
         }
@@ -356,6 +356,7 @@ fn commit_batch(
     live: &[PrivateAdmittedConnection],
     report: &mut PrivateInputCommitted,
 ) -> Vec<PrivateInputDecision> {
+    let previously_mapped = mapped.clone();
     // THE LEDGER IS UPDATED FROM THIS BATCH BEFORE THIS BATCH IS ROUTED, and
     // only from facts the batch actually carries. A batch with no presentation
     // observations says nothing about mapping and therefore changes nothing,
@@ -462,6 +463,30 @@ fn commit_batch(
         }
         if commit.outcome != TransactionOutcome::Committed {
             continue;
+        }
+        // A client may draw before mapping, or remap pixels already committed
+        // before its withdrawal. The map edge authorizes those existing
+        // pixels; it must not require another draw or recommit the old batch.
+        for surface in mapped.difference(&previously_mapped) {
+            if commit.applied_surfaces.contains(surface) {
+                continue;
+            }
+            let Some(committed_transaction) = generations.committed_transaction(*surface) else {
+                continue;
+            };
+            let Some(state) = assembly
+                .committed_surfaces()
+                .iter()
+                .find(|state| state.surface == *surface)
+            else {
+                continue;
+            };
+            decisions.push(PrivateInputDecision {
+                committed_transaction,
+                surface: *surface,
+                geometry: Some(state.geometry),
+                withdrawal: false,
+            });
         }
         // REMOVALS TRAVEL SEPARATELY. A removal-only batch applies no
         // surface, so a withdrawal read out of `applied_surfaces` would

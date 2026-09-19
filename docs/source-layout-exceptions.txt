@@ -40,3 +40,6 @@ inline-tests crates/sophia-runtime/src/shell_transport/native_launcher/control/a
 # External private Session custody and generation controls; rationale in the style guide.
 inline-tests crates/sophia-session/src/private_input.rs
 inline-tests crates/sophia-session/src/private_input/committed/generations.rs
+inline-tests crates/sophia-session/src/private_input/service.rs
+inline-tests crates/sophia-session/src/private_input/lifetime.rs
+inline-tests crates/sophia-session/src/private_input/faults.rs

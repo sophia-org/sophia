@@ -313,6 +313,22 @@ pub struct PrivateInputOutcome {
     pub interrupted: bool,
     /// What became of the serving thread itself, apart from its workers.
     pub service_thread: PrivateInputThreadJoin,
+    /// Whether the slot holding the serving thread's join handle was poisoned.
+    ///
+    /// REPORTED BESIDE THE JOIN, NEVER INSTEAD OF IT. The slot is recovered
+    /// rather than given up on, so the join above is what actually happened;
+    /// this says only that some thread panicked while holding the slot. An
+    /// earlier version let the poisoning stand in for the answer, reporting a
+    /// thread that was never started while its handle was still stored.
+    pub join_slot_poisoned: bool,
+    /// Whether the slot holding the service command sender was poisoned.
+    ///
+    /// REPORTED, AND RECOVERED FROM RATHER THAN REFUSED. A stop that could not
+    /// read this slot would send no stop command at all, while the service's
+    /// receiver stayed connected -- so the service would never end and the
+    /// wait for it would never return. The sender is taken back and used; this
+    /// says only that some thread panicked while holding the slot.
+    pub command_slot_poisoned: bool,
     /// What the durable owner still holds after collection. Not a bare count:
     /// collecting every actor says nothing about whether anything is owed, and
     /// a store that could not be read says less still.
@@ -337,6 +353,15 @@ pub struct PrivateInputOutcome {
     /// the same reason it does above: a failure to look is not a finding of
     /// nothing.
     pub receipts_unobserved: Option<usize>,
+    /// Observed transaction batches that reached this service and were never
+    /// committed.
+    ///
+    /// TAKEN INTO CUSTODY AT SHUTDOWN, NOT PROCESSED. Committing them as the
+    /// service ends would be doing work on behalf of an order that has
+    /// stopped; dropping them would lose observations the frontend had already
+    /// made. They are moved to owned intake and counted. `None` is unreadable,
+    /// which is not none owed.
+    pub intake_uncommitted: Option<usize>,
 }
 
 impl core::fmt::Debug for PrivateInputOutcome {
@@ -350,12 +375,15 @@ impl core::fmt::Debug for PrivateInputOutcome {
             .field("execution", &self.execution)
             .field("execution_at_close", &self.execution_at_close)
             .field("service_thread", &self.service_thread)
+            .field("join_slot_poisoned", &self.join_slot_poisoned)
+            .field("command_slot_poisoned", &self.command_slot_poisoned)
             .field("maintenance", &self.maintenance)
             .field("visits", &self.visits)
             .field("interrupted", &self.interrupted)
             .field("settlement", &self.settlement)
             .field("bridge_undelivered", &self.bridge_undelivered)
             .field("receipts_unobserved", &self.receipts_unobserved)
+            .field("intake_uncommitted", &self.intake_uncommitted)
             .field("retains_obligations", &self.retains_obligations())
             .finish()
     }
@@ -385,7 +413,8 @@ impl PrivateInputOutcome {
             // Unreadable retains, for the same reason an unreadable
             // settlement does: nothing has been shown to be finished.
             || self.bridge_undelivered.is_none_or(|owed| owed > 0)
-            || self.receipts_unobserved.is_none_or(|owed| owed > 0);
+            || self.receipts_unobserved.is_none_or(|owed| owed > 0)
+            || self.intake_uncommitted.is_none_or(|owed| owed > 0);
         if !outstanding {
             // FINISHED CLEAN, SO THE CLAIM GOES BACK. Nothing is retained, so
             // there is nothing to dispose of; the lifetime becomes usable
@@ -841,19 +870,37 @@ impl PrivateInputHandle {
         within: Duration,
         limit: usize,
     ) -> Vec<XAuthorityObservedTransactionBatch> {
+        self.try_drain_transactions_limited(within, limit)
+            .unwrap_or_default()
+    }
+
+    /// Take at most `limit` batches, or say the channel could not be read.
+    ///
+    /// UNREADABLE IS NOT AN EMPTY CHANNEL. The infallible form above answers
+    /// both with an empty list, so a caller driving commits treats a poisoned
+    /// receiver exactly as it treats a quiet one: it reports a step that
+    /// observed nothing and moves on, while intake it can no longer reach
+    /// accumulates behind the lock. A caller that must not do that uses this.
+    pub(super) fn try_drain_transactions_limited(
+        &self,
+        within: Duration,
+        limit: usize,
+    ) -> Result<Vec<XAuthorityObservedTransactionBatch>, PrivateInputUnavailable> {
         let limit = limit.min(PRIVATE_INPUT_DRAIN_BOUND);
         if limit == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        let Ok(held) = self.runtime.transactions.lock() else {
-            return Vec::new();
-        };
+        let held = self
+            .runtime
+            .transactions
+            .lock()
+            .map_err(|_| PrivateInputUnavailable)?;
         let mut taken = Vec::new();
         if let Ok(first) = held.recv_timeout(within) {
             taken.push(first);
         }
         taken.extend(held.try_iter().take(limit - taken.len()));
-        taken
+        Ok(taken)
     }
 
     pub fn submit_action(

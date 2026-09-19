@@ -20,6 +20,7 @@ mod admission;
 mod committed;
 mod config;
 mod control;
+mod faults;
 mod handle;
 mod lifetime;
 mod service;
@@ -38,6 +39,10 @@ pub use handle::{
     PrivateInputStatus, PrivateInputThreadJoin, PrivateInputTopologyRefusal,
     PrivateInputUnavailable, PrivateInputWaitExpired,
 };
+#[cfg(test)]
+#[path = "../tests/support/private_input_faults.rs"]
+mod tests_faults;
+
 #[cfg(test)]
 #[path = "../tests/support/private_input_session.rs"]
 mod tests;

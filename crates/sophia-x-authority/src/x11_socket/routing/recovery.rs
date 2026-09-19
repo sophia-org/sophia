@@ -401,6 +401,20 @@ impl InputRecovery {
             .map(|entry| entry.ticket)
     }
 
+    /// The terminal answer published for this delivery, if there is one.
+    ///
+    /// READS, AND CHANGES NOTHING. A consumer needs to be able to see that a
+    /// delivery has settled without taking the receipt off the channel, because
+    /// taking it is what a consumer does *after* deciding to, and a wait that
+    /// consumed its own evidence could not then be followed by the drain it was
+    /// waiting for. This does not observe, so it frees no place.
+    fn settled(
+        &self,
+        id: XAuthorityInputDeliveryId,
+    ) -> Option<XAuthorityClientInputDelivery> {
+        self.state.lock().ok()?.tickets.get(&id)?.terminal
+    }
+
     // Cancellation before resolution leaves a bounded tombstone until the
     // frontend consumes the ingress/frozen entry. It cannot resurrect later.
     fn begin_routing(&self, id: Option<XAuthorityInputDeliveryId>) -> bool {

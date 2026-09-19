@@ -375,6 +375,9 @@ fn committed_routing() {
         drop((peer, submission));
         evidence.collect(instance.finish(), false);
     }
+    for order in [Order::Little, Order::Big] {
+        evidence.collect(support::lifecycle::exercise(order), false);
+    }
     evidence.emit(
         "committed_routing",
         &[

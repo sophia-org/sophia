@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use sophia_engine::AuthorityTransactionIntake;
 use sophia_protocol::{
-    ClientAdmissionId, CommittedSurfaceState, SurfaceId, TransactionCommit, TransactionOutcome,
+    ClientAdmissionId, CommittedSurfaceState, SurfaceId, TransactionCommit, TransactionId,
+    TransactionOutcome,
 };
 use sophia_x_authority::{PrivateAdmittedConnection, XAuthorityObservedTransactionBatch};
 
@@ -13,6 +14,7 @@ struct SourceGeneration {
     admission: ClientAdmissionId,
     previous: u64,
     removed: bool,
+    committed: Option<TransactionId>,
 }
 
 #[derive(Default)]
@@ -21,6 +23,13 @@ pub(super) struct GenerationLedger {
 }
 
 impl GenerationLedger {
+    pub(super) fn committed_transaction(&self, surface: SurfaceId) -> Option<TransactionId> {
+        self.sources
+            .get(&surface)
+            .filter(|source| !source.removed)
+            .and_then(|source| source.committed)
+    }
+
     pub(super) fn prepare(
         &self,
         batch: &XAuthorityObservedTransactionBatch,
@@ -94,12 +103,21 @@ impl GenerationLedger {
                 .find(|route| route.surface == transaction.surface)
                 .and_then(|route| route.admission)
             {
+                let committed = if commits.iter().any(|commit| {
+                    commit.outcome == TransactionOutcome::Committed
+                        && commit.applied_surfaces.contains(&transaction.surface)
+                }) {
+                    Some(batch.transaction)
+                } else {
+                    self.committed_transaction(transaction.surface)
+                };
                 self.sources.insert(
                     transaction.surface,
                     SourceGeneration {
                         admission: admission.client_id,
                         previous: transaction.previous_committed_generation,
                         removed: false,
+                        committed,
                     },
                 );
             }

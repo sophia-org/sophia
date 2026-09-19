@@ -194,6 +194,12 @@ and `tests/support/private_input_generations.rs` to inspect exact retained custo
 poison ownership locks, and prepare a candidate before a competing Engine commit.
 Those intervals are unavailable through the public controller. Their two mounts
 are recorded individually; the public socket acceptance tests remain separate.
+The private input service, lifetime constructor and fault carrier also contain
+test-only wiring for that external fixture. It drops the real command sender or
+installs a thread-local subscriber around the serving call; the subscriber body
+lives in `tests/support/private_input_faults.rs`. The release carrier is empty
+and no public configuration can request a fault. These exact wiring paths are
+listed individually because the layout checker also flags `cfg(test)` glue.
 
 ## TEA Policy Style
 

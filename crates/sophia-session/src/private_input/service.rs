@@ -102,6 +102,15 @@ pub(super) struct PrivateInputRuntime {
     /// place only when the delivery is observed. Holding it here is what lets
     /// a later drain try again.
     pub(super) retained_receipts: Mutex<std::collections::VecDeque<XAuthorityClientInputDelivery>>,
+    /// Observed batches taken off the transaction channel at shutdown and
+    /// never committed.
+    ///
+    /// A HOME FOR INTAKE NOBODY WILL PROCESS. The frontend observed these and
+    /// handed them over; the order has since stopped, so committing them now
+    /// would be acting for a service that has ended, and dropping them would
+    /// lose observations that were already made. They are kept here so a stop
+    /// can say they are owed.
+    pub(super) retained_intake: Mutex<Vec<XAuthorityObservedTransactionBatch>>,
     pub(super) access: PrivateProducerAccess,
     pub(super) registry: Arc<Mutex<NamespaceRegistry>>,
     pub(super) admitted: Arc<Mutex<BTreeMap<ClientAdmissionId, PrivateInputAdmissionRecord>>>,
@@ -175,7 +184,13 @@ impl PrivateInputRuntime {
     pub(super) fn start(
         config: PrivateInputConfig,
         closing: std::sync::Weak<super::lifetime::PrivateInputClosingSlot>,
+        faults: super::faults::PrivateInputFaults,
     ) -> Result<Self, PrivateInputRefusal> {
+        // THE CARRIER IS EMPTY OUTSIDE TEST BUILDS, so nothing reads it there.
+        // It stays a named parameter rather than an underscored one because it
+        // is a real parameter in the builds that have faults at all.
+        #[cfg(not(test))]
+        let _ = &faults;
         let PrivateInputConfig {
             socket_path,
             namespace,
@@ -407,7 +422,23 @@ impl PrivateInputRuntime {
                 // Marking it before the call would report a socket nothing is
                 // listening on yet.
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    private.serve_until_stopped(&thread_owner.lease(), &mut keeper, binding)
+                    let serve =
+                        || private.serve_until_stopped(&thread_owner.lease(), &mut keeper, binding);
+                    // THE FAULT WRAPS ONLY THIS CALL, AND ONLY IN TEST BUILDS.
+                    // An unwind raised after serve returns passes through
+                    // nothing: the collection guard has already run by then.
+                    // Acting on an event the serving thread genuinely emits
+                    // while that guard is live is what makes this an unwind in
+                    // the place a real one would happen.
+                    #[cfg(test)]
+                    if let Some(fault) = faults.unwind.clone() {
+                        fault.record_serving_thread();
+                        return tracing::subscriber::with_default(
+                            super::faults::PrivateInputUnwindSubscriber::over(fault),
+                            serve,
+                        );
+                    }
+                    serve()
                 }));
 
                 let mut report = ServiceClosed {
@@ -510,6 +541,7 @@ impl PrivateInputRuntime {
             participant,
             observer,
             retained_receipts: Mutex::new(std::collections::VecDeque::new()),
+            retained_intake: Mutex::new(Vec::new()),
             access,
             registry,
             admitted,
@@ -615,8 +647,37 @@ impl PrivateInputRuntime {
     }
 
     /// A sender for the service command channel, if this still holds one.
+    ///
+    /// REFUSES ON POISON, which is right for ordinary use: a caller that wants
+    /// to ask the service something can be told the slot is unreadable and
+    /// give up. Shutdown cannot, which is why it uses the recovering reader
+    /// below instead.
+    ///
+    /// cfg(test) because nothing in production asks the service anything yet.
+    /// It is the ordinary reader rather than a test helper, and loses the
+    /// gate the moment a production caller wants one.
+    #[cfg(test)]
     pub(super) fn command_sender(&self) -> Option<SyncSender<XServerFrontendServiceCommand>> {
         self.commands.lock().ok().and_then(|held| held.clone())
+    }
+
+    /// A sender for shutdown, recovered from a poisoned slot.
+    ///
+    /// RECOVERED BECAUSE THE ALTERNATIVE IS A DEADLOCK, not merely a worse
+    /// report. Reading this slot with `.ok()` returned `None` on poison while
+    /// the real sender stayed stored, so the stop sent no StopAndDisconnect --
+    /// and the service's receiver was still connected, so it never ended and
+    /// the wait on the closed channel never returned. The slot holds an
+    /// `Option<SyncSender>` and nothing else, so taking it back after another
+    /// thread panicked is safe, and the poisoning is reported rather than
+    /// standing in for an answer about the service.
+    fn command_sender_for_shutdown(
+        &self,
+    ) -> (Option<SyncSender<XServerFrontendServiceCommand>>, bool) {
+        match self.commands.lock() {
+            Ok(held) => (held.clone(), false),
+            Err(poisoned) => (poisoned.into_inner().clone(), true),
+        }
     }
 
     /// Give up every command sender this service has.
@@ -644,15 +705,33 @@ impl PrivateInputRuntime {
         // service has already seen its receiver disconnect and stopped itself,
         // and there is nothing to ask it. The collection below is the same
         // either way.
-        if let Some(sender) = self.command_sender() {
+        let (sender, command_slot_poisoned) = self.command_sender_for_shutdown();
+        if let Some(sender) = sender {
             let _ = sender.send(XServerFrontendServiceCommand::StopAndDisconnect);
         }
         let closed = self.closed.lock().ok().and_then(|held| held.recv().ok());
-        let service_thread = match self.thread.lock().ok().and_then(|mut held| held.take()) {
+        // RECOVERED, NOT ABANDONED. An earlier version read this slot with
+        // `.ok()`, so a poisoned mutex produced `None` and the stop reported
+        // `NeverStarted` -- while the real join handle was still sitting in the
+        // slot. That is the worst of both: a run that says no thread was ever
+        // started, and an actor left for a later drop to detach unjoined.
+        //
+        // The slot holds an `Option<JoinHandle>` and nothing else, so it is
+        // always one of its own values and taking it back after a panic is
+        // safe. The poisoning is a fact about some other thread, not a reason
+        // to lose this one, and it is reported beside the join rather than
+        // standing in for it.
+        let (taken, join_slot_poisoned) = match self.thread.lock() {
+            Ok(mut held) => (held.take(), false),
+            Err(poisoned) => (poisoned.into_inner().take(), true),
+        };
+        let service_thread = match taken {
             Some(handle) => match handle.join() {
                 Ok(()) => PrivateInputThreadJoin::Joined,
                 Err(payload) => PrivateInputThreadJoin::Panicked(describe_panic(&payload)),
             },
+            // NOW TRUSTWORTHY, because the slot was actually read. Before this
+            // it was also what an unreadable slot looked like.
             None => PrivateInputThreadJoin::NeverStarted,
         };
         // AFTER THE JOIN, AND ONLY AFTER IT. The thread has ended, so the
@@ -684,6 +763,19 @@ impl PrivateInputRuntime {
         // finite queue that nothing will add to. Taking all of it is what makes
         // the number the whole number, and counting by draining-and-discarding
         // would destroy the very receipts it was counting.
+        // INTAKE THE ORDER NEVER COMMITTED. The bridge counts what it holds,
+        // but observations can still be queued on the transaction channel that
+        // the bridge never took; a stop that counted only the bridge would
+        // report those as nothing owed. They are moved into owned intake
+        // rather than committed: the service has ended, and committing on its
+        // behalf now would be doing work for an order that has stopped.
+        let intake_uncommitted = match (self.retained_intake.lock(), self.transactions.lock()) {
+            (Ok(mut retained), Ok(held)) => {
+                retained.extend(held.try_iter());
+                Some(retained.len())
+            }
+            _ => None,
+        };
         let receipts_unobserved = match (self.retained_receipts.lock(), self.deliveries.lock()) {
             (Ok(mut retained), Ok(held)) => {
                 retained.extend(held.try_iter());
@@ -693,9 +785,12 @@ impl PrivateInputRuntime {
         };
         let mut outcome = PrivateInputOutcome {
             service_thread,
+            join_slot_poisoned,
+            command_slot_poisoned,
             settlement,
             bridge_undelivered,
             receipts_unobserved,
+            intake_uncommitted,
             ..PrivateInputOutcome::default()
         };
         if let Some(closed) = closed {

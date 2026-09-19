@@ -188,3 +188,39 @@ fn engine_still_rejects_an_overtaken_prepared_candidate() {
         BufferSource::CpuBuffer { handle: 11 }
     );
 }
+
+#[test]
+fn a_rejected_update_does_not_replace_the_committed_mapping_source() {
+    let engine = HeadlessEngine::default();
+    let mut ledger = GenerationLedger::default();
+    let mut committed = Vec::new();
+    let first = batch(10, 1);
+    let commit = ledger
+        .prepare(&first, &committed, &live())
+        .unwrap()
+        .commit(&engine, &mut committed);
+    ledger.record(&first, &[commit]);
+    let surface = first.transactions[0].surface;
+    assert_eq!(
+        ledger.committed_transaction(surface),
+        Some(first.transaction)
+    );
+
+    let mut failed = batch(11, 2);
+    failed.transactions[0].readiness = SurfaceTransactionReadiness::Failed;
+    let commit = ledger
+        .prepare(&failed, &committed, &live())
+        .unwrap()
+        .commit(&engine, &mut committed);
+    assert_eq!(commit.outcome, TransactionOutcome::RejectedStaleSurface);
+    ledger.record(&failed, &[commit]);
+    assert_eq!(
+        ledger.committed_transaction(surface),
+        Some(first.transaction)
+    );
+    assert!(ledger.prepare(&failed, &committed, &live()).is_err());
+    assert_eq!(
+        committed[0].buffer(),
+        BufferSource::CpuBuffer { handle: 10 }
+    );
+}

@@ -72,6 +72,19 @@ impl PrivateDeliveryObserver {
     pub fn observe(&self, receipt: XAuthorityClientInputDelivery) -> PrivateDeliveryObservation {
         self.recovery.observe_typed(receipt)
     }
+
+    /// The terminal answer the ledger holds for this delivery, if any.
+    ///
+    /// A WITNESS, NOT A CONSUMPTION. It reads the ledger and frees nothing, so
+    /// a caller can establish that its own delivery has settled without taking
+    /// the receipt off the channel -- which is the only way to wait for a
+    /// delivery and then still be able to test what draining does.
+    pub fn settled(
+        &self,
+        delivery: XAuthorityInputDeliveryId,
+    ) -> Option<XAuthorityClientInputDelivery> {
+        self.recovery.settled(delivery)
+    }
 }
 
 #[cfg(unix)]

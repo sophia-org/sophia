@@ -130,6 +130,13 @@ impl Peer {
     }
 
     pub fn create_map_and_draw(&mut self) -> u32 {
+        let window = self.create_unmapped();
+        self.map(window);
+        self.draw(window);
+        window
+    }
+
+    pub fn create_unmapped(&mut self) -> u32 {
         let window = self.base | 1;
         let gc = self.base | 2;
         let mut create = Vec::new();
@@ -150,7 +157,19 @@ impl Peer {
             create_gc.extend(self.order.u32(value));
         }
         self.request(55, 0, &create_gc);
+        window
+    }
+
+    pub fn map(&mut self, window: u32) {
         self.request(8, 0, &self.order.u32(window));
+    }
+
+    pub fn unmap(&mut self, window: u32) {
+        self.request(10, 0, &self.order.u32(window));
+    }
+
+    pub fn draw(&mut self, window: u32) {
+        let gc = self.base | 2;
         let mut rectangle = Vec::new();
         rectangle.extend(self.order.u32(window));
         rectangle.extend(self.order.u32(gc));
@@ -158,7 +177,6 @@ impl Peer {
             rectangle.extend(self.order.u16(value));
         }
         self.request(70, 0, &rectangle);
-        window
     }
 
     fn request(&mut self, opcode: u8, detail: u8, payload: &[u8]) {

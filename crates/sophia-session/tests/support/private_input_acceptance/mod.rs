@@ -1,4 +1,5 @@
 //! Independent wire expectations; no X-authority encoder or private fixture.
+pub mod lifecycle;
 mod wire;
 pub use wire::{Order, Peer};
 

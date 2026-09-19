@@ -139,6 +139,36 @@ impl PrivateInputLifetimeOwner {
         &self,
         config: super::PrivateInputConfig,
     ) -> Result<PrivateInputHandle, PrivateInputRefusal> {
+        self.start_with_faults(config, super::faults::PrivateInputFaults::default())
+    }
+
+    /// Stand a service up with test-only faults armed against it.
+    ///
+    /// cfg(test) ONLY. There is no release path that reaches a fault, and the
+    /// carrier is an empty struct outside test builds.
+    #[cfg(test)]
+    pub(super) fn start_with_faults(
+        &self,
+        config: super::PrivateInputConfig,
+        faults: super::faults::PrivateInputFaults,
+    ) -> Result<PrivateInputHandle, PrivateInputRefusal> {
+        self.start_checked(config, faults)
+    }
+
+    #[cfg(not(test))]
+    fn start_with_faults(
+        &self,
+        config: super::PrivateInputConfig,
+        faults: super::faults::PrivateInputFaults,
+    ) -> Result<PrivateInputHandle, PrivateInputRefusal> {
+        self.start_checked(config, faults)
+    }
+
+    fn start_checked(
+        &self,
+        config: super::PrivateInputConfig,
+        faults: super::faults::PrivateInputFaults,
+    ) -> Result<PrivateInputHandle, PrivateInputRefusal> {
         {
             let mut state = self
                 .closing
@@ -155,7 +185,7 @@ impl PrivateInputLifetimeOwner {
                 }
             }
         }
-        match PrivateInputRuntime::start(config, Arc::downgrade(&self.closing)) {
+        match PrivateInputRuntime::start(config, Arc::downgrade(&self.closing), faults) {
             Ok(runtime) => Ok(PrivateInputHandle {
                 runtime: Arc::new(runtime),
             }),

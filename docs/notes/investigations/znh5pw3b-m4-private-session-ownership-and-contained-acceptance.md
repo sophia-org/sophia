@@ -36,6 +36,9 @@ run. Completed evidence directories are retained under their original names.
 | `30035134` | `m4-c0acc0f2-source/.artifacts/harness-30035134` | Ten runner controls passed, including kernel namespace and delegated-descriptor checks. Acceptance remained `NOT_RUN`, 0/8. |
 | `652208c4` | `m4-c0acc0f2-source/.artifacts/acceptance-652208c4` | Six groups passed together with no failed rows: construction, authorization, connection identity, containment, no ambient fallback and evidence integrity. Commit routing and lifetime were unbound; the aggregate remained `NOT_RUN`. Source was attested inside containment and unchanged afterward. |
 | `34fac795` | `m4-c0acc0f2-source/.artifacts/acceptance-34fac795` | The same six groups passed. The newly bound commit-routing control failed waiting for a committed admission; lifetime remained unbound. The aggregate is `FAIL`, with the exact source attested and unchanged. |
+| `f9794062` | `m4-c0acc0f2-source/.artifacts/generations-f9794062` | Five generation controls passed through the contained Session component target. These use supplied authority batches and the real Engine commit owner; acceptance remained `NOT_RUN`. |
+| `f9794062` | `m4-c0acc0f2-source/.artifacts/acceptance-f9794062` | Six groups passed; routing reached a real Engine commit and submitted admission, then failed the exact Delivered ACK assertion. Lifetime remained unbound. Aggregate `FAIL`; source attested and unchanged. |
+| `f9794062` | `m4-c0acc0f2-source/.artifacts/harness-f9794062` | Twenty-five harness controls passed, including exact Session-library selection and refusal of mixed targets or the acceptance-row alias. The target was reused only for this identical source. Acceptance remained `NOT_RUN`. |
 
 ## Findings
 
@@ -73,6 +76,40 @@ map for an earlier effect or inferring mapping from Engine snapshot presence.
 The next wire fixture also waits for a real GetGeometry reply and preserves
 nonempty commit reports, distinguishing malformed requests from a missing join.
 
+The real core drawing request then exposed different generation domains. X
+starts its drawing generation at one; Engine starts an uncommitted surface at
+zero. `PolyFillRectangle` supplies no predecessor for the client to correct.
+Session now checks the source admission, incarnation and generation, and prepares
+each new FIFO candidate against the actual Engine predecessor. It records an
+attempted source even when Engine rejects it, so the same failed candidate
+cannot be prepared again against newer state. The five component controls also
+cover duplicate source updates, stale admissions, removals and an overtaken
+prepared candidate. They do not replace the wire acceptance row.
+
+The `f9794062` wire run passed that commit boundary and failed later, at the
+admission ACK. Source inspection found that Session had not enabled deferred
+policy mapping: MapWindow mapped immediately, but AdmitSurface requires a
+pending unmapped window. That configuration repair and more precise ACK
+diagnostics are prepared; the failed run does not validate them. Further controls
+cover drawing before map, subsequent updates, withdrawal and remapping already
+committed pixels without recommitting the old candidate.
+
+**Receipt custody.** The public receipt channel uses existing bounded recovery
+tickets. Internal completion does not consume the public receipt; a ticket can
+be pruned only after routing finishes and the consumer observes that exact
+receipt. Session previously drained receipts without making that observation,
+which could permanently exhaust the ticket bound. The narrow observer and
+retaining drain are under review. “Observed” must not itself claim that capacity
+has returned. Poison must preserve popped receipts, and inventory must disclose
+any uncounted tail. Fill/drain/refill remains a required behavioral control.
+
+**Outer lifetime.** A runtime retained only by a returned outcome still disappears
+when the controller drops that report. The prepared outer owner reserves a slot
+before startup. Review caught a Drop path that stopped but omitted transfer to
+that slot, and a poisoned join-slot read that could report NeverStarted while
+still holding a real join handle. The fixes and exit controls remain unaccepted
+until contained execution proves collection and retained ownership separately.
+
 **Collection and observation.** Readiness must come from the prepared service's
 port, and status reads must not drive recovery. An unwind needs its actual
 custody evidence; an empty worker list cannot substitute for a report that was
@@ -95,7 +132,27 @@ missing bridge/config/outcome fields. A Clippy result against a working tree
 cannot qualify an incomplete signed checkpoint. The failure remains distinct
 from the preceding successful five-row build.
 
+Commit `7178e027` accidentally included the coordinator's generation work in
+progress through broad staging. No source was lost or reverted; `f9794062`
+continued it with focused controls. Its inclusion in another owner's commit was
+not independent review or validation. Subsequent checkpoints stage explicit
+individual paths, with API changes and their callers frozen together.
+
 ## Acceptance boundary
+
+The exact signed `2747942f` run reached **7/8 PASS, zero FAIL**, aggregate
+`NOT_RUN`; only lifetime remains unbound. Source attestation and the final
+unchanged-source check both passed. Evidence is
+`.artifacts/m4-c0acc0f2-source/.artifacts/acceptance-2747942f/report.json` in the
+root checkout. Committed routing passed all five subcases in both byte orders,
+with four actors started and collected and none pending. This establishes the
+generation handoff and deferred-map repair on that source. Later lifecycle and
+receipt fixtures remain separate work; known weak receipt controls in this
+checkpoint are not evidence for receipt accounting.
+The static layout gate on `2747942f` failed because its test-only command-loss
+helper in `private_input/service.rs` lacked the required exact-path entry.
+The next checkpoint records that wiring and the external unwind fixture's
+carriers with their rationale; the failed result remains a failure.
 
 M4 has eight required groups. The evidence-integrity group checks deliberate
 changes to a preceding real Session result and its actual executable identities;
