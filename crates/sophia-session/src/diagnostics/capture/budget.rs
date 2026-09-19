@@ -45,22 +45,43 @@ pub(super) struct SegmentBudget {
     suppressed: std::collections::BTreeMap<String, u64>,
 }
 
+/// What the budget decided about one entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Admission {
+    Written,
+    Suppressed,
+    /// The first record this name has lost in this segment.
+    ///
+    /// Distinguished so a truncated kind is reported when the truncation
+    /// starts, not only when the segment closes. Most sessions never fill a
+    /// segment and so never rotate: an onscreen client at a hundred and
+    /// eighteen frames a second spends this share in half a minute, and a
+    /// rotation-only account would leave the busiest kind silently cut for the
+    /// rest of the session with nothing but a total to say so.
+    SuppressedFirst,
+}
+
 impl SegmentBudget {
     /// Whether this entry may be written, charging it when it may.
-    pub(super) fn admit(&mut self, name: &str, len: u64) -> bool {
+    pub(super) fn admit(&mut self, name: &str, len: u64) -> Admission {
         if let Some(spent) = self.bytes.get_mut(name) {
             if *spent >= NAME_SEGMENT_SHARE {
                 let suppressed = self.suppressed.entry(name.to_owned()).or_default();
+                let first = *suppressed == 0;
                 *suppressed = suppressed.saturating_add(1);
-                return false;
+                return if first {
+                    Admission::SuppressedFirst
+                } else {
+                    Admission::Suppressed
+                };
             }
             *spent = spent.saturating_add(len);
-            return true;
+            return Admission::Written;
         }
         if self.bytes.len() < BUDGET_NAMES {
             self.bytes.insert(name.to_owned(), len);
         }
-        true
+        Admission::Written
     }
 
     /// The names suppressed in the segment just closed, and how many records

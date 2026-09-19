@@ -252,8 +252,14 @@ recorded session. Storage keeps four event segments of at most 15 MiB each,
 with separate bounded identity and marker journals. Within a segment, one
 record name may write at most a quarter of it; beyond that its records are
 suppressed so a single high-volume kind cannot rotate every other kind out of
-the history. A segment that closed with suppressed names begins the next one
-with a `sophia_session_record_budget` record per name and the count it lost.
+the history. The first record a name loses is reported where it happens, as a
+`sophia_session_record_budget schema=1 status=share_spent` record naming the
+kind, so a gap is visible in the segment it opens in rather than only in a
+total. A segment that closed with suppressed names begins the next one with a
+`status=suppressed` record per name and the count it lost. A busy client
+reaches its share in well under a minute, which is the bound working: the
+dominant kind is truncated so the segment keeps far more history of every
+other kind.
 Ordinary session volume is far below the share, and the identity journal is
 never suppressed. Automatic history retains
 at most twenty finished sessions within a 1 GiB budget, reserving space for the

@@ -14,7 +14,7 @@ use super::{METADATA_LIMIT, SEGMENT_LIMIT, SEGMENTS, Stamp};
 
 mod budget;
 
-use budget::{NAME_SEGMENT_SHARE, SegmentBudget, budget_name};
+use budget::{Admission, NAME_SEGMENT_SHARE, SegmentBudget, budget_name};
 
 const QUEUE_CAPACITY: usize = 256;
 pub const DIAGNOSTIC_RECORD_MAX_BYTES: usize = 4096;
@@ -329,8 +329,29 @@ fn append_event(
         }
     }
     *sequence = sequence.saturating_add(1);
-    if !budget.admit(budget_name(line), entry.len() as u64) {
-        return Ok(entry);
+    let name = budget_name(line);
+    match budget.admit(name, entry.len() as u64) {
+        Admission::Written => {}
+        Admission::Suppressed => return Ok(entry),
+        Admission::SuppressedFirst => {
+            // Said where the cut begins, so the gap in a kind is visible in
+            // the segment it happens in rather than inferable only from the
+            // health total. The count follows at rotation.
+            *sequence = sequence.saturating_add(1);
+            let notice = Stamp::now();
+            let mut file = directory.file(
+                "events.0.log",
+                OFlags::WRONLY | OFlags::CREATE | OFlags::APPEND,
+            )?;
+            file.write_all(
+                format!(
+                    "{sequence}\t{}\t{}\tsophia_session_record_budget schema=1 status=share_spent name={name} share_bytes={NAME_SEGMENT_SHARE}\n",
+                    notice.utc_msec, notice.boot_msec,
+                )
+                .as_bytes(),
+            )?;
+            return Ok(entry);
+        }
     }
     let mut file = directory.file(
         "events.0.log",

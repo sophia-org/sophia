@@ -123,10 +123,20 @@ surface returned to a head.
 `NAME_SEGMENT_SHARE` is a quarter of the 15 MiB segment, tracked per name on
 the capture worker and reset at rotation
 (`diagnostics/capture/budget.rs`). Two flooding kinds therefore leave half a
-segment for everything else. A segment that closes with names it had to refuse
-writes one `sophia_session_record_budget schema=1` record per name at the head
-of the next one, and the health record carries a `suppressed=` total, so a
-bounded log cannot be mistaken for a quiet session.
+segment for everything else. The first record a name loses is reported where it
+happens as a `sophia_session_record_budget schema=1 status=share_spent`
+record; a segment that closes with refused names records the counts at the head
+of the next one; and the health record carries a `suppressed=` total. A bounded
+log cannot be mistaken for a quiet session.
+
+The rotation-only account was not enough, which the confirmation run showed:
+`sophia_x_present_delivery` spent its share in about half a minute of onscreen
+`glxgears` -- eight records per presented frame at 118 frames a second -- and
+the session then suppressed 58,376 further records without ever rotating, so no
+per-name record was ever written and only the health total said anything. The
+share itself is left as it is. A segment holds about two minutes of that
+workload whatever the policy, so truncating the dominant kind is what buys the
+other kinds their history; what was wrong was doing it quietly.
 
 The reference is not what was copied. Xorg queues an offscreen window's Present
 on a fake vblank timer that runs at **1 Hz**

@@ -8,7 +8,9 @@
 //! so a burst small enough to fit is untouched and a flood is cut where it
 //! would otherwise take the whole segment.
 
-use super::{BUDGET_NAMES, NAME_SEGMENT_SHARE, SEGMENT_LIMIT, SegmentBudget, budget_name};
+use super::{
+    Admission, BUDGET_NAMES, NAME_SEGMENT_SHARE, SEGMENT_LIMIT, SegmentBudget, budget_name,
+};
 
 #[test]
 fn a_name_writes_until_its_share_is_spent() {
@@ -18,10 +20,22 @@ fn a_name_writes_until_its_share_is_spent() {
     // The first four fill the share exactly; charging happens on admission, so
     // the fourth is admitted and the fifth finds nothing left.
     for _ in 0..4 {
-        assert!(budget.admit("sophia_x_present_delivery", entry));
+        assert_eq!(
+            budget.admit("sophia_x_present_delivery", entry),
+            Admission::Written
+        );
     }
-    assert!(!budget.admit("sophia_x_present_delivery", entry));
-    assert_eq!(budget.total_suppressed(), 1);
+    // The first loss is distinguished so it can be reported where it happens.
+    assert_eq!(
+        budget.admit("sophia_x_present_delivery", entry),
+        Admission::SuppressedFirst
+    );
+    assert_eq!(
+        budget.admit("sophia_x_present_delivery", entry),
+        Admission::Suppressed,
+        "only the first loss announces itself; the rest are counted"
+    );
+    assert_eq!(budget.total_suppressed(), 2);
 }
 
 #[test]
@@ -32,9 +46,18 @@ fn a_flood_does_not_silence_the_records_that_explain_the_session() {
     for _ in 0..8 {
         budget.admit("sophia_x_present_delivery", NAME_SEGMENT_SHARE / 2);
     }
-    assert!(!budget.admit("sophia_x_present_delivery", 64));
-    assert!(budget.admit("sophia_live_input_route", 64));
-    assert!(budget.admit("sophia_live_session_cursor", 64));
+    assert_ne!(
+        budget.admit("sophia_x_present_delivery", 64),
+        Admission::Written
+    );
+    assert_eq!(
+        budget.admit("sophia_live_input_route", 64),
+        Admission::Written
+    );
+    assert_eq!(
+        budget.admit("sophia_live_session_cursor", 64),
+        Admission::Written
+    );
 }
 
 #[test]
@@ -54,6 +77,8 @@ fn rotation_reports_what_the_closed_segment_refused_and_starts_clean() {
     }
     budget.admit("sophia_x_present_submission", NAME_SEGMENT_SHARE);
     budget.admit("sophia_x_present_submission", 64);
+    // Three lost for the first name and one for the second, whatever order
+    // they arrived in.
 
     let suppressed = budget.rotate();
 
@@ -66,8 +91,9 @@ fn rotation_reports_what_the_closed_segment_refused_and_starts_clean() {
         "each refused name is accounted for by its own count"
     );
     assert_eq!(budget.total_suppressed(), 0);
-    assert!(
+    assert_eq!(
         budget.admit("sophia_x_present_delivery", NAME_SEGMENT_SHARE),
+        Admission::Written,
         "a new segment grants a new share"
     );
 }
@@ -80,17 +106,24 @@ fn an_unbounded_vocabulary_cannot_grow_the_budget() {
     // and one that first appears when the map is full is not that name.
     let mut budget = SegmentBudget::default();
     for index in 0..BUDGET_NAMES * 2 {
-        assert!(budget.admit(&format!("sophia_kind_{index}"), NAME_SEGMENT_SHARE));
+        assert_eq!(
+            budget.admit(&format!("sophia_kind_{index}"), NAME_SEGMENT_SHARE),
+            Admission::Written
+        );
     }
     // The first names filled the map and are each held to their share.
-    assert!(
-        !budget.admit("sophia_kind_0", 64),
+    assert_eq!(
+        budget.admit("sophia_kind_0", 64),
+        Admission::SuppressedFirst,
         "a name the budget is tracking is held to its share"
     );
     // One that arrived past the cap is untracked, so it is written rather than
     // refused -- the safe direction for a name too rare to have been counted.
     let overflowed = format!("sophia_kind_{}", BUDGET_NAMES * 2 - 1);
-    assert!(budget.admit(&overflowed, NAME_SEGMENT_SHARE));
+    assert_eq!(
+        budget.admit(&overflowed, NAME_SEGMENT_SHARE),
+        Admission::Written
+    );
     assert_eq!(budget.total_suppressed(), 1);
 }
 
