@@ -105,7 +105,8 @@ start-then-service-fail cycle is not spaced by it.
 
 ## Finding and resolution
 
-No cause is established, and the path that destroys it is now traced end to
+The cause is established above, by experiment rather than from the log — which
+is itself the finding. The path that destroyed the evidence is traced end to
 end. `session_eprintln!` (`lib.rs:16`) reaches `output::stderr`, installed by
 `sophia-cli/src/main.rs:28` as `session_stderr`, which calls
 `diagnostics::capture_line` and falls back to raw `eprintln!` only when capture
@@ -134,8 +135,8 @@ Three separable defects, in increasing order of cost:
    emitted would classify the failure without retaining arbitrary error text,
    which is what the reduction discipline actually requires.
 3. **The retry is unbounded.** An identical failure repeating 841 times at 1 Hz
-   is not a retry policy. After a bounded number of identical outcomes the
-   supervisor should stop and say so once.
+   is not a retry policy. Spaced rather than halted in `658dad52`; note that
+   it counts start failures only.
 
 Whether the content-pipeline error classification should distinguish transient
 backpressure is a fourth question, tracked with these because it shares the
