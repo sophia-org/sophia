@@ -1,0 +1,2 @@
+#!/bin/sh
+exec chpst -u niltempus:niltempus svlogd -tt /var/log/cargo-prune

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runit service: prune abandoned cargo target dirs once a day.
+#
+# snooze blocks until the next matching wall-clock slot, then runs the
+# pruner; runit restarts this script, so it blocks until tomorrow again.
+# -s 3600 spreads the start over an hour so a cold boot at 03:00 does not
+# put a 40 GiB scan in front of everything else.
+exec 2>&1
+exec chpst -u niltempus:niltempus \
+    snooze -H 3 -M 0 -s 3600 \
+    /home/niltempus/dev/sophia-stack/tools/prune_build_caches.sh \
+        --root /home/niltempus/dev \
+        --days 14 \
+        --keep /home/niltempus/dev/sophia-stack/tools/build-cache-keep.txt \
+        --apply

@@ -1,0 +1,21 @@
+# Substring match against the target directory's full path.
+# A target whose path contains any line here is never pruned,
+# regardless of age. Blank lines and # comments ignored.
+
+# The working tree's own target - rebuilding it is the expensive one,
+# and it is the only target here that is continuously in use.
+/home/niltempus/dev/sophia-stack/target
+
+# Deliberately NOT kept:
+#
+#   .artifacts/<gate>-<sha>-source/
+#     The contained acceptance harness checks out a fresh source tree per
+#     signed commit and builds inside it. One of these is currently 76G.
+#     They are per-commit by design and correct to reclaim once the commit
+#     they attest is superseded - the evidence record under .artifacts is
+#     what outlives them, not the build.
+#
+#   .artifacts/<gate>-<sha>-source/.artifacts/target-m3, .../target-m4
+#     The persistent per-gate targets live inside those checkouts, so they
+#     age out with their parent. Keeping them individually would pin the
+#     76G checkout they sit in.
