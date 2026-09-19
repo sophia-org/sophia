@@ -66,25 +66,40 @@ repeated `start_failed` that follows.
 
 ## Finding and resolution
 
-No cause is established. The finding is that the supervisor retries an
-unrecoverable start once per second, indefinitely, while recording nothing that
-would let anyone say why — and that the reduction which strips `reason=` is
-working as specified, so the gap is in what the supervisor classifies, not in
-the log's discipline.
+No cause is established, and the path that destroys it is now traced end to
+end. `session_eprintln!` (`lib.rs:16`) reaches `output::stderr`, installed by
+`sophia-cli/src/main.rs:28` as `session_stderr`, which calls
+`diagnostics::capture_line` and falls back to raw `eprintln!` only when capture
+declines. Capture does not decline: `capture.rs:44` returns `true` even when it
+drops the line, so the fallback never fires and the text is destroyed rather
+than downgraded.
 
-Two separable pieces of work:
+`reduced_record` filters by a field allowlist. For `sophia_shell_component`
+(`diagnostics/shell_component.rs:13`) the permitted keys are `schema`, `status`,
+`role`, `gpu_mode`, `endpoint_released`, `slot`, `revision`, `device_major`,
+`device_minor`, and three epochs. **`reason` is not among them**, and correctly
+so: it is free text.
 
-1. **Record a classified start failure.** `reason={error}` is free text and is
-   correctly dropped. The supervisor needs approved failure codes for the start
-   path, the way lifecycle and guard records already carry them, so the retained
-   line distinguishes a spawn failure from a mount failure from a negotiation
-   timeout without retaining arbitrary error text.
-2. **Bound or escalate the retry.** An identical failure repeating 841 times is
-   not a retry policy; after a bounded number of identical outcomes the
+Three separable defects, in increasing order of cost:
+
+1. **Two emitters drop an allowlisted field they already have.** Of the eleven
+   `sophia_shell_component` emitters in `component_service.rs`, nine pass
+   `slot={}`. `start_failed` (`:107`) and `poll_failed` (`:97`) do not, so their
+   records reduce to `schema` and `status` alone and cannot even name the
+   component that failed. The sibling `service_failed` at `:240` passes it.
+   This is a one-line repair per emitter and would have made the 841 records
+   attributable.
+2. **No allowlisted field can carry a cause.** The status vocabulary says
+   *that* a start failed, never why. An enumerated cause key — spawn, mount,
+   negotiation timeout, configuration rejection — added to the allowlist and
+   emitted would classify the failure without retaining arbitrary error text,
+   which is what the reduction discipline actually requires.
+3. **The retry is unbounded.** An identical failure repeating 841 times at 1 Hz
+   is not a retry policy. After a bounded number of identical outcomes the
    supervisor should stop and say so once.
 
 Whether the content-pipeline error classification should distinguish transient
-backpressure is a third question, tracked with the first because it shares the
+backpressure is a fourth question, tracked with these because it shares the
 boundary.
 
 ## Validation and remaining work
