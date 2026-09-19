@@ -28,6 +28,13 @@ impl LiveProductionVisualRuntime {
         };
         native_scanout
             .set_translation_motion_active(self.translations.active(self.translation_time()));
+        // The cadence an unpresentable candidate is paced to, read from the
+        // head that paces everything else rather than from a constant.
+        let paced_interval = crate::head_refresh_interval(
+            native_scanout
+                .cadence_head(self.outputs.primary_output())
+                .map_or(0, |head| head.refresh_millihz),
+        );
         let queued = self
             .present_scheduler
             .front()
@@ -52,8 +59,13 @@ impl LiveProductionVisualRuntime {
                 );
                 return self.run_observation_tick();
             }
-            self.present_scheduler.pop_front();
-            self.reject_gpu_presentation(transaction);
+            self.skip_unpresentable(
+                transaction,
+                queued_candidate,
+                queued_surface,
+                crate::LiveProductionFirstVisibilityReason::OutsidePresentationOrder,
+                paced_interval,
+            );
             return self.run_observation_tick();
         }
 
@@ -109,8 +121,13 @@ impl LiveProductionVisualRuntime {
                 );
                 return self.run_observation_tick();
             }
-            self.present_scheduler.pop_front();
-            self.reject_gpu_presentation(transaction);
+            self.skip_unpresentable(
+                transaction,
+                queued_candidate,
+                queued_surface,
+                crate::LiveProductionFirstVisibilityReason::NoApplicableOutput,
+                paced_interval,
+            );
             return self.run_observation_tick();
         }
         // Present's MSC belongs to one physical CRTC clock. Bind it before
@@ -304,8 +321,13 @@ impl LiveProductionVisualRuntime {
                 "skipped Present absent from lowered physical head frames"
             );
             native_scanout.queue_retained_output_head_composition_frames(output_head_frames)?;
-            self.present_scheduler.pop_front();
-            self.reject_gpu_presentation(transaction);
+            self.skip_unpresentable(
+                transaction,
+                queued_candidate,
+                queued_surface,
+                crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames,
+                paced_interval,
+            );
             return self.run_observation_tick();
         }
         if self.present_scheduler.take_diagnose_first_mixed_export() {
@@ -432,6 +454,59 @@ impl LiveProductionVisualRuntime {
 }
 
 impl LiveProductionVisualRuntime {
+    /// Settle a Present no head can carry, paced to the head's refresh.
+    ///
+    /// An onscreen client is paced by retirement: its Present completes from a
+    /// real page flip, so it redraws at the head's rate. A client whose window
+    /// cannot reach a screen used to be settled in the same owner pass its
+    /// Present arrived in, which paced it by nothing at all -- `glxgears`
+    /// dragged offscreen ran at nine thousand frames a second, and every one of
+    /// them cost owner-loop present handling, a protocol completion and its
+    /// evidence. Parking the candidate withholds the Idle that frees its
+    /// buffer, so the client blocks on its own back buffers exactly as a
+    /// visible one does, and the completion is delivered one tick later.
+    ///
+    /// The verdict is not revisited at the tick. A surface that becomes
+    /// visible again presents a newer buffer, which enters the queue runnable
+    /// and is composed normally.
+    ///
+    /// A candidate that has already spent its first-visibility budget is not
+    /// made to wait a second time; the budget exists to bound exactly this
+    /// kind of wait.
+    fn skip_unpresentable(
+        &mut self,
+        transaction: TransactionId,
+        candidate: sophia_protocol::SurfaceTransactionKey,
+        surface: SurfaceId,
+        reason: crate::LiveProductionFirstVisibilityReason,
+        interval: std::time::Duration,
+    ) {
+        if !self.present_scheduler.front_first_visibility_exhausted()
+            && self
+                .present_scheduler
+                .defer_to_frame_tick(candidate, Instant::now(), interval)
+        {
+            // Coalesced on powers of two, like the busy-output defer above: a
+            // paced client produces one of these per frame, and a line each
+            // would be the evidence flood this pacing exists to stop.
+            let paced = self.present_scheduler.paced_skips();
+            if paced.is_power_of_two() {
+                tracing::info!(
+                    "sophia_live_present_pace schema=1 status=parked paced={paced} transaction={} surface={} reason={reason:?} interval_usec={}",
+                    transaction.raw(),
+                    surface.index(),
+                    interval.as_micros(),
+                );
+            }
+            for overflowed in self.present_scheduler.bound_frame_tick_parking(surface) {
+                self.reject_gpu_presentation(overflowed);
+            }
+            return;
+        }
+        self.present_scheduler.pop_front();
+        self.reject_gpu_presentation(transaction);
+    }
+
     /// Idle the client buffer a successor flip has just replaced on `output`.
     ///
     /// Does nothing unless a direct frame is recorded as displayed there. The

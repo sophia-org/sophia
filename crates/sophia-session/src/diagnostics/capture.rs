@@ -12,8 +12,13 @@ use sha2::{Digest, Sha256};
 use super::storage::Directory;
 use super::{METADATA_LIMIT, SEGMENT_LIMIT, SEGMENTS, Stamp};
 
+mod budget;
+
+use budget::{NAME_SEGMENT_SHARE, SegmentBudget, budget_name};
+
 const QUEUE_CAPACITY: usize = 256;
 pub const DIAGNOSTIC_RECORD_MAX_BYTES: usize = 4096;
+
 static SINK: OnceLock<Sink> = OnceLock::new();
 static INSTALL_LOCK: Mutex<()> = Mutex::new(());
 
@@ -153,6 +158,7 @@ impl Capture {
                 let mut sequence = 0u64;
                 let mut rotated = 0u64;
                 let mut errors = 0u64;
+                let mut budget = SegmentBudget::default();
                 let mut synced = Instant::now();
                 loop {
                     let event = match priority_rx
@@ -168,21 +174,27 @@ impl Capture {
                     let result = (|| -> io::Result<()> {
                         let _lock = directory.lock()?;
                         if let Some(event) = event {
-                            sequence = sequence.saturating_add(1);
                             let (stamp, line, identity) = match event {
                                 Event::Line(stamp, line) => {
                                     let identity = identity_record(&line);
                                     (stamp, line, identity)
                                 }
                             };
-                            let entry = format!(
-                                "{sequence}\t{}\t{}\t{line}\n",
-                                stamp.utc_msec, stamp.boot_msec
-                            );
+                            let entry = append_event(
+                                &directory,
+                                stamp,
+                                &line,
+                                &mut rotated,
+                                &mut sequence,
+                                &mut budget,
+                            )?;
+                            // The identity journal is separately bounded and
+                            // carries the small, sparse vocabulary the share
+                            // exists to protect, so it takes the record even
+                            // when the event segment's budget refused it.
                             if identity {
                                 directory.append("identity.log", &entry, METADATA_LIMIT)?;
                             }
-                            append_event(&directory, &entry, &mut rotated)?;
                         }
                         if synced.elapsed() >= Duration::from_secs(5)
                             || (empty && worker_stop.load(Ordering::Acquire))
@@ -199,6 +211,7 @@ impl Capture {
                                 sequence,
                                 discarded.load(Ordering::Relaxed),
                                 rotated,
+                                budget.total_suppressed(),
                                 errors,
                                 if worker_stop.load(Ordering::Acquire) {
                                     "stopped"
@@ -240,14 +253,39 @@ fn write_health(
     sequence: u64,
     discarded: u64,
     rotated: u64,
+    suppressed: u64,
     errors: u64,
     state: &str,
 ) -> io::Result<()> {
-    directory.replace("health", &format!("sequence={sequence}\ndiscarded={discarded}\nrotated_bytes={rotated}\nstorage_errors={errors}\nrecording={state}\nsynchronized_boot_msec={}\n", Stamp::now().boot_msec))
+    directory.replace("health", &format!("sequence={sequence}\ndiscarded={discarded}\nrotated_bytes={rotated}\nsuppressed={suppressed}\nstorage_errors={errors}\nrecording={state}\nsynchronized_boot_msec={}\n", Stamp::now().boot_msec))
 }
 
-fn append_event(directory: &Directory, entry: &str, rotated: &mut u64) -> io::Result<()> {
+/// Append one record, rotating and enforcing the per-name share.
+///
+/// Formats the entry here rather than taking one, because rotation writes
+/// records of its own: a segment that closes with names it had to suppress
+/// says so at the head of the next one, and those records must carry the
+/// sequence numbers *before* the record whose arrival rotated the segment.
+/// The entry is reformatted after a rotation for exactly that reason, which
+/// costs one `format!` per fifteen megabytes.
+///
+/// Returns the entry as written, for the identity journal to reuse.
+fn append_event(
+    directory: &Directory,
+    stamp: Stamp,
+    line: &str,
+    rotated: &mut u64,
+    sequence: &mut u64,
+    budget: &mut SegmentBudget,
+) -> io::Result<String> {
     use rustix::fs::OFlags;
+    let format_entry = |sequence: u64| {
+        format!(
+            "{sequence}\t{}\t{}\t{line}\n",
+            stamp.utc_msec, stamp.boot_msec
+        )
+    };
+    let mut entry = format_entry(sequence.saturating_add(1));
     let file = directory.file(
         "events.0.log",
         OFlags::WRONLY | OFlags::CREATE | OFlags::APPEND,
@@ -266,12 +304,40 @@ fn append_event(directory: &Directory, entry: &str, rotated: &mut u64) -> io::Re
                 Err(error) => return Err(error),
             }
         }
+        // What the closed segment refused, said out loud at the head of the
+        // new one. A suppressed record is still evidence of its own kind's
+        // volume, and silence here would make a bounded log read like a quiet
+        // session.
+        let suppressed = budget.rotate();
+        if !suppressed.is_empty() {
+            let mut file = directory.file(
+                "events.0.log",
+                OFlags::WRONLY | OFlags::CREATE | OFlags::APPEND,
+            )?;
+            for (name, count) in suppressed {
+                *sequence = sequence.saturating_add(1);
+                let notice = Stamp::now();
+                file.write_all(
+                    format!(
+                        "{sequence}\t{}\t{}\tsophia_session_record_budget schema=1 status=suppressed name={name} suppressed={count} share_bytes={NAME_SEGMENT_SHARE}\n",
+                        notice.utc_msec, notice.boot_msec,
+                    )
+                    .as_bytes(),
+                )?;
+            }
+            entry = format_entry(sequence.saturating_add(1));
+        }
+    }
+    *sequence = sequence.saturating_add(1);
+    if !budget.admit(budget_name(line), entry.len() as u64) {
+        return Ok(entry);
     }
     let mut file = directory.file(
         "events.0.log",
         OFlags::WRONLY | OFlags::CREATE | OFlags::APPEND,
     )?;
-    file.write_all(entry.as_bytes())
+    file.write_all(entry.as_bytes())?;
+    Ok(entry)
 }
 
 /// The source is Sophia's own evidence callback, never a mixed child-output

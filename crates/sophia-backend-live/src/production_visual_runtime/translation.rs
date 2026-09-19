@@ -1,19 +1,32 @@
 use super::*;
 
 impl LiveProductionVisualRuntime {
-    pub fn translation_frames_pending(&self) -> bool {
-        !self.translation_deadlines.is_empty()
-    }
-
-    pub fn translation_frame_due(&self) -> bool {
+    /// Every deadline the owner loop must wake for, soonest first.
+    ///
+    /// Two sources, deliberately answered together. An animating translation
+    /// owes a frame at its deadline, and a Present parked for pacing owes its
+    /// client a completion at the head's next refresh. The owner has one wait
+    /// to bound and one preemption to decide, so it asks one question; keeping
+    /// them apart is what would let a session with no animation sleep through
+    /// a parked candidate's tick.
+    fn frame_deadlines(&self) -> impl Iterator<Item = Instant> + '_ {
         self.translation_deadlines
             .values()
-            .any(|deadline| *deadline <= Instant::now())
+            .copied()
+            .chain(self.present_scheduler.frame_tick_deadline())
     }
 
-    pub fn translation_cap_wait(&self, now: Instant, maximum: Duration) -> Duration {
-        self.translation_deadlines
-            .values()
+    pub fn frame_deadlines_pending(&self) -> bool {
+        self.frame_deadlines().next().is_some()
+    }
+
+    pub fn frame_deadline_due(&self) -> bool {
+        let now = Instant::now();
+        self.frame_deadlines().any(|deadline| deadline <= now)
+    }
+
+    pub fn frame_deadline_cap_wait(&self, now: Instant, maximum: Duration) -> Duration {
+        self.frame_deadlines()
             .map(|deadline| {
                 deadline
                     .saturating_duration_since(now)

@@ -599,6 +599,26 @@ remain fenced until the selected page flip retires, then drain in original
 authority order. Removal, timeout, and disconnect settle the same bounded
 records without resource debt.
 
+A Present no head can carry is paced, not settled on arrival. The three
+conditions that establish it -- absent from the presentation order, no output
+it routes to, absent from the lowered head frames -- each park the candidate
+until the head's next refresh instead of completing it in the owner pass its
+request arrived in. Withholding the completion withholds the Idle that returns
+the buffer, so an invisible client blocks on its own back buffers exactly as a
+visible one blocks on retirement, and pays the same per-frame cost rather than
+its render rate. The verdict is not revisited at the tick: a surface that
+becomes visible presents a newer buffer, which enters the queue runnable.
+Parking is bounded per surface, drains with the runnable set when a topology
+transition escalates, and invents no display clock -- the completion carries
+the last real display sample, because a fabricated MSC would break monotonicity
+the moment the surface returned to a head.
+
+Evidence retention bounds each record name's share of an event segment. Volume
+is what decides which records survive rotation, so without a per-name bound the
+fastest kind evicts every other one, and the sparse records that explain a
+session are lost to a burst that explains only itself. A segment that closes
+with names it had to refuse records that fact at the head of the next one.
+
 There is no compatibility-only committed-snapshot production adapter. Every
 active client path enters through authority transactions. XLibre and Wayland
 remain historical evidence and cannot become alternate production loops.

@@ -218,7 +218,7 @@ fn reload_repaints_scrolling_columns_without_a_new_client_frame() {
             "the column must not leak onto output 2"
         );
         assert!(!runtime.apply_presentation_layout(std::slice::from_ref(&column), &[]));
-        assert!(!runtime.translation_frames_pending());
+        assert!(!runtime.frame_deadlines_pending());
     }
 }
 

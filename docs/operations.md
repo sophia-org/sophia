@@ -249,7 +249,13 @@ work. Queue, acknowledgement, and quiescence deadlines remain bounded.
 
 Resource observations continue every five seconds throughout an ordinary
 recorded session. Storage keeps four event segments of at most 15 MiB each,
-with separate bounded identity and marker journals. Automatic history retains
+with separate bounded identity and marker journals. Within a segment, one
+record name may write at most a quarter of it; beyond that its records are
+suppressed so a single high-volume kind cannot rotate every other kind out of
+the history. A segment that closed with suppressed names begins the next one
+with a `sophia_session_record_budget` record per name and the count it lost.
+Ordinary session volume is far below the share, and the identity journal is
+never suppressed. Automatic history retains
 at most twenty finished sessions within a 1 GiB budget, reserving space for the
 active session's 80 MiB allowance, including application diagnostics. Active sessions are never deleted. If active
 sessions alone exceed the budget, their protection takes precedence.
@@ -268,8 +274,8 @@ their bytes. Directories are private (0700), files are 0600, and unsafe ownershi
 symlinks, hardlinks and nonregular files are refused.
 
 Recording uses bounded queues and synchronizes periodically. Its health record
-reports discarded records, rotated bytes, storage failures, and the last
-confirmed synchronization time. An abrupt power loss can lose the newest
+reports discarded records, rotated bytes, records suppressed by the per-name
+share, storage failures, and the last confirmed synchronization time. An abrupt power loss can lose the newest
 unsynchronized tail. An unfinished record with no live owner is `interrupted`;
 Sophia does not invent an exit code or crash cause. A clean process exit is
 `exited`, a nonzero exit is `failed`, and neither is a proof verdict.

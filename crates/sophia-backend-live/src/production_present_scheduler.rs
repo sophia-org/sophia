@@ -13,6 +13,7 @@ use std::error::Error;
 use std::time::{Duration, Instant};
 
 mod first_visibility;
+mod frame_tick;
 
 pub use first_visibility::LiveProductionFirstVisibilityReason;
 
@@ -51,6 +52,11 @@ enum LiveProductionPresentLayoutState {
         reason: LiveProductionFirstVisibilityReason,
         deadline: Instant,
     },
+    /// Cannot reach a screen, and is held until the head's next refresh so the
+    /// client it belongs to is paced like a visible one. See `frame_tick`.
+    AwaitingFrameTick {
+        deadline: Instant,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +74,13 @@ impl LiveProductionPresentLayoutState {
 impl LiveProductionQueuedPresent {
     const fn runnable(&self) -> bool {
         self.layout_state.runnable()
+    }
+
+    const fn awaiting_frame_tick(&self) -> bool {
+        matches!(
+            self.layout_state,
+            LiveProductionPresentLayoutState::AwaitingFrameTick { .. }
+        )
     }
 }
 
@@ -170,6 +183,12 @@ pub struct LiveProductionPresentScheduler {
     max_pending_queued: usize,
     max_total_queued: usize,
     diagnose_first_mixed_export: bool,
+    /// The shared deadline every candidate parked for pacing settles on, so a
+    /// burst leaves together on one tick instead of one per interval.
+    frame_tick: Option<Instant>,
+    paced_skips: usize,
+    max_frame_tick_parked: usize,
+    frame_tick_overflows: usize,
     /// Frames this session has given the kernel, newest last, per output.
     ///
     /// The scheduler holds one present in flight, so what it names is what is
@@ -308,8 +327,16 @@ impl LiveProductionPresentScheduler {
                     &mut superseded,
                 );
             } else {
+                // A paced candidate is deliberately not superseded here. Its
+                // verdict is settled and only its delivery is on the clock;
+                // taking it now would hand the client its buffer back early,
+                // which is the pacing this arrival is subject to.
                 self.supersede_queued_where(
-                    |queued| !queued.runnable() && queued.surface == surface,
+                    |queued| {
+                        !queued.runnable()
+                            && !queued.awaiting_frame_tick()
+                            && queued.surface == surface
+                    },
                     &mut superseded,
                 );
             }
@@ -754,10 +781,16 @@ impl LiveProductionPresentScheduler {
             .any(|queued| queued.layout_state.runnable())
     }
 
+    /// Whether a layout epoch is holding a Present back.
+    ///
+    /// Excludes a candidate parked for pacing. This predicate reports that
+    /// scheduling is *blocked* -- waiting on a layout decision that has not
+    /// been made -- and a paced candidate is not waiting on a decision: its
+    /// verdict is settled and only its delivery is on the clock.
     pub fn has_layout_deferred(&self) -> bool {
         self.queued
             .iter()
-            .any(|queued| !queued.layout_state.runnable())
+            .any(|queued| !queued.layout_state.runnable() && !queued.awaiting_frame_tick())
     }
 
     /// Records that one layout epoch committed. Its Presents remain fenced
@@ -882,21 +915,28 @@ impl LiveProductionPresentScheduler {
     /// commits or aborts them on its own schedule, and mass-skipping them here
     /// would settle work the layout still intends to present. What blocks
     /// quiescence is the runnable set alone.
+    ///
+    /// A candidate parked for pacing drains with the runnable ones. It is
+    /// already destined for the same rejection, and leaving it to its tick
+    /// would keep a topology wait blocked on a client that has been told
+    /// nothing, which is the state this escalation exists to end.
     pub fn drain_runnable_transactions(&mut self) -> Vec<TransactionId> {
         let mut drained = Vec::new();
         let mut retained = VecDeque::with_capacity(self.queued.len());
         for queued in self.queued.drain(..) {
-            if queued.layout_state.runnable() {
+            if queued.layout_state.runnable() || queued.awaiting_frame_tick() {
                 drained.push(queued.submission.transaction);
             } else {
                 retained.push_back(queued);
             }
         }
         self.queued = retained;
+        self.frame_tick = self.earliest_frame_tick();
         drained
     }
 
     pub fn drain_transactions(&mut self) -> Vec<TransactionId> {
+        self.frame_tick = None;
         self.queued
             .drain(..)
             .map(|queued| queued.submission.transaction)

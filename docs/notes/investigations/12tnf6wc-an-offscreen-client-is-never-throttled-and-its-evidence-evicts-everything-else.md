@@ -2,7 +2,7 @@
 id: 12tnf6wc
 date: 2026-09-19
 kind: investigation
-status: investigating
+status: awaiting-physical-acceptance
 tags: [investigation, rendering, x11, tooling]
 ---
 # An offscreen client is never throttled and its evidence evicts everything else
@@ -89,13 +89,67 @@ A third, smaller: the layer could check the record name from a structured
 field rather than formatting the message first. Cheap, and only worth doing
 alongside the others.
 
+## Repair
+
+**A skipped Present is now paced to the head's refresh.** The three gates in
+`drive_gpu_presentation` that establish a candidate cannot reach a screen park
+it instead of settling it in the owner pass its request arrived in
+(`production_present_scheduler/frame_tick.rs`, a sibling of the
+first-visibility park it is modelled on). `service_first_visibility_presentations`
+releases them once per owner pass, and the owner's wait was generalised from
+translation deadlines alone to every frame deadline, so a session with nothing
+else to do still wakes at the tick.
+
+The throttle is the withheld Idle, not the delayed Complete. A parked candidate
+keeps the client's buffer, so the client blocks on its own back buffers exactly
+as a visible one blocks on retirement. That is also why the queue stays small:
+Mesa keeps four back buffers, so a conforming client cannot park more than
+that. `FRAME_TICK_PARKED_PER_SURFACE = 8` bounds one that does not wait, by
+settling its oldest early rather than by inventing a second way to unwind a
+candidate.
+
+Parked candidates are moved to the back of the queue. `poll_gate` pushes each
+newly eligible candidate to the front, so leaving them in place would have
+stacked them in reverse arrival order and made both the tick and the overflow
+bound take the newest first.
+
+The display clock is not invented. A paced completion still carries the last
+real display sample: X's fake vblank is a separate MSC domain that the server
+reconciles per window when a CRTC appears, and Sophia has no such
+reconciliation, so a fabricated MSC would break monotonicity the moment the
+surface returned to a head.
+
+**Retention now bounds each record name's share of a segment.**
+`NAME_SEGMENT_SHARE` is a quarter of the 15 MiB segment, tracked per name on
+the capture worker and reset at rotation
+(`diagnostics/capture/budget.rs`). Two flooding kinds therefore leave half a
+segment for everything else. A segment that closes with names it had to refuse
+writes one `sophia_session_record_budget schema=1` record per name at the head
+of the next one, and the health record carries a `suppressed=` total, so a
+bounded log cannot be mistaken for a quiet session.
+
+The reference is not what was copied. Xorg queues an offscreen window's Present
+on a fake vblank timer that runs at **1 Hz**
+(`~/src/xserver/Xext/present/present_fake.c:116-140`) and completes it `Copy`;
+`PresentCompleteModeSkip` there means a *scrapped* vblank, which is Sophia's
+supersession case. Pacing to the head's refresh is what "throttled like an
+onscreen one" asks for, and the interval is one call if a coarser choice is
+ever wanted.
+
 ## Validation and remaining work
 
-- [ ] Defer `Skipped` completions to the frame tick and prove an offscreen
-      `glxgears` reports the cadence rather than ~9,000 FPS, with the owner
-      loop's present handling dropping to match.
-- [ ] Bound per-kind retention and prove a shake's input-routing records
-      survive a subsequent offscreen burst.
+- [x] Defer `Skipped` completions to the frame tick. Covered by
+      `tests/support/present_frame_tick.rs`: a parked candidate is ineligible
+      and is not layout-deferred, a burst shares one tick and settles oldest
+      first, the per-surface bound settles the oldest early, and a topology
+      escalation takes the parked set too.
+- [x] Bound per-kind retention. Covered by
+      `diagnostics/capture/budget/tests.rs`, and the existing capture bound
+      test now asserts an ordinary session suppresses nothing.
+- [ ] Physical confirmation: an offscreen `glxgears` reports the head's cadence
+      rather than ~9,000 FPS, `sophia_live_present_scheduler schema=2` shows
+      `paced_skips` in the thousands with `frame_tick_overflows=0`, and the
+      window resumes its onscreen rate when dragged back.
 - [ ] Re-run the evidence-volume check onscreen under the synthetic shake once
       the records can survive long enough to read.
 

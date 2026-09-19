@@ -31,6 +31,22 @@ pub(super) fn head_refresh_millihz(mode_vrefresh: Option<u32>, fallback_millihz:
     }
 }
 
+/// One refresh period, as a duration.
+///
+/// The single place a millihertz refresh becomes a frame interval. A zero
+/// refresh takes sixty hertz, the same fallback `head_refresh_millihz` applies
+/// and for the same reason: a head reporting zero is not asserting that it
+/// does not scan out, and dividing by it downstream is not an option. The
+/// result is never zero, because callers use it as a wait.
+pub fn head_refresh_interval(refresh_millihz: u32) -> std::time::Duration {
+    let refresh_millihz = if refresh_millihz == 0 {
+        60_000
+    } else {
+        refresh_millihz
+    };
+    std::time::Duration::from_micros((1_000_000_000_u64 / u64::from(refresh_millihz)).max(1))
+}
+
 /// The head a cadence falls back to when no desktop primary is published yet.
 ///
 /// Lowest *enabled*, not lowest. A head that has been disabled keeps whatever

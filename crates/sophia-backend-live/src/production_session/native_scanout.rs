@@ -1,4 +1,5 @@
 mod refresh;
+pub use refresh::head_refresh_interval;
 
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod persistent_native_scanout {

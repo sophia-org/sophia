@@ -32,6 +32,10 @@ pub struct LiveProductionVisualDiagnostics {
     pub max_latest_deferred_per_surface: usize,
     pub max_pending_queued: usize,
     pub max_total_queued: usize,
+    /// Presents held to the head's refresh because no head could carry them.
+    pub paced_skips: usize,
+    pub max_frame_tick_parked: usize,
+    pub frame_tick_overflows: usize,
     pub software_present_frames_waiting: usize,
     pub software_present_frames_submitted: usize,
     pub software_present_retirements_pending: usize,
@@ -71,6 +75,9 @@ impl LiveProductionVisualRuntime {
                 .max_latest_deferred_per_surface(),
             max_pending_queued: self.present_scheduler.max_pending_queued(),
             max_total_queued: self.present_scheduler.max_total_queued(),
+            paced_skips: self.present_scheduler.paced_skips(),
+            max_frame_tick_parked: self.present_scheduler.max_frame_tick_parked(),
+            frame_tick_overflows: self.present_scheduler.frame_tick_overflows(),
             software_present_frames_waiting: self
                 .software_presents_unframed
                 .len()

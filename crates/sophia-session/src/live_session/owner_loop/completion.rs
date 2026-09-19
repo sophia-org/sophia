@@ -1060,7 +1060,7 @@
     if let Some(runtime) = runtime.as_ref() {
         let diagnostics = runtime.diagnostics();
         crate::session_println!(
-            "sophia_live_present_scheduler schema=1 status=complete surface_content_capacity={} pending_limit=1 in_flight_limit=1 pending_supersessions={} surface_content_supersessions={} scheduler_supersessions={} max_surface_content_deferred={} max_latest_deferred_per_surface={} max_pending_queued={} max_total_queued={} max_live_sources={} max_live_fences={} max_live_presentations={} present_rejections={} native_suspend_present_rejections={} shutdown_present_rejections={} other_present_rejections={}",
+            "sophia_live_present_scheduler schema=2 status=complete surface_content_capacity={} pending_limit=1 in_flight_limit=1 pending_supersessions={} surface_content_supersessions={} scheduler_supersessions={} max_surface_content_deferred={} max_latest_deferred_per_surface={} max_pending_queued={} max_total_queued={} max_live_sources={} max_live_fences={} max_live_presentations={} present_rejections={} native_suspend_present_rejections={} shutdown_present_rejections={} other_present_rejections={} paced_skips={} max_frame_tick_parked={} frame_tick_overflows={}",
             sophia_engine::SURFACE_CONTENT_STREAM_CAPACITY,
             diagnostics.pending_supersessions,
             diagnostics.surface_content_supersessions,
@@ -1076,6 +1076,9 @@
             diagnostics.native_suspend_present_rejections,
             diagnostics.shutdown_present_rejections,
             diagnostics.other_present_rejections,
+            diagnostics.paced_skips,
+            diagnostics.max_frame_tick_parked,
+            diagnostics.frame_tick_overflows,
         );
     }
 

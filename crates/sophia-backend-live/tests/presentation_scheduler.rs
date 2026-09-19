@@ -23,6 +23,9 @@ use sophia_renderer_live::{LiveCompositionPlacement, LiveRendererImageId};
 #[path = "support/first_present_visibility.rs"]
 mod first_present_visibility;
 
+#[path = "support/present_frame_tick.rs"]
+mod present_frame_tick;
+
 fn fd() -> OwnedFd {
     File::open("/dev/null").unwrap().into()
 }

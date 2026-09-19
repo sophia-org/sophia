@@ -326,6 +326,17 @@ fn capture_is_bounded_redacted_and_survives_without_completion_records() {
     assert_eq!(resources + discarded, 1701); // resources plus the oversized record
     assert!(inspection.health.contains("recording=stopped"));
     assert!(inspection.health.contains("rotated_bytes=15728640"));
+    // An ordinary session's volume is nowhere near one name's share, so the
+    // per-name bound must be invisible here. A nonzero count on this workload
+    // would mean the share was cutting records it was never meant to reach.
+    assert!(inspection.health.contains("suppressed=0\n"));
+    assert!(
+        !inspection
+            .events
+            .iter()
+            .any(|line| line.contains("sophia_session_record_budget")),
+        "nothing was suppressed, so nothing may claim it was"
+    );
     assert!(inspection.record.bytes <= 64 * 1024 * 1024);
     assert!(!inspection.health.contains("discarded=0\n"));
     assert!(!record.path.join("outcome").exists());
