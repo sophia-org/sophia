@@ -62,6 +62,21 @@ sophia_surface_select_entries() {
     )
     SOPHIA_SURFACE_DESKTOPS=(
         sophia-kitty
+    )
+    # Proof and evidence workflows, kept out of the login menu unless asked for.
+    #
+    # operations.md calls these diagnostics and evidence rather than sessions:
+    # Native Chrome is "a bounded Engine-chrome diagnostic", Hagia Promotion is
+    # "immutable release evidence", and the other two are bounded proof gates.
+    # Only "Sophia Hagia (Native Policy)" is "the ordinary user-profile
+    # session". They ship in every release and keep their operator commands, so
+    # nothing here decides whether a proof can be run -- only whether it also
+    # takes a line in greetd, where four of them crowded out the two entries
+    # someone logs in with. Set SOPHIA_INSTALL_PROOF_SESSIONS=1 to list them.
+    SOPHIA_SURFACE_PROOF_DESKTOPS=(
+        sophia-native-chrome-proof
+    )
+    SOPHIA_SURFACE_PROOF_DESKTOP_COMMANDS=(
         sophia-native-chrome-proof
     )
     SOPHIA_SURFACE_RETIRED_COMMANDS=(
@@ -83,8 +98,30 @@ sophia_surface_select_entries() {
     )
     if [[ "$hagia_included" == true ]]; then
         SOPHIA_SURFACE_COMMANDS+=("${SOPHIA_SURFACE_HAGIA_COMMANDS[@]}")
-        SOPHIA_SURFACE_DESKTOPS+=("${SOPHIA_SURFACE_HAGIA_DESKTOPS[@]}")
+        SOPHIA_SURFACE_DESKTOPS+=(sophia-hagia)
+        SOPHIA_SURFACE_PROOF_DESKTOPS+=(
+            sophia-hagia-promotion
+            sophia-firefox-proof
+            sophia-recovery-proof
+        )
+        SOPHIA_SURFACE_PROOF_DESKTOP_COMMANDS+=(
+            sophia-hagia-promotion-session
+            sophia-firefox-proof
+            sophia-recovery-proof
+        )
     fi
+    if sophia_surface_proof_sessions_requested; then
+        SOPHIA_SURFACE_DESKTOPS+=("${SOPHIA_SURFACE_PROOF_DESKTOPS[@]}")
+    fi
+}
+
+# Whether proof and evidence entries should appear in the login menu. The
+# release still carries them either way; this only selects what greetd lists.
+sophia_surface_proof_sessions_requested() {
+    case "${SOPHIA_INSTALL_PROOF_SESSIONS:-}" in
+        1|true|yes) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 sophia_surface_validate_entries() {
@@ -133,6 +170,26 @@ sophia_surface_remove_absent_hagia() {
     done
 }
 
+# Retire proof entries a previous release listed, when this one does not.
+# Matches the exact substituted Exec line, so an unrelated file that happens to
+# share a name is preserved -- the same rule the hagia retirement uses.
+sophia_surface_remove_absent_proofs() {
+    local prefix="$1" session_dir="$2"
+    local command desktop entry expected index
+
+    ! sophia_surface_proof_sessions_requested || return 0
+    for index in "${!SOPHIA_SURFACE_PROOF_DESKTOPS[@]}"; do
+        desktop="${SOPHIA_SURFACE_PROOF_DESKTOPS[$index]}"
+        command="${SOPHIA_SURFACE_PROOF_DESKTOP_COMMANDS[$index]}"
+        entry="$session_dir/$desktop.desktop"
+        expected="Exec=$prefix/current/bin/$command"
+        if [[ -f "$entry" && ! -L "$entry" ]] \
+            && grep -Fqx "$expected" "$entry"; then
+            rm -f -- "$entry"
+        fi
+    done
+}
+
 sophia_surface_install() {
     local release="$1" prefix="$2" session_dir="$3" command_dir="$4"
     local command desktop desktop_temp entry expected index link sed_prefix
@@ -141,6 +198,7 @@ sophia_surface_install() {
     sophia_surface_validate_entries "$release" || return
     install -d -m 755 "$session_dir" "$command_dir"
     sophia_surface_remove_absent_hagia "$prefix" "$session_dir" "$command_dir"
+    sophia_surface_remove_absent_proofs "$prefix" "$session_dir"
     for command in "${SOPHIA_SURFACE_RETIRED_COMMANDS[@]}"; do
         link="$command_dir/$command"
         if [[ -L "$link" ]] \

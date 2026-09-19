@@ -45,18 +45,29 @@ canonical default-profile digest, and Hagia and Narthex executable digests.
 Installation rejects missing, non-executable, or mismatched artifacts. Legacy
 WM executables, compatibility configuration, and bridge fields are forbidden.
 
-Every release installs these base entries:
+Every release installs this base entry:
 
-- `Sophia Kitty (Baseline)` — one application, no WM or shell;
-- `Sophia Native Chrome Proof` — a bounded Engine-chrome diagnostic.
+- `Sophia Kitty (Baseline)` — one application, no WM or shell.
 
 A release built with explicit `SOPHIA_HAGIA_BIN` and
 `SOPHIA_HAGIA_SHELL_BIN` paths also installs:
 
-- `Sophia Hagia (Native Policy)` — the ordinary user-profile session;
+- `Sophia Hagia (Native Policy)` — the ordinary user-profile session.
+
+Every release also carries the proof and evidence profiles below, and installs
+their operator commands, but leaves them out of the login menu unless
+`SOPHIA_INSTALL_PROOF_SESSIONS=1` is set for the install. They are diagnostics
+run deliberately, and listing them by default put four of them in front of the
+two entries someone logs in with:
+
+- `Sophia Native Chrome Proof` — a bounded Engine-chrome diagnostic;
 - `Sophia Hagia Promotion (Packaged Default)` — immutable release evidence;
 - `Sophia Firefox Proof` — the integrated browser workflow;
 - `Sophia Recovery Proof` — a bounded watchdog/recovery gate.
+
+Activating without the request retires proof entries a previous install
+listed, matching only entries whose `Exec` line points into the install prefix,
+so an operator's own file at the same path is preserved.
 
 The generic `sophia-session` command is an internal launcher and requires an
 explicit native profile. It has no legacy-WM profile and no compatibility

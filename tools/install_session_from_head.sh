@@ -73,10 +73,15 @@ fi
 # replace as `previous`.
 release_dir="/opt/sophia/releases/$release_id"
 echo "Installing $release_id (sudo required)"
+# sudo drops the environment, so the proof-session opt-in has to be handed
+# across the privilege boundary by name rather than inherited.
+proof_sessions="SOPHIA_INSTALL_PROOF_SESSIONS=${SOPHIA_INSTALL_PROOF_SESSIONS:-}"
 if [[ -d "$release_dir" ]]; then
-    sudo "$ROOT_DIR/tools/activate_live_session_release.sh" "$release_dir"
+    sudo "$proof_sessions" \
+        "$ROOT_DIR/tools/activate_live_session_release.sh" "$release_dir"
 else
-    sudo "$ROOT_DIR/tools/install_live_session.sh" "$artifact"
+    sudo "$proof_sessions" \
+        "$ROOT_DIR/tools/install_live_session.sh" "$artifact"
 fi
 
 # Verify what is selected rather than trusting that the installer said so.

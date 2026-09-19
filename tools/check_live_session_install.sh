@@ -75,7 +75,11 @@ make_artifact() {
     done
     install -m 755 "$ROOT_DIR/tools/stop_sophia_session.sh" \
         "$artifact/tools/stop_sophia_session.sh"
-    for desktop in "${SOPHIA_SURFACE_DESKTOPS[@]}"; do
+    # A packaged release carries every entry unconditionally; only activation
+    # selects which reach the login menu. Build the artifact the same way, so
+    # the proof entries exist to be installed or withheld.
+    for desktop in "${SOPHIA_SURFACE_DESKTOPS[@]}" \
+        "${SOPHIA_SURFACE_PROOF_DESKTOPS[@]}"; do
         case "$desktop" in
             sophia-hagia) command=sophia-hagia-session ;;
             sophia-hagia-promotion) command=sophia-hagia-promotion-session ;;
@@ -146,9 +150,11 @@ done
 [[ "$(readlink "$COMMAND_DIR/sophia")" == "$PREFIX/current/target/release/sophia" ]]
 [[ "$(readlink -f "$COMMAND_DIR/sophia")" == "$PREFIX/releases/0001/target/release/sophia" ]]
 "$COMMAND_DIR/sophia" session list
-for desktop in sophia-kitty sophia-native-chrome-proof; do
-    [[ -f "$SESSION_DIR/$desktop.desktop" ]]
-done
+[[ -f "$SESSION_DIR/sophia-kitty.desktop" ]]
+# The diagnostic ships in the release and keeps its operator command, but a
+# default install leaves it out of the login menu.
+[[ ! -e "$SESSION_DIR/sophia-native-chrome-proof.desktop" ]]
+[[ -x "$PREFIX/current/bin/sophia-native-chrome-proof" ]]
 [[ ! -e "$SESSION_DIR/sophia.desktop" ]]
 [[ ! -e "$COMMAND_DIR/sophia-verify-xmonad-run" ]]
 
@@ -187,8 +193,11 @@ hagia_env=(
 env "${hagia_env[@]}" "$ROOT_DIR/tools/install_live_session.sh" "$first"
 env "${hagia_env[@]}" "$ROOT_DIR/tools/install_live_session.sh" "$hagia_artifact"
 [[ "$(readlink "$hagia_prefix/current")" == releases/0003 ]]
-for desktop in sophia-hagia sophia-hagia-promotion sophia-firefox-proof sophia-recovery-proof; do
-    [[ -f "$hagia_sessions/$desktop.desktop" ]]
+# The ordinary user-profile session is listed; the evidence and proof profiles
+# are not, though their commands are installed either way.
+[[ -f "$hagia_sessions/sophia-hagia.desktop" ]]
+for desktop in sophia-hagia-promotion sophia-firefox-proof sophia-recovery-proof; do
+    [[ ! -e "$hagia_sessions/$desktop.desktop" ]]
 done
 for command in sophia-hagia-session sophia-hagia-promotion-session \
     sophia-record-hagia-run sophia-verify-hagia sophia-verify-hagia-promotion; do
@@ -206,6 +215,35 @@ done
 env "${hagia_env[@]}" "$hagia_commands/sophia-rollback"
 [[ "$(readlink "$hagia_prefix/current")" == releases/0003 ]]
 [[ -f "$hagia_sessions/sophia-hagia.desktop" ]]
+
+# Proof entries are opt-in, and withdrawing the request retires them again.
+proof_prefix="$TEMP_DIR/proof/prefix"
+proof_sessions="$TEMP_DIR/proof/sessions"
+proof_commands="$TEMP_DIR/proof/commands"
+proof_env=(
+    SOPHIA_INSTALL_PREFIX="$proof_prefix"
+    SOPHIA_SESSION_DIR="$proof_sessions"
+    SOPHIA_COMMAND_DIR="$proof_commands"
+)
+env "${proof_env[@]}" SOPHIA_INSTALL_PROOF_SESSIONS=1 \
+    "$ROOT_DIR/tools/install_live_session.sh" "$hagia_artifact"
+for desktop in sophia-kitty sophia-hagia sophia-hagia-promotion \
+    sophia-firefox-proof sophia-recovery-proof sophia-native-chrome-proof; do
+    [[ -f "$proof_sessions/$desktop.desktop" ]]
+done
+# A foreign file at a proof entry's path is operator-owned and must survive
+# retirement, exactly as it does for the compatibility entries above.
+printf '[Desktop Entry]\nExec=/foreign-recovery\n' \
+    >"$proof_sessions/sophia-recovery-proof.desktop"
+env "${proof_env[@]}" "$ROOT_DIR/tools/activate_live_session_release.sh" \
+    "$proof_prefix/releases/0003"
+for desktop in sophia-hagia-promotion sophia-firefox-proof \
+    sophia-native-chrome-proof; do
+    [[ ! -e "$proof_sessions/$desktop.desktop" ]]
+done
+grep -Fqx 'Exec=/foreign-recovery' "$proof_sessions/sophia-recovery-proof.desktop"
+[[ -f "$proof_sessions/sophia-hagia.desktop" ]]
+[[ -f "$proof_sessions/sophia-kitty.desktop" ]]
 
 if env "${hagia_env[@]}" "$ROOT_DIR/tools/activate_live_session_release.sh" \
     "$hagia_artifact" >/dev/null 2>&1; then
