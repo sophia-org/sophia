@@ -91,16 +91,20 @@ that integration is where the risk is.
 
 ## Validation and remaining work
 
-- [ ] Confirm the mechanism before repairing it: admit the scheduler counters
-      to reduction, or measure under the synthetic shake, and establish whether
-      the loop is spending turns on delivery or retiring frames late.
+- [ ] Confirm the mechanism before repairing it. The scheduler counters are
+      admitted since `6042256c`, and
+      `tools/benchmark_sophia_glxgears_shake_tty3.sh` now drives a virtual
+      mouse at 1 kHz through the bounded benchmark, so one shaken run pairs
+      `client_mean_fps` with `cadence_deferred_batches` and `merged_batches`
+      and says whether the loop is spending turns on delivery or retiring
+      frames late.
 - [ ] Thread the coalescer and flush at the frame boundary.
 - [ ] Test the integration through the live routing path, not only the
       coalescer in isolation: a grab, a focus change and a target crossing must
       each still deliver their motion in order.
 - [ ] Re-measure: `glxgears` should hold ~118 FPS under continuous motion, and
       the reporter's existing rule -- at least 55 FPS with a p95 of at most
-      25 ms -- should pass under a scripted shake.
+      25 ms -- should pass under the scripted shake, then once more by hand.
 
 Open work is tracked as t116 in `todo.md`.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a bounded virtual keyboard and inject input through Linux uinput."""
+"""Create a bounded virtual keyboard or mouse and inject input through Linux uinput."""
 
 from __future__ import annotations
 
@@ -23,6 +23,13 @@ KEY_LEFTMETA = 125
 KEY_LEFTCTRL = 29
 KEY_LEFTALT = 56
 KEY_BACKSPACE = 14
+EV_REL = 2
+REL_X = 0
+REL_Y = 1
+BTN_LEFT = 0x110
+MAX_SHAKE_HZ = 2000
+MAX_SHAKE_SECONDS = 600.0
+MAX_SHAKE_AMPLITUDE = 64
 
 KEY_CODES = {
     "a": 30,
@@ -80,6 +87,7 @@ UI_DEV_DESTROY = ioctl_code(IOC_NONE, 2)
 UI_DEV_SETUP = ioctl_code(IOC_WRITE, 3, 92)
 UI_SET_EVBIT = ioctl_code(IOC_WRITE, 100, 4)
 UI_SET_KEYBIT = ioctl_code(IOC_WRITE, 101, 4)
+UI_SET_RELBIT = ioctl_code(IOC_WRITE, 102, 4)
 INPUT_EVENT = struct.Struct("llHHi")
 UINPUT_SETUP = struct.Struct("HHHH80sI")
 
@@ -87,8 +95,8 @@ UINPUT_SETUP = struct.Struct("HHHH80sI")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Create a virtual keyboard, publish its /dev/input/event path, "
-            "then inject bounded input after a trigger file appears."
+            "Create a virtual keyboard or mouse, publish its /dev/input/event "
+            "path, then inject bounded input after a trigger file appears."
         )
     )
     parser.add_argument("--text")
@@ -99,6 +107,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--followup-chord", choices=("logout", "recovery"))
     parser.add_argument("--followup-trigger-file", type=Path)
     parser.add_argument("--followup-result-file", type=Path)
+    parser.add_argument("--shake-hz", type=int)
+    parser.add_argument("--shake-seconds", type=float)
+    parser.add_argument("--shake-amplitude", type=int, default=8)
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--key-interval-ms", type=float, default=2.0)
     parser.add_argument("--self-test", action="store_true")
@@ -137,6 +148,31 @@ def input_sequence(
     for keycode in keycodes:
         sequence.extend(((keycode, 1), (keycode, 0)))
     return "text", f"characters={len(resolved_text)}", sequence
+
+
+def shake_plan(args: argparse.Namespace) -> tuple[int, float, int] | None:
+    """A pointer shake: alternating horizontal motion at a fixed report rate.
+
+    One relative motion per report is what a hand produces on a 1 kHz mouse,
+    and it is the shape the compositor's routing and cursor paths are paced
+    by. The device is a mouse rather than a keyboard, so it is exclusive with
+    every key sequence.
+    """
+    if args.shake_hz is None and args.shake_seconds is None:
+        return None
+    if args.shake_hz is None or args.shake_seconds is None:
+        raise ValueError("--shake-hz and --shake-seconds are required together")
+    if args.text is not None or args.chord is not None or args.followup_chord is not None:
+        raise ValueError("a shake is exclusive with --text, --chord and --followup-chord")
+    if not 1 <= args.shake_hz <= MAX_SHAKE_HZ:
+        raise ValueError(f"--shake-hz must be between 1 and {MAX_SHAKE_HZ}")
+    if not 0 < args.shake_seconds <= MAX_SHAKE_SECONDS:
+        raise ValueError(
+            f"--shake-seconds must be positive and at most {MAX_SHAKE_SECONDS:g}"
+        )
+    if not 1 <= args.shake_amplitude <= MAX_SHAKE_AMPLITUDE:
+        raise ValueError(f"--shake-amplitude must be between 1 and {MAX_SHAKE_AMPLITUDE}")
+    return args.shake_hz, args.shake_seconds, args.shake_amplitude
 
 
 def publish(path: Path | None, value: str) -> None:
@@ -188,7 +224,33 @@ def inject(device: int, sequence: list[tuple[int, int]], interval: float) -> Non
             time.sleep(interval)
 
 
-def self_test(mode: str, description: str, sequence: list[tuple[int, int]]) -> int:
+def inject_shake(
+    device: int, rate_hz: int, seconds: float, amplitude: int, stopped: list[bool]
+) -> tuple[int, float]:
+    """Emit alternating REL_X reports on an absolute schedule.
+
+    Returns the reports sent and the rate actually achieved, so a run that
+    could not hold its rate says so instead of being read as one that did.
+    """
+    period_ns = 1_000_000_000 // rate_hz
+    planned = int(rate_hz * seconds)
+    started = time.monotonic_ns()
+    sent = 0
+    for index in range(planned):
+        if stopped[0]:
+            break
+        remaining = started + index * period_ns - time.monotonic_ns()
+        if remaining > 0:
+            time.sleep(remaining / 1e9)
+        emit(device, EV_REL, REL_X, amplitude if index % 2 == 0 else -amplitude)
+        emit(device, EV_SYN, SYN_REPORT, 0)
+        sent += 1
+    elapsed_ns = time.monotonic_ns() - started
+    achieved_hz = sent * 1e9 / elapsed_ns if elapsed_ns > 0 else 0.0
+    return sent, achieved_hz
+
+
+def self_test(mode: str, description: str, events: int) -> int:
     if INPUT_EVENT.size != 24 or UINPUT_SETUP.size != 92:
         raise RuntimeError(
             f"unexpected Linux ABI sizes: input_event={INPUT_EVENT.size} "
@@ -196,7 +258,7 @@ def self_test(mode: str, description: str, sequence: list[tuple[int, int]]) -> i
         )
     print(
         "sophia_uinput schema=1 status=self_test_passed "
-        f"mode={mode} {description} events={len(sequence) * 2}"
+        f"mode={mode} {description} events={events}"
     )
     return 0
 
@@ -220,15 +282,24 @@ def main() -> int:
     if args.key_interval_ms < 0 or args.key_interval_ms > 1000:
         raise ValueError("--key-interval-ms must be between 0 and 1000")
     validate_followup(args)
-    mode, description, sequence = input_sequence(args.text, args.chord)
+    shake = shake_plan(args)
+    if shake is not None:
+        rate_hz, seconds, amplitude = shake
+        mode = "shake"
+        description = f"rate_hz={rate_hz} seconds={seconds:g} amplitude={amplitude}"
+        sequence: list[tuple[int, int]] = []
+        events = int(rate_hz * seconds) * 2
+    else:
+        mode, description, sequence = input_sequence(args.text, args.chord)
+        events = len(sequence) * 2
     followup = None
     if args.followup_chord is not None:
         followup = input_sequence(None, args.followup_chord)
     if args.self_test:
-        self_test(mode, description, sequence)
+        self_test(mode, description, events)
         if followup is not None:
             followup_mode, followup_description, followup_sequence = followup
-            self_test(followup_mode, followup_description, followup_sequence)
+            self_test(followup_mode, followup_description, len(followup_sequence) * 2)
         return 0
     if args.ready_file is None or args.trigger_file is None:
         raise ValueError("--ready-file and --trigger-file are required")
@@ -240,13 +311,21 @@ def main() -> int:
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    name = f"Sophia Virtual Keyboard {os.getpid()}"
+    kind = "Mouse" if shake is not None else "Keyboard"
+    name = f"Sophia Virtual {kind} {os.getpid()}"
     deadline = time.monotonic() + args.timeout_seconds
     device = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
     created = False
     try:
         fcntl.ioctl(device, UI_SET_EVBIT, EV_SYN)
         fcntl.ioctl(device, UI_SET_EVBIT, EV_KEY)
+        if shake is not None:
+            # udev tags a pointer only when a mouse button sits beside the
+            # relative axes; without BTN_LEFT libinput never sees the device.
+            fcntl.ioctl(device, UI_SET_EVBIT, EV_REL)
+            fcntl.ioctl(device, UI_SET_RELBIT, REL_X)
+            fcntl.ioctl(device, UI_SET_RELBIT, REL_Y)
+            fcntl.ioctl(device, UI_SET_KEYBIT, BTN_LEFT)
         # One device retains input ownership across ordered proof phases.
         keycodes = {keycode for keycode, _value in sequence}
         if followup is not None:
@@ -257,7 +336,7 @@ def main() -> int:
         setup = UINPUT_SETUP.pack(
             BUS_USB,
             0x534F,
-            0x5048,
+            0x4D53 if shake is not None else 0x5048,
             1,
             encoded_name.ljust(80, b"\0"),
             0,
@@ -274,13 +353,26 @@ def main() -> int:
         )
         wait_for_trigger(args.trigger_file, deadline, stopped)
         injected_at_usec = time.monotonic_ns() // 1_000
-        inject(device, sequence, args.key_interval_ms / 1000.0)
-        publish(args.result_file, str(injected_at_usec))
-        print(
-            "sophia_uinput schema=1 status=injected "
-            f"mode={mode} {description} events={len(sequence) * 2}",
-            flush=True,
-        )
+        if shake is not None:
+            rate_hz, seconds, amplitude = shake
+            publish(args.result_file, str(injected_at_usec))
+            reports, achieved_hz = inject_shake(
+                device, rate_hz, seconds, amplitude, stopped
+            )
+            print(
+                "sophia_uinput schema=1 status=injected "
+                f"mode={mode} {description} events={reports * 2} "
+                f"achieved_hz={achieved_hz:.1f}",
+                flush=True,
+            )
+        else:
+            inject(device, sequence, args.key_interval_ms / 1000.0)
+            publish(args.result_file, str(injected_at_usec))
+            print(
+                "sophia_uinput schema=1 status=injected "
+                f"mode={mode} {description} events={len(sequence) * 2}",
+                flush=True,
+            )
         if followup is not None:
             followup_mode, followup_description, followup_sequence = followup
             assert args.followup_trigger_file is not None

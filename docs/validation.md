@@ -611,6 +611,24 @@ descriptor mismatch or cache-capacity rejection, no submission or retirement
 failure, and clean resource drain. This remains a GLX compatibility diagnostic
 rather than a substitute for the fixed Vulkan acceptance workload.
 
+The same benchmark under a synthetic shake, for a cadence claim that does not
+depend on a hand:
+
+```sh
+tools/benchmark_sophia_glxgears_shake_tty3.sh
+```
+
+It creates a virtual mouse through uinput before the session opens its seat,
+so udev enumerates it beside the physical devices, then drives alternating
+relative motion at `SOPHIA_GLXGEARS_SHAKE_HZ` (default 1000) reports a second
+and `SOPHIA_GLXGEARS_SHAKE_AMPLITUDE` (default 8) pixels from the moment the
+client holds focus until the bounded run ends. Keep hands off the mouse. A
+trailing `sophia_glxgears_shake` record, appended to `shake.log` beside the
+session log, pairs the rate the probe actually achieved with the client's
+sampled FPS and Sophia's present cadence; `status=pass` requires the benchmark
+to pass and the shake to have started on focus rather than on its deadline.
+`/dev/uinput` must be writable (`tools/setup_sophia_uinput.sh`).
+
 The session log must not contain a CPU submission between the first mixed
 Present retirement and its successor, a repeated cold import of one live image
 generation, nor an AMD `context is guilty` recovery. The first run that

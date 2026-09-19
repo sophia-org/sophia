@@ -84,5 +84,7 @@ tools/probes/uinput_text_injector.py --self-test
 tools/probes/uinput_text_injector.py --chord=logout --self-test
 tools/probes/uinput_text_injector.py \
     --chord=recovery --followup-chord=logout --self-test
+tools/probes/uinput_text_injector.py \
+    --shake-hz=1000 --shake-seconds=35 --shake-amplitude=8 --self-test
 
 echo "atomic scanout local checks passed"
