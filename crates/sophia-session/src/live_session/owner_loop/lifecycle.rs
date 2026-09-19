@@ -844,7 +844,9 @@
             && drain_physical_input!(
                 input_routing_mode,
                 &mut routed_input_coalescer,
-                primary_frame_pacer.repaint_due(Instant::now())
+                primary_frame_pacer.repaint_due(Instant::now()),
+                &mut routed_input_motion_held_since,
+                primary_frame_interval
             );
         metrics.max_input_phase = metrics.max_input_phase.max(input_phase_started.elapsed());
         if input_requested_exit {

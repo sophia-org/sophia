@@ -52,6 +52,8 @@ fn route_overlay_input(
         None,
         &mut sophia_engine::RoutedInputCoalescer::new(),
         true,
+        &mut None,
+        std::time::Duration::ZERO,
     )
     .unwrap();
     assert_eq!(receiver.try_iter().count(), 0);

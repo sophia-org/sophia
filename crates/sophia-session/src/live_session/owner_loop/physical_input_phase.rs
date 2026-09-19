@@ -1,6 +1,7 @@
 {
 macro_rules! drain_physical_input {
-    ($routing_mode:expr, $routed_input_coalescer:expr, $repaint_due:expr) => {{
+    ($routing_mode:expr, $routed_input_coalescer:expr, $repaint_due:expr,
+     $motion_held_since:expr, $frame_interval:expr) => {{
         synchronize_wm_pointer_epoch!();
         if let Some(components) = shell_components.as_mut() {
             component_service::synchronize_native_capture(components, &mut launcher_capture, &mut launcher_keyboard)?;
@@ -107,6 +108,8 @@ macro_rules! drain_physical_input {
                     input_presentation_epoch,
                     routed_input_coalescer: $routed_input_coalescer,
                     repaint_due: $repaint_due,
+                    motion_held_since: $motion_held_since,
+                    frame_interval: $frame_interval,
                 },
             )?;
             routed_input_saturation.merge(report.ingress_saturation);
@@ -1038,6 +1041,10 @@ let mut primary_frame_pacer = sophia_engine::PrimaryFramePacer::new(primary_fram
 // Motion is buffered here rather than inside the drain, so a pass that does
 // not end on a frame boundary carries its latest motion into the next one.
 let mut routed_input_coalescer = sophia_engine::RoutedInputCoalescer::new();
+// When the motion it holds was first buffered. A session that composes from
+// client submissions asks the pacer for almost no repaints, so the release has
+// to be able to happen on the clock rather than only on a paced frame.
+let mut routed_input_motion_held_since: Option<Instant> = None;
 // Samples the gauges the completion record reports once, so a verifier can ask
 // whether they grew rather than only whether they drained.
 let mut resource_sampler = LiveResourceSampler::new(started, config.normal_session && crate::diagnostics::recording());

@@ -656,6 +656,8 @@ fn a_bound_grab_routes_physical_motion_and_release_after_a_scene_change() {
         Some(&mut held),
         &mut sophia_engine::RoutedInputCoalescer::new(),
         true,
+        &mut None,
+        std::time::Duration::ZERO,
     )
     .unwrap();
     assert!(
@@ -733,6 +735,31 @@ fn route_pointer_batch(
     PhysicalInputRouteReport,
     Vec<sophia_protocol::RoutedInputRequest>,
 ) {
+    // A frame long enough that only `repaint_due` can release the motion.
+    let mut held_since = None;
+    route_pointer_batch_paced(
+        events,
+        coalescer,
+        repaint_due,
+        &mut held_since,
+        std::time::Duration::from_secs(3_600),
+        next_delivery,
+    )
+}
+
+/// As above, but with the hold clock the live path uses, so a test can release
+/// motion the way a session composing from client submissions does.
+fn route_pointer_batch_paced(
+    events: Vec<InputEventPacket>,
+    coalescer: &mut sophia_engine::RoutedInputCoalescer,
+    repaint_due: bool,
+    held_since: &mut Option<std::time::Instant>,
+    frame_interval: std::time::Duration,
+    next_delivery: &mut u64,
+) -> (
+    PhysicalInputRouteReport,
+    Vec<sophia_protocol::RoutedInputRequest>,
+) {
     let mut layout = PersistentLiveLayout::default();
     let first = SurfaceId::new(201, 1);
     let second = SurfaceId::new(202, 1);
@@ -795,6 +822,8 @@ fn route_pointer_batch(
         None,
         coalescer,
         repaint_due,
+        held_since,
+        frame_interval,
     )
     .unwrap();
     let delivered = receiver
@@ -924,5 +953,41 @@ fn motion_that_crosses_to_another_surface_delivers_both_in_order() {
     assert_ne!(
         delivered[0].target_surface, delivered[1].target_surface,
         "the crossing must be what separated them"
+    );
+}
+
+#[test]
+fn motion_is_released_on_the_clock_when_no_repaint_is_requested() {
+    // The regression this pins. Release used to wait only on the frame pacer,
+    // which reports a repaint due only when one was *requested* -- and a
+    // session composing from client Present submissions requests almost none:
+    // one measured run composed 870 frames and asked for two. Motion was
+    // buffered, coalesced away by the next packet, and the client received no
+    // pointer input at all while the pointer moved over it.
+    let mut coalescer = sophia_engine::RoutedInputCoalescer::new();
+    let mut held_since = None;
+    let mut next_delivery = 1;
+    let (report, delivered) = route_pointer_batch_paced(
+        vec![
+            event(1, InputEventKind::PointerMotion, 1.0),
+            event(2, InputEventKind::PointerMotion, 3.0),
+        ],
+        &mut coalescer,
+        false,
+        &mut held_since,
+        std::time::Duration::ZERO,
+        &mut next_delivery,
+    );
+
+    assert_eq!(
+        report.pointer_routed, 1,
+        "a frame's wait must release motion even with no repaint requested"
+    );
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].global_position.x, 153.0);
+    assert!(!coalescer.has_pending_motion());
+    assert!(
+        held_since.is_none(),
+        "releasing the motion must clear the wait it was holding"
     );
 }

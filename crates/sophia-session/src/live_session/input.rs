@@ -413,9 +413,14 @@ struct PhysicalInputRoutingContext<'a> {
     /// cadence instead of once per event. The owner loop owns it, so motion
     /// buffered by one pass survives into the next.
     routed_input_coalescer: &'a mut sophia_engine::RoutedInputCoalescer,
-    /// Whether this pass ends on a frame boundary, which is when buffered
-    /// motion is released.
+    /// Whether the frame pacer says a repaint is due, which releases buffered
+    /// motion.
     repaint_due: bool,
+    /// When the motion now buffered was first held, so it can be released on
+    /// the cadence even when no paced repaint asks for it.
+    motion_held_since: &'a mut Option<std::time::Instant>,
+    /// One composed frame, the longest buffered motion may wait.
+    frame_interval: std::time::Duration,
 }
 
 fn route_physical_input<P: NonBlockingInputPoller>(
@@ -465,6 +470,8 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         input_presentation_epoch,
         routed_input_coalescer,
         repaint_due,
+        motion_held_since,
+        frame_interval,
     } = context;
     route_input_events_with_launcher(
         events,
@@ -508,6 +515,8 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         Some(pending_lease_input),
         routed_input_coalescer,
         repaint_due,
+        motion_held_since,
+        frame_interval,
     )
 }
 
@@ -663,6 +672,8 @@ fn route_input_events_with_pointer_focus(
         None,
         &mut routed_input_coalescer,
         true,
+        &mut None,
+        std::time::Duration::ZERO,
     )
 }
 
@@ -709,6 +720,8 @@ fn route_input_events_with_launcher(
     mut pending_lease_input: Option<&mut PendingLeaseInput>,
     routed_input_coalescer: &mut sophia_engine::RoutedInputCoalescer,
     repaint_due: bool,
+    motion_held_since: &mut Option<std::time::Instant>,
+    frame_interval: std::time::Duration,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         ingress_saturation: RoutedInputIngressSaturation::default(),
@@ -1682,6 +1695,7 @@ fn route_input_events_with_launcher(
                     && let Some(flush) = routed_input_coalescer
                         .flush_barrier(sophia_engine::RoutedInputFlushReason::FocusChanged)
                 {
+                    *motion_held_since = None;
                     deliver_coalesced_inputs(
                         flush,
                         input_sender,
@@ -1732,8 +1746,11 @@ fn route_input_events_with_launcher(
                     outcome: sophia_protocol::InputRouteOutcome::Routed,
                 };
                 match routed_input_coalescer.push(event.clone(), coalesced_route) {
-                    sophia_engine::RoutedInputQueueAction::BufferedMotion => {}
+                    sophia_engine::RoutedInputQueueAction::BufferedMotion => {
+                        motion_held_since.get_or_insert_with(std::time::Instant::now);
+                    }
                     sophia_engine::RoutedInputQueueAction::Flushed(flush) => {
+                        *motion_held_since = None;
                         deliver_coalesced_inputs(
                             flush,
                             input_sender,
@@ -1749,12 +1766,23 @@ fn route_input_events_with_launcher(
             }
         }
     }
-    // The frame boundary. Releasing here is what caps motion delivery at the
-    // composition cadence: a client sees the pointer's current position once
-    // per composed frame instead of once per packet the device produced.
-    if repaint_due
+    // The frame boundary, which caps motion delivery at the composition
+    // cadence: a client sees the pointer's current position once per composed
+    // frame instead of once per packet the device produced.
+    //
+    // The pacer alone cannot decide this. It reports a repaint due only when
+    // one was *requested*, and a session composing from client Present
+    // submissions asks for almost none -- one measured run took 870 frames and
+    // requested two. Waiting only on the pacer buffered motion that was then
+    // coalesced away, and the client received no pointer input at all. So the
+    // wait is bounded by the frame interval as well: whatever drives
+    // composition, motion is never held longer than the frame it belongs to.
+    let motion_waited_a_frame = motion_held_since
+        .is_some_and(|since| since.elapsed() >= frame_interval);
+    if (repaint_due || motion_waited_a_frame)
         && let Some(flush) = routed_input_coalescer.flush_frame()
     {
+        *motion_held_since = None;
         deliver_coalesced_inputs(
             flush,
             input_sender,
