@@ -267,6 +267,14 @@ fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Resul
     Ok(())
 }
 
+/// Build parallelism inside containment.
+///
+/// Held as an explicit number rather than the host core count so a gate reports
+/// the same work regardless of which machine runs it. Memory is the bound that
+/// matters, not cores: each `rustc` job is the large allocation, and the value
+/// is raised only with a measured run behind it.
+const BUILD_JOBS: &str = "8";
+
 pub(super) fn cargo() -> Command {
     let mut command = process::private_command("/work/toolchain/bin/cargo");
     command
@@ -278,7 +286,10 @@ pub(super) fn cargo() -> Command {
         .env("CARGO_HOME", "/work/cargo")
         .env("CARGO_TARGET_DIR", "/work/target")
         .env("CARGO_NET_OFFLINE", "true")
-        .env("CARGO_BUILD_JOBS", "2")
+        .env("CARGO_BUILD_JOBS", BUILD_JOBS)
+        // A gate builds a fresh snapshot every time, so the incremental cache is
+        // written and never read back. Turning it off removes that write.
+        .env("CARGO_INCREMENTAL", "0")
         .env("PWD", SOURCE);
     command
 }

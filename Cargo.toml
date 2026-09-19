@@ -57,6 +57,13 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 new_without_default = "allow"
 
+[profile.dev]
+# Backtraces keep file and line; only debugger variable inspection is given up.
+# Measured on a workspace test binary: 479 MB at debuginfo=2, 99 MB stripped,
+# with debug sections accounting for 379 MB of the file. The `test` profile
+# inherits this, so every test binary in the workspace is covered.
+debug = "line-tables-only"
+
 [workspace.dependencies]
 kdl = { version = "6.7.1", default-features = false, features = ["span"] }
 rustix = { version = "1.1", default-features = false, features = ["fs", "process"] }
