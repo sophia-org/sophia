@@ -20,7 +20,11 @@ DURATION_SECONDS="${SOPHIA_GLXGEARS_DURATION_SECONDS:-20}"
 # The shake outlives the bounded client so an early trigger cannot leave an
 # unshaken tail in the mean; the session's end stops it.
 SHAKE_MARGIN_SECONDS=15
-TRIGGER_RECORD='sophia_live_session_input_pipeline schema=1 status=focus_applied'
+# The client's own GL_RENDERER line reaches session.log (its stdout is teed
+# there); the session's focus_applied record does not -- it is diverted to
+# the reduced per-session evidence log. GL_RENDERER means the client has a
+# context and is about to draw, which is when the shake should begin.
+TRIGGER_RECORD='GL_RENDERER'
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 LOG_DIR="${SOPHIA_DIAGNOSTIC_DIR:-$STATE_HOME/sophia/standalone-session}"
 SESSION_LOG="$LOG_DIR/session.log"
@@ -80,7 +84,7 @@ summarize() {
             "$SESSION_LOG" 2>/dev/null | tail -n 1 || true
     )"
     status=fail
-    if ((benchmark_status == 0)) && [[ -n "$injected" && "$trigger" == focus_applied ]]; then
+    if ((benchmark_status == 0)) && [[ -n "$injected" && "$trigger" == renderer ]]; then
         status=pass
     fi
     mkdir -p "$LOG_DIR"
@@ -121,7 +125,7 @@ watch_for_trigger() {
         fi
         sleep 0.1
     done
-    deadline=$((SECONDS + 60))
+    deadline=$((SECONDS + 180))
     while ! grep -Fq "$TRIGGER_RECORD" "$SESSION_LOG" 2>/dev/null; do
         if ((SECONDS >= deadline)); then
             echo deadline >"$TRIGGER_LOG"
@@ -130,7 +134,7 @@ watch_for_trigger() {
         fi
         sleep 0.01
     done
-    echo focus_applied >"$TRIGGER_LOG"
+    echo renderer >"$TRIGGER_LOG"
     : >"$TRIGGER_FILE"
 }
 
@@ -164,6 +168,6 @@ WATCHER_PID=$!
 
 printf '%s\n' \
     "Virtual mouse ready at $input_device." \
-    "It shakes at ${SHAKE_HZ} Hz, ${SHAKE_AMPLITUDE} px, once the client holds focus; keep hands off the mouse." \
+    "It shakes at ${SHAKE_HZ} Hz, ${SHAKE_AMPLITUDE} px, once the client starts rendering; keep hands off the mouse." \
     "The shake summary lands in $SHAKE_LOG."
 tools/benchmark_sophia_glxgears_tty3.sh "$@"
