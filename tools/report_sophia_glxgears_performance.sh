@@ -231,7 +231,7 @@ external | disabled) ;;
 esac
 
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=5 path=(legacy_ioctl|atomic_plane) ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session_cursor schema=(5|6) path=(legacy_ioctl|atomic_plane) ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$cursor" ]] || fail "missing hardware-cursor metrics"

@@ -74,6 +74,35 @@ the desktop's halving -- but the same mechanism: continuous motion perturbs the
 cadence. This is the before-number the coalescer repair has to lift back toward
 60.
 
+### Measured after the repair
+
+The coalescer is wired and behaves as designed: **19,952 motion packets became
+914 deliveries** in one 20-second shaken run, about one per composed frame.
+
+| condition | client FPS |
+| --- | --- |
+| idle | 59.7 |
+| shaken, per-event routing | 41.7 |
+| shaken, coalesced | **48.1** |
+
+So the hypothesis is **partly confirmed and not sufficient**. Per-event routing
+was a real cost -- 15% of the frame rate came back -- but roughly 11.6 FPS is
+still lost under motion, and the input phase is no longer where it goes:
+`max_input_phase_msec=0`, with composition itself running at 47.3 a second
+against 59.7 idle.
+
+The residual points at the cursor plane, not at input routing. In the same run
+`sophia_live_session_cursor schema=6 path=atomic_plane` reports 890 hardware
+updates (about one per frame) against 7,538 queued, **234 `cursor_only`
+commits** -- atomic commits carrying nothing but the cursor -- and
+`updates_primary_in_flight=48`, cursor commits made while a primary flip was
+outstanding, which the benchmark's own rule says must be zero on the atomic
+path. `max_motion_to_submit_msec=18` is longer than the 16.7 ms frame. A
+`p95_frame_msec` of 33.4, exactly two frame intervals, is the shape of a frame
+occasionally missed rather than a uniform slowdown.
+
+That is a separate mechanism from this note's, and is tracked as t120.
+
 ## Finding and resolution
 
 Not established. The per-event routing is confirmed and the coalescer exists
@@ -115,13 +144,20 @@ that integration is where the risk is.
       `client_mean_fps` with `cadence_deferred_batches` and `merged_batches`
       and says whether the loop is spending turns on delivery or retiring
       frames late.
-- [ ] Thread the coalescer and flush at the frame boundary.
-- [ ] Test the integration through the live routing path, not only the
-      coalescer in isolation: a grab, a focus change and a target crossing must
-      each still deliver their motion in order.
-- [ ] Re-measure: `glxgears` should hold ~118 FPS under continuous motion, and
-      the reporter's existing rule -- at least 55 FPS with a p95 of at most
-      25 ms -- should pass under the scripted shake, then once more by hand.
+- [x] Thread the coalescer and flush at the frame boundary. Landed; release is
+      bounded by the frame interval as well as the pacer, because a session
+      composing from client submissions requests almost no paced repaints and
+      waiting only on the pacer delivered no motion at all.
+- [x] Test the integration through the live routing path, not only the
+      coalescer in isolation: five tests drive it, covering one delivery per
+      frame, release on the clock with no repaint requested, a button after its
+      motion, and a crossing delivering both surfaces in order.
+- [ ] The reporter's rule -- at least 55 FPS with a p95 of at most 25 ms --
+      still fails under the scripted shake at 48.1 FPS and 33.4 ms. Closing
+      that gap is t120, not this note.
+- [ ] One manual hand-on-mouse run: the coalescer's tests say when it must
+      flush, but a scripted flood and a hand are not the same, and a fault here
+      presents as feel rather than as a failing test.
 
 Open work is tracked as t116 in `todo.md`.
 
