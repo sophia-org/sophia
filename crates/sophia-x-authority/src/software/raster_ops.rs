@@ -14,7 +14,8 @@ use std::sync::Arc;
 
 use sophia_protocol::{Rect, Size};
 
-use crate::{XFontFace, XGraphicsContextValues, XPoint};
+use crate::font::pcf::XGlyph;
+use crate::{XGraphicsContextValues, XPoint};
 
 use super::XAuthorityCpuBufferSnapshot;
 
@@ -388,26 +389,29 @@ pub(super) fn put_image_pixels(
     }
 }
 
-pub(super) fn draw_fixed_glyph(
+/// Paint one glyph's set pixels at `(left, top)`.
+///
+/// Every pixel goes through `fill_rect`, so a glyph inherits the graphics
+/// context's clip, raster function and plane mask exactly as a filled
+/// rectangle does. Glyphs are any size the face declares, not one cell.
+pub(super) fn draw_glyph(
     buffer: &mut XAuthorityCpuBufferSnapshot,
-    cell_x: i32,
-    cell_y: i32,
-    byte: u8,
+    left: i32,
+    top: i32,
+    glyph: &XGlyph,
     pixel: u32,
-    font: XFontFace,
     gc: &XGraphicsContextValues,
 ) {
-    let rows = font.glyph_rows(byte);
-    for (row, bits) in rows.into_iter().enumerate() {
-        for column in 0..6 {
-            if bits & (1 << (5 - column)) == 0 {
+    for row in 0..glyph.height {
+        for column in 0..glyph.width {
+            if !glyph.pixel(column, row) {
                 continue;
             }
             fill_rect(
                 buffer,
                 Rect {
-                    x: cell_x.saturating_add(column),
-                    y: cell_y.saturating_add(i32::try_from(row).unwrap_or(0)),
+                    x: left.saturating_add(i32::from(column)),
+                    y: top.saturating_add(i32::from(row)),
                     width: 1,
                     height: 1,
                 },

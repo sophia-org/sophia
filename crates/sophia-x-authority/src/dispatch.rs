@@ -1,18 +1,18 @@
 use crate::image::X_IMAGE_FORMAT_Z_PIXMAP;
 use crate::{
-    X_ATOM_NONE, X_BIG_REQUESTS_EXTENSION_NAME, X_BIG_REQUESTS_MAJOR_OPCODE, X_FIXED_6X13_ASCENT,
-    X_FIXED_6X13_DESCENT, X_MIT_SHM_EXTENSION_NAME, X_MIT_SHM_MAJOR_OPCODE, X_RANDR_EXTENSION_NAME,
-    X_RANDR_MAJOR_OPCODE, X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_COLORMAP, X_SETUP_DEFAULT_ROOT,
-    X_SETUP_DEFAULT_VISUAL, X_SOPHIA_PRESENT_EXTENSION_NAME, X_SOPHIA_PRESENT_MAJOR_OPCODE,
-    XAtomTable, XAuthorityRequestKind, XAuthorityResponseOutcome, XAuthorityResponsePacket,
-    XAuthorityRuntime, XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput,
-    XClientReply, XColorRgb16, XColormapError, XErrorCode, XFontFace, XGlxContextConfig,
-    XMetadataPropertyCandidate, XPolyText8Item, XPropertyError, XPropertyTable, XPutImageSemantics,
-    XRandrModeInfo, XRandrMonitorInfo, XResourceId, XTextDraw, XWindowGeometryUpdate,
-    XWireParseError, XWireRequest, XXiDeviceClass, XXiDeviceInfo, XXiLegacyDeviceClass,
-    XXiLegacyDeviceInfo, decode_x_size_hints, decode_x_transient_for, decode_x_window_type_facts,
-    encode_x_client_output, metadata_property_candidate, x_error_from_runtime,
-    x_error_from_wire_parse, x_lookup_color_name, x_selection_failure_event, x_true_color_visual,
+    X_ATOM_NONE, X_BIG_REQUESTS_EXTENSION_NAME, X_BIG_REQUESTS_MAJOR_OPCODE,
+    X_MIT_SHM_EXTENSION_NAME, X_MIT_SHM_MAJOR_OPCODE, X_RANDR_EXTENSION_NAME, X_RANDR_MAJOR_OPCODE,
+    X_SETUP_ARGB_VISUAL, X_SETUP_DEFAULT_COLORMAP, X_SETUP_DEFAULT_ROOT, X_SETUP_DEFAULT_VISUAL,
+    X_SOPHIA_PRESENT_EXTENSION_NAME, X_SOPHIA_PRESENT_MAJOR_OPCODE, XAtomTable,
+    XAuthorityRequestKind, XAuthorityResponseOutcome, XAuthorityResponsePacket, XAuthorityRuntime,
+    XAuthorityRuntimeError, XByteOrder, XClientEvent, XClientOutput, XClientReply, XColorRgb16,
+    XColormapError, XErrorCode, XGlxContextConfig, XMetadataPropertyCandidate, XPolyTextItem,
+    XPropertyError, XPropertyTable, XPutImageSemantics, XRandrModeInfo, XRandrMonitorInfo,
+    XResourceId, XTextDraw, XWindowGeometryUpdate, XWireParseError, XWireRequest, XXiDeviceClass,
+    XXiDeviceInfo, XXiLegacyDeviceClass, XXiLegacyDeviceInfo, decode_x_size_hints,
+    decode_x_transient_for, decode_x_window_type_facts, encode_x_client_output,
+    metadata_property_candidate, x_error_from_runtime, x_error_from_wire_parse,
+    x_lookup_color_name, x_selection_failure_event, x_true_color_visual,
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 
@@ -444,14 +444,14 @@ fn dispatch_text_draw(
     }
 }
 
-fn dispatch_poly_text8(
+fn dispatch_poly_text(
     context: XDispatchContext,
     runtime: &mut XAuthorityRuntime,
     drawable: XResourceId,
     gc: XResourceId,
     x: i16,
     baseline: i16,
-    items: &[XPolyText8Item],
+    items: &[XPolyTextItem],
 ) -> XDispatchResult {
     let transaction = context.transaction;
     if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
@@ -491,22 +491,19 @@ fn dispatch_poly_text8(
     let mut font_error = None;
     for item in items {
         match item {
-            XPolyText8Item::Text { delta, bytes } => {
+            XPolyTextItem::Text { delta, chars } => {
                 current_x = current_x.saturating_add(i32::from(*delta));
+                let advance = font.metrics.text_extents(chars).overall_width;
                 draws.push(XTextDraw {
                     x: current_x,
                     baseline: i32::from(baseline),
-                    text: bytes,
+                    text: chars,
                     image: false,
-                    font,
+                    font: font.clone(),
                 });
-                current_x = current_x.saturating_add(
-                    i32::try_from(bytes.len())
-                        .unwrap_or(i32::MAX)
-                        .saturating_mul(font.width()),
-                );
+                current_x = current_x.saturating_add(advance);
             }
-            XPolyText8Item::Font { font: requested } => {
+            XPolyTextItem::Font { font: requested } => {
                 match runtime.font_face(context.namespace, *requested) {
                     Ok(resolved) => font = resolved,
                     Err(error) => {

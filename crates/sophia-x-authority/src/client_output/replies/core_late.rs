@@ -13,6 +13,7 @@ fn encode_core_late_reply(
             | XClientReply::GetKeyboardControl { .. }
             | XClientReply::TranslateCoordinates { .. }
             | XClientReply::QueryFont { .. }
+            | XClientReply::QueryTextExtents { .. }
             | XClientReply::GetProperty { .. }
             | XClientReply::GetSelectionOwner { .. }
             | XClientReply::AllocNamedColor { .. }
@@ -148,11 +149,22 @@ fn encode_core_late_reply(
                     put_i16(byte_order, &mut out[14..16], dst_y);
                     out
                 }
-                XClientReply::QueryFont {
-                    sequence,
-                    font_ascent,
-                    font_descent,
-                } => encode_font_info_reply(byte_order, sequence, font_ascent, font_descent, None),
+                XClientReply::QueryFont { sequence, metrics } => {
+                    encode_font_info_reply(byte_order, sequence, &metrics, None, true)
+                }
+                XClientReply::QueryTextExtents { sequence, extents } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    out[1] = extents.draw_direction;
+                    put_i16(byte_order, &mut out[8..10], extents.font_ascent);
+                    put_i16(byte_order, &mut out[10..12], extents.font_descent);
+                    put_i16(byte_order, &mut out[12..14], extents.overall_ascent);
+                    put_i16(byte_order, &mut out[14..16], extents.overall_descent);
+                    put_i32(byte_order, &mut out[16..20], extents.overall_width);
+                    put_i32(byte_order, &mut out[20..24], extents.overall_left);
+                    put_i32(byte_order, &mut out[24..28], extents.overall_right);
+                    out
+                }
                 XClientReply::GetProperty {
                     sequence,
                     property_type,

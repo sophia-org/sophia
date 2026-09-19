@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use sophia_protocol::{NamespaceId, Rect};
 
-use crate::{XAuthorityAccessError, XFontFace, XResourceId};
+use crate::{XAuthorityAccessError, XFontHandle, XResourceId};
 
 pub const X_GX_COPY: u8 = 3;
 
@@ -56,7 +56,7 @@ pub struct XGraphicsContextRecord {
     pub depth: u8,
     pub namespace: NamespaceId,
     pub values: XGraphicsContextValues,
-    pub(crate) font_face: XFontFace,
+    pub(crate) font_face: XFontHandle,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -72,7 +72,7 @@ impl XGraphicsContextTable {
         drawable: XResourceId,
         depth: u8,
         values: XGraphicsContextValues,
-        font_face: XFontFace,
+        font_face: XFontHandle,
     ) -> Result<(), XAuthorityAccessError> {
         if !namespace.is_valid() {
             return Err(XAuthorityAccessError::InvalidNamespace);
@@ -125,7 +125,7 @@ impl XGraphicsContextTable {
         id: XResourceId,
         mask: u32,
         values: XGraphicsContextValues,
-        font_face: Option<XFontFace>,
+        font_face: Option<XFontHandle>,
     ) -> Result<(), XAuthorityAccessError> {
         let record = self
             .records

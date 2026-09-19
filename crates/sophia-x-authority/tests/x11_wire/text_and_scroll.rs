@@ -213,14 +213,18 @@ fn x11_fixed_6x13_gc_survives_font_close_and_image_text_forces_copy_solid() {
         &mut atoms,
         &mut properties,
     );
-    assert!(matches!(
-        query_gc.outputs.as_slice(),
-        [XClientOutput::Reply(XClientReply::QueryFont {
-            font_ascent: 11,
-            font_descent: 2,
-            ..
-        })]
-    ));
+    // A graphics context answers QueryFont with the face it retains, and that
+    // face is the built-in 6x13: single byte, every character present.
+    let [XClientOutput::Reply(XClientReply::QueryFont { metrics, .. })] =
+        query_gc.outputs.as_slice()
+    else {
+        panic!("a fontable graphics context answers QueryFont");
+    };
+    assert_eq!(metrics.font_ascent, 11);
+    assert_eq!(metrics.font_descent, 2);
+    assert_eq!(metrics.min_byte1, 0);
+    assert_eq!(metrics.max_byte1, 0);
+    assert!(metrics.all_chars_exist);
     let query_closed_font = text_contract_dispatch(
         namespace,
         6,

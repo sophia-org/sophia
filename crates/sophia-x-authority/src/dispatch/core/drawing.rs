@@ -15,6 +15,8 @@ fn dispatch_core_drawing_request(
             | XWireRequest::PolyFillArc { .. }
             | XWireRequest::PolyText8 { .. }
             | XWireRequest::ImageText8 { .. }
+            | XWireRequest::PolyText16 { .. }
+            | XWireRequest::ImageText16 { .. }
             | XWireRequest::FillPoly { .. }
             | XWireRequest::PutImage { .. }
     ) {
@@ -306,13 +308,44 @@ fn dispatch_core_drawing_request(
             x,
             y,
             items,
-        } => dispatch_poly_text8(context, runtime, drawable, gc, x, y, &items),
+        }
+        | XWireRequest::PolyText16 {
+            drawable,
+            gc,
+            x,
+            y,
+            items,
+        } => dispatch_poly_text(context, runtime, drawable, gc, x, y, &items),
         XWireRequest::ImageText8 {
             drawable,
             gc,
             x,
             y,
             text,
+        } => {
+            // An 8-bit request names characters whose high byte is zero, which
+            // is how the server reads it against a two-byte face as well.
+            let chars: Vec<u16> = text.iter().map(|byte| u16::from(*byte)).collect();
+            dispatch_text_draw(
+                context,
+                runtime,
+                drawable,
+                gc,
+                XTextDraw {
+                    x: i32::from(x),
+                    baseline: i32::from(y),
+                    text: &chars,
+                    image: true,
+                    font: crate::builtin_font_handle(),
+                },
+            )
+        }
+        XWireRequest::ImageText16 {
+            drawable,
+            gc,
+            x,
+            y,
+            chars,
         } => dispatch_text_draw(
             context,
             runtime,
@@ -321,9 +354,11 @@ fn dispatch_core_drawing_request(
             XTextDraw {
                 x: i32::from(x),
                 baseline: i32::from(y),
-                text: &text,
+                text: &chars,
                 image: true,
-                font: XFontFace::default(),
+                // Replaced by the graphics context's own face before drawing;
+                // this only has to be a face.
+                font: crate::builtin_font_handle(),
             },
         ),
         XWireRequest::FillPoly {

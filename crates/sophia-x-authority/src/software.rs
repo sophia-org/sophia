@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use sophia_protocol::{Rect, Size};
 
-use crate::{XFontFace, XGraphicsContextValues, XPoint, XResourceId};
+use crate::{XFontHandle, XGraphicsContextValues, XPoint, XResourceId};
 
 mod pixmap_exports;
 mod raster_ops;
@@ -16,8 +16,8 @@ mod update;
 use pixmap_exports::XPixmapExportDamage;
 
 use raster_ops::{
-    copy_buffer_region, copy_xrgb8888, draw_fixed_glyph, draw_line, draw_rectangle_outline,
-    fill_rect, point_bounds, put_image_pixels, rectangle_outline_bounds, set_pixel,
+    copy_buffer_region, copy_xrgb8888, draw_glyph, draw_line, draw_rectangle_outline, fill_rect,
+    point_bounds, put_image_pixels, rectangle_outline_bounds, set_pixel,
 };
 pub(crate) use raster_variants::{
     XAuthorityRasterCommand, XAuthorityRasterStore, XOwnedTextDraw, XRasterPoint,
@@ -397,6 +397,20 @@ impl XSoftwareBufferStore {
         result
     }
 
+    /// Paint one or more text runs.
+    ///
+    /// Placement is the server's: a glyph sits at its left side bearing from
+    /// the pen and its own ascent above the baseline, and the pen advances by
+    /// the character width whatever the glyph's ink measures
+    /// (`mi/miglblt.c:139-172`). A character the face does not define takes
+    /// the default character, and if the face has no usable default it is
+    /// dropped entirely -- no ink and no advance.
+    ///
+    /// `ImageText` differs from `PolyText` in two ways, both taken from
+    /// `miImageGlyphBlt`: it first fills a background box spanning the run's
+    /// total advance and the *font's* ascent and descent, and it forces a copy
+    /// function and a solid fill for both the box and the glyphs, so the
+    /// graphics context's function and fill style are deliberately ignored.
     pub fn draw_text(
         &mut self,
         drawable: XResourceId,
@@ -411,10 +425,10 @@ impl XSoftwareBufferStore {
             if draw.text.is_empty() {
                 continue;
             }
-            let top = draw.baseline.saturating_sub(draw.font.ascent());
-            let width = i32::try_from(draw.text.len())
-                .unwrap_or(i32::MAX)
-                .saturating_mul(draw.font.width());
+            let metrics = &draw.font.metrics;
+            let top = draw.baseline.saturating_sub(i32::from(metrics.font_ascent));
+            let height = i32::from(metrics.font_ascent.saturating_add(metrics.font_descent));
+            let width = metrics.text_extents(draw.text).overall_width;
             let draw_gc;
             let raster_gc = if draw.image {
                 draw_gc = XGraphicsContextValues {
@@ -433,33 +447,32 @@ impl XSoftwareBufferStore {
                         x: draw.x,
                         y: top,
                         width,
-                        height: draw.font.ascent().saturating_add(draw.font.descent()),
+                        height,
                     },
                     gc.background,
                     raster_gc,
                 );
             }
-            for (index, byte) in draw.text.iter().copied().enumerate() {
-                let cell_x = draw.x.saturating_add(
-                    i32::try_from(index)
-                        .unwrap_or(i32::MAX)
-                        .saturating_mul(draw.font.width()),
-                );
-                draw_fixed_glyph(
+            let mut pen = draw.x;
+            for code in draw.text.iter().copied() {
+                let Some((info, glyph)) = draw.font.glyph(code) else {
+                    continue;
+                };
+                draw_glyph(
                     buffer,
-                    cell_x,
-                    top,
-                    byte,
+                    pen.saturating_add(i32::from(info.left_side_bearing)),
+                    draw.baseline.saturating_sub(i32::from(info.ascent)),
+                    glyph,
                     gc.foreground,
-                    draw.font,
                     raster_gc,
                 );
+                pen = pen.saturating_add(i32::from(info.character_width));
             }
             damage.push(Rect {
                 x: draw.x,
                 y: top,
                 width,
-                height: draw.font.ascent().saturating_add(draw.font.descent()),
+                height,
             });
         }
         let published_damage = union_rects(&damage);
@@ -850,7 +863,8 @@ fn union_rects(rectangles: &[Rect]) -> Option<Rect> {
 pub(crate) struct XTextDraw<'a> {
     pub x: i32,
     pub baseline: i32,
-    pub text: &'a [u8],
+    /// Characters as CHAR2B values, whichever request width carried them.
+    pub text: &'a [u16],
     pub image: bool,
-    pub font: XFontFace,
+    pub font: XFontHandle,
 }

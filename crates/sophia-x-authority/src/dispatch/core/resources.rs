@@ -21,6 +21,7 @@ fn dispatch_core_resource_request(
             | XWireRequest::RecolorCursor { .. }
             | XWireRequest::ListFonts { .. }
             | XWireRequest::ListFontsWithInfo { .. }
+            | XWireRequest::QueryTextExtents { .. }
             | XWireRequest::CreatePixmap { .. }
             | XWireRequest::FreePixmap { .. }
     ) {
@@ -224,27 +225,21 @@ fn dispatch_core_resource_request(
             if runtime.resource_id_in_use(font) {
                 return Handled(core_resource_bad_id_choice(context, font));
             }
-            let outputs = match XFontFace::from_name(&name) {
-                Some(face) => match runtime.open_font_face(
-                    context.namespace,
-                    font,
-                    face,
-                    u64::from(context.sequence),
-                ) {
-                    Ok(()) => Vec::new(),
-                    Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                        error,
-                        context.sequence,
-                        context.major_opcode,
-                        0,
-                        u32::try_from(font.local.raw()).unwrap_or(0),
-                    ))],
-                },
-                None => {
+            // The catalog resolves the name against the configured path and
+            // the built-in element. A name no element publishes is BadName,
+            // which is what the client expects and what lets a toolkit probe
+            // for a face without dying.
+            let outputs = match runtime.open_named_font(
+                context.namespace,
+                font,
+                &name,
+                u64::from(context.sequence),
+            ) {
+                Ok(()) => Vec::new(),
+                Err(crate::XFontOpenFailure::Unresolved) => {
                     tracing::debug!(
-                        font_name = %name,
                         font = font.local.raw(),
-                        "core OpenFont rejected an unsupported font name"
+                        "sophia_x11_font schema=1 status=refused"
                     );
                     vec![XClientOutput::Error(crate::XClientError {
                         code: XErrorCode::BadName,
@@ -253,6 +248,15 @@ fn dispatch_core_resource_request(
                         minor_code: 0,
                         major_code: context.major_opcode,
                     })]
+                }
+                Err(crate::XFontOpenFailure::Resource(error)) => {
+                    vec![XClientOutput::Error(x_error_from_runtime(
+                        error,
+                        context.sequence,
+                        context.major_opcode,
+                        0,
+                        u32::try_from(font.local.raw()).unwrap_or(0),
+                    ))]
                 }
             };
             XDispatchResult {
@@ -277,10 +281,9 @@ fn dispatch_core_resource_request(
         }
         XWireRequest::QueryFont { font } => {
             let output = match runtime.fontable_face(context.namespace, font) {
-                Ok(_) => XClientOutput::Reply(XClientReply::QueryFont {
+                Ok(face) => XClientOutput::Reply(XClientReply::QueryFont {
                     sequence: context.sequence,
-                    font_ascent: i16::try_from(X_FIXED_6X13_ASCENT).unwrap_or(i16::MAX),
-                    font_descent: i16::try_from(X_FIXED_6X13_DESCENT).unwrap_or(i16::MAX),
+                    metrics: Box::new(face.metrics.clone()),
                 }),
                 Err(error) => {
                     core_resource_validation_error(context, error, XErrorCode::BadFont, font)
@@ -429,30 +432,57 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::ListFonts { max_names, .. } => XDispatchResult {
+        XWireRequest::ListFonts {
+            max_names,
+            ref pattern,
+        } => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::ListFonts {
                 sequence: context.sequence,
-                names: if max_names == 0 {
-                    Vec::new()
-                } else {
-                    vec!["fixed".to_owned()]
-                },
+                names: runtime.list_fonts(pattern, usize::from(max_names)),
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::ListFontsWithInfo { max_names, .. } => XDispatchResult {
-            response: None,
-            outputs: vec![XClientOutput::Reply(XClientReply::ListFontsWithInfo {
-                sequence: context.sequence,
-                names: if max_names == 0 {
-                    Vec::new()
-                } else {
-                    vec!["fixed".to_owned()]
-                },
-            })],
-            metadata_candidates: Vec::new(),
-        },
+        XWireRequest::ListFontsWithInfo {
+            max_names,
+            ref pattern,
+        } => {
+            // Each name is reported with its own metrics, so every entry costs
+            // a load. The bound is smaller than the plain listing's because
+            // this one measures rather than names.
+            let names = runtime.list_fonts_with_info(
+                pattern,
+                usize::from(max_names).min(crate::X_LIST_FONTS_WITH_INFO_MAX_NAMES),
+            );
+            XDispatchResult {
+                response: None,
+                outputs: vec![XClientOutput::Reply(XClientReply::ListFontsWithInfo {
+                    sequence: context.sequence,
+                    names,
+                })],
+                metadata_candidates: Vec::new(),
+            }
+        }
+        XWireRequest::QueryTextExtents { fontable, ref chars } => {
+            let output = match runtime.fontable_face(context.namespace, fontable) {
+                Ok(face) => XClientOutput::Reply(XClientReply::QueryTextExtents {
+                    sequence: context.sequence,
+                    extents: face.metrics.text_extents(chars),
+                }),
+                Err(error) => {
+                    core_resource_validation_error(context, error, XErrorCode::BadFont, fontable)
+                        .outputs
+                        .into_iter()
+                        .next()
+                        .expect("resource error has one output")
+                }
+            };
+            XDispatchResult {
+                response: None,
+                outputs: vec![output],
+                metadata_candidates: Vec::new(),
+            }
+        }
         XWireRequest::CreatePixmap {
             depth,
             pixmap,

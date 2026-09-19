@@ -203,9 +203,9 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
             gc: XResourceId::new(0x220011, 1),
             x: 5,
             y: 16,
-            items: vec![XPolyText8Item::Text {
+            items: vec![XPolyTextItem::Text {
                 delta: 0,
-                bytes: b"Hi".to_vec(),
+                chars: vec![72, 105],
             }],
         }
     );
@@ -223,9 +223,9 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
             gc: XResourceId::new(0x220011, 1),
             x: 5,
             y: 16,
-            items: vec![XPolyText8Item::Text {
+            items: vec![XPolyTextItem::Text {
                 delta: 0,
-                bytes: b"=".to_vec(),
+                chars: vec![61],
             }],
         }
     );
@@ -283,12 +283,12 @@ fn x11_poly_text8_font_shift_is_msb_first_for_both_client_orders() {
                 x: 5,
                 y: 16,
                 items: vec![
-                    XPolyText8Item::Font {
+                    XPolyTextItem::Font {
                         font: XResourceId::new(0x0123_4567, 1),
                     },
-                    XPolyText8Item::Text {
+                    XPolyTextItem::Text {
                         delta: -1,
-                        bytes: b"x".to_vec(),
+                        chars: vec![120],
                     },
                 ],
             }

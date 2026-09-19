@@ -8,7 +8,7 @@ use sophia_protocol::{
 };
 
 use crate::image::X_IMAGE_FORMAT_Z_PIXMAP;
-use crate::{X_GX_COPY, XByteOrder, XFontFace, XGraphicsContextValues, XResourceId};
+use crate::{X_GX_COPY, XByteOrder, XFontHandle, XGraphicsContextValues, XResourceId};
 
 use super::raster_replay::apply_command;
 use super::update::packed_patch_region;
@@ -141,9 +141,9 @@ pub struct XPutImageSemantics {
 pub(crate) struct XOwnedTextDraw {
     pub x: i32,
     pub baseline: i32,
-    pub text: Vec<u8>,
+    pub text: Vec<u16>,
     pub image: bool,
-    pub font: XFontFace,
+    pub font: XFontHandle,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

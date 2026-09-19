@@ -509,13 +509,12 @@ impl XAuthorityRuntime {
             if draw.text.is_empty() {
                 continue;
             }
+            let metrics = &draw.font.metrics;
             damage.push(Rect {
                 x: draw.x,
-                y: draw.baseline.saturating_sub(draw.font.ascent()),
-                width: i32::try_from(draw.text.len())
-                    .unwrap_or(i32::MAX)
-                    .saturating_mul(draw.font.width()),
-                height: draw.font.ascent().saturating_add(draw.font.descent()),
+                y: draw.baseline.saturating_sub(i32::from(metrics.font_ascent)),
+                width: metrics.text_extents(draw.text).overall_width,
+                height: i32::from(metrics.font_ascent.saturating_add(metrics.font_descent)),
             });
         }
         let Some(buffer) = self.software_buffers.draw_text(drawable, size, draws, gc) else {
@@ -536,7 +535,7 @@ impl XAuthorityRuntime {
                     baseline: draw.baseline,
                     text: draw.text.to_vec(),
                     image: draw.image,
-                    font: draw.font,
+                    font: draw.font.clone(),
                 })
                 .collect(),
             gc: gc.clone(),

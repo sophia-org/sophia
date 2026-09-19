@@ -79,9 +79,15 @@ pub enum XGlxContextConfig {
     FbConfig(u32),
 }
 
+/// One item of a `PolyText8` or `PolyText16` request.
+///
+/// Characters are held as the protocol's CHAR2B value whichever request
+/// carried them: an 8-bit request's byte is the low half of a character whose
+/// high half is zero, which is exactly how the server reads it. Holding one
+/// type keeps a single drawing path for both requests.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum XPolyText8Item {
-    Text { delta: i8, bytes: Vec<u8> },
+pub enum XPolyTextItem {
+    Text { delta: i8, chars: Vec<u16> },
     Font { font: XResourceId },
 }
 
@@ -276,7 +282,14 @@ pub enum XWireRequest {
         gc: XResourceId,
         x: i16,
         y: i16,
-        items: Vec<XPolyText8Item>,
+        items: Vec<XPolyTextItem>,
+    },
+    PolyText16 {
+        drawable: XResourceId,
+        gc: XResourceId,
+        x: i16,
+        y: i16,
+        items: Vec<XPolyTextItem>,
     },
     ImageText8 {
         drawable: XResourceId,
@@ -284,6 +297,17 @@ pub enum XWireRequest {
         x: i16,
         y: i16,
         text: Vec<u8>,
+    },
+    ImageText16 {
+        drawable: XResourceId,
+        gc: XResourceId,
+        x: i16,
+        y: i16,
+        chars: Vec<u16>,
+    },
+    QueryTextExtents {
+        fontable: XResourceId,
+        chars: Vec<u16>,
     },
     CreateColormap {
         alloc: u8,
@@ -1288,6 +1312,7 @@ pub fn decode_x11_core_request(
         X_OPEN_FONT => decode_open_font(context, bytes),
         X_CLOSE_FONT => decode_close_font(context, bytes),
         X_QUERY_FONT => decode_query_font(context, bytes),
+        X_QUERY_TEXT_EXTENTS => decode_query_text_extents(context, bytes),
         X_LIST_FONTS => decode_list_fonts(context, bytes),
         X_LIST_FONTS_WITH_INFO => decode_list_fonts_with_info(context, bytes),
         X_CREATE_PIXMAP => decode_create_pixmap(context, bytes),
@@ -1307,7 +1332,9 @@ pub fn decode_x11_core_request(
         X_PUT_IMAGE => decode_put_image(context, bytes),
         X_GET_IMAGE => decode_get_image(context, bytes),
         X_POLY_TEXT8 => decode_poly_text8(context, bytes),
+        X_POLY_TEXT16 => decode_poly_text16(context, bytes),
         X_IMAGE_TEXT8 => decode_image_text8(context, bytes),
+        X_IMAGE_TEXT16 => decode_image_text16(context, bytes),
         X_CREATE_COLORMAP => decode_create_colormap(context, bytes),
         X_FREE_COLORMAP => {
             require_exact_len(X_FREE_COLORMAP, X_FREE_COLORMAP_REQ_LEN, bytes.len())?;

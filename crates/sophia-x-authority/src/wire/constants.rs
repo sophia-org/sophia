@@ -38,6 +38,7 @@ const X_GET_INPUT_FOCUS: u8 = 43;
 const X_OPEN_FONT: u8 = 45;
 const X_CLOSE_FONT: u8 = 46;
 const X_QUERY_FONT: u8 = 47;
+const X_QUERY_TEXT_EXTENTS: u8 = 48;
 const X_LIST_FONTS: u8 = 49;
 const X_LIST_FONTS_WITH_INFO: u8 = 50;
 const X_CREATE_PIXMAP: u8 = 53;
@@ -57,7 +58,9 @@ const X_POLY_FILL_ARC: u8 = 71;
 const X_PUT_IMAGE: u8 = 72;
 const X_GET_IMAGE: u8 = 73;
 const X_POLY_TEXT8: u8 = 74;
+const X_POLY_TEXT16: u8 = 75;
 const X_IMAGE_TEXT8: u8 = 76;
+const X_IMAGE_TEXT16: u8 = 77;
 const X_CREATE_COLORMAP: u8 = 78;
 const X_FREE_COLORMAP: u8 = 79;
 const X_ALLOC_COLOR: u8 = 84;
@@ -590,6 +593,7 @@ const X_GET_IMAGE_REQ_LEN: usize = 20;
 const X_OPEN_FONT_REQ_LEN: usize = 12;
 const X_CLOSE_FONT_REQ_LEN: usize = 8;
 const X_QUERY_FONT_REQ_LEN: usize = 8;
+const X_QUERY_TEXT_EXTENTS_REQ_LEN: usize = 8;
 const X_LIST_FONTS_REQ_LEN: usize = 8;
 const X_LIST_FONTS_WITH_INFO_REQ_LEN: usize = 8;
 const X_CREATE_PIXMAP_REQ_LEN: usize = 16;
@@ -608,7 +612,9 @@ const X_POLY_FILL_RECTANGLE_REQ_LEN: usize = 12;
 const X_POLY_FILL_ARC_REQ_LEN: usize = 12;
 const X_PUT_IMAGE_REQ_LEN: usize = 24;
 const X_POLY_TEXT8_REQ_LEN: usize = 16;
+const X_POLY_TEXT16_REQ_LEN: usize = 16;
 const X_IMAGE_TEXT8_REQ_LEN: usize = 16;
+const X_IMAGE_TEXT16_REQ_LEN: usize = 16;
 const X_CREATE_COLORMAP_REQ_LEN: usize = 16;
 const X_FREE_COLORMAP_REQ_LEN: usize = 8;
 const X_ALLOC_COLOR_REQ_LEN: usize = 16;
@@ -666,7 +672,14 @@ const X_GENERIC_EVENT_QUERY_VERSION_REQ_LEN: usize = 8;
 pub const X_PUT_IMAGE_MAX_DATA_BYTES: usize = 256 * 1024;
 pub const X_QUERY_COLORS_MAX_PIXELS: usize = 256;
 pub const X_POLY_TEXT8_MAX_BYTES: usize = 64 * 1024;
+pub const X_POLY_TEXT16_MAX_BYTES: usize = 64 * 1024;
 pub const X_IMAGE_TEXT8_MAX_BYTES: usize = 64 * 1024;
+pub const X_IMAGE_TEXT16_MAX_BYTES: usize = 64 * 1024;
+/// A `QueryTextExtents` string, in characters.
+///
+/// The request carries no count; its length is recovered from the request
+/// length, so this is the bound on what that arithmetic may produce.
+pub const X_QUERY_TEXT_EXTENTS_MAX_CHARS: usize = 32 * 1024;
 pub const X_ALLOC_NAMED_COLOR_MAX_NAME_BYTES: usize = 256;
 
 /// The compositing and antialiased-text extension every modern toolkit asks

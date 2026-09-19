@@ -226,16 +226,26 @@ fn encode_core_early_reply(
                 }
                 XClientReply::ListFontsWithInfo { sequence, names } => {
                     let mut out = Vec::new();
-                    for name in names {
+                    for (name, metrics) in names {
+                        // Each face reports its own metrics. A single set for
+                        // every name was the defect that had a face of ascent
+                        // eleven reporting eight.
                         out.extend(encode_font_info_reply(
                             byte_order,
                             sequence,
-                            8,
-                            2,
+                            &metrics,
                             Some(name.as_bytes()),
+                            false,
                         ));
                     }
-                    out.extend(encode_font_info_reply(byte_order, sequence, 0, 0, None));
+                    // A zero-length name terminates the series.
+                    out.extend(encode_font_info_reply(
+                        byte_order,
+                        sequence,
+                        &crate::XFontMetrics::default(),
+                        None,
+                        false,
+                    ));
                     out
                 }
                 XClientReply::QueryBestSize {

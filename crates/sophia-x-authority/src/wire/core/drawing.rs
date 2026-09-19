@@ -43,16 +43,27 @@ fn decode_get_image(
     })
 }
 
-fn decode_poly_text8(
-    context: XWireClientContext,
+/// Walk a `PolyText8` or `PolyText16` item list.
+///
+/// The two requests differ only in how wide a character is. An item's length
+/// byte counts *characters*, not bytes, so a 16-bit item occupies
+/// `2 + 2 * len`. A length of 255 is not a string at all but a font shift,
+/// five bytes whose font identifier is most significant byte first regardless
+/// of the client's own byte order -- the server reassembles it that way
+/// explicitly and never swaps it (`dix/dixfonts.c:1206-1209`), and neither do
+/// the CHAR2B values themselves.
+fn decode_poly_text_items(
+    opcode: u8,
+    header_len: usize,
+    max_bytes: usize,
     bytes: &[u8],
-) -> Result<XWireRequest, XWireParseError> {
-    require_len(X_POLY_TEXT8, X_POLY_TEXT8_REQ_LEN, bytes.len())?;
-    let item_bytes = &bytes[X_POLY_TEXT8_REQ_LEN..];
-    if item_bytes.len() > X_POLY_TEXT8_MAX_BYTES {
+    char_width: usize,
+) -> Result<Vec<XPolyTextItem>, XWireParseError> {
+    let item_bytes = &bytes[header_len..];
+    if item_bytes.len() > max_bytes {
         return Err(XWireParseError::PropertyValueTooLarge {
             len: item_bytes.len(),
-            max: X_POLY_TEXT8_MAX_BYTES,
+            max: max_bytes,
         });
     }
 
@@ -60,6 +71,8 @@ fn decode_poly_text8(
     let mut items = Vec::new();
     while offset < item_bytes.len() {
         let remaining = item_bytes.len().saturating_sub(offset);
+        // A request is padded to four bytes, so up to three zero bytes may
+        // trail the last item. They are padding, not a zero-length item.
         if remaining <= 3 && item_bytes[offset..].iter().all(|byte| *byte == 0) {
             break;
         }
@@ -67,17 +80,17 @@ fn decode_poly_text8(
         if len == u8::MAX {
             if remaining < 5 {
                 return Err(XWireParseError::InvalidLength {
-                    opcode: X_POLY_TEXT8,
-                    expected_at_least: X_POLY_TEXT8_REQ_LEN + offset + 5,
+                    opcode,
+                    expected_at_least: header_len + offset + 5,
                     actual: bytes.len(),
                 });
             }
-            items.push(XPolyText8Item::Font {
+            items.push(XPolyTextItem::Font {
                 font: XResourceId::new(
                     u64::from(u32::from_be_bytes(
                         item_bytes[offset + 1..offset + 5]
                             .try_into()
-                            .expect("validated PolyText8 font item width"),
+                            .expect("validated font item width"),
                     )),
                     1,
                 ),
@@ -86,23 +99,66 @@ fn decode_poly_text8(
             continue;
         }
 
-        let glyph_len = usize::from(len);
-        let item_len = 2usize.saturating_add(glyph_len);
+        let item_len = 2usize.saturating_add(usize::from(len).saturating_mul(char_width));
         if remaining < item_len {
             return Err(XWireParseError::InvalidLength {
-                opcode: X_POLY_TEXT8,
-                expected_at_least: X_POLY_TEXT8_REQ_LEN + offset + item_len,
+                opcode,
+                expected_at_least: header_len + offset + item_len,
                 actual: bytes.len(),
             });
         }
-        items.push(XPolyText8Item::Text {
+        let payload = &item_bytes[offset + 2..offset + item_len];
+        let chars = if char_width == 1 {
+            payload.iter().map(|byte| u16::from(*byte)).collect()
+        } else {
+            payload
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect()
+        };
+        items.push(XPolyTextItem::Text {
             delta: item_bytes[offset + 1] as i8,
-            bytes: item_bytes[offset + 2..offset + item_len].to_vec(),
+            chars,
         });
         offset += item_len;
     }
+    Ok(items)
+}
 
+fn decode_poly_text8(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_POLY_TEXT8, X_POLY_TEXT8_REQ_LEN, bytes.len())?;
+    let items = decode_poly_text_items(
+        X_POLY_TEXT8,
+        X_POLY_TEXT8_REQ_LEN,
+        X_POLY_TEXT8_MAX_BYTES,
+        bytes,
+        1,
+    )?;
     Ok(XWireRequest::PolyText8 {
+        drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+        x: context.byte_order.i16(&bytes[12..14]),
+        y: context.byte_order.i16(&bytes[14..16]),
+        items,
+    })
+}
+
+fn decode_poly_text16(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_POLY_TEXT16, X_POLY_TEXT16_REQ_LEN, bytes.len())?;
+    let items = decode_poly_text_items(
+        X_POLY_TEXT16,
+        X_POLY_TEXT16_REQ_LEN,
+        X_POLY_TEXT16_MAX_BYTES,
+        bytes,
+        2,
+    )?;
+    Ok(XWireRequest::PolyText16 {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         x: context.byte_order.i16(&bytes[12..14]),
@@ -374,4 +430,92 @@ fn arc_damage_bounds(
         });
     }
     Ok(damage)
+}
+
+fn decode_image_text16(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_IMAGE_TEXT16, X_IMAGE_TEXT16_REQ_LEN, bytes.len())?;
+    // The header's spare byte carries the count, and for the 16-bit request it
+    // counts characters rather than bytes.
+    let char_count = usize::from(bytes[1]);
+    let text_len = char_count.saturating_mul(2);
+    if text_len > X_IMAGE_TEXT16_MAX_BYTES {
+        return Err(XWireParseError::PropertyValueTooLarge {
+            len: text_len,
+            max: X_IMAGE_TEXT16_MAX_BYTES,
+        });
+    }
+    let expected_len = X_IMAGE_TEXT16_REQ_LEN + padded_len(text_len);
+    if bytes.len() != expected_len {
+        return Err(XWireParseError::InvalidLength {
+            opcode: X_IMAGE_TEXT16,
+            expected_at_least: expected_len,
+            actual: bytes.len(),
+        });
+    }
+    let chars = bytes[X_IMAGE_TEXT16_REQ_LEN..X_IMAGE_TEXT16_REQ_LEN + text_len]
+        .chunks_exact(2)
+        .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+        .collect();
+
+    Ok(XWireRequest::ImageText16 {
+        drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+        x: context.byte_order.i16(&bytes[12..14]),
+        y: context.byte_order.i16(&bytes[14..16]),
+        chars,
+    })
+}
+
+/// `QueryTextExtents` carries no character count.
+///
+/// Its length is recovered from the request length, which cannot distinguish
+/// one trailing character from two -- so the header's spare byte carries an
+/// odd-length flag instead (`dix/dispatch.c:1411-1418`).
+fn decode_query_text_extents(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(
+        X_QUERY_TEXT_EXTENTS,
+        X_QUERY_TEXT_EXTENTS_REQ_LEN,
+        bytes.len(),
+    )?;
+    let payload = bytes.len().saturating_sub(X_QUERY_TEXT_EXTENTS_REQ_LEN);
+    if !payload.is_multiple_of(4) {
+        return Err(XWireParseError::InvalidLength {
+            opcode: X_QUERY_TEXT_EXTENTS,
+            expected_at_least: X_QUERY_TEXT_EXTENTS_REQ_LEN,
+            actual: bytes.len(),
+        });
+    }
+    let mut char_count = payload / 2;
+    if bytes[1] != 0 {
+        // An odd string leaves one character of padding to discard.
+        if char_count == 0 {
+            return Err(XWireParseError::InvalidLength {
+                opcode: X_QUERY_TEXT_EXTENTS,
+                expected_at_least: X_QUERY_TEXT_EXTENTS_REQ_LEN + 4,
+                actual: bytes.len(),
+            });
+        }
+        char_count -= 1;
+    }
+    if char_count > X_QUERY_TEXT_EXTENTS_MAX_CHARS {
+        return Err(XWireParseError::PropertyValueTooLarge {
+            len: char_count,
+            max: X_QUERY_TEXT_EXTENTS_MAX_CHARS,
+        });
+    }
+    let chars = bytes
+        [X_QUERY_TEXT_EXTENTS_REQ_LEN..X_QUERY_TEXT_EXTENTS_REQ_LEN + char_count * 2]
+        .chunks_exact(2)
+        .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+        .collect();
+    Ok(XWireRequest::QueryTextExtents {
+        fontable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        chars,
+    })
 }

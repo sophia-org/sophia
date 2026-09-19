@@ -8,6 +8,8 @@
 //! XLibre's libXfont embeds `fixed` and `cursor` the same way and for the same
 //! reason.
 
+mod tests;
+
 use super::fixed_6x13::X_FIXED_6X13_GLYPHS;
 use super::metrics::{XCharInfo, XFontMetrics};
 use super::pcf::{XGlyph, XLoadedFont};
@@ -55,13 +57,17 @@ pub fn fixed_6x13() -> XLoadedFont {
     };
     let width = u16::try_from(X_FIXED_6X13_WIDTH).unwrap_or(6);
     let height = u16::try_from(X_FIXED_6X13_ASCENT + X_FIXED_6X13_DESCENT).unwrap_or(13);
+    // The table packs a six-pixel row into the low bits, with bit five
+    // leftmost. A loaded glyph row is most significant bit leftmost, whatever
+    // the file's own order was, so the built-in rows are shifted into that
+    // same convention once here rather than every drawing path carrying two.
     let glyphs = X_FIXED_6X13_GLYPHS
         .iter()
         .map(|rows| XGlyph {
             width,
             height,
             row_bytes: 1,
-            rows: rows.to_vec(),
+            rows: rows.iter().map(|row| row << 2).collect(),
         })
         .collect();
     XLoadedFont {

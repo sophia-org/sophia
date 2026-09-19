@@ -1,47 +1,73 @@
+/// Encode the 60-byte font description both `QueryFont` and
+/// `ListFontsWithInfo` carry, optionally followed by a name.
+///
+/// `QueryFont` appends a per-character array whenever the face's ink bounds
+/// differ, because a client that sees identical bounds is entitled to assume
+/// every character measures alike (`dix/dispatch.c:1362-1370`). A face with
+/// constant metrics therefore sends 60 bytes where one with varying ink sends
+/// one entry per matrix cell.
 fn encode_font_info_reply(
     byte_order: XByteOrder,
     sequence: u16,
-    font_ascent: i16,
-    font_descent: i16,
+    metrics: &crate::XFontMetrics,
     name: Option<&[u8]>,
+    with_char_infos: bool,
 ) -> Vec<u8> {
     let name = name.unwrap_or_default();
     let padded_name_len = padded_len(name.len());
-    let mut out = vec![0; 60 + padded_name_len];
+    let properties = metrics.properties.len();
+    let char_infos = if with_char_infos {
+        metrics.query_font_char_infos()
+    } else {
+        0
+    };
+    let mut out = vec![0; 60 + padded_name_len + properties * 8 + char_infos * 12];
+    let units = 7 + (padded_name_len / 4) + properties * 2 + char_infos * 3;
     write_reply_header(
         byte_order,
         &mut out[..X_CLIENT_OUTPUT_RECORD_LEN],
         sequence,
-        u32::try_from(7 + (padded_name_len / 4)).unwrap_or(7),
+        u32::try_from(units).unwrap_or(7),
     );
     out[1] = u8::try_from(name.len()).unwrap_or(0);
-    // min_bounds charinfo
-    put_i16(byte_order, &mut out[8..10], 0);
-    put_i16(byte_order, &mut out[10..12], 6);
-    put_i16(byte_order, &mut out[12..14], 6);
-    put_i16(byte_order, &mut out[14..16], 11);
-    put_i16(byte_order, &mut out[16..18], 2);
-    put_u16(byte_order, &mut out[18..20], 0);
-    // max_bounds charinfo
-    put_i16(byte_order, &mut out[24..26], 0);
-    put_i16(byte_order, &mut out[26..28], 6);
-    put_i16(byte_order, &mut out[28..30], 6);
-    put_i16(byte_order, &mut out[30..32], 11);
-    put_i16(byte_order, &mut out[32..34], 2);
-    put_u16(byte_order, &mut out[34..36], 0);
-    put_u16(byte_order, &mut out[40..42], 0);
-    put_u16(byte_order, &mut out[42..44], 255);
-    put_u16(byte_order, &mut out[44..46], 0);
-    put_u16(byte_order, &mut out[46..48], 0);
-    out[48] = 0;
-    out[49] = 0;
-    out[50] = 0;
-    out[51] = 1;
-    put_i16(byte_order, &mut out[52..54], font_ascent);
-    put_i16(byte_order, &mut out[54..56], font_descent);
-    put_u32(byte_order, &mut out[56..60], 0);
+    put_char_info(byte_order, &mut out[8..20], &metrics.min_bounds);
+    put_char_info(byte_order, &mut out[24..36], &metrics.max_bounds);
+    put_u16(byte_order, &mut out[40..42], metrics.min_char_or_byte2);
+    put_u16(byte_order, &mut out[42..44], metrics.max_char_or_byte2);
+    put_u16(byte_order, &mut out[44..46], metrics.default_char);
+    put_u16(byte_order, &mut out[46..48], u16::try_from(properties).unwrap_or(0));
+    out[48] = metrics.draw_direction;
+    out[49] = metrics.min_byte1;
+    out[50] = metrics.max_byte1;
+    out[51] = u8::from(metrics.all_chars_exist);
+    put_i16(byte_order, &mut out[52..54], metrics.font_ascent);
+    put_i16(byte_order, &mut out[54..56], metrics.font_descent);
+    put_u32(byte_order, &mut out[56..60], u32::try_from(char_infos).unwrap_or(0));
     out[60..60 + name.len()].copy_from_slice(name);
+    let mut at = 60 + padded_name_len;
+    for (_, value, _) in &metrics.properties {
+        // The atom is resolved by the caller's table; a property whose name
+        // has no atom is written as none rather than invented.
+        put_u32(byte_order, &mut out[at..at + 4], 0);
+        put_u32(byte_order, &mut out[at + 4..at + 8], *value);
+        at += 8;
+    }
+    for index in 0..char_infos {
+        let info = metrics.char_infos.get(index).copied().unwrap_or_default();
+        put_char_info(byte_order, &mut out[at..at + 12], &info);
+        at += 12;
+    }
     out
+}
+
+/// One 12-byte CHARINFO.
+fn put_char_info(byte_order: XByteOrder, out: &mut [u8], info: &crate::XCharInfo) {
+    put_i16(byte_order, &mut out[0..2], info.left_side_bearing);
+    put_i16(byte_order, &mut out[2..4], info.right_side_bearing);
+    put_i16(byte_order, &mut out[4..6], info.character_width);
+    put_i16(byte_order, &mut out[6..8], info.ascent);
+    put_i16(byte_order, &mut out[8..10], info.descent);
+    put_u16(byte_order, &mut out[10..12], info.attributes);
 }
 
 fn write_event_header(
@@ -75,6 +101,10 @@ fn put_u16(byte_order: XByteOrder, out: &mut [u8], value: u16) {
         XByteOrder::LittleEndian => out.copy_from_slice(&value.to_le_bytes()),
         XByteOrder::BigEndian => out.copy_from_slice(&value.to_be_bytes()),
     }
+}
+
+fn put_i32(byte_order: XByteOrder, out: &mut [u8], value: i32) {
+    put_u32(byte_order, out, value as u32);
 }
 
 fn put_i16(byte_order: XByteOrder, out: &mut [u8], value: i16) {

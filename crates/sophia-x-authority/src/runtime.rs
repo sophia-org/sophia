@@ -16,7 +16,7 @@ use crate::{
     X_ATOM_NONE, XAtomTable, XAuthorityCpuBufferUpdate, XAuthorityPortalCommand,
     XAuthorityRasterCommand, XAuthorityRasterStore, XAuthorityRequestKind, XAuthorityRequestPacket,
     XAuthorityResponsePacket, XAuthorityRuntimeError, XAuthoritySelectionArtifact, XByteOrder,
-    XDrawingUpdate, XFontFace, XGraphicsContextTable, XGraphicsContextValues, XOwnedTextDraw,
+    XDrawingUpdate, XFontHandle, XGraphicsContextTable, XGraphicsContextValues, XOwnedTextDraw,
     XPoint, XPropertyChange, XPropertyMode, XPropertyTable, XPutImageSemantics, XRasterPoint,
     XRasterUnsupportedKind, XResourceKind, XResourceTable, XSelectionEvent, XSelectionMonitor,
     XShmSegmentTable, XSoftwareBufferStore, XTextDraw, XWindowLifecycleEvent, XWindowTable,
@@ -101,9 +101,9 @@ struct XDri3PixmapRecord {
     plane_fds: Vec<Arc<OwnedFd>>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct XFontRecord {
-    face: XFontFace,
+    face: XFontHandle,
 }
 
 /// What kind of thing a drawable id names.
@@ -169,6 +169,9 @@ pub struct XAuthorityRuntime {
     pending_raster_command: Option<XAuthorityRasterCommand>,
     pixmaps: BTreeMap<crate::XResourceId, XPixmapRecord>,
     fonts: BTreeMap<crate::XResourceId, XFontRecord>,
+    /// The font path and the faces loaded from it. Indexed once at startup
+    /// and never changed by a client request.
+    font_catalog: crate::XFontCatalog,
     shm_pixmaps: BTreeMap<crate::XResourceId, XShmPixmapBinding>,
     shm_mappings: BTreeMap<u32, Weak<sophia_sysv_shm::ClientMapping>>,
     /// The live mapping for each descriptor-backed segment.
@@ -262,6 +265,7 @@ impl Default for XAuthorityRuntime {
             pending_raster_command: None,
             pixmaps: Default::default(),
             fonts: Default::default(),
+            font_catalog: crate::XFontCatalog::builtin_only(),
             shm_pixmaps: Default::default(),
             shm_mappings: Default::default(),
             shm_descriptor_mappings: Default::default(),

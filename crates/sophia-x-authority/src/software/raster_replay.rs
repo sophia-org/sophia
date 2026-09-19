@@ -7,7 +7,8 @@
 
 use sophia_protocol::{Rect, SurfaceRasterClass};
 
-use crate::{X_GX_COPY, XFontFace, XGraphicsContextValues};
+use crate::font::pcf::XGlyph;
+use crate::{X_GX_COPY, XGraphicsContextValues};
 
 use super::XAuthorityCpuBufferSnapshot;
 use super::raster_ops::{draw_line, draw_rectangle_outline, fill_rect, set_pixel};
@@ -355,10 +356,10 @@ fn draw_projected_text(
     draw: &XOwnedTextDraw,
     gc: &XGraphicsContextValues,
 ) -> Rect {
-    let top = draw.baseline.saturating_sub(draw.font.ascent());
-    let width = i32::try_from(draw.text.len())
-        .unwrap_or(i32::MAX)
-        .saturating_mul(draw.font.width());
+    let metrics = &draw.font.metrics;
+    let top = draw.baseline.saturating_sub(i32::from(metrics.font_ascent));
+    let height = i32::from(metrics.font_ascent.saturating_add(metrics.font_descent));
+    let width = metrics.text_extents(&draw.text).overall_width;
     let mut raster_gc = projected_gc(gc, density);
     if draw.image {
         raster_gc.function = X_GX_COPY;
@@ -370,7 +371,7 @@ fn draw_projected_text(
                     x: draw.x,
                     y: top,
                     width,
-                    height: draw.font.ascent().saturating_add(draw.font.descent()),
+                    height,
                 },
                 density,
             ),
@@ -378,67 +379,67 @@ fn draw_projected_text(
             &raster_gc,
         );
     }
-    for (index, byte) in draw.text.iter().copied().enumerate() {
-        let cell_x = draw.x.saturating_add(
-            i32::try_from(index)
-                .unwrap_or(i32::MAX)
-                .saturating_mul(draw.font.width()),
-        );
+    let mut pen = draw.x;
+    for code in draw.text.iter().copied() {
+        let Some((info, glyph)) = draw.font.glyph(code) else {
+            continue;
+        };
         draw_coverage_glyph(
             snapshot,
             density,
-            cell_x,
-            top,
-            byte,
+            pen.saturating_add(i32::from(info.left_side_bearing)),
+            draw.baseline.saturating_sub(i32::from(info.ascent)),
+            glyph,
             gc.foreground,
-            draw.font,
             &raster_gc,
         );
+        pen = pen.saturating_add(i32::from(info.character_width));
     }
     project_rect(
         Rect {
             x: draw.x,
             y: top,
             width,
-            height: draw.font.ascent().saturating_add(draw.font.descent()),
+            height,
         },
         density,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Paint one glyph at a fractional density with exact area coverage.
+///
+/// The glyph's own pixels are projected, so a face of any cell size scales the
+/// same way the fixed face did.
 fn draw_coverage_glyph(
     snapshot: &mut XAuthorityCpuBufferSnapshot,
     density: u32,
-    cell_x: i32,
-    cell_y: i32,
-    byte: u8,
+    left: i32,
+    top: i32,
+    glyph: &XGlyph,
     pixel: u32,
-    font: XFontFace,
     gc: &XGraphicsContextValues,
 ) {
     let bounds = project_rect(
         Rect {
-            x: cell_x,
-            y: cell_y,
-            width: font.width(),
-            height: font.ascent().saturating_add(font.descent()),
+            x: left,
+            y: top,
+            width: i32::from(glyph.width),
+            height: i32::from(glyph.height),
         },
         density,
     );
-    let rows = font.glyph_rows(byte);
     for y in bounds.y..bounds.y.saturating_add(bounds.height) {
         for x in bounds.x..bounds.x.saturating_add(bounds.width) {
             let mut area = 0_i64;
-            for (row, bits) in rows.iter().copied().enumerate() {
-                for column in 0..6_i32 {
-                    if bits & (1 << (5 - column)) == 0 {
+            for row in 0..glyph.height {
+                for column in 0..glyph.width {
+                    if !glyph.pixel(column, row) {
                         continue;
                     }
-                    let sx = cell_x.saturating_add(column);
-                    let sy = cell_y.saturating_add(i32::try_from(row).unwrap_or(0));
-                    let overlap_x = overlap_scaled(x, sx, density);
-                    let overlap_y = overlap_scaled(y, sy, density);
+                    let source_x = left.saturating_add(i32::from(column));
+                    let source_y = top.saturating_add(i32::from(row));
+                    let overlap_x = overlap_scaled(x, source_x, density);
+                    let overlap_y = overlap_scaled(y, source_y, density);
                     area = area.saturating_add(overlap_x.saturating_mul(overlap_y));
                 }
             }

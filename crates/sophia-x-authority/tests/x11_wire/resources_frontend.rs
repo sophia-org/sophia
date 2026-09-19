@@ -62,9 +62,20 @@ fn x11_dispatch_accepts_open_and_close_font_resources() {
     let encoded = list.encoded_outputs(XByteOrder::LittleEndian);
     assert_eq!(encoded.len(), 1);
     assert_eq!(encoded[0][0], 1);
-    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]), 1);
-    assert_eq!(encoded[0][32], 5);
-    assert_eq!(&encoded[0][33..38], b"fixed");
+    // A wildcard lists what the path actually publishes, bounded by the
+    // client's own limit. With no host directory configured that is the
+    // built-in element's names, `fixed` among them. It used to be exactly one
+    // name whatever was asked for.
+    assert_eq!(read_u16(XByteOrder::LittleEndian, &encoded[0][8..10]), 5);
+    let mut at = 32;
+    let mut listed = Vec::new();
+    for _ in 0..5 {
+        let len = usize::from(encoded[0][at]);
+        listed.push(String::from_utf8_lossy(&encoded[0][at + 1..at + 1 + len]).into_owned());
+        at += 1 + len;
+    }
+    assert!(listed.iter().any(|name| name == "fixed"), "listed {listed:?}");
+    assert!(listed.iter().any(|name| name == "6x13"), "listed {listed:?}");
 
     let list = decode_x11_core_request(
         context(namespace, 635, XByteOrder::LittleEndian),
@@ -81,12 +92,23 @@ fn x11_dispatch_accepts_open_and_close_font_resources() {
     let encoded = list.encoded_outputs(XByteOrder::LittleEndian);
     assert_eq!(encoded.len(), 1);
     assert_eq!(encoded[0][0], 1);
-    assert_eq!(encoded[0][1], 5);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]), 9);
+    // One 60-byte description per name, then a zero-length terminator. Each
+    // carries the metrics of the face that name resolves to; a single set for
+    // every name was the defect that reported an ascent of eight for a face
+    // whose ascent is eleven.
+    assert_eq!(encoded[0][1], 5, "the first entry names five characters");
     assert_eq!(&encoded[0][60..65], b"fixed");
-    assert_eq!(encoded[0][68], 1);
-    assert_eq!(encoded[0][69], 0);
-    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][72..76]), 7);
+    assert_eq!(
+        read_i16(XByteOrder::LittleEndian, &encoded[0][52..54]),
+        11,
+        "the built-in face's real ascent"
+    );
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][54..56]), 2);
+    assert_eq!(encoded[0][49], 0, "single byte: min_byte1");
+    assert_eq!(encoded[0][50], 0, "single byte: max_byte1");
+    // The terminator is the last description and names nothing.
+    let terminator = encoded[0].len() - 60;
+    assert_eq!(encoded[0][terminator + 1], 0, "the series ends with an empty name");
 
     let close = decode_x11_core_request(
         context(namespace, 636, XByteOrder::LittleEndian),

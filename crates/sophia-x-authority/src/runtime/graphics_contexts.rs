@@ -8,11 +8,14 @@ impl XAuthorityRuntime {
     ) -> Result<(), XAuthorityRuntimeError> {
         self.validate_drawable_access(namespace, drawable)?;
         let depth = self.drawable_depth(namespace, drawable)?;
+        // A graphics context with no font named still draws text, so it holds
+        // the built-in face rather than an empty one. `Default` for a face is
+        // a font with no glyphs at all, which would silently draw nothing.
         let font_face = values
             .font
             .map(|font| self.font_face(namespace, font))
             .transpose()?
-            .unwrap_or_default();
+            .unwrap_or_else(crate::builtin_font_handle);
         self.graphics_contexts
             .create(namespace, gc, drawable, depth, values, font_face)
             .map_err(XAuthorityRuntimeError::from)?;
@@ -45,10 +48,10 @@ impl XAuthorityRuntime {
         &self,
         namespace: NamespaceId,
         gc: crate::XResourceId,
-    ) -> Result<(u8, XGraphicsContextValues, XFontFace), XAuthorityRuntimeError> {
+    ) -> Result<(u8, XGraphicsContextValues, XFontHandle), XAuthorityRuntimeError> {
         self.graphics_contexts
             .get(namespace, gc)
-            .map(|record| (record.depth, core_draw_gc_values(record), record.font_face))
+            .map(|record| (record.depth, core_draw_gc_values(record), record.font_face.clone()))
             .map_err(Into::into)
     }
 
@@ -56,7 +59,7 @@ impl XAuthorityRuntime {
         &self,
         namespace: NamespaceId,
         fontable: crate::XResourceId,
-    ) -> Result<XFontFace, XAuthorityRuntimeError> {
+    ) -> Result<XFontHandle, XAuthorityRuntimeError> {
         match self.font_face(namespace, fontable) {
             Ok(face) => Ok(face),
             Err(
@@ -64,7 +67,7 @@ impl XAuthorityRuntime {
             ) => self
                 .graphics_contexts
                 .get(namespace, fontable)
-                .map(|record| record.font_face)
+                .map(|record| record.font_face.clone())
                 .map_err(Into::into),
             Err(error) => Err(error),
         }

@@ -765,14 +765,58 @@ impl XAuthorityRuntime {
         font: crate::XResourceId,
         generation: u64,
     ) -> Result<(), XAuthorityRuntimeError> {
-        self.open_font_face(namespace, font, crate::XFontFace::default(), generation)
+        self.open_font_face(namespace, font, crate::builtin_font_handle(), generation)
+    }
+
+    /// Open a font by the name a client asked for.
+    ///
+    /// Resolution belongs to the catalog: this only decides what a failure
+    /// means to the protocol. A name nothing publishes is a client error, not
+    /// a session one.
+    /// Names matching a pattern, for `ListFonts`.
+    pub(crate) fn list_fonts(&self, pattern: &str, max_names: usize) -> Vec<String> {
+        self.font_catalog.list(pattern, max_names)
+    }
+
+    /// Names with their metrics, for `ListFontsWithInfo`.
+    ///
+    /// A name that will not load is dropped rather than reported with invented
+    /// metrics, since a client uses these numbers to lay text out.
+    pub(crate) fn list_fonts_with_info(
+        &mut self,
+        pattern: &str,
+        max_names: usize,
+    ) -> Vec<(String, Box<crate::XFontMetrics>)> {
+        let names = self.font_catalog.list(pattern, max_names);
+        names
+            .into_iter()
+            .filter_map(|name| {
+                let (face, _) = self.font_catalog.open(&name).ok()?;
+                Some((name, Box::new(face.metrics.clone())))
+            })
+            .collect()
+    }
+
+    pub(crate) fn open_named_font(
+        &mut self,
+        namespace: NamespaceId,
+        font: crate::XResourceId,
+        name: &str,
+        generation: u64,
+    ) -> Result<(), crate::XFontOpenFailure> {
+        let (face, _) = self
+            .font_catalog
+            .open(name)
+            .map_err(|_| crate::XFontOpenFailure::Unresolved)?;
+        self.open_font_face(namespace, font, face, generation)
+            .map_err(crate::XFontOpenFailure::Resource)
     }
 
     pub(crate) fn open_font_face(
         &mut self,
         namespace: NamespaceId,
         font: crate::XResourceId,
-        face: crate::XFontFace,
+        face: crate::XFontHandle,
         generation: u64,
     ) -> Result<(), XAuthorityRuntimeError> {
         self.resources
@@ -809,11 +853,11 @@ impl XAuthorityRuntime {
         &self,
         namespace: NamespaceId,
         font: crate::XResourceId,
-    ) -> Result<crate::XFontFace, XAuthorityRuntimeError> {
+    ) -> Result<crate::XFontHandle, XAuthorityRuntimeError> {
         self.validate_font_access(namespace, font)?;
         self.fonts
             .get(&font)
-            .map(|record| record.face)
+            .map(|record| record.face.clone())
             .ok_or(XAuthorityRuntimeError::UnknownResource)
     }
 

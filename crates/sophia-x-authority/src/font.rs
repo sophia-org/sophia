@@ -15,9 +15,10 @@ pub const X_FIXED_6X13_CANONICAL_NAME: &str =
 /// mode, which on a UTF-8 locale is by default, so refusing it refuses the
 /// terminal rather than the encoding.
 ///
-/// Accepting it is not a claim to cover the Unicode repertoire. Sophia
-/// rasterizes one fixed face either way, and a glyph outside it falls back
-/// exactly as it already does under the Latin-1 name.
+/// The built-in face is indexed by one byte and says so, so a client told to
+/// expect a single-byte font draws with the 8-bit requests. A configured font
+/// path supplies the real two-byte face under this name, and then the same
+/// spelling means what it says.
 pub const X_FIXED_6X13_UNICODE_NAME: &str =
     "-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso10646-1";
 
@@ -31,56 +32,45 @@ pub mod xlfd;
 
 use fixed_6x13::X_FIXED_6X13_GLYPHS;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum XFontFace {
-    #[default]
-    Fixed6x13,
+pub use catalog::{XFontCatalog, XFontOpenError, XFontOpenSource};
+pub use metrics::{XCharInfo, XFontMetrics, XTextExtents};
+pub use pcf::{XGlyph, XLoadedFont};
+
+/// A face a resource holds open.
+///
+/// Shared, because a graphics context retains the face it was given and must
+/// keep drawing with it after the client closes the font identifier. Cheap to
+/// clone, so the drawing paths pass it freely.
+pub type XFontHandle = std::sync::Arc<pcf::XLoadedFont>;
+
+/// The face every resource starts with, and the one a bare session serves.
+///
+/// Built once for the process and shared. It is immutable, and every graphics
+/// context and every text draw that has not been given another face reaches
+/// for it, so constructing it per use would rebuild two hundred and fifty six
+/// glyphs on a path that runs per request.
+pub fn builtin_font_handle() -> XFontHandle {
+    static BUILTIN: std::sync::OnceLock<XFontHandle> = std::sync::OnceLock::new();
+    std::sync::Arc::clone(BUILTIN.get_or_init(|| std::sync::Arc::new(builtin::fixed_6x13())))
 }
 
-impl XFontFace {
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
-        name.eq_ignore_ascii_case("fixed")
-            .then_some(Self::Fixed6x13)
-            // The core cursor font is accepted for CreateGlyphCursor. Cursor
-            // glyphs are authority metadata today and are not text-rasterized.
-            .or_else(|| {
-                name.eq_ignore_ascii_case("cursor")
-                    .then_some(Self::Fixed6x13)
-            })
-            // xterm opens the standard X.Org `nil2` compatibility face for
-            // its tiny-font and icon slots even when `-fn 6x13` selects the
-            // terminal face. Sophia does not expose a font-menu raster path,
-            // so retaining the fixed face here preserves FONTABLE lifetime
-            // without introducing host-font dependence.
-            .or_else(|| name.eq_ignore_ascii_case("nil2").then_some(Self::Fixed6x13))
-            .or_else(|| name.eq_ignore_ascii_case("6x13").then_some(Self::Fixed6x13))
-            .or_else(|| {
-                name.eq_ignore_ascii_case(X_FIXED_6X13_CANONICAL_NAME)
-                    .then_some(Self::Fixed6x13)
-            })
-            .or_else(|| {
-                name.eq_ignore_ascii_case(X_FIXED_6X13_UNICODE_NAME)
-                    .then_some(Self::Fixed6x13)
-            })
-    }
-
-    pub(crate) const fn width(self) -> i32 {
-        X_FIXED_6X13_WIDTH
-    }
-
-    pub(crate) const fn ascent(self) -> i32 {
-        X_FIXED_6X13_ASCENT
-    }
-
-    pub(crate) const fn descent(self) -> i32 {
-        X_FIXED_6X13_DESCENT
-    }
-
-    pub(crate) fn glyph_rows(self, byte: u8) -> [u8; 13] {
-        X_FIXED_6X13_GLYPHS[usize::from(byte)]
-    }
-}
-
+/// Metrics of the built-in face, for the paths that still assume one cell size.
 pub fn x_fixed_glyph_rows(byte: u8) -> [u8; 13] {
-    XFontFace::Fixed6x13.glyph_rows(byte)
+    X_FIXED_6X13_GLYPHS[usize::from(byte)]
+}
+
+/// How many faces `ListFontsWithInfo` will measure for one request.
+///
+/// Every entry costs a load, so this is smaller than a plain listing's bound.
+/// A font menu asks for far fewer; a client asking for more gets the first of
+/// them rather than an error.
+pub const X_LIST_FONTS_WITH_INFO_MAX_NAMES: usize = 256;
+
+/// Why `OpenFont` did not produce a font resource.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XFontOpenFailure {
+    /// No path element publishes the name: a client error, `BadName`.
+    Unresolved,
+    /// The name resolved but the resource could not be created.
+    Resource(crate::XAuthorityRuntimeError),
 }

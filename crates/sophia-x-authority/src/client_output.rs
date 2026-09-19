@@ -370,7 +370,8 @@ pub enum XClientReply {
     },
     ListFontsWithInfo {
         sequence: u16,
-        names: Vec<String>,
+        /// Each name with the metrics of the face it resolves to.
+        names: Vec<(String, Box<crate::XFontMetrics>)>,
     },
     QueryBestSize {
         sequence: u16,
@@ -784,8 +785,11 @@ pub enum XClientReply {
     },
     QueryFont {
         sequence: u16,
-        font_ascent: i16,
-        font_descent: i16,
+        metrics: Box<crate::XFontMetrics>,
+    },
+    QueryTextExtents {
+        sequence: u16,
+        extents: crate::XTextExtents,
     },
     GetProperty {
         sequence: u16,
