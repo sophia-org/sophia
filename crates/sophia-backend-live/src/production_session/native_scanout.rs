@@ -1081,6 +1081,41 @@ mod persistent_native_scanout {
                 .position(|head| head.enabled && head.output.id == output)
         }
 
+        /// The head whose refresh sets the composition cadence.
+        ///
+        /// Composition is one global tick, so exactly one head decides the rate
+        /// every output is composed at. That head must be the desktop primary --
+        /// the output `focus-at-startup` names, which the session publishes as
+        /// `primary_output` -- and not whichever head enumerated first.
+        ///
+        /// `heads` is ordered by lowest `OutputId`, minted from the lowest
+        /// connector object on the lowest card node. On a mixed-refresh desktop
+        /// that order has nothing to do with which display the user is looking
+        /// at: a 60Hz secondary enumerating ahead of a 120Hz primary capped
+        /// composition for both, halving a double-buffered client to thirty
+        /// frames a second.
+        ///
+        /// Falls back to the lowest *enabled* head when no primary is published
+        /// yet, which is the case before the session's first output publication.
+        /// A disabled head keeps its last refresh, so selecting one would pace
+        /// the desktop from a display that is no longer scanning out.
+        pub fn cadence_head(
+            &self,
+            primary_output: Option<OutputId>,
+        ) -> Option<&LiveProductionNativeHead> {
+            if let Some(output) = primary_output
+                && let Some(index) = self.primary_head_index(output)
+            {
+                return self.heads.get(index);
+            }
+            let enabled = self
+                .heads
+                .iter()
+                .map(|head| head.enabled)
+                .collect::<Vec<_>>();
+            super::refresh::fallback_cadence_index(&enabled).and_then(|index| self.heads.get(index))
+        }
+
         /// The head driving a named connector.
         ///
         /// The one lookup that is exact for a mirror group: every head has its own

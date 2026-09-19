@@ -31,4 +31,14 @@ pub(super) fn head_refresh_millihz(mode_vrefresh: Option<u32>, fallback_millihz:
     }
 }
 
+/// The head a cadence falls back to when no desktop primary is published yet.
+///
+/// Lowest *enabled*, not lowest. A head that has been disabled keeps whatever
+/// refresh it last carried, so choosing one would pace the whole desktop from
+/// a display that is no longer scanning out. The previous selection took
+/// `heads.first()` and filtered nothing.
+pub(super) fn fallback_cadence_index(enabled: &[bool]) -> Option<usize> {
+    enabled.iter().position(|enabled| *enabled)
+}
+
 mod tests;

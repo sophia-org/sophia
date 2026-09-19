@@ -1013,9 +1013,20 @@ macro_rules! publish_resumed_topology_transport {
 let mut native_frame_service_preempted_previous_cycle = false;
 let mut native_frame_control_priority_cycles = 0_u8;
 let mut last_native_frame_service = Instant::now();
+// The cadence follows the desktop primary, not whichever head enumerated
+// first. Before the session publishes an output authority there is no primary
+// to follow, so this opens on the lowest enabled head and the recompute at the
+// top of every pass corrects it once the publication lands.
 let primary_refresh_millihz = native_scanout
     .as_ref()
-    .and_then(|native| native.heads.first())
+    .and_then(|native| {
+        native.cadence_head(
+            wm_session
+                .as_ref()
+                .and_then(LiveWmSession::published_output_snapshot)
+                .map(|snapshot| snapshot.primary_output),
+        )
+    })
     .map_or(60_000, |head| head.refresh_millihz)
     .max(1);
 let mut primary_frame_interval = Duration::from_micros(
@@ -1034,7 +1045,14 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         *failure_phase = crate::diagnostics::SessionFailurePhase::OwnerLoop;
         if let Some(refresh_millihz) = native_scanout
             .as_ref()
-            .and_then(|native| native.heads.first())
+            .and_then(|native| {
+                native.cadence_head(
+                    wm_session
+                        .as_ref()
+                        .and_then(LiveWmSession::published_output_snapshot)
+                        .map(|snapshot| snapshot.primary_output),
+                )
+            })
             .map(|head| head.refresh_millihz.max(1))
         {
             let interval = Duration::from_micros(

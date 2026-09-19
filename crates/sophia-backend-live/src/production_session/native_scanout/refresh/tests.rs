@@ -6,7 +6,7 @@
 //! multiplication; the precedence is what was wrong, and what silently paced a
 //! 120Hz head at 60Hz for a whole session.
 
-use super::head_refresh_millihz;
+use super::{fallback_cadence_index, head_refresh_millihz};
 
 #[test]
 fn a_discovered_mode_supplies_the_refresh() {
@@ -30,6 +30,24 @@ fn a_zero_mode_refresh_falls_back_rather_than_pacing_on_nothing() {
     // The kernel reporting zero is not a claim that the head never scans out,
     // and a zero interval divides by zero in the pacer.
     assert_eq!(head_refresh_millihz(Some(0), 60_000), 60_000);
+}
+
+#[test]
+fn the_cadence_falls_back_to_the_lowest_enabled_head_not_the_lowest() {
+    // The bug this replaces: `heads.first()` filtered nothing, so a disabled
+    // head at index zero paced the desktop from a display that had stopped
+    // scanning out, using whatever refresh it last carried.
+    assert_eq!(fallback_cadence_index(&[false, true, true]), Some(1));
+    assert_eq!(fallback_cadence_index(&[true, true]), Some(0));
+    assert_eq!(fallback_cadence_index(&[false, false, true]), Some(2));
+}
+
+#[test]
+fn no_enabled_head_selects_nothing_rather_than_index_zero() {
+    // With every head disabled there is no rate to pace at. The caller keeps
+    // its previous interval; it must not be handed a disabled head's.
+    assert_eq!(fallback_cadence_index(&[false, false]), None);
+    assert_eq!(fallback_cadence_index(&[]), None);
 }
 
 #[test]
