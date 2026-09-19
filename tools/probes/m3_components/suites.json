@@ -202,7 +202,12 @@
       "private_input::tests::observing_a_receipt_releases_the_place_its_delivery_took",
       "private_input::tests::a_poisoned_command_slot_still_stops_the_service",
       "private_input::tests::queued_intake_nobody_committed_is_owed_at_stop",
-      "private_input::tests::an_unreadable_transaction_channel_is_refused_and_still_retains"
+      "private_input::tests::an_unreadable_transaction_channel_is_refused_and_still_retains",
+      "private_input::tests::an_unmapped_surface_gets_no_route_until_it_is_mapped",
+      "private_input::tests::a_drain_returns_the_receipts_whose_places_it_freed",
+      "private_input::tests::a_stop_that_reports_the_thread_collected_really_joined_it",
+      "private_input::tests::a_control_refused_for_now_keeps_its_place_and_its_transaction",
+      "private_input::tests::a_committed_draw_is_reconciled_to_the_engine_predecessor"
     ],
     "private-session-bind": [
       "x11_socket::routing_tests::private_exclusive_bind::exclusive_bind_refuses_an_occupied_path_and_keeps_the_first_owner",
