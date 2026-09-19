@@ -629,6 +629,22 @@ sampled FPS and Sophia's present cadence; `status=pass` requires the benchmark
 to pass and the shake to have started when the client began rendering rather than on its deadline.
 `/dev/uinput` must be writable (`tools/setup_sophia_uinput.sh`).
 
+What the shaken run is for is the benchmark's own rule -- at least 55 FPS with
+a p95 of at most 25 ms -- which until this harness existed had only ever been
+checked against a fixture. It now holds under 1 kHz motion: 59.9 FPS at a p95
+of 16.7 ms, one frame interval rather than two. The cursor record beside it
+says why, and is worth reading when the rule fails. `cursor_only` counts the
+blocking cursor-only commits taken while the client was drawing and should be
+near zero; `rides` should be close to the frame count, because a cursor that
+rides a frame going out anyway costs nothing. A high `cursor_only` with a p95
+at twice the frame interval is the signature of frames losing their vblank to
+the cursor.
+
+An installed desktop reports a nonzero `cursor_only_total_msec` and that is
+ordinary: it idles, so the commits that move the pointer on an idle desktop
+are taken often, each bounded by one vblank. The benchmark reads zero only
+because `glxgears` never stops drawing.
+
 The session log must not contain a CPU submission between the first mixed
 Present retirement and its successor, a repeated cold import of one live image
 generation, nor an AMD `context is guilty` recovery. The first run that

@@ -745,6 +745,32 @@ buffer-age history reduce composition work, while incomplete history forces a
 full repaint. One newest pending frame and one KMS submission are retained per
 output so slow rendering cannot create an unbounded queue.
 
+Pointer motion reaches the X frontend at the composition cadence, not at the
+rate the device produces it. A 1 kHz mouse otherwise mints a delivery
+identity, a route lease and an ordered acknowledgement per packet, which keeps
+authority work continuously available to the owner loop and costs the client
+frames: a measured shake held a 120Hz head's client at half its idle rate.
+Motion is buffered latest-wins per target surface and released on the frame
+boundary, so a client sees the pointer's current position once per composed
+frame. Release is bounded by the frame interval as well as by the pacer, since
+a session composing from client submissions requests almost no paced repaints.
+Anything that changes state releases the buffered motion ahead of itself, so a
+click still lands after the motion that positioned the pointer under it, a
+crossing into another surface releases the position the departed client last
+saw, and buttons, scroll and keys keep their immediate path. Scroll is not
+coalesced: each axis packet carries a delta, so latest-wins would lose
+distance.
+
+A cursor-only atomic commit is taken only while the client is quiet. The
+commit blocks until the kernel applies it at a vblank -- deliberately, because
+it carries no page-flip event and the owner must not guess at a completion it
+did not observe -- so one issued between a frame retiring and the next
+arriving spends the vblank that frame needed. The cursor rides a frame that is
+going out whenever there is one, which costs nothing; it commits alone only
+when no primary has retired on that head for two refreshes. That keeps the
+pointer moving on an idle desktop, which is the reason the commit exists, and
+keeps it out of the way of a client that is drawing.
+
 Physical AMDGPU recovery evidence requires GL execution to be isolated from the
 session owner. After the initial synchronous modeset, the production native
 path moves EGL, GL, GBM targets, imported-image residency, and locked front
