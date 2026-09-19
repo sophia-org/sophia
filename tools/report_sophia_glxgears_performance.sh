@@ -60,7 +60,14 @@ completion="$(
     grep -E '^sophia_live_session schema=16 status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
-[[ -n "$completion" ]] || fail "missing bounded Sophia session completion"
+[[ -n "$completion" ]] || fail "\
+missing bounded Sophia session completion.
+The session's own records are absent from $SESSION_LOG, which happens when the
+session ran as an ordinary one: sophia then diverts its records to the reduced
+per-session evidence log, where a cadence summary keeps samples and loses the
+mean_fps and p95_frame_msec this report reads. A benchmark session must be
+bounded -- tools/run_sophia_session.sh passes --max-runtime-ms for exactly
+this -- so its full records stay on stdout and reach this log."
 grep -Eq '^sophia_live_session_protocol_errors schema=1 expected=[0-9]+ unexpected=0$' \
     "$SESSION_LOG" || fail "session contains unexpected X11 protocol errors"
 grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
@@ -106,7 +113,8 @@ cadence="$(
     grep -E '^sophia_live_present_cadence schema=1 status=complete ' \
         "$SESSION_LOG" | tail -n 1 || true
 )"
-[[ -n "$cadence" ]] || fail "missing retained-buffer cadence summary"
+[[ -n "$cadence" ]] || fail "\
+missing retained-buffer cadence summary (see the bounded-session note above)"
 timestamp_count="$(rendering_performance_field "$cadence" samples)" ||
     fail "cadence summary lacks samples"
 advancing_intervals="$(rendering_performance_field "$cadence" advancing_intervals)" ||

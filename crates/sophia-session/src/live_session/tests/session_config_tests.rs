@@ -62,9 +62,7 @@ pub(super) fn isolated_session_config(
             .iter()
             .any(|argument| argument.starts_with("--config="))
         {
-            let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tools/config/sophia/core.kdl");
-            arguments.push(format!("--config={}", core.display()));
+            arguments.push(isolated_core_config_argument());
         }
         if !arguments
             .iter()
@@ -74,6 +72,20 @@ pub(super) fn isolated_session_config(
         }
     }
     PersistentXtermSessionConfig::from_args(&arguments)
+}
+
+/// The core configuration a test must name so it does not discover the
+/// operator's own.
+///
+/// Without `--config` (or `--no-config`, which an explicit `--desktop-profile`
+/// forbids) core discovery falls through to `~/.config/sophia/config.kdl`.
+/// A test that lands there asserts against whatever desktop the machine
+/// happens to run: two of these passed on a machine with no Sophia config and
+/// failed on one with it.
+fn isolated_core_config_argument() -> String {
+    let core =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/config/sophia/core.kdl");
+    format!("--config={}", core.display())
 }
 
 fn isolated_desktop_profile_argument() -> String {
@@ -344,6 +356,7 @@ session { terminal "terminal"; browser "browser"; }
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
 
     let base = [
+        isolated_core_config_argument(),
         format!("--desktop-profile={}", path.display()),
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/true".to_owned(),
@@ -364,6 +377,7 @@ session { terminal "terminal"; browser "browser"; }
 
     assert!(
         PersistentXtermSessionConfig::from_args(&[
+            isolated_core_config_argument(),
             format!("--desktop-profile={}", path.display()),
             "--shell-process=/srv/narthex".to_owned(),
         ])
@@ -1160,6 +1174,7 @@ fn session_authority_preparation_is_deterministic_and_rejection_preserves_active
     let active_overrides = first.session_application_overrides.clone();
 
     let rejected = PersistentXtermSessionConfig::from_args(&[
+        isolated_core_config_argument(),
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/kitty".to_owned(),
         "--session-start=missing".to_owned(),
@@ -1172,6 +1187,7 @@ fn session_authority_preparation_is_deterministic_and_rejection_preserves_active
 #[test]
 fn normal_session_rejects_proof_only_options() {
     let result = PersistentXtermSessionConfig::from_args(&[
+        isolated_core_config_argument(),
         "--session-mode=normal".to_owned(),
         "--session-app=terminal=/usr/bin/xterm".to_owned(),
         "--session-start=terminal".to_owned(),
@@ -1493,6 +1509,7 @@ fn an_explicit_profile_still_refuses_a_shortcut_the_session_cannot_perform() {
     }
 
     let refused = PersistentXtermSessionConfig::from_args(&[
+        isolated_core_config_argument(),
         "--session-mode=normal".to_owned(),
         format!("--desktop-profile={}", profile.display()),
         "--session-app=standalone=/usr/bin/true".to_owned(),
@@ -1540,6 +1557,7 @@ fn an_explicit_profile_enabling_a_shell_still_refuses_without_one() {
     }
 
     let refused = PersistentXtermSessionConfig::from_args(&[
+        isolated_core_config_argument(),
         "--session-mode=normal".to_owned(),
         format!("--desktop-profile={}", profile.display()),
         "--session-app=standalone=/usr/bin/true".to_owned(),
@@ -1595,6 +1613,13 @@ fn the_standalone_single_application_argument_set_still_starts() {
         "--session-app=standalone=/usr/bin/true".to_owned(),
         "--session-start=standalone".to_owned(),
         "--exit-when-startup-exits".to_owned(),
+        // The profile runs bounded, which is also what keeps its records
+        // readable: `sophia` diverts an *ordinary* session's records to the
+        // reduced per-session evidence log, where a cadence summary loses the
+        // `mean_fps` and `p95_frame_msec` the benchmark report exists to read.
+        // A bounded session keeps its full records on stdout, which is where
+        // this profile's report looks.
+        "--max-runtime-ms=55000".to_owned(),
         "--session-app-arg=standalone=--config".to_owned(),
         "--session-app-arg=standalone=NONE".to_owned(),
         "--session-app-arg=standalone=--override".to_owned(),
@@ -1614,6 +1639,13 @@ fn the_standalone_single_application_argument_set_still_starts() {
         "--session-app-arg=standalone=sleep 20".to_owned(),
     ]);
 
+    assert!(
+        accepted
+            .as_ref()
+            .is_ok_and(|config| config.max_runtime.is_some()),
+        "the standalone argument set must stay bounded so its records reach the report: {:?}",
+        accepted.as_ref().err()
+    );
     assert!(
         accepted.is_ok(),
         "the standalone argument set was refused: {:?}",

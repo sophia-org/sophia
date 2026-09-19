@@ -681,10 +681,30 @@ if [[ "$SESSION_PROFILE" == standalone ]]; then
     if [[ "${SOPHIA_LEGACY_CURSOR:-0}" == 1 ]]; then
         session_args+=(--legacy-cursor)
     fi
+    # A bounded measurement, not a daily session.
+    #
+    # This is what keeps the run's records where a report can read them.
+    # `sophia` installs the reduced per-session evidence capture only for an
+    # "ordinary" session -- `--session-mode=normal` with no `--proof` and no
+    # `--max-runtime-ms` -- and a captured session's records go to that reduced
+    # log instead of stdout, stripped of the very numbers a report is for:
+    # `present_cadence` keeps `samples` and loses `mean_fps` and
+    # `p95_frame_msec`. The benchmark reporter reads this profile's
+    # `session.log`, so without this the cadence summary it needs is simply not
+    # there, and it fails on the bounded-completion record it also cannot find.
+    #
+    # The value is a backstop, never the exit: the client's own duration ends
+    # the run through `--exit-when-startup-exits`, and the independent watchdog
+    # is sized by the caller. Sitting above the watchdog means this cap cannot
+    # truncate a workload -- it marks the session bounded and keeps its full,
+    # unreduced records on stdout, which is where this profile's report reads
+    # them from.
+    standalone_max_runtime_msec=$(( ( ${SESSION_WATCHDOG_SECONDS:-600} + 30 ) * 1000 ))
     session_args+=(
         "--session-app=standalone=$standalone_bin"
         --session-start=standalone
         --exit-when-startup-exits
+        "--max-runtime-ms=$standalone_max_runtime_msec"
     )
     if [[ "$standalone_workload" == vkcube ]]; then
         session_args+=(
