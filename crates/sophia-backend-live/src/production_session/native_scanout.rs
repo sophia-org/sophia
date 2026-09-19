@@ -1,3 +1,5 @@
+mod refresh;
+
 #[cfg(all(feature = "libdrm-events", feature = "gbm-probe"))]
 mod persistent_native_scanout {
     use crate::*;
@@ -751,7 +753,10 @@ mod persistent_native_scanout {
                         target_generation: 1,
                         native_size: selection.size(),
                         scale: record.scale,
-                        refresh_millihz: record.mode.refresh_millihz,
+                        refresh_millihz: super::refresh::head_refresh_millihz(
+                            selection.mode().map(|mode| mode.vrefresh()),
+                            record.mode.refresh_millihz,
+                        ),
                         transform: sophia_protocol::OutputTransform::Normal,
                         mapping: initial_mapping,
                     };

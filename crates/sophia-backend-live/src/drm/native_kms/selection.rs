@@ -70,6 +70,16 @@ impl LibdrmNativePrimaryPlaneSelection {
         self.size
     }
 
+    /// The KMS mode discovery attached, when it attached one.
+    ///
+    /// Optional for the same reason the field is: a caller composing a
+    /// selection by hand need not supply one. A consumer that needs the real
+    /// refresh must read it here rather than from a sysfs record, which
+    /// carries only a resolution and fabricates the rest.
+    pub const fn mode(self) -> Option<drm::control::Mode> {
+        self.mode
+    }
+
     pub fn connector_id(self) -> u32 {
         self.connector.into()
     }
