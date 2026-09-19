@@ -1,9 +1,9 @@
 fn run_x_authority_vkcube_admission_smoke()
 -> Result<XAuthorityVkcubeAdmissionSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("vkcube", "vkcube")?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let (display, socket_path) = temp_xauthority_display(6685)?;
     let (transaction_sender, transaction_receiver) = sync_channel(4_096);
     let (control_ack_sender, control_ack_receiver) = sync_channel(64);

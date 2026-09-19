@@ -556,9 +556,9 @@ fn run_x_authority_quickshell_smoke()
     // Both halves of DRI3, because the point of this probe is the GL path: Qt
     // renders through it, and without a device the client falls back long
     // before it reaches Present -- which is the request this exists to watch.
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let (display, socket_path) = temp_xauthority_display(7_900)?;
     run_x_authority_external_probe_smoke(ExternalProbeInvocation {
         label: "quickshell",
@@ -713,9 +713,54 @@ impl sophia_x_authority::XServerFrontendPixmapAllocator for ExternalProbePixmapA
 
 struct ExternalProbeRenderDeviceProvider {
     device: std::fs::File,
+    import_formats: Vec<sophia_x_authority::XServerFrontendDmaBufImportFormat>,
+}
+
+impl ExternalProbeRenderDeviceProvider {
+    /// Measures the node's DMA-BUF import inventory once, before the frontend
+    /// exists, the way a live session does.
+    ///
+    /// The authority answers `GetSupportedModifiers` from this inventory and
+    /// nothing else. Handed none, mesa allocates without a modifier and
+    /// imports through the single-plane `PixmapFromBuffer`, which is not the
+    /// path a session runs and not the stage the GLX probes require. A node
+    /// that cannot be measured is reported and advertised as nothing, as the
+    /// session does, so a probe that needs the layouts says which stage it
+    /// lost rather than failing to start.
+    fn measured(device: std::fs::File) -> Result<Self, Box<dyn std::error::Error>> {
+        let import_formats = match device
+            .try_clone()
+            .map_err(|_| sophia_backend_live::LiveDmaBufCapabilityError::DeviceUnavailable)
+            .and_then(sophia_backend_live::query_dma_buf_import_formats)
+        {
+            Ok(formats) => formats
+                .into_iter()
+                .map(
+                    |row| sophia_x_authority::XServerFrontendDmaBufImportFormat {
+                        format: row.format,
+                        modifiers: row.modifiers,
+                    },
+                )
+                .collect(),
+            Err(reason) => {
+                eprintln!(
+                    "sophia_x_authority_probe schema=1 status=degraded reason=dma_buf_import_capabilities_unavailable error={reason:?}"
+                );
+                Vec::new()
+            }
+        };
+        Ok(Self {
+            device,
+            import_formats,
+        })
+    }
 }
 
 impl XServerFrontendRenderDeviceProvider for ExternalProbeRenderDeviceProvider {
+    fn dma_buf_import_formats(&self) -> Vec<sophia_x_authority::XServerFrontendDmaBufImportFormat> {
+        self.import_formats.clone()
+    }
+
     fn open_render_device_fd(
         &self,
     ) -> Result<std::os::fd::OwnedFd, XServerFrontendRenderDeviceError> {
@@ -733,9 +778,9 @@ impl XServerFrontendRenderDeviceProvider for ExternalProbeRenderDeviceProvider {
 fn run_x_authority_zenity_render_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("zenity_render", "zenity")?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let (display, socket_path) = temp_xauthority_display(7760)?;
     run_x_authority_external_probe_smoke(ExternalProbeInvocation {
         label: "zenity_render",
@@ -766,10 +811,9 @@ fn run_x_authority_zenity_render_smoke()
 fn run_x_authority_vkcube_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("vkcube", "vkcube")?;
-    let render_node = first_openable_render_node()?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: render_node,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let (display, socket_path) = temp_xauthority_display(6680)?;
     run_x_authority_external_probe_smoke(ExternalProbeInvocation {
         label: "vkcube",
@@ -794,9 +838,9 @@ fn run_x_authority_vkcube_smoke()
 fn run_x_authority_glxgears_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("glxgears", "glxgears")?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let (display, socket_path) = temp_xauthority_display(6685)?;
     run_x_authority_external_probe_smoke(ExternalProbeInvocation {
         label: "glxgears",
@@ -833,9 +877,9 @@ fn run_x_authority_glxgears_smoke()
 fn run_x_authority_glx_pbuffer_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("pbdemo", "pbdemo")?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let image = std::env::temp_dir().join(format!("sophia-pbuffer-probe-{}.ppm", std::process::id()));
     // A 2x2 binary PPM: the smallest input pbdemo will accept.
     std::fs::write(
@@ -879,9 +923,9 @@ fn run_x_authority_glx_pbuffer_smoke()
 fn run_x_authority_browser_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("browser", "helium")?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     // Scratch profile, per process: a browser started against the operator's own
     // profile forwards to whatever instance is already running and exits before
     // it opens the display, which reads as a silent probe rather than a refusal.
@@ -925,9 +969,9 @@ fn run_x_authority_browser_smoke()
 fn run_x_authority_kitty_smoke()
 -> Result<XAuthorityExternalProbeSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("kitty", "kitty")?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let (display, socket_path) = temp_xauthority_display(6690)?;
     run_x_authority_external_probe_smoke(ExternalProbeInvocation {
         label: "kitty",

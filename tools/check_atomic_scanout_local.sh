@@ -87,4 +87,11 @@ tools/probes/uinput_text_injector.py \
 tools/probes/uinput_text_injector.py \
     --shake-hz=1000 --shake-seconds=35 --shake-amplitude=8 --self-test
 
+# The GLX probes require the modifier-negotiated DRI3 import, and the
+# authority advertises layouts only from a measured inventory. The glxgears
+# benchmark's preflight failed for eleven days after that inventory replaced
+# a fixed list, because nothing here ran it.
+cargo run --quiet --offline -p sophia-cli --features native-session \
+    -- x-authority-glxgears-smoke
+
 echo "atomic scanout local checks passed"

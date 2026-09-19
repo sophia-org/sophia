@@ -1,9 +1,9 @@
 fn run_x_authority_kitty_input_smoke()
 -> Result<XAuthorityKittyInputSmokeReport, Box<dyn std::error::Error>> {
     let command = resolve_external_probe_binary("kitty", "kitty")?;
-    let provider = Arc::new(ExternalProbeRenderDeviceProvider {
-        device: first_openable_render_node()?,
-    });
+    let provider = Arc::new(ExternalProbeRenderDeviceProvider::measured(
+        first_openable_render_node()?,
+    )?);
     let (display, socket_path) = temp_xauthority_display(6692)?;
     let result_file = XtermInputResultFile {
         path: std::env::temp_dir().join(format!(
