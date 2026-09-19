@@ -654,6 +654,8 @@ fn a_bound_grab_routes_physical_motion_and_release_after_a_scene_change() {
         None,
         None,
         Some(&mut held),
+        &mut sophia_engine::RoutedInputCoalescer::new(),
+        true,
     )
     .unwrap();
     assert!(
@@ -713,4 +715,214 @@ fn client_ungrab_joins_an_engine_release_without_extending_it() {
         Response::Released
     );
     assert!(fixture.state.lease(identity.seat).is_none());
+}
+
+/// Routes one batch through the live physical path with a caller-owned
+/// coalescer, so a test can decide where the frame boundary falls.
+///
+/// Two surfaces sit side by side, the first spanning x 0..100 and the second
+/// x 100..200, and the pointer opens centred on a 300-wide output -- inside the
+/// second. An event's x is an offset from that centre, so an event carrying
+/// -100 lands in the first surface and one carrying 0 lands in the second.
+fn route_pointer_batch(
+    events: Vec<InputEventPacket>,
+    coalescer: &mut sophia_engine::RoutedInputCoalescer,
+    repaint_due: bool,
+    next_delivery: &mut u64,
+) -> (
+    PhysicalInputRouteReport,
+    Vec<sophia_protocol::RoutedInputRequest>,
+) {
+    let mut layout = PersistentLiveLayout::default();
+    let first = SurfaceId::new(201, 1);
+    let second = SurfaceId::new(202, 1);
+    let near = add_surface(&mut layout, first, admission(1, 4), 0);
+    let far = add_surface(&mut layout, second, admission(2, 4), 100);
+    for surface in [first, second] {
+        layout.presentation_roles.insert(
+            surface,
+            sophia_protocol::SurfacePresentationRole::PolicyManaged,
+        );
+    }
+    let scene = projection(vec![near, far]);
+    let (sender, receiver) = sync_channel(32);
+    let (release_sender, _release_receiver) = sync_channel(8);
+    let (mut repeat, keymap) = super::test_key_repeat_parts();
+    let mut pointer = SessionPointerPlacement::default();
+    pointer.center_on_primary_output(Size {
+        width: 300,
+        height: 100,
+    });
+    let report = route_input_events_with_launcher(
+        events,
+        &InputFocusState::new(),
+        &[],
+        &scene.layers,
+        &layout.presentation_roles,
+        &layout.client_routes,
+        &sender,
+        &mut XCoreKeyboardMapper::new(),
+        &mut repeat,
+        &keymap,
+        &mut SessionClientKeyState::default(),
+        &mut EmergencyChordState::awaiting_arm(),
+        &mut VirtualTerminalChordState::default(),
+        &mut PhysicalKeyboardCoverage::default(),
+        None,
+        &mut pointer,
+        true,
+        false,
+        false,
+        PhysicalInputRoutingMode::Full,
+        next_delivery,
+        10,
+        None,
+        None,
+        None,
+        Some(second),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(&release_sender),
+        Some(scene.output),
+        scene.epoch,
+        None,
+        None,
+        None,
+        None,
+        None,
+        coalescer,
+        repaint_due,
+    )
+    .unwrap();
+    let delivered = receiver
+        .try_iter()
+        .map(|routed: XAuthorityRoutedInput| routed.request)
+        .collect::<Vec<_>>();
+    (report, delivered)
+}
+
+#[test]
+fn motion_reaches_the_frontend_once_per_frame_rather_than_once_per_event() {
+    // The repair this pins. Each of these used to mint its own delivery, route
+    // lease and ordered acknowledgement, which is what kept authority work
+    // continuously available and held composition below its cadence.
+    let mut coalescer = sophia_engine::RoutedInputCoalescer::new();
+    let mut next_delivery = 1;
+    let (report, delivered) = route_pointer_batch(
+        vec![
+            event(1, InputEventKind::PointerMotion, 1.0),
+            event(2, InputEventKind::PointerMotion, 2.0),
+            event(3, InputEventKind::PointerMotion, 3.0),
+        ],
+        &mut coalescer,
+        true,
+        &mut next_delivery,
+    );
+
+    assert_eq!(report.pointer_routed, 1, "three motions, one delivery");
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(
+        delivered[0].global_position.x, 153.0,
+        "the frontend must see where the pointer ended, not where it started"
+    );
+}
+
+#[test]
+fn motion_observed_away_from_a_frame_boundary_waits_for_the_next_one() {
+    let mut coalescer = sophia_engine::RoutedInputCoalescer::new();
+    let mut next_delivery = 1;
+
+    let (held, nothing) = route_pointer_batch(
+        vec![
+            event(1, InputEventKind::PointerMotion, 1.0),
+            event(2, InputEventKind::PointerMotion, 2.0),
+        ],
+        &mut coalescer,
+        false,
+        &mut next_delivery,
+    );
+    assert_eq!(held.pointer_routed, 0, "no frame boundary, no delivery");
+    assert!(nothing.is_empty());
+    assert!(
+        coalescer.has_pending_motion(),
+        "the motion must survive the pass that could not deliver it"
+    );
+
+    let (released, delivered) = route_pointer_batch(
+        vec![event(3, InputEventKind::PointerMotion, 4.0)],
+        &mut coalescer,
+        true,
+        &mut next_delivery,
+    );
+    assert_eq!(released.pointer_routed, 1);
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(
+        delivered[0].global_position.x, 154.0,
+        "what arrives is the latest position, not a replay of the ones it replaced"
+    );
+    assert!(!coalescer.has_pending_motion());
+}
+
+#[test]
+fn a_button_lands_after_the_motion_that_positioned_the_pointer() {
+    let mut coalescer = sophia_engine::RoutedInputCoalescer::new();
+    let mut next_delivery = 1;
+    let (report, delivered) = route_pointer_batch(
+        vec![
+            event(1, InputEventKind::PointerMotion, 5.0),
+            event(
+                2,
+                InputEventKind::PointerButton {
+                    button: 272,
+                    pressed: true,
+                },
+                0.0,
+            ),
+        ],
+        &mut coalescer,
+        true,
+        &mut next_delivery,
+    );
+
+    assert_eq!(report.pointer_routed, 2);
+    assert_eq!(report.pointer_buttons_routed, 1);
+    assert_eq!(delivered.len(), 2);
+    assert_eq!(
+        delivered[0].kind,
+        InputEventKind::PointerMotion,
+        "a click must not overtake the motion that placed the pointer under it"
+    );
+    assert!(matches!(
+        delivered[1].kind,
+        InputEventKind::PointerButton { .. }
+    ));
+}
+
+#[test]
+fn motion_that_crosses_to_another_surface_delivers_both_in_order() {
+    // Latest-wins is per target surface: coalescing across a crossing would
+    // drop the last position the client being left ever saw.
+    let mut coalescer = sophia_engine::RoutedInputCoalescer::new();
+    let mut next_delivery = 1;
+    let (report, delivered) = route_pointer_batch(
+        vec![
+            event(1, InputEventKind::PointerMotion, -100.0),
+            event(2, InputEventKind::PointerMotion, 0.0),
+        ],
+        &mut coalescer,
+        true,
+        &mut next_delivery,
+    );
+
+    assert_eq!(report.pointer_routed, 2);
+    assert_eq!(delivered.len(), 2);
+    assert_eq!(delivered[0].global_position.x, 50.0);
+    assert_eq!(delivered[1].global_position.x, 150.0);
+    assert_ne!(
+        delivered[0].target_surface, delivered[1].target_surface,
+        "the crossing must be what separated them"
+    );
 }

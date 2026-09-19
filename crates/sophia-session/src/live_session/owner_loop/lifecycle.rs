@@ -841,7 +841,11 @@
         )?;
         let input_phase_started = Instant::now();
         let input_requested_exit = input_routing_mode != PhysicalInputRoutingMode::Suppressed
-            && drain_physical_input!(input_routing_mode);
+            && drain_physical_input!(
+                input_routing_mode,
+                &mut routed_input_coalescer,
+                primary_frame_pacer.repaint_due(Instant::now())
+            );
         metrics.max_input_phase = metrics.max_input_phase.max(input_phase_started.elapsed());
         if input_requested_exit {
             break;

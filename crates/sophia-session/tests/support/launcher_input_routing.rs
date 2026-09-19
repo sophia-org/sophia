@@ -50,6 +50,8 @@ fn route_overlay_input(
         None,
         Some((capture, keyboard)),
         None,
+        &mut sophia_engine::RoutedInputCoalescer::new(),
+        true,
     )
     .unwrap();
     assert_eq!(receiver.try_iter().count(), 0);

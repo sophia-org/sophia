@@ -409,6 +409,13 @@ struct PhysicalInputRoutingContext<'a> {
     route_lease_release_sender: &'a SyncSender<XAuthorityRouteLeaseRelease>,
     input_output: Option<sophia_protocol::OutputId>,
     input_presentation_epoch: u64,
+    /// Holds pointer motion so it reaches the frontend at the composition
+    /// cadence instead of once per event. The owner loop owns it, so motion
+    /// buffered by one pass survives into the next.
+    routed_input_coalescer: &'a mut sophia_engine::RoutedInputCoalescer,
+    /// Whether this pass ends on a frame boundary, which is when buffered
+    /// motion is released.
+    repaint_due: bool,
 }
 
 fn route_physical_input<P: NonBlockingInputPoller>(
@@ -456,6 +463,8 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         route_lease_release_sender,
         input_output,
         input_presentation_epoch,
+        routed_input_coalescer,
+        repaint_due,
     } = context;
     route_input_events_with_launcher(
         events,
@@ -497,6 +506,8 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         Some(reference_capture),
         Some((launcher_capture, launcher_keyboard)),
         Some(pending_lease_input),
+        routed_input_coalescer,
+        repaint_due,
     )
 }
 
@@ -607,6 +618,9 @@ fn route_input_events_with_pointer_focus(
     pointer_outputs: Option<&[sophia_engine::HeadlessOutput]>,
     reference_capture: Option<&mut sophia_engine::ReferenceSheetCapture>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
+    // This path routes one batch and returns, so the end of that batch is its
+    // frame boundary and its motion is released there.
+    let mut routed_input_coalescer = sophia_engine::RoutedInputCoalescer::new();
     route_input_events_with_launcher(
         events,
         focus,
@@ -647,6 +661,8 @@ fn route_input_events_with_pointer_focus(
         reference_capture,
         None,
         None,
+        &mut routed_input_coalescer,
+        true,
     )
 }
 
@@ -691,6 +707,8 @@ fn route_input_events_with_launcher(
     mut reference_capture: Option<&mut sophia_engine::ReferenceSheetCapture>,
     mut launcher: Option<(&mut sophia_engine::LauncherCapture, &mut sophia_engine::LauncherKeyboard)>,
     mut pending_lease_input: Option<&mut PendingLeaseInput>,
+    routed_input_coalescer: &mut sophia_engine::RoutedInputCoalescer,
+    repaint_due: bool,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         ingress_saturation: RoutedInputIngressSaturation::default(),
@@ -1653,6 +1671,28 @@ fn route_input_events_with_launcher(
                         .as_deref()
                         .is_some_and(|handoff| handoff.target().is_none()),
                 );
+                // A click that begins or defers a focus handoff must land
+                // after the motion that positioned the pointer, so buffered
+                // motion is released before the handoff takes the event.
+                let handoff_takes_event = starts_focus_handoff
+                    || pointer_focus_handoff
+                        .as_deref()
+                        .is_some_and(|handoff| handoff.target().is_some());
+                if handoff_takes_event
+                    && let Some(flush) = routed_input_coalescer
+                        .flush_barrier(sophia_engine::RoutedInputFlushReason::FocusChanged)
+                {
+                    deliver_coalesced_inputs(
+                        flush,
+                        input_sender,
+                        next_input_delivery,
+                        application_route_leases.as_deref_mut(),
+                        client_routes,
+                        input_output,
+                        input_presentation_epoch,
+                        &mut report,
+                    )?;
+                }
                 if let Some(handoff) = pointer_focus_handoff.as_deref_mut() {
                     if starts_focus_handoff {
                         handoff.begin(focus_surface, now_msec, request)?;
@@ -1669,47 +1709,140 @@ fn route_input_events_with_launcher(
                         continue;
                     }
                 }
-                let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
-                *next_input_delivery = next_input_delivery
-                    .checked_add(1)
-                    .ok_or("live-session input delivery ID exhausted")?;
-                let route_lease = match application_route_leases.as_deref_mut() {
-                    Some(state) => application_route_lease_for_request(
-                        &request,
-                        client_routes,
-                        state,
-                        input_output,
-                        input_presentation_epoch,
-                    )?,
-                    None => None,
+                // Motion reaches the frontend at the composition cadence
+                // rather than once per event. Every motion packet used to mint
+                // its own delivery, route lease and ordered acknowledgement,
+                // which kept authority work continuously available to the owner
+                // loop and let a moving pointer hold composition below its rate.
+                // The coalescer keeps the latest motion per target surface and
+                // releases it on the frame boundary; anything that changes
+                // state releases it first, so a click still lands after the
+                // motion that positioned the pointer.
+                //
+                // The route is restated rather than forwarded so the packet
+                // rebuilt at release is exactly the one this path would have
+                // sent: the engine takes `global_position` from the event, and
+                // `surface` and `local` are the values already unwrapped above.
+                let coalesced_route = sophia_protocol::InputRoute {
+                    input_serial: event.serial,
+                    target_surface: Some(surface),
+                    global_position: global,
+                    local_position: Some(local),
+                    transform: route.transform,
+                    outcome: sophia_protocol::InputRouteOutcome::Routed,
                 };
-                if !route_bounded_input(
-                    input_sender,
-                    XAuthorityRoutedInput {
-                        request,
-                        route_lease,
-                        delivery: Some(delivery),
-                        mode: XAuthorityRoutedInputMode::Deliver,
-                    },
-                    sophia_protocol::CapacityClass::Ordered,
-                    &mut report.ingress_saturation,
-                )? {
-                    continue;
+                match routed_input_coalescer.push(event.clone(), coalesced_route) {
+                    sophia_engine::RoutedInputQueueAction::BufferedMotion => {}
+                    sophia_engine::RoutedInputQueueAction::Flushed(flush) => {
+                        deliver_coalesced_inputs(
+                            flush,
+                            input_sender,
+                            next_input_delivery,
+                            application_route_leases.as_deref_mut(),
+                            client_routes,
+                            input_output,
+                            input_presentation_epoch,
+                            &mut report,
+                        )?;
+                    }
                 }
-                report.pointer_routed = report.pointer_routed.saturating_add(1);
-                if is_button {
-                    report.pointer_buttons_routed = report.pointer_buttons_routed.saturating_add(1);
-                    report.pointer_button_targets.push(surface);
-                }
-                if is_axis {
-                    report.pointer_axes_routed = report.pointer_axes_routed.saturating_add(1);
-                    report.pointer_axis_targets.push(surface);
-                }
-                report.deliveries.push(delivery);
             }
         }
     }
+    // The frame boundary. Releasing here is what caps motion delivery at the
+    // composition cadence: a client sees the pointer's current position once
+    // per composed frame instead of once per packet the device produced.
+    if repaint_due
+        && let Some(flush) = routed_input_coalescer.flush_frame()
+    {
+        deliver_coalesced_inputs(
+            flush,
+            input_sender,
+            next_input_delivery,
+            application_route_leases,
+            client_routes,
+            input_output,
+            input_presentation_epoch,
+            &mut report,
+        )?;
+    }
     Ok(report)
+}
+
+/// Deliver, in order, the inputs a coalescer released.
+///
+/// This is the tail the per-event path used to run inline: mint a delivery id,
+/// take a route lease, send, and account for what was sent. It runs once per
+/// released packet rather than once per packet observed.
+#[allow(clippy::too_many_arguments)]
+fn deliver_coalesced_inputs(
+    flush: sophia_engine::RoutedInputFlush,
+    input_sender: &impl RoutedInputIngress,
+    next_input_delivery: &mut u64,
+    mut application_route_leases: Option<&mut ApplicationRouteLeaseState>,
+    client_routes: &XAuthorityClientSurfaceRoutes,
+    input_output: Option<sophia_protocol::OutputId>,
+    input_presentation_epoch: u64,
+    report: &mut PhysicalInputRouteReport,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for queued in flush.inputs {
+        // The route was restated as routed, with a valid surface and a local
+        // position, before it was buffered, so a refusal here cannot describe a
+        // packet this path would have delivered.
+        let Ok(request) = sophia_engine::routed_input_request_from_physical_event(
+            &queued.event,
+            &queued.route,
+        ) else {
+            continue;
+        };
+        let surface = request.target_surface;
+        let is_button = matches!(
+            request.kind,
+            sophia_protocol::InputEventKind::PointerButton { .. }
+        );
+        let is_axis = matches!(
+            request.kind,
+            sophia_protocol::InputEventKind::PointerAxis { .. }
+        );
+        let delivery = XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
+        *next_input_delivery = next_input_delivery
+            .checked_add(1)
+            .ok_or("live-session input delivery ID exhausted")?;
+        let route_lease = match application_route_leases.as_deref_mut() {
+            Some(state) => application_route_lease_for_request(
+                &request,
+                client_routes,
+                state,
+                input_output,
+                input_presentation_epoch,
+            )?,
+            None => None,
+        };
+        if !route_bounded_input(
+            input_sender,
+            XAuthorityRoutedInput {
+                request,
+                route_lease,
+                delivery: Some(delivery),
+                mode: XAuthorityRoutedInputMode::Deliver,
+            },
+            sophia_protocol::CapacityClass::Ordered,
+            &mut report.ingress_saturation,
+        )? {
+            continue;
+        }
+        report.pointer_routed = report.pointer_routed.saturating_add(1);
+        if is_button {
+            report.pointer_buttons_routed = report.pointer_buttons_routed.saturating_add(1);
+            report.pointer_button_targets.push(surface);
+        }
+        if is_axis {
+            report.pointer_axes_routed = report.pointer_axes_routed.saturating_add(1);
+            report.pointer_axis_targets.push(surface);
+        }
+        report.deliveries.push(delivery);
+    }
+    Ok(())
 }
 
 fn pointer_focus_surface(
