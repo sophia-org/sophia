@@ -98,6 +98,19 @@ renderer_identity="${renderer_identity#"${renderer_identity%%[![:space:]]*}"}"
 [[ -n "$renderer_identity" ]] || fail "OpenGL renderer identity is empty"
 renderer_sha256="$(printf '%s' "$renderer_identity" | sha256sum | awk '{print $1}')"
 
+# How large the output measured here is, which is what makes an FPS figure
+# mean anything.
+#
+# The repaint record states it directly, and is preferred. It is emitted at
+# trace level, though, so it reaches a log only when verbose tracing is on --
+# and turning that on also routes the session's records into the reduced
+# per-session evidence log, where the cadence summary this report exists to
+# read loses its numbers. Requiring it made the report unpassable: the two
+# settings it needed cancelled each other out.
+#
+# So the head's own mode answers when the repaint record is absent. It says
+# the same thing about the same output, survives at the ordinary level, and
+# is what the session already reports about the display it drove.
 output_repaint="$(
     grep -E '^.*sophia_live_output_repaint schema=1 status=[^ ]+ output=1 mode=full ' \
         "$SESSION_LOG" |
@@ -106,8 +119,21 @@ output_repaint="$(
 output_pixels="$(
     rendering_performance_field "$output_repaint" pixels 2>/dev/null || true
 )"
+if [[ ! "$output_pixels" =~ ^[1-9][0-9]*$ ]]; then
+    output_head="$(
+        grep -E '^.*sophia_live_native_head schema=2 status=ready output=1 ' \
+            "$SESSION_LOG" |
+            head -n 1 || true
+    )"
+    output_mode="$(
+        rendering_performance_field "$output_head" mode 2>/dev/null || true
+    )"
+    if [[ "$output_mode" =~ ^([1-9][0-9]*)x([1-9][0-9]*)$ ]]; then
+        output_pixels=$((BASH_REMATCH[1] * BASH_REMATCH[2]))
+    fi
+fi
 [[ "$output_pixels" =~ ^[1-9][0-9]*$ ]] ||
-    fail "missing positive output pixel count"
+    fail "no output extent: neither a full repaint record nor a ready head mode"
 
 cadence="$(
     grep -E '^sophia_live_present_cadence schema=1 status=complete ' \

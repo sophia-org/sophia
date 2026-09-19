@@ -177,4 +177,26 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     exit 1
 fi
 
+# The output extent has two sources, and a run must carry one of them. The
+# repaint record is trace-level, so an ordinary benchmark run does not have
+# it; the head's ready mode says the same thing about the same output and
+# does survive. Requiring only the first made the report unpassable through
+# its own benchmark, because enabling trace also diverts the records it reads.
+grep -v '^sophia_live_output_repaint' "$FIXTURE" >"$MUTATED"
+if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter accepted a run with no output extent at all" >&2
+    exit 1
+fi
+
+{
+    grep -v '^sophia_live_output_repaint' "$FIXTURE"
+    printf '%s\n' \
+        'sophia_live_native_head schema=2 status=ready output=1 head=1 connector=DP-1 connector_id=94 mode=2560x1440 refresh_millihz=60000 mirrored=false'
+} >"$MUTATED"
+if ! head_extent="$("$REPORTER" "$MUTATED" 2>/dev/null)"; then
+    echo "glxgears reporter rejected a run whose extent comes from the head mode" >&2
+    exit 1
+fi
+[[ "$head_extent" == *" output_pixels=3686400 "* ]]
+
 echo "glxgears performance reporter regressions passed"
