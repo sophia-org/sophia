@@ -43,6 +43,13 @@ pub(super) const BUDGET_NAMES: usize = 256;
 pub(super) struct SegmentBudget {
     bytes: std::collections::BTreeMap<String, u64>,
     suppressed: std::collections::BTreeMap<String, u64>,
+    /// Every record refused since the capture started, across segments.
+    ///
+    /// The per-name map above is per segment and is what rotation reports;
+    /// this is what the health record reports, and it must not fall back to
+    /// zero at a rotation or a session that suppressed tens of thousands of
+    /// records reads as one that suppressed none.
+    suppressed_total: u64,
 }
 
 /// What the budget decided about one entry.
@@ -69,6 +76,7 @@ impl SegmentBudget {
                 let suppressed = self.suppressed.entry(name.to_owned()).or_default();
                 let first = *suppressed == 0;
                 *suppressed = suppressed.saturating_add(1);
+                self.suppressed_total = self.suppressed_total.saturating_add(1);
                 return if first {
                     Admission::SuppressedFirst
                 } else {
@@ -92,10 +100,7 @@ impl SegmentBudget {
     }
 
     pub(super) fn total_suppressed(&self) -> u64 {
-        self.suppressed
-            .values()
-            .copied()
-            .fold(0, u64::saturating_add)
+        self.suppressed_total
     }
 }
 

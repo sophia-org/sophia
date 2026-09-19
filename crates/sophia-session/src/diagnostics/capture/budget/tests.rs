@@ -90,7 +90,11 @@ fn rotation_reports_what_the_closed_segment_refused_and_starts_clean() {
         ],
         "each refused name is accounted for by its own count"
     );
-    assert_eq!(budget.total_suppressed(), 0);
+    assert_eq!(
+        budget.total_suppressed(),
+        4,
+        "the health total survives rotation; only the per-name accounting resets"
+    );
     assert_eq!(
         budget.admit("sophia_x_present_delivery", NAME_SEGMENT_SHARE),
         Admission::Written,

@@ -781,6 +781,20 @@ saw, and buttons, scroll and keys keep their immediate path. Scroll is not
 coalesced: each axis packet carries a delta, so latest-wins would lose
 distance.
 
+A due paced repaint takes an owner turn from authority work only when it could
+run on that turn. The repaint yields to a pending layout epoch and to a
+topology preparation, and a refusal does not move the pacer's deadline, so the
+repaint stays due; letting it preempt anyway is a livelock, because a held
+epoch ends on the authority batch that carries the client's frame, and that
+batch is what the preemption keeps refusing. One predicate answers the
+preemption, the wait cap and the repaint, so the three cannot drift.
+
+A frame a client presents before it maps its window is skipped once the map is
+acknowledged and is not observed by the layout: nobody will see it, so it is
+not an extent anything can resize from. A launch epoch treats such a surface
+exactly as one that has drawn nothing, deferring it out of the gate rather than
+holding the gate on it.
+
 A cursor-only atomic commit is taken only while the client is quiet. The
 commit blocks until the kernel applies it at a vblank -- deliberately, because
 it carries no page-flip event and the owner must not guess at a completion it

@@ -559,7 +559,8 @@ pub fn reduced_record(line: &str) -> Option<String> {
                     | "max_pending_queued"
                     | "max_total_queued"
                     | "present_rejections"
-            );
+            )
+            || super::layout_epoch::count_key(key);
         let numeric = measurement && !value.is_empty() && value.bytes().all(|c| c.is_ascii_digit());
         let digest = (key == "digest" || key.ends_with("sha256"))
             && value.len() == 64
@@ -651,6 +652,7 @@ pub fn reduced_record(line: &str) -> Option<String> {
                     | "input_proof_complete"
                     | "tick_limit"
             );
+        let epoch_status = super::layout_epoch::status(name, key, value);
         let allocation_stop = name == "sophia_window_allocation_publisher"
             && ((key == "status" && value == "stopped")
                 || (key == "pending_cancelled" && matches!(value, "true" | "false")));
@@ -694,6 +696,7 @@ pub fn reduced_record(line: &str) -> Option<String> {
             || numeric
             || digest
             || fixed
+            || epoch_status
             || protocol_status
             || quiescence_status
             || quiescence_reason

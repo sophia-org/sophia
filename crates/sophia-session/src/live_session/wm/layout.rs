@@ -342,6 +342,18 @@ impl PersistentLiveLayout {
         }
         self.remove_surfaces(&batch.removed_surfaces);
         for (index, transaction) in batch.transactions.iter().enumerate() {
+            // A frame presented before its window mapped is skipped by
+            // production the moment the map is acknowledged; nobody will ever
+            // see it. Observing it here would still record its extent as a
+            // safe observation, and the launch epoch reads that as pixels it
+            // can resize: the surface is then held in the gate instead of
+            // being deferred out of it like a window that drew nothing, and
+            // the launch waits on a frame the client sent to a window that
+            // did not exist yet. Kitty draws exactly one such frame, one
+            // request ahead of its MapWindow.
+            if self.present_escaped_admission(transaction.surface) {
+                continue;
+            }
             let observed_size = live_transaction_observed_size(
                 transaction,
                 &self.dma_buf_sizes,

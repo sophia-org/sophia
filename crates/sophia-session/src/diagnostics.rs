@@ -7,6 +7,7 @@ mod recovery;
 mod shell_action;
 mod shell_component;
 pub use recovery::SessionCompletionFailure;
+mod layout_epoch;
 mod session_failure;
 mod storage;
 mod supervise;

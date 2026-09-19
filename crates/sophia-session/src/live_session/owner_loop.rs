@@ -126,6 +126,42 @@ fn control_priority_should_reset(
     !control_is_pending(session_controls_pending, pointer_grabs_pending) || frame_service_preempted
 }
 
+/// Whether the paced repaint could run on this owner turn if it is due.
+///
+/// The repaint yields to a pending layout epoch and to a topology
+/// preparation, and neither refusal moves the pacer's deadline, so the repaint
+/// stays due. Anything that reads `repaint_due` to decide how to spend the
+/// turn -- preempting authority, capping the wait -- has to read this too.
+///
+/// Without it the due repaint took every owner turn from authority for as
+/// long as the epoch lasted, and the epoch can only end on authority work,
+/// because the frame it waits for arrives as an authority batch. Two kitty
+/// launches in one session each held the loop for their whole four-second
+/// budget, compositing nothing and routing no input, with the right frame
+/// sitting in the receive queue after seventy-six milliseconds. The guard
+/// that alternated turns had covered this by accident; when it was removed to
+/// stop halving composition under input, the livelock was what remained.
+fn paced_repaint_runnable(layout_settled: bool, topology_settled: bool) -> bool {
+    layout_settled && topology_settled
+}
+
+/// The owner's wait, capped by the paced repaint only when that repaint could
+/// run. A repaint that cannot run yet must not turn the wait into a spin;
+/// what it waits behind -- an epoch's authority traffic or its deadline -- is
+/// seen within `maximum`.
+fn paced_repaint_wait_cap(
+    pacer: sophia_engine::PrimaryFramePacer,
+    runnable: bool,
+    now: Instant,
+    maximum: Duration,
+) -> Duration {
+    if runnable {
+        pacer.cap_wait(now, maximum)
+    } else {
+        maximum
+    }
+}
+
 fn native_frame_service_should_preempt_authority(
     request: &OutputFrameServiceRequest,
     preempted_previous_cycle: bool,

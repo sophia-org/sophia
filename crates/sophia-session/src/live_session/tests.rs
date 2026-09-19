@@ -53,7 +53,7 @@ use super::{
     managed_child_exit_is_nonfatal, native_frame_service_requires_owner_progress,
     native_frame_service_should_preempt_authority, native_session_exported_pixels,
     newest_head_composition_frame, observe_floating_pointer_gesture,
-    observe_public_output_generations, observe_public_output_topology,
+    observe_public_output_generations, observe_public_output_topology, paced_repaint_runnable,
     pending_wm_focus_after_engine_decision, physical_input_page_flip_correlates,
     physical_input_pixels_already_changed, physical_input_routing_mode,
     place_pointer_event_for_routing, pointer_press_starts_focus_handoff,
@@ -225,6 +225,27 @@ fn deferred_cpu_composition_retains_the_native_visual_owner() {
         production_cycle_native_owner_policy(false, true),
         ProductionCycleNativeOwnerPolicy::Unavailable
     );
+}
+
+#[test]
+fn a_repaint_that_cannot_run_does_not_take_the_turn_from_authority() {
+    // The repaint yields to a pending layout epoch and to a topology
+    // preparation, and neither refusal moves the pacer's deadline, so the
+    // repaint stays due. Letting it preempt anyway is a livelock: the epoch
+    // ends on the authority batch carrying the client's frame, and that batch
+    // is exactly what the preemption keeps refusing to take. Each kitty launch
+    // paid the epoch's full four-second budget this way, compositing nothing
+    // and routing no input, with the right frame queued after 76ms.
+    assert!(paced_repaint_runnable(true, true));
+    assert!(
+        !paced_repaint_runnable(false, true),
+        "a pending layout epoch"
+    );
+    assert!(
+        !paced_repaint_runnable(true, false),
+        "a topology being prepared"
+    );
+    assert!(!paced_repaint_runnable(false, false));
 }
 
 #[test]

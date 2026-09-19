@@ -22,9 +22,17 @@
         // authority work is continuously available. Sustained pointer motion
         // makes it continuously available, which is how a 120Hz desktop
         // delivered thirty frames a second to a double-buffered client.
+        // A due repaint preempts only when it can run; see the predicate.
+        let paced_repaint_runnable = paced_repaint_runnable(
+            layout.pending.is_none(),
+            native_scanout
+                .as_ref()
+                .is_none_or(|native| native.output_topology_preparation_phase().is_none()),
+        );
         let paced_repaint_preemption = runtime.is_some()
             && native_scanout.is_some()
-            && (primary_frame_pacer.repaint_due(Instant::now()) || runtime.as_ref().is_some_and(|r| r.frame_deadline_due()));
+            && ((paced_repaint_runnable && primary_frame_pacer.repaint_due(Instant::now()))
+                || runtime.as_ref().is_some_and(|r| r.frame_deadline_due()));
         let native_frame_service_preemption = paced_repaint_preemption
             || native_frame_service_request
             .as_ref()
@@ -84,7 +92,7 @@
                     // Yield until the earliest frame/drain deadline instead of
                     // spinning while a renderer or policy response is pending.
                     let now = Instant::now();
-                    let mut wait = primary_frame_pacer.cap_wait(now, Duration::from_millis(1));
+                    let mut wait = paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, Duration::from_millis(1));
                     if let Some(runtime) = runtime.as_ref() { wait = runtime.frame_deadline_cap_wait(now, wait); }
                     if let Some(quiescence) = session_quiescence.as_ref() {
                         wait = wait.min(quiescence.deadline.saturating_duration_since(now));
@@ -104,7 +112,7 @@
                         || explicit_pointer_grabs.pending() != 0,
                 );
                 let maximum = runtime.as_ref().map_or(maximum, |r| r.frame_deadline_cap_wait(now, maximum));
-                authority_receiver.recv_timeout(primary_frame_pacer.cap_wait(now, maximum))
+                authority_receiver.recv_timeout(paced_repaint_wait_cap(primary_frame_pacer, paced_repaint_runnable, now, maximum))
             }
         };
         native_frame_service_preempted_previous_cycle = native_frame_service_preemption;
@@ -831,10 +839,7 @@
                         runtime.release_layout_deferred_presentations();
                     }
                     let repaint_now = Instant::now();
-                    if layout.pending.is_none()
-                        && native_scanout.output_topology_preparation_phase().is_none()
-                        && primary_frame_pacer.repaint_due(repaint_now)
-                    {
+                    if paced_repaint_runnable && primary_frame_pacer.repaint_due(repaint_now) {
                         let raised_surface = layout
                             .top_client_positioned_surface()
                             .or_else(|| focus.focused_surface(seat));

@@ -585,3 +585,236 @@ fn a_withdrawn_surface_cannot_authorize_a_skip_with_a_late_acknowledgement() {
     assert!(!layout.acknowledge_admission_control(TransactionId::from_raw(13), surface));
     assert!(layout.skippable_escaped_presents().is_empty());
 }
+
+/// The map request alone: the admission intent and the observation, with no
+/// pixels in the batch. What a client sends when it maps a window it has
+/// already drawn into.
+fn map_batch(
+    surface: SurfaceId,
+    transaction_id: u64,
+    geometry: Rect,
+) -> sophia_x_authority::XAuthorityObservedTransactionBatch {
+    let constraints = SurfaceConstraints {
+        min_size: None,
+        max_size: None,
+    };
+    let mut batch = crate::live_session::wm_update_coordinator_batch(TransactionId::from_raw(
+        transaction_id,
+    ));
+    let client = sophia_x_authority::XServerFrontendClientId::from_raw(1);
+    batch.client = Some(client);
+    add_test_surface_route(&mut batch, surface, client);
+    batch.surface_presentations.push(
+        sophia_x_authority::XAuthoritySurfacePresentationObservation {
+            surface,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            stack_rank: 0,
+            owner: None,
+            mapped: true,
+            geometry,
+            constraints,
+            generation: 1,
+        },
+    );
+    batch
+        .presentation_intents
+        .push(sophia_protocol::SurfacePresentationIntent {
+            surface,
+            kind: sophia_protocol::SurfacePresentationIntentKind::Request,
+            role: sophia_protocol::SurfacePresentationRole::PolicyManaged,
+            surface_kind: sophia_protocol::LayoutNodeKind::Toplevel,
+            placement_preference: sophia_protocol::SurfacePlacementPreference::Default,
+            presentation_owner: None,
+            stack_rank: 0,
+            geometry,
+            constraints,
+            generation: 1,
+        });
+    batch
+}
+
+/// Begin the admission control for a launch, as the WM phase does when the
+/// surface first needs a place.
+fn begin_launch_control(layout: &mut PersistentLiveLayout, surface: SurfaceId, control: u64) {
+    let geometry = layout.layers.get(&surface).map_or(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        },
+        |layer| layer.geometry,
+    );
+    assert!(
+        layout
+            .admissions
+            .begin_control(surface, TransactionId::from_raw(control), geometry)
+    );
+}
+
+fn acknowledge_launch_control(
+    layout: &mut PersistentLiveLayout,
+    surface: SurfaceId,
+    control: u64,
+) {
+    assert!(
+        layout
+            .admissions
+            .acknowledge_control(surface, TransactionId::from_raw(control))
+    );
+}
+
+/// Stage the launch epoch the blind WM proposes for a newly mapped window,
+/// and report whether it committed at once.
+fn stage_launch_epoch(
+    layout: &mut PersistentLiveLayout,
+    surface: SurfaceId,
+    epoch: u64,
+    proposed: Size,
+) -> bool {
+    let transaction = TransactionId::from_raw(epoch);
+    let proposal = LiveWmProposal {
+        transaction,
+        layers: planning_layers_for(layout, [surface]),
+        requested_sizes: BTreeMap::from([(surface, proposed)]),
+        presentation_states: BTreeMap::new(),
+        configure_deliveries: 0,
+        focus: Some(surface),
+        timeout: Duration::from_secs(4),
+        update: sophia_engine::WmTransactionUpdate {
+            commit: TransactionCommit {
+                transaction,
+                outcome: TransactionOutcome::Committed,
+                applied_surfaces: vec![surface],
+            },
+        },
+        moved_surfaces: 0,
+        source: None,
+        policy_settlement: None,
+    };
+    let mut controls = crate::session_control::SessionControlQueue::default();
+    layout.stage(proposal, &mut controls).unwrap().is_some()
+}
+
+#[test]
+fn a_launch_that_never_presented_before_mapping_commits_its_epoch_at_once() {
+    // glxgears: create, map, then draw. Its first frame has no pixels to
+    // resize, so the launch epoch defers it and commits without waiting, and
+    // the frame that follows is selected as the visual candidate on arrival.
+    let surface = SurfaceId::new(5, 1);
+    let initial = Rect {
+        x: 20,
+        y: 30,
+        width: 300,
+        height: 300,
+    };
+    let proposed = Size {
+        width: 1266,
+        height: 1398,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&map_batch(surface, 10, initial));
+    begin_launch_control(&mut layout, surface, 11);
+    acknowledge_launch_control(&mut layout, surface, 11);
+
+    assert!(
+        stage_launch_epoch(&mut layout, surface, 12, proposed),
+        "with nothing to resize, the epoch has nothing to wait for"
+    );
+}
+
+#[test]
+fn a_frame_presented_before_the_map_does_not_hold_the_launch_epoch() {
+    // Kitty: create, draw a frame at its own size, then map -- the Present is
+    // one request ahead of the MapWindow. That frame escapes admission and is
+    // skipped, and nothing about it can be resized: nobody has seen it. The
+    // launch epoch must treat the surface exactly as it treats one that has
+    // never presented, or it holds a four-second gate on a window that will
+    // answer it in eighty milliseconds.
+    let surface = SurfaceId::new(5, 1);
+    let initial = Rect {
+        x: 20,
+        y: 30,
+        width: 946,
+        height: 1038,
+    };
+    let proposed = Size {
+        width: 1266,
+        height: 1398,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&present_batch(surface, 9, 44, initial, false));
+    assert_eq!(layout.escaped_pre_admission.len(), 1, "the pre-map frame escaped");
+    layout.observe_authority_batch(&map_batch(surface, 10, initial));
+    begin_launch_control(&mut layout, surface, 11);
+    acknowledge_launch_control(&mut layout, surface, 11);
+
+    let committed_at_once = stage_launch_epoch(&mut layout, surface, 12, proposed);
+
+    assert_eq!(
+        layout.layout_epochs.safe_size(surface),
+        None,
+        "a frame nobody has seen is not a safe extent to resize from"
+    );
+    assert!(
+        committed_at_once,
+        "the launch epoch held its gate on a surface with no pixels to resize"
+    );
+}
+
+#[test]
+fn a_correctly_sized_frame_satisfies_a_held_launch_epoch() {
+    // Even when the epoch is held, the frame at the proposed size must
+    // release it. This is the wait kitty actually paid: the right frame
+    // arrived seventy-six milliseconds after the map and the epoch ran out
+    // its whole four-second timeout regardless.
+    //
+    // The order is the owner loop's: the epoch is held first, the frontend's
+    // control acknowledgement lands a few milliseconds later, and the frame
+    // follows. The frame's batch carries no admission request -- that went
+    // out with the map -- so it is quarantined for admission, not escaped.
+    let surface = SurfaceId::new(5, 1);
+    let initial = Rect {
+        x: 20,
+        y: 30,
+        width: 946,
+        height: 1038,
+    };
+    let proposed = Size {
+        width: 1266,
+        height: 1398,
+    };
+    let mut layout = PersistentLiveLayout::default();
+    layout.observe_authority_batch(&present_batch(surface, 9, 44, initial, false));
+    layout.observe_authority_batch(&map_batch(surface, 10, initial));
+    begin_launch_control(&mut layout, surface, 11);
+    if stage_launch_epoch(&mut layout, surface, 12, proposed) {
+        // Nothing to prove here: the sibling test covers the immediate commit.
+        return;
+    }
+    acknowledge_launch_control(&mut layout, surface, 11);
+    assert!(
+        layout.resolve_pending().is_none(),
+        "no pixels yet, so the acknowledgement alone cannot commit"
+    );
+    let at_proposed_size = Rect {
+        width: proposed.width,
+        height: proposed.height,
+        ..initial
+    };
+    layout.observe_authority_batch(&present_batch(surface, 13, 45, at_proposed_size, false));
+
+    assert!(
+        layout.resolve_pending().is_some(),
+        "the frame at the requested size arrived and the epoch did not take it: pending={:?} safe={:?} state={:?}",
+        layout.pending.as_ref().map(|pending| (
+            pending.requested_sizes.clone(),
+            pending.staged_transactions.keys().copied().collect::<Vec<_>>(),
+            pending.admission_surfaces.clone(),
+        )),
+        layout.layout_epochs.safe_observation(surface),
+        layout.admissions.state(surface),
+    );
+}

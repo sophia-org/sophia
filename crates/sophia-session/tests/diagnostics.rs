@@ -272,6 +272,25 @@ fn concurrent_markers_remain_distinct_and_ambiguous_sessions_need_selection() {
 }
 
 #[test]
+fn a_launch_epochs_states_survive_reduction() {
+    // These were reduced to a bare transaction number. A held epoch and a
+    // layout timeout then read like ordinary progress, and the difference
+    // between them -- a four-second launch stall -- had to be inferred from
+    // timestamps. The counts say what the epoch waited on and what it excused.
+    for record in [
+        "sophia_live_resize_epoch schema=2 status=held transaction=11 surfaces=1 deferred=0 timeout_msec=4000",
+        "sophia_live_wm schema=1 status=layout_timeout transaction=11 preserved_layout=true rollback_transaction=12 rollback_configures=1 rollback_withdrawn=false",
+        "sophia_live_resize_epoch schema=1 status=committed transaction=12 matched_surfaces=1",
+        "sophia_live_resize_epoch schema=3 status=visual_armed epoch=12 transaction=15255 surface=4194318 width=1266 height=1398",
+        "sophia_live_resize_epoch schema=3 status=queue_aborted epoch=11 rejected_presents=0 recovery_extents=1",
+        "sophia_live_visual_candidate schema=1 status=selected transaction=15255 surface=4194318 width=1266 height=1398",
+        "sophia_live_surface_admission schema=1 status=frontend_admitted transaction=11 surface=4194318",
+    ] {
+        assert_eq!(reduced_record(record), Some(record.into()), "{record}");
+    }
+}
+
+#[test]
 fn the_present_scheduler_record_keeps_the_tallies_that_explain_a_paced_client() {
     // These were dropped for ending in no recognised measurement suffix, which
     // left a desktop session able to say it paced an invisible client without
