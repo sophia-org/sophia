@@ -42,6 +42,13 @@ pub(crate) enum StartCause {
     GpuDomain,
     /// Launch evidence was missing, stale, or unconnected.
     Evidence,
+    /// The process layer refused the attempt: a slot still owned by a previous
+    /// process, an unknown component, or a launch that could not be protected.
+    ///
+    /// Distinct from `Presentation`, which is the session declining to start
+    /// anything, and from `LaunchSpec`, which is a specification a profile got
+    /// wrong. This is the layer that owns the child refusing to make one.
+    Process,
     /// Anything the codes above do not name. A record carrying this is a gap
     /// in this table, not a kind of failure.
     Other,
@@ -59,12 +66,13 @@ impl StartCause {
             Self::GpuIdentity => "gpu_identity",
             Self::GpuDomain => "gpu_domain",
             Self::Evidence => "evidence",
+            Self::Process => "process",
             Self::Other => "other",
         }
     }
 
     /// Every admitted token, for the reduction allowlist and its test.
-    pub(crate) const ALL: [&'static str; 9] = [
+    pub(crate) const ALL: [&'static str; 10] = [
         "presentation",
         "attempt_owned",
         "selection",
@@ -73,6 +81,7 @@ impl StartCause {
         "gpu_identity",
         "gpu_domain",
         "evidence",
+        "process",
         "other",
     ];
 }
@@ -123,6 +132,18 @@ pub(crate) fn classify(message: &str) -> StartCause {
     }
     if message.contains("unknown component selection") || message.contains("selected roles") {
         return StartCause::Selection;
+    }
+    // After the selection test, deliberately. "unknown component selection" is
+    // a selection the session cannot hold; the bare "unknown component" here is
+    // the process layer not recognising a slot. The longer phrase contains the
+    // shorter one, so testing this first would swallow it.
+    if message.contains("component process busy or unknown")
+        || message.contains("requires protected launch")
+        || message.contains("component protection evidence")
+        || message.contains("stale component process")
+        || message.contains("unknown component")
+    {
+        return StartCause::Process;
     }
     StartCause::Other
 }

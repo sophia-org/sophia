@@ -85,6 +85,14 @@ const REFUSALS: &[(&str, StartCause)] = &[
         "component GPU access requires native client rendering",
         StartCause::GpuGrant,
     ),
+    // shell_component_processes.rs -- the layer that owns the child. These
+    // were absent from this table, and the first live run reported
+    // cause=other from one of them.
+    ("component process busy or unknown", StartCause::Process),
+    ("component requires protected launch", StartCause::Process),
+    ("missing component protection evidence", StartCause::Process),
+    ("stale component process", StartCause::Process),
+    ("unknown component", StartCause::Process),
 ];
 
 #[test]
@@ -120,6 +128,32 @@ fn a_message_that_gains_a_trailing_detail_keeps_its_code() {
 }
 
 #[test]
+fn overlapping_phrases_keep_their_own_codes() {
+    // "unknown component selection" contains "unknown component", and the two
+    // belong to different layers: the session cannot hold that selection,
+    // versus the process layer not recognising a slot. Order in `classify`
+    // is what separates them, so a reordering must fail here.
+    assert_eq!(
+        classify("unknown component selection"),
+        StartCause::Selection
+    );
+    assert_eq!(classify("unknown component"), StartCause::Process);
+
+    // Likewise "stale component launch evidence" against "stale component
+    // process", and "missing component protection evidence" against the
+    // launch-evidence family.
+    assert_eq!(
+        classify("stale component launch evidence"),
+        StartCause::Evidence
+    );
+    assert_eq!(classify("stale component process"), StartCause::Process);
+    assert_eq!(
+        classify("missing component protection evidence"),
+        StartCause::Process
+    );
+}
+
+#[test]
 fn an_unrecognised_refusal_is_other_rather_than_a_wrong_code() {
     assert_eq!(
         classify("something nobody has written yet"),
@@ -139,6 +173,7 @@ fn every_variant_appears_in_the_admitted_token_list() {
         StartCause::GpuIdentity,
         StartCause::GpuDomain,
         StartCause::Evidence,
+        StartCause::Process,
         StartCause::Other,
     ];
     assert_eq!(
