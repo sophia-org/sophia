@@ -44,11 +44,11 @@ use super::{
     authority_batch_has_engine_work, authority_batch_is_pure_content, authority_merge_run_len,
     authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
     clamp_floating_pointer_outline, clear_client_pressed_keys_state_only,
-    completed_pointer_gesture_geometry, current_cpu_frame_is_presented,
-    flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
-    independent_native_output_presented, initial_session_focus_candidate,
-    input_baseline_is_presented, is_shell_switcher_shortcut, live_transaction_observed_size,
-    live_transaction_raster_size, live_transaction_visual_evidence,
+    completed_pointer_gesture_geometry, control_is_pending, control_priority_should_reset,
+    current_cpu_frame_is_presented, flush_all_client_pressed_keys,
+    global_runtime_deadline_ends_session, independent_native_output_presented,
+    initial_session_focus_candidate, input_baseline_is_presented, is_shell_switcher_shortcut,
+    live_transaction_observed_size, live_transaction_raster_size, live_transaction_visual_evidence,
     logical_startup_output_progress, logical_synchronous_modeset_records,
     managed_child_exit_is_nonfatal, native_frame_service_requires_owner_progress,
     native_frame_service_should_preempt_authority, native_session_exported_pixels,
@@ -278,6 +278,45 @@ fn native_frame_progress_cannot_consecutively_preempt_authority() {
     assert!(native_frame_service_should_preempt_authority(
         &idle, false, true, 4, true
     ));
+}
+
+#[test]
+fn a_pending_pointer_grab_counts_as_a_control_for_both_the_decision_and_the_counter() {
+    // The bug: the preemption decision counted explicit pointer grabs and the
+    // counter that earns priority counted only session controls. A held grab
+    // with no session control pinned the counter at zero while the decision
+    // kept reporting a pending control, so the four-cycle priority it gates
+    // was unreachable and the request path could not preempt at all for as
+    // long as the grab lasted.
+    assert!(
+        control_is_pending(0, 1),
+        "a pointer grab is a pending control"
+    );
+    assert!(
+        control_is_pending(1, 0),
+        "a session control is a pending control"
+    );
+    assert!(
+        !control_is_pending(0, 0),
+        "nothing waiting is not a pending control"
+    );
+
+    // The counter must hold whenever the decision sees a control, so priority
+    // can actually accumulate to the threshold.
+    assert!(
+        !control_priority_should_reset(0, 1, false),
+        "a pending grab must let the counter accumulate, not reset it"
+    );
+    assert!(!control_priority_should_reset(1, 0, false));
+    assert!(
+        control_priority_should_reset(0, 0, false),
+        "nothing waiting resets"
+    );
+
+    // A preemption always resets: the control path just yielded, so it has no
+    // backlog left to earn priority for.
+    assert!(control_priority_should_reset(1, 1, true));
+    assert!(control_priority_should_reset(0, 1, true));
 }
 
 #[test]

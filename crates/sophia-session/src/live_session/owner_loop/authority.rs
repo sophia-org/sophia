@@ -12,9 +12,18 @@
             native_frame_service_deadline_armed = true;
             native_frame_idle_service_cycles = 0;
         }
+        // No consecutive-cycle guard here, deliberately. The request-driven
+        // path below keeps one, because that is what it was written for: a
+        // continuously busy renderer must not starve X control and focus
+        // handshakes. The paced path inherited the guard when it was added,
+        // and on this path it is not fairness but a hard halving -- the pacer
+        // only asks for a repaint when one is actually due, so refusing every
+        // second request caps composition at half the head's refresh whenever
+        // authority work is continuously available. Sustained pointer motion
+        // makes it continuously available, which is how a 120Hz desktop
+        // delivered thirty frames a second to a double-buffered client.
         let paced_repaint_preemption = runtime.is_some()
             && native_scanout.is_some()
-            && !native_frame_service_preempted_previous_cycle
             && (primary_frame_pacer.repaint_due(Instant::now()) || runtime.as_ref().is_some_and(|r| r.translation_frame_due()));
         let native_frame_service_preemption = paced_repaint_preemption
             || native_frame_service_request
@@ -23,10 +32,18 @@
                 native_frame_service_should_preempt_authority(
                     request,
                     native_frame_service_preempted_previous_cycle,
-                    session_controls.pending_len() != 0 || explicit_pointer_grabs.pending() != 0,
+                    control_is_pending(
+                        session_controls.pending_len(),
+                        explicit_pointer_grabs.pending(),
+                    ),
                     native_frame_control_priority_cycles,
+                    // Derived from the cadence rather than fixed. This was a
+                    // hardcoded sixteen milliseconds, chosen as a sixty hertz
+                    // watchdog before per-refresh pacing existed; on a 120Hz
+                    // head that is two frame intervals, so it could not
+                    // recover a tick the alternation had already lost.
                     native_frame_service_deadline_armed
-                        && last_native_frame_service.elapsed() >= Duration::from_millis(16),
+                        && last_native_frame_service.elapsed() >= primary_frame_interval,
                 )
             });
         let wm_only_cycle = initial_authority_batch.is_none()
@@ -93,7 +110,18 @@
         native_frame_service_preempted_previous_cycle = native_frame_service_preemption;
         // Nothing waiting, or the frame service already preempted: either way
         // the control path has no backlog to earn priority for.
-        if session_controls.pending_len() == 0 || native_frame_service_preemption {
+        //
+        // This must test what the preemption test above calls a pending
+        // control. It counted session controls alone while the decision also
+        // counted explicit pointer grabs, so a held grab with no session
+        // control left the counter pinned at zero and the priority it gates
+        // permanently unreachable -- the request path could then never
+        // preempt for as long as the grab lasted.
+        if control_priority_should_reset(
+            session_controls.pending_len(),
+            explicit_pointer_grabs.pending(),
+            native_frame_service_preemption,
+        ) {
             native_frame_control_priority_cycles = 0;
         } else {
             native_frame_control_priority_cycles =

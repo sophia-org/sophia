@@ -102,6 +102,30 @@ const fn production_cycle_native_owner_policy(
     }
 }
 
+/// Whether a control class is waiting on an owner turn.
+///
+/// The preemption decision and the counter that earns priority must agree on
+/// this. They did not: the decision counted explicit pointer grabs, the
+/// counter counted only session controls. A held grab with no session control
+/// therefore left the counter pinned at zero while the decision kept reporting
+/// a pending control, so the priority the decision gates was unreachable for
+/// as long as the grab lasted.
+fn control_is_pending(session_controls_pending: usize, pointer_grabs_pending: usize) -> bool {
+    session_controls_pending != 0 || pointer_grabs_pending != 0
+}
+
+/// Whether the control-priority counter returns to zero this turn.
+///
+/// Either nothing is waiting, or the frame service already preempted -- in
+/// both cases the control path has no backlog to earn priority for.
+fn control_priority_should_reset(
+    session_controls_pending: usize,
+    pointer_grabs_pending: usize,
+    frame_service_preempted: bool,
+) -> bool {
+    !control_is_pending(session_controls_pending, pointer_grabs_pending) || frame_service_preempted
+}
+
 fn native_frame_service_should_preempt_authority(
     request: &OutputFrameServiceRequest,
     preempted_previous_cycle: bool,
