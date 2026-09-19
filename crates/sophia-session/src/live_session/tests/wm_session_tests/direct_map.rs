@@ -58,6 +58,48 @@ fn no_wm_session_commits_policy_managed_pixels_without_admission() {
 }
 
 #[test]
+fn no_wm_session_geometry_routes_its_policy_managed_window() {
+    // The regression this pins: a no-WM session assigns no output owner and the
+    // window is PolicyManaged, not ClientPositioned. Routing had narrowed to
+    // client-positioned surfaces, so this window reached no output and its
+    // Present was parked NoApplicableOutput until startup timed out. In the
+    // Direct policy-map mode every surface must route by geometry instead.
+    let surface = SurfaceId::new(57, 1);
+    let geometry = Rect {
+        x: 20,
+        y: 30,
+        width: 640,
+        height: 480,
+    };
+    let output = Size {
+        width: 2560,
+        height: 1440,
+    };
+    let transaction = TransactionId::from_raw(113);
+    let batch = direct_map_batch(surface, transaction, geometry, 113);
+
+    let mut direct = PersistentLiveLayout::new(LivePolicyMapMode::Direct, output);
+    direct.observe_authority_batch(&batch);
+    assert!(
+        !direct.is_client_positioned(surface),
+        "the fixture window must be policy-managed for this to test anything"
+    );
+    assert!(
+        direct.surface_is_geometry_routed(surface),
+        "a policy-managed window in a no-WM session must route by geometry"
+    );
+
+    // The external-WM path is unchanged: there a policy owner is assigned, so a
+    // policy-managed surface is not geometry-routed and must not become so.
+    let mut deferred = PersistentLiveLayout::new(LivePolicyMapMode::Deferred, output);
+    deferred.observe_authority_batch(&batch);
+    assert!(
+        !deferred.surface_is_geometry_routed(surface),
+        "with a window manager a policy-managed surface routes by its assigned owner"
+    );
+}
+
+#[test]
 fn no_wm_session_keeps_first_toplevel_chrome_inside_the_output() {
     let surface = SurfaceId::new(56, 1);
     let output = Size {

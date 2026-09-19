@@ -93,8 +93,14 @@
                     }
                 }
                 presentation_layout.sort_by_key(|layer| layer.stack_rank);
+                // A surface reaches an output by geometry when no policy assigned
+                // it an owner: every client-positioned surface, and -- in a
+                // session with no window manager -- every surface, since nothing
+                // there assigns an owner and the Engine owns placement. Filtering
+                // to client-positioned alone left a no-WM policy-managed window
+                // routed to no output, so it never presented.
                 let geometry_routed_surfaces = presentation_layout.iter()
-                    .filter(|layer| layout.is_client_positioned(layer.surface))
+                    .filter(|layer| layout.surface_is_geometry_routed(layer.surface))
                     .map(|layer| layer.surface).collect::<Vec<_>>();
                 let chrome_surfaces = presentation_layout
                     .iter()

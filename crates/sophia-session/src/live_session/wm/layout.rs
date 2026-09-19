@@ -139,6 +139,11 @@ struct PersistentLiveLayout {
     retirement_focus:
         BTreeMap<SurfaceId, (sophia_protocol::SurfaceTransactionKey, TransactionId)>,
     bypass_policy_admission: bool,
+    /// The Engine, not an external policy client, owns initial placement --
+    /// true exactly in the Direct policy-map mode (no external window manager).
+    /// A surface then has no policy-assigned output owner, so it must route to
+    /// an output by its geometry instead.
+    engine_owns_initial_placement: bool,
     stage_new_surfaces_offset: bool,
     center_first_surface_in: Option<Size>,
     constraint_relayout_required: bool,
@@ -151,6 +156,7 @@ impl PersistentLiveLayout {
     fn new(policy_map_mode: LivePolicyMapMode, output: Size) -> Self {
         Self {
             bypass_policy_admission: policy_map_mode.bypass_engine_admission(),
+            engine_owns_initial_placement: policy_map_mode.engine_owns_initial_placement(),
             stage_new_surfaces_offset: policy_map_mode.frontend_deferred(),
             // Without an external WM, the Engine owns initial placement. Keep
             // the first toplevel's extent intact and center the output space
@@ -671,6 +677,19 @@ impl PersistentLiveLayout {
     fn is_client_positioned(&self, surface: SurfaceId) -> bool {
         self.presentation_roles.get(&surface)
             == Some(&sophia_protocol::SurfacePresentationRole::ClientPositioned)
+    }
+
+    /// Whether this surface reaches an output by its geometry rather than by a
+    /// policy-assigned owner.
+    ///
+    /// A client-positioned surface always does: it carries its own coordinates
+    /// and no policy places it. In a session with no external window manager
+    /// (the Direct policy-map mode) nothing assigns any surface an output owner
+    /// and the Engine owns placement, so every surface routes by geometry there
+    /// too. Without this a policy-managed window in a no-WM session matches
+    /// neither routing arm and reaches no output at all.
+    fn surface_is_geometry_routed(&self, surface: SurfaceId) -> bool {
+        self.is_client_positioned(surface) || self.engine_owns_initial_placement
     }
 
     fn top_client_positioned_surface(&self) -> Option<SurfaceId> {
