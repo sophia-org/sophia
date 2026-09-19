@@ -104,9 +104,18 @@ pub(super) fn service_components(
     if let Err(error) = components.start_next(Instant::now(), |role| {
         role == sophia_config::ShellComponentRole::Bar || catalog.ready()
     }) {
-        crate::session_eprintln!(
-            "sophia_shell_component schema=1 status=start_failed reason={error}"
-        );
+        // `slot` is already an approved field for this record; without it a
+        // retained start failure reduces to schema and status alone and cannot
+        // name the component that failed. A failure raised before any slot was
+        // selected has none to report.
+        match components.last_start_slot() {
+            Some(slot) => crate::session_eprintln!(
+                "sophia_shell_component schema=1 status=start_failed slot={slot} reason={error}"
+            ),
+            None => crate::session_eprintln!(
+                "sophia_shell_component schema=1 status=start_failed reason={error}"
+            ),
+        }
     }
     reconcile_catalog_connections(components, catalog, launches)?;
     if !available {

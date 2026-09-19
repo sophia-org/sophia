@@ -56,6 +56,10 @@ pub struct ShellComponentSession {
     retry_at: [Option<std::time::Instant>; MAX_SHELL_COMPONENTS],
     start_cursor: usize,
     last_schedule: Option<std::time::Instant>,
+    /// The slot the most recent launch attempt selected. A failed start
+    /// reports an error that does not carry the slot, so without this the
+    /// retained record cannot name the component that failed.
+    last_start_slot: Option<usize>,
 }
 impl ShellComponentSession {
     /// `directory` is the already-created Session-private endpoint parent.
@@ -109,7 +113,14 @@ impl ShellComponentSession {
             retry_at: std::array::from_fn(|_| None),
             start_cursor: 0,
             last_schedule: None,
+            last_start_slot: None,
         })
+    }
+
+    /// The slot of the most recent launch attempt, for reporting a failure
+    /// that the error itself cannot attribute.
+    pub fn last_start_slot(&self) -> Option<usize> {
+        self.last_start_slot
     }
 
     /// Evidence belongs to this successfully negotiated attempt, never a later

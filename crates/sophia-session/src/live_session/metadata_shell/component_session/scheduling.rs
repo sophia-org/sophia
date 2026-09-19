@@ -24,6 +24,9 @@ impl ShellComponentSession {
         now: Instant,
         mut role_ready: impl FnMut(ShellComponentRole) -> bool,
     ) -> Result<Option<ComponentConnectionKey>> {
+        // Clear before selecting. A failure raised before any slot is chosen
+        // must not be attributed to the previous visit's selection.
+        self.last_start_slot = None;
         if self.last_schedule.is_some_and(|last| now < last) {
             return Err("component scheduler clock regressed".into());
         }
@@ -50,6 +53,10 @@ impl ShellComponentSession {
                 now.checked_add(Duration::from_secs(1))
                     .ok_or("component retry deadline overflow")?,
             );
+            // Record the selection before attempting it. `start` reports a
+            // failure that does not name the slot, and the caller has no other
+            // way to attribute the retained record.
+            self.last_start_slot = Some(slot);
             return self.start(slot).map(Some);
         }
         Ok(None)
