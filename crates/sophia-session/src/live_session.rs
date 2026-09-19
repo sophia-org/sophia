@@ -642,6 +642,7 @@ pub(crate) fn run_persistent_xterm_session(
             // present. Deferring without a WM strands the client's toplevel
             // before MapNotify, VisibilityNotify, and Expose.
             .with_policy_map_deferred(policy_map_mode.frontend_deferred())
+            .with_font_path(config.font_path.clone())
             .with_admission_policy(admission_policy);
     let mut client_render_devices = None;
     if !config.software_client_rendering

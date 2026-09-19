@@ -273,6 +273,7 @@ X server conformance suite:
 cargo test --offline -q -p sophia-protocol
 cargo test --offline -q -p sophia-portal
 cargo test --offline -q -p sophia-x-authority --test x11_wire
+cargo test --offline -q -p sophia-x-authority --lib font::
 cargo test --offline -q -p sophia-x-authority --test x11_wire x_server_frontend_routes_selection_notify_to_the_requestor_client -- --exact
 cargo test --offline -q -p sophia-x-authority --test x11_wire cross_namespace_executor_installs_property_and_notifies_requestor -- --exact
 cargo test --offline -q -p sophia-portal --test socket

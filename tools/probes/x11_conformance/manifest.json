@@ -1003,6 +1003,11 @@
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
     },
+    "48": {
+      "name": "X_QUERY_TEXT_EXTENTS",
+      "cases": [],
+      "coverage_debt": "Measured by unit and wire tests: odd-length recovery in both byte orders, and the reply checked against what the raster draws. No independent case yet."
+    },
     "49": {
       "name": "X_LIST_FONTS",
       "cases": [],
@@ -1012,6 +1017,16 @@
       "name": "X_LIST_FONTS_WITH_INFO",
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+    },
+    "51": {
+      "name": "X_SET_FONT_PATH",
+      "cases": [],
+      "coverage_debt": "Refused with BadAccess by design, since the font path is session configuration. Covered by a wire test; no independent case yet."
+    },
+    "52": {
+      "name": "X_GET_FONT_PATH",
+      "cases": [],
+      "coverage_debt": "Reports the configured directories and the built-in element. Covered by a wire test; no independent case yet."
     },
     "53": {
       "name": "X_CREATE_PIXMAP",
@@ -1098,10 +1113,20 @@
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
     },
+    "75": {
+      "name": "X_POLY_TEXT16",
+      "cases": [],
+      "coverage_debt": "Covered by wire tests in both byte orders including font-shift items. No independent case yet."
+    },
     "76": {
       "name": "X_IMAGE_TEXT8",
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+    },
+    "77": {
+      "name": "X_IMAGE_TEXT16",
+      "cases": [],
+      "coverage_debt": "Covered by wire tests in both byte orders, and by a dispatch test asserting it paints what ImageText8 paints for the same characters. No independent case yet."
     },
     "78": {
       "name": "X_CREATE_COLORMAP",

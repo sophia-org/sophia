@@ -1135,10 +1135,46 @@ destination in one request-coordinate space, and supports pixmap/window
 combinations. GraphicsExpose/NoExpose delivery remains outside this bounded
 text-and-scroll slice.
 
-The admitted core-font names are the fixed face aliases (`fixed`, `6x13`, and
-its canonical XLFD) plus the lifecycle-only `cursor` and `nil2` compatibility
-names opened by real xterm. They resolve to immutable in-process face data;
-Sophia does not consult host font paths or silently accept arbitrary names.
+Core fonts come from a session-configured font path, searched in order, with
+the built-in element last. The built-in element carries the 6x13 Latin-1 bitmap
+under the fixed face aliases (`fixed`, `6x13`, and its canonical XLFD) plus the
+lifecycle-only `cursor` and `nil2` compatibility names opened by real xterm,
+and it is always present: a session with no directories configured still
+renders text, and the pixel proofs have a face that host packages cannot
+change under them. XLibre embeds `fixed` and `cursor` the same way and for the
+same reason.
+
+A host path is what lets a terminal in UTF-8 mode render the repertoire it
+asks for. The built-in face is indexed by one byte and reports itself that way,
+so a client told to expect a single-byte font draws with the 8-bit requests;
+the real `iso10646-1` 6x13 is a two-byte matrix of some four thousand glyphs,
+and only a font path can supply it.
+
+Four safeguards make exposing that path defensible, and each is tested by what
+it refuses:
+
+1. **The path is session configuration.** `SetFontPath` is decoded and answered
+   `BadAccess`, so no client request can add a directory to search. It is
+   answered rather than left undecoded because a client that meets `BadRequest`
+   may exit -- xterm installs an error handler that does -- so a client must be
+   able to ask and be told no.
+2. **A client's string never becomes a path.** A name is matched against an
+   index built from each directory's `fonts.dir` and `fonts.alias`, and the
+   file is the one the *directory* published. A published entry naming anything
+   outside its own directory is dropped rather than obeyed.
+3. **Reads are bounded and follow no links.** Index and font files are opened
+   `O_NOFOLLOW`, must be regular files, and are size-bounded before parsing.
+   The PCF reader indexes nothing without a checked accessor; a truncated or
+   hostile file yields no font rather than a panic.
+4. **Loaded faces are bounded.** The cache holds a fixed number of faces and a
+   fixed number of bytes, evicting least recently used, so a client opening
+   many fonts costs a ceiling rather than growing memory. A face whose declared
+   matrix exceeds the protocol's own two-byte maximum is refused at load.
+
+The path is indexed once, when the frontend is constructed. A directory
+changing underneath a running session cannot change what a client resolves.
+`--font-path` overrides it; `--font-path=` selects none, which is what a proof
+that must not depend on installed packages asks for.
 
 The external real-client harness now treats any observed X protocol error as a
 smoke failure even if the client already produced authority transactions. This

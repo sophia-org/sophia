@@ -98,6 +98,13 @@ struct PersistentXtermSessionConfig {
     namespace_profile: NamespaceProfile,
     namespace_capabilities: NamespaceCapabilities,
     xkb_config: sophia_x_authority::XkbRmlvoConfig,
+    /// Directories the X frontend searches for core fonts.
+    ///
+    /// Defaults to the standard X11 font directories that exist on this host,
+    /// the same set XLibre compiles in. `--font-path=` with nothing after it
+    /// selects none, leaving only the built-in face, which is what a
+    /// deterministic proof wants.
+    font_path: Vec<std::path::PathBuf>,
     key_repeat_config: sophia_config::RepeatConfig,
     initial_caps_lock: bool,
     initial_num_lock: bool,
@@ -553,6 +560,14 @@ impl PersistentXtermSessionConfig {
             options: arg_value(args, "--xkb-options").unwrap_or(effective_xkb.options),
         };
         xkb_config.validate()?;
+        let font_path = match arg_value(args, "--font-path") {
+            Some(value) => value
+                .split(':')
+                .filter(|entry| !entry.is_empty())
+                .map(std::path::PathBuf::from)
+                .collect(),
+            None => sophia_x_authority::XFontCatalog::default_path(),
+        };
         let inject_output_size = arg_value(args, "--inject-output-size")
             .as_deref()
             .map(parse_output_size)
@@ -1125,6 +1140,7 @@ impl PersistentXtermSessionConfig {
 
             namespace_capabilities: NamespaceCapabilities::NONE,
             xkb_config,
+            font_path,
             key_repeat_config,
             initial_caps_lock,
             initial_num_lock,

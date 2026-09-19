@@ -1726,3 +1726,57 @@ fn the_cursor_flags_need_native_scanout() {
         );
     }
 }
+
+#[test]
+fn the_font_path_defaults_to_the_host_directories_and_can_be_emptied() {
+    // A live session should find the host's core fonts without being told
+    // where they are, which is what lets a terminal in UTF-8 mode render real
+    // Unicode rather than the single built-in face. A proof that must not
+    // depend on installed packages asks for none.
+    let arguments = |extra: Option<&str>| {
+        let mut args = vec![
+            isolated_core_config_argument(),
+            isolated_desktop_profile_argument(),
+            "--session-mode=normal".to_owned(),
+            "--session-app=mirror=/usr/bin/kitty".to_owned(),
+            "--session-start=mirror".to_owned(),
+            "--session-action-app=terminal=mirror".to_owned(),
+            "--session-app=proof=/usr/bin/kitty".to_owned(),
+            "--session-start=proof".to_owned(),
+            "--session-action-app=browser=proof".to_owned(),
+            "--wm-process=/usr/bin/true".to_owned(),
+            "--wm-interface=sophia_wm_v1".to_owned(),
+            "--max-runtime-ms=30000".to_owned(),
+        ];
+        if let Some(extra) = extra {
+            args.push(extra.to_owned());
+        }
+        args
+    };
+
+    let config =
+        PersistentXtermSessionConfig::from_args(&arguments(None)).expect("a default session");
+    assert_eq!(
+        config.font_path,
+        sophia_x_authority::XFontCatalog::default_path(),
+        "the default is the standard directories that exist on this host"
+    );
+
+    let configured =
+        PersistentXtermSessionConfig::from_args(&arguments(Some("--font-path=/one/dir:/two/dir")))
+            .expect("an explicit path");
+    assert_eq!(
+        configured.font_path,
+        vec![
+            std::path::PathBuf::from("/one/dir"),
+            std::path::PathBuf::from("/two/dir"),
+        ]
+    );
+
+    let empty = PersistentXtermSessionConfig::from_args(&arguments(Some("--font-path=")))
+        .expect("an empty path");
+    assert!(
+        empty.font_path.is_empty(),
+        "an empty path leaves only the built-in face, which is deterministic"
+    );
+}

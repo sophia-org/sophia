@@ -103,6 +103,26 @@ cleanly rather than being told it exists and ignored. MIT-SHM had advertised 1.2
 | Window manager advertisement | `cargo test --offline -q -p sophia-x-authority --test x11_wire a_client_asking_whether_a_manager_runs_is_answered -- --exact` plus `cargo run --offline -q -p sophia-cli --features native-session -- x-authority-browser-smoke` | root `_NET_SUPPORTING_WM_CHECK` and `_NET_SUPPORTED`, the authority-owned check window at `0x24`, its self-reference, and its `_NET_WM_NAME` | `wire` | `implemented; physical proof pending`: Sophia previously answered no root property but `RESOURCE_MANAGER`, so every EWMH client concluded no window manager was running while Hagia and Sophia configured and placed its windows underneath it. The offline browser probe recorded Helium reading `_NET_SUPPORTING_WM_CHECK` and `_NET_SUPPORTED` off the root and receiving nothing; it now completes the handshake with `first_error=none` and issues three more requests. It does not yet map a window in that probe, which stalls before its GPU process starts, so this does not claim the blank-window cause is fixed. `_NET_SUPPORTED` lists only hints with behaviour behind them: the `_NET_WM_STATE` set, both struts, `_NET_WM_WINDOW_TYPE`, and `_NET_WM_NAME`. `_NET_ACTIVE_WINDOW`, `_NET_CLIENT_LIST`, `_NET_CURRENT_DESKTOP`, `_NET_FRAME_EXTENTS`, `_NET_WM_SYNC_REQUEST` and `_NET_WM_MOVERESIZE` are withheld though clients do ask for them, because Hagia is blind and would not honour them. `ReparentNotify` remains unimplemented. |
 | Cross-process Present | `cargo test --offline -q -p sophia-x-authority a_present_from_a_client_that_did_not_create_the_window_is_admitted -- --exact` | a present admitted for a window the presenting client did not create, its feedback delivered to the subscribing client, a refusal answered as a client-visible error, and Present `NotifyMSC` | `wire` | `implemented; physical proof pending`: Present admission previously required the presenting client to be the window's creator, and a failure ended the connection reader with no client-visible error and no EOF -- the writer half held the socket open, so the client waited on a conversation nobody read. A single-connection client cannot observe either fault, which is why kitty, glxgears, vkcube and Firefox pass throughout; a browser that presents from a GPU process to a window its browser process created is killed silently. `NotifyMSC` was an undecodable request while Present 1.2 was advertised, and Mesa blocks on the completion it asks for. The clock it answers from is the last completion's ust/msc, so a target at or behind it answers at once and one ahead waits for a completion to advance it. Present minors with no implementation now answer `BadImplementation` rather than failing to parse. This does not claim the browser renders; that is the physical gate's to prove. |
 
+## Core Text And Fonts
+
+| Request | Status | Proven by |
+| --- | --- | --- |
+| `PolyText8` 74, `ImageText8` 76 | implemented | wire decode both orders, dispatch damage, pixels |
+| `PolyText16` 75, `ImageText16` 77 | implemented | decode both orders incl. font-shift items; 16-bit and 8-bit paint identically for characters whose high byte is zero |
+| `QueryTextExtents` 48 | implemented | odd-length recovery both orders; measured against what the raster draws |
+| `QueryFont` 47 | implemented | real matrix and bounds; per-character array only when ink bounds differ |
+| `ListFonts` 49 | implemented | pattern and limit honoured |
+| `ListFontsWithInfo` 50 | implemented | each name reports its own metrics |
+| `OpenFont` 45, `CloseFont` 46 | implemented | catalog resolution; unpublished name is `BadName` |
+| `SetFontPath` 51 | refused, `BadAccess` | the safeguard; decoded so a client is told no rather than meeting `BadRequest` |
+| `GetFontPath` 52 | implemented | reports the configured directories and `built-ins` |
+| `PolySegment` 66 | implemented | segments paint and stay disjoint |
+
+Not proven: a host-font session under a real client has not yet been accepted
+physically, so the two-byte face is proven only by unit and wire evidence. Glyph
+repertoire is whatever the configured path supplies; nothing here claims Unicode
+coverage from the built-in element, which is one Latin-1 bitmap.
+
 ## Admission Rule
 
 Every native X11 change must update this matrix when it changes a real-client
