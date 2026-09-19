@@ -526,6 +526,18 @@ pub fn reduced_record(line: &str) -> Option<String> {
                     | "cadence_repaints"
                     | "merged_batches"
                     | "max_merge_run"
+                    // Present-scheduler tallies, admitted for the same reason
+                    // and dropped for the same one: they end in no recognised
+                    // suffix. Without them a desktop session can say it paced
+                    // an invisible client without saying how often, so the
+                    // mechanism can be measured on the rig and only asserted
+                    // on the machine people actually use.
+                    | "paced_skips"
+                    | "max_frame_tick_parked"
+                    | "frame_tick_overflows"
+                    | "max_pending_queued"
+                    | "max_total_queued"
+                    | "present_rejections"
             );
         let numeric = measurement && !value.is_empty() && value.bytes().all(|c| c.is_ascii_digit());
         let digest = (key == "digest" || key.ends_with("sha256"))

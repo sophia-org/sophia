@@ -272,6 +272,16 @@ fn concurrent_markers_remain_distinct_and_ambiguous_sessions_need_selection() {
 }
 
 #[test]
+fn the_present_scheduler_record_keeps_the_tallies_that_explain_a_paced_client() {
+    // These were dropped for ending in no recognised measurement suffix, which
+    // left a desktop session able to say it paced an invisible client without
+    // saying how often. The counters carry no client, surface or application
+    // content: they count the scheduler's own decisions.
+    let record = "sophia_live_present_scheduler schema=2 status=complete max_pending_queued=2 max_total_queued=9 present_rejections=31 paced_skips=1873 max_frame_tick_parked=4 frame_tick_overflows=0";
+    assert_eq!(reduced_record(record), Some(record.into()));
+}
+
+#[test]
 fn capture_is_bounded_redacted_and_survives_without_completion_records() {
     let fixture = Fixture::new();
     let store = fixture.store();
