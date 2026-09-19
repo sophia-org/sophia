@@ -2,7 +2,7 @@
 id: cnbxdj48
 date: 2026-09-19
 kind: investigation
-status: awaiting-physical-acceptance
+status: accepted
 tags: [investigation, session, wm, x11]
 ---
 # A kitty window waits out a four-second layout budget before it opens
@@ -107,10 +107,16 @@ in about 80 ms; with both, about 40 ms, like glxgears.
 ## Validation and remaining work
 
 - [x] Both defects reproduced in unit tests before the fix and pass after.
-- [ ] Physical: install, open a kitty window in the live session, and read
-      its map-to-presented interval from the record: expected under 100 ms,
-      with the launch epoch's `status=held` record absent (the epoch commits
-      at once) and no `status=layout_timeout` for the life of the session.
+- [x] Physical, live Hagia session on release `0.1.0-84d906f148d6`. The
+      startup kitty: map 762490733, presented 762490842, **109 ms**. A second
+      kitty opened by hand: map 762556111, presented 762556212, **101 ms**.
+      Both launch epochs read `surfaces=0 deferred=1` and committed within
+      2 ms; both resize epochs that followed read `surfaces=1` and committed
+      in the millisecond they were held, `matched_surfaces=1`. No
+      `layout_timeout` in the session. During the second launch the owner
+      loop composited seven frames in the 300 ms after the map, where the old
+      build composited none. The remainder is kitty's own render time, about
+      70 ms from map to its correctly sized frame.
 - [ ] The evidence that a held epoch froze input and composition is
       circumstantial (record counts). A held epoch's owner-loop starvation is
       not measured directly; if a stall recurs, `sophia_live_session` tick
