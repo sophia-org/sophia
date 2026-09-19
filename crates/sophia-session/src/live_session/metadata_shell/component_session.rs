@@ -60,6 +60,13 @@ pub struct ShellComponentSession {
     /// reports an error that does not carry the slot, so without this the
     /// retained record cannot name the component that failed.
     last_start_slot: Option<usize>,
+    /// Consecutive failed starts per slot, reset by a successful one. This
+    /// spaces the retry; it never stops it, because a condition that clears
+    /// on its own must still be able to bring the component up.
+    start_attempts: [u32; MAX_SHELL_COMPONENTS],
+    /// Set on the visit where a slot's retry first spaces beyond the base
+    /// interval, so the transition is recorded once rather than per attempt.
+    entered_backoff: Option<usize>,
 }
 impl ShellComponentSession {
     /// `directory` is the already-created Session-private endpoint parent.
@@ -114,6 +121,8 @@ impl ShellComponentSession {
             start_cursor: 0,
             last_schedule: None,
             last_start_slot: None,
+            start_attempts: [0; MAX_SHELL_COMPONENTS],
+            entered_backoff: None,
         })
     }
 
@@ -121,6 +130,11 @@ impl ShellComponentSession {
     /// that the error itself cannot attribute.
     pub fn last_start_slot(&self) -> Option<usize> {
         self.last_start_slot
+    }
+
+    /// The slot whose retry interval first widened on this visit, if any.
+    pub fn entered_backoff(&self) -> Option<usize> {
+        self.entered_backoff
     }
 
     /// Evidence belongs to this successfully negotiated attempt, never a later

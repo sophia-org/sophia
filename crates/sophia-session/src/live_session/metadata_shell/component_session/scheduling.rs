@@ -2,6 +2,31 @@
 use super::*;
 use std::time::{Duration, Instant};
 
+/// The consecutive failure count at which the retry first spaces out. One
+/// failure keeps the base interval, because a single transient loss should
+/// recover at once rather than be punished.
+const BACKOFF_BEGINS_AFTER: u32 = 2;
+/// The base retry interval, and the ceiling the spacing grows to.
+const RETRY_BASE: Duration = Duration::from_secs(1);
+const RETRY_CEILING: Duration = Duration::from_secs(60);
+
+/// Space a slot's retry by its consecutive failures: one second, then
+/// doubling to a minute, and staying there.
+///
+/// The spacing never becomes infinite. A component that cannot start because
+/// of a condition that later clears -- a device that appears late, an endpoint
+/// still held by a retiring peer -- must still be able to come up without the
+/// session being restarted, so this bounds the rate rather than the attempts.
+fn retry_delay(attempts: u32) -> Duration {
+    if attempts <= 1 {
+        return RETRY_BASE;
+    }
+    RETRY_BASE
+        .checked_mul(1_u32 << (attempts - 1).min(6))
+        .unwrap_or(RETRY_CEILING)
+        .min(RETRY_CEILING)
+}
+
 impl ShellComponentSession {
     pub fn connected_roles(
         &self,
@@ -25,8 +50,10 @@ impl ShellComponentSession {
         mut role_ready: impl FnMut(ShellComponentRole) -> bool,
     ) -> Result<Option<ComponentConnectionKey>> {
         // Clear before selecting. A failure raised before any slot is chosen
-        // must not be attributed to the previous visit's selection.
+        // must not be attributed to the previous visit's selection, and the
+        // backoff transition belongs to the visit that caused it.
         self.last_start_slot = None;
+        self.entered_backoff = None;
         if self.last_schedule.is_some_and(|last| now < last) {
             return Err("component scheduler clock regressed".into());
         }
@@ -49,15 +76,30 @@ impl ShellComponentSession {
                 continue;
             }
             self.start_cursor = (slot + 1) % count;
-            self.retry_at[slot] = Some(
-                now.checked_add(Duration::from_secs(1))
-                    .ok_or("component retry deadline overflow")?,
-            );
             // Record the selection before attempting it. `start` reports a
             // failure that does not name the slot, and the caller has no other
             // way to attribute the retained record.
             self.last_start_slot = Some(slot);
-            return self.start(slot).map(Some);
+            let outcome = self.start(slot);
+            let attempts = match outcome {
+                Ok(_) => {
+                    self.start_attempts[slot] = 0;
+                    0
+                }
+                Err(_) => {
+                    let attempts = self.start_attempts[slot].saturating_add(1);
+                    self.start_attempts[slot] = attempts;
+                    if attempts == BACKOFF_BEGINS_AFTER {
+                        self.entered_backoff = Some(slot);
+                    }
+                    attempts
+                }
+            };
+            self.retry_at[slot] = Some(
+                now.checked_add(retry_delay(attempts))
+                    .ok_or("component retry deadline overflow")?,
+            );
+            return outcome.map(Some);
         }
         Ok(None)
     }

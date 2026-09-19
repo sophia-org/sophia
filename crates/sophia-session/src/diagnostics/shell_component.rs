@@ -38,6 +38,7 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
                 | "stop_failed"
                 | "poll_failed"
                 | "start_failed"
+                | "start_backoff"
                 | "catalog_failed"
                 | "dock_failed"
                 | "service_failed"

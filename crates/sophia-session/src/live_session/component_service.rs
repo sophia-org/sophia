@@ -117,6 +117,14 @@ pub(super) fn service_components(
             ),
         }
     }
+    // Recorded on the visit the spacing widens, not on every attempt after it.
+    // A reader seeing this knows the retries that follow are deliberately
+    // sparse rather than stalled.
+    if let Some(slot) = components.entered_backoff() {
+        crate::session_eprintln!(
+            "sophia_shell_component schema=1 status=start_backoff slot={slot}"
+        );
+    }
     reconcile_catalog_connections(components, catalog, launches)?;
     if !available {
         catalog.service_execution(
