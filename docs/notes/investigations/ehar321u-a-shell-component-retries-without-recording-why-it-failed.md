@@ -104,11 +104,25 @@ boundary.
 
 ## Validation and remaining work
 
-- [ ] Reproduce with the reason visible — run the component with
-      `verbose_diagnostics`, or launch it outside the supervisor — and record
-      the actual first failure, which nothing here establishes.
-- [ ] Decide the approved start-failure codes and emit them.
-- [ ] Bound the retry, and prove the bound with a component that cannot start.
+- [x] Name the component whose start failed — `start_next` now records the slot
+      it selected and the caller reports it, cleared on entry so a failure
+      raised before any selection is not misattributed (`6dd557bd`).
+      `poll_failed` is deliberately left without one: it is the error arm for a
+      poll across every slot, so it has no single component to name.
+- [x] Space the retry — consecutive failures now widen the interval from one
+      second to a sixty-second ceiling, recorded once on the visit it widens
+      under a new `start_backoff` status. The spacing never becomes infinite,
+      so a condition that clears on its own can still bring the component up
+      (`658dad52`).
+- [ ] **Find and fix why the Lom bar cannot start.** Nothing here establishes
+      it. The failure originates inside `processes.start` — either
+      `plan.prepare`, which builds the protection specification and
+      materialises the sandbox, or the spawn itself. Reproduce with the reason
+      visible: outside the supervisor no sink is installed, so `capture_line`
+      returns false and `session_stderr` falls through to a plain `eprintln!`.
+- [ ] Decide the approved start-failure cause codes and emit them, so the next
+      occurrence is diagnosable from retained evidence rather than from a live
+      reproduction.
 - [ ] Separately assess whether `WouldBlock` on the panel socket should stop
       the component at `component_service.rs:225`.
 
