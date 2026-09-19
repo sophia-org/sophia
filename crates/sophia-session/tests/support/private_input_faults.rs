@@ -185,3 +185,41 @@ impl tracing::Subscriber for PrivateInputUnwindSubscriber {
 
     fn exit(&self, _: &tracing::span::Id) {}
 }
+
+/// Makes the serving thread's exit observable to a control.
+///
+/// WHY A DELAY IS THE ONLY WAY. Distinguishing "waited for the thread" from
+/// "did not wait" requires the thread to still be doing something when the wait
+/// is skipped. Without that there is nothing to observe: the closure ends a few
+/// instructions after its last message either way, and every witness of its
+/// ending -- including the execution keeper's own abandonment -- reads the same
+/// in both cases. That is exactly why the existing `execution != Retained`
+/// assertion failed to catch a detached thread: it was not wrong, it was racing.
+///
+/// So the thread lingers briefly after sending its report and sets this only as
+/// its final act. A stop that joined provably waits through the linger; a stop
+/// that dropped the handle provably does not.
+pub(crate) struct PrivateInputExitMarker {
+    exited: AtomicBool,
+    linger: std::time::Duration,
+}
+
+impl PrivateInputExitMarker {
+    pub(crate) fn lingering(linger: std::time::Duration) -> Self {
+        Self {
+            exited: AtomicBool::new(false),
+            linger,
+        }
+    }
+
+    /// Called by the serving thread as its last act.
+    pub(crate) fn mark_exited(&self) {
+        std::thread::sleep(self.linger);
+        self.exited.store(true, Ordering::Release);
+    }
+
+    /// Whether the serving thread had finished by the time this was asked.
+    pub(crate) fn exited(&self) -> bool {
+        self.exited.load(Ordering::Acquire)
+    }
+}

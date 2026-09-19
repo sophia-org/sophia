@@ -16,7 +16,19 @@
 pub(super) struct PrivateInputFaults {
     #[cfg(test)]
     pub(super) unwind: Option<std::sync::Arc<PrivateInputUnwindFault>>,
+    /// Makes the serving thread's exit observable.
+    ///
+    /// A STOP THAT DID NOT WAIT CANNOT BE CAUGHT WITHOUT SOMETHING LEFT TO WAIT
+    /// FOR. Reporting a thread collected without joining it is otherwise
+    /// invisible: the thread is a hair from finishing anyway, so every witness
+    /// of its ending reads the same either way. This holds the closure open a
+    /// moment past its last message, so a stop that skipped the join returns
+    /// while the marker is provably unset.
+    #[cfg(test)]
+    pub(super) exit: Option<std::sync::Arc<PrivateInputExitMarker>>,
 }
 
 #[cfg(test)]
-pub(super) use super::tests_faults::{PrivateInputUnwindFault, arm_globally};
+pub(super) use super::tests_faults::{
+    PrivateInputExitMarker, PrivateInputUnwindFault, arm_globally,
+};

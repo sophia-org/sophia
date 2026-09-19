@@ -507,6 +507,14 @@ impl PrivateInputRuntime {
                     });
                 }
                 let _ = closed_tx.send(report);
+                // THE THREAD'S LAST ACT, IN TEST BUILDS ONLY. It makes the
+                // difference between a stop that waited for this thread and one
+                // that merely said it had observable at all; see the exit
+                // marker for why nothing else can.
+                #[cfg(test)]
+                if let Some(exit) = faults.exit.as_ref() {
+                    exit.mark_exited();
+                }
             })
             .map_err(PrivateInputRefusal::Thread)?;
 

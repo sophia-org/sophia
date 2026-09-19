@@ -193,6 +193,7 @@ impl Fixture {
                 ),
                 crate::private_input::faults::PrivateInputFaults {
                     unwind: Some(std::sync::Arc::clone(&fault)),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -255,12 +256,18 @@ impl Fixture {
     /// happened. Damaging a service that has not yet started a worker would
     /// prove nothing about custody at all.
     /// Drive one coordinator step, keeping whatever it decided.
-    fn pump(&mut self) {
-        let committed = self
+    ///
+    /// The effects go into the harvest so a readiness poll cannot eat them; the
+    /// report comes back so a caller that needs the commit outcomes themselves
+    /// -- what was applied, and whether this service held a mapping fact for it
+    /// -- can read them without draining the harvest to find out.
+    fn pump(&mut self) -> crate::private_input::PrivateInputCommitted {
+        let mut committed = self
             .handle_mut()
             .apply_committed(Duration::from_millis(5))
             .expect("the bridge is readable");
-        self.harvest.extend(committed.effects);
+        self.harvest.append(&mut committed.effects);
+        committed
     }
 
     fn running_row(&mut self) -> sophia_x_authority::PrivateCustodySnapshotRow {
@@ -1911,6 +1918,460 @@ fn an_unreadable_transaction_channel_is_refused_and_still_retains() {
     assert!(
         fixture.lifetime.retains_unresolved(),
         "and the reserved slot is holding that runtime"
+    );
+    drop(peer);
+}
+
+/// A surface that was drawn but never mapped gets no route; mapping it is what
+/// admits it, and drawing again after that configures rather than re-admits.
+///
+/// THE DISCRIMINATOR IS ONE REQUEST. `create_map_and_draw`, which every other
+/// control here uses, is exactly `create_unmapped` + `map` + `draw`. This runs
+/// the same sequence with the `MapWindow` left out, so the only thing that can
+/// account for a different outcome is the mapping fact itself.
+///
+/// WHAT THIS CATCHES. Nothing else here ever draws an unmapped window, so the
+/// guard that refuses to route one was never exercised: deleting it left all
+/// twenty-two controls green. An unmapped passive helper picking up an input
+/// route is precisely what the private path must not do.
+///
+/// It also refuses to pass vacuously. Asserting "no admission" alone would hold
+/// just as well if nothing had committed at all, so the first phase requires the
+/// commit to have applied the surface while this service held no mapping fact
+/// for it -- the exact state the guard exists to act on.
+#[test]
+fn an_unmapped_surface_gets_no_route_until_it_is_mapped() {
+    let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+    let mut peer = fixture.connect();
+    assert_eq!(
+        fixture.running_row().worker,
+        PrivateCustodyWorkerStanding::Running
+    );
+
+    // DRAWN, NEVER MAPPED.
+    let window = peer.create_unmapped();
+    peer.draw(window);
+    peer.confirm_geometry(window);
+
+    // WAIT ON WHAT THE MUTATION CANNOT CHANGE. The vacuity guard has to be
+    // anchored on `applied`, which is simply what the coordinator committed. An
+    // earlier version waited for `mapped` to be empty as well, and that field is
+    // written by the very code under test -- so the defect made the wait time
+    // out instead of making the routing assertion below fire, and the control
+    // reported a timeout rather than the fault it had actually found.
+    let deadline = std::time::Instant::now() + WAIT;
+    let mut applied = None;
+    while applied.is_none() {
+        let report = fixture.pump();
+        applied = report
+            .outcomes
+            .iter()
+            .find(|outcome| !outcome.applied.is_empty())
+            .map(|outcome| outcome.applied.clone());
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the unmapped draw reached a commit within the bound"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let unmapped = applied.expect("the loop only leaves with one");
+    // Give the bridge a moment to stage anything that commit decided, so the
+    // assertion below is about what was routed rather than about what has not
+    // been reached yet.
+    for _ in 0..8 {
+        fixture.pump();
+    }
+    assert!(
+        fixture
+            .harvest
+            .iter()
+            .all(|effect| effect.kind() != XAuthorityControlKind::AdmitSurface),
+        "a surface this service holds no mapping fact for was routed anyway: {:?}",
+        fixture.harvest
+    );
+
+    // NOW MAP IT. This is the only request that changes, and it is what admits.
+    peer.map(window);
+    peer.confirm_geometry(window);
+
+    let deadline = std::time::Instant::now() + WAIT;
+    loop {
+        fixture.pump();
+        if fixture
+            .harvest
+            .iter()
+            .any(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "mapping the window admitted it within the bound"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    let admissions: Vec<_> = fixture
+        .harvest
+        .iter()
+        .filter(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
+        .collect();
+    assert_eq!(
+        admissions.len(),
+        1,
+        "mapping admits the surface exactly once: {admissions:?}"
+    );
+    let admitted = admissions[0];
+    assert!(
+        admitted.geometry().is_some(),
+        "the admission carries the geometry the coordinator committed: {admitted:?}"
+    );
+    assert!(
+        unmapped.contains(&admitted.surface()),
+        "the surface admitted on mapping is the one drawn while unmapped: {admitted:?} of {unmapped:?}"
+    );
+
+    // AND A LATER DRAW CONFIGURES RATHER THAN ADMITTING AGAIN.
+    peer.draw(window);
+    peer.confirm_geometry(window);
+    let deadline = std::time::Instant::now() + WAIT;
+    loop {
+        fixture.pump();
+        if fixture
+            .harvest
+            .iter()
+            .any(|effect| effect.kind() == XAuthorityControlKind::ConfigureSurface)
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a further draw configured the admitted surface within the bound"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        fixture
+            .harvest
+            .iter()
+            .filter(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
+            .count(),
+        1,
+        "the surface is admitted once and configured afterwards, never re-admitted"
+    );
+    drop(peer);
+}
+
+/// Draining a receipt hands it to the caller and frees its place together.
+///
+/// WHAT THIS CATCHES. The release control beside this one proves that observing
+/// a receipt frees its delivery's place, but it does that through the ledger
+/// directly. Nothing covered the drain itself, so a drain that observed the
+/// receipt and then dropped it -- freeing the place while the caller never
+/// learns which receipt freed it -- went unnoticed. The two have to happen
+/// together or the caller cannot account for what it no longer holds.
+#[test]
+fn a_drain_returns_the_receipts_whose_places_it_freed() {
+    let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+    let mut peer = fixture.connect();
+    let _window = peer.create_map_and_draw();
+    assert_eq!(
+        fixture.running_row().worker,
+        PrivateCustodyWorkerStanding::Running
+    );
+    let submission = fixture.issue_submission();
+    let surface = fixture.admitted_surface();
+    fixture.focus(surface);
+    let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
+
+    let mut pressed = true;
+    let mut sent = Vec::new();
+    for _ in 0..2 {
+        let accepted = submission
+            .submit_pointer_button(surface, BTN_LEFT, pressed)
+            .expect("the connection is live and has authority");
+        pressed = !pressed;
+        await_flushed(&runtime, accepted.delivery);
+        assert_eq!(
+            runtime.observer.state(accepted.delivery),
+            sophia_x_authority::DeliveryState::Live,
+            "settled and still holding its place, because nobody has drained it"
+        );
+        sent.push(accepted.delivery);
+    }
+
+    let receipts = fixture
+        .handle()
+        .drain_deliveries()
+        .expect("the channel and the queue are readable");
+
+    // THE RECEIPTS COME BACK, AND THEY ARE THE ONES THAT WERE FREED.
+    let mut observed: Vec<_> = receipts.observed.iter().map(|r| r.delivery).collect();
+    observed.sort_by_key(|d| d.raw());
+    let mut expected = sent.clone();
+    expected.sort_by_key(|d| d.raw());
+    assert_eq!(
+        observed, expected,
+        "the drain returned exactly the receipts it observed: {receipts:?}"
+    );
+    assert_eq!(receipts.retained, 0, "nothing was left owed: {receipts:?}");
+    for delivery in &sent {
+        assert_eq!(
+            runtime.observer.state(*delivery),
+            sophia_x_authority::DeliveryState::Ended,
+            "and each returned receipt's place really was released"
+        );
+    }
+    drop((submission, peer));
+}
+
+/// A stop that reports the service thread collected must have waited for it.
+///
+/// WHAT THIS CATCHES. `stop` can drop the join handle and report `Joined`
+/// anyway; the thread is then detached and the claim is simply untrue. Every
+/// twenty-two controls passed with that in place, including the one asserting
+/// the execution is not `Retained` after the join -- which is a real assertion
+/// that merely lost a race: the report is sent one statement before the closure
+/// ends, so the keeper's abandonment usually lands before the read either way.
+///
+/// This makes the difference observable instead of likely. The thread lingers
+/// past its last message and marks its exit only at the very end, so a stop that
+/// joined provably waits through that and a stop that did not provably returns
+/// before the mark. The linger is not a contrivance: the absence of a wait
+/// cannot be seen unless something is still there to be waited for.
+#[test]
+fn a_stop_that_reports_the_thread_collected_really_joined_it() {
+    let directory = std::env::temp_dir().join(format!(
+        "m4-session-exit-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let socket = directory.join("private.sock");
+    let lifetime = PrivateInputLifetimeOwner::reserved();
+    let marker = std::sync::Arc::new(
+        crate::private_input::faults::PrivateInputExitMarker::lingering(Duration::from_millis(150)),
+    );
+    let handle = lifetime
+        .start_with_faults(
+            config(
+                &socket,
+                PrivateInputGrantPolicy::EnabledWithVerifiedEvidence,
+            ),
+            crate::private_input::faults::PrivateInputFaults {
+                exit: Some(std::sync::Arc::clone(&marker)),
+                ..Default::default()
+            },
+        )
+        .expect("the service starts");
+    assert_eq!(
+        handle.await_ready(WAIT).unwrap(),
+        PrivateInputReadiness::Ready
+    );
+
+    let mut peer = Peer::connect(&socket, Order::Little, Some(COOKIE)).unwrap();
+    let _window = peer.create_map_and_draw();
+
+    assert!(
+        !marker.exited(),
+        "the thread is still serving before the stop"
+    );
+    let outcome = handle.stop();
+    assert_eq!(
+        outcome.service_thread,
+        PrivateInputThreadJoin::Joined,
+        "the stop reports the thread collected: {outcome:?}"
+    );
+    assert!(
+        marker.exited(),
+        "and it really waited for it: a stop that reported Joined returned while \
+         the thread was still running"
+    );
+
+    drop(peer);
+    let _ = std::fs::remove_file(&socket);
+    let _ = std::fs::remove_dir(&directory);
+}
+
+/// A control the order refuses for now stays owed, keeps its transaction, and
+/// is delivered later without anything overtaking it.
+///
+/// WHAT THIS CATCHES. The bridge stops at the first refusal that says "later"
+/// and leaves the entry at the head. Nothing exercised that, so removing the
+/// stop -- dropping the entry instead of keeping it -- left every control
+/// green. Work the coordinator committed and the order declined for capacity
+/// would simply have vanished.
+///
+/// THE REFUSAL IS THE ORDER'S OWN. The ready queue admits controls up to
+/// `input_capacity * 2`, and it is refilled one entry per serve turn with a
+/// socket write in between, while the bridge delivers a whole staged batch in a
+/// tight loop under one held lock. A burst of draws therefore outruns it and
+/// earns a real `Saturated`. An earlier attempt drew one at a time and
+/// concluded the bound was unreachable; it was aiming at a different, larger
+/// gate and never got near this one.
+#[test]
+fn a_control_refused_for_now_keeps_its_place_and_its_transaction() {
+    let mut fixture =
+        Fixture::started_with_bounds(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence, 4, 2);
+    let mut peer = fixture.connect();
+    let window = peer.create_map_and_draw();
+    assert_eq!(
+        fixture.running_row().worker,
+        PrivateCustodyWorkerStanding::Running
+    );
+    let _surface = fixture.admitted_surface();
+
+    // Just past what the queue will take at once. The ceiling here is
+    // `input_capacity * 2` = 4, and the burst is kept close to it on purpose:
+    // this peer never reads the events it is sent, so every extra draw is
+    // pressure on a socket that cannot drain, and a bigger burst buys nothing
+    // but flakiness under load.
+    for _ in 0..10 {
+        peer.draw(window);
+    }
+    peer.confirm_geometry(window);
+
+    let deadline = std::time::Instant::now() + WAIT;
+    let mut refused = None;
+    while refused.is_none() {
+        let report = fixture
+            .handle_mut()
+            .apply_committed(Duration::from_millis(50))
+            .expect("the bridge is readable");
+        // The classification is restated here rather than borrowed from the
+        // bridge, so a change to what counts as "later" cannot quietly change
+        // what this control is testing.
+        refused = report.refused.iter().find_map(|refusal| match refusal {
+            crate::private_input::PrivateInputControlError::Refused(
+                sophia_x_authority::AdmissionRefusal::Saturated
+                | sophia_x_authority::AdmissionRefusal::Unavailable
+                | sophia_x_authority::AdmissionRefusal::AuthorityUnreadable,
+                command,
+            ) => Some(*command),
+            _ => None,
+        });
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the order refused a control for capacity within the bound \
+             (the control ceiling is input_capacity * 2)"
+        );
+    }
+    let refused = refused.expect("the loop only leaves with one");
+    let refused_transaction = control_transaction(&refused);
+
+    // STILL OWED, NOT DISCARDED. This is what the mutation destroys.
+    let owed = fixture
+        .handle()
+        .outstanding()
+        .expect("the bridge is readable");
+    assert!(
+        owed >= 1,
+        "a control the order deferred is kept rather than dropped"
+    );
+
+    // NOTHING BEHIND IT OVERTOOK IT, AND IT KEPT ITS OWN TRANSACTION. Minting a
+    // fresh one would leave the first outstanding and unanswerable, and two
+    // acknowledgements could then arrive for one committed decision.
+    let deadline = std::time::Instant::now() + WAIT;
+    let mut delivered = false;
+    while !delivered {
+        let report = fixture
+            .handle_mut()
+            .apply_committed(Duration::from_millis(50))
+            .expect("the bridge is readable");
+        for submitted in report
+            .effects
+            .iter()
+            .filter_map(|effect| effect.submitted())
+        {
+            if submitted.transaction == refused_transaction {
+                delivered = true;
+            } else {
+                assert!(
+                    submitted.transaction < refused_transaction || delivered,
+                    "a control minted after the refused one was delivered ahead of it: \
+                     {submitted:?} before {refused_transaction:?}"
+                );
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the deferred control was delivered under its original transaction"
+        );
+    }
+    drop(peer);
+}
+
+/// The transaction a control command carries, whichever kind it is.
+fn control_transaction(
+    command: &sophia_x_authority::XAuthorityClientControlCommand,
+) -> sophia_protocol::TransactionId {
+    use sophia_x_authority::XAuthorityControlCommand as C;
+    match command.command {
+        C::PublishMetadataRule { transaction, .. }
+        | C::AdmitSurface { transaction, .. }
+        | C::ConfigureSurface { transaction, .. }
+        | C::WithdrawSurface { transaction, .. }
+        | C::FocusSurface { transaction, .. }
+        | C::ClearFocus { transaction, .. } => transaction,
+        _ => panic!("the refused control carries a transaction: {command:?}"),
+    }
+}
+
+/// A committed draw is reconciled to the Engine's own predecessor.
+///
+/// WHAT THIS CATCHES. The generation ledger has its own six controls, but they
+/// exercise the ledger in isolation: every one of them passes if the commit
+/// path stops calling it. Bypassing preparation was caught only by unrelated
+/// controls timing out on admissions that never arrived, which says a pipeline
+/// broke somewhere, not what broke.
+///
+/// The signature is exact. The X authority stamps a drawing transaction with
+/// the window's own generation, which starts at one, while the Engine expects
+/// zero for a surface it has never committed; without reconciliation the commit
+/// comes back `RejectedStaleSurface` rather than `Committed`. That is the
+/// difference preparation exists to remove, and it is visible in the commit
+/// outcomes the report carries.
+#[test]
+fn a_committed_draw_is_reconciled_to_the_engine_predecessor() {
+    let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+    let mut peer = fixture.connect();
+    let window = peer.create_map_and_draw();
+    assert_eq!(
+        fixture.running_row().worker,
+        PrivateCustodyWorkerStanding::Running
+    );
+
+    // A FRESH BATCH AFTER READINESS. Waiting for a started worker already pumps
+    // commits, and a pump hands its outcomes out once; without a new draw there
+    // is nothing left for this to read.
+    peer.draw(window);
+    peer.confirm_geometry(window);
+
+    let deadline = std::time::Instant::now() + WAIT;
+    let mut seen = Vec::new();
+    let mut committed_an_applied_surface = false;
+    while !committed_an_applied_surface {
+        let report = fixture.pump();
+        for outcome in &report.outcomes {
+            seen.push(outcome.outcome);
+            if outcome.outcome == sophia_protocol::TransactionOutcome::Committed
+                && !outcome.applied.is_empty()
+            {
+                committed_an_applied_surface = true;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the draw reached a commit within the bound: outcomes so far {seen:?}"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    assert!(
+        !seen.contains(&sophia_protocol::TransactionOutcome::RejectedStaleSurface),
+        "the draw was reconciled to the Engine's predecessor rather than \
+         rejected as stale: {seen:?}"
     );
     drop(peer);
 }
