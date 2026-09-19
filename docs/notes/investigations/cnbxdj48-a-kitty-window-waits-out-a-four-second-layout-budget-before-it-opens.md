@@ -117,12 +117,18 @@ in about 80 ms; with both, about 40 ms, like glxgears.
       loop composited seven frames in the 300 ms after the map, where the old
       build composited none. The remainder is kitty's own render time, about
       70 ms from map to its correctly sized frame.
+- [x] A third client, ghostty, confirms the repair is not kitty-specific: its
+      toplevel maps at 762606946 and presents at 762607015, **69 ms**, with
+      the same `deferred=1` launch epoch and no timeout. Its two input-only
+      helper windows are `ClientPositioned`, so admission never governs them
+      and only the toplevel is admitted.
 - [ ] The evidence that a held epoch froze input and composition is
       circumstantial (record counts). A held epoch's owner-loop starvation is
       not measured directly; if a stall recurs, `sophia_live_session` tick
       counts across the stall would show it.
 
-Open work is tracked as t123 in `todo.md`.
+Closed as t123 in `done-2026-09.md`. The remaining item above is an
+observation about this note's evidence, not open work.
 
 ## Connections
 
