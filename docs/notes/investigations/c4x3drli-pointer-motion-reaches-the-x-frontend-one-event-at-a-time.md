@@ -57,6 +57,23 @@ drag, grab and focus change -- and is proven by four tests
 (`sophia-engine/tests/input.rs:334-419`). It is **dead code**: nothing in
 `sophia-session` constructs one.
 
+### Measured on the repeatable rig
+
+`tools/benchmark_sophia_glxgears_shake_tty3.sh` now drives a virtual mouse at
+1 kHz through the standalone benchmark, so the perturbation is measured without
+a hand. On the reference host, `glxgears` in the standalone single-output path:
+
+| condition | client FPS |
+| --- | --- |
+| idle | 59.7 |
+| 1 kHz pointer shake | 41.7 (samples 43.3 / 38.0 / 43.8) |
+
+44,286 motion events injected at exactly 1000.0 Hz. The standalone path idles
+at 60, not the 118 of the dual-monitor desktop, so this is a smaller drop than
+the desktop's halving -- but the same mechanism: continuous motion perturbs the
+cadence. This is the before-number the coalescer repair has to lift back toward
+60.
+
 ## Finding and resolution
 
 Not established. The per-event routing is confirmed and the coalescer exists
