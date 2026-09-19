@@ -1236,3 +1236,184 @@ fn x11_dispatch_still_refuses_a_face_it_cannot_rasterize() {
         "a face Sophia cannot rasterize must still be refused by name"
     );
 }
+
+/// Build a window and a graphics context, then return the dispatcher's view.
+fn text_window_and_gc(
+    namespace: NamespaceId,
+    window: u32,
+    gc: u32,
+    runtime: &mut XAuthorityRuntime,
+    atoms: &mut XAtomTable,
+    properties: &mut XPropertyTable,
+) {
+    for (sequence, opcode, bytes) in [
+        (
+            1u16,
+            1u8,
+            create_window_request(XByteOrder::LittleEndian, window, 0, 0, 300, 200),
+        ),
+        (
+            2,
+            55,
+            create_gc_request(XByteOrder::LittleEndian, gc, window),
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence) + 900, XByteOrder::LittleEndian),
+            &bytes,
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+            request,
+            runtime,
+            atoms,
+            properties,
+        );
+    }
+}
+
+#[test]
+fn x11_sixteen_bit_text_draws_what_eight_bit_text_draws_for_the_same_characters() {
+    // A character whose high byte is zero names the same glyph through either
+    // request, so the two must produce identical pixels. This is the property
+    // that says the 16-bit path reaches the raster correctly rather than
+    // merely decoding: a swapped CHAR2B or a mis-scaled advance shows here.
+    let namespace = NamespaceId::from_raw(46);
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let mut eight = XAuthorityRuntime::new();
+    text_window_and_gc(
+        namespace,
+        0x220161,
+        0x220162,
+        &mut eight,
+        &mut atoms,
+        &mut properties,
+    );
+    let request = decode_x11_core_request(
+        context(namespace, 960, XByteOrder::LittleEndian),
+        &image_text8_request(XByteOrder::LittleEndian, 0x220161, 0x220162, 9, 20, b"AaZz"),
+    )
+    .unwrap();
+    let eight_draw = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 76),
+        request,
+        &mut eight,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let mut sixteen = XAuthorityRuntime::new();
+    text_window_and_gc(
+        namespace,
+        0x220161,
+        0x220162,
+        &mut sixteen,
+        &mut atoms,
+        &mut properties,
+    );
+    let codes: Vec<u16> = b"AaZz".iter().map(|byte| u16::from(*byte)).collect();
+    let request = decode_x11_core_request(
+        context(namespace, 961, XByteOrder::LittleEndian),
+        &image_text16_request(XByteOrder::LittleEndian, 0x220161, 0x220162, 9, 20, &codes),
+    )
+    .unwrap();
+    let sixteen_draw = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 77),
+        request,
+        &mut sixteen,
+        &mut atoms,
+        &mut properties,
+    );
+
+    assert!(sixteen_draw.outputs.is_empty(), "a 16-bit draw is not an error");
+    let eight_response = eight_draw.response.unwrap();
+    let sixteen_response = sixteen_draw.response.unwrap();
+    assert_eq!(
+        sixteen_response.transactions[0].damage,
+        eight_response.transactions[0].damage,
+        "the same characters dirty the same rectangle"
+    );
+    let XAuthorityCpuBufferUpdate::Replace(eight_pixels) =
+        eight.take_cpu_buffer_update().expect("the 8-bit draw reached the raster")
+    else {
+        panic!("the first update replaces the buffer");
+    };
+    let XAuthorityCpuBufferUpdate::Replace(sixteen_pixels) =
+        sixteen.take_cpu_buffer_update().expect("the 16-bit draw reached the raster")
+    else {
+        panic!("the first update replaces the buffer");
+    };
+    assert!(
+        eight_pixels.bytes.iter().any(|byte| *byte != 0),
+        "the comparison is only worth making if something was painted"
+    );
+    assert_eq!(
+        sixteen_pixels.bytes, eight_pixels.bytes,
+        "and painted the same pixels"
+    );
+}
+
+#[test]
+fn x11_query_text_extents_measures_the_face_the_fontable_holds() {
+    // Xlib lays text out from these numbers without asking again, so they must
+    // agree with what the server paints. Four characters of the built-in face
+    // are twenty four pixels wide, eleven above the baseline and two below.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    text_window_and_gc(
+        namespace,
+        0x220171,
+        0x220172,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let codes: Vec<u16> = b"AaZz".iter().map(|byte| u16::from(*byte)).collect();
+    let request = decode_x11_core_request(
+        context(namespace, 970, XByteOrder::LittleEndian),
+        &query_text_extents_request(XByteOrder::LittleEndian, 0x220172, &codes),
+    )
+    .unwrap();
+    let extents = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 48),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let encoded = extents.encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded.len(), 1);
+    assert_eq!(encoded[0][0], 1, "a reply, not an error");
+    assert_eq!(encoded[0][1], 0, "left to right");
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][8..10]), 11);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][10..12]), 2);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][12..14]), 11);
+    assert_eq!(read_i16(XByteOrder::LittleEndian, &encoded[0][14..16]), 2);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][16..20]), 24);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][20..24]), 0);
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][24..28]), 24);
+
+    // An unknown fontable is BadFont rather than a reply of zeros.
+    let request = decode_x11_core_request(
+        context(namespace, 971, XByteOrder::LittleEndian),
+        &query_text_extents_request(XByteOrder::LittleEndian, 0x220199, &codes),
+    )
+    .unwrap();
+    let refused = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 48),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        refused.outputs.as_slice(),
+        [XClientOutput::Error(error)] if error.code == XErrorCode::BadFont
+    ));
+}

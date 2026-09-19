@@ -800,3 +800,147 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
         );
     }
 }
+
+#[test]
+fn x11_core_decoder_reads_sixteen_bit_text_in_both_client_orders() {
+    // A CHAR2B is not client-order data: the two bytes go to the wire high
+    // half first whatever the connection's order, and the server reads them
+    // that way. Decoding them with the client's order would silently swap
+    // every character above U+00FF.
+    let namespace = NamespaceId::from_raw(47);
+    let chars = [0x2500u16, 0x03a9, 0x0041];
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let request = decode_x11_core_request(
+            context(namespace, 700, byte_order),
+            &poly_text16_request(byte_order, 0x330010, 0x330011, 7, 19, &chars),
+        )
+        .unwrap();
+        assert_eq!(
+            request,
+            XWireRequest::PolyText16 {
+                drawable: XResourceId::new(0x330010, 1),
+                gc: XResourceId::new(0x330011, 1),
+                x: 7,
+                y: 19,
+                items: vec![XPolyTextItem::Text {
+                    delta: 0,
+                    chars: chars.to_vec(),
+                }],
+            },
+            "{byte_order:?}"
+        );
+
+        let image = decode_x11_core_request(
+            context(namespace, 701, byte_order),
+            &image_text16_request(byte_order, 0x330010, 0x330011, 7, 19, &chars),
+        )
+        .unwrap();
+        assert_eq!(
+            image,
+            XWireRequest::ImageText16 {
+                drawable: XResourceId::new(0x330010, 1),
+                gc: XResourceId::new(0x330011, 1),
+                x: 7,
+                y: 19,
+                chars: chars.to_vec(),
+            },
+            "{byte_order:?}"
+        );
+    }
+}
+
+#[test]
+fn x11_poly_text16_font_shift_is_msb_first_and_its_items_count_characters() {
+    // The shift is five bytes and its identifier is assembled big endian; the
+    // string items around it count characters, so a two-character item
+    // occupies six bytes rather than four.
+    let namespace = NamespaceId::from_raw(47);
+    let shifted: u32 = 0x0033_0099;
+    let mut items = vec![2, 0xfe];
+    items.extend_from_slice(&0x0041u16.to_be_bytes());
+    items.extend_from_slice(&0x2500u16.to_be_bytes());
+    items.push(255);
+    items.extend_from_slice(&shifted.to_be_bytes());
+    items.push(1);
+    items.push(3);
+    items.extend_from_slice(&0x03a9u16.to_be_bytes());
+
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let request = decode_x11_core_request(
+            context(namespace, 702, byte_order),
+            &poly_text16_items_request(byte_order, 0x330010, 0x330011, 1, 2, &items),
+        )
+        .unwrap();
+        let XWireRequest::PolyText16 { items, .. } = request else {
+            panic!("a PolyText16 request");
+        };
+        assert_eq!(
+            items,
+            vec![
+                XPolyTextItem::Text {
+                    delta: -2,
+                    chars: vec![0x0041, 0x2500],
+                },
+                XPolyTextItem::Font {
+                    font: XResourceId::new(u64::from(shifted), 1),
+                },
+                XPolyTextItem::Text {
+                    delta: 3,
+                    chars: vec![0x03a9],
+                },
+            ],
+            "{byte_order:?}"
+        );
+    }
+}
+
+#[test]
+fn x11_query_text_extents_recovers_its_length_from_the_odd_flag() {
+    // The request carries no count. An even and an odd string of the same
+    // padded length differ only by that flag, so reading it wrongly measures
+    // one character too many.
+    let namespace = NamespaceId::from_raw(47);
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let even = decode_x11_core_request(
+            context(namespace, 703, byte_order),
+            &query_text_extents_request(byte_order, 0x330011, &[0x0041, 0x0042]),
+        )
+        .unwrap();
+        assert_eq!(
+            even,
+            XWireRequest::QueryTextExtents {
+                fontable: XResourceId::new(0x330011, 1),
+                chars: vec![0x0041, 0x0042],
+            },
+            "{byte_order:?}"
+        );
+
+        let odd = decode_x11_core_request(
+            context(namespace, 704, byte_order),
+            &query_text_extents_request(byte_order, 0x330011, &[0x0041]),
+        )
+        .unwrap();
+        assert_eq!(
+            odd,
+            XWireRequest::QueryTextExtents {
+                fontable: XResourceId::new(0x330011, 1),
+                chars: vec![0x0041],
+            },
+            "{byte_order:?}"
+        );
+
+        let empty = decode_x11_core_request(
+            context(namespace, 705, byte_order),
+            &query_text_extents_request(byte_order, 0x330011, &[]),
+        )
+        .unwrap();
+        assert_eq!(
+            empty,
+            XWireRequest::QueryTextExtents {
+                fontable: XResourceId::new(0x330011, 1),
+                chars: Vec::new(),
+            },
+            "{byte_order:?}"
+        );
+    }
+}

@@ -734,6 +734,85 @@ fn poly_text8_items_request(
     out
 }
 
+/// A `PolyText16` request carrying one string item.
+///
+/// The item's length byte counts characters, not bytes, and each character is
+/// two bytes most significant first regardless of the client's own order.
+fn poly_text16_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    x: i16,
+    y: i16,
+    chars: &[u16],
+) -> Vec<u8> {
+    let mut items = Vec::with_capacity(2 + chars.len() * 2);
+    items.push(u8::try_from(chars.len()).unwrap());
+    items.push(0);
+    for code in chars {
+        items.extend_from_slice(&code.to_be_bytes());
+    }
+    poly_text16_items_request(byte_order, drawable, gc, x, y, &items)
+}
+
+fn poly_text16_items_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    x: i16,
+    y: i16,
+    items: &[u8],
+) -> Vec<u8> {
+    let mut out = vec![75, 0];
+    let len_units = padded_len_for_test(16 + items.len()) / 4;
+    push_u16(&mut out, byte_order, len_units as u16);
+    push_u32(&mut out, byte_order, drawable);
+    push_u32(&mut out, byte_order, gc);
+    push_i16(&mut out, byte_order, x);
+    push_i16(&mut out, byte_order, y);
+    out.extend_from_slice(items);
+    pad_to_four(&mut out);
+    out
+}
+
+/// An `ImageText16` request. Its header count is in characters.
+fn image_text16_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    x: i16,
+    y: i16,
+    chars: &[u16],
+) -> Vec<u8> {
+    let mut out = vec![77, u8::try_from(chars.len()).unwrap()];
+    let len_units = (16 + padded_len_for_test(chars.len() * 2)) / 4;
+    push_u16(&mut out, byte_order, len_units as u16);
+    push_u32(&mut out, byte_order, drawable);
+    push_u32(&mut out, byte_order, gc);
+    push_i16(&mut out, byte_order, x);
+    push_i16(&mut out, byte_order, y);
+    for code in chars {
+        out.extend_from_slice(&code.to_be_bytes());
+    }
+    pad_to_four(&mut out);
+    out
+}
+
+/// A `QueryTextExtents` request. The string has no count; an odd length is
+/// declared in the header's spare byte instead.
+fn query_text_extents_request(byte_order: XByteOrder, fontable: u32, chars: &[u16]) -> Vec<u8> {
+    let odd = chars.len() % 2 == 1;
+    let mut out = vec![48, u8::from(odd)];
+    let len_units = (8 + padded_len_for_test(chars.len() * 2)) / 4;
+    push_u16(&mut out, byte_order, len_units as u16);
+    push_u32(&mut out, byte_order, fontable);
+    for code in chars {
+        out.extend_from_slice(&code.to_be_bytes());
+    }
+    pad_to_four(&mut out);
+    out
+}
+
 fn image_text8_request(
     byte_order: XByteOrder,
     drawable: u32,
