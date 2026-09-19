@@ -9,8 +9,8 @@ use sophia_protocol::{
 };
 use sophia_session::private_input::{
     PrivateInputConfig, PrivateInputGrantPolicy, PrivateInputHandle, PrivateInputInstanceCookie,
-    PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal, PrivateInputService,
-    PrivateInputThreadJoin,
+    PrivateInputLifetimeOwner, PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal,
+    PrivateInputService, PrivateInputThreadJoin,
 };
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -69,6 +69,9 @@ pub fn config(socket: &Path, grants: PrivateInputGrantPolicy) -> PrivateInputCon
 }
 
 pub struct Instance {
+    /// Reserved before the service starts and kept for its whole life, so
+    /// custody of an unresolved runtime has a home that outlives the handle.
+    lifetime: PrivateInputLifetimeOwner,
     handle: Option<PrivateInputHandle>,
     directory: PathBuf,
     socket: PathBuf,
@@ -98,7 +101,8 @@ impl Instance {
         if foreign {
             config.cookie.instance = InstanceId::new(999);
         }
-        let started = PrivateInputService::start(config);
+        let lifetime = PrivateInputLifetimeOwner::reserved();
+        let started = PrivateInputService::start(&lifetime, config);
         let handle = match started {
             Ok(handle) => handle,
             Err(error) => {
@@ -111,6 +115,7 @@ impl Instance {
             PrivateInputReadiness::Ready
         );
         Ok(Self {
+            lifetime,
             handle: Some(handle),
             directory,
             socket,
@@ -171,7 +176,13 @@ impl Instance {
     }
 
     pub fn finish(mut self) -> PrivateInputOutcome {
-        self.handle.take().unwrap().stop()
+        let outcome = self.handle.take().unwrap().stop();
+        assert_eq!(
+            self.lifetime.retains_unresolved(),
+            outcome.retains_obligations(),
+            "the outer owner must retain what the close report says is owed"
+        );
+        outcome
     }
 }
 

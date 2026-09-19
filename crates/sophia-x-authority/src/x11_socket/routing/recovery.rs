@@ -752,20 +752,41 @@ impl InputRecovery {
     }
 
     fn observe(&self, receipt: XAuthorityClientInputDelivery) -> bool {
+        self.observe_typed(receipt) == PrivateDeliveryObservation::Observed
+    }
+
+    /// Observe, and say which answer it is.
+    ///
+    /// A BOOLEAN MAKES FOUR DIFFERENT ANSWERS LOOK THE SAME. A ledger that
+    /// could not be read, a delivery it has never heard of, one already
+    /// observed and a receipt that is not the terminal answer for its delivery
+    /// call for completely different handling, and the first of them is not a
+    /// refusal at all -- nothing was decided. A consumer told only `false`
+    /// treats a poisoned ledger exactly as it treats a duplicate.
+    fn observe_typed(
+        &self,
+        receipt: XAuthorityClientInputDelivery,
+    ) -> PrivateDeliveryObservation {
         let Ok(mut state) = self.state.lock() else {
-            return false;
+            return PrivateDeliveryObservation::Unreadable;
         };
         let Some(entry) = state.tickets.get_mut(&receipt.delivery) else {
-            return false;
+            return PrivateDeliveryObservation::UnknownDelivery;
         };
-        if entry.observed || entry.terminal != Some(receipt) {
-            return false;
+        if entry.observed {
+            return PrivateDeliveryObservation::AlreadyObserved;
+        }
+        if entry.terminal != Some(receipt) {
+            return PrivateDeliveryObservation::TerminalMismatch;
         }
         entry.observed = true;
         if entry.routing_finished {
             state.tickets.remove(&receipt.delivery);
         }
-        true
+        // OBSERVED, WHICH IS NOT THE SAME AS FREED. The ticket is removed only
+        // when routing has also finished; when it has not, the observation is
+        // recorded and the removal happens on that side instead.
+        PrivateDeliveryObservation::Observed
     }
 
     fn recover(

@@ -15,6 +15,39 @@
 // that quietly stops accepting deliveries once enough receipts have gone
 // unobserved. Observation is what gives the place back.
 
+/// What observing one receipt established.
+///
+/// FOUR ANSWERS, AND NONE OF THEM IS A PROMISE ABOUT CAPACITY. `Observed`
+/// records that the consumer has taken this receipt; the delivery's place comes
+/// back only once the ledger is ALSO finished routing it, and which of those
+/// happens last is not this call's to know. Reading `Observed` as "a place is
+/// free now" would be a guess.
+///
+/// `Unreadable` is not a refusal either: the ledger was never asked, nothing
+/// was decided, and a consumer that treated it as a refusal would conclude a
+/// receipt was rejected when it was not looked at.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrivateDeliveryObservation {
+    /// The consumer's observation is recorded.
+    ///
+    /// NOT "THE PLACE IS BACK". A ticket is pruned when it is both observed and
+    /// routing-finished. This is one of those two; if routing has not finished,
+    /// the ticket is still there and will be pruned when it does.
+    Observed,
+    /// The ledger holds no ticket for this delivery.
+    UnknownDelivery,
+    /// This delivery had already been observed. Nothing further is recorded,
+    /// and this says nothing about whether its place has come back: routing may
+    /// still be unfinished.
+    AlreadyObserved,
+    /// The ledger's terminal answer for this delivery is not the receipt
+    /// offered, so this receipt frees nothing.
+    TerminalMismatch,
+    /// The ledger could not be read. Nothing was decided.
+    Unreadable,
+}
+
 /// Marks a delivery receipt observed, and nothing else.
 #[cfg(unix)]
 #[derive(Clone)]
@@ -30,13 +63,14 @@ impl PrivateDeliveryObserver {
 
     /// Mark this exact receipt observed.
     ///
-    /// `false` MEANS THIS RECEIPT DID NOT RELEASE ANYTHING, and the caller
-    /// still holds it. The ledger refuses an observation whose ticket it does
-    /// not have, one already observed, and one whose terminal receipt is not
-    /// the receipt offered -- so a consumer cannot free a place by presenting
-    /// an answer that belongs to a different delivery.
-    pub fn observe(&self, receipt: XAuthorityClientInputDelivery) -> bool {
-        self.recovery.observe(receipt)
+    /// ANYTHING BUT `Observed` LEAVES THE RECEIPT WITH THE CALLER. The ledger
+    /// refuses an observation whose ticket it does not have, one already made,
+    /// and one whose terminal receipt is not the receipt offered -- so a
+    /// consumer cannot free a place by presenting an answer that belongs to a
+    /// different delivery -- and it reports separately when it could not be
+    /// read at all, which is not a refusal.
+    pub fn observe(&self, receipt: XAuthorityClientInputDelivery) -> PrivateDeliveryObservation {
+        self.recovery.observe_typed(receipt)
     }
 }
 

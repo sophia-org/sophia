@@ -78,6 +78,15 @@ pub(super) struct PrivateInputRuntime {
     >,
     pub(super) owner: Arc<PrivateServiceOwner>,
     pub(super) store: PrivateSettlementOwner,
+    /// The lifetime's reserved closing slot, reached weakly.
+    ///
+    /// WEAK, SO THERE IS NO CYCLE. The slot holds this runtime strongly once
+    /// it ends with work owed, because that is what custody means. This only
+    /// ever needs to put itself there and must not keep the slot alive to do
+    /// it: a lifetime that has gone leaves a service with nowhere to place
+    /// custody, which is a fact worth reporting rather than a pair that keeps
+    /// each other alive for good.
+    pub(super) closing: std::sync::Weak<super::lifetime::PrivateInputClosingSlot>,
     pub(super) participant: PrivateAdmissionParticipant,
     /// The one call that gives a delivery's place back.
     ///
@@ -109,7 +118,15 @@ pub(super) struct PrivateInputRuntime {
     pub(super) execution_witness:
         Arc<Mutex<Option<sophia_x_authority::PrivateExecutionWitnessHandle>>>,
     pub(super) grants: super::PrivateInputGrantPolicy,
-    pub(super) commands: SyncSender<XServerFrontendServiceCommand>,
+    /// The service command sender, held so it can be given up.
+    ///
+    /// AN OPTION BECAUSE LOSING IT IS A REAL EXIT. A service whose command
+    /// senders have all gone sees its receiver disconnect and stops on its
+    /// own; a stop that assumed a sender was always there would have no way to
+    /// describe that, and no way to be driven through it. Sending clones out
+    /// of here rather than holding a second copy elsewhere keeps "all the
+    /// senders" a thing that can actually be said.
+    pub(super) commands: Mutex<Option<SyncSender<XServerFrontendServiceCommand>>>,
     /// The receiving ends Session owns.
     ///
     /// EACH BEHIND ITS OWN LOCK. A receiver is not `Sync`, and the handle is
@@ -155,7 +172,10 @@ impl PrivateInputRuntime {
     ///
     /// Everything that can be refused is refused here, on the caller's thread,
     /// before a thread exists to have to unwind.
-    pub(super) fn start(config: PrivateInputConfig) -> Result<Self, PrivateInputRefusal> {
+    pub(super) fn start(
+        config: PrivateInputConfig,
+        closing: std::sync::Weak<super::lifetime::PrivateInputClosingSlot>,
+    ) -> Result<Self, PrivateInputRefusal> {
         let PrivateInputConfig {
             socket_path,
             namespace,
@@ -296,6 +316,14 @@ impl PrivateInputRuntime {
                     cookie: cookie.cookie,
                 },
             )
+            // SESSION DECIDES WHEN A WINDOW IS ADMITTED, SO THE FRONTEND MUST
+            // WAIT FOR IT. Without this MapWindow maps the window immediately,
+            // and the AdmitSurface the bridge then raises from the commit is
+            // refused: admit_window_from_engine requires a pending policy map
+            // on an unmapped window and will not admit one that is already
+            // mapped. The two halves would be deciding the same thing
+            // independently, and the frontend would always get there first.
+            .with_policy_map_deferred(true)
             .with_admission_policy(policy);
 
         let store = PrivateSettlementOwner::with_capacity(settlement_capacity);
@@ -478,6 +506,7 @@ impl PrivateInputRuntime {
             socket_path,
             owner,
             store,
+            closing,
             participant,
             observer,
             retained_receipts: Mutex::new(std::collections::VecDeque::new()),
@@ -487,7 +516,7 @@ impl PrivateInputRuntime {
             readiness,
             execution_witness,
             grants,
-            commands,
+            commands: Mutex::new(Some(commands)),
             acknowledgements: Mutex::new(acknowledgements),
             deliveries: Mutex::new(deliveries),
             transactions: Mutex::new(transactions),
@@ -585,14 +614,39 @@ impl PrivateInputRuntime {
         Some(self.stop())
     }
 
+    /// A sender for the service command channel, if this still holds one.
+    pub(super) fn command_sender(&self) -> Option<SyncSender<XServerFrontendServiceCommand>> {
+        self.commands.lock().ok().and_then(|held| held.clone())
+    }
+
+    /// Give up every command sender this service has.
+    ///
+    /// cfg(test) ONLY, AND IT IS NOT A FAULT INJECTOR. Nothing is broken and
+    /// nothing is faked: the senders are dropped, which is exactly what
+    /// happens when the last holder of a channel goes, and the service's own
+    /// receiver then reports a real disconnection. There is no release path to
+    /// this, and no configuration that reaches it.
+    #[cfg(test)]
+    pub(super) fn drop_command_senders(&self) -> bool {
+        self.commands
+            .lock()
+            .map(|mut held| held.take().is_some())
+            .unwrap_or(false)
+    }
+
     pub(super) fn stop(&self) -> PrivateInputOutcome {
         // Producer admission closes as the service ends: the port lives inside
         // the invocation, so stopping it is what shuts the door. Nothing here
         // reaches around that to close it early, which would refuse producers
         // while the invocation was still running.
-        let _ = self
-            .commands
-            .send(XServerFrontendServiceCommand::StopAndDisconnect);
+        // TOLERATES A SENDER THAT HAS ALREADY GONE. Losing the command
+        // channel is one of the ways a service ends; when it has happened the
+        // service has already seen its receiver disconnect and stopped itself,
+        // and there is nothing to ask it. The collection below is the same
+        // either way.
+        if let Some(sender) = self.command_sender() {
+            let _ = sender.send(XServerFrontendServiceCommand::StopAndDisconnect);
+        }
         let closed = self.closed.lock().ok().and_then(|held| held.recv().ok());
         let service_thread = match self.thread.lock().ok().and_then(|mut held| held.take()) {
             Some(handle) => match handle.join() {
@@ -615,11 +669,28 @@ impl PrivateInputRuntime {
         // so it appears in no settlement reading; counting it here is what
         // stops a stop from looking finished while this is still owed.
         let bridge_undelivered = self.bridge.lock().map(|held| held.outstanding()).ok();
-        // RECEIPTS TAKEN AND NEVER HANDED BACK. Each one still holds a place in
-        // the delivery ledger, so a stop that ignored them would look finished
-        // while the service it stopped had permanently spent that much of its
-        // own delivery bound. `None` is unreadable, which is not none owed.
-        let receipts_unobserved = self.retained_receipts.lock().map(|held| held.len()).ok();
+        // RECEIPTS TAKEN AND NEVER HANDED BACK, PLUS THE ONES NOBODY TOOK.
+        // Each holds a place in the delivery ledger, so a stop that ignored
+        // them would look finished while the service it stopped had
+        // permanently spent that much of its own delivery bound. Receipts
+        // still sitting in the channel count too: the thread has ended, so
+        // nothing will ever read them, and a count that skipped them would
+        // report zero owed with receipts unread. They are moved into custody
+        // rather than observed, so nothing is consumed on the way out.
+        // `None` is unreadable, which is not none owed.
+        // THE RETENTION BOUND DOES NOT APPLY HERE. It exists to limit what a
+        // running service holds while more keeps arriving; this is the final
+        // account of a thread that has already ended, so what is left is a
+        // finite queue that nothing will add to. Taking all of it is what makes
+        // the number the whole number, and counting by draining-and-discarding
+        // would destroy the very receipts it was counting.
+        let receipts_unobserved = match (self.retained_receipts.lock(), self.deliveries.lock()) {
+            (Ok(mut retained), Ok(held)) => {
+                retained.extend(held.try_iter());
+                Some(retained.len())
+            }
+            _ => None,
+        };
         let mut outcome = PrivateInputOutcome {
             service_thread,
             settlement,

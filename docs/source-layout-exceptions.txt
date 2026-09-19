@@ -36,3 +36,7 @@ inline-tests crates/sophia-session/src/live_session/window_allocation.rs
 
 # External exact native activation response/FIFO ownership controls.
 inline-tests crates/sophia-runtime/src/shell_transport/native_launcher/control/activation.rs
+
+# External private Session custody and generation controls; rationale in the style guide.
+inline-tests crates/sophia-session/src/private_input.rs
+inline-tests crates/sophia-session/src/private_input/committed/generations.rs

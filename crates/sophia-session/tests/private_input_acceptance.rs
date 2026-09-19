@@ -35,9 +35,12 @@ fn construction() {
         drop(peer);
     }
     // A second production owner must not displace the live listener.
-    let second =
-        PrivateInputService::start(config(instance.socket(), PrivateInputGrantPolicy::Disabled))
-            .expect("the valid second configuration must reach the listener bind");
+    let second_lifetime = sophia_session::private_input::PrivateInputLifetimeOwner::reserved();
+    let second = PrivateInputService::start(
+        &second_lifetime,
+        config(instance.socket(), PrivateInputGrantPolicy::Disabled),
+    )
+    .expect("the valid second configuration must reach the listener bind");
     assert_eq!(
         second.await_ready(support::WAIT).unwrap(),
         PrivateInputReadiness::Stopped
@@ -303,6 +306,23 @@ fn committed_routing() {
         let mapped = admitted
             .submitted()
             .expect("committed admission reached the real order");
+        let acknowledge = |expected: sophia_session::private_input::PrivateInputSubmitted| {
+            let acknowledgements = instance
+                .handle()
+                .drain_acknowledgements_within(support::WAIT);
+            assert_eq!(acknowledgements.len(), 1, "{acknowledgements:?}");
+            let ack = acknowledgements[0];
+            assert_eq!(ack.client, submission.connection().client);
+            assert_eq!(ack.acknowledgement.transaction, expected.transaction);
+            assert_eq!(ack.acknowledgement.surface, expected.surface);
+            assert_eq!(ack.acknowledgement.kind, expected.kind);
+            assert_eq!(
+                ack.acknowledgement.outcome,
+                XAuthorityControlOutcome::Delivered,
+                "{ack:?}"
+            );
+        };
+        acknowledge(mapped);
         let focused = instance
             .handle()
             .submit_action(
@@ -312,32 +332,7 @@ fn committed_routing() {
                 },
             )
             .unwrap();
-        let mut acknowledgements = Vec::new();
-        while acknowledgements.len() < 2 {
-            acknowledgements.extend(
-                instance
-                    .handle()
-                    .drain_acknowledgements_within(Duration::from_millis(10)),
-            );
-            assert!(
-                Instant::now() < deadline,
-                "control acknowledgement deadline"
-            );
-        }
-        assert_eq!(acknowledgements.len(), 2);
-        for expected in [mapped, focused] {
-            assert_eq!(
-                acknowledgements
-                    .iter()
-                    .filter(|ack| ack.client == submission.connection().client
-                        && ack.acknowledgement.transaction == expected.transaction
-                        && ack.acknowledgement.surface == expected.surface
-                        && ack.acknowledgement.kind == expected.kind
-                        && ack.acknowledgement.outcome == XAuthorityControlOutcome::Delivered)
-                    .count(),
-                1
-            );
-        }
+        acknowledge(focused);
         peer.focus_event(window);
         for (key, pressed, kind, detail, state) in [
             (false, true, 4, 1, 0),
@@ -365,8 +360,9 @@ fn committed_routing() {
                 .handle()
                 .drain_deliveries_within(support::WAIT)
                 .unwrap();
-            // Observed, so each receipt gave its delivery's place back.
-            assert!(receipts.retained.is_empty(), "{receipts:?}");
+            // Consumption observes the exact receipt; routing completion is
+            // the separate condition for returning its capacity.
+            assert_eq!(receipts.retained, 0, "{receipts:?}");
             let observed = &receipts.observed;
             assert_eq!(observed.len(), 1);
             assert_eq!(observed[0].client, submission.connection().client);
@@ -375,7 +371,7 @@ fn committed_routing() {
         }
         peer.empty_tail();
         let drained = instance.handle().drain_deliveries().unwrap();
-        assert!(drained.observed.is_empty() && drained.retained.is_empty());
+        assert!(drained.observed.is_empty() && drained.retained == 0);
         drop((peer, submission));
         evidence.collect(instance.finish(), false);
     }

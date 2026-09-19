@@ -22,6 +22,13 @@ use super::submission::{PrivateInputConnection, PrivateInputSubmission};
 /// call rather than being dropped.
 pub const PRIVATE_INPUT_DRAIN_BOUND: usize = 256;
 
+/// The most receipts this service will hold in its own custody.
+///
+/// SEPARATE FROM THE PER-CALL BOUND. One bounds how much work a single call
+/// does; this bounds how much a service can be holding at once. Reaching it
+/// leaves the remainder in the channel, which is a queue already.
+pub const PRIVATE_INPUT_RECEIPT_RETENTION: usize = 256;
+
 /// Receipts taken from the delivery channel, and what became of each.
 ///
 /// TWO DIFFERENT OUTCOMES, KEPT APART. An observed receipt released its
@@ -32,9 +39,43 @@ pub const PRIVATE_INPUT_DRAIN_BOUND: usize = 256;
 pub struct PrivateInputReceipts {
     /// Handed back to the ledger, which pruned the ticket.
     pub observed: Vec<XAuthorityClientInputDelivery>,
-    /// Still held. Every receipt this service owes, not only the ones this
-    /// call popped.
-    pub retained: Vec<XAuthorityClientInputDelivery>,
+    /// How many receipts this service is still holding, across every call.
+    ///
+    /// INVENTORY, NOT THIS CALL'S WORK, AND A COUNT RATHER THAN A LIST. The
+    /// observations above are bounded; this is not, so returning the receipts
+    /// themselves would make an unbounded copy of everything held on every
+    /// call, and would blur the one distinction that matters here -- what this
+    /// call did against what the service owes.
+    pub retained: usize,
+    /// How many receipts this call actually looked at.
+    ///
+    /// THE BOUND IS ON THIS, AND IT HAS TO BE VISIBLE. An earlier version
+    /// bounded the work by what was left at the end of the call, which let a
+    /// full retention queue be observed and a full channel drained on top of
+    /// it in one call -- twice the advertised bound, and invisible from the
+    /// outside. Reporting what was visited is what makes the bound checkable.
+    pub visited: usize,
+    /// How many observations could not be made because the ledger could not be
+    /// read.
+    ///
+    /// COUNTED APART FROM THE REST OF `retained`. A ledger that was never asked
+    /// has refused nothing, and a reader that could not tell this from a
+    /// declined receipt would conclude the ledger rejected work it never saw.
+    pub unreadable: usize,
+}
+
+/// How many receipts this service is holding, and whether that is all of them.
+///
+/// A PARTIAL COUNT THAT SAID SO IS USABLE; ONE THAT DID NOT IS WORSE THAN
+/// NOTHING. The retention bound can stop the channel being emptied, and a
+/// caller told only a number would read the number as the whole obligation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PrivateInputReceiptInventory {
+    /// Receipts in this service's own custody.
+    pub retained: usize,
+    /// Whether the delivery channel was emptied into that custody. When false,
+    /// `retained` is a floor and not a total.
+    pub complete: bool,
 }
 
 /// A boundary or a record that could not be read.
@@ -160,6 +201,19 @@ pub enum PrivateInputRefusal {
     /// sized smaller than the connections it is meant to hold -- which is the
     /// one failure a capacity is there to prevent.
     SettlementCapacity { clients: usize, places_each: usize },
+    /// The lifetime offered is already running a service.
+    ///
+    /// ONE SLOT, ONE SERVICE. A lifetime reserves exactly one home for one
+    /// service's unresolved runtime; admitting a second would give two
+    /// services one home between them.
+    LifetimeInUse,
+    /// The lifetime offered is still holding a service that ended with work
+    /// owed. Starting another under it would leave that work with nowhere to
+    /// be, and there is deliberately no call that empties it.
+    LifetimeRetainsUnresolved,
+    /// The lifetime's slot could not be read, so nothing can be admitted under
+    /// it: a service whose custody has nowhere to go must not be started.
+    LifetimeUnreadable,
     /// The service thread could not be started.
     Thread(std::io::Error),
 }
@@ -332,7 +386,28 @@ impl PrivateInputOutcome {
             // settlement does: nothing has been shown to be finished.
             || self.bridge_undelivered.is_none_or(|owed| owed > 0)
             || self.receipts_unobserved.is_none_or(|owed| owed > 0);
-        self.retained = outstanding.then_some(runtime);
+        if !outstanding {
+            // FINISHED CLEAN, SO THE CLAIM GOES BACK. Nothing is retained, so
+            // there is nothing to dispose of; the lifetime becomes usable
+            // again rather than being spent by a service that owed nothing.
+            if let Some(closing) = runtime.closing.upgrade() {
+                closing.release_claim();
+            }
+            return self;
+        }
+        // THE RESERVED SLOT FIRST. Custody belongs to the lifetime, which was
+        // established before the service was, rather than to this report --
+        // a caller that drops the report would otherwise drop the custody with
+        // it, and a controller that goes without a stop would have nowhere to
+        // put anything at all.
+        //
+        // Placing it settles nothing. It records that this service ended with
+        // work outstanding, and it is never read as evidence that any of that
+        // work was resolved.
+        if let Some(closing) = runtime.closing.upgrade() {
+            closing.place(Arc::clone(&runtime));
+        }
+        self.retained = Some(runtime);
         self
     }
 }
@@ -367,12 +442,17 @@ impl PrivateInputService {
     /// owner are established here and never leave. What comes back can name
     /// connections, issue submissions, drain receipts and stop; it cannot
     /// reach any of those.
+    /// Stand a service up under an explicit lifetime.
+    ///
+    /// THE LIFETIME IS A PARAMETER RATHER THAN SOMETHING THIS MAKES. Custody
+    /// of a service that ends with work owed has to have a home reserved
+    /// before the service exists, and a lifetime this constructed would be one
+    /// the caller could not hold afterwards.
     pub fn start(
+        lifetime: &super::PrivateInputLifetimeOwner,
         config: super::PrivateInputConfig,
     ) -> Result<PrivateInputHandle, PrivateInputRefusal> {
-        super::service::PrivateInputRuntime::start(config).map(|runtime| PrivateInputHandle {
-            runtime: Arc::new(runtime),
-        })
+        lifetime.start(config)
     }
 }
 
@@ -587,31 +667,28 @@ impl PrivateInputHandle {
         &self,
         within: Option<Duration>,
     ) -> Result<PrivateInputReceipts, PrivateInputUnavailable> {
+        // EVERY FALLIBLE ACQUISITION BEFORE ANY OBSERVATION. An earlier version
+        // observed the retained receipts first and then reached for the
+        // delivery channel, so a poisoned channel returned `Err` and took the
+        // already-observed receipts with it: their places were given back in
+        // the ledger and the caller was never told which receipts those were.
+        // Both locks are taken here, and after that nothing can fail.
         let mut retained = self
             .runtime
             .retained_receipts
             .lock()
             .map_err(|_| PrivateInputUnavailable)?;
-        let mut observed = Vec::new();
+        let held = self
+            .runtime
+            .deliveries
+            .lock()
+            .map_err(|_| PrivateInputUnavailable)?;
 
-        // WHAT WAS KEPT GOES FIRST, in the order it was kept.
-        let mut still_retained = std::collections::VecDeque::new();
-        while let Some(receipt) = retained.pop_front() {
-            if self.runtime.observer.observe(receipt) {
-                observed.push(receipt);
-            } else {
-                still_retained.push_back(receipt);
-            }
-        }
-        *retained = still_retained;
-
-        let room = PRIVATE_INPUT_DRAIN_BOUND.saturating_sub(retained.len());
+        // TAKEN INTO CUSTODY BEFORE ANYTHING IS OBSERVED. A receipt moved out
+        // of the channel and into this queue has changed owner and nothing
+        // else; it is not consumed, not observed, and still owed.
+        let room = PRIVATE_INPUT_RECEIPT_RETENTION.saturating_sub(retained.len());
         if room > 0 {
-            let held = self
-                .runtime
-                .deliveries
-                .lock()
-                .map_err(|_| PrivateInputUnavailable)?;
             let mut taken = Vec::new();
             if let Some(within) = within
                 && let Ok(first) = held.recv_timeout(within)
@@ -619,31 +696,85 @@ impl PrivateInputHandle {
                 taken.push(first);
             }
             taken.extend(held.try_iter().take(room - taken.len()));
-            drop(held);
-            for receipt in taken {
-                if self.runtime.observer.observe(receipt) {
+            retained.extend(taken);
+        }
+        drop(held);
+
+        // BOUNDED BY WHAT THIS CALL VISITS, AND VISITED IN PLACE. Counting the
+        // remainder let a full queue be observed and then a full channel
+        // drained on top, which is twice the bound this advertises. Walking the
+        // whole queue to rebuild it would also make the work proportional to
+        // everything held rather than to the bound, so only the prefix is
+        // touched and only released receipts are removed.
+        let mut observed = Vec::new();
+        let mut unreadable = 0usize;
+        let limit = retained.len().min(PRIVATE_INPUT_DRAIN_BOUND);
+        let mut visited = 0usize;
+        let mut index = 0usize;
+        while visited < limit {
+            let receipt = retained[index];
+            visited += 1;
+            match self.runtime.observer.observe(receipt) {
+                sophia_x_authority::PrivateDeliveryObservation::Observed => {
+                    retained.remove(index);
                     observed.push(receipt);
-                } else {
-                    // POPPED, SO IT IS OURS NOW. Dropping it here would take
-                    // its ticket's place with it.
-                    retained.push_back(receipt);
                 }
+                sophia_x_authority::PrivateDeliveryObservation::Unreadable => {
+                    // NOT A REFUSAL. The ledger was never asked, so this is
+                    // counted apart from the receipts it actually declined.
+                    unreadable += 1;
+                    index += 1;
+                }
+                _ => index += 1,
             }
         }
 
         Ok(PrivateInputReceipts {
             observed,
-            retained: retained.iter().copied().collect(),
+            retained: retained.len(),
+            visited,
+            unreadable,
         })
     }
 
-    /// How many receipts this service has taken and not handed back.
-    pub fn unobserved_receipts(&self) -> Result<usize, PrivateInputUnavailable> {
-        self.runtime
+    /// Take queued receipts into custody and report what is owed.
+    ///
+    /// IT MOVES RECEIPTS, AND IT HAS TO. A count that read only the retained
+    /// queue reported zero while receipts sat unread in the delivery channel,
+    /// each one still holding its ticket's place; the channel cannot be
+    /// measured without taking from it. Nothing here is observed, so nothing
+    /// is consumed: the receipts change owner from the channel to this
+    /// service, which is where they were going to have to be counted anyway.
+    ///
+    /// IT SAYS WHEN IT COULD NOT TAKE EVERYTHING. The retention bound can stop
+    /// it short of emptying the channel, and a total reported in that case
+    /// would be a total of what fitted rather than of what is owed. The answer
+    /// carries whether the channel was actually emptied, so a partial reading
+    /// can never be mistaken for a complete one.
+    pub fn unobserved_receipts(
+        &self,
+    ) -> Result<PrivateInputReceiptInventory, PrivateInputUnavailable> {
+        let mut retained = self
+            .runtime
             .retained_receipts
             .lock()
-            .map(|held| held.len())
-            .map_err(|_| PrivateInputUnavailable)
+            .map_err(|_| PrivateInputUnavailable)?;
+        let held = self
+            .runtime
+            .deliveries
+            .lock()
+            .map_err(|_| PrivateInputUnavailable)?;
+        let room = PRIVATE_INPUT_RECEIPT_RETENTION.saturating_sub(retained.len());
+        let taken: Vec<_> = held.try_iter().take(room).collect();
+        // Fewer than there was room for means the channel ran out, which is the
+        // only way to know it is empty. Taking exactly the room available
+        // leaves the question open, and so does having no room at all.
+        let complete = taken.len() < room;
+        retained.extend(taken);
+        Ok(PrivateInputReceiptInventory {
+            retained: retained.len(),
+            complete,
+        })
     }
 
     /// Take the control acknowledgements that have arrived, without waiting.
@@ -825,6 +956,14 @@ impl Drop for PrivateInputHandle {
         // joins once. The report is discarded rather than the stop skipped,
         // and anything still owed stays owned by the durable store this
         // runtime keeps, which outlives the facade.
-        let _ = self.runtime.stop_once();
+        // AND THE RETENTION IS APPLIED HERE TOO. An earlier version performed
+        // the stop and discarded its outcome without ever running retention,
+        // so the reserved closing slot was never filled on the one path it
+        // exists for -- a controller that goes without an explicit stop -- and
+        // a clean drop never gave its claim back either. The report is what is
+        // discarded; the custody decision is not.
+        if let Some(outcome) = self.runtime.stop_once() {
+            let _ = outcome.with_retention(Arc::clone(&self.runtime));
+        }
     }
 }

@@ -21,6 +21,7 @@ mod committed;
 mod config;
 mod control;
 mod handle;
+mod lifetime;
 mod service;
 mod submission;
 
@@ -32,15 +33,16 @@ pub use control::{
     PrivateInputSubmitted,
 };
 pub use handle::{
-    PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputReceipts,
-    PrivateInputRefusal, PrivateInputService, PrivateInputSettlement, PrivateInputStatus,
-    PrivateInputThreadJoin, PrivateInputTopologyRefusal, PrivateInputUnavailable,
-    PrivateInputWaitExpired,
+    PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputReceiptInventory,
+    PrivateInputReceipts, PrivateInputRefusal, PrivateInputService, PrivateInputSettlement,
+    PrivateInputStatus, PrivateInputThreadJoin, PrivateInputTopologyRefusal,
+    PrivateInputUnavailable, PrivateInputWaitExpired,
 };
 #[cfg(test)]
 #[path = "../tests/support/private_input_session.rs"]
 mod tests;
 
+pub use lifetime::PrivateInputLifetimeOwner;
 pub use submission::{
     PrivateInputAccepted, PrivateInputConnection, PrivateInputSubmission, PrivateInputSubmitError,
 };

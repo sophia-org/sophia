@@ -173,10 +173,9 @@ fn run() -> Result<(), String> {
     let flags = rustix::fs::fcntl_getfl(&control).map_err(|e| e.to_string())?;
     rustix::fs::fcntl_setfl(&control, flags | rustix::fs::OFlags::NONBLOCK)
         .map_err(|e| e.to_string())?;
-    // `mut` because apply_committed is controller-exclusive: it takes &mut self
-    // so two callers cannot submit the same committed command twice.
-    let mut service =
-        PrivateInputService::start(options.config()?).map_err(|e| format!("start: {e:?}"))?;
+    let lifetime = sophia_session::private_input::PrivateInputLifetimeOwner::reserved();
+    let mut service = PrivateInputService::start(&lifetime, options.config()?)
+        .map_err(|e| format!("start: {e:?}"))?;
     let ready = service
         .await_ready(Duration::from_secs(3))
         .map_err(|e| e.to_string())?;

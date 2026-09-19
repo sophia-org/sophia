@@ -189,6 +189,12 @@ accounting, forced returned refusal and partial FIFO drain. It does not enable
 dock negotiation or claim kernel backpressure. Its bodies remain outside `src`;
 only its individual module mount is listed, with no checker or legacy-debt change.
 
+The private input Session fixtures mount `tests/support/private_input_session.rs`
+and `tests/support/private_input_generations.rs` to inspect exact retained custody,
+poison ownership locks, and prepare a candidate before a competing Engine commit.
+Those intervals are unavailable through the public controller. Their two mounts
+are recorded individually; the public socket acceptance tests remain separate.
+
 ## TEA Policy Style
 
 Use TEA-style structure for policy components:
