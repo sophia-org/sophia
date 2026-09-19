@@ -23,6 +23,7 @@ mod control;
 mod faults;
 mod handle;
 mod lifetime;
+mod receipts;
 mod service;
 mod submission;
 
@@ -34,10 +35,9 @@ pub use control::{
     PrivateInputSubmitted,
 };
 pub use handle::{
-    PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputReceiptInventory,
-    PrivateInputReceipts, PrivateInputRefusal, PrivateInputService, PrivateInputSettlement,
-    PrivateInputStatus, PrivateInputThreadJoin, PrivateInputTopologyRefusal,
-    PrivateInputUnavailable, PrivateInputWaitExpired,
+    PrivateInputHandle, PrivateInputOutcome, PrivateInputReadiness, PrivateInputRefusal,
+    PrivateInputService, PrivateInputSettlement, PrivateInputStatus, PrivateInputThreadJoin,
+    PrivateInputTopologyRefusal, PrivateInputUnavailable, PrivateInputWaitExpired,
 };
 #[cfg(test)]
 #[path = "../tests/support/private_input_faults.rs"]
@@ -48,6 +48,7 @@ mod tests_faults;
 mod tests;
 
 pub use lifetime::PrivateInputLifetimeOwner;
+pub use receipts::{PrivateInputReceiptInventory, PrivateInputReceipts};
 pub use submission::{
     PrivateInputAccepted, PrivateInputConnection, PrivateInputSubmission, PrivateInputSubmitError,
 };

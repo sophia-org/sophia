@@ -123,6 +123,18 @@ impl Fixture {
 
     /// Start with a stated delivery capacity, so a control can fill it.
     fn started_with_capacity(grants: PrivateInputGrantPolicy, capacity: usize) -> Self {
+        Self::started_with_bounds(grants, 4, capacity)
+    }
+
+    /// Start with both bounds stated.
+    ///
+    /// THE CLIENT BOUND IS PART OF THE DELIVERY BOUND, so a control that means
+    /// to fill the ledger has to be able to shrink both.
+    fn started_with_bounds(
+        grants: PrivateInputGrantPolicy,
+        clients: usize,
+        capacity: usize,
+    ) -> Self {
         let directory = std::env::temp_dir().join(format!(
             "m4-session-{}-{}",
             std::process::id(),
@@ -133,6 +145,7 @@ impl Fixture {
         let lifetime = PrivateInputLifetimeOwner::reserved();
         let mut configured = config(&socket, grants);
         configured.input_capacity = NonZeroUsize::new(capacity).expect("a real capacity");
+        configured.max_concurrent_clients = NonZeroUsize::new(clients).expect("a real bound");
         let handle = PrivateInputService::start(&lifetime, configured).unwrap();
         assert_eq!(
             handle.await_ready(WAIT).unwrap(),
@@ -162,6 +175,9 @@ impl Fixture {
         let lifetime = PrivateInputLifetimeOwner::reserved();
         let fault =
             std::sync::Arc::new(crate::private_input::faults::PrivateInputUnwindFault::default());
+        // Registered with the process-global subscriber before the service
+        // starts, so the callsite is live from the first event.
+        crate::private_input::faults::arm_globally(&fault);
         let handle = lifetime
             .start_with_faults(
                 config(
@@ -199,6 +215,20 @@ impl Fixture {
 
     fn connect(&self) -> Peer {
         Peer::connect(&self.socket, Order::Little, Some(COOKIE)).unwrap()
+    }
+
+    /// A peer at the socket layer only: accepted, given a worker, and gone
+    /// before it ever sent a setup prefix.
+    ///
+    /// THIS IS THE ONLY KIND OF DEPARTURE THE REAPER SPEAKS ABOUT. A peer that
+    /// completes the handshake and then closes cleanly ends its dispatch loop
+    /// with `Ok(())`, and `reap_client_worker` emits nothing for that -- it
+    /// reports only a client failure, a client disconnect or a service
+    /// shutdown. A socket that closes before the setup prefix arrives makes
+    /// `read_x11_setup_request` fail with a client disconnect, which is the
+    /// event this exists to provoke.
+    fn probe_socket(&self) -> std::os::unix::net::UnixStream {
+        std::os::unix::net::UnixStream::connect(&self.socket).expect("the listener is bound")
     }
 
     /// Custody as it stands, read through the owner's own lease.
@@ -242,7 +272,7 @@ impl Fixture {
                 std::time::Instant::now() < deadline,
                 "no custody place reported a started worker within the bound: {snapshot:?}"
             );
-            std::thread::yield_now();
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -276,7 +306,7 @@ impl Fixture {
                 self.harvest
             );
             self.pump();
-            std::thread::yield_now();
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -369,7 +399,7 @@ impl Fixture {
                 "delivery {:?} settled within the bound",
                 accepted.delivery
             );
-            std::thread::yield_now();
+            std::thread::sleep(Duration::from_millis(1));
         }
         accepted.delivery
     }
@@ -487,15 +517,23 @@ fn running_worker_is_collected() {
         );
     }
 
-    // EXACT RETAINED WORK. The bridge was readable throughout, so the count is
-    // a count and not an absence, and custody is retained exactly when
-    // something is still owed.
-    let undelivered = outcome
-        .bridge_undelivered
-        .expect("the bridge was readable, so it reports a count");
+    // EXACT RETAINED WORK, COUNTING EVERY SOURCE OF IT. An earlier version
+    // compared retention against the bridge count and the settlement
+    // readability alone, so a run that ended with uncommitted intake or an
+    // undrained receipt -- both ordinary, both retention -- read as a
+    // contradiction. Which of them is non-zero depends on timing, which is why
+    // it only failed once the controls ran concurrently.
+    let owed = |count: Option<usize>| count.is_none_or(|owed| owed > 0);
+    let something_owed = !outcome.settlement.readable
+        || outcome.settlement.reserved_credits.is_some_and(|n| n > 0)
+        || outcome.settlement.owed.is_some_and(|n| n > 0)
+        || outcome.settlement.indeterminate.is_some_and(|n| n > 0)
+        || owed(outcome.bridge_undelivered)
+        || owed(outcome.receipts_unobserved)
+        || owed(outcome.intake_uncommitted);
     assert_eq!(
         outcome.retains_obligations(),
-        undelivered > 0 || !outcome.settlement.readable,
+        something_owed,
         "custody is retained exactly when something is still owed: {outcome:?}"
     );
 
@@ -647,25 +685,66 @@ fn an_unreadable_bridge_retains_custody_rather_than_reporting_nothing_owed() {
 fn an_unreadable_surface_ledger_refuses_rather_than_reporting_an_empty_one() {
     let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
     let mut peer = fixture.connect();
-    let _window = peer.create_map_and_draw();
-    let _ = fixture
-        .handle_mut()
-        .apply_committed(Duration::from_millis(10));
+    let window = peer.create_map_and_draw();
+    // A REALLY ADMITTED SURFACE FIRST, so the ledger being poisoned is one that
+    // had something to lose.
+    let _surface = fixture.admitted_surface();
 
     let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
-    let poisoner = std::thread::spawn(move || {
-        let _held = runtime.admitted_surfaces.lock().unwrap();
+    let poisoner = std::sync::Arc::clone(&runtime);
+    let thread = std::thread::spawn(move || {
+        let _held = poisoner.admitted_surfaces.lock().unwrap();
         panic!("poisoning the surface ledger on purpose");
     });
-    assert!(poisoner.join().is_err());
+    assert!(thread.join().is_err(), "the poisoning thread panicked");
 
-    // Refused, and specifically not reported as a step that committed nothing.
+    // NEW WORK THE STAGING MUST ACTUALLY TOUCH. An earlier version poisoned the
+    // ledger and then called an idle `apply_committed`, which has no staged
+    // decision, never reaches `stage_decisions`, and so legitimately returns
+    // Ok -- the control was asserting against a step that never took the lock
+    // it had damaged. A redraw on the already-admitted window produces a real
+    // batch, and the geometry reply orders it.
+    peer.draw(window);
+    peer.confirm_geometry(window);
+
+    let deadline = std::time::Instant::now() + WAIT;
+    loop {
+        match fixture
+            .handle_mut()
+            .apply_committed(Duration::from_millis(10))
+        {
+            Err(_) => break,
+            Ok(report) => {
+                assert_eq!(
+                    report.batches_observed, 0,
+                    "a call that took work read the unreadable ledger as empty: {report:?}"
+                );
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the redraw reached the bridge within the bound"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+
+    // UNREADABLE IS DURABLE, NOT A ONE-OFF.
     assert!(
         fixture
             .handle_mut()
             .apply_committed(Duration::from_millis(10))
             .is_err(),
-        "an unreadable ledger is refused rather than read as empty"
+        "the ledger stays unreadable rather than recovering into an empty read"
+    );
+    // AND THE REFUSAL CONSUMED NOTHING: the bridge is still readable and still
+    // holding the work the refused staging could not place.
+    let outstanding = fixture
+        .handle()
+        .outstanding()
+        .expect("the bridge itself is readable");
+    assert!(
+        outstanding >= 1,
+        "the refused staging left its work owed rather than dropping it"
     );
     drop(peer);
 }
@@ -676,17 +755,73 @@ fn a_control_for_a_departed_connection_is_refused() {
     let fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
     let mut peer = fixture.connect();
     let _window = peer.create_map_and_draw();
-    let admitted = fixture.handle().admitted().unwrap();
-    let seen = *admitted.first().expect("the peer is admitted");
 
-    let connection = crate::private_input::PrivateInputConnection {
+    // WAITED FOR, NOT ASSUMED. An earlier version read `admitted().first()`
+    // immediately after connecting and found nothing, because admission is the
+    // boundary's act and had not happened yet.
+    let deadline = std::time::Instant::now() + WAIT;
+    let seen = loop {
+        let admitted = fixture
+            .handle()
+            .admitted()
+            .expect("the boundary is readable");
+        if let Some(seen) = admitted.first().copied() {
+            break seen;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the peer was admitted within the bound"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    let live = crate::private_input::PrivateInputConnection {
         client: seen.client,
         admission: seen.admission,
-        // A generation no live row carries.
-        connection_generation: seen.connection_generation.wrapping_add(1),
+        connection_generation: seen.connection_generation,
     };
+
+    // A GENERATION NO LIVE ROW CARRIES is refused even while the peer is here,
+    // which is the identity half of the claim.
+    let mismatched = fixture.handle().submit_action(
+        crate::private_input::PrivateInputConnection {
+            connection_generation: seen.connection_generation.wrapping_add(1),
+            ..live
+        },
+        crate::private_input::PrivateInputAction::ClearFocus {
+            surface: sophia_protocol::SurfaceId::new(1, 1),
+        },
+    );
+    assert!(
+        matches!(
+            mismatched,
+            Err(crate::private_input::PrivateInputControlError::ConnectionGone)
+        ),
+        "a connection generation no live row carries is refused: {mismatched:?}"
+    );
+
+    // NOW THE CONNECTION REALLY DEPARTS, and that exact admission must go.
+    drop(peer);
+    let deadline = std::time::Instant::now() + WAIT;
+    loop {
+        let admitted = fixture
+            .handle()
+            .admitted()
+            .expect("the boundary is readable");
+        let departed = !admitted
+            .iter()
+            .any(|row| row.client == live.client && row.admission == live.admission && !row.closed);
+        if departed {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the dropped peer's admission closed within the bound: {admitted:?}"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
     let refused = fixture.handle().submit_action(
-        connection,
+        live,
         crate::private_input::PrivateInputAction::ClearFocus {
             surface: sophia_protocol::SurfaceId::new(1, 1),
         },
@@ -696,9 +831,8 @@ fn a_control_for_a_departed_connection_is_refused() {
             refused,
             Err(crate::private_input::PrivateInputControlError::ConnectionGone)
         ),
-        "a connection generation no live row carries is refused: {refused:?}"
+        "the exact admission that departed is refused: {refused:?}"
     );
-    drop(peer);
 }
 
 /// A topology naming a primary it does not contain is refused, and nothing is
@@ -832,7 +966,7 @@ fn one_drain_visits_no_more_than_its_bound() {
     let fixture = Fixture::started(PrivateInputGrantPolicy::Disabled);
     let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
 
-    let seeded = super::handle::PRIVATE_INPUT_DRAIN_BOUND + 44;
+    let seeded = super::receipts::PRIVATE_INPUT_DRAIN_BOUND + 44;
     {
         let mut retained = runtime.retained_receipts.lock().unwrap();
         for index in 0..seeded {
@@ -849,7 +983,7 @@ fn one_drain_visits_no_more_than_its_bound() {
     let receipts = fixture.handle().drain_deliveries().unwrap();
     assert_eq!(
         receipts.visited,
-        super::handle::PRIVATE_INPUT_DRAIN_BOUND,
+        super::receipts::PRIVATE_INPUT_DRAIN_BOUND,
         "one call visits exactly its bound when more is waiting"
     );
     // None of these belong to the ledger, so none of them is released and all
@@ -1331,9 +1465,13 @@ fn an_unwind_on_the_serving_thread_still_collects() {
     // obligation, and an unwind there would be testing something else.
     fault.arm();
 
-    // A second peer, reaped, is what makes the serving thread emit the event.
-    let probe = fixture.connect();
-    drop(probe);
+    // A SECOND PEER THAT NEVER FINISHES ITS HANDSHAKE. A fully connected peer
+    // that closes cleanly is `Ok(())` to its worker and the reaper says nothing
+    // about it; only a failure, a disconnect or a shutdown is reported. This
+    // socket goes before its setup prefix, so the worker reports a real client
+    // disconnect and the serving thread emits the event while its collection
+    // guard is still live.
+    drop(fixture.probe_socket());
 
     let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
     let deadline = std::time::Instant::now() + WAIT;
@@ -1342,7 +1480,7 @@ fn an_unwind_on_the_serving_thread_still_collects() {
             std::time::Instant::now() < deadline,
             "the armed fault fired on the serving thread within the bound"
         );
-        std::thread::yield_now();
+        std::thread::sleep(Duration::from_millis(1));
     }
 
     let handle = fixture.handle.take().unwrap();
@@ -1391,26 +1529,29 @@ fn an_unwind_on_the_serving_thread_still_collects() {
     drop((submission, peer));
 }
 
-/// The delivery bound fills, gives a place back on exactly one drain, and
-/// takes exactly one replacement.
+/// Observing a receipt releases the place its delivery took, and the ledger
+/// can be cycled through that release more than once.
 ///
-/// WHAT THIS PROVES THAT NOTHING ELSE DOES. Seeding the retained queue with
-/// receipts bounds a call's work, but the receipts are unknown to the ledger,
-/// so nothing about them establishes that observing a real one releases the
-/// place its delivery took. That is the whole claim behind consuming receipts
-/// by observing them, and it can only be shown by filling the real bound and
-/// watching it move.
+/// WHAT THIS PROVES THAT NOTHING ELSE DOES. Everything else about receipts
+/// establishes that Session keeps them and counts them. This establishes the
+/// claim the whole design rests on: that handing one back is what frees the
+/// delivery place it was holding. A receipt taken off the channel and dropped
+/// would satisfy every other control here and still leak the place forever.
 ///
-/// The refusal at the bound is checked to be the capacity refusal specifically
-/// and to arrive before acceptance -- a delivery that was accepted and then
-/// discarded would look the same to a caller counting successes.
+/// IT ASKS THE LEDGER, NOT A COUNTER. `state()` reports whether the ledger is
+/// still holding a ticket for that exact delivery, so the release is observed
+/// where it actually happens rather than inferred from a number Session keeps.
+///
+/// An earlier version tried to prove this by filling the declared bound until
+/// it refused. That could never work: the bound is not the configured input
+/// capacity but `input*2 + 2047*(input+1)` -- 6145 for a capacity of two --
+/// because the ordinary ledger reserves a place for every resource range a
+/// server could hand out. Sizing it to the private client bound instead does
+/// make it reachable, but it also changes a bound M3 acceptance already
+/// measures, so it is not a change to make inside M4 closure.
 #[test]
-fn the_delivery_bound_fills_drains_and_refills() {
-    const CAPACITY: usize = 2;
-    let mut fixture = Fixture::started_with_capacity(
-        PrivateInputGrantPolicy::EnabledWithVerifiedEvidence,
-        CAPACITY,
-    );
+fn observing_a_receipt_releases_the_place_its_delivery_took() {
+    let mut fixture = Fixture::started(PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
     let mut peer = fixture.connect();
     let _window = peer.create_map_and_draw();
     assert_eq!(
@@ -1422,87 +1563,52 @@ fn the_delivery_bound_fills_drains_and_refills() {
     fixture.focus(surface);
     let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
 
-    // FILL. Presses and releases alternate so the authority is never asked to
-    // press a button that is already down.
+    // TWICE, because once is consistent with a place that was never taken.
     let mut pressed = true;
-    let mut accepted = Vec::new();
-    loop {
-        match submission.submit_pointer_button(surface, BTN_LEFT, pressed) {
-            Ok(taken) => {
-                // ONE AT A TIME, TO ITS TERMINAL ANSWER, WITHOUT OBSERVING IT.
-                // Submitting again before this one has settled lets the
-                // per-grant in-flight limit refuse the second request, and that
-                // refusal is also `Saturated` -- so the loop would stop short
-                // and call a grant limit the receipt bound. Waiting here makes
-                // the only thing still holding a place the unobserved receipt.
-                await_flushed(&runtime, taken.delivery);
-                accepted.push(taken.delivery);
-                pressed = !pressed;
-                assert!(
-                    accepted.len() <= CAPACITY,
-                    "the bound admitted more than it declared: {accepted:?}"
-                );
-            }
-            Err(crate::private_input::PrivateInputSubmitError::Refused(
-                sophia_x_authority::PrivateSendError::Saturated(_),
-            )) => break,
-            Err(other) => panic!("the bound refuses by saturation, not by {other:?}"),
-        }
+    for cycle in 0..2 {
+        let accepted = submission
+            .submit_pointer_button(surface, BTN_LEFT, pressed)
+            .unwrap_or_else(|error| panic!("cycle {cycle} submitted: {error:?}"));
+        pressed = !pressed;
+        await_flushed(&runtime, accepted.delivery);
+
+        // SETTLED BUT STILL HELD. The delivery has its terminal answer and the
+        // ledger has not given the place back, because nobody has observed it.
+        assert_eq!(
+            runtime.observer.state(accepted.delivery),
+            sophia_x_authority::DeliveryState::Live,
+            "cycle {cycle}: a settled delivery still holds its place until observed"
+        );
+
+        // Take the receipt off the channel WITHOUT observing it. Taking it is
+        // not what frees the place, and this is where that is established.
+        let receipt = take_one_receipt(&runtime);
+        assert_eq!(receipt.delivery, accepted.delivery, "cycle {cycle}");
+        assert_eq!(
+            runtime.observer.state(accepted.delivery),
+            sophia_x_authority::DeliveryState::Live,
+            "cycle {cycle}: taking the receipt off the channel frees nothing"
+        );
+
+        // Hand it back. THIS is the release.
+        assert_eq!(
+            runtime.observer.observe(receipt),
+            sophia_x_authority::PrivateDeliveryObservation::Observed,
+            "cycle {cycle}"
+        );
+        assert_eq!(
+            runtime.observer.state(accepted.delivery),
+            sophia_x_authority::DeliveryState::Ended,
+            "cycle {cycle}: observing the receipt released its delivery's place"
+        );
+
+        // AND IT IS NOT RELEASABLE TWICE.
+        assert_eq!(
+            runtime.observer.observe(receipt),
+            sophia_x_authority::PrivateDeliveryObservation::UnknownDelivery,
+            "cycle {cycle}: a released place cannot be released again"
+        );
     }
-    assert_eq!(
-        accepted.len(),
-        CAPACITY,
-        "the bound admits exactly what it declared"
-    );
-
-    // FULL, AND REFUSED BEFORE ACCEPTANCE.
-    assert!(
-        matches!(
-            submission.submit_pointer_button(surface, BTN_LEFT, pressed),
-            Err(crate::private_input::PrivateInputSubmitError::Refused(
-                sophia_x_authority::PrivateSendError::Saturated(_)
-            ))
-        ),
-        "a full ledger refuses the next request"
-    );
-
-    // DRAIN EXACTLY ONE, and observe it. Taking the receipt off the channel is
-    // not what frees the place; handing it back to the ledger is.
-    let first = take_one_receipt(&runtime);
-    assert_eq!(first.delivery, accepted[0], "receipts arrive in order");
-    assert_eq!(
-        runtime.observer.observe(first),
-        sophia_x_authority::PrivateDeliveryObservation::Observed
-    );
-
-    // REFILL BY EXACTLY ONE.
-    let replacement = submission
-        .submit_pointer_button(surface, BTN_LEFT, pressed)
-        .expect("observing one receipt gave exactly one place back");
-    pressed = !pressed;
-    await_flushed(&runtime, replacement.delivery);
-    assert!(
-        matches!(
-            submission.submit_pointer_button(surface, BTN_LEFT, pressed),
-            Err(crate::private_input::PrivateInputSubmitError::Refused(
-                sophia_x_authority::PrivateSendError::Saturated(_)
-            ))
-        ),
-        "one observation returns one place, not the whole bound"
-    );
-
-    // AND IT CYCLES. Once would be consistent with a single leftover place;
-    // twice is the bound actually being reused.
-    let second = take_one_receipt(&runtime);
-    assert_eq!(second.delivery, accepted[1]);
-    assert_eq!(
-        runtime.observer.observe(second),
-        sophia_x_authority::PrivateDeliveryObservation::Observed
-    );
-    let cycled = submission
-        .submit_pointer_button(surface, BTN_LEFT, pressed)
-        .expect("the bound is reusable rather than spent");
-    await_flushed(&runtime, cycled.delivery);
 
     drop((submission, peer));
 }
@@ -1526,7 +1632,7 @@ fn await_flushed(
             std::time::Instant::now() < deadline,
             "delivery {delivery:?} settled within the bound"
         );
-        std::thread::yield_now();
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 

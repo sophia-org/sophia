@@ -85,6 +85,17 @@ impl PrivateDeliveryObserver {
     ) -> Option<XAuthorityClientInputDelivery> {
         self.recovery.settled(delivery)
     }
+
+    /// Whether the ledger is still holding a place for this delivery.
+    ///
+    /// THE PLACE ITSELF, NOT THE RECEIPT. A delivery that has settled still
+    /// occupies its ticket until it is both routing-finished and observed, so
+    /// this is what actually shows an observation releasing something. Three
+    /// answers, because an unreadable ledger is not an ended delivery: reading
+    /// absence into a poisoned ledger would free everything at once.
+    pub fn state(&self, delivery: XAuthorityInputDeliveryId) -> DeliveryState {
+        self.recovery.delivery_state(delivery)
+    }
 }
 
 #[cfg(unix)]

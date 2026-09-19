@@ -199,7 +199,7 @@
       "private_input::tests::command_loss_closes_admission_and_collects",
       "private_input::tests::a_service_error_after_startup_closes_admission_and_collects",
       "private_input::tests::an_unwind_on_the_serving_thread_still_collects",
-      "private_input::tests::the_delivery_bound_fills_drains_and_refills",
+      "private_input::tests::observing_a_receipt_releases_the_place_its_delivery_took",
       "private_input::tests::a_poisoned_command_slot_still_stops_the_service",
       "private_input::tests::queued_intake_nobody_committed_is_owed_at_stop",
       "private_input::tests::an_unreadable_transaction_channel_is_refused_and_still_retains"

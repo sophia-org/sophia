@@ -20,6 +20,16 @@
 //! peer is reaped, and the panic is raised from inside that event on the
 //! serving thread. It is not a simulation of an unwind: it is an unwind, in
 //! the place a real one would happen.
+//!
+//! THE EVENT IS ABOUT A FAILED DEPARTURE, NOT A POLITE ONE. `reap_client_worker`
+//! emits it only for a client failure, a client disconnect or a service
+//! shutdown; a peer that completes its handshake and then closes cleanly ends
+//! its dispatch loop with `Ok(())` and is reaped in silence. An earlier version
+//! of the control connected a full peer and dropped it, which therefore never
+//! fired at all -- what fired, eight seconds later, was the service's own
+//! shutdown tearing down the primary peer, long after the wait had failed. The
+//! probe now closes before it sends a setup prefix, which is a real client
+//! disconnect and is reported promptly from the serving loop.
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -80,13 +90,37 @@ impl PrivateInputUnwindFault {
 }
 
 /// Reads events on the serving thread and raises the armed fault.
-pub(crate) struct PrivateInputUnwindSubscriber {
-    fault: std::sync::Arc<PrivateInputUnwindFault>,
-}
+///
+/// INSTALLED ONCE, GLOBALLY, AND FOR A REASON THAT IS NOT CONVENIENCE.
+/// `tracing` caches a callsite's `Interest` process-wide the first time it is
+/// reached. A thread-local subscriber installed around one serve call does not
+/// exist yet when some other service in the same test binary reaps a client
+/// first, so that callsite is registered against the no-op global, cached as
+/// `never`, and permanently disabled -- and the fault then waits out its whole
+/// bound for an event that can no longer be emitted to anyone. Alone it
+/// passed; run beside its siblings it could not.
+///
+/// So the subscriber is global and answers `sometimes`, which keeps the
+/// callsite live for every service in the process, and the decision about
+/// whether to fire stays where it belongs: armed, and on the exact thread that
+/// recorded itself as serving.
+pub(crate) struct PrivateInputUnwindSubscriber;
 
-impl PrivateInputUnwindSubscriber {
-    pub(crate) fn over(fault: std::sync::Arc<PrivateInputUnwindFault>) -> Self {
-        Self { fault }
+/// The fault currently armed for an unwind, if any.
+static ARMED: Mutex<Option<std::sync::Arc<PrivateInputUnwindFault>>> = Mutex::new(None);
+
+/// Install the global subscriber once and register this fault with it.
+pub(crate) fn arm_globally(fault: &std::sync::Arc<PrivateInputUnwindFault>) {
+    static INSTALLED: std::sync::Once = std::sync::Once::new();
+    INSTALLED.call_once(|| {
+        // A failure here means something else already claimed the global
+        // default; the control would then wait out its bound, so it is louder
+        // to say so now.
+        tracing::subscriber::set_global_default(PrivateInputUnwindSubscriber)
+            .expect("no other global tracing subscriber in this test binary");
+    });
+    if let Ok(mut armed) = ARMED.lock() {
+        *armed = Some(std::sync::Arc::clone(fault));
     }
 }
 
@@ -104,6 +138,14 @@ impl tracing::field::Visit for MessageMatch {
 }
 
 impl tracing::Subscriber for PrivateInputUnwindSubscriber {
+    /// NEVER `never`. Caching this callsite off is the failure above.
+    fn register_callsite(
+        &self,
+        _: &'static tracing::Metadata<'static>,
+    ) -> tracing::subscriber::Interest {
+        tracing::subscriber::Interest::sometimes()
+    }
+
     fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
         true
     }
@@ -117,6 +159,8 @@ impl tracing::Subscriber for PrivateInputUnwindSubscriber {
     fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
 
     fn event(&self, event: &tracing::Event<'_>) {
+        let Ok(armed) = ARMED.lock() else { return };
+        let Some(fault) = armed.as_ref() else { return };
         // THE SOURCE OF THE EVENT, NOT ONLY ITS WORDS. A message is a string
         // anything could emit; requiring the file it was written in makes this
         // the frontend's own disconnect rather than any event that happens to
@@ -128,8 +172,11 @@ impl tracing::Subscriber for PrivateInputUnwindSubscriber {
             .is_some_and(|path| path.ends_with("x11_socket/frontend/service.rs"));
         let mut seen = MessageMatch { matched: false };
         event.record(&mut seen);
-        if self.fault.should_fire(from_frontend && seen.matched) {
-            self.fault.fired.store(true, Ordering::Release);
+        if fault.should_fire(from_frontend && seen.matched) {
+            fault.fired.store(true, Ordering::Release);
+            let fault = std::sync::Arc::clone(fault);
+            drop(armed);
+            let _ = fault;
             panic!("private input lifetime fault: unwind on the serving thread");
         }
     }

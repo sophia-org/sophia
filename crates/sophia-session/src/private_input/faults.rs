@@ -19,4 +19,4 @@ pub(super) struct PrivateInputFaults {
 }
 
 #[cfg(test)]
-pub(super) use super::tests_faults::{PrivateInputUnwindFault, PrivateInputUnwindSubscriber};
+pub(super) use super::tests_faults::{PrivateInputUnwindFault, arm_globally};

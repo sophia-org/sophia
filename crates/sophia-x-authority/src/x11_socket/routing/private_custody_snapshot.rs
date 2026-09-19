@@ -202,7 +202,14 @@ impl PrivateEvidenceCustody {
             handle_present,
             departing,
             join,
-            publication_right_unclaimed: !self
+            // READ AS THE HOME WRITES IT. `producer` is true while the right
+            // is still here: `take_publication` exchanges true for false and
+            // `return_publication` stores true back, and the home is built
+            // with it already true. An earlier version negated this, so the
+            // field reported the opposite of its own name -- and the two
+            // assertions over it agreed with each other by both being wrong,
+            // which is why only a real run caught it.
+            publication_right_unclaimed: self
                 .join
                 .producer
                 .load(std::sync::atomic::Ordering::Acquire),

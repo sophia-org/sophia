@@ -421,24 +421,21 @@ impl PrivateInputRuntime {
                 // Ready, which the service publishes once it has prepared.
                 // Marking it before the call would report a socket nothing is
                 // listening on yet.
+                // THE THREAD RECORDS ITSELF BEFORE IT SERVES, AND ONLY IN TEST
+                // BUILDS. The fault fires from inside an event the serving
+                // thread genuinely emits while its collection guard is live,
+                // which is what makes it an unwind in the place a real one
+                // would happen; an unwind raised after serve returns passes
+                // through nothing. The subscriber that watches for that event
+                // is global -- see the faults module for why it cannot be
+                // thread-local -- so all this has to do is say which thread is
+                // serving.
+                #[cfg(test)]
+                if let Some(fault) = faults.unwind.as_ref() {
+                    fault.record_serving_thread();
+                }
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let serve =
-                        || private.serve_until_stopped(&thread_owner.lease(), &mut keeper, binding);
-                    // THE FAULT WRAPS ONLY THIS CALL, AND ONLY IN TEST BUILDS.
-                    // An unwind raised after serve returns passes through
-                    // nothing: the collection guard has already run by then.
-                    // Acting on an event the serving thread genuinely emits
-                    // while that guard is live is what makes this an unwind in
-                    // the place a real one would happen.
-                    #[cfg(test)]
-                    if let Some(fault) = faults.unwind.clone() {
-                        fault.record_serving_thread();
-                        return tracing::subscriber::with_default(
-                            super::faults::PrivateInputUnwindSubscriber::over(fault),
-                            serve,
-                        );
-                    }
-                    serve()
+                    private.serve_until_stopped(&thread_owner.lease(), &mut keeper, binding)
                 }));
 
                 let mut report = ServiceClosed {
