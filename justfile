@@ -66,6 +66,17 @@ direct-scanout-cursor-gate:
 direct-scanout-atomic-cursor-gate:
     @cargo --quiet xtask conformance gate direct-scanout --atomic-cursor
 
+# The bounded glxgears benchmark, hands off the mouse. Run from tty3.
+# This is the unshaken baseline for the recipe below.
+glxgears-benchmark:
+    @tools/benchmark_sophia_glxgears_tty3.sh
+
+# The same benchmark with a virtual mouse shaking the pointer at 1 kHz from
+# the moment the client holds focus. Run from tty3; keep hands off the mouse.
+# The summary lands in ~/.local/state/sophia/standalone-session/shake.log.
+glxgears-shake hz='1000' amplitude='8':
+    @SOPHIA_GLXGEARS_SHAKE_HZ="{{ hz }}" SOPHIA_GLXGEARS_SHAKE_AMPLITUDE="{{ amplitude }}" tools/benchmark_sophia_glxgears_shake_tty3.sh
+
 # Re-verify an archived direct-scanout run, newest by default.
 direct-scanout-archive run='':
     @cargo --quiet xtask conformance verify direct-scanout-archive "{{ run }}"
