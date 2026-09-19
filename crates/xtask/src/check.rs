@@ -383,11 +383,20 @@ fn workspace_tests(repo: &Path) -> Result<(), String> {
         .map_err(|error| format!("could not create isolated test config: {error}"))?;
     // Tests that exercise discovery provide their own fixtures. Every other
     // test must see compiled defaults, not the developer's current desktop.
+    //
+    // run_sophia_session.sh puts SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE in the
+    // session environment, so every terminal opened inside a running Sophia
+    // session inherits permission to attempt a destructive atomic modeset on
+    // the card that session is already driving. The smoke then fails on a
+    // card it was never going to get, and the gate's result depends on which
+    // terminal invoked it. Ask for that smoke deliberately through
+    // tools/atomic_scanout_smoke.sh instead.
     let result = Command::new("cargo")
         .current_dir(repo)
         .args(["test", "--offline", "--workspace", "--all-features"])
         .env("XDG_CONFIG_HOME", &config)
         .env_remove("SOPHIA_SHELL_CONFIG")
+        .env_remove("SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE")
         .status();
     let cleanup = std::fs::remove_dir_all(&config);
     let status = result.map_err(|error| format!("could not run workspace tests: {error}"))?;
