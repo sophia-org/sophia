@@ -4,7 +4,7 @@
 
 use sophia_backend_live::{
     CursorCommitPlan, HardwareCursorPath, LegacyHardwareCursorAdmission,
-    LibdrmNativeCursorPlacement, plan_cursor_commit, settle_pending_cursor,
+    LibdrmNativeCursorPlacement, cursor_only_quiet, plan_cursor_commit, settle_pending_cursor,
 };
 
 fn placement(x: i32) -> LibdrmNativeCursorPlacement {
@@ -17,11 +17,24 @@ fn placement(x: i32) -> LibdrmNativeCursorPlacement {
     }
 }
 
+/// Every case below a quiet client, which is the state these rules were
+/// written for: a cursor-only commit is the answer only when nothing else
+/// needs the CRTC.
 fn plan(
     admission: LegacyHardwareCursorAdmission,
     pending: Option<Option<LibdrmNativeCursorPlacement>>,
     committed: Option<LibdrmNativeCursorPlacement>,
     primary_going_out: bool,
+) -> CursorCommitPlan {
+    plan_while(admission, pending, committed, primary_going_out, true)
+}
+
+fn plan_while(
+    admission: LegacyHardwareCursorAdmission,
+    pending: Option<Option<LibdrmNativeCursorPlacement>>,
+    committed: Option<LibdrmNativeCursorPlacement>,
+    primary_going_out: bool,
+    client_quiet: bool,
 ) -> CursorCommitPlan {
     plan_cursor_commit(
         HardwareCursorPath::AtomicPlane,
@@ -29,6 +42,7 @@ fn plan(
         pending,
         committed,
         primary_going_out,
+        client_quiet,
     )
 }
 
@@ -42,6 +56,7 @@ fn the_legacy_path_is_left_alone() {
             Some(Some(placement(10))),
             None,
             false,
+            true,
         ),
         CursorCommitPlan::Idle
     );
@@ -189,4 +204,87 @@ fn settling_the_latest_cursor_clears_the_pending_cell() {
         None
     );
     assert_eq!(settle_pending_cursor(Some(None), None), None);
+}
+
+/// The t120 gate. A cursor-only commit blocks until the kernel applies it at
+/// a vblank, so one issued while a client is drawing spends the vblank that
+/// client's next frame needed -- a measured run paid 234 of them for a fifth
+/// of its frame rate. The position waits for the frame that will carry it.
+#[test]
+fn a_drawing_client_keeps_its_vblank() {
+    for admission in [
+        LegacyHardwareCursorAdmission::Update,
+        LegacyHardwareCursorAdmission::InitializeThenUpdate,
+    ] {
+        assert_eq!(
+            plan_while(admission, Some(Some(placement(10))), None, false, false),
+            CursorCommitPlan::Wait,
+            "{admission:?} must not take a vblank from a drawing client"
+        );
+        assert_eq!(
+            plan_while(admission, Some(Some(placement(10))), None, false, true),
+            CursorCommitPlan::CommitCursorOnly,
+            "{admission:?} must still serve a quiet one"
+        );
+    }
+}
+
+/// Riding is free and is decided before quietness is consulted, so a frame on
+/// its way carries the cursor whatever the client has been doing.
+#[test]
+fn a_frame_going_out_carries_the_cursor_either_way() {
+    for quiet in [true, false] {
+        assert_eq!(
+            plan_while(
+                LegacyHardwareCursorAdmission::Update,
+                Some(Some(placement(10))),
+                None,
+                true,
+                quiet,
+            ),
+            CursorCommitPlan::RideNextPrimary,
+            "a frame is going out; quiet={quiet} cannot matter"
+        );
+    }
+}
+
+/// Two refreshes without a retirement is quiet. One is not: a client pacing
+/// exactly on the refresh would otherwise flicker between the two answers.
+#[test]
+fn quiet_means_two_refreshes_without_a_frame() {
+    // 60Hz: 16666us per refresh.
+    assert!(
+        cursor_only_quiet(0, 5_000_000, 60_000),
+        "nothing has ever retired, which is startup"
+    );
+    assert!(
+        !cursor_only_quiet(1_000_000, 1_000_000, 60_000),
+        "a frame just retired"
+    );
+    assert!(
+        !cursor_only_quiet(1_000_000, 1_016_666, 60_000),
+        "one refresh is a client still keeping pace"
+    );
+    assert!(
+        cursor_only_quiet(1_000_000, 1_033_332, 60_000),
+        "two refreshes with nothing drawn is quiet"
+    );
+    // The same boundary moves with the head's own refresh: at 120Hz an
+    // interval is 8333us, so the gate opens at 16666 rather than 33332.
+    assert!(
+        !cursor_only_quiet(1_000_000, 1_016_665, 120_000),
+        "at 120Hz this is one microsecond short of two refreshes"
+    );
+    assert!(
+        cursor_only_quiet(1_000_000, 1_016_666, 120_000),
+        "at 120Hz two refreshes have passed"
+    );
+}
+
+/// A head reporting no refresh is read as 60Hz. Treating it as infinitely
+/// quiet would restore exactly the cost the gate removes.
+#[test]
+fn an_unknown_refresh_does_not_open_the_gate() {
+    assert!(!cursor_only_quiet(1_000_000, 1_016_666, 0));
+    assert!(cursor_only_quiet(1_000_000, 1_033_332, 0));
 }

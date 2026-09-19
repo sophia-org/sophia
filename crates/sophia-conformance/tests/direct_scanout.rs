@@ -627,6 +627,14 @@ fn cursor_record_with_plane(path: &str, plane: &str, updates: usize, failures: u
     )
 }
 
+/// Schema 7 is read the same way: the reader takes fields by name, so the
+/// rename and the two new cost fields must not disturb it.
+fn cursor_record_schema_seven(path: &str, plane: &str, updates: usize, failures: usize) -> String {
+    format!(
+        "sophia_live_session_cursor schema=7 path={path} plane={plane} moves_coalesced=3 max_motion_to_submit_msec=2 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=1 legacy_updates_primary_in_flight=4 buttons_routed=0 hardware_updates={updates} hidden_updates=0 hardware_failures={failures}"
+    )
+}
+
 /// A session that moved a cursor over direct frames and kept flipping after.
 fn cursor_log() -> String {
     [
@@ -792,6 +800,27 @@ fn the_legacy_path_over_a_capable_card_is_accepted() {
         &cursor_record_with_plane("legacy_ioctl", "accepted", 13, 0),
     );
     cursor_verification(&text).expect("a capable card driven legacy is ordinary");
+}
+
+/// The schema-7 shape reads the same, rename and all.
+///
+/// Schema 7 renamed the in-flight counter to name the path that counts it and
+/// added what a blocking cursor-only commit cost. The reader takes fields by
+/// name, so neither should disturb it -- and a reader that silently stopped
+/// recognising the newest record would verify nothing on every run from here.
+#[test]
+fn the_current_cursor_schema_verifies() {
+    let text = cursor_log().replace(
+        &cursor_record("legacy_ioctl", 13, 0),
+        &cursor_record_schema_seven("legacy_ioctl", "accepted", 13, 0),
+    );
+    let report = cursor_verification(&text).expect("the schema-7 shape reads");
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("path=legacy_ioctl") && line.contains("plane=accepted")),
+        "{report:?}"
+    );
 }
 
 /// A schema-4 record still verifies, because archive `0004` is one.

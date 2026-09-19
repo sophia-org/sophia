@@ -16,13 +16,15 @@ use crate::direct_scanout::{record_after_marker, reject_duplicate_fields};
 const PROOF: &str = "sophia_live_direct_scanout_cursor_proof schema=1 status=";
 /// The cursor record, newest schema first.
 ///
-/// Schema 5 added the driving path and the plane probe; schema 4 predates
-/// the atomic path entirely, so a record in that shape was necessarily on
-/// the legacy ioctl with nothing probed. Reading both is not politeness --
+/// Schema 7 renamed the in-flight counter for the path that counts it and
+/// added what a cursor-only commit cost; schema 5 added the driving path and
+/// the plane probe; schema 4 predates the atomic path entirely, so a record
+/// in that shape was necessarily on the legacy ioctl with nothing probed. Reading both is not politeness --
 /// archive `0004` is schema 4, and a reader that only understood the newest
 /// shape would quietly stop verifying the proof that archive was written to
 /// make. The corpus caught exactly that.
-const CURSOR_SCHEMAS: [(&str, &str, &str); 3] = [
+const CURSOR_SCHEMAS: [(&str, &str, &str); 4] = [
+    ("sophia_live_session_cursor schema=7 ", "", ""),
     ("sophia_live_session_cursor schema=6 ", "", ""),
     ("sophia_live_session_cursor schema=5 ", "", ""),
     (

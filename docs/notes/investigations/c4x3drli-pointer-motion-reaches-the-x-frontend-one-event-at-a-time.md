@@ -101,7 +101,10 @@ path. `max_motion_to_submit_msec=18` is longer than the 16.7 ms frame. A
 `p95_frame_msec` of 33.4, exactly two frame intervals, is the shape of a frame
 occasionally missed rather than a uniform slowdown.
 
-That is a separate mechanism from this note's, and is tracked as t120.
+That is a separate mechanism from this note's, and is read out in
+[[0lamaqyi-a-blocking-cursor-only-commit-spends-the-vblank-the-next-frame-needed]]:
+the cursor-only commit blocks until a vblank, so one issued while a client is
+drawing spends the vblank that client's next frame needed. Tracked as t120.
 
 ## Finding and resolution
 

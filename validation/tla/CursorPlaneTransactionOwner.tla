@@ -16,6 +16,15 @@ EXTENDS Naturals, FiniteSets
  * that may not draw again for most of a second, and must not accumulate    *
  * one commit per pointer event.                                            *
  *                                                                          *
+ * A cursor-only commit is taken only while the client is quiet. The real   *
+ * commit blocks until the kernel applies it at a vblank, so one issued      *
+ * between a frame retiring and the next arriving spends the vblank that     *
+ * frame needed; a measured run paid 234 of them for a fifth of its frame    *
+ * rate. A drawing client has a frame along within a refresh and that frame  *
+ * carries the cursor for nothing, so the position waits for it. `quiet`     *
+ * carries that, and `Quiesce` is a client falling silent -- which is what   *
+ * keeps the cursor from freezing on a desktop nobody is drawing to.         *
+ *                                                                          *
  * The model also has to keep two things a working system already has. A    *
  * cursor commit must not disturb a directly scanned client buffer -- the   *
  * primary keeps scanning what it was scanning. The eligibility episode     *
@@ -84,12 +93,17 @@ CoveredBy(position) ==
  * frames       : client frames the environment has produced.               *
  * commits      : atomic commits issued.                                    *
  * freed        : how many times the CRTC became free.                      *
+ * quiet        : the client has stopped drawing, so a blocking cursor-only *
+ *                commit may take a vblank without taking one a frame       *
+ *                needed. Drawing clears it; `Quiesce` sets it.             *
  *************************************************************************)
 VARIABLES outstanding, pendingCursor, committed, pendingFrame, scanned,
-          doubleCommit, lostFrame, disturbed, moves, frames, commits, freed
+          doubleCommit, lostFrame, disturbed, moves, frames, commits, freed,
+          quiet
 
 vars == <<outstanding, pendingCursor, committed, pendingFrame, scanned,
-          doubleCommit, lostFrame, disturbed, moves, frames, commits, freed>>
+          doubleCommit, lostFrame, disturbed, moves, frames, commits, freed,
+          quiet>>
 
 Kinds == {"none", "primary", "cursorOnly"}
 
@@ -106,6 +120,7 @@ Init ==
     /\ frames = 0
     /\ commits = 0
     /\ freed = 0
+    /\ quiet = TRUE
 
 (***************************************************************************
  * Environment: the pointer moves. Unfair and bounded -- nothing obliges a  *
@@ -117,7 +132,7 @@ PointerMoves ==
     /\ moves' = moves + 1
     /\ pendingCursor' = moves + 1
     /\ UNCHANGED <<outstanding, committed, pendingFrame, scanned,
-         doubleCommit, lostFrame, disturbed, frames, commits, freed>>
+         doubleCommit, lostFrame, disturbed, frames, commits, freed, quiet>>
 
 (***************************************************************************
  * Environment: the client draws. Also unfair: a client repainting on a     *
@@ -129,8 +144,23 @@ ClientDraws ==
     /\ pendingFrame = 0
     /\ frames' = frames + 1
     /\ pendingFrame' = frames + 1
+    /\ quiet' = FALSE
     /\ UNCHANGED <<outstanding, pendingCursor, committed, scanned,
          doubleCommit, lostFrame, disturbed, moves, commits, freed>>
+
+(***************************************************************************
+ * Environment: the client falls silent. This is the implementation's two   *
+ * refreshes without a retirement, with the duration abstracted away. Fair, *
+ * unlike drawing: a client that has stopped stays stopped until it draws   *
+ * again, which is what lets a pending cursor eventually find its commit.   *
+ *************************************************************************)
+Quiesce ==
+    /\ pendingFrame = 0
+    /\ quiet = FALSE
+    /\ quiet' = TRUE
+    /\ UNCHANGED <<outstanding, pendingCursor, committed, pendingFrame,
+         scanned, doubleCommit, lostFrame, disturbed, moves, frames, commits,
+         freed>>
 
 (***************************************************************************
  * A commit carrying the primary, and the cursor too when one is pending.   *
@@ -151,7 +181,7 @@ CommitPrimary ==
     /\ pendingCursor' = 0
     /\ commits' = commits + 1
     /\ doubleCommit' = (doubleCommit \/ outstanding # "none")
-    /\ UNCHANGED <<lostFrame, disturbed, moves, frames, freed>>
+    /\ UNCHANGED <<lostFrame, disturbed, moves, frames, freed, quiet>>
 
 (***************************************************************************
  * A commit carrying only the cursor. Atomic requests are sparse, so a      *
@@ -166,6 +196,7 @@ CommitCursorOnly ==
     /\ outstanding = "none"
     /\ pendingCursor # 0
     /\ pendingFrame = 0
+    /\ quiet
     /\ outstanding' = "cursorOnly"
     /\ committed' = [h \in Heads |->
                         IF h \in CoveredBy(pendingCursor) THEN pendingCursor ELSE 0]
@@ -174,7 +205,7 @@ CommitCursorOnly ==
     /\ scanned' = scanned
     /\ disturbed' = (disturbed \/ \E h \in Heads : scanned'[h] # scanned[h])
     /\ doubleCommit' = (doubleCommit \/ outstanding # "none")
-    /\ UNCHANGED <<pendingFrame, lostFrame, moves, frames, freed>>
+    /\ UNCHANGED <<pendingFrame, lostFrame, moves, frames, freed, quiet>>
 
 (***************************************************************************
  * The commit completes and the CRTC frees. This is the page-flip event for *
@@ -186,7 +217,7 @@ CommitCompletes ==
     /\ outstanding' = "none"
     /\ freed' = freed + 1
     /\ UNCHANGED <<pendingCursor, committed, pendingFrame, scanned,
-         doubleCommit, lostFrame, disturbed, moves, frames, commits>>
+         doubleCommit, lostFrame, disturbed, moves, frames, commits, quiet>>
 
 (***************************************************************************
  * The driver refuses a combined commit. The retry drops the cursor and     *
@@ -208,7 +239,7 @@ CombinedCommitRefused ==
     /\ commits' = commits + 1
     /\ doubleCommit' = (doubleCommit \/ outstanding # "none")
     /\ UNCHANGED <<pendingCursor, committed, disturbed, moves,
-         frames, freed>>
+         frames, freed, quiet>>
 
 Owner ==
     \/ CommitPrimary
@@ -219,10 +250,18 @@ Owner ==
 Next ==
     \/ PointerMoves
     \/ ClientDraws
+    \/ Quiesce
     \/ Owner
 
 Spec == Init /\ [][Next]_vars
-FairSpec == Spec /\ WF_vars(Owner)
+
+(***************************************************************************
+ * `Quiesce` is fair and drawing is not, which is what keeps the liveness   *
+ * property true under the gate: a client that keeps drawing carries the    *
+ * cursor on its own commits, and one that stops eventually goes quiet and  *
+ * releases the cursor-only commit.                                          *
+ *************************************************************************)
+FairSpec == Spec /\ WF_vars(Owner) /\ WF_vars(Quiesce)
 
 TypeOK ==
     /\ outstanding \in Kinds
@@ -233,6 +272,7 @@ TypeOK ==
     /\ doubleCommit \in BOOLEAN
     /\ lostFrame \in BOOLEAN
     /\ disturbed \in BOOLEAN
+    /\ quiet \in BOOLEAN
     /\ commits \in 0..(MaxMoves + 2 * MaxFrames + 1)
 
 (***************************************************************************

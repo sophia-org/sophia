@@ -219,8 +219,9 @@ impl LiveProductionNativeScanout {
         }
         self.max_cursor_update = self.max_cursor_update.max(update_started.elapsed());
         if primary_in_flight {
-            self.cursor_updates_primary_in_flight =
-                self.cursor_updates_primary_in_flight.saturating_add(1);
+            self.legacy_cursor_updates_primary_in_flight = self
+                .legacy_cursor_updates_primary_in_flight
+                .saturating_add(1);
         }
         if visible {
             self.cursor_updates = self.cursor_updates.saturating_add(1);
@@ -264,6 +265,9 @@ impl LiveProductionNativeScanout {
             self.heads[index].pending_cursor,
             self.heads[index].committed_cursor,
             true,
+            // A frame is going out, which the planner answers before it looks
+            // at quietness, so this head's client cannot be quiet anyway.
+            false,
         ) {
             crate::CursorCommitPlan::RideNextPrimary => {}
             crate::CursorCommitPlan::Idle => {
@@ -375,12 +379,22 @@ impl LiveProductionNativeScanout {
                 self.heads[index].submitted_at.is_some()
                     || self.heads[index].scanout_custody.submitted().is_some(),
             );
+            // The client's own pacing decides whether this head can afford a
+            // blocking commit. `presented_page_flip_ust_usec` and this clock
+            // are the same monotonic microseconds, which is why the page-flip
+            // path already stamps retirements with it.
+            let client_quiet = crate::cursor_only_quiet(
+                self.heads[index].presented_page_flip_ust_usec,
+                Self::monotonic_ust_usec(),
+                self.heads[index].refresh_millihz,
+            );
             match crate::plan_cursor_commit(
                 crate::HardwareCursorPath::AtomicPlane,
                 admission,
                 self.heads[index].pending_cursor,
                 self.heads[index].committed_cursor,
                 false,
+                client_quiet,
             ) {
                 crate::CursorCommitPlan::Idle => {
                     self.heads[index].pending_cursor = None;
@@ -407,10 +421,18 @@ impl LiveProductionNativeScanout {
                 placement,
             );
             let group = self.heads[index].group;
+            // This blocks until the kernel applies it. Measured rather than
+            // argued: the gate above is only worth its complexity if what it
+            // still admits costs approximately nothing.
+            let commit_started = Instant::now();
             let status = crate::submit_native_cursor_only_commit(
                 self.groups[group].session.cursor_commit_device(),
                 request,
             );
+            let commit_elapsed = commit_started.elapsed();
+            self.max_cursor_only_commit = self.max_cursor_only_commit.max(commit_elapsed);
+            self.cursor_only_commit_total =
+                self.cursor_only_commit_total.saturating_add(commit_elapsed);
             match status {
                 crate::LibdrmNativeAtomicCommitSubmitStatus::Submitted => {
                     self.settle_atomic_cursor(index, placement, false);

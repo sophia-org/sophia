@@ -19,8 +19,13 @@ report="$("$REPORTER" "$FIXTURE")"
 [[ "$report" == *" snapshot_promotions=3 "* ]]
 [[ "$report" == *" import_cache_imports=3 "* ]]
 [[ "$report" == *" import_cache_hits=2 "* ]]
-[[ "$report" == *" cursor_updates_primary_in_flight=80 "* ]]
-[[ "$report" == *" cursor_max_update_msec=1" ]]
+[[ "$report" == *" cursor_legacy_updates_primary_in_flight=80 "* ]]
+[[ "$report" == *" cursor_max_update_msec=1 "* ]]
+# The cursor's own cost closes the line, and is zero on a fixture predating
+# schema 7 rather than absent -- a reader that dropped it would otherwise look
+# the same as a run that never paid it.
+[[ "$report" == *" cursor_only=0 "* ]]
+[[ "$report" == *" cursor_only_total_msec=0" ]]
 
 grep -v '^GL_RENDERER' "$FIXTURE" >"$MUTATED"
 if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
@@ -98,11 +103,12 @@ if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
     exit 1
 fi
 
-# The atomic path passes this gate, and is held to its own shape rather than
-# the legacy one. An atomic cursor cannot commit while a flip is in flight --
-# the kernel serializes commits per CRTC -- so a positive overlap count there
-# is a contradiction, where on the legacy ioctl it is the evidence that
-# pointer motion happened at all.
+# The atomic path passes this gate, and the overlap count is not held against
+# it. Only the legacy ioctl increments that counter -- the atomic path returns
+# before it is reached -- and the cursor plane is taken at readiness, after the
+# first frames, so an atomic session legitimately carries the ioctl updates it
+# made beforehand. Both shapes are accepted here; whether motion perturbed
+# pacing is the cadence rule's judgement, which measures it directly.
 sed -e 's/path=legacy_ioctl/path=atomic_plane/' \
     -e 's/updates_primary_in_flight=80/updates_primary_in_flight=0/' \
     "$FIXTURE" >"$MUTATED"
@@ -112,10 +118,24 @@ if ! "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
 fi
 
 sed 's/path=legacy_ioctl/path=atomic_plane/' "$FIXTURE" >"$MUTATED"
-if "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
-    echo "glxgears reporter accepted an atomic cursor committed during a flip" >&2
+if ! "$REPORTER" "$MUTATED" >/dev/null 2>&1; then
+    echo "glxgears reporter rejected an atomic run carrying pre-switch ioctl updates" >&2
     exit 1
 fi
+
+# Schema 7 renames that counter and adds what a cursor-only commit cost. The
+# reporter must read the new name, or every run from here reports nothing
+# about the cursor while appearing to pass.
+sed -e 's/sophia_live_session_cursor schema=5 /sophia_live_session_cursor schema=7 /' \
+    -e 's/ updates_primary_in_flight=80 / legacy_updates_primary_in_flight=80 cursor_only=2 cursor_only_max_msec=1 cursor_only_total_msec=2 /' \
+    "$FIXTURE" >"$MUTATED"
+if ! schema_seven="$("$REPORTER" "$MUTATED" 2>/dev/null)"; then
+    echo "glxgears reporter rejected a schema-7 cursor record" >&2
+    exit 1
+fi
+[[ "$schema_seven" == *" cursor_legacy_updates_primary_in_flight=80 "* ]]
+[[ "$schema_seven" == *" cursor_only=2 "* ]]
+[[ "$schema_seven" == *" cursor_only_total_msec=2"* ]]
 
 # Shaped so only the path restriction can reject it: with a zero overlap
 # count it would satisfy the atomic branch, so if it is refused, it is refused

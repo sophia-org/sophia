@@ -31,10 +31,12 @@ pub(super) struct NativeEvidenceSnapshot {
     pub cursor_updates_coalesced: usize,
     pub cursor_updates_ridden: usize,
     pub cursor_only_commits: usize,
+    pub max_cursor_only_commit: Duration,
+    pub cursor_only_commit_total: Duration,
     pub cursor_combined_drops: usize,
     pub cursor_legacy_fallbacks: usize,
     pub cursor_initialization_deferrals: usize,
-    pub cursor_updates_primary_in_flight: usize,
+    pub legacy_cursor_updates_primary_in_flight: usize,
     pub cursor_update_failures: usize,
     pub max_cursor_initialization: Duration,
     pub max_cursor_update: Duration,
@@ -82,10 +84,12 @@ impl NativeEvidenceSnapshot {
             cursor_updates_coalesced: native.cursor_updates_coalesced,
             cursor_updates_ridden: native.cursor_updates_ridden,
             cursor_only_commits: native.cursor_only_commits,
+            max_cursor_only_commit: native.max_cursor_only_commit,
+            cursor_only_commit_total: native.cursor_only_commit_total,
             cursor_combined_drops: native.cursor_combined_drops,
             cursor_legacy_fallbacks: native.cursor_legacy_fallbacks,
             cursor_initialization_deferrals: native.cursor_initialization_deferrals,
-            cursor_updates_primary_in_flight: native.cursor_updates_primary_in_flight,
+            legacy_cursor_updates_primary_in_flight: native.legacy_cursor_updates_primary_in_flight,
             cursor_update_failures: native.cursor_update_failures,
             max_cursor_initialization: native.max_cursor_initialization,
             max_cursor_update: native.max_cursor_update,
@@ -158,6 +162,10 @@ impl NativeEvidenceSnapshot {
         self.cursor_only_commits = self
             .cursor_only_commits
             .saturating_add(next.cursor_only_commits);
+        self.max_cursor_only_commit = self.max_cursor_only_commit.max(next.max_cursor_only_commit);
+        self.cursor_only_commit_total = self
+            .cursor_only_commit_total
+            .saturating_add(next.cursor_only_commit_total);
         self.cursor_combined_drops = self
             .cursor_combined_drops
             .saturating_add(next.cursor_combined_drops);
@@ -167,9 +175,9 @@ impl NativeEvidenceSnapshot {
         self.cursor_initialization_deferrals = self
             .cursor_initialization_deferrals
             .saturating_add(next.cursor_initialization_deferrals);
-        self.cursor_updates_primary_in_flight = self
-            .cursor_updates_primary_in_flight
-            .saturating_add(next.cursor_updates_primary_in_flight);
+        self.legacy_cursor_updates_primary_in_flight = self
+            .legacy_cursor_updates_primary_in_flight
+            .saturating_add(next.legacy_cursor_updates_primary_in_flight);
         self.cursor_update_failures = self
             .cursor_update_failures
             .saturating_add(next.cursor_update_failures);

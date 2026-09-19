@@ -216,6 +216,12 @@ done
 # by construction, because the kernel serializes commits per CRTC and the
 # cursor waits instead. Keeping them would have failed the atomic path for
 # behaving correctly.
+#
+# A third went the same way for the same reason: an atomic run was required
+# to report *zero* in-flight updates, which read a counter only the legacy
+# branch increments. Because the cursor plane is taken at readiness rather
+# than at setup, an atomic session legitimately carries the ioctl updates it
+# made before the switch, and the rule failed it for them.
 # The benchmark runs a standalone session; an older gate still demanded an
 # external policy client, which a standalone
 # session never reports. That made the gate unrunnable through its own
@@ -231,23 +237,38 @@ external | disabled) ;;
 esac
 
 cursor="$(
-    grep -E '^sophia_live_session_cursor schema=(5|6) path=(legacy_ioctl|atomic_plane) ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session_cursor schema=(5|6|7) path=(legacy_ioctl|atomic_plane) ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$cursor" ]] || fail "missing hardware-cursor metrics"
 cursor_path="$(field "$cursor" path)"
-cursor_updates_primary_in_flight="$(
-    nonnegative_field "$cursor" updates_primary_in_flight
-)"
-# The legacy path overlaps flips and the atomic path cannot; each is checked
-# for its own shape rather than both for one.
+# Schema 7 renamed this to name the path that counts it. Only the legacy
+# ioctl does: the atomic path returns before the counter is reached, and the
+# plane is chosen at readiness -- after the first frames -- so an atomic
+# session still carries whatever it accumulated on the ioctl beforehand. The
+# rule that read this as "an atomic cursor committed while a flip was in
+# flight" is gone with it; it failed a correct run for a count that cannot
+# mean that. Whether motion perturbs pacing is the cadence rule's judgement,
+# above, which measures the thing directly.
+cursor_legacy_in_flight="$(
+    rendering_performance_field "$cursor" legacy_updates_primary_in_flight 2>/dev/null ||
+        rendering_performance_field "$cursor" updates_primary_in_flight
+)" || fail "cursor record lacks an in-flight update count"
+[[ "$cursor_legacy_in_flight" =~ ^[0-9]+$ ]] ||
+    fail "cursor in-flight update count is not a nonnegative integer"
 if [[ "$cursor_path" == legacy_ioctl ]]; then
-    ((cursor_updates_primary_in_flight > 0)) ||
+    ((cursor_legacy_in_flight > 0)) ||
         fail "the legacy cursor never overlapped a page flip, so pointer motion was not exercised"
-else
-    ((cursor_updates_primary_in_flight == 0)) ||
-        fail "an atomic cursor committed while a flip was in flight"
 fi
+# What the cursor cost the frame clock, which is what t120 repaired. A
+# cursor-only commit blocks until a vblank, so these are near zero only when
+# the quiet gate is keeping them out of a drawing client's way. Absent before
+# schema 7, where the cost was not yet measured.
+cursor_only="$(rendering_performance_field "$cursor" cursor_only || echo 0)"
+cursor_only_max_msec="$(rendering_performance_field "$cursor" cursor_only_max_msec || echo 0)"
+cursor_only_total_msec="$(
+    rendering_performance_field "$cursor" cursor_only_total_msec || echo 0
+)"
 cursor_max_update_msec="$(nonnegative_field "$cursor" max_update_msec)"
 cursor_hardware_failures="$(nonnegative_field "$cursor" hardware_failures)"
 ((cursor_max_update_msec <= 20)) ||
@@ -255,4 +276,4 @@ cursor_hardware_failures="$(nonnegative_field "$cursor" hardware_failures)"
 ((cursor_hardware_failures == 0)) || fail "hardware cursor update failed"
 
 printf '%s\n' \
-    "sophia_glxgears_performance schema=6 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_copy=$present_complete_copy present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers snapshot_captures=$snapshot_captures snapshot_promotions=$snapshot_promotions import_cache_imports=$import_cache_imports import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec cursor_path=$cursor_path cursor_updates_primary_in_flight=$cursor_updates_primary_in_flight cursor_max_update_msec=$cursor_max_update_msec"
+    "sophia_glxgears_performance schema=6 status=pass workload=glxgears-x11 role=compatibility_probe duration_seconds=$duration_seconds surface_width=$surface_width surface_height=$surface_height swap_interval=$swap_interval renderer_sha256=$renderer_sha256 output_pixels=$output_pixels client_samples=$client_samples client_mean_fps=$client_mean_fps present_samples=$timestamp_count present_fps=$present_fps p95_frame_msec=$p95_msec native_retirements=$native_retirements native_nonzero_exports=$native_nonzero_exports native_mixed_exports=$native_mixed_exports present_complete_copy=$present_complete_copy present_idle=$present_idle present_idle_fence_triggers=$present_idle_fence_triggers snapshot_captures=$snapshot_captures snapshot_promotions=$snapshot_promotions import_cache_imports=$import_cache_imports import_cache_hits=$import_cache_hits native_max_render_msec=$native_max_render_msec native_max_upload_msec=$native_max_upload_msec native_max_submit_to_page_flip_msec=$native_max_submit_to_page_flip_msec cursor_path=$cursor_path cursor_legacy_updates_primary_in_flight=$cursor_legacy_in_flight cursor_max_update_msec=$cursor_max_update_msec cursor_only=$cursor_only cursor_only_max_msec=$cursor_only_max_msec cursor_only_total_msec=$cursor_only_total_msec"

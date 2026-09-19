@@ -970,7 +970,7 @@
         );
     }
     crate::session_println!(
-        "sophia_live_session_cursor schema=6 path={} plane={} moves_coalesced={} max_motion_to_submit_msec={} initialization_max_msec={} initialization_deferrals={} max_update_msec={} updates_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={} queued={} backend_coalesced={} rides={} cursor_only={} combined_drops={} fallbacks={} pending={}",
+        "sophia_live_session_cursor schema=7 path={} plane={} moves_coalesced={} max_motion_to_submit_msec={} initialization_max_msec={} initialization_deferrals={} max_update_msec={} legacy_updates_primary_in_flight={} buttons_routed={} hardware_updates={} hidden_updates={} hardware_failures={} queued={} backend_coalesced={} rides={} cursor_only={} cursor_only_max_msec={} cursor_only_total_msec={} combined_drops={} fallbacks={} pending={}",
         match native_scanout.as_ref().map(|scanout| scanout.cursor_path) {
             Some(sophia_backend_live::HardwareCursorPath::AtomicPlane) => "atomic_plane",
             _ => "legacy_ioctl",
@@ -994,7 +994,7 @@
         native_totals.max_cursor_initialization.as_millis(),
         native_totals.cursor_initialization_deferrals,
         native_totals.max_cursor_update.as_millis(),
-        native_totals.cursor_updates_primary_in_flight,
+        native_totals.legacy_cursor_updates_primary_in_flight,
         physical_pointer_buttons_routed,
         native_totals.cursor_updates,
         native_totals.cursor_hidden_updates,
@@ -1003,6 +1003,8 @@
         native_totals.cursor_updates_coalesced,
         native_totals.cursor_updates_ridden,
         native_totals.cursor_only_commits,
+        native_totals.max_cursor_only_commit.as_millis(),
+        native_totals.cursor_only_commit_total.as_millis(),
         native_totals.cursor_combined_drops,
         native_totals.cursor_legacy_fallbacks,
         native_scanout

@@ -171,12 +171,23 @@ mod persistent_native_scanout {
         pub cursor_updates_ridden: usize,
         /// Atomic cursor-only commits made while primary content was idle.
         pub cursor_only_commits: usize,
+        /// Longest one of those blocking commits, and their total. They wait
+        /// for the kernel to apply them at a vblank, so this is owner-loop
+        /// time a frame could not use. The quiet gate exists to keep both
+        /// near zero while a client is drawing.
+        pub max_cursor_only_commit: Duration,
+        pub cursor_only_commit_total: Duration,
         /// Combined primary/cursor requests retried as cursor-only commits.
         pub cursor_combined_drops: usize,
         /// Runtime atomic cursor rejection transitions to the legacy ioctl.
         pub cursor_legacy_fallbacks: usize,
         pub cursor_initialization_deferrals: usize,
-        pub cursor_updates_primary_in_flight: usize,
+        /// Legacy-ioctl cursor updates issued while a page flip was in
+        /// flight, which an ioctl may do and an atomic commit may not. Named
+        /// for the path that counts it: the atomic path returns before this
+        /// is reached, so a session that later took the cursor plane still
+        /// carries whatever it accumulated beforehand.
+        pub legacy_cursor_updates_primary_in_flight: usize,
         /// Which cursor path this session is driving, and what the card said
         /// it would accept. Two facts, kept apart: a session can be on the
         /// legacy ioctl while the card would happily scan a cursor plane,
@@ -1001,11 +1012,13 @@ mod persistent_native_scanout {
                 cursor_updates_coalesced: 0,
                 cursor_updates_ridden: 0,
                 cursor_only_commits: 0,
+                max_cursor_only_commit: Duration::ZERO,
+                cursor_only_commit_total: Duration::ZERO,
                 cursor_combined_drops: 0,
                 cursor_legacy_fallbacks: 0,
                 cursor_path: crate::HardwareCursorPath::LegacyIoctl,
                 cursor_initialization_deferrals: 0,
-                cursor_updates_primary_in_flight: 0,
+                legacy_cursor_updates_primary_in_flight: 0,
                 cursor_update_failures: 0,
                 max_cursor_initialization: Duration::ZERO,
                 max_cursor_update: Duration::ZERO,
