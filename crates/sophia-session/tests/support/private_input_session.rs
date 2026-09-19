@@ -44,7 +44,14 @@ use sophia_x_authority::{
 use wire::{Order, Peer};
 
 /// The bound every wait in here uses. `wire.rs` reads this from its parent.
-pub const WAIT: Duration = Duration::from_secs(8);
+///
+/// GENEROUS ON PURPOSE. A passing control never waits, so the only thing this
+/// sizes is how much contention a failing one tolerates before it calls a busy
+/// machine a defect. Running the whole suite in parallel puts eight private X
+/// services on a host that is also running a desktop, and at eight seconds
+/// roughly one run in seven lost an admission to starvation rather than to
+/// anything being wrong.
+pub const WAIT: Duration = Duration::from_secs(20);
 const COOKIE: [u8; 32] = [0x73; 32];
 /// BTN_LEFT, the native evdev code.
 ///
@@ -582,6 +589,7 @@ fn running_worker_is_collected() {
     );
     assert!(!fixture.lifetime.slot_poisoned());
 
+    record_actors(&runtime, &outcome);
     drop(peer);
     drop(outcome);
     drop(runtime);
@@ -1061,6 +1069,7 @@ fn a_stop_counts_receipts_nobody_drained() {
         fixture.lifetime.retains_unresolved(),
         "and the lifetime's reserved slot is holding it"
     );
+    record_actors(&runtime, &outcome);
     drop((submission, peer));
 }
 
@@ -1335,6 +1344,85 @@ fn a_service_error_after_startup_closes_admission_and_collects() {
     drop(peer);
 }
 
+/// Actors started and collected across one `lifetime` run.
+///
+/// ACCUMULATED ACROSS THE FIVE EXITS, because the acceptance record is about
+/// the case and not about any one of them. Each subcase adds what its own exit
+/// started and collected; nothing else reads or resets it.
+static LIFETIME_ACTORS: std::sync::Mutex<(usize, usize)> = std::sync::Mutex::new((0, 0));
+
+/// Record one exit's actors from custody, not from a counter.
+///
+/// The service thread is one actor and every custody place that started a
+/// worker is another. Collection is counted the same way round: the thread if
+/// it joined, and every place that published a join. Reading both from the
+/// same snapshot is what makes "started equals collected" a statement about
+/// this run rather than an arithmetic identity.
+fn record_actors(
+    runtime: &std::sync::Arc<crate::private_input::service::PrivateInputRuntime>,
+    outcome: &crate::private_input::PrivateInputOutcome,
+) {
+    let after = runtime
+        .owner
+        .custody_snapshot(&runtime.owner.lease())
+        .expect("the owner keeps its inventory past the service");
+    let started = 1 + after
+        .rows
+        .iter()
+        .filter(|row| row.worker != PrivateCustodyWorkerStanding::NeverStarted)
+        .count();
+    let collected = usize::from(outcome.service_thread == PrivateInputThreadJoin::Joined)
+        + after
+            .rows
+            .iter()
+            .filter(|row| row.join != PrivateCustodyJoinStanding::Unpublished)
+            .count();
+    let mut actors = LIFETIME_ACTORS.lock().expect("the accumulator is readable");
+    actors.0 += started;
+    actors.1 += collected;
+}
+
+/// M4.lifetime: Session closes admission, collects actors and keeps unresolved
+/// obligations on every exit.
+///
+/// THE ACCEPTANCE BODY, COMPOSED FROM THE CONTROLS RATHER THAN BESIDE THEM.
+/// The harness binds one test name to the case, and the five subjects it
+/// requires are exactly five controls that already exist. Calling them keeps
+/// the acceptance row and the component suite from ever drifting apart: there
+/// is one body per exit, and both readers run the same one.
+///
+/// Ignored so it runs only through the acceptance harness, which passes
+/// `--include-ignored`; the component runner does not, which is what keeps a
+/// diagnostic suite from ever reporting this as acceptance.
+#[test]
+#[ignore = "run through cargo xtask check m4-acceptance"]
+fn lifetime() {
+    *LIFETIME_ACTORS.lock().expect("the accumulator is readable") = (0, 0);
+
+    running_worker_is_collected();
+    command_loss_closes_admission_and_collects();
+    a_service_error_after_startup_closes_admission_and_collects();
+    an_unwind_on_the_serving_thread_still_collects();
+    a_stop_counts_receipts_nobody_drained();
+
+    let (started, collected) = *LIFETIME_ACTORS.lock().expect("the accumulator is readable");
+    assert!(started > 0, "five real exits started actors");
+    assert_eq!(
+        started, collected,
+        "every actor these exits started was collected"
+    );
+
+    println!(
+        "sophia_m4_acceptance {{\"schema\":1,\"case\":\"M4.lifetime\",\"subcases\":{{\
+         \"stop\":\"PASS\",\"command_loss\":\"PASS\",\"service_error\":\"PASS\",\
+         \"unwind\":\"PASS\",\"retained_obligations\":\"PASS\"}},\"cleanup\":{{\
+         \"actors_started\":{started},\"actors_collected\":{collected},\
+         \"pending_actors\":0,\"complete\":true}},\"observations\":{{\
+         \"real_session_invocations\":5,\
+         \"actor_scope\":\"service_threads_and_registered_ordered_workers\"}}}}"
+    );
+}
+
 /// What every exit must establish, whatever ended it.
 ///
 /// ADMISSION CLOSED, OLD SUBMISSIONS REFUSED, THE PRIMARY ACTOR COLLECTED.
@@ -1412,6 +1500,7 @@ fn assert_collected(
         expect_workers,
         "the worker list is present exactly when the invocation could report one: {outcome:?}"
     );
+    record_actors(runtime, outcome);
 
     // AND NOTHING STARTED WAS LEFT BEHIND. A place that started a worker and
     // published no join is an actor nobody collected.
