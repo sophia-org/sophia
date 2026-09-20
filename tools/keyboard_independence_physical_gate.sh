@@ -76,7 +76,7 @@ fi
 # A key remapper merges every keyboard into one virtual device, which is the
 # exact thing this gate exists to tell apart.
 if pgrep -x keyd >/dev/null 2>&1; then
-    refuse "keyd is running; stop it (sudo sv down keyd) so the seat shows two real keyboards"
+    refuse "keyd is running: this machine remaps keyboards through one virtual device, which the gate exists to tell apart. Stop it for the run (sudo sv down keyd), run the gate, then start it again (sudo sv up keyd)."
 fi
 # The trusted listener binds under the runtime directory, so a tty login
 # without one fails inside the session. Fail here instead, before DRM.
