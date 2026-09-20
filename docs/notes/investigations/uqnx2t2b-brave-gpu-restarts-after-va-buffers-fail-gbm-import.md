@@ -2,7 +2,7 @@
 id: uqnx2t2b
 date: 2026-09-07
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, rendering, x11]
 ---
 # Brave GPU restarts after VA buffers fail GBM import
@@ -747,3 +747,34 @@ neither diagnosis establishes the other.
 
 The subsequent [GLX pixmap export investigation](uffn76nu-glx-pixmap-exports-need-coherent-backing-and-reply-ordering.md)
 records the configuration, pixel-publication and retained-storage repair.
+
+## Accepted on the installed session, 2026-09-20
+
+The remaining work named above -- the normal-launch repair, and accelerated
+playback failing at EGL binding -- is superseded by what the live session now
+shows. Read from `chrome://gpu` in the operator's running Brave Origin
+1.95.104:
+
+- **Video Decode: Hardware accelerated.** Canvas, Compositing, Rasterization,
+  WebGL and WebGPU likewise. Video Encode stays software-only by blocklist,
+  which is Chromium's Linux default and outside this note's subject.
+- **GPU0 `0x164e`, Mesa 26.1.8, ACTIVE** -- the integrated device this note
+  established the descriptor imports on -- rather than GPU1 `0x744c`, the
+  discrete Navi 31 it failed on.
+
+The device split this note spent its length identifying is resolved by
+selecting the device rather than by changing the renderer:
+`--render-node-override=/dev/dri/renderD128`, configured in
+`~/.config/hagia/config.kdl` and `lom-workspaces.kdl`, with `sophia-cli`'s
+`client_launch_socket` tests covering the injection. That is a durable
+configuration, not a flag typed once.
+
+And the symptom that opened the note is gone rather than quieter. It was four
+GPU processes failing at `gbm_wrapper.cc:465` within minutes. Measured in
+ordinary use: one gpu-process, up 20h39m32s against a browser up 20h39m33s --
+started with it and never replaced -- and no `gbm_wrapper` or GPU-crash line
+in any session log.
+
+t068 is closed on this. The interop reference kept above is left standing: it
+describes work that was never done, and the device selection is what made it
+unnecessary rather than complete.
