@@ -82,12 +82,20 @@ public module as a facade when callers already depend on that path. Do not split
 purely to satisfy a number if the result would obscure ownership or scatter one
 tightly coupled algorithm across files.
 
+Test files answer to a ceiling too, and it is looser than production's rather
+than absent. A wire fixture or a table of refusals is one dense table with one
+owner, which is the same cohesion argument this guide already makes for a
+dense parser, so tests are rejected over 1500 lines rather than over 1000. A
+test file is not exempt from having a subject: the 800-line report applies to
+tests exactly as it does to production, and reaching it is the point at which
+to look for the seam rather than the point at which to stop worrying.
+
 Run `tools/audit_source_layout.sh` during local validation. It reports
-production files at 800 lines, tests at 800 lines, and rejects unreviewed
-production files over 1000 lines, inline production tests, and direct printing
-from libraries. `docs/source-layout-exceptions.txt` is an exact-path migration
-ledger, not a permanent allowlist; remove entries as each owning domain is
-extracted.
+production files at 800 lines and tests at 800 lines, and rejects unreviewed
+production files over 1000 lines, unreviewed test files over 1500 lines,
+inline production tests, and direct printing from libraries.
+`docs/source-layout-exceptions.txt` is an exact-path migration ledger, not a
+permanent allowlist; remove entries as each owning domain is extracted.
 
 ### Engine Crate Modules
 

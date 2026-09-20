@@ -2,6 +2,7 @@
 # remains a failure in tools/audit_source_layout.sh and must be removed. The
 # xtask layout gate prevents a new violation from hiding behind a reduced count.
 inline-tests crates/sophia-backend-live/src/runtime/page_flip.rs
+inline-tests crates/sophia-cli/src/commands/x_authority/external_probe.rs
 inline-tests crates/sophia-conformance/src/desktop_comparison/capture_owner.rs
 inline-tests crates/sophia-conformance/src/desktop_comparison/capture_owner/trace.rs
 inline-tests crates/sophia-conformance/src/desktop_comparison/capture_owner/workload.rs
@@ -9,14 +10,18 @@ inline-tests crates/sophia-session/src/live_session.rs
 inline-tests crates/sophia-session/src/live_session/input.rs
 inline-tests crates/sophia-session/src/live_session/wm/public_policy.rs
 inline-tests crates/sophia-session/src/live_session/wm/session.rs
-inline-tests crates/sophia-cli/src/commands/x_authority/external_probe.rs
 inline-tests crates/sophia-x-authority/src/x11_socket/connection/dispatch.rs
 large crates/sophia-backend-live/src/production_session/native_scanout.rs
 large crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/renderer_images.rs
 large crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/topology.rs
 large crates/sophia-backend-live/src/production_visual_runtime.rs
+large crates/sophia-backend-live/tests/libdrm_events_feature/scanout_submission.rs
 large crates/sophia-conformance/src/desktop_comparison.rs
 large crates/sophia-conformance/src/desktop_comparison/capture_owner.rs
+large crates/sophia-engine/src/composition_plan.rs
+large crates/sophia-engine/src/compositor_graphics.rs
+large crates/sophia-protocol/src/ipc/wm_v1_records.rs
+large crates/sophia-renderer-live/src/native_scanout.rs
 large crates/sophia-session/src/live_session.rs
 large crates/sophia-session/src/live_session/config.rs
 large crates/sophia-session/src/live_session/input.rs
@@ -29,13 +34,17 @@ large crates/sophia-session/src/live_session/tests/session_config_tests.rs
 large crates/sophia-session/src/live_session/tests/wm_session_tests.rs
 large crates/sophia-session/src/live_session/wm/layout.rs
 large crates/sophia-session/src/live_session/wm/public_policy.rs
-large crates/sophia-engine/src/composition_plan.rs
-large crates/sophia-engine/src/compositor_graphics.rs
-large crates/sophia-protocol/src/ipc/wm_v1_records.rs
-large crates/sophia-renderer-live/src/native_scanout.rs
+large crates/sophia-session/tests/support/private_input_session.rs
 large crates/sophia-x-authority/src/dispatch.rs
 large crates/sophia-x-authority/src/property.rs
+large crates/sophia-x-authority/src/wire.rs
 large crates/sophia-x-authority/src/x11_socket/connection/server.rs
 large crates/sophia-x-authority/src/x11_socket/tests.rs
 large crates/sophia-x-authority/src/x11_socket/tests/routing.rs
-large crates/sophia-x-authority/src/wire.rs
+large crates/sophia-x-authority/tests/authority/resources.rs
+large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs
+large crates/sophia-x-authority/tests/x11_wire/core_dispatch.rs
+large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs
+large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs
+large crates/sophia-x-authority/tests/x11_wire/resources_frontend.rs
+large crates/sophia-x-authority/tests/x11_wire/support_extensions.rs
