@@ -597,9 +597,29 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 Ok(registration) => registration,
                 Err(error) => {
                     let _ = state.release_client(client);
-                    return Err(X11SetupSocketError::new(format!(
-                        "failed to register X11 client route: {error}"
-                    )));
+                    let message = format!("failed to register X11 client route: {error}");
+                    // A FULL STORE IS THIS CONNECTION'S ANSWER, NOT THE
+                    // SERVICE'S ENDING. Registration can refuse for two
+                    // unlike reasons. A poisoned registry is the instance
+                    // saying it can no longer be trusted to route anybody,
+                    // and ending is the honest response to that. Having no
+                    // place left is the instance saying it is full, which is
+                    // a fact about this one admission and about nothing else:
+                    // every connection already served is still being served
+                    // correctly, and the next admission may well find room.
+                    //
+                    // Unclassified, these were the same, so four ordinary
+                    // departures on an instance admitting four left the fifth
+                    // connection ending the whole private service -- the
+                    // class t130 named, a per-client condition the service
+                    // does not survive. Named as a client failure, the
+                    // frontend disconnects this one and keeps serving.
+                    return Err(match error {
+                        XServerFrontendRouteError::ContinuationUnavailable { .. } => {
+                            X11SetupSocketError::client_failure(message)
+                        }
+                        _ => X11SetupSocketError::new(message),
+                    });
                 }
             };
             // BOUND HERE, BEFORE THE FIRST THING THAT CAN REFUSE.
@@ -3080,6 +3100,27 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             X11SetupSocketError::new(format!("failed to revoke X11 client admission: {error}"))
         })
     });
+    // THE PLACE THIS CONNECTION LEFT GOES BACK DURING THE RUN.
+    //
+    // A continuation place is held from reservation until the work left in it
+    // is gone, and the only thing that notices it is gone is a visit. Every
+    // other reclamation in this instance is hung off the maintenance keeper,
+    // which runs a bounded number of visits AFTER the invocation has ended --
+    // so a place handed over here stayed taken for the whole remaining life of
+    // the service, and an instance that had seen `max_concurrent_clients`
+    // departures could admit nobody.
+    //
+    // Driven here, on the way out and by the connection that is leaving, so
+    // the reclamation is live. Unconditional: whatever this connection's
+    // result turns out to be below, it is leaving and what it left is still
+    // owed a visit. This does not reclaim this connection's own place -- its
+    // work may not have settled yet, and a place comes back only when the work
+    // in it is gone -- it reclaims whoever settled since the last departure.
+    // The admission path drives again before refusing, which is what covers
+    // the place that settles after this.
+    if let Some(routing) = protocol_routing.as_ref() {
+        routing.drive_departed_continuations();
+    }
     pending_publication_result?;
     result?;
     writer_result?;

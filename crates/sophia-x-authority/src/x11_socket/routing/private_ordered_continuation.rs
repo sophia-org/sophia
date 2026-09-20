@@ -453,6 +453,30 @@ impl PrivateSettlementRef {
 }
 
 #[cfg(unix)]
+impl XServerFrontendRouteRegistry {
+    /// Give every retained continuation one visit, and give back the places
+    /// whose work has gone.
+    ///
+    /// The registry's live entry into reclamation. It answers nothing and
+    /// refuses nothing: an instance with no store has no places to reclaim,
+    /// and a store that has gone cannot be asked. Both are ordinary here --
+    /// every non-private instance is the first -- so neither is an error.
+    fn drive_departed_continuations(&self) -> usize {
+        let Some(owner) = self.continuation_owner.get().and_then(PrivateSettlementRef::owner)
+        else {
+            return 0;
+        };
+        // Bounded by the places that exist, so each retained one is offered a
+        // visit. Read and released before driving: the drive takes the store.
+        let places = {
+            let held = owner.records_even_if_poisoned();
+            held.continuations.len()
+        };
+        owner.drive_ordered_continuations(places)
+    }
+}
+
+#[cfg(unix)]
 impl PrivateSettlementOwner {
     /// A handle to this store that does not keep it alive.
     ///
@@ -512,7 +536,43 @@ impl PrivateSettlementOwner {
     /// Takes an index in the outer storage the declared bound already made.
     /// The record itself is allocated here -- before exposure, which is what
     /// matters -- rather than later while holding custody.
+    /// RECLAIM BEFORE REFUSING. A place is held from reservation until the
+    /// work left in it is gone, and what notices that the work is gone is the
+    /// drive below. An instance that has seen `max_concurrent_clients`
+    /// departures therefore has every place taken by a connection that is no
+    /// longer there, and the reservation that finds none is not learning that
+    /// the instance is busy -- it is learning that nobody has looked.
+    ///
+    /// So look, once, and only on the path that is about to refuse. Driving
+    /// here costs nothing in the ordinary case because the ordinary case does
+    /// not reach it, and a refusal after it is an honest one: every retained
+    /// place was visited and none of them was finished.
+    ///
+    /// This is the backstop, not the mechanism. Places come back during the
+    /// run because a departing connection drives them on its way out; this
+    /// catches the admission that arrives before that drive has settled the
+    /// place it needs.
     fn reserve_ordered_continuation(
+        &self,
+    ) -> Result<PrivateOrderedContinuationSlot, AdmissionRefusal> {
+        match self.try_reserve_ordered_continuation() {
+            Err(AdmissionRefusal::Saturated) => {
+                // Bounded by the places that exist, so every retained one is
+                // offered a visit and the round robin still starts where it
+                // left off. Read and released before driving: the drive takes
+                // the store itself, and a home under it.
+                let places = {
+                    let held = self.records_even_if_poisoned();
+                    held.continuations.len()
+                };
+                self.drive_ordered_continuations(places);
+                self.try_reserve_ordered_continuation()
+            }
+            other => other,
+        }
+    }
+
+    fn try_reserve_ordered_continuation(
         &self,
     ) -> Result<PrivateOrderedContinuationSlot, AdmissionRefusal> {
         // An unreachable owner and a full one are different answers, for the
@@ -624,7 +684,6 @@ impl PrivateSettlementOwner {
     /// quiet -- producers may still hold senders -- and not when it drains with
     /// an admission still unanswered, a capsule belonging to elsewhere, or a
     /// wire whose ending was never established.
-    #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
     fn drive_ordered_continuations(&self, visits: usize) -> usize {
         let mut driven = 0usize;
         for _ in 0..visits {
@@ -705,7 +764,6 @@ impl PrivateSettlementOwner {
     }
 
     /// Give a place back, once the work in it is gone.
-    #[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by a driver that is not attached yet.
     fn return_ordered_continuation(&self, index: usize, record: &Arc<PrivateOrderedHome>) {
         let mut held = self.records_even_if_poisoned();
         let PrivateOrderedContinuationPlace::Taken(place) = &held.continuations[index] else {

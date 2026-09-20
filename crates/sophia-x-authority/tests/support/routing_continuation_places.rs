@@ -1129,3 +1129,85 @@ fn waiting_for_a_permit_leaves_the_producers_level_where_it_was() {
     );
     drop(f.fixture);
 }
+
+#[test]
+fn a_full_store_of_departed_places_reclaims_them_rather_than_refusing() {
+    // t138. Every place is taken by a connection that has gone, and the
+    // reservation that finds none is not learning that the instance is busy --
+    // it is learning that nobody has looked. Measured on a live private
+    // instance as a fifth admission that completed setup and was reset, with
+    // the invocation ending on "no retained place is available".
+    //
+    // No drive is called here. That is the whole point: before this, a caller
+    // had to know to drive, and on the live path nothing did.
+    let durable = PrivateSettlementOwner::with_capacities(4, 4);
+    for raw in 0..4 {
+        let client = XServerFrontendClientId(8110 + raw);
+        let slot = durable
+            .reserve_ordered_continuation()
+            .expect("a place, while the store still has free ones");
+        let PreparedOrderedFixture {
+            channels,
+            registration,
+            ..
+        } = prepared_ordered_fixture(client);
+        let mut source = Some(transport_continuation(&registration, channels.ordered));
+        // The connection departs: its row goes, and with it every sender that
+        // could still reach the queue it left.
+        drop(registration);
+        assert_eq!(
+            retain_into(slot, &mut source),
+            PrivateContinuationCommit::Retained
+        );
+    }
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(4),
+        "four departures, four places still taken"
+    );
+
+    // The fifth admission. It must not be told the instance is full while
+    // every place in it belongs to somebody who has left.
+    let fifth = durable
+        .reserve_ordered_continuation()
+        .expect("a place reclaimed from a departed connection, not a refusal");
+    assert_eq!(
+        durable.continuations_reserved(),
+        Some(1),
+        "the reclaimed places went back and only the new one is taken"
+    );
+    assert_eq!(
+        durable.continuations_retained(),
+        Some(0),
+        "and none of them is still retained"
+    );
+    drop(fifth);
+}
+
+#[test]
+fn a_store_full_of_live_places_still_refuses() {
+    // The other half of the rule above, and the reason it is safe. Reclaiming
+    // before refusing must not reclaim a place whose work is still there: a
+    // full store of LIVE connections is genuinely full, and saying otherwise
+    // would hand one connection's destination to another.
+    let durable = PrivateSettlementOwner::with_capacities(2, 2);
+    let mut held = Vec::new();
+    for raw in 0..2 {
+        let _ = raw;
+        held.push(
+            durable
+                .reserve_ordered_continuation()
+                .expect("a place, while the store still has free ones"),
+        );
+    }
+
+    assert!(
+        matches!(
+            durable.reserve_ordered_continuation(),
+            Err(AdmissionRefusal::Saturated)
+        ),
+        "a place reserved and not yet disposed of is nobody else's to take"
+    );
+    assert_eq!(durable.continuations_reserved(), Some(2));
+    drop(held);
+}

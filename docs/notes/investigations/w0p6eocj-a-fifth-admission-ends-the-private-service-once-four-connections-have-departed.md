@@ -93,14 +93,80 @@ The owner is the private-input authority in `sophia-x-authority`; the work
 is t138, taken by the adapter lane. Until it lands, an instance that has
 seen `max_concurrent_clients` departures is one admission away from ending.
 
+## Second measurement: the driver was not the whole of it
+
+Measured 2026-09-20 on master with the same probe widened to ten rounds. The
+driver is attached now -- `drive_departed_continuations` on the registry, run
+by each departing connection at the end of its teardown, and again by an
+admission before it refuses. With the drive instrumented, the fifth admission
+reports:
+
+```text
+PROBE reserve-retry places=4 driven=0 standings=["Live", "Live", "Live", "Live"]
+```
+
+**The places are Live, not Retained, so there was never anything for the
+driver to reclaim.** The drive visits only retained homes, deliberately: a
+live home belongs to a connection that may still be bound into, and driving
+it would close a wire out from under whoever holds it. It was right to
+decline. What is wrong is upstream: four connections had gone and not one of
+their homes had been told so.
+
+`retain()` is reached from exactly two places, and neither runs here.
+
+The first is the synchronous cleanup, which `Drop for
+XServerFrontendClientRouteRegistration` runs only for a registration with no
+ordered custody. A connection that started an ordered worker -- which is
+every XTEST client in this probe -- takes the other branch, and
+`private_destruction.rs` says what that branch does in as many words:
+
+> THE DEFERRED BRANCH DOES NOTHING ELSE. No standing change, no fence, no
+> lease transfer, no number-keyed removal, no place return: every one of
+> those is the synchronous body's, and the synchronous body is not run.
+
+The second is `run_deferred_cleanup`, and it is gated. Its prerequisites
+require a `PrivateConnectionsCollected` token, and the only mint is
+`connections_collected`, which requires `active_client_worker_count() == 0`
+and is documented as "minted only after the wait". The two callers of
+`run_deferred_cleanups` are the private service's `collect` and its `drop`.
+So the discharge that would retain the home can only run once the invocation
+is over.
+
+Which means t138 is not "attach the driver that was written" either. That was
+read off the `allow(dead_code)` attribute and the comment beside it, and the
+comment was describing the wiring rather than the reason there was nothing to
+wire. The general shape the first finding named is right and is worse than it
+looked: **the reclamation is not merely hung off a keeper that runs late, it
+is gated on a token that cannot honestly be minted during the run.** A
+service-wide quiesce is not a fact a live path can establish, because a new
+connection may be accepted at any moment -- which is exactly why the mint
+sits after the wait.
+
+The remaining work is therefore a decision, not a wiring fix. The per-custody
+prerequisites beside the token are already per-connection and already strong:
+the destruction is decided and deferred, and **this** custody's worker has
+published its join. The open question is whether the effects the discharge
+performs are all this connection's own -- the fence, the lease, the home's
+standing and the place plainly are -- or whether the number-keyed removal
+genuinely needs the service-wide quiesce, in which case the interval that
+already governs number reuse is where the answer lives.
+
 ## Validation and remaining work
 
 - [x] Measure collection after c2931f65: repaired, 10 ms in every round.
 - [x] Find what remains: retained places are not released for reuse.
-- [ ] t138: attach a live driver for `drive_ordered_continuations` so a
-      departed connection's place returns during the run, and refuse rather
-      than end the service when an admission still finds none; re-run the
-      probe for at least `2 * max_concurrent_clients` rounds.
+- [x] Attach a live driver for the continuation reclamation:
+      `drive_departed_continuations`, run by a departing connection on its way
+      out and by an admission before it refuses.
+- [x] Refuse rather than end the service when an admission finds no place:
+      `ContinuationUnavailable` is now classified a client failure, so the
+      frontend disconnects the one connection. Re-measured over ten rounds:
+      the invocation reports `failure None` where it previously reported
+      `X11SetupSocketError { ... no retained place is available ... }`.
+- [ ] Retain a departed connection's home during the run. The driver is live
+      and finds nothing to do until this lands; the fifth admission is still
+      refused, but it is refused alone now instead of ending the service.
+      Needs the decision above about the collection token.
 
 ## Connections
 
