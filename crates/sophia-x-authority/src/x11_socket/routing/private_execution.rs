@@ -223,6 +223,25 @@ fn execute_owned(
         if route.mode == XAuthorityRoutedInputMode::Repeat {
             return Err(PrivateExecutionRefusal::RepeatUnsupported);
         }
+        // THE RESERVED CHORD IS NOT SUPPLIED SYNTHETICALLY. Recovery
+        // recognises Ctrl-Alt-Backspace from physical devices in the guard's
+        // own process, so nothing here can trigger it; what this refuses is
+        // handing the chord to a client as ordinary key events, which the
+        // engine never lets a policy client bind and which a synthetic source
+        // could otherwise do. Only the press that completes it is refused,
+        // and only while both modifiers are down: either modifier may be held
+        // synthetically, and Ctrl-Backspace or Alt-Backspace are ordinary
+        // keys. A physical press never comes through this executor, so no
+        // physical chord is refused, or delayed, by this.
+        if let InputEventKind::Key { keycode, pressed: true } = route.request.kind
+            && keycode == crate::X_AUTHORITY_RESERVED_CHORD_KEY
+            && keyboards.modifiers(route.request.seat).is_some_and(|held| {
+                held & crate::X_AUTHORITY_RESERVED_CHORD_MODIFIERS
+                    == crate::X_AUTHORITY_RESERVED_CHORD_MODIFIERS
+            })
+        {
+            return Err(PrivateExecutionRefusal::ReservedChord);
+        }
 
         // Claimed, not consulted. Accepted work waits its turn in the shared
         // order, and a delivery can end during that wait: its epoch revoked,

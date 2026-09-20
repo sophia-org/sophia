@@ -455,6 +455,48 @@ def two_injectors(context):
         no_reply_yet(observer, .04)
 
 
+def reserved_chord(context):
+    """A synthetic source cannot supply the reserved emergency chord, and
+    nothing else about it is refused: either modifier may be held, an
+    ordinary key under both is delivered, and Backspace under one of them
+    is delivered. The refusal is the executor's, silent on the wire: the
+    reference server sends no error for a FakeInput it accepts, and neither
+    does this; what the observer sees is that the chord's press never
+    arrives while every other press does."""
+    with client(context) as observer, client(context) as injector:
+        window, opcode = target(observer), major(injector)
+        fake(injector, opcode, 2, detail=37)  # Control_L
+        injector.sync()
+        key_event(observer, 2, window, key=37)
+        fake(injector, opcode, 2, detail=64)  # Alt_L
+        injector.sync()
+        key_event(observer, 2, window, key=64)
+        fake(injector, opcode, 2, detail=22)  # BackSpace under both: the chord
+        injector.sync()
+        observer.sync()
+        no_input_yet(observer, window, .04)
+        fake(injector, opcode, 2, detail=38)  # an ordinary key under both
+        injector.sync()
+        key_event(observer, 2, window, key=38)
+        fake(injector, opcode, 3, detail=38)
+        injector.sync()
+        key_event(observer, 3, window, key=38)
+        fake(injector, opcode, 3, detail=64)  # Alt released
+        injector.sync()
+        key_event(observer, 3, window, key=64)
+        fake(injector, opcode, 2, detail=22)  # Control-BackSpace is an ordinary key
+        injector.sync()
+        key_event(observer, 2, window, key=22)
+        fake(injector, opcode, 3, detail=22)
+        injector.sync()
+        key_event(observer, 3, window, key=22)
+        fake(injector, opcode, 3, detail=37)
+        injector.sync()
+        key_event(observer, 3, window, key=37)
+        observer.sync()
+        no_input_yet(observer, window, .04)
+
+
 CASES = {
     'xtest_discovery': discovery,
     'xtest_disabled': denied,
@@ -476,4 +518,5 @@ CASES = {
     'xtest_full_delay_disconnect': full_delay_disconnect,
     'xtest_disconnect_release': disconnect_release,
     'xtest_two_injectors': two_injectors,
+    'xtest_reserved_chord': reserved_chord,
 }

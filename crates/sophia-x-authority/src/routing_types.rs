@@ -805,3 +805,17 @@ impl XAuthorityOrderedDelivery {
         &self.emission
     }
 }
+
+/// The evdev keycode that completes the reserved emergency chord, Backspace.
+///
+/// Ctrl-Alt-Backspace belongs to emergency recovery: the session's input
+/// guard recognises it from physical devices in its own process, and the
+/// engine never binds it for a policy client. The private executor refuses
+/// a synthetic press of this key while both modifiers below are down, so a
+/// source that could not be given the chord cannot hand it to a client as
+/// ordinary key events either. The session pins these equal to its own.
+pub const X_AUTHORITY_RESERVED_CHORD_KEY: u32 = 14;
+
+/// The X modifier mask that, held with the key above, makes the reserved
+/// chord: Control (bit 2) and Mod1 (bit 3), where Alt lives in the keymap.
+pub const X_AUTHORITY_RESERVED_CHORD_MODIFIERS: u16 = (1 << 2) | (1 << 3);

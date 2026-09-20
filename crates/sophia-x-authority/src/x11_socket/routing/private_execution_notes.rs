@@ -181,6 +181,13 @@ pub(crate) enum PrivateExecutionRefusal {
     /// Repetition is a delivery policy, not another aggregate press or join.
     /// The private source does not yet own an ordered repeat operation.
     RepeatUnsupported,
+    /// A synthetic press that would complete the reserved emergency chord.
+    ///
+    /// Refused before any effect, and only that press: a synthetic source may
+    /// hold either modifier, and Backspace under one of them is an ordinary
+    /// key. Recovery itself recognises the chord from physical devices in
+    /// the guard's own process, which nothing here reaches.
+    ReservedChord,
     /// This executor already holds as many records as it may.
     ///
     /// Refused before the effect, so nothing is applied that could not then be
@@ -281,6 +288,31 @@ pub(crate) enum PrivateExecutionRefusal {
 }
 
 /// What one ordered input did.
+#[cfg(unix)]
+impl PrivateExecutionRefusal {
+    /// Whether this refusal is the executor declining the request on the
+    /// request's own terms, a decision no later turn changes: an input the
+    /// authority cannot validate, a shape the private source does not carry,
+    /// or the reserved chord. Such a request is answered as refused and its
+    /// grant freed, because nothing re-runs it and leaving it unanswered kept
+    /// the grant's one cell for good, wedging the producer after a single
+    /// refused injection. Every other refusal keeps the request as it was:
+    /// a completion that is missing, replaced or claimed elsewhere, a history
+    /// or origin that is not this instance's, or a guard that could not be
+    /// reached, are facts about the instance and not decisions about the
+    /// request, and the controls that accepted M3 hold that such a request
+    /// has no outcome.
+    pub(crate) fn declines_the_request(self) -> bool {
+        matches!(
+            self,
+            Self::Unmappable
+                | Self::StateOnlyUnsupported
+                | Self::RepeatUnsupported
+                | Self::ReservedChord
+        )
+    }
+}
+
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrivateOrderedRun {

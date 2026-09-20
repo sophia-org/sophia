@@ -2,7 +2,7 @@
 id: njr7sd2q
 date: 2026-09-20
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, x11, input, tooling]
 ---
 # Binding the last native obligations, what each proves, and what stays unmet
@@ -294,7 +294,40 @@ quietly false with no test failing if that layout changed; so witness the
 construction and refuse at the adapter, one filter, and the property stays
 true for a reason a reader can find from the obligation.
 
-Three ways to close the row, which is the decision: bind the obligation to a
+**Decided and built, 2026-09-20 evening.** Mason chose the adapter refusal
+with the construction witnessed. Built on the executor rather than in the
+adapter's plan, because the plan runs at dispatch where the seat's modifier
+state is not readable, and FakeInput has no reply for an error to ride on;
+the refusal is silent on the wire, which is what the reference server would
+do for a press it accepted, and the observer sees the chord's press never
+arrive while every other press does. `PrivateExecutionRefusal::ReservedChord`
+is raised in `run_ordered_input` when a synthetic Backspace press finds
+Control and Mod1 in the seat's modifier mask; the constants are exported by
+`sophia-x-authority` and the session's test holds them equal to the guard's
+evdev keys and the engine's reservation.
+
+Building it found a second thing. A request the executor refuses before
+entering the authority had no completion at all: the grant's one cell stayed
+held, and the producer's next request was saturated for good. One refused
+injection wedged its injector, for `RepeatUnsupported` and
+`StateOnlyUnsupported` as much as for the new refusal, and no control had
+ever followed a refusal with a second request. The fix publishes the
+refusal as the request's completion through the same reserved execution the
+authority's own refusals use, with a new `RegistrationError::ConsumerRefused`,
+and observes it at once: the cell is freed, the waiter is woken, and the
+delivery is answered `RouteRejected` on the next retirement. Scoped to the
+refusals the executor makes on the request's own terms (`Unmappable`,
+`StateOnlyUnsupported`, `RepeatUnsupported`, `ReservedChord`), because the
+M3 controls hold, on purpose, that a request refused for a fact about the
+instance, foreign keyboard history, a replaced completion, an unprepared
+origin, keeps no outcome. Witnessed by
+`an_execution_refusal_answers_the_delivery_and_frees_the_grant_for_the_next_request`.
+
+Bound to the executor witness, the wedge witness and the session's constants
+test; the wire case `xtest_reserved_chord` joins the xtest profile, so it
+reads forty-two of forty-two when it passes.
+
+Three ways it could have closed, kept for the record: bind the obligation to a
 witness of the construction (a synthetic chord through a private instance
 reaches no observer, and a fixture-physical chord is recognised beside a
 synthetic hold), which is honest only if the session-level guard is what the
@@ -307,15 +340,14 @@ witnesses and both are worth having.
 
 ## Finding and resolution
 
-Five of the six were bindable or writable on the day, and two of the
-bindings were tests that did not exist: the stalled reader and the five
-ingress refusals. One stays unmet with the reason beside it, because five of
-its seven producers do not exist. `native_internal_wait`, which the lane
-had recorded unmet on a stale reason, is bound too. Two rows read NORESULT:
-`native_executor_order` (a split or a rewording, Mason's call) and
-`native_protected_action` (t139, behaviour to build). The runner has no
-partial verdict, so the honest count of forty is the count of rows that
-hold whole: thirty-eight.
+All six were bound by the end of the day, three of them on tests that did
+not exist in the morning: the stalled reader, the five ingress refusals,
+the output-lock wait, and the reserved chord with the wedge it uncovered.
+`native_internal_wait`, which the lane had recorded unmet on a stale reason,
+is bound too, and `native_executor_order` was reworded by decision to the
+producers that exist. The runner has no partial verdict, so the honest count
+of forty is the count of rows that hold whole, and it is forty once the
+profile reads the last binding.
 
 ## Validation and remaining work
 
@@ -329,9 +361,9 @@ hold whole: thirty-eight.
       the row bound to nineteen tests.
 - [x] `native_internal_wait`: the output-lock witness written and the row
       bound.
-- [ ] t139: decide between witnessing the construction, refusing at the
-      adapter, and building the authority's recognition; then bind
-      `native_protected_action`.
+- [x] t139: the executor refuses the synthetic press that would complete
+      the chord; the wedge it uncovered is fixed; `native_protected_action`
+      bound; `xtest_reserved_chord` added to the wire profile.
 - [x] Decided 2026-09-20 with Mason: the selected rank is the code's, and
       the plan's paragraph is corrected to it; `native_executor_order` is
       reworded to the producers that exist and bound to six tests; t139

@@ -45,7 +45,7 @@ large crates/sophia-x-authority/src/dispatch.rs 1222
 large crates/sophia-x-authority/src/property.rs 1136
 large crates/sophia-x-authority/src/wire.rs 1648
 large crates/sophia-x-authority/src/x11_socket/connection/server.rs 1301
-large crates/sophia-x-authority/src/x11_socket/tests.rs 1435
+large crates/sophia-x-authority/src/x11_socket/tests.rs 1443
 large crates/sophia-x-authority/tests/authority/resources.rs 1614
 large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs 5144
 large crates/sophia-x-authority/tests/x11_wire/core_dispatch.rs 1627
