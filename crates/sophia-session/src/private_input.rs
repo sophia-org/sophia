@@ -22,6 +22,7 @@ mod config;
 mod control;
 mod faults;
 mod handle;
+mod injection;
 mod lifetime;
 mod receipts;
 mod service;
@@ -42,6 +43,10 @@ pub use handle::{
 #[cfg(test)]
 #[path = "../tests/support/private_input_faults.rs"]
 mod tests_faults;
+
+#[cfg(test)]
+#[path = "../tests/support/private_input_injection.rs"]
+mod tests_injection;
 
 #[cfg(test)]
 #[path = "../tests/support/private_input_session.rs"]
