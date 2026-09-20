@@ -5,8 +5,9 @@ use std::sync::Arc;
 use sophia_protocol::{NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile};
 
 use crate::{
-    X11SetupSocketError, XServerFrontendAdmissionPolicy, XServerFrontendPixmapAllocator,
-    XServerFrontendRenderDeviceProvider, XServerFrontendSetupAuthorization,
+    X11SetupSocketError, XServerFrontendAdmissionPolicy, XServerFrontendInjectionPolicy,
+    XServerFrontendPixmapAllocator, XServerFrontendRenderDeviceProvider,
+    XServerFrontendSetupAuthorization,
 };
 
 const DEFAULT_MAX_CONCURRENT_CLIENTS: NonZeroUsize = match NonZeroUsize::new(16) {
@@ -20,6 +21,13 @@ pub struct XServerFrontendConfig {
     namespace: NamespaceContext,
     setup_authorization: XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
+    /// Where an admitted connection gets the means to inject.
+    ///
+    /// Separate from the admission policy because being admitted to the
+    /// instance and being admitted to inject are different decisions: the
+    /// private host admits ordinary recipients too, and they must not be able
+    /// to fake input at the seat.
+    injection_policy: Option<Arc<dyn XServerFrontendInjectionPolicy>>,
     render_device_provider: Option<Arc<dyn XServerFrontendRenderDeviceProvider>>,
     pixmap_allocator: Option<Arc<dyn XServerFrontendPixmapAllocator>>,
     device_bundle: Option<Arc<crate::XServerFrontendDeviceBundle>>,
@@ -42,6 +50,7 @@ impl core::fmt::Debug for XServerFrontendConfig {
             .field("namespace", &self.namespace)
             .field("setup_authorization", &self.setup_authorization)
             .field("has_admission_policy", &self.admission_policy.is_some())
+            .field("has_injection_policy", &self.injection_policy.is_some())
             .field(
                 "has_render_device_provider",
                 &self.render_device_provider.is_some(),
@@ -92,6 +101,7 @@ impl XServerFrontendConfig {
             namespace,
             setup_authorization: XServerFrontendSetupAuthorization::default(),
             admission_policy: None,
+            injection_policy: None,
             render_device_provider: None,
             pixmap_allocator: None,
             device_bundle: None,
@@ -119,6 +129,19 @@ impl XServerFrontendConfig {
         admission_policy: Arc<dyn XServerFrontendAdmissionPolicy>,
     ) -> Self {
         self.admission_policy = Some(admission_policy);
+        self
+    }
+
+    /// Where this frontend gets the means to inject, if it offers any.
+    ///
+    /// Absent is the ordinary shape and is what every session that is not an
+    /// explicitly admitted private instance uses: XTEST is then absent from
+    /// discovery and every guessed opcode answers BadAccess.
+    pub fn with_injection_policy(
+        mut self,
+        injection_policy: Arc<dyn XServerFrontendInjectionPolicy>,
+    ) -> Self {
+        self.injection_policy = Some(injection_policy);
         self
     }
 

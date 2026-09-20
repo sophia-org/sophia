@@ -142,6 +142,59 @@ pub trait XServerFrontendAdmissionPolicy: Send + Sync + 'static {
     fn revoke(&self, context: ClientAdmissionContext) -> Result<(), XServerFrontendAdmissionError>;
 }
 
+/// Why a connection was not given the means to inject.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XServerFrontendInjectionError {
+    /// The instance issues no injection at all. The ordinary answer: XTEST
+    /// exists in the protocol and not in this instance.
+    Unavailable,
+    /// This admission exists and may not inject. Distinguished from the above
+    /// because one describes the server and the other describes the client,
+    /// and a record that collapsed them could not say which.
+    Denied,
+}
+
+impl core::fmt::Display for XServerFrontendInjectionError {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Unavailable => formatter.write_str("X11 synthetic input unavailable"),
+            Self::Denied => formatter.write_str("X11 synthetic input denied"),
+        }
+    }
+}
+
+impl std::error::Error for XServerFrontendInjectionError {}
+
+/// What an admitted connection may do to the seat, and nothing else.
+///
+/// Deliberately not a handle to the authority. An adapter holds this and has
+/// no expression for issuing itself a grant, registering a device or naming
+/// another connection's work: those belong to whoever issued this.
+pub trait XTestInjector: Send + 'static {
+    /// Install the slot this connection parks on.
+    ///
+    /// Once, and before the first submission: a slot installed after a
+    /// request exists could be armed too late to catch that request's
+    /// completion, and the client would wait for an answer that already went
+    /// nowhere. Reports false if one is already installed.
+    fn report_completions_to(&self, barrier: crate::PrivateRequestBarrier) -> bool;
+}
+
+/// Who decides whether a connection may inject, and issues the means.
+///
+/// Decided once, at setup, for the same reason discovery and every request
+/// path share one decision: a client refused injection must find XTEST absent
+/// from QueryExtension and ListExtensions, and two decisions in two places
+/// could disagree. The disagreement would be a client that can see an
+/// extension it may not use.
+pub trait XServerFrontendInjectionPolicy: Send + Sync + 'static {
+    fn issue(
+        &self,
+        context: ClientAdmissionContext,
+        device: sophia_protocol::DeviceId,
+    ) -> Result<Box<dyn XTestInjector>, XServerFrontendInjectionError>;
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XServerFrontendRenderDeviceError {
     Unavailable,
