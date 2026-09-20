@@ -472,6 +472,13 @@ usage: cargo xtask <command>
       Run the X11 conformance profiles through the probe's own entry on the committed
       source; XTS5 is BLOCKED unless its checkout and selected purposes are supplied.
 
+  check m6-evidence --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS]
+        [--core-report=/PATH/report.json] [--canonical-report=/PATH/report.json]
+        [--xts-root=/XTS --xts-expected=/PURPOSES.json]
+      Run m3, m4 and m5 acceptance and both X11 profiles on one committed source, cite
+      the core baseline and the contained canonical run by path, and compose one verdict;
+      anything absent, errored or on other bytes is NORESULT, never a pass.
+
   profile args --profile=<name> [--display=<name>] [key=value ...]
       Print the validated live-session argument vector for one profile.
 
