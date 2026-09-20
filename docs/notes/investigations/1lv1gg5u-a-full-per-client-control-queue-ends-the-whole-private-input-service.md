@@ -2,7 +2,7 @@
 id: 1lv1gg5u
 date: 2026-09-20
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation]
 ---
 # A full per-client control queue ends the whole private input service
@@ -107,12 +107,48 @@ expiring twenty seconds later.
 - [x] Establish what the silence is: the service is gone, by the stop report
       above, not starved and not stalled.
 - [x] Locate the path and the queue depth, from source.
-- [ ] t130: park and retry on a `Full` control route; then re-run the
-      session library suite under `LOAD=64` (the script is in the note's
-      session scratchpad; it is thirty lines) and the twelve gate-isolated
-      workspace runs t115 records.
-- [ ] Decide whether the public broker's `route_control` should survive
-      `ClientQueueFull` the same way.
+- [x] t130, resolved 2026-09-20 on the private path, by deferring the
+      message rather than the operation (below). The session library suite
+      under `LOAD=64`, five runs: the control that found this passed five of
+      five, where before the fix it died in most runs; one unrelated
+      live-session test,
+      `profile_preparation_tests::pregraphics_policy_launch_failure_rolls_back_before_returning`,
+      failed once in five under that load, which is the t131 class and is
+      recorded there rather than here.
+- [ ] The twelve gate-isolated workspace runs t115 records, now that the
+      death is gone.
+- [x] The public broker's `route_control` keeps its fatal arm: decided, and
+      pinned by `the_public_broker_still_answers_a_full_control_queue_as_the_fault_it_was`.
+
+## Resolved: a full private control channel defers the message
+
+Built 2026-09-20 on `t130/park-full-control`, by the M6 lane; the row was
+filed by the adapter lane, whose note w0p6eocj points here. The caution
+above decided the shape: routing a control does work before its send, and
+for a focus change the FocusOut to the previous client has already gone
+out, so a retry of the operation would repeat effects. What is deferred is
+therefore the exact message. The registry keeps a per-client backlog of
+controls a full channel would not take, each with the connection it was
+routed to; `route_control_to_client` sends what that client was owed
+earlier first and then the new control, and keeps it on `Full`, so the
+per-client order holds and nothing routed later overtakes it;
+`flush_control_backlog` runs every service turn after the order is served.
+A client whose channel has gone has its kept controls acknowledged
+`ClientGone`, as the public router acknowledges a control to a departed
+client, and its row removed by its own identity; a successor under the
+same number never receives a predecessor's control. The backlog needs no
+bound of its own: every routed control holds an accepted-item credit from
+the settlement store, and a focus change adds at most one FocusOut. The
+private path only: a private instance installs a control-completion
+registry before exposure and the public broker never does, so the public
+broker's arm for a full queue is the fault it always was.
+
+Four controls in `tests/support/private_control_backlog.rs`: two kept
+controls sent in order when the channel drains; a focus change whose
+FocusOut went out at once, whose focus moved once, and whose own message
+waited and went once; a kept control for a channel that is gone,
+acknowledged once and never crossing to a successor; and the public broker
+still answering `ClientQueueFull`.
 
 ## Connections
 

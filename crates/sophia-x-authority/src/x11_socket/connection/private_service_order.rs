@@ -27,6 +27,15 @@ trait RoutedBrokerAccess {
     /// Answer the producer requests waiting at the port, if this service has
     /// one. The public broker has none.
     fn answer_producers(&mut self) -> Result<usize, X11SetupSocketError>;
+    /// Send what full per-client control channels held back, as far as they
+    /// now allow. The public broker holds nothing back, so this moves
+    /// nothing there.
+    fn flush_deferred_controls(&mut self) -> Result<usize, X11SetupSocketError> {
+        self.broker()?
+            .registry
+            .flush_control_backlog()
+            .map_err(|error| X11SetupSocketError::new(error.to_string()))
+    }
     /// Give back what departed connections left, if no connection frame is
     /// active. The mirror of `attach_ready`, from the same frame and for the
     /// same reason: the service frame is the one place holding the checked
