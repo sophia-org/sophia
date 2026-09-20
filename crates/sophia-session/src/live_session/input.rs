@@ -11,66 +11,9 @@ use lease_routing::*;
 #[path = "input/pointer_focus.rs"]
 mod pointer_focus;
 use pointer_focus::*;
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct PhysicalInputRouteReport {
-    /// What a full ingress queue cost this pass. Non-zero means the endpoint
-    /// epoch must close, which is the barrier that replaces the records lost.
-    ingress_saturation: RoutedInputIngressSaturation,
-    events: usize,
-    wm_actions: Vec<WmActionId>,
-    policy_inputs: Vec<PhysicalPolicyInput>,
-    launcher_events: Vec<sophia_engine::LauncherInputEvent>,
-    reference_operations: Vec<(sophia_protocol::OutputId,u64,sophia_protocol::ShellReferenceOperation)>,
-    chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,
-    content_activations: Vec<sophia_engine::PresentedContentTarget>,
-    descriptor_activations: Vec<(sophia_protocol::ToplevelActionCapabilityRef, u64)>,
-    chrome_captures_started: usize,
-    chrome_actions_activated: usize,
-    chrome_captures_cancelled: usize,
-    chrome_events_consumed: usize,
-    wm_pointer_gestures: Vec<sophia_protocol::WmPointerGestureCompleted>,
-    wm_pointer_interactions: Vec<FloatingPointerPolicyInteraction>,
-    floating_outline: FloatingPointerOutlineUpdate,
-    keys_observed: usize,
-    keys_suppressed_no_focus: usize,
-    keys_suppressed_stale_focus: usize,
-    key_targets: Vec<SurfaceId>,
-    routed_key_presses: Vec<(u64, u64)>,
-    deferred_key_presses: Vec<(u64, u64)>,
-    pointer_buttons_observed: usize,
-    pointer_buttons_suppressed_no_target: usize,
-    pointer_buttons_suppressed_by_policy: usize,
-    pointer_buttons_routed: usize,
-    pointer_lease_waits: usize,
-    pointer_lease_rejections: usize,
-    pointer_button_targets: Vec<SurfaceId>,
-    pointer_focus_targets: Vec<SurfaceId>,
-    pointer_axes_observed: usize,
-    pointer_axes_routed: usize,
-    pointer_axis_targets: Vec<SurfaceId>,
-    keys_routed: usize,
-    pointer_events: usize,
-    pointer_routed: usize,
-    deliveries: Vec<XAuthorityInputDeliveryId>,
-    emergency_exit: bool,
-    return_suppressed: bool,
-    virtual_terminal: Option<u8>,
-    virtual_terminal_trigger_keycode: Option<u32>,
-    virtual_terminal_modifier_keycodes: [Option<u32>; 4],
-    virtual_terminal_modifier_releases: usize,
-    pointer_focus_handoff_expired: bool,
-    pointer_focus_handoff_stale_drops: usize,
-    pointer_focus_handoff_capacity_drops: usize,
-    pointer_focus_handoff_released: Option<(SurfaceId, usize)>,
-    keyboard_focus_handoff_expired: bool,
-    keyboard_focus_handoff_stale_drops: usize,
-    keyboard_focus_handoff_capacity_drops: usize,
-    keyboard_focus_handoff_released: Option<(SurfaceId, usize)>,
-    pointer_boundary_entries: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
-    pointer_boundary_reversals: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
-    pointer_output_transitions: Vec<(sophia_engine::PointerOutputTransition, bool)>,
-}
+#[path = "input/route_report.rs"]
+mod route_report;
+use route_report::*;
 
 type SessionPointerPlacement = sophia_engine::OutputUnionPointerState;
 
@@ -778,6 +721,7 @@ fn route_input_events_with_launcher(
         pointer_boundary_entries: Vec::new(),
         pointer_boundary_reversals: Vec::new(),
         pointer_output_transitions: Vec::new(),
+        device_announcements: 0,
     };
     if routing_mode == PhysicalInputRoutingMode::Full
         && let (Some(held), Some(state), Some(projections), Some(release_sender)) = (
@@ -1194,6 +1138,10 @@ fn route_input_events_with_launcher(
                         .push((event.serial, event.time_msec));
                 }
                 report.deliveries.push(delivery);
+            }
+            sophia_protocol::InputEventKind::DeviceAdded { .. }
+            | sophia_protocol::InputEventKind::DeviceRemoved => {
+                report.device_announcements = report.device_announcements.saturating_add(1);
             }
             kind @ (sophia_protocol::InputEventKind::PointerMotion
             | sophia_protocol::InputEventKind::PointerButton { .. }

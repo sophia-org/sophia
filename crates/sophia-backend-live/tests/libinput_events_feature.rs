@@ -353,6 +353,8 @@ fn native_libinput_event_reader_idles_without_exposing_native_identity() {
             .with_pointer_device(DeviceId::from_raw(2))
             .with_keyboard_device(DeviceId::from_raw(3))
     );
+    assert!(poller.reader().device_inventory().is_empty());
+    assert_eq!(poller.reader().retained_len(), 0);
     assert_eq!(
         poller.reader().policy_report(),
         NativeLibinputPolicyReport {

@@ -208,9 +208,16 @@ fn execute_owned(
         if transients.pending.is_some() {
             return Err(PrivateExecutionRefusal::CustodyRetained);
         }
-        if matches!(route.request.kind, InputEventKind::PointerAxis {
-            horizontal_v120: 0, vertical_v120: 0,
-        }) {
+        if matches!(
+            route.request.kind,
+            InputEventKind::PointerAxis {
+                horizontal_v120: 0,
+                vertical_v120: 0,
+            } | InputEventKind::DeviceAdded { .. }
+                | InputEventKind::DeviceRemoved
+        ) {
+            // A device announcement is not an input. The session consumes it
+            // on its physical turn; one arriving here names nothing to apply.
             return Err(PrivateExecutionRefusal::Unmappable);
         }
 
@@ -318,6 +325,10 @@ fn execute_owned(
                         custody.grant(), custody.capability(), native, native_pending,
                         pending_custody, next_event_order, &mut notes,
                     ),
+                    // Refused as unmappable before the transaction; kept whole
+                    // here so no announcement can ever be applied as an input.
+                    InputEventKind::DeviceAdded { .. } | InputEventKind::DeviceRemoved =>
+                        Err(sophia_input_authority::RegistrationError::ConsumerRefused),
                 };
                 outcome.map(|()| if notes.deferred {
                     sophia_input_authority::ExecutionDisposition::Defer

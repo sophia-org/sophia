@@ -277,6 +277,50 @@ fn libinput_event_source_accepts_registered_device_events_in_order() {
 }
 
 #[test]
+fn libinput_event_source_registers_on_an_announcement_and_forgets_on_a_departure() {
+    let mut source = LibinputEventSource::new();
+    let mut announced = motion_event(1, 0.0, 0.0);
+    announced.device = DeviceId::from_raw(300);
+    announced.kind = InputEventKind::DeviceAdded {
+        keyboard: true,
+        pointer: false,
+        touch: false,
+        virtual_bus: false,
+    };
+    let mut departed = announced.clone();
+    departed.serial = 3;
+    departed.kind = InputEventKind::DeviceRemoved;
+    let mut typed = motion_event(2, 0.0, 0.0);
+    typed.device = DeviceId::from_raw(300);
+    typed.kind = InputEventKind::Key {
+        keycode: 30,
+        pressed: true,
+    };
+
+    assert_eq!(
+        source.push_event(departed.clone()),
+        LibinputEventIngest::UnknownDevice
+    );
+    assert_eq!(source.push_event(announced), LibinputEventIngest::Accepted);
+    assert_eq!(
+        source.device(DeviceId::from_raw(300)),
+        Some(&LibinputDeviceDescriptor {
+            seat: SeatId::from_raw(1),
+            device: DeviceId::from_raw(300),
+            kind: LibinputDeviceKind::Keyboard,
+        })
+    );
+    assert_eq!(
+        source.push_event(typed.clone()),
+        LibinputEventIngest::Accepted
+    );
+    assert_eq!(source.push_event(departed), LibinputEventIngest::Accepted);
+    assert_eq!(source.device(DeviceId::from_raw(300)), None);
+    assert_eq!(source.push_event(typed), LibinputEventIngest::UnknownDevice);
+    assert_eq!(source.pending_len(), 3);
+}
+
+#[test]
 fn libinput_event_source_rejects_unknown_or_wrong_seat_events() {
     let mut source = LibinputEventSource::new();
     source.register_device(LibinputDeviceDescriptor {
