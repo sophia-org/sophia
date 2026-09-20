@@ -2,7 +2,8 @@ use std::os::fd::OwnedFd;
 
 use sophia_input_authority::InstanceId;
 use sophia_protocol::{
-    BufferHandle, ClientAdmissionContext, ClientAuthenticationMethod, DmaBufDescriptor, Rect, Size,
+    BufferHandle, ClientAdmissionContext, ClientAuthenticationMethod, DmaBufDescriptor, Point,
+    Rect, Size, SurfaceId,
 };
 
 /// Monotonically assigned identity for one live X11 client connection.
@@ -165,11 +166,51 @@ impl core::fmt::Display for XServerFrontendInjectionError {
 
 impl std::error::Error for XServerFrontendInjectionError {}
 
+/// Work accepted into the shared order.
+///
+/// Acceptance and not completion. The request this answers has been ordered,
+/// not processed, and a caller that treated this as the end of the work would
+/// release its client before the input had happened. What says the work
+/// finished is the completion that arrives at the barrier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XTestAccepted {
+    pub sequence: crate::ReadySequence,
+}
+
+/// Why injected work was not accepted.
+///
+/// Each cause keeps its own answer, because a caller acts on them
+/// differently: one says wait, one says stop, and one says nothing was
+/// established at all. Collapsing them would tell a client to give up when it
+/// should retry, or report a decision where none was made.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XTestInjectionRefusal {
+    /// The grant's one completion cell is still held by the request before
+    /// this one. Worth retrying, and the retry becomes possible exactly when
+    /// that request is observed.
+    Saturated,
+    /// The consumer is gone.
+    Disconnected,
+    /// Nothing could be established: the ledger or the shared queue could not
+    /// be reached. Not a refusal on the terms of the request.
+    Unavailable,
+    /// Refused on its terms. A transition is in flight, or routing is closed.
+    Denied,
+    /// No identity remains to carry the work. Terminal: retrying cannot
+    /// create a number that does not exist.
+    Exhausted,
+}
+
 /// What an admitted connection may do to the seat, and nothing else.
 ///
 /// Deliberately not a handle to the authority. An adapter holds this and has
 /// no expression for issuing itself a grant, registering a device or naming
 /// another connection's work: those belong to whoever issued this.
+///
+/// The methods mirror the private submission they translate to, rather than
+/// the protocol they are reached from. XTEST's own shape -- its event types,
+/// its detail byte, its notion of a root window -- is the adapter's business
+/// and stops at this boundary.
 pub trait XTestInjector: Send + 'static {
     /// Install the slot this connection parks on.
     ///
@@ -178,6 +219,27 @@ pub trait XTestInjector: Send + 'static {
     /// completion, and the client would wait for an answer that already went
     /// nowhere. Reports false if one is already installed.
     fn report_completions_to(&self, barrier: crate::PrivateRequestBarrier) -> bool;
+
+    fn submit_key(
+        &self,
+        target: SurfaceId,
+        keycode: u32,
+        pressed: bool,
+    ) -> Result<XTestAccepted, XTestInjectionRefusal>;
+
+    fn submit_button(
+        &self,
+        target: SurfaceId,
+        button: u32,
+        pressed: bool,
+    ) -> Result<XTestAccepted, XTestInjectionRefusal>;
+
+    fn submit_motion(
+        &self,
+        target: SurfaceId,
+        global: Point,
+        local: Point,
+    ) -> Result<XTestAccepted, XTestInjectionRefusal>;
 }
 
 /// Who decides whether a connection may inject, and issues the means.

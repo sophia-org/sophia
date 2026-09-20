@@ -97,6 +97,21 @@ impl PrivateInputSubmission {
     }
 
     /// Submit one pointer motion to a surface.
+    /// Report this connection's internal-processing completions to `barrier`.
+    ///
+    /// The one thing an adapter may install, and the reason it is here rather
+    /// than on the handle that issued this: the slot belongs to the
+    /// connection that will park on it, and the ingress it forwards to is the
+    /// one this submission already retains. Once, and before the first
+    /// submission, or a request could finish before anywhere existed to put
+    /// its answer. Reports false if one is already installed.
+    pub fn report_completions_to(
+        &self,
+        barrier: sophia_x_authority::PrivateRequestBarrier,
+    ) -> bool {
+        self.ingress.report_completions_to(barrier)
+    }
+
     pub fn submit_pointer_motion(
         &self,
         target: SurfaceId,
