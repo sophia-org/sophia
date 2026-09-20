@@ -130,6 +130,7 @@ pub(super) enum Gate {
     #[default]
     M3,
     M4,
+    M5,
 }
 
 impl Gate {
@@ -137,6 +138,7 @@ impl Gate {
         match self {
             Self::M3 => "m3-acceptance",
             Self::M4 => "m4-acceptance",
+            Self::M5 => "m5-acceptance",
         }
     }
 
@@ -144,6 +146,7 @@ impl Gate {
         match self {
             Self::M3 => "tools/probes/m3_acceptance",
             Self::M4 => "tools/probes/m4_acceptance",
+            Self::M5 => "tools/probes/m5_acceptance",
         }
     }
 }

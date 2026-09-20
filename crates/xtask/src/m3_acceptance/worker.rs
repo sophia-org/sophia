@@ -22,6 +22,8 @@ pub(super) fn initial(
             "harness_self_test"
         } else if config.gate == Gate::M4 {
             "m4_acceptance"
+        } else if config.gate == Gate::M5 {
+            "m5_acceptance"
         } else {
             "m3_acceptance"
         }
@@ -186,8 +188,8 @@ pub(super) fn successful(report: &Report, config: &Config) -> bool {
 
 fn execute(config: &Config, inventory: &Inventory, report: &mut Report) -> Result<(), String> {
     let harness = Path::new(SOURCE).join(config.gate.directory());
-    if config.gate == Gate::M4 && config.component_suite.is_some() {
-        return Err("M3 component evidence cannot qualify as M4".into());
+    if config.gate != Gate::M3 && config.component_suite.is_some() {
+        return Err("M3 component evidence cannot qualify as M4 or M5".into());
     }
     if let Some(suite) = &config.component_suite {
         if config.self_test
@@ -388,17 +390,22 @@ fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
     let session_component = super::components::session_target(config);
     let package = if config.self_test {
         "xtask"
-    } else if config.gate == Gate::M4 || session_component {
+    } else if config.gate != Gate::M3 || session_component {
         "sophia-session"
     } else {
         "sophia-x-authority"
     };
+    // M5 runs its groups from a Session target of its own: admission,
+    // cancellation and the processing barrier are Session obligations the
+    // standalone conformance host does not hold.
     let target = if config.self_test {
         "xtask"
     } else if session_component {
         "sophia_session"
     } else if config.gate == Gate::M4 {
         "private_input_acceptance"
+    } else if config.gate == Gate::M5 {
+        "xtest_acceptance"
     } else {
         "sophia_x_authority"
     };
@@ -416,6 +423,8 @@ fn build(config: &Config, report: &mut Report) -> Result<PathBuf, String> {
         command.args(["--bin", "xtask"]);
     } else if config.gate == Gate::M4 && !session_component {
         command.args(["--test", "private_input_acceptance"]);
+    } else if config.gate == Gate::M5 {
+        command.args(["--test", "xtest_acceptance"]);
     } else {
         command.arg("--lib");
     }
@@ -469,10 +478,10 @@ fn self_tests(
     binary: &Path,
     available: &BTreeSet<&str>,
 ) -> Result<(), String> {
-    let prefix = if config.gate == Gate::M4 {
-        "m3_acceptance::m4_tests::"
-    } else {
-        "m3_acceptance::tests::"
+    let prefix = match config.gate {
+        Gate::M3 => "m3_acceptance::tests::",
+        Gate::M4 => "m3_acceptance::m4_tests::",
+        Gate::M5 => "m3_acceptance::m5_tests::",
     };
     let count = available
         .iter()
@@ -551,7 +560,9 @@ fn cases(
             "--show-output",
             "--color=never",
         ]);
-        if config.gate == Gate::M4 {
+        if config.gate != Gate::M3 {
+            // M4 and M5 case tests carry #[ignore], so an ordinary cargo test
+            // cannot claim acceptance; only the gate includes them.
             command.arg("--include-ignored");
             if row.case == "M4.no_ambient_fallback" {
                 // Only fabricated names inside the outer device-hidden scope.

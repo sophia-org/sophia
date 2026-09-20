@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "cases": {
+    "M5.registration_admission": "registration_admission",
+    "M5.version_negotiation": "version_negotiation",
+    "M5.cursor_comparison": "cursor_comparison",
+    "M5.fake_input_encoding": "fake_input_encoding",
+    "M5.fake_input_effects": "fake_input_effects",
+    "M5.processing_barrier": "processing_barrier",
+    "M5.cancellation_half_close": "cancellation_half_close",
+    "M5.grab_control": "grab_control"
+  }
+}
