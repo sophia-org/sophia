@@ -49,6 +49,12 @@ struct PrivateLifecycleSlot {
     mark: Arc<std::sync::atomic::AtomicU64>,
     incarnation: u64,
     record: Option<PrivateLifecycleRecord>,
+    /// Whoever this incarnation's connection has parked, if anyone.
+    ///
+    /// Replaced rather than cleared when the slot is admitted again, so a new
+    /// connection cannot inherit a departed one's wake. A `OnceLock` and not a
+    /// mutex because closing happens on a drop path that must take no lock.
+    waiter: Arc<std::sync::OnceLock<crate::NotifierSubscription>>,
 }
 
 struct PrivateLifecycleRecords {
@@ -83,12 +89,26 @@ pub(crate) struct PrivateLifecycleGate {
     cleanup: Arc<std::sync::OnceLock<PrivateNativeOwnerCleanup>>,
     mark: Arc<std::sync::atomic::AtomicU64>,
     open: u64,
+    waiter: Arc<std::sync::OnceLock<crate::NotifierSubscription>>,
 }
 
 impl PrivateLifecycleGate {
     pub fn is_open(&self) -> bool {
         self.mark.load(Ordering::Acquire) == self.open
     }
+    /// Park this connection's notifier on the gate, so a revocation reaches a
+    /// waiter instead of leaving it asleep until its peer happens to move.
+    ///
+    /// Register, then re-read `is_open`. A close landing between the two sets
+    /// the mark before it reads the waiter, so either this subscription is
+    /// visible to that close or the re-read already sees the mark. Reports
+    /// false if a waiter is already registered, which means this incarnation
+    /// is being asked to park twice and the second ask is a defect.
+    #[cfg_attr(not(test), allow(dead_code))] // No connection parks on a gate yet.
+    pub fn wake_on_close(&self, notifier: &crate::ConnectionNotifier) -> bool {
+        self.waiter.set(notifier.subscription()).is_ok()
+    }
+
     pub fn close(&self) {
         let _ = self.mark.compare_exchange(
             self.open,
@@ -96,6 +116,16 @@ impl PrivateLifecycleGate {
             Ordering::AcqRel,
             Ordering::Acquire,
         );
+        // After the mark, never before: a waiter roused by this must find the
+        // gate already shut rather than park again on a gate that looks open.
+        //
+        // This runs on the connection-custody drop path, which takes no
+        // mutex, allocates nothing and enters no guard. Reading a `OnceLock`
+        // is an atomic load and raising the wake is one write to an eventfd,
+        // so both hold here. A waiter list behind a lock would not.
+        if let Some(waiter) = self.waiter.get() {
+            let _ = waiter.notify();
+        }
     }
 }
 
@@ -141,6 +171,7 @@ impl PrivateLifecycleOwner {
                 mark: Arc::new(std::sync::atomic::AtomicU64::new(1)),
                 incarnation: 0,
                 record: None,
+                waiter: Arc::new(std::sync::OnceLock::new()),
             });
         }
         Ok(PrivateLifecycleRecords { slots, cursor: 0 })
@@ -220,10 +251,15 @@ impl PrivateLifecycleOwner {
             leased: false,
         });
         slot.mark.store(open, Ordering::Release);
+        // A fresh waiter for a fresh incarnation. Replaced rather than
+        // cleared, because a `OnceLock` cannot be emptied and a new
+        // connection must not inherit the wake of the one it replaced.
+        slot.waiter = Arc::new(std::sync::OnceLock::new());
         let gate = PrivateLifecycleGate {
             cleanup,
             mark: slot.mark.clone(),
             open,
+            waiter: slot.waiter.clone(),
         };
         if !self.inner.accepting.load(Ordering::Acquire) {
             gate.close();
@@ -276,6 +312,7 @@ impl PrivateLifecycleOwner {
                     cleanup: record.cleanup.clone(),
                     mark: slot.mark.clone(),
                     open: slot.incarnation << 1,
+                    waiter: slot.waiter.clone(),
                 };
                 if !gate.is_open() {
                     return Err(PrivateLifecycleRefusal::NotAdmitted);

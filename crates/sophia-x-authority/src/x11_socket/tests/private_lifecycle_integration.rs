@@ -662,3 +662,61 @@ fn lifecycle_integration_actual_setup_binds_before_its_first_fallible_attachment
     );
     drop(held);
 }
+
+#[test]
+fn lifecycle_integration_close_wakes_a_parked_connection() {
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
+    let client = XServerFrontendClientId(7631);
+    let (registration, _channels) = lifecycle_integrated_route(&f, client);
+    let gate = lifecycle_gate(&registration);
+
+    let notifier = crate::ConnectionNotifier::new().unwrap();
+    assert!(gate.wake_on_close(&notifier), "a fresh gate takes a waiter");
+    // One connection, one wake. A second ask means something tried to park
+    // this incarnation twice, which is a defect rather than a second waiter.
+    assert!(!gate.wake_on_close(&notifier));
+    assert!(gate.is_open(), "registering must not close the gate");
+
+    gate.close();
+
+    // Revocation does not wait on the runner: the parked connection is roused
+    // by the close itself, and finds the gate already shut rather than
+    // parking again on one that still looks open.
+    assert!(!gate.is_open());
+    let (ours, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+    let mut wait = crate::ConnectionWait::new(std::os::fd::AsFd::as_fd(&ours), &notifier);
+    assert_eq!(
+        wait.wait_until(Some(
+            std::time::Instant::now() + std::time::Duration::from_secs(5)
+        ))
+        .unwrap(),
+        crate::ConnectionWake::Notified,
+    );
+}
+
+#[test]
+fn lifecycle_integration_a_new_incarnation_does_not_inherit_a_departed_wake() {
+    let service_keeper = service_owner(&crate::PrivateSettlementOwner::default(), 16);
+    let f = private_for_roles(&service_keeper);
+    let client = XServerFrontendClientId(7632);
+    let (registration, _channels) = lifecycle_integrated_route(&f, client);
+    let gate = lifecycle_gate(&registration);
+    let departed = crate::ConnectionNotifier::new().unwrap();
+    assert!(gate.wake_on_close(&departed));
+    gate.close();
+    drop(registration);
+    lifecycle_drain(&f.terminal.lifecycle);
+
+    // The slot comes back for someone else. Its waiter is replaced rather
+    // than cleared, so the next connection can park at all -- inheriting the
+    // old one would leave the new client unable to register and silently
+    // unwakeable.
+    let (next, _channels) = lifecycle_integrated_route(&f, XServerFrontendClientId(7633));
+    let next_gate = lifecycle_gate(&next);
+    let fresh = crate::ConnectionNotifier::new().unwrap();
+    assert!(
+        next_gate.wake_on_close(&fresh),
+        "a reused slot must offer its new connection an unclaimed waiter"
+    );
+}
