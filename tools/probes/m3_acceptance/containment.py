@@ -19,7 +19,7 @@ if sys.argv[1] == '--enter':
               'input_devices_present': Path('/dev/input').exists()}
     Path('/work/evidence/containment.json').write_text(json.dumps(record) + '\n')
     gate = sys.argv[3] if len(sys.argv) == 4 else 'm3-acceptance'
-    if gate not in ('m3-acceptance', 'm4-acceptance'):
+    if gate not in ('m3-acceptance', 'm4-acceptance', 'm5-acceptance'):
         raise SystemExit('unknown contained gate')
     os.execv('/work/xtask', ['xtask', 'check', gate, '--contained'])
 else:

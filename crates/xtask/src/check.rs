@@ -16,6 +16,9 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
         [subject, rest @ ..] if subject == "m4-acceptance" => {
             crate::m3_acceptance::run_m4(repo, rest)
         }
+        [subject, rest @ ..] if subject == "m5-acceptance" => {
+            crate::m3_acceptance::run_m5(repo, rest)
+        }
         [subject, rest @ ..] if subject == "m3-components" => {
             crate::m3_acceptance::run_components(repo, rest)
         }

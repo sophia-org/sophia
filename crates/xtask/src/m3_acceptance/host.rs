@@ -90,8 +90,8 @@ pub(super) fn run_for(
     suite: Option<&str>,
     gate: Gate,
 ) -> Result<Vec<String>, String> {
-    if gate == Gate::M4 && suite.is_some() {
-        return Err("M4 acceptance does not accept an M3 component suite".into());
+    if gate != Gate::M3 && suite.is_some() {
+        return Err("M4 and M5 acceptance do not accept an M3 component suite".into());
     }
     let mut opts = options(arguments)?;
     if gate == Gate::M4
@@ -242,6 +242,13 @@ fn execute(
     if gate == Gate::M4
         && success
         && let Err(error) = super::m4::validate_binary(&report, &opts.output)
+    {
+        report.overall = Verdict::Fail;
+        report.harness_error = Some(error);
+    }
+    if gate == Gate::M5
+        && success
+        && let Err(error) = super::m5::validate_binary(&report, &opts.output)
     {
         report.overall = Verdict::Fail;
         report.harness_error = Some(error);

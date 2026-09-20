@@ -1,4 +1,5 @@
 //! M4 shares process/source custody with M3, never its acceptance inventory.
+//! The gate-keyed entry points here also route M5 to its own module.
 use super::{catalog, evidence, identity, types::*};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -20,6 +21,9 @@ pub(super) const CASES: [&str; 8] = [
 pub(super) fn inventory(gate: Gate, path: &Path) -> Result<Inventory, String> {
     if gate == Gate::M3 {
         return catalog::inventory(path);
+    }
+    if gate == Gate::M5 {
+        return super::m5::inventory(path);
     }
     let value: Inventory = identity::read_json(path)?;
     let frozen: Inventory = serde_json::from_str(include_str!(
@@ -48,6 +52,9 @@ pub(super) fn bindings(gate: Gate, path: &Path) -> Result<Bindings, String> {
     if gate == Gate::M3 {
         return catalog::bindings(path);
     }
+    if gate == Gate::M5 {
+        return super::m5::bindings(path);
+    }
     let value: Bindings = identity::read_json(path)?;
     if value.schema != 1
         || value.cases.iter().any(|(case, test)| {
@@ -70,6 +77,9 @@ fn expected_test(case: &str) -> Option<&str> {
 pub(super) fn overall(gate: Gate, rows: &[CaseResult]) -> Result<Verdict, String> {
     if gate == Gate::M3 {
         return catalog::overall(rows);
+    }
+    if gate == Gate::M5 {
+        return super::m5::overall(rows);
     }
     if rows.iter().map(|row| row.case.as_str()).ne(CASES) {
         return Err("M4 aggregate requires all eight rows in order".into());
@@ -121,6 +131,9 @@ pub(super) fn validate_case(
 ) -> Result<CaseEvidence, String> {
     if gate == Gate::M3 {
         return evidence::validate_case(row, exact, run, text);
+    }
+    if gate == Gate::M5 {
+        return super::m5::validate_case(row, exact, run, text);
     }
     evidence::validate_exact_test(exact, run, text)?;
     let records = text

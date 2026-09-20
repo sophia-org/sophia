@@ -6,6 +6,7 @@ mod evidence;
 mod host;
 mod identity;
 mod m4;
+mod m5;
 mod process;
 mod types;
 mod worker;
@@ -40,6 +41,17 @@ pub fn run_m4(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> 
     }
 }
 
+pub fn run_m5(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
+    process::arm_subreaper()?;
+    match arguments {
+        [inside] if inside == "--contained" => worker::run().map(|()| Vec::new()),
+        [help] if help == "--help" => Ok(vec![
+            "cargo xtask check m5-acceptance --output=/NEW/DIR --target-dir=/OWNED/TARGET [--self-test]".into(),
+        ]),
+        _ => host::run_for(repo, arguments, None, types::Gate::M5),
+    }
+}
+
 #[path = "../tests/support/m3_acceptance.rs"]
 mod tests;
 
@@ -48,3 +60,6 @@ mod m4_tests;
 
 #[path = "../tests/support/m4_integrity.rs"]
 mod m4_integrity;
+
+#[path = "../tests/support/m5_acceptance.rs"]
+mod m5_tests;

@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "plan_source_commit": "ed0726c10258dad0b1fdde210f567fed0b510e62",
+  "cases": [
+    {
+      "case": "M5.registration_admission",
+      "gate": "M5",
+      "required": true,
+      "requirement": "One admission decision governs discovery and every request path: a client refused the extension finds it absent from QueryExtension and ListExtensions and a guessed opcode on major 146 answers BadAccess, while an admitted client is told first_event and first_error zero.",
+      "subcases": [
+        "absent_when_refused",
+        "guessed_opcode_bad_access",
+        "discovery_agrees",
+        "no_events_no_errors",
+        "admitted_client_sees_it"
+      ]
+    },
+    {
+      "case": "M5.version_negotiation",
+      "gate": "M5",
+      "required": true,
+      "requirement": "GetVersion answers the constant 2.1 for every requested version, in both byte orders.",
+      "subcases": [
+        "requested_1",
+        "requested_2",
+        "requested_65535",
+        "both_byte_orders"
+      ]
+    },
+    {
+      "case": "M5.cursor_comparison",
+      "gate": "M5",
+      "required": true,
+      "requirement": "CompareCursor looks the window up first, intercepts CurrentCursor before any resource lookup, compares None against a window whose cursor is explicitly none, answers BadCursor for a value that is not a cursor, and compares against the window's effective cursor.",
+      "subcases": [
+        "window_before_cursor",
+        "non_window_drawable_bad_window",
+        "current_cursor_intercepted",
+        "none_against_explicit_none",
+        "unknown_cursor_bad_cursor",
+        "effective_inherited_cursor"
+      ]
+    },
+    {
+      "case": "M5.fake_input_encoding",
+      "gate": "M5",
+      "required": true,
+      "requirement": "FakeInput accepts types 2 through 6 with the send-event bit masked and reported unmasked, refuses XI events and every detail outside its enumeration, decodes an undefined minor so the client gets an error against a sequence it can attribute, answers BadLength for a body that is not whole 32-byte event records or carries no event, consults root for motion only, answers with no reply, and takes a delay across the full CARD32 domain.",
+      "subcases": [
+        "types_2_through_6",
+        "send_event_bit_masked",
+        "xi_events_refused",
+        "undefined_minor",
+        "bad_length_partial_record",
+        "bad_length_no_event",
+        "key_detail_keycode",
+        "button_zero_refused",
+        "motion_detail_strict",
+        "root_motion_only",
+        "no_reply",
+        "delay_full_domain"
+      ]
+    },
+    {
+      "case": "M5.fake_input_effects",
+      "gate": "M5",
+      "required": true,
+      "requirement": "A fake event reaches the device this connection's admission granted, synchronously within the request; the delay is taken before detail and root are validated; the highest reachable position is one less than the width and the height.",
+      "subcases": [
+        "delivered_to_admitted_device",
+        "synchronous_before_completion",
+        "delay_before_validation",
+        "clipped_position_reachable"
+      ]
+    },
+    {
+      "case": "M5.processing_barrier",
+      "gate": "M5",
+      "required": true,
+      "requirement": "The submitting connection parks on the request's completion publication through the existing wait and notifier machinery and is released at observation, with its grant's completion cell already free, without spinning, while healthy peers continue.",
+      "subcases": [
+        "completion_published_after_effect",
+        "next_request_waits",
+        "cell_free_when_released",
+        "ingress_masked_without_spinning",
+        "healthy_peers_continue"
+      ]
+    },
+    {
+      "case": "M5.cancellation_half_close",
+      "gate": "M5",
+      "required": true,
+      "requirement": "Disconnect and revocation cancel pending work; a write-half-close finishes pending work and drains buffered later requests before actual EOF, with RDHUP latched once.",
+      "subcases": [
+        "disconnect_cancels_pending",
+        "revocation_cancels_pending",
+        "write_half_close_finishes_pending",
+        "buffered_requests_drained_before_eof",
+        "rdhup_latched_once"
+      ]
+    },
+    {
+      "case": "M5.grab_control",
+      "gate": "M5",
+      "required": true,
+      "requirement": "GrabControl takes a strict boolean; imperviousness belongs to the connection, persists until the same client clears it or departs, exempts that client from a server grab's dispatch pause, and never lets it take a grab another client holds.",
+      "subcases": [
+        "strict_boolean",
+        "impervious_during_server_grab",
+        "persists_until_cleared_or_departure",
+        "cannot_take_held_grab"
+      ]
+    }
+  ]
+}
