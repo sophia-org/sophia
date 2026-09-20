@@ -259,9 +259,39 @@ exists, by construction; the scope says they are not separately timed.
 The lane's retraction (`472bc15b`) stands: the protected chord exists as the
 emergency chord, the missing half is the rule that a synthetic contribution
 can neither satisfy nor taint it, and XTEST injects any keycode today. Row
-t139 is opened for building it, with both witnesses the lane suggested: the
-adapter's refusal at the wire, which the probe can bind, and the executor's
-invariant, which is what the obligation names.
+t139 is opened for it. Read before anything was built, the facts are these:
+
+- **The emergency action is recognised only from physical devices, by
+  construction.** The input guard (`live_session/input_guard.rs`) is its own
+  process that opens libinput itself and feeds `EmergencyChordState::observe`
+  from what it polls; the owner loop keeps a second `EmergencyChordState` on
+  the session's own physical input turn. Synthetic input enters through the
+  private service and the X authority and has no edge to either observer.
+  So a synthetic Ctrl-Alt-Backspace cannot trigger recovery, and a synthetic
+  hold of one of its keys cannot keep a physical chord from triggering it,
+  today, because the two paths never meet.
+- **What synthetic input can do is put the chord into X clients as ordinary
+  key events.** `xtest.rs` converts an admitted `FakeInput` detail to evdev
+  with no filter (detail 22 is Backspace); the engine refuses to bind the
+  chord to a policy client, so no shortcut fires, but the focused client
+  sees the keys. Whether that is a protected action being supplied depends
+  on what "protected action" is taken to mean.
+- **The authority has no recognition.** `registry/execution.rs` anticipates
+  one, physical-only and run before the aggregate so a recipient barrier
+  cannot swallow it; nothing joins that to the ledger's physical-versus-
+  synthetic distinction. That is the half the obligation's "fixture
+  physical chord" names, for the headless model.
+
+Three ways to close the row, which is the decision: bind the obligation to a
+witness of the construction (a synthetic chord through a private instance
+reaches no observer, and a fixture-physical chord is recognised beside a
+synthetic hold), which is honest only if the session-level guard is what the
+obligation means; refuse the chord at the adapter so the wire itself says
+synthetic cannot supply it, which the probe can bind; or build the
+authority's physical-only recognition the comment anticipates, which is new
+behaviour and the plan says M6 adds none. The lane's advice, carried here,
+is that the adapter's refusal and the executor's invariant are different
+witnesses and both are worth having.
 
 ## Finding and resolution
 
@@ -287,7 +317,8 @@ hold whole: thirty-eight.
       the row bound to nineteen tests.
 - [x] `native_internal_wait`: the output-lock witness written and the row
       bound.
-- [ ] t139: build the emergency-chord rule and bind
+- [ ] t139: decide between witnessing the construction, refusing at the
+      adapter, and building the authority's recognition; then bind
       `native_protected_action`.
 - [ ] Decisions for Mason: the plan's rank list against the code's; the
       executor-order split; the key-over-another-surface route refusal.
