@@ -27,6 +27,20 @@ trait RoutedBrokerAccess {
     /// Answer the producer requests waiting at the port, if this service has
     /// one. The public broker has none.
     fn answer_producers(&mut self) -> Result<usize, X11SetupSocketError>;
+    /// Give back what departed connections left, if no connection frame is
+    /// active. The mirror of `attach_ready`, from the same frame and for the
+    /// same reason: the service frame is the one place holding the checked
+    /// lease and the frontend together.
+    ///
+    /// THE COUNT IS PASSED, NOT READ. Only this loop's thread starts a client
+    /// worker, so the number it was just told is stable until it acts again;
+    /// an implementation that went looking for its own would be asking a
+    /// question it could not hold the answer to. Zero is what makes the
+    /// window, and the private implementation is what decides on it.
+    ///
+    /// THE PUBLIC PATH HAS NOTHING TO GIVE BACK: nothing is registered there,
+    /// so no place was ever taken.
+    fn reclaim_idle(&mut self, frames_active: usize) -> Result<usize, X11SetupSocketError>;
     /// End private issuance and acceptance at a cancelling stop decision,
     /// before reporting cancellation or stopping connection workers. Accepted
     /// work stays with its existing owners. Safe to repeat; the public broker
@@ -47,6 +61,9 @@ impl RoutedBrokerAccess for XServerFrontendRouteBroker {
         Ok(0)
     }
     fn answer_producers(&mut self) -> Result<usize, X11SetupSocketError> {
+        Ok(0)
+    }
+    fn reclaim_idle(&mut self, _frames_active: usize) -> Result<usize, X11SetupSocketError> {
         Ok(0)
     }
     fn close_private_producers(&mut self) {}
@@ -174,6 +191,14 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
         self.order.producers_issued += issued;
         self.order.producers_refused += refused;
         Ok(issued + refused)
+    }
+    fn reclaim_idle(&mut self, frames_active: usize) -> Result<usize, X11SetupSocketError> {
+        self.check()?;
+        Ok(reclaim_idle_departures(
+            self.runner.frontend(),
+            self.service,
+            frames_active,
+        ))
     }
     fn close_private_producers(&mut self) {
         self.port.close();

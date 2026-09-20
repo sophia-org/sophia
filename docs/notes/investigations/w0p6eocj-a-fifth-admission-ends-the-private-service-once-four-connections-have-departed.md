@@ -214,14 +214,76 @@ been examined and may well need the quiesce.
       `X11SetupSocketError { ... no retained place is available ... }`.
 - [x] Find why the live driver reclaims nothing: the three gates above, all
       of which end at the invocation's collection.
-- [ ] Build the live per-connection teardown: reap the departing connection's
-      worker, discharge its deferred cleanup under a warrant that keeps the
-      registry identity check and drops the service-wide quiesce, and let the
-      place come back on the departure. Re-run the probe for at least
-      `2 * max_concurrent_clients` rounds and require the fifth admission to
-      be served rather than merely refused alone.
-- [ ] Do not widen the warrant to the other paths that take the collection
-      token until each has been examined on its own.
+- [x] Build the live reclaim. Done differently from the sketch above, and the
+      difference matters. A second warrant was not needed and would have been
+      wrong: eight of the nine consumers of `PrivateConnectionsCollected`
+      depend on the quiesce it asserts, not merely on its registry identity,
+      and `deferred_cleanup_prerequisites` is the funnel they share -- so
+      widening it would have authorised `private_retained_drive`, which writes
+      a connection's ordered output, on a warrant that says nothing about
+      whether that connection is still there.
+
+      Instead the ordinary token is minted in the window where its condition
+      is genuinely true. `drive_routed_service` accepts connections on its own
+      thread while holding the frontend, so it is the only thing that can
+      start a client worker; when it is told zero frames are active, that is
+      stable until it acts again. `reclaim_idle_departures` runs there, beside
+      `attach_ready` and for the same reason -- the service frame is the one
+      place holding the checked lease and the frontend together. The count is
+      passed in rather than read, so the reading and the mint are one step
+      apart.
+- [x] Make the reap non-blocking. The loop cannot wait: a blocked ordered
+      delivery is allowed six seconds. `hand_finished_worker_to_joiner` peeks
+      with `is_finished` under the slot's own lock and consumes nothing when
+      the worker is still running, because there is no way to put a handle
+      back -- doing so would have to un-say `HandedToJoiner`, which the
+      departure, the snapshot and the reaping all read as durable.
+      `reap_finished` filters before it claims anything at all, so the common
+      answer perturbs no observer.
+
+## What this closed, and what it uncovered
+
+Measured over the ten-round probe. The fifth admission no longer fails on
+`no retained place is available` -- **the place comes back during the run.**
+
+It fails on the next resource in the same registration instead:
+
+```text
+failure None
+failed to register X11 client route: no evidence custody is available
+    for X11 route client 5
+```
+
+The same disease, one layer up. An evidence custody is retired by
+`retire_completed_custody`, which lives on `PrivateRetainedExecutionResources`
+-- a type that exists only after the invocation ends, built at handoff by
+`PrivateServiceExecutionKeeper::retain`. So custody reclamation is not merely
+undriven during the run, it is not addressable during the run: there is no
+live receiver to call it on. That refusal is now contained the same way the
+place refusal was, so the service survives and the fifth connection is refused
+alone rather than ending the invocation.
+
+**So t138's named symptom is closed and the admission still is not served.**
+Both halves are true and the row should say so.
+
+Two smaller things the work turned up, both fixed here. A worker joined by the
+live reclaim made the final collection report its place uncollected, because
+`collect_attached_workers` read only its own attempt; it now reads the
+published result, which is the custody's own word that somebody joined it.
+And `d_worker_exit` pinned `NotBegun` after a worker had exited, which was
+true only while nothing else could join -- the claim it makes, "departure
+alone is not a join", is pinned now while the worker is still running, where a
+join could only have come from the departure path.
+
+## Remaining work
+
+- [ ] Reclaim the evidence custody during the run. Needs a live receiver for
+      the completion visit; today it is only on the retained resources. This
+      is what stands between a long-lived instance and admitting its
+      `max_concurrent_clients + 1`th connection.
+- [ ] Do not widen the collection token to the other paths that take it.
+      Eight of nine need the quiesce; the idle window is how this change
+      avoided the question, and the next one should avoid it the same way.
 
 ## Connections
 

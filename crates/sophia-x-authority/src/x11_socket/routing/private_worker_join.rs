@@ -198,6 +198,13 @@ enum PrivateReaped {
     /// This record has already been asked. Nothing was consumed, and whatever
     /// the first attempt established is left exactly as it was.
     AlreadyAsked,
+    /// The worker's thread has not finished, and this attempt would have had
+    /// to wait for it. NOTHING WAS CONSUMED: the handle is still in the slot,
+    /// its life is unchanged, and this record may be asked again.
+    ///
+    /// ONLY A NON-BLOCKING ASK PRODUCES THIS. `reap` waits by definition and
+    /// never answers it; `reap_finished` answers it instead of waiting.
+    StillRunning,
     /// This home's one publication right is somewhere else.
     ///
     /// ANOTHER VIEW HOLDS IT OR HAS USED IT, so this attempt is not the
@@ -338,6 +345,72 @@ impl<'a> PrivateReapingRecord<'a> {
     /// permission to drive this connection's home.
 #[cfg(unix)]
     fn reap(&self) -> PrivateReaping {
+        self.reap_handed_by(hand_worker_to_joiner)
+    }
+
+    /// Reap only a worker whose thread has already finished.
+    ///
+    /// THE SAME ATTEMPT AS `reap` IN EVERY RESPECT BUT ONE: it asks the slot
+    /// for a finished handle rather than for any handle, and answers
+    /// `StillRunning` where `reap` would have waited. Every guarantee above
+    /// holds unchanged -- one attempt owns the handle, the intent is written
+    /// before anything is taken, no lock is held across the join, the result
+    /// is retained before anything else happens.
+    ///
+    /// AN UNFINISHED WORKER TAKES THE WITHDRAWAL PATH, which is exactly right
+    /// and not a special case: nothing was consumed, so the intent is
+    /// withdrawn, the publication right goes back to the home and the claim is
+    /// released. The record is left as it was found and a later ask may reach
+    /// the same handle.
+    ///
+    /// FOR A CALLER THAT MAY NOT WAIT. The service frame drives this between
+    /// accepting connections and serving the order; a blocked ordered delivery
+    /// is allowed six seconds, and spending that here would stop the instance.
+    #[cfg(unix)]
+    fn reap_finished(&self) -> PrivateReaping {
+        // ASKED BEFORE THE CLAIM, AND BEFORE THE PUBLICATION RIGHT. The
+        // protocol below writes its intent ahead of touching the slot, and
+        // rewinds that write when nothing was consumed -- correct, but the
+        // rewind is not invisible: a reader looking between the two sees a
+        // join in progress that never happened. `reap` can afford that
+        // because it only ever runs at collection; this one runs on every
+        // idle turn, so the common answer must perturb nothing at all.
+        //
+        // NOT A SUBSTITUTE FOR THE CHECK UNDER THE LOCK. This is a filter,
+        // and the hand-over still asks again with the slot held, which is
+        // where the answer has to be true. A worker that finishes in between
+        // is simply reaped on the next turn.
+        if !self.worker_finished() {
+            return PrivateReaping {
+                reaped: PrivateReaped::StillRunning,
+                slot_poisoned: false,
+                exit: None,
+            };
+        }
+        self.reap_handed_by(hand_finished_worker_to_joiner)
+    }
+
+    /// Whether this connection's worker thread has already finished.
+    ///
+    /// Borrows the handle and never blocks. A slot with no handle answers
+    /// false: there is nothing here to reap, and saying otherwise would send
+    /// the caller into the protocol to find that out.
+    #[cfg(unix)]
+    fn worker_finished(&self) -> bool {
+        let held = match self.slot.lock() {
+            Ok(held) => held,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        held.handle
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished)
+    }
+
+    #[cfg(unix)]
+    fn reap_handed_by(
+        &self,
+        hand: impl FnOnce(&Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandoff,
+    ) -> PrivateReaping {
 
         // CLAIMED FIRST. Everything below this point is one attempt's, and a
         // second ask leaves without touching the slot.
@@ -371,7 +444,7 @@ impl<'a> PrivateReapingRecord<'a> {
         // handle may have been taken rather than nothing at all.
         self.evidence.phase.store(1, Ordering::Release);
 
-        let handoff = hand_worker_to_joiner(self.slot);
+        let handoff = hand(self.slot);
         let slot_poisoned = handoff.source_poisoned;
         let Some(handle) = handoff.handle else {
             // NOTHING WAS CONSUMED, so this attempt is not one: the intent is
@@ -388,10 +461,17 @@ impl<'a> PrivateReapingRecord<'a> {
             self.evidence.return_publication();
             self.claimed.store(false, Ordering::Release);
             return PrivateReaping {
-                reaped: match handoff.found {
-                    PrivateWorkerLife::NeverStarted => PrivateReaped::NothingStarted,
-                    PrivateWorkerLife::HandedToJoiner => PrivateReaped::HandedElsewhere,
-                    PrivateWorkerLife::Running => PrivateReaped::HandleMissing,
+                // A HANDLE LEFT BEHIND IS NOT A HANDLE MISSING. The life
+                // reads `Running` in both cases, so only the hand-over can
+                // tell them apart, and it does.
+                reaped: if handoff.still_running {
+                    PrivateReaped::StillRunning
+                } else {
+                    match handoff.found {
+                        PrivateWorkerLife::NeverStarted => PrivateReaped::NothingStarted,
+                        PrivateWorkerLife::HandedToJoiner => PrivateReaped::HandedElsewhere,
+                        PrivateWorkerLife::Running => PrivateReaped::HandleMissing,
+                    }
                 },
                 slot_poisoned,
                 exit: None,

@@ -360,6 +360,72 @@ fn stop_attached_workers(
     failures
 }
 
+/// Give back what departed connections left, in a window where no connection
+/// frame is active.
+///
+/// WHY THIS EXISTS. A connection that started an ordered worker departs
+/// through the deferred branch, which by design retains nothing and returns no
+/// place. What would retain it is the deferred cleanup, and that needs two
+/// things nothing produced during the run: the custody's published join, and
+/// the collection's word that this registry's frames are all collected. Both
+/// were made only by the invocation's own collection -- so a private instance
+/// gave every place back at once, at shutdown, and an instance that had seen
+/// `max_concurrent_clients` departures could admit nobody.
+///
+/// WHY THE WINDOW IS HONEST, AND WHY THE COUNT IS A PARAMETER. The token this
+/// mints says no connection frame is active. That is the same fact the
+/// collection's mint establishes, and here it is established the same way: the
+/// service frame is the only thread that spawns a client worker, it holds the
+/// frontend exclusively while it does, and it has just been told how many are
+/// active. Taking the count as an argument is what keeps the reading and the
+/// mint in one place; reading it here, from a frontend this function does not
+/// hold, would be asking a question whose answer could already have changed.
+///
+/// NOTHING IS WIDENED. The token is the ordinary one and the discharge is the
+/// ordinary one. Every other path that takes this token is untouched, and none
+/// of them is reached from here.
+///
+/// AND NOTHING WAITS. The reap below is the non-blocking one: a worker still
+/// running is left exactly where it is, for a later turn, because this runs
+/// between accepting a connection and serving the order.
+#[cfg(unix)]
+fn reclaim_idle_departures(
+    frontend: &PrivateXServerFrontend,
+    service: &PrivateServiceLease<'_>,
+    frames_active: usize,
+) -> usize {
+    if frames_active != 0 {
+        return 0;
+    }
+    let registry = &frontend.broker.registry;
+    let mut progressed = 0usize;
+    // THE JOIN FIRST, because the discharge refuses without it. Every custody
+    // that ever started a thread is offered a look; one whose thread is still
+    // running answers `StillRunning` and keeps its handle.
+    for pin in service.custodies_of(registry) {
+        if !pin.ever_started() {
+            continue;
+        }
+        if PrivateReapingRecord::bound_to(&pin).reap_finished().reaped
+            == PrivateReaped::Joined
+        {
+            progressed += 1;
+        }
+    }
+    // THEN THE DISCHARGE, on the same selection and under the token this
+    // window earned. A custody whose worker is still running refuses
+    // `JoinUnpublished` and is visited again on a later turn.
+    let collected = PrivateConnectionsCollected {
+        registry: Arc::clone(&registry.clients),
+    };
+    for outcome in run_deferred_cleanups(service, registry, Some(&collected)) {
+        if outcome.result.is_ok() {
+            progressed += 1;
+        }
+    }
+    progressed
+}
+
 /// Collect every worker in this registry's custodies, through the join
 /// custody -- every slot that ever held a thread, as above.
 ///
@@ -386,12 +452,22 @@ fn collect_attached_workers(
             PrivateJoinResult::Returned => PrivateJoinKind::Returned,
             PrivateJoinResult::Panicked(_) => PrivateJoinKind::Panicked,
         });
-        if reaping.reaped != PrivateReaped::Joined {
+        // A WORKER ALREADY JOINED IS COLLECTED, WHOEVER JOINED IT. This
+        // attempt answers `AlreadyAsked` when the live idle-window reclaim
+        // reached the same custody first, and that is not a worker nobody
+        // collected -- it is one collected earlier. The published result is
+        // what says so, and it is the custody's own: no report, mark or
+        // socket state stands in for it.
+        //
+        // Read from the record rather than from this attempt, because this
+        // attempt deliberately did not consume anything in that case.
+        let joined = reaping.reaped == PrivateReaped::Joined || join.is_some();
+        if !joined {
             uncollected.push(place);
         }
         collected.push(PrivateWorkerCollection {
             place,
-            joined: reaping.reaped == PrivateReaped::Joined,
+            joined,
             slot_poisoned: reaping.slot_poisoned,
             join,
             reaped: reaping.reaped,

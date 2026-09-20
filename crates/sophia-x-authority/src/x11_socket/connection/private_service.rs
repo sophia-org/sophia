@@ -225,6 +225,15 @@ fn drive_routed_service(
             // readiness since the last turn gets its worker here; one that
             // was already visited is not visited again.
             progressed |= broker.attach_ready()? != 0;
+            // AND THE MIRROR OF IT, AFTER THE ACCEPT ABOVE. What a departed
+            // connection left is given back here, in the window where no
+            // connection frame is active -- which this thread is the only one
+            // that can open or close, because it is the only one that starts a
+            // client worker and it holds the frontend while it does.
+            //
+            // THE COUNT IS READ HERE AND PASSED, so the fact and its use are
+            // one step apart rather than two acquisitions apart.
+            progressed |= broker.reclaim_idle(frontend.active_client_worker_count())? != 0;
         }
         let workers_before_reap = frontend.active_client_worker_count();
         frontend.poll_client_workers()?;

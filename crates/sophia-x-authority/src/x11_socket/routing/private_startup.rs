@@ -146,7 +146,6 @@ impl PrivateWorkerSlot {
 
 /// What handing a worker on produced.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Nothing joins a worker yet.
 struct PrivateWorkerHandoff {
     /// The worker, if this slot had one.
     handle: Option<std::thread::JoinHandle<()>>,
@@ -165,6 +164,15 @@ struct PrivateWorkerHandoff {
     /// what to do next needs them apart -- nothing was started is not a
     /// reason to stop expecting a join, and already handed on is.
     found: PrivateWorkerLife,
+    /// The handle is here and its thread has not finished, so a caller that
+    /// would have had to wait was given nothing instead.
+    ///
+    /// A THIRD READING OF "NO HANDLE", and it is not either of the two above.
+    /// The slot still holds the handle and its life is unchanged, so this is
+    /// the one no-handle answer that says ask again. `found` cannot carry it:
+    /// the life here is `Running`, which is exactly what it is when a handle
+    /// was taken from a running worker.
+    still_running: bool,
 }
 
 /// Give this connection's worker to whoever will join it.
@@ -188,13 +196,56 @@ struct PrivateWorkerHandoff {
 /// NO JOIN HERE, and no lock held across one. What comes back is the handle;
 /// joining it is the caller's, after this returns.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Nothing joins a worker yet.
 fn hand_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandoff {
+    hand_worker_to_joiner_when(slot, |_| true)
+}
+
+/// Give this connection's worker on ONLY IF ITS THREAD HAS ALREADY FINISHED.
+///
+/// THE POINT IS WHAT IT DOES NOT DO. The hand-over above is unconditional, so
+/// its caller is committed to a join, and a join waits: an ordered writer can
+/// sit on a blocked delivery for the six seconds `blocked_send` allows it. A
+/// driver on the service frame cannot spend that -- it is the thread that
+/// accepts connections and serves the order -- so it needs to ask without
+/// promising to wait.
+///
+/// ASKED UNDER THE SAME ONE GUARD THE TAKE HAPPENS IN. `is_finished` borrows
+/// the handle and never blocks, so looking costs nothing and there is no
+/// interval between the look and the take for the answer to go stale in.
+///
+/// AND AN UNFINISHED WORKER IS LEFT EXACTLY AS IT WAS FOUND: the handle stays
+/// in the slot, the life is not advanced, and nothing was consumed. That
+/// matters more than it looks. There is no way to put a handle back -- doing
+/// so would have to un-say `HandedToJoiner`, which the departure decision, the
+/// snapshot and the reaping all read as a durable fact -- so the only safe
+/// place to decide is here, before it leaves.
+#[cfg(unix)]
+fn hand_finished_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandoff {
+    hand_worker_to_joiner_when(slot, std::thread::JoinHandle::is_finished)
+}
+
+#[cfg(unix)]
+fn hand_worker_to_joiner_when(
+    slot: &Mutex<PrivateWorkerSlot>,
+    take: impl FnOnce(&std::thread::JoinHandle<()>) -> bool,
+) -> PrivateWorkerHandoff {
     let (mut held, source_poisoned) = match slot.lock() {
         Ok(held) => (held, false),
         Err(poisoned) => (poisoned.into_inner(), true),
     };
     let found = held.life;
+    // ASKED BEFORE ANYTHING MOVES, under this guard. A refusal here leaves the
+    // slot untouched, which is what makes this the only place the question can
+    // be asked at all.
+    if !held.handle.as_ref().is_some_and(take) {
+        let still_running = held.handle.is_some();
+        return PrivateWorkerHandoff {
+            handle: None,
+            source_poisoned,
+            found,
+            still_running,
+        };
+    }
     let handle = held.handle.take();
     if handle.is_some() {
         held.life = PrivateWorkerLife::HandedToJoiner;
@@ -203,6 +254,7 @@ fn hand_worker_to_joiner(slot: &Mutex<PrivateWorkerSlot>) -> PrivateWorkerHandof
         handle,
         source_poisoned,
         found,
+        still_running: false,
     }
 }
 

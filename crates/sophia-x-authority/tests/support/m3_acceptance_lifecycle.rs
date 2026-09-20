@@ -268,7 +268,18 @@ fn d_worker_exit() {
             worker
         );
         assert_eq!(custody.exit_sink().reading(), PrivateExitReading::NotLeft);
-        assert_eq!(custody.join().phase(), PrivateReapingPhase::NotBegun);
+        // DEPARTURE ALONE IS NOT A JOIN, AND THIS IS WHERE THAT IS PINNED.
+        // The worker is running, so a join begun by now could only have come
+        // from the departure path -- which is the claim. Below, once the
+        // worker has exited, it no longer can be: the service frame reclaims
+        // departed connections on any idle turn and may join an exited worker
+        // at once, so a NotBegun after the exit would pin the scheduler
+        // rather than the departure.
+        assert_eq!(
+            custody.join().phase(),
+            PrivateReapingPhase::NotBegun,
+            "nothing joined this worker while it was still running"
+        );
         if !panics {
             peer.shutdown(std::net::Shutdown::Both).unwrap();
             let (stop, _) = custody.bound_pair().unwrap();
@@ -282,11 +293,6 @@ fn d_worker_exit() {
         } else {
             assert!(matches!(departure, PrivateExitReading::Classified(_)));
         }
-        assert_eq!(
-            custody.join().phase(),
-            PrivateReapingPhase::NotBegun,
-            "departure alone is not a join"
-        );
         service.command(XServerFrontendServiceCommand::StopAndDisconnect);
         let closed = service.closed();
         assert_eq!(custody.join().phase(), PrivateReapingPhase::Joined);

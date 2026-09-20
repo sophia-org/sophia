@@ -614,8 +614,20 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // class t130 named, a per-client condition the service
                     // does not survive. Named as a client failure, the
                     // frontend disconnects this one and keeps serving.
+                    //
+                    // THE EVIDENCE CUSTODY IS THE SAME KIND OF FULL, and it
+                    // is the next one an instance meets: once departed
+                    // connections give their places back during the run, the
+                    // custody they also hold is what the fifth admission
+                    // runs out of instead. Its reclamation is not reachable
+                    // during the run at all -- a custody is retired by the
+                    // invocation completion, which the maintenance keeper
+                    // drives after the invocation has ended -- so until that
+                    // is live this refusal is the honest answer, and it is
+                    // still an answer about one connection.
                     return Err(match error {
-                        XServerFrontendRouteError::ContinuationUnavailable { .. } => {
+                        XServerFrontendRouteError::ContinuationUnavailable { .. }
+                        | XServerFrontendRouteError::EvidenceCustodyUnavailable { .. } => {
                             X11SetupSocketError::client_failure(message)
                         }
                         _ => X11SetupSocketError::new(message),
