@@ -7,10 +7,16 @@ They do not revive work, close a current milestone, or change acceptance gates.
 
 ## Milestone records
 
+- 2026-09-20: [M6 accepted: the whole of t093 on one source](../milestones/cfko9jxl-m6-accepted-the-whole-of-t093-on-one-source.md)
+- 2026-09-20: [M5: the XTEST adapter accepted, and the one obligation left open](../milestones/vlcrn30a-m5-xtest-adapter-accepted-and-the-one-obligation-left-open.md)
 - 2026-09-19: [M4 private Session acceptance and what mutation showed about it](../milestones/pq4wr7xn-m4-private-session-acceptance-and-what-mutation-showed.md)
 - 2026-09-18: [M3 integrated acceptance checkpoint and remaining C controls](../milestones/nywg1vat-m3-integrated-acceptance-checkpoint-and-remaining-c-controls.md)
 - 2026-09-09: [Exact copied Present evidence gates reallocation advice](../milestones/urqkkdzp-exact-copied-present-evidence-gates-reallocation-advice.md)
 - 2026-09-09: [Connection-pinned device negotiation and bounded renderer refresh](../milestones/szr8j0rg-connection-pinned-device-negotiation-and-bounded-renderer-refresh.md)
+- 2026-09-08: [Generic cross-device image capture and worker recovery](../milestones/j11gjkh1-generic-cross-device-image-capture-and-worker-recovery.md)
+- 2026-09-08: [Measured DRI3 import capabilities and exact legacy exports](../milestones/f24uuvwu-measured-dri3-import-capabilities-and-exact-legacy-exports.md)
+- 2026-09-06: [Daily-session diagnostics accepted across logout and login](../milestones/v4ycp9ba-daily-session-diagnostics-accepted-across-logout-and-login.md)
+- 2026-09-06: [Ghostty launcher startup accepted in ordinary use](../milestones/2mb23diq-ghostty-launcher-startup-accepted-in-ordinary-use.md)
 - 2026-09-04: [2026-09-04 Milestone 14 Exit Retargeted To Development-Session Readiness](../sources/2026-09/legacy-milestone-0001-2026-09-04-milestone-14-exit-retargeted-to-development-session-readiness.md)
 - 2026-09-04: [2026-09-04 Native Tree Layouts And Tab Descriptors](../sources/2026-09/legacy-milestone-0002-2026-09-04-native-tree-layouts-and-tab-descriptors.md)
 - 2026-09-01: [2026-09-01 Milestone 14 Stable X Backing And Continuous Presentation](../sources/2026-09/legacy-milestone-0003-2026-09-01-milestone-14-stable-x-backing-and-continuous-presentation.md)
