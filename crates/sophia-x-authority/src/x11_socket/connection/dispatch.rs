@@ -515,24 +515,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // Issued once, at setup, from the same admission that admitted this
     // connection, so discovery and every request answer from one decision.
     //
-    // A refusal is not a connection error and must not be treated as one: it
-    // is the ordinary answer for a client that may connect and may not
-    // inject, which is most of them, and such a client goes on being served
-    // everything else. What it loses is XTEST, which it is then told is
-    // absent rather than being left to discover per request.
-    let injector = admission_lease
-        .as_ref()
-        .zip(injection_policy.as_ref())
-        .and_then(|(lease, policy)| {
-            policy
-                .issue(lease.context(), crate::X_TEST_INJECTION_DEVICE)
-                .ok()
-        });
-    let injection = if injector.is_some() {
-        crate::XTestAdmission::Admitted
-    } else {
-        crate::XTestAdmission::Absent
-    };
+    // Filled in below rather than here. The issuer answers from the live
+    // admitted row for this connection, and that row does not exist until the
+    // connection has been registered and its private lifecycle attached, so
+    // asking at this point is asking about a client the authority has not met
+    // and is refused every time.
+    let mut injector: Option<Box<dyn crate::XTestInjector>> = None;
     let client_lease = setup_lease.ok_or_else(|| {
         X11SetupSocketError::new("Sophia X Server Frontend did not retain a setup client lease")
     })?;
@@ -656,6 +644,23 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // registration before any writer can observe or mutate it. Private
             // preparation may come before or after this setup edge.
             if let Some(context) = admission { routing.attach_private_lifecycle(&registration, context)?; }
+            // The earliest point the issuer can answer about this connection:
+            // it is registered, its lifecycle is attached, and the admitted
+            // row the issuance validates against now exists.
+            //
+            // A refusal is not a connection error and must not be treated as
+            // one. Most clients may connect and may not inject, and such a
+            // client goes on being served everything else; what it loses is
+            // XTEST, which it is then told is absent rather than left to
+            // discover one refusal at a time.
+            injector = admission_lease
+                .as_ref()
+                .zip(injection_policy.as_ref())
+                .and_then(|(lease, policy)| {
+                    policy
+                        .issue(lease.context(), crate::X_TEST_INJECTION_DEVICE)
+                        .ok()
+                });
             routing.attach_connection_state(
                 &registration,
                 namespace,
@@ -953,7 +958,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 sequence,
                 major_opcode,
                 client_id: client.raw(),
-                injection,
+                injection: if injector.is_some() {
+                    crate::XTestAdmission::Admitted
+                } else {
+                    crate::XTestAdmission::Absent
+                },
             };
             dispatch_started = false;
             dispatch_complete = false;
