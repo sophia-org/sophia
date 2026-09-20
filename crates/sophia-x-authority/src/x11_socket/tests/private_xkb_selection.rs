@@ -51,7 +51,8 @@ mod private_xkb_selection_tests {
                     },
                     X11ClientAdmissionContext {
                         authorization: &XServerFrontendSetupAuthorization::default(),
-                        admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
+                        injection_policy: None,
+                admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
                         worker_admission: None,
                     },
                     |_| Ok(None),

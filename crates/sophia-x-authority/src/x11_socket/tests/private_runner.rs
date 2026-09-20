@@ -623,6 +623,7 @@ fn idle_runner_loss_closes_an_actual_connection_attached_after_preparation() {
             },
             X11ClientAdmissionContext {
                 authorization: &XServerFrontendSetupAuthorization::default(),
+                injection_policy: None,
                 admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
                 worker_admission: None,
             },
@@ -698,7 +699,8 @@ fn a_refused_actual_setup_returns_its_watchdog_slot() {
         },
         X11ClientAdmissionContext {
             authorization: &XServerFrontendSetupAuthorization::default(),
-            admission_policy: None,
+            injection_policy: None,
+                admission_policy: None,
             worker_admission: None,
         },
         |_| Ok(None),
@@ -754,7 +756,8 @@ fn unprepared_frontend_teardown_closes_actual_setup_before_waiting_for_common() 
                 },
                 X11ClientAdmissionContext {
                     authorization: &XServerFrontendSetupAuthorization::default(),
-                    admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
+                    injection_policy: None,
+                admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
                     worker_admission: None,
                 },
                 |_| Ok(None),

@@ -362,6 +362,7 @@ impl XServerFrontend {
             &self.state,
             self.config.setup_authorization(),
             self.config.admission_policy(),
+            self.config.injection_policy(),
             None,
             |_| Ok(()),
         )
@@ -377,6 +378,7 @@ impl XServerFrontend {
             &self.state,
             self.config.setup_authorization(),
             self.config.admission_policy(),
+            self.config.injection_policy(),
             None,
             observer,
         )
@@ -396,6 +398,7 @@ impl XServerFrontend {
             &self.state,
             self.config.setup_authorization(),
             self.config.admission_policy(),
+            self.config.injection_policy(),
             observer,
         )
     }
@@ -414,6 +417,7 @@ impl XServerFrontend {
         let namespace = self.config.namespace();
         let authorization = self.config.setup_authorization().clone();
         let admission_policy = self.config.admission_policy();
+        let injection_policy = self.config.injection_policy();
         let completion_sender = self.worker_completion_sender.clone();
         let admission_event_sender = self.worker_admission_event_sender.clone();
         #[cfg(all(test, unix))]
@@ -439,6 +443,7 @@ impl XServerFrontend {
                         X11ClientAdmissionContext {
                             authorization: &authorization,
                             admission_policy,
+                            injection_policy,
                             worker_admission: Some((worker_id, admission_event_sender)),
                         },
                         move |trace| observer(trace),

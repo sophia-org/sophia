@@ -969,6 +969,16 @@ pub const X_TEST_MOTION_RELATIVE: u8 = 1;
 /// carried alongside the masked one.
 pub const X_TEST_EVENT_TYPE_MASK: u8 = 0x7f;
 
+/// The virtual device an XTEST connection injects through.
+///
+/// Names a device within this connection's own grant, not a shared one and
+/// not a physical one: the issuer allocates it per grant, and grants are per
+/// connection, so every injector gets its own however many there are. A core
+/// FakeInput carries no way to name a device anyway -- its trailing 2.1 byte
+/// is padding here -- so there is nothing for a client to choose between.
+pub const X_TEST_INJECTION_DEVICE: sophia_protocol::DeviceId =
+    sophia_protocol::DeviceId::from_raw(1);
+
 const X_TEST_GET_VERSION_REQ_LEN: usize = 8;
 const X_TEST_COMPARE_CURSOR_REQ_LEN: usize = 12;
 /// The 36-byte request: a four-byte header and one 32-byte event-shaped body.

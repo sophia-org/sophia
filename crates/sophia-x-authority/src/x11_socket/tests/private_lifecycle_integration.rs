@@ -397,7 +397,8 @@ fn lifecycle_integration_actual_setup_both_orders_closes_exact_query_owner() {
                 },
                 X11ClientAdmissionContext {
                     authorization: &XServerFrontendSetupAuthorization::default(),
-                    admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
+                    injection_policy: None,
+                admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
                     worker_admission: None,
                 },
                 |_| Ok(None),
@@ -612,6 +613,7 @@ fn lifecycle_integration_actual_setup_binds_before_its_first_fallible_attachment
             },
             X11ClientAdmissionContext {
                 authorization: &XServerFrontendSetupAuthorization::default(),
+                injection_policy: None,
                 admission_policy: Some(Arc::new(LifecycleSetupPolicy(context))),
                 worker_admission: None,
             },

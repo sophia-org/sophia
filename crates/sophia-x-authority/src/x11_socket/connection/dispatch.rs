@@ -9,6 +9,9 @@ struct X11ClientConnectionInputs {
 struct X11ClientAdmissionContext<'a> {
     authorization: &'a XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
+    /// Who may fake input, decided by the same instance that decided who may
+    /// connect, and separately from it.
+    injection_policy: Option<Arc<dyn crate::XServerFrontendInjectionPolicy>>,
     worker_admission: Option<(u64, Sender<X11CoreClientWorkerAdmission>)>,
 }
 
@@ -440,6 +443,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let X11ClientAdmissionContext {
         authorization,
         admission_policy,
+        injection_policy,
         worker_admission,
     } = admission;
     if admission_policy.is_none() && client_routing.as_ref().is_some_and(|routing| routing.input_recovery.lifecycle.get().is_some()) {
@@ -508,6 +512,27 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .as_ref()
         .map(|lease| lease.context().namespace.id)
         .unwrap_or(namespace);
+    // Issued once, at setup, from the same admission that admitted this
+    // connection, so discovery and every request answer from one decision.
+    //
+    // A refusal is not a connection error and must not be treated as one: it
+    // is the ordinary answer for a client that may connect and may not
+    // inject, which is most of them, and such a client goes on being served
+    // everything else. What it loses is XTEST, which it is then told is
+    // absent rather than being left to discover per request.
+    let injector = admission_lease
+        .as_ref()
+        .zip(injection_policy.as_ref())
+        .and_then(|(lease, policy)| {
+            policy
+                .issue(lease.context(), crate::X_TEST_INJECTION_DEVICE)
+                .ok()
+        });
+    let injection = if injector.is_some() {
+        crate::XTestAdmission::Admitted
+    } else {
+        crate::XTestAdmission::Absent
+    };
     let client_lease = setup_lease.ok_or_else(|| {
         X11SetupSocketError::new("Sophia X Server Frontend did not retain a setup client lease")
     })?;
@@ -928,10 +953,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 sequence,
                 major_opcode,
                 client_id: client.raw(),
-                // Absent until a connection is issued an injector. Decided
-                // once at setup rather than per request, so a client cannot
-                // be refused discovery and then served a request.
-                injection: crate::XTestAdmission::Absent,
+                injection,
             };
             dispatch_started = false;
             dispatch_complete = false;

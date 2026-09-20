@@ -116,6 +116,7 @@ pub fn run_x11_core_socket_server_once_config_traced_with_idle_timeout(
         &state,
         config.setup_authorization(),
         config.admission_policy(),
+        config.injection_policy(),
         Some(idle_timeout),
         observer,
     )
@@ -156,6 +157,7 @@ pub fn run_x11_core_socket_server_once_channels(
         X11ClientAdmissionContext {
             authorization: &XServerFrontendSetupAuthorization::default(),
             admission_policy: None,
+            injection_policy: None,
             worker_admission: None,
         },
         move |trace| {
@@ -200,6 +202,7 @@ pub fn run_x11_core_socket_server_once_session_channels(
         X11ClientAdmissionContext {
             authorization: &XServerFrontendSetupAuthorization::default(),
             admission_policy: None,
+            injection_policy: None,
             worker_admission: None,
         },
         move |trace| {
@@ -846,6 +849,7 @@ fn run_x11_core_socket_server_once_with_trace_observer(
         &state,
         &authorization,
         None,
+        None,
         idle_timeout,
         observer,
     )
@@ -976,6 +980,7 @@ pub fn serve_x11_core_socket_listener_once_traced(
         &authorization,
         None,
         None,
+        None,
         observer,
     )
 }
@@ -1003,6 +1008,7 @@ pub fn serve_x11_core_socket_listener_traced(
         state,
         &authorization,
         None,
+        None,
         observer,
     )
 }
@@ -1014,6 +1020,7 @@ fn serve_x11_core_socket_listener_with_setup_authorization(
     state: &X11CoreSocketServerState,
     authorization: &XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
+    injection_policy: Option<Arc<dyn crate::XServerFrontendInjectionPolicy>>,
     mut observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     loop {
@@ -1023,6 +1030,7 @@ fn serve_x11_core_socket_listener_with_setup_authorization(
             state,
             authorization,
             admission_policy.clone(),
+            injection_policy.clone(),
             None,
             &mut observer,
         )?;
@@ -1092,6 +1100,7 @@ fn serve_x11_core_socket_listener_once_with_setup_authorization(
     state: &X11CoreSocketServerState,
     authorization: &XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
+    injection_policy: Option<Arc<dyn crate::XServerFrontendInjectionPolicy>>,
     idle_timeout: Option<Duration>,
     observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
@@ -1111,6 +1120,7 @@ fn serve_x11_core_socket_listener_once_with_setup_authorization(
         state,
         authorization,
         admission_policy,
+        injection_policy,
         observer,
     )
 }
@@ -1256,6 +1266,7 @@ fn serve_x11_core_socket_client_with_trace_observer(
         state,
         &authorization,
         None,
+        None,
         observer,
     )
 }
@@ -1267,6 +1278,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_setup_authorization(
     state: &X11CoreSocketServerState,
     authorization: &XServerFrontendSetupAuthorization,
     admission_policy: Option<Arc<dyn XServerFrontendAdmissionPolicy>>,
+    injection_policy: Option<Arc<dyn crate::XServerFrontendInjectionPolicy>>,
     mut observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
     serve_x11_core_socket_client_with_trace_observer_and_input(
@@ -1281,6 +1293,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_setup_authorization(
         X11ClientAdmissionContext {
             authorization,
             admission_policy,
+            injection_policy,
             worker_admission: None,
         },
         move |trace| observer(trace).map(|()| None),

@@ -248,6 +248,10 @@ impl XServerFrontendConfig {
         self.admission_policy.clone()
     }
 
+    pub(crate) fn injection_policy(&self) -> Option<Arc<dyn XServerFrontendInjectionPolicy>> {
+        self.injection_policy.clone()
+    }
+
     pub(crate) fn render_device_provider(
         &self,
     ) -> Option<Arc<dyn XServerFrontendRenderDeviceProvider>> {
