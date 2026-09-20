@@ -74,10 +74,16 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         for event in poller.poll_ready()? {
-            let sophia_protocol::InputEventKind::Key { keycode, pressed } = event.kind else {
-                continue;
+            let action = match event.kind {
+                sophia_protocol::InputEventKind::Key { keycode, pressed } => {
+                    chord.observe_at_device(event.device, keycode, pressed)
+                }
+                // A keyboard that leaves takes its chord keys with it. That
+                // can finish arming; it can never trigger.
+                sophia_protocol::InputEventKind::DeviceRemoved => chord.forget_device(event.device),
+                _ => continue,
             };
-            match chord.observe(keycode, pressed) {
+            match action {
                 EmergencyChordAction::None => {}
                 EmergencyChordAction::Armed => {
                     std::fs::write(&armed_file, b"armed\n")?;

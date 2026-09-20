@@ -173,6 +173,26 @@ fn physical_coverage_reduces_shifted_positions_and_virtual_terminals() {
 }
 
 #[test]
+fn a_shift_on_one_keyboard_does_not_cover_a_printable_on_another() {
+    let mut coverage = PhysicalKeyboardCoverage::default();
+    let a = DeviceId::from_raw(257);
+    let b = DeviceId::from_raw(258);
+    coverage.observe_key_at_device(a, 42, true);
+    coverage.observe_key_at_device(b, 2, true);
+    coverage.observe_key_at_device(b, 2, false);
+    assert_eq!(coverage.snapshot().shifted_positions, 0);
+
+    coverage.observe_key_at_device(a, 2, true);
+    coverage.observe_key_at_device(a, 2, false);
+    assert_eq!(coverage.snapshot().shifted_positions, 1);
+
+    // A departure takes the shift with it.
+    coverage.forget_device(a);
+    coverage.observe_key_at_device(a, 3, true);
+    assert_eq!(coverage.snapshot().shifted_positions, 1);
+}
+
+#[test]
 fn client_key_state_drains_one_surface_without_touching_another() {
     let mut state = SessionClientKeyState::default();
     let old_super = pressed_key(1, 125);

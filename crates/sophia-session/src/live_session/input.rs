@@ -830,7 +830,7 @@ fn route_input_events_with_launcher(
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
                 if !control_plane_applied {
                     report.keys_observed = report.keys_observed.saturating_add(1);
-                    keyboard_coverage.observe_key(keycode, pressed);
+                    keyboard_coverage.observe_key_at_device(event.device, keycode, pressed);
                     let launcher_text=launcher.as_mut().map(|(capture,keyboard)|keyboard.observe(keycode,pressed,capture.active()));
 
                     match virtual_terminal_chord.observe_at_device(
@@ -931,7 +931,7 @@ fn route_input_events_with_launcher(
                         continue;
                     }
                     }
-                    if emergency_chord.observe(keycode, pressed)
+                    if emergency_chord.observe_at_device(event.device, keycode, pressed)
                         == EmergencyChordAction::Triggered
                     {
                         report.emergency_exit = true;

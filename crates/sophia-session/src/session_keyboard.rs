@@ -224,9 +224,22 @@ impl SessionClientKeyState {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PhysicalShiftKeys {
+    left: bool,
+    right: bool,
+}
+
+impl PhysicalShiftKeys {
+    const fn held(self) -> bool {
+        self.left || self.right
+    }
+}
+
+/// A shifted position counts only when the shift and the printable come
+/// from the same device: two keyboards are not one keyboard with more keys.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PhysicalKeyboardCoverage {
-    left_shift: bool,
-    right_shift: bool,
+    shifts: BTreeMap<DeviceId, PhysicalShiftKeys>,
     shifted_printable_mask: u32,
     virtual_terminal_mask: u16,
 }
@@ -240,11 +253,17 @@ pub struct PhysicalKeyboardCoverageSnapshot {
 }
 
 impl PhysicalKeyboardCoverage {
+    /// Observes a key from a single, unnamed device. A seat names the device.
     pub fn observe_key(&mut self, keycode: u32, pressed: bool) {
+        self.observe_key_at_device(DeviceId::INVALID, keycode, pressed);
+    }
+
+    pub fn observe_key_at_device(&mut self, device: DeviceId, keycode: u32, pressed: bool) {
+        let shifts = self.shifts.entry(device).or_default();
         match keycode {
-            EVDEV_KEY_LEFTSHIFT => self.left_shift = pressed,
-            EVDEV_KEY_RIGHTSHIFT => self.right_shift = pressed,
-            _ if pressed && (self.left_shift || self.right_shift) => {
+            EVDEV_KEY_LEFTSHIFT => shifts.left = pressed,
+            EVDEV_KEY_RIGHTSHIFT => shifts.right = pressed,
+            _ if pressed && shifts.held() => {
                 if let Some(index) = SHIFTED_PRINTABLE_KEYCODES
                     .iter()
                     .position(|candidate| *candidate == keycode)
@@ -254,6 +273,19 @@ impl PhysicalKeyboardCoverage {
             }
             _ => {}
         }
+        if !shifts.held() {
+            self.shifts.remove(&device);
+        }
+    }
+
+    /// The device left the seat, and any shift it held with it.
+    pub fn forget_device(&mut self, device: DeviceId) {
+        self.shifts.remove(&device);
+    }
+
+    /// Every device's shift, as when the seat is reopened.
+    pub fn forget_all_devices(&mut self) {
+        self.shifts.clear();
     }
 
     pub fn observe_virtual_terminal(&mut self, terminal: u8) {
@@ -262,7 +294,7 @@ impl PhysicalKeyboardCoverage {
         }
     }
 
-    pub fn snapshot(self) -> PhysicalKeyboardCoverageSnapshot {
+    pub fn snapshot(&self) -> PhysicalKeyboardCoverageSnapshot {
         PhysicalKeyboardCoverageSnapshot {
             shifted_positions: self.shifted_printable_mask.count_ones(),
             shifted_positions_required: SHIFTED_PRINTABLE_KEYCODES.len() as u32,
