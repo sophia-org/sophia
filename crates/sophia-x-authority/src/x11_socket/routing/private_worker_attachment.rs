@@ -399,11 +399,36 @@ fn reclaim_idle_departures(
     }
     let registry = &frontend.broker.registry;
     let mut progressed = 0usize;
-    // THE JOIN FIRST, because the discharge refuses without it. Every custody
-    // that ever started a thread is offered a look; one whose thread is still
-    // running answers `StillRunning` and keeps its handle.
+    // THE JOIN FIRST, because the discharge refuses without it -- and ONLY
+    // FOR A DEPARTURE THAT HAS DECIDED. The reap is offered to a custody
+    // whose destruction has been decided as a deferral, which is exactly the
+    // arm the discharge will require of it next; nothing earlier, and
+    // nothing else.
+    //
+    // NOT EVERY FINISHED THREAD, which is what this first did. A worker whose
+    // permit was refused finishes at once, and its connection may still be
+    // deciding its departure -- destruction Requested, not yet Decided. The
+    // decision reads the slot's life to say what it found, so a reap that
+    // took the handle in that gap made the decision record WorkerHandedOn
+    // where the truth was WorkerRunning: the reclaim was changing what the
+    // departure said about itself, not merely racing a reader of the slot.
+    // It reached the M3 start-failures control one run in ten.
+    //
+    // A live connection's dead worker is left for the collection too, as it
+    // always was. Reaping it would publish a join nobody asked for and make
+    // that connection NoLongerStartable, and the reclaim has no business with
+    // a connection that has not left.
     for pin in service.custodies_of(registry) {
         if !pin.ever_started() {
+            continue;
+        }
+        if !matches!(
+            pin.cleanup_record().destruction_standing(),
+            PrivateDestructionStanding::Decided(PrivateDestructionDecision::Deferred(
+                PrivateDestructionDeferral::WorkerRunning
+                    | PrivateDestructionDeferral::WorkerHandedOn,
+            ))
+        ) {
             continue;
         }
         if PrivateReapingRecord::bound_to(&pin).reap_finished().reaped

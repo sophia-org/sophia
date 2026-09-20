@@ -275,6 +275,37 @@ true only while nothing else could join -- the claim it makes, "departure
 alone is not a join", is pinned now while the worker is still running, where a
 join could only have come from the departure path.
 
+## A flake the reclaim introduced, found by the M6 composition
+
+The composition on 7fe5b296 read `m3-acceptance` 19 of 20: `D.start_failures`
+failed one run in ten, bisected to ef10bf9e. Two things were wrong, and they
+needed different fixes.
+
+**The reap ran ahead of the destruction decision.** `reclaim_idle_departures`
+reaped any custody that had ever started a thread and whose thread was
+finished. A worker whose permit is refused finishes at once, and its
+connection may still be deciding its departure -- destruction `Requested`,
+not yet `Decided`. `depart_for_destruction` reads the slot's life to decide,
+so a reap in that gap made the decision record `WorkerHandedOn` where the
+truth was `WorkerRunning`. The reclaim was changing what the departure said
+about itself. The reap now takes only a custody whose destruction is
+`Decided(Deferred(WorkerRunning | WorkerHandedOn))` -- the arm the discharge
+requires next -- so it consumes exactly what the discharge can consume and
+never runs ahead of the decision. A live connection's dead worker is left for
+the collection, as it always was. Pinned by
+`the_idle_window_does_not_reap_a_departure_that_has_not_decided`.
+
+**And the control assumed nothing joins before the collection.** With that
+fixed, the flake remained: once the departure has decided, the idle window
+joins a finished worker during the run, legitimately, and the control read
+the slot expecting the handle still there. Its claim -- startup retains the
+real handle when its later permit fails -- is proven either by a handle in the
+slot or by a join already published with `Returned`, since nothing can be
+joined that startup did not keep; what it must never read is an empty slot
+with no join. The control now reads handle-or-reaped, the same rewrite
+`d_worker_exit` took. 0 failures in 40 single-threaded runs after, against
+1 in 10 before.
+
 ## Remaining work
 
 - [ ] Reclaim the evidence custody during the run. Needs a live receiver for

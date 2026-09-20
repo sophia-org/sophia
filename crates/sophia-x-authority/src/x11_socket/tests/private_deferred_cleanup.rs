@@ -916,3 +916,65 @@ fn the_idle_window_reclaims_a_departed_connection_and_a_busy_one_does_not() {
     );
     drop(custody);
 }
+
+#[test]
+fn the_idle_window_does_not_reap_a_departure_that_has_not_decided() {
+    // The M3 start-failures control found this one run in ten. A worker
+    // whose permit is refused finishes at once, and its connection may still
+    // be deciding its departure -- destruction Requested, not yet Decided.
+    // The decision reads the slot's life to say what it found, so a reap in
+    // that gap made it record WorkerHandedOn where the truth was
+    // WorkerRunning: the reclaim was changing what the departure said about
+    // itself. So the reap waits for the decision, exactly as the discharge
+    // does, and takes only what the discharge could take next.
+    let f = worker_fixture(XServerFrontendClientId(9530));
+    let custody = custody_for(&f, &f.fixture.keeper);
+    let frontend = f.fixture.runner.frontend.as_ref().expect("a live runner");
+    // A body that returns at once, so the thread is finished by the time the
+    // window looks -- the shape of a refused permit, without the fault.
+    start_worker(&f, &custody, Some("finished at once"));
+    let lease = f.fixture.keeper.lease();
+    let record = custody.cleanup_record();
+    assert!(record.claim_destruction(), "the departure is requested");
+    assert_eq!(
+        record.destruction_standing(),
+        PrivateDestructionStanding::Requested,
+        "and not yet decided"
+    );
+    let _ = PrivateReapingRecord::bound_to(&custody);
+    // Let the thread actually end before asking, so the only thing standing
+    // between the window and the handle is the decision.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+
+    let progressed = reclaim_idle_departures(frontend, &lease, 0);
+    assert_eq!(progressed, 0, "nothing is reaped ahead of the decision");
+    assert!(
+        custody.worker_slot().lock().expect("a readable slot").handle.is_some(),
+        "the handle is still in the slot for the decision to read"
+    );
+    assert_eq!(
+        custody.join().phase(),
+        PrivateReapingPhase::NotBegun,
+        "and no join was begun"
+    );
+
+    // ONCE DECIDED, IT IS THE WINDOW'S TO TAKE. The same arm the discharge
+    // requires is the one that admits the reap.
+    assert!(record.publish_destruction(PrivateDestructionDecision::Deferred(
+        PrivateDestructionDeferral::WorkerRunning
+    )));
+    let mut reaped = false;
+    for _ in 0..2000 {
+        if reclaim_idle_departures(frontend, &lease, 0) > 0 {
+            reaped = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(reaped, "a decided deferral is reaped in the window");
+    assert!(
+        custody.join().result().is_some(),
+        "and its join is published for the discharge"
+    );
+    drop(custody);
+}

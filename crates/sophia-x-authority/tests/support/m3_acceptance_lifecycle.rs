@@ -202,16 +202,35 @@ fn d_start_failures() {
     release.release();
     let attachment = waited_for_value(|| custody.attachment()).unwrap();
     assert_eq!(attachment, PrivateAttachment::Started);
-    let handle = custody
-        .worker_slot()
-        .lock()
-        .unwrap()
-        .handle
-        .as_ref()
-        .unwrap()
-        .thread()
-        .id();
-    assert_eq!(custody.join().phase(), PrivateReapingPhase::NotBegun);
+    // STARTUP MUST RETAIN THE REAL HANDLE WHEN ITS LATER PERMIT FAILS, and
+    // there are now two ways to see that it did. The departure here has
+    // decided, and a refused permit means the worker finished at once, so
+    // the service frame's idle-window reclaim may already have joined it
+    // legitimately by the time this reads the slot. A handle in the slot is
+    // one proof; a join already published with Returned is the other, since
+    // nothing can be joined that startup did not keep. What this must not
+    // read is an empty slot with no join -- a handle lost.
+    let handle = {
+        let slot = custody.worker_slot().lock().unwrap();
+        match slot.handle.as_ref() {
+            Some(thread) => {
+                assert_eq!(custody.join().phase(), PrivateReapingPhase::NotBegun);
+                format!("{:?}", thread.thread().id())
+            }
+            None => {
+                assert_eq!(
+                    custody.join().phase(),
+                    PrivateReapingPhase::Joined,
+                    "an empty slot with no published join is a handle startup lost"
+                );
+                assert!(
+                    matches!(custody.join().result(), Some(PrivateJoinResult::Returned)),
+                    "the reclaim joined it, so the refused start returned"
+                );
+                "reaped in the idle window".to_owned()
+            }
+        }
+    };
     service.command(XServerFrontendServiceCommand::StopAndDisconnect);
     let closed = service.closed();
     assert_eq!(custody_identity(&custody), identity);
