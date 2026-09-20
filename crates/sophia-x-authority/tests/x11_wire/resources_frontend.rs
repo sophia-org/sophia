@@ -1979,7 +1979,21 @@ fn copy_plane_expands_one_bit_into_foreground_and_background() {
         &mut atoms,
         &mut properties,
     );
-    assert!(copied.outputs.is_empty(), "{:?}", copied.outputs);
+    // A plane copy has CopyArea's exposure semantics: the whole source was
+    // there, so the context's graphics-exposures earn one NoExpose.
+    assert!(
+        matches!(
+            copied.outputs.as_slice(),
+            [XClientOutput::Event(XClientEvent::NoExpose {
+                sequence: 4,
+                drawable,
+                minor_opcode: 0,
+                major_opcode: 63,
+            })] if *drawable == XResourceId::new(window.into(), 1)
+        ),
+        "{:?}",
+        copied.outputs
+    );
     let response = copied.response.expect("a copy produces a transaction");
     assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
 

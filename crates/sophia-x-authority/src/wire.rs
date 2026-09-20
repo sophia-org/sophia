@@ -122,6 +122,9 @@ pub enum XWireRequest {
         override_redirect: bool,
         event_mask: Option<u32>,
         do_not_propagate_mask: Option<u32>,
+        /// The window was created InputOnly: it can be the target of input
+        /// and geometry requests but never of a drawing request.
+        input_only: bool,
     },
     ChangeWindowAttributes {
         window: XResourceId,

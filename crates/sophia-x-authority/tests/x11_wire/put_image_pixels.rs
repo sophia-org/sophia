@@ -271,11 +271,13 @@ fn put_image_negative_destination_and_gc_mask_preserve_other_pixels() {
     );
     assert_eq!(fixture.pixels(), expected);
     assert!(fixture.runtime.take_cpu_buffer_updates().is_empty());
+    // A left-pad on a ZPixmap upload is a Match error, as the protocol has
+    // it, not a Value error.
     assert_eq!(
         fixture
             .upload(2, 24, 1, 0, 0, &bytes)
             .encoded_outputs(order)[0][1],
-        XErrorCode::BadValue.wire_code()
+        XErrorCode::BadMatch.wire_code()
     );
     assert_eq!(
         fixture

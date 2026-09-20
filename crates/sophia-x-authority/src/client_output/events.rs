@@ -176,6 +176,27 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_u16(byte_order, &mut out[14..16], height);
             put_u16(byte_order, &mut out[16..18], count);
         }
+        XClientEvent::GraphicsExpose {
+            sequence,
+            drawable,
+            x,
+            y,
+            width,
+            height,
+            minor_opcode,
+            count,
+            major_opcode,
+        } => {
+            write_event_header(byte_order, &mut out, X_GRAPHICS_EXPOSE, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], drawable);
+            put_u16(byte_order, &mut out[8..10], x);
+            put_u16(byte_order, &mut out[10..12], y);
+            put_u16(byte_order, &mut out[12..14], width);
+            put_u16(byte_order, &mut out[14..16], height);
+            put_u16(byte_order, &mut out[16..18], minor_opcode);
+            put_u16(byte_order, &mut out[18..20], count);
+            out[20] = major_opcode;
+        }
         XClientEvent::NoExpose {
             sequence,
             drawable,

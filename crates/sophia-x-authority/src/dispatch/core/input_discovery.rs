@@ -244,15 +244,42 @@ fn dispatch_core_input_discovery_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::QueryBestSize { width, height, .. } => XDispatchResult {
-                    response: None,
-                    outputs: vec![XClientOutput::Reply(XClientReply::QueryBestSize {
-                        sequence: context.sequence,
-                        width,
-                        height,
-                    })],
-                    metadata_candidates: Vec::new(),
-                },
+                XWireRequest::QueryBestSize {
+                    class,
+                    drawable,
+                    width,
+                    height,
+                } => {
+                    // The drawable must exist, and a tile or stipple size is
+                    // only meaningful for one with pixels: an InputOnly
+                    // window is a Match error for those two classes.
+                    if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable)
+                    {
+                        core_resource_validation_error(
+                            context,
+                            error,
+                            XErrorCode::BadDrawable,
+                            drawable,
+                        )
+                    } else if class != 0 && runtime.window_is_input_only(drawable) {
+                        core_resource_validation_error(
+                            context,
+                            XAuthorityRuntimeError::InvalidSurface,
+                            XErrorCode::BadMatch,
+                            drawable,
+                        )
+                    } else {
+                        XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Reply(XClientReply::QueryBestSize {
+                                sequence: context.sequence,
+                                width,
+                                height,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        }
+                    }
+                }
                 XWireRequest::QueryColors { colormap, pixels } => {
                     let output = match runtime.colormap_visual(context.namespace, colormap) {
                         Err(_) => color_error(

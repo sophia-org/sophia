@@ -32,6 +32,7 @@ fn dispatch_core_window_request(
                     depth,
                     visual,
                     colormap,
+                    input_only,
                     ..
                 } => {
                     let kind = packet.kind.clone();
@@ -106,6 +107,7 @@ fn dispatch_core_window_request(
                             resolved_visual,
                             resolved_colormap,
                         );
+                        runtime.set_window_input_only(*window, input_only);
                     }
                     let mut outputs = outputs_from_authority_response(context, &kind, &response);
                     if response.outcome == XAuthorityResponseOutcome::Accepted

@@ -47,6 +47,7 @@ include!("x11_wire/xi_list_input_devices.rs");
 include!("x11_wire/xi_virtual_source.rs");
 include!("x11_wire/glx_pbuffer.rs");
 include!("x11_wire/dri3_plane_bounds_socket.rs");
+include!("x11_wire/drawing_completions.rs");
 include!("x11_wire/support_requests.rs");
 include!("x11_wire/support_extensions.rs");
 

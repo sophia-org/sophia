@@ -253,6 +253,7 @@ fn decode_poly_line(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_POLY_LINE, X_POLY_LINE_REQ_LEN, bytes.len())?;
+    validate_coordinate_mode(bytes[1])?;
     let point_bytes = &bytes[X_POLY_LINE_REQ_LEN..];
     if !point_bytes.len().is_multiple_of(4) {
         return Err(XWireParseError::InvalidLength {
@@ -288,6 +289,12 @@ fn decode_fill_poly(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_FILL_POLY, X_FILL_POLY_REQ_LEN, bytes.len())?;
+    // Shape is {Complex, Nonconvex, Convex}; anything else is a bad value,
+    // named in the error, before the coordinate mode is judged.
+    if bytes[12] > 2 {
+        return Err(XWireParseError::InvalidValue(u32::from(bytes[12])));
+    }
+    validate_coordinate_mode(bytes[13])?;
     let point_bytes = &bytes[X_FILL_POLY_REQ_LEN..];
     if !point_bytes.len().is_multiple_of(4) {
         return Err(XWireParseError::InvalidLength {
@@ -304,6 +311,15 @@ fn decode_fill_poly(
         coordinate_mode: bytes[13],
         points: decode_points(context, point_bytes),
     })
+}
+
+/// A coordinate mode is `Origin` or `Previous`; the protocol lists Value
+/// among the errors of every request that carries one.
+fn validate_coordinate_mode(mode: u8) -> Result<(), XWireParseError> {
+    if mode > 1 {
+        return Err(XWireParseError::InvalidValue(u32::from(mode)));
+    }
+    Ok(())
 }
 
 /// Read a list of sixteen-bit coordinate pairs.
@@ -433,6 +449,7 @@ fn decode_poly_point(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_POLY_POINT, X_POLY_POINT_REQ_LEN, bytes.len())?;
+    validate_coordinate_mode(bytes[1])?;
     let point_bytes = &bytes[X_POLY_POINT_REQ_LEN..];
     if !point_bytes.len().is_multiple_of(4) {
         return Err(XWireParseError::InvalidLength {

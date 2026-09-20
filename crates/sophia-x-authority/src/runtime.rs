@@ -228,6 +228,9 @@ pub struct XAuthorityRuntime {
     graphics_contexts: XGraphicsContextTable,
     window_background_pixels: BTreeMap<crate::XResourceId, u32>,
     window_visuals: BTreeMap<crate::XResourceId, (u8, u32, crate::XResourceId)>,
+    /// Windows created InputOnly. They take input and geometry requests but
+    /// have no pixels, so the drawing family refuses them.
+    input_only_windows: BTreeSet<crate::XResourceId>,
     window_allocation: XWindowAllocationState,
     colormaps: BTreeMap<crate::XResourceId, u32>,
     glx_contexts: BTreeMap<crate::XResourceId, (NamespaceId, u32, bool)>,
@@ -297,6 +300,7 @@ impl Default for XAuthorityRuntime {
             graphics_contexts: Default::default(),
             window_background_pixels: Default::default(),
             window_visuals: Default::default(),
+            input_only_windows: Default::default(),
             window_allocation: Default::default(),
             colormaps: Default::default(),
             glx_contexts: Default::default(),
