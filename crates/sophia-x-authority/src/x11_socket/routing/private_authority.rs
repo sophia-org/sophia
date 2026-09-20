@@ -634,7 +634,14 @@ impl PrivateOutstandingRequest {
                 .map(|_completion| ())
                 .map_err(PrivateAuthorityRefusal::Authority)
         })??;
-        self.observe().map(|_observed| ())
+        let observed = self.observe().map(|_observed| ());
+        // Observing stores the outcome for whoever waits on this request;
+        // the wake is raised separately, outside common, and by the terminal
+        // on its own path. Nobody else raises it for this one, so it is
+        // raised here: a waiter left asleep on a stored refusal sat until its
+        // connection departed, and the dispatch ended unpublished.
+        self.flush_report();
+        observed
     }
 
     /// Observe the outcome of this request, and only this one.
