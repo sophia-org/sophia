@@ -276,7 +276,6 @@ impl PrivateDeliveryCustody {
 
     /// Begin custody for an event nobody admitted, with a cell of its own
     /// for the writer's answer.
-    #[cfg_attr(not(test), allow(dead_code))] // Constructed by the departed release visit next.
     fn unadmitted(order: u64) -> Self {
         Self {
             unadmitted: Some(Arc::default()),

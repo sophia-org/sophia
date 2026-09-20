@@ -169,6 +169,24 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
         .unwrap()
         .unwrap();
     assert!(debt.1.native_reconciled && !debt.1.recipient_settled);
+    // AND THE DEPARTED VISIT BUILDS NOTHING FOR IT: the suppressed release has
+    // already left the holds, so a held incarnation with no holders is never
+    // this one, and the settling stays exactly as it was.
+    let settling = f.runner.frontend().terminal.settling.len();
+    let PrivatePreparedRunner {
+        frontend, keyboards, ..
+    } = &mut f.runner;
+    let private = frontend.as_mut().unwrap();
+    for _ in 0..16 {
+        let step = private
+            .deliver_one(Some(keyboards), &mut |_, _| Ok(()))
+            .unwrap();
+        assert!(!matches!(
+            step,
+            PrivateDeliveryStep::DepartedRelease { released: true }
+        ));
+    }
+    assert_eq!(private.terminal.settling.len(), settling);
 }
 
 #[test]
