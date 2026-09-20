@@ -53,7 +53,7 @@ pub(super) fn options(arguments: &[String]) -> Result<Options, String> {
     Ok(parsed)
 }
 
-fn artifact_path(path: &Path, artifacts: &Path) -> Result<PathBuf, String> {
+pub(super) fn artifact_path(path: &Path, artifacts: &Path) -> Result<PathBuf, String> {
     if !path.is_absolute()
         || path.components().any(|part| part == Component::ParentDir)
         || !path.starts_with(artifacts)

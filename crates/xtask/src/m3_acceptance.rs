@@ -8,6 +8,7 @@ mod identity;
 mod m4;
 mod m5;
 mod process;
+mod profiles;
 mod types;
 mod worker;
 
@@ -41,6 +42,11 @@ pub fn run_m4(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> 
     }
 }
 
+/// The X11 conformance profiles, xtest and native-input, as a gate.
+pub fn run_profiles(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
+    profiles::run(repo, arguments)
+}
+
 pub fn run_m5(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     process::arm_subreaper()?;
     match arguments {
@@ -63,3 +69,6 @@ mod m4_integrity;
 
 #[path = "../tests/support/m5_acceptance.rs"]
 mod m5_tests;
+
+#[path = "../tests/support/x11_profile.rs"]
+mod profile_tests;

@@ -467,6 +467,11 @@ usage: cargo xtask <command>
   check m3-components --suite=NAME --output=/NEW/DIR --target-dir=/OWNED/TARGET
       Run only the device-hidden M3 acceptance harness; missing cases fail the gate.
 
+  check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET
+        [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json [--xts-scenario=NAME]]
+      Run the X11 conformance profiles through the probe's own entry on the committed
+      source; XTS5 is BLOCKED unless its checkout and selected purposes are supplied.
+
   profile args --profile=<name> [--display=<name>] [key=value ...]
       Print the validated live-session argument vector for one profile.
 

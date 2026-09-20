@@ -172,6 +172,23 @@ python3 -B tools/probes/x11_conformance/check.py \
   --output /tmp/sophia-native-input-all
 ```
 
+The same two profiles are produced by a gate rather than by hand through
+
+```sh
+cargo xtask check x11-profile --profile=all \
+  --output=/ABS/.artifacts/x11-profile-<label> \
+  --target-dir=/ABS/.artifacts/x11-profile-target
+```
+
+which refuses a dirty tree, snapshots the committed source beside the
+evidence, runs each profile through this `check.py` with its own log and
+absolute deadline, and judges each by the report it wrote: the probe's own
+rules, plus that the report names the candidate commit and a clean tree, or
+it is NORESULT rather than a pass. XTS5 is BLOCKED and unrun unless
+`--xts-root` and `--xts-expected` are both supplied; a BLOCKED XTS never
+passes by absence and never fails the profiles. `core` stays with its own
+gate above.
+
 Each output directory must be new. Keep large targets on disk instead of a
 memory-backed `/tmp`. All offline commands clear inherited Sophia, Hagia,
 DBUS, XDG and display settings. The private profile builds
