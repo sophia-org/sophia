@@ -1,0 +1,120 @@
+---
+id: wq3n8fkz
+date: 2026-09-20
+kind: investigation
+status: investigating
+tags: [investigation, session, tooling]
+---
+# Which physical acceptance rows a virtual device could drive
+
+## Question
+
+Eleven open rows carry `@physical`. Several are years-old acceptance work that
+has stayed open because it needs a hand on a mouse. XTEST shipped this week --
+can it close any of them, and if not, what can?
+
+## XTEST cannot, for two independent reasons
+
+**It is not in a live session.** `crates/sophia-session/src/live_session.rs`
+installs no injector; a grep for `xtest` in it returns nothing. The adapter
+exists only inside a private input instance, which requires the instance
+cookie, and t093 closed with discovery deliberately left disabled. Nothing on a
+real Hagia desktop can reach it.
+
+**It is the wrong layer by design.** t139 established that emergency recovery
+is the input guard's, a separate process polling libinput directly, so a
+synthetic source cannot reach the physical path *by construction*. That is a
+property we built on purpose. XTEST drives X clients; it does not drive the
+seat, and these rows are about what the seat does.
+
+## What does reach a live session
+
+A virtual device on `/dev/uinput`, created before the session opens its seat so
+that udev enumerates it beside the physical devices. This is not speculative:
+`tools/benchmark_sophia_glxgears_shake_tty3.sh` already does it, and its header
+states the same complaint these rows have -- the benchmark's rule "has only
+ever been exercised by a hand on the mouse, which is neither repeatable nor
+present on an unattended run".
+
+The tool is `tools/probes/uinput_text_injector.py`. **What it emits today is
+narrower than what it registers**, and the gap is exactly what decides this
+question:
+
+| | registered as a capability | actually emitted |
+| --- | --- | --- |
+| `EV_KEY` keys | yes | yes -- `--text`, and `--chord logout\|recovery` |
+| `BTN_LEFT` | yes, so libinput sees a mouse | **never** |
+| `REL_X` | yes | yes -- `--shake-hz`, alternating |
+| `REL_Y` | yes | **never** |
+| wheel | no | no |
+
+So today it can type, send two fixed chords, and shake horizontally. It cannot
+click, cannot move vertically, and cannot scroll.
+
+## The split
+
+**Driveable now** -- the input these rows need is already emittable, and the
+verdict is in records the session already writes (`sophia_live_surface_geometry`,
+`sophia_live_session_focus`, `sophia_live_output_authority`,
+`sophia_live_native_startup_output`, `sophia_shell_components_shutdown`):
+
+- **t019** -- idle, VT resume, normal logout during actual use. `--chord logout`
+  exists; idle is a wait. The closest to free of the eleven.
+- **t077** -- signing-dialog lockout: bounded input-delivery and control
+  recovery, healthy focus, close, VT and clean shutdown. `--chord recovery` is
+  the chord this row is about.
+- **t012** -- revalidate installed startup after the output-ownership repair.
+  Startup evidence, no pointer at all.
+- **t007** -- third-terminal crash repair: both panels shown, terminal bounds
+  correct, new terminals admitted. Launching terminals is scriptable; bounds
+  are recorded.
+
+**Blocked on one small addition** -- these need a button, vertical motion, or a
+wheel, and nothing else:
+
+- **t009** -- panel pointer hit targets, popout anchoring, focus, stop/relaunch.
+- **t011** -- scrolling repair, three Kitty windows, vertical scrolling.
+- **t060** -- namespace-scoped QueryPointer menu placement and drag.
+- **t062** -- explicit pointer-grab promotion after the click-lease repair.
+  `sophia_live_explicit_pointer_grab` already records the verdict.
+- **t004** -- maximized/fullscreen stacking, if the window operations are
+  reached by pointer rather than by a bound shortcut.
+
+**Partly or wholly human:**
+
+- **t081** -- Lom workspace clicks and shortcuts are driveable once buttons
+  exist, but "flash-free native panel" is a judgement about rendered output
+  over time. A capture harness could bound it; a record cannot.
+- **t068** -- Brave's client-internal GPU device mismatch and accelerated video
+  without GPU restarts. Third-party browser internals; neither input nor our
+  records decide it.
+
+## What the split is worth
+
+**Four rows need no new tooling at all**, and five more need one change to one
+file: emit `BTN_LEFT` press and release, emit `REL_Y`, and register and emit a
+wheel axis. The capabilities are already declared -- `BTN_LEFT` is registered
+precisely so libinput recognises the device -- so this is filling in emitters
+beside `shake`, not new machinery, in a file that already has a `--self-test`.
+
+## What this does not claim
+
+That these rows would then be closed. Driving a session is not accepting one.
+Each of the four says *accept* or *observe* or *revalidate*, and whether a
+record standing in for a person satisfies that is a judgement about the row,
+not about the tooling -- one for whoever owns the acceptance, and worth
+deciding per row rather than in general. What the tooling changes is that the
+evidence can be produced unattended and repeatably, so the person is deciding
+from a recorded run rather than performing it.
+
+Note also that `@physical` rows historically pair with an installed release and
+real outputs; a virtual input device does not make a session headless, and the
+GPU half of t009, t011 and t081 still wants real hardware.
+
+## Connections
+
+- [Private native input authority and XTEST adapter](../plans/7xqjn8rp-private-native-input-authority-and-xtest-adapter.md) --
+  where XTEST lives, and why it stays inside an admitted private instance.
+- t094, in plan with the obligations lane, covers per-physical-device identity
+  through backend and Session ingress: the same territory, and where a virtual
+  device's identity would have to be honest.
