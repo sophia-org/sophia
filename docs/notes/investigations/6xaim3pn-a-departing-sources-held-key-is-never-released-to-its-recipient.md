@@ -2,7 +2,7 @@
 id: 6xaim3pn
 date: 2026-09-20
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, x11, input]
 ---
 # A departing source's held key is never released to its recipient
@@ -164,7 +164,7 @@ delivery comes back `WriteFailed` or `ClientDisconnected` from a socket that
 is gone, rather than a clean `TargetGone`. Settling has to treat those as
 terminal or the release never finishes and the instance cannot stop.
 
-## What was built, and the one thing left
+## What was built first, and the one thing that was left
 
 Built and on master as of `c2931f65`, with the two-injector case green in
 both byte orders and thirty-eight of forty on the wire:
@@ -200,6 +200,66 @@ for this one, which owes an event and has no cell to answer for it. What the
 predicate wants to ask is whether an event is owed, not whether a completion
 is held, and every ordering decision in the terminal rests on it, so that is
 its own change with its own tests rather than a line changed in passing.
+
+## Resolved: the predicate asks whether an event is owed
+
+Landed 2026-09-20 on the `t136/owed-release` branch in four commits, each
+green on the whole `sophia-x-authority` suite:
+
+- `0256f9db` proves the ledger side first: a retired source's record is
+  what `claim_next_attempt` hands out once its native half is settled (the
+  scheduler refuses a debt whose native half is not in, and the revoked
+  grant is still the owner the ledger authorises for that settlement), and
+  one finished attempt with the recipient bit frees it.
+- `80c72e6e` is the plumbing, with no behaviour change. Reading past the
+  predicate found four gates, not one. `handover_unfinished` and
+  `owes_handover` were premised on the admitted completion cell;
+  `XAuthorityOrderedDelivery::from_emission` refused an emission with no
+  delivery id, so the release would have landed `Unwrappable` and blocked its
+  recipient's head for ever; `attempt_one_delivery` relinquished any release
+  with no cell before enqueueing; and a capsule with no finalizer made the
+  ordered writer return `Unanswered` and keep the delivery in flight, which
+  wedges that recipient's writer. So the answer slot is a second finalizer
+  form, not a polled field: a `PrivateUnadmittedCompletion` the custody
+  owns, exclusive with the admitted cell; the finalizer answers into
+  whichever cell the custody has and, for the unadmitted one, never refuses;
+  the capsule may name no delivery through a constructor of its own; the
+  custody decides whether an event is owed by whether either cell exists,
+  and every ordering decision in the terminal rests on that. The suppressed
+  StateOnly release carries neither cell and stays out on that ground, which
+  its guard now asserts in those words.
+- `48008e36` turns the visit on: `release_departed_one` makes its custody
+  the unadmitted kind. Four terminal controls in
+  `tests/support/private_departed_release.rs` lend keyboards to the delivery
+  turn, which nothing had done before: the whole path from the revocation to
+  an empty ledger, with a real writer reading back a bare KeyRelease of the
+  key held; the recipient gone by the time the bytes go, where the write
+  fails, the answer is recorded once and never rewritten, and the endpoint's
+  own termination settles what the write could not; the recipient gone
+  before the release is enqueued, where its termination answers
+  `ClientDisconnected` through the same cell and the record goes without a
+  write; and a survivor, where the visit builds nothing and the survivor's
+  own release ends the aggregate once as an ordinary admitted release.
+- `86c3b0c5` is a gate correction found on the first passing run: the
+  profile gate demoted a PASS because the subreaper reaped a child of the
+  probe's entry that was still dying when the entry returned. That is
+  teardown, and the same run by hand leaves nothing behind; the verdict now
+  records what was found and reaped and demotes only what lingered.
+
+**The wire says so.** `xtest` by hand on the branch:
+`status PASS, required 40, executed 40, failures 0`, with
+`xtest_disconnect_release` green in both byte orders; and through
+`cargo xtask check x11-profile --profile=xtest` on the committed candidate,
+whose report is beside this note's evidence under `.artifacts/`.
+
+**Limits, kept.** The release is stamped at the visit rather than at the
+disconnect, so a press decided for the same recipient in the turns between
+is seen first; the reference server releases at disconnect. A release whose
+event could not be built blocks its recipient's head until termination,
+exactly as a requested one does today. A recipient whose wire was left
+unterminated retains the release and re-attempts it, never disposed, the
+same standing as a requested release. None of this is physical acceptance;
+it is the headless source model the M5 record and the plan describe.
 
 ## Connections
 

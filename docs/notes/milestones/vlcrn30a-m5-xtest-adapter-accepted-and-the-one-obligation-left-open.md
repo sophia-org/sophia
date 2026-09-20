@@ -19,8 +19,12 @@ parses. The eight run together in about two seconds and were run repeatedly
 rather than once.
 
 **The independent conformance profile passes thirty-six of forty subcases**
-in both byte orders. The four that remain are one obligation rather than
-four, and it is stated below rather than left to be inferred from a count.
+in both byte orders, as accepted. The four that remained were one obligation
+rather than four, stated below rather than left to be inferred from a count;
+it is closed since, and the profile reads forty of forty through
+`cargo xtask check x11-profile --profile=xtest` from 2026-09-20 (t136 at
+`48008e36`, its note linked below). The paragraphs that follow record what
+was open when the milestone was accepted.
 
 ## What the extension is
 
@@ -128,6 +132,12 @@ departs is cancelled and never happens. t136 is work already *completed*,
 whose effect outlives the client that caused it. Eight of eight is not
 forty of forty, and this is the difference.
 
+Closed 2026-09-20: the predicate that decides whether a handover is owed now
+asks whether an event is owed rather than whether a completion cell is held,
+and a release nobody admitted carries a cell of its own for its writer to
+answer into. The note above records the four gates that turned out to stand
+behind the one, and the wire reads forty of forty.
+
 One narrower row is open beside it: **t137**, an impervious client's own
 `GrabServer` is dropped rather than deferred, which the imperviousness work
 opened and which the `grab_control` group currently pins the consequence of.
@@ -136,8 +146,9 @@ opened and which the `grab_control` group currently pins the consequence of.
 
 No real application has driven XTEST here, which is why its matrix row is
 `wire` and not higher. The profile's XTS5 rows remain BLOCKED and are
-reported as such rather than counted. The conformance profile is still run
-by hand rather than by a gate; registering it is separate work, in progress.
+reported as such rather than counted. The conformance profile was run by
+hand when this was accepted; it has been produced by a gate since `ab823b92`
+(`cargo xtask check x11-profile`), which is what the count above now cites.
 M6 is untouched.
 
 ## Connections
