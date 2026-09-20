@@ -442,12 +442,16 @@ def two_injectors(context):
         # tests must prove that ordering independently.
         observer.sync()
         no_reply_yet(observer, .05)
-        assert not observer.events, 'joining/retiring source changed aggregate key state'
+        assert not observer.events, (
+            'joining/retiring source changed aggregate key state',
+            [data.hex() for data in observer.events])
         fake(second, second_opcode, 3, detail=50)
         second.sync()
         key_event(observer, 3, window, key=50)
         observer.sync()
-        assert not observer.events, 'duplicate aggregate transition'
+        assert not observer.events, (
+            'duplicate aggregate transition',
+            [data.hex() for data in observer.events])
         no_reply_yet(observer, .04)
 
 

@@ -36,6 +36,38 @@ fn route_core_lifecycle_events_with_control(
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
+    const FOCUS_CHANGE_MASK: u32 = 1 << 21;
+
+    // A focus transition is reported to whoever asked about the window it
+    // names, and asking is selecting FocusChange on that window. Making the
+    // request that moved the focus is not asking: a client that moves the
+    // focus and did not select is exactly as uninterested as one that did
+    // neither, and until now it was told anyway, twice, about a window it
+    // had said nothing about.
+    //
+    // Only this client's own copy is decided here. Routing a transition to
+    // the other windows it concerns is the focus source's, which resolves
+    // the whole hierarchy under the guards that applied the focus; a second
+    // delivery from here would duplicate what that already owes.
+    let mut unselected_focus = Vec::new();
+    for (index, item) in output.outputs.iter().enumerate() {
+        let crate::XClientOutput::Event(XClientEvent::Focus { event: window, .. }) = item else {
+            continue;
+        };
+        let selectors = routing
+            .core_event_subscribers(*window, FOCUS_CHANGE_MASK)
+            .map_err(|error| {
+                X11SetupSocketError::new(format!(
+                    "failed to inspect X11 focus subscriptions: {error}"
+                ))
+            })?;
+        if !selectors.contains(&client) {
+            unselected_focus.push(index);
+        }
+    }
+    for index in unselected_focus.into_iter().rev() {
+        output.outputs.remove(index);
+    }
 
     let mut candidates = Vec::new();
     for (index, output) in output.outputs.iter().enumerate() {
@@ -168,6 +200,7 @@ fn filter_local_core_lifecycle_events(
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
+    const FOCUS_CHANGE_MASK: u32 = 1 << 21;
 
     let structure_events = output
         .outputs
@@ -207,6 +240,14 @@ fn filter_local_core_lifecycle_events(
                 selections.selects(window, VISIBILITY_CHANGE_MASK)
             }
             XClientEvent::Expose { window, .. } => selections.selects(window, EXPOSURE_MASK),
+            // A focus transition is reported to the windows that asked about
+            // it, and asking is selecting FocusChange on the window named.
+            // The request that caused the transition earns its client
+            // nothing: a client that moves the focus and did not select is
+            // exactly as uninterested as one that did neither.
+            XClientEvent::Focus { event: window, .. } => {
+                selections.selects(window, FOCUS_CHANGE_MASK)
+            }
             // A synthetic ConfigureNotify is the protocol response to a
             // managed ConfigureWindow request, not a selected structure event.
             XClientEvent::ConfigureNotify {
