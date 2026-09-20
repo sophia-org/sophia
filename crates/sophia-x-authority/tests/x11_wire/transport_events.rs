@@ -498,6 +498,72 @@ fn core_keyboard_control_and_bell_requests_are_bounded() {
 }
 
 #[test]
+fn x11_force_screen_saver_accepts_both_modes_and_refuses_any_other() {
+    let namespace = NamespaceId::from_raw(47);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    // Reset and Activate. This host blanks nothing, so the whole observable
+    // is that neither is refused: every XTS test's startup resets the screen
+    // saver, and a refusal there ends the test before its first assertion.
+    for (sequence, mode) in [(1u16, 0u8), (2, 1)] {
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence), XByteOrder::LittleEndian),
+            &[115, mode, 1, 0],
+        )
+        .unwrap();
+        assert_eq!(request, XWireRequest::ForceScreenSaver { mode });
+        let accepted = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 115),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(
+            accepted
+                .encoded_outputs(XByteOrder::LittleEndian)
+                .is_empty(),
+            "mode {mode} should be accepted silently"
+        );
+    }
+
+    let refused = decode_x11_core_request(
+        context(namespace, 3, XByteOrder::LittleEndian),
+        &[115, 2, 1, 0],
+    )
+    .unwrap();
+    assert_eq!(refused, XWireRequest::ForceScreenSaver { mode: 2 });
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 115),
+        refused,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+    assert_eq!(encoded.len(), 1, "an undefined mode is one error and nothing else");
+    assert_eq!(encoded[0][0], 0, "an error, not a reply");
+    assert_eq!(encoded[0][1], 2, "BadValue");
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]),
+        2,
+        "the error names the mode it refused"
+    );
+    assert_eq!(encoded[0][10], 115, "major opcode");
+
+    // A request longer than its one word is a decode failure, not a mode.
+    assert!(
+        decode_x11_core_request(
+            context(namespace, 4, XByteOrder::LittleEndian),
+            &[115, 0, 2, 0, 0, 0, 0, 0],
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn x11_setup_parser_accepts_little_endian_auth_fields() {
     let bytes = setup_request(
         XByteOrder::LittleEndian,

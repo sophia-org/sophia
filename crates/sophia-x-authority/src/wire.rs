@@ -1297,6 +1297,11 @@ pub enum XWireRequest {
     },
     GetKeyboardControl,
     Bell,
+    /// Mode travels in the header's data byte rather than a body, so the
+    /// request is one word long and `mode` is the only thing it carries.
+    ForceScreenSaver {
+        mode: u8,
+    },
     TranslateCoordinates {
         source: XResourceId,
         destination: XResourceId,
@@ -1441,6 +1446,12 @@ pub fn decode_x11_core_request(
         X_BELL => {
             require_exact_len(X_BELL, 4, bytes.len())?;
             Ok(XWireRequest::Bell)
+        }
+        X_FORCE_SCREEN_SAVER => {
+            require_exact_len(X_FORCE_SCREEN_SAVER, 4, bytes.len())?;
+            // An out-of-range mode is a Value error the client must see with
+            // its sequence, not a decode failure, so it is carried through.
+            Ok(XWireRequest::ForceScreenSaver { mode: bytes[1] })
         }
         X_OPEN_FONT => decode_open_font(context, bytes),
         X_CLOSE_FONT => decode_close_font(context, bytes),

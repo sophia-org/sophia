@@ -768,7 +768,25 @@ def destroy_xid_reuse(context):
         assert not any(e[0] & 127 == 17 for e in old_watcher.events), 'old subscription survived XID reuse'
 
 
+def force_screen_saver(context):
+    with client(context) as c:
+        # Reset (0) and Activate (1). This authority blanks nothing and keeps
+        # no idle timer, so what is observable is that neither mode is
+        # refused and the connection survives it. That is the whole of what
+        # the request is for here: every XTS test's startup resets the screen
+        # saver, and a refusal there ends the test before its assertions.
+        for mode in (0, 1):
+            c.send(115, detail=mode)
+        c.sync()
+        # Outside that pair the protocol requires a Value error reporting the
+        # mode it refused, and the connection must survive that too.
+        for mode in (2, 255):
+            c.completion(c.send(115, detail=mode), error=2, opcode=115, resource=mode)
+        c.sync()
+
+
 CASES = {'setup': setup,
+         'force_screen_saver': force_screen_saver,
          **{name: setup_containment for name in ('setup_empty', 'setup_truncated_prefix',
              'setup_truncated_auth', 'setup_invalid_order', 'setup_version_containment')},
          'window_tree': window_tree, 'map': window_transition,
