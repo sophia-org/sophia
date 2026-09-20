@@ -168,6 +168,13 @@ unchanged. `XDG_RUNTIME_DIR` is now required for a live session, which is what
 `verify_group` is asked before the socket is bound, which is the moment that
 matters: what it catches is something already waiting in the directory.
 
+**The row is closed, and its launcher half moved.** t141's remaining work --
+the launcher mounting one group directory, and the exit-3 proof that a
+confined client cannot *reach* the trusted path -- needs a confined listener
+to exist before either can be done, and that is Tier 2. Both moved to t142,
+which no longer waits on t141. Leaving them in t141 would have made the two
+rows wait on each other.
+
 **Not covered by any gate.** These six controls live in
 `src/live_session/tests/socket_directory_tests.rs` and run only under
 `--features native-session`, which no gate runs as a test -- xtask uses that
