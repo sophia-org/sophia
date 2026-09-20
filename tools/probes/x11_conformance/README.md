@@ -187,6 +187,29 @@ partial journal contains PASS results. This deliberately rejects the yserver
 comparator's PASS-to-NORESULT and missing-candidate-purpose false positives.
 No results from an older directory can supply a pass.
 
+### First measured run, 2026-09-20
+
+`selected-core` executed against the fixture host: 58 purposes across six
+cases, of which **31 PASS**. The rest are recorded rather than dropped, and
+sort into three kinds:
+
+| kind | purposes | what the journal says |
+| --- | --- | --- |
+| undecoded opcode | 4 | `BadRequest`, `Protocol request was X_WarpPointer` (41) |
+| extension absent by design | 3 | `Server does not support XTEST extension` |
+| behaviour difference | 6 | `Got Success, Expecting BadAtom`; `Got BadValue, Expecting BadMatch`; `Unmap event was received on window`/`on the parent of window` |
+| not testable here | 2 | `There is no reliable method of testing that a BadAlloc error is generated` (UNSUPPORTED) |
+
+Per case: XChangeProperty 10 of 13, XInternAtom 6 of 8, XDestroyWindow 4 of
+6, XMapWindow 5 of 15, XSetInputFocus 4 of 13, XGetSelectionOwner 2 of 3.
+The remainder are UNTESTED purposes after a failure in the same case.
+
+The behaviour differences are the point of running XTS at all and are real
+findings against this authority; the undecoded opcode is the same class as
+ForceScreenSaver was. Until they are resolved or the selection is narrowed
+to what passes, `selected-core` reads FAIL, which is the honest verdict and
+not a reason to drop a case from the manifest.
+
 With missing dependencies the adapter writes `BLOCKED`, `suite_executed=false`
 and concrete missing paths/tools, and exits 2. Under the gates,
 `cargo xtask check x11-profile` and `m6-evidence` take `--xts-root`,
