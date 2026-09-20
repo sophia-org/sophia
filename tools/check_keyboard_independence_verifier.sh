@@ -28,7 +28,9 @@ reject_mutation() {
     fi
 }
 
-reject_mutation session.log '/status=removed device=256/d' 'a run with no removal'
+reject_mutation session.log '/status=removed device=256/d' 'a run where only the media interface was removed'
+reject_mutation session.log '/status=removed device=/d' 'a run with no removal'
+reject_mutation session.log 's/status=removed device=261 released=0/status=removed device=261 released=1/' 'a second interface that also released a key'
 reject_mutation session.log 's/status=removed device=256 released=1/status=removed device=256 released=0/' 'a removal that released nothing'
 reject_mutation session.log 's/status=removed device=256 released=1/status=removed device=256 released=2/' 'a removal that released more than the one held key'
 reject_mutation session.log '/reason=device_removed device=256 count=1/d' 'a removal without its release flush'

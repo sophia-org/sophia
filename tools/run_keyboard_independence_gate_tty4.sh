@@ -5,10 +5,23 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [[ ! -t 0 || "$(tty)" != /dev/tty4 ]]; then
-    echo "Switch to tty4 with Ctrl+Alt+F4, log in, and run:" >&2
+# Any text console will do, as long as it is not the display manager's: the
+# gate takes the GPU and the seat's input, and the launcher stops greetd and
+# restores it, which it cannot do from greetd's own VT.
+console="$(tty 2>/dev/null || true)"
+manager_vt="$(awk '
+    /^\[[^]]+\][[:space:]]*$/ { terminal = ($0 ~ /^\[terminal\][[:space:]]*$/) }
+    terminal && /^[[:space:]]*vt[[:space:]]*=/ { sub(/^[^=]*=[[:space:]]*/, ""); gsub(/[[:space:]]/, ""); print; exit }
+' /etc/greetd/config.toml 2>/dev/null || true)"
+if [[ ! -t 0 || ! "$console" =~ ^/dev/tty([1-9][0-9]*)$ ]]; then
+    echo "Switch to a text console (Ctrl+Alt+F3, for example), log in, and run:" >&2
     echo "  SOPHIA_KEYBOARD_A=/dev/input/by-id/...-event-kbd SOPHIA_KEYBOARD_B=/dev/input/by-id/...-event-kbd \\" >&2
     echo "  $ROOT_DIR/tools/run_keyboard_independence_gate_tty4.sh" >&2
+    exit 1
+fi
+console_vt="${BASH_REMATCH[1]}"
+if [[ -n "$manager_vt" && "$console_vt" == "$manager_vt" ]]; then
+    echo "tty$console_vt belongs to the display manager; log out of its session and use another console." >&2
     exit 1
 fi
 if [[ -z "${SOPHIA_KEYBOARD_A:-}" || -z "${SOPHIA_KEYBOARD_B:-}" ]]; then
@@ -51,7 +64,7 @@ sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 echo "Sophia binary: $sophia_sha256"
 
 export SOPHIA_TTY_PROFILE=keyboard-independence
-export SOPHIA_TTY_NUMBER=4
+export SOPHIA_TTY_NUMBER="$console_vt"
 export SOPHIA_KEYBOARD_INDEPENDENCE_ARM=1
 export SOPHIA_KEYBOARD_INDEPENDENCE_SEAT="${SOPHIA_KEYBOARD_INDEPENDENCE_SEAT:-seat0}"
 export SOPHIA_KEYBOARD_INDEPENDENCE_SOURCE_COMMIT="$sophia_commit"
