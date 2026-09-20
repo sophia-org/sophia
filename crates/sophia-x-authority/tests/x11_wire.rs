@@ -21,6 +21,7 @@ include!("x11_wire/render_clip_reset.rs");
 include!("x11_wire/withdrawn_state.rs");
 include!("x11_wire/rendering_dispatch.rs");
 include!("x11_wire/properties_dispatch.rs");
+include!("x11_wire/selection_cut_buffer.rs");
 include!("x11_wire/output_and_draw.rs");
 include!("x11_wire/image_readback.rs");
 include!("x11_wire/density_fidelity.rs");
