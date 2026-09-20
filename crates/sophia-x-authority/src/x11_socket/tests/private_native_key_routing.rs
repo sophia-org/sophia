@@ -345,3 +345,83 @@ fn native_key_noncongruent_visual_coordinates_remain_unavailable() {
     assert!(pending.is_none());
     assert_eq!(f.held(38), crate::XkbPhysicalKeyState::Released);
 }
+
+#[test]
+fn native_key_reaches_focus_while_the_pointer_is_over_another_clients_window() {
+    // t140. A key press is reported to the pointer's window only when the
+    // focus window is one of its ancestors; otherwise it is reported to the
+    // focus window itself. A pointer over a THIRD client's window is exactly
+    // that second case, so the key is delivered -- and before this it was
+    // refused, because neither projection held that window and the path
+    // resolution treated an unseeable branch as a missing hierarchy.
+    //
+    // It is the XTEST case that made it matter: an injected key targets the
+    // focused surface with no pointer involvement at all, so it was correct
+    // by construction and then refused for wherever the user had last left
+    // the pointer.
+    let mut f = KeyFixture::new();
+    // Not registered in any projection, which is what makes it another
+    // client's: this connection cannot see it, and cannot tell it from a
+    // window that has gone.
+    let foreign = XResourceId::new(0x7f0001, 1);
+    {
+        let mut selected = f.base.selections.lock().unwrap();
+        assert!(
+            !selected.geometries.contains_key(&foreign),
+            "the control is only about a window this client cannot see"
+        );
+        selected.update(window(), Some(3), None);
+    }
+    // MOVED WHERE THE ROUTING ACTUALLY READS IT. The observation the key path
+    // consults is the input authority's, not the selection state's snapshot;
+    // setting only the latter leaves the pointer where the fixture put it and
+    // the control proves nothing.
+    f.base
+        .private
+        .broker
+        .registry
+        .input_authority
+        .lock()
+        .unwrap()
+        .observe_query_input(
+            namespace(),
+            foreign,
+            XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                kind: XAuthorityPointerEventKind::Motion,
+                surface: surface(),
+                root_x: 900,
+                root_y: 900,
+                event_x: 4,
+                event_y: 4,
+                state: 0,
+                time_msec: 2,
+            }),
+        );
+
+    let mut pending = None;
+    f.press(30, 821, &mut pending).expect(
+        "a focused key must not be refused for where the pointer is",
+    );
+    let hold = pending.as_mut().expect("the press was held for delivery");
+    assert_eq!(
+        hold.delivered_window(),
+        window(),
+        "the key went to the focus window, which is what the pointer being \
+         elsewhere means"
+    );
+    let frame = hold
+        .take_press_emission()
+        .unwrap()
+        .encode_frame(0, XByteOrder::LittleEndian, 1)
+        .unwrap();
+    assert_eq!(frame.as_bytes()[0], 2, "an ordinary KeyPress");
+    // THE CHILD IS NONE, not the foreign window. The event names a child of
+    // the event window containing the pointer, and a window in a branch this
+    // client cannot see is not one of its children; naming it would hand a
+    // client another client's resource id.
+    assert_eq!(
+        &frame.as_bytes()[16..20],
+        &0u32.to_le_bytes(),
+        "no child is named when the pointer is outside this client's tree"
+    );
+}

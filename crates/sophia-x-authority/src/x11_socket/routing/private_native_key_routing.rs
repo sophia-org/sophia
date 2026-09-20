@@ -34,7 +34,30 @@ fn key_pointer_path(
         } else if selected.geometries.contains_key(&position.surface_window) {
             selected
         } else {
-            return Err(R::Applied(PrivateAppliedRefusal::HierarchyMissing));
+            // THE POINTER IS SOMEWHERE THIS CLIENT CANNOT SEE, WHICH IS NOT A
+            // REASON TO REFUSE THE KEY. Neither projection holds that window,
+            // so it belongs to a third client -- or to nothing, if the
+            // observation is stale. From here the two are the same fact and
+            // the same answer.
+            //
+            // The core protocol already says what that answer is. A key press
+            // is reported to the pointer's window only when the focus window
+            // is one of its ancestors; otherwise it is reported to the focus
+            // window itself. A pointer over somebody else's window is exactly
+            // the second case, so the key is delivered, not lost.
+            //
+            // THE ROOT ALONE IS THE HONEST PATH. It says what this client can
+            // actually establish -- the pointer is under the root, in a branch
+            // outside its projection -- and `normal_key_target` already reads
+            // a path its focus window is absent from as a disjoint branch and
+            // begins delivery at focus. Nothing new decides this; the refusal
+            // was simply reaching the decision first.
+            //
+            // Refusing here made an injected key fail on where the user last
+            // left the pointer, which on a desktop with more than one window
+            // is most of the time. The wire never saw it: the request is
+            // answered and the refusal is behind it.
+            return Ok(PrivateOrderedAncestry::new(root));
         };
         let geometry = source
             .geometries

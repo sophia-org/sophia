@@ -2,7 +2,7 @@
 id: r7k2mvqd
 date: 2026-09-20
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation]
 ---
 # A key routed to focus is refused when the pointer is over another client's window
@@ -96,6 +96,42 @@ Reading 2 is the smaller change and has a precedent in the same function.
 Reading 1 is the one that says what a focused key is. Whichever is taken, the
 group that was missing is the same: a key injected while the pointer is over
 a third client's window.
+
+## Resolution
+
+Repaired 2026-09-20, and by neither of the two readings above: the machinery
+to do the right thing was already there and the refusal was simply reaching
+the decision first.
+
+`normal_key_target` already handles a pointer in a branch the focus window is
+absent from -- "A known disjoint pointer branch means delivery starts at focus
+itself", which is the core protocol's own rule. A key press is reported to the
+pointer's window only when the focus window is one of its ancestors, and
+otherwise to the focus window. A pointer over a third client's window is
+exactly that second case.
+
+So `key_pointer_path` no longer refuses when neither projection holds the
+pointer's surface. It answers with the root alone, which is what the client
+can actually establish -- the pointer is under the root, in a branch outside
+its projection -- and the resolver's existing disjoint path delivers at focus.
+Reading 1 was wrong to suggest the pointer should not be consulted at all: a
+key event carries the pointer's coordinates and the core rule depends on the
+hierarchy, so it must be. Reading 2 was close but described a fallback that
+did not need writing.
+
+A window that has simply gone is handled the same way and deliberately: from
+the client's side an unseeable branch and an absent one are one fact, and
+refusing a key is worse than delivering it in either.
+
+The control is
+`native_key_reaches_focus_while_the_pointer_is_over_another_clients_window`.
+Its first version passed without the repair, because it moved the selection
+state's pointer snapshot while the routing reads the input authority's
+observation -- a test bound to a claim it did not make. Corrected, it fails
+with the production symptom, `KeyboardPreparation(Applied(HierarchyMissing))`.
+It also pins that no child is named in the event: a window in a branch the
+client cannot see is not one of its children, and naming it would hand a
+client another client's resource id.
 
 ## Connections
 
