@@ -282,6 +282,18 @@ t139 is opened for it. Read before anything was built, the facts are these:
   synthetic distinction. That is the half the obligation's "fixture
   physical chord" names, for the headless model.
 
+The lane, told of the guard, sharpened its own claim rather than defend it:
+the recovery path is not forgeable from the adapter, and what XTEST does
+circumvent is the engine's property that the chord is never available to a
+policy client whatever it registers, because a client that could not
+register the chord can be handed it as key events. That is the claim that
+stands. The lane's advice on the decision, recorded as its own: a
+construction witness proves a path does not exist for a reason that lives
+nowhere near the obligation, the guard's process layout, and would go
+quietly false with no test failing if that layout changed; so witness the
+construction and refuse at the adapter, one filter, and the property stays
+true for a reason a reader can find from the obligation.
+
 Three ways to close the row, which is the decision: bind the obligation to a
 witness of the construction (a synthetic chord through a private instance
 reaches no observer, and a fixture-physical chord is recognised beside a
