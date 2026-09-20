@@ -61,3 +61,9 @@ fn version_negotiation() {
 fn fake_input_encoding() {
     support::groups::fake_input_encoding();
 }
+
+#[test]
+#[ignore = "run through cargo xtask check m5-acceptance"]
+fn fake_input_effects() {
+    support::groups::fake_input_effects();
+}
