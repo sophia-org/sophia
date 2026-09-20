@@ -153,4 +153,70 @@ impl XServerFrontendRouteRegistry {
         state.published = true;
         Ok(true)
     }
+
+    /// Observe where an instance's pointer starts: over the root, at the
+    /// centre of the screen, which is where the reference server puts it
+    /// before anything has moved it.
+    ///
+    /// A key needs the pointer's position, for the coordinates it carries
+    /// and for the path that decides which window under the focus receives
+    /// it, and the executor takes that position only from an observation.
+    /// A native source provides one the first time the pointer crosses a
+    /// surface; a headless instance, or one whose clients inject before any
+    /// pointer has crossed anything, has none, and could not deliver a key
+    /// at all. This is that first observation, made once, only when the
+    /// namespace has been prepared and nothing has observed the pointer yet.
+    /// It invents no surface: the observation is over the root, and every
+    /// path that reads it treats the root as the bare screen.
+    ///
+    /// Taken under common, as every observation is, and reports whether it
+    /// observed.
+    pub(crate) fn publish_prepared_pointer(
+        &self,
+        runtime: &XAuthorityRuntime,
+    ) -> Result<bool, PrivateAppliedRegistryRefusal> {
+        let owner = self
+            .private_applied
+            .get()
+            .ok_or(PrivateAppliedRegistryRefusal::NoPrivateOwner)?;
+        let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+        let geometry = runtime
+            .drawable_facts(owner.namespace, root)
+            .map_err(|_| PrivateAppliedRegistryRefusal::AuthorityUnavailable)?
+            .geometry;
+        let centre_x = clamp_input_coordinate(f64::from(geometry.width / 2));
+        let centre_y = clamp_input_coordinate(f64::from(geometry.height / 2));
+        owner
+            .controller
+            .under_common(|_| {
+                let mut authority = self
+                    .input_authority
+                    .lock()
+                    .map_err(|_| PrivateAppliedRegistryRefusal::AuthorityUnavailable)?;
+                if !authority.has_ordered_namespace(owner.namespace)
+                    || authority
+                        .pointer_query_state(owner.namespace)
+                        .position
+                        .is_some()
+                {
+                    return Ok(false);
+                }
+                authority.observe_query_input(
+                    owner.namespace,
+                    root,
+                    XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
+                        kind: XAuthorityPointerEventKind::Motion,
+                        surface: crate::ROOT_POINTER_SURFACE,
+                        root_x: centre_x,
+                        root_y: centre_y,
+                        event_x: centre_x,
+                        event_y: centre_y,
+                        state: 0,
+                        time_msec: 0,
+                    }),
+                );
+                Ok(true)
+            })
+            .map_err(|_| PrivateAppliedRegistryRefusal::AuthorityUnavailable)?
+    }
 }

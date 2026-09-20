@@ -1,16 +1,20 @@
 // Controls for the runner's own accounting under the service: the live
 // reclamation visit (held, retired, reused; refused by the allowance;
-// unwatched; interrupted), a control the supervisor will not watch, and the
-// two retained diagnostics of this checkpoint's input limitations (keys
-// without a native pointer observation; an overlapping-button
+// unwatched; interrupted), a control the supervisor will not watch, a key
+// before any native pointer observation, and the retained diagnostic of
+// this checkpoint's one remaining input limitation (an overlapping-button
 // release never delivered). Harness in `private_producer_service.rs`.
 
-/// RETAINED DIAGNOSTIC, NOT A DELIVERY CLAIM: a key through the service.
-/// The window selects KeyPress/KeyRelease, the applied focus names it and
-/// was acknowledged, but no native pointer source has observed the pointer.
-/// The native keyboard source refuses MissingQueryScope before applying.
+/// A key through the service before any native pointer source has observed
+/// the pointer. The window selects KeyPress/KeyRelease and the applied focus
+/// names it. The pointer's position comes from the observation preparation
+/// made -- over the bare root, at the centre of the screen -- so the key
+/// carries those root coordinates, the same coordinates relative to a window
+/// at the root's origin, and no child, because the pointer is over nothing.
+/// This was a retained diagnostic (the key refused MissingQueryScope) until
+/// the prepared observation lifted the limitation.
 #[test]
-fn a_key_through_the_service_requires_a_native_pointer_observation() {
+fn a_key_through_the_service_before_any_pointer_observation_carries_the_prepared_position() {
     let (launched, socket_path) = launch_producing("producer-key", 9610, 4);
     launched.access.await_ready(Duration::from_secs(15)).expect("readiness");
     let mut client = connect_private_client(&socket_path);
@@ -55,22 +59,24 @@ fn a_key_through_the_service_requires_a_native_pointer_observation() {
     let order = outcome.order.expect("the tally");
     assert_eq!(focus, Some(XAuthorityControlOutcome::Delivered), "the applied focus was established");
     assert_eq!(focus_in, Some(expected_focus_in(sequence, window)), "and seen by the window");
-    assert_eq!(on_wire, None, "no key reached the client");
+    let mut expected = expected_key_service_event(sequence, window, 38, true, 0);
+    // The screen's centre, 1280 by 720 halved, as root coordinates and as
+    // coordinates relative to a window at the root's origin.
+    for (offset, value) in [(20, 640_i16), (22, 360), (24, 640), (26, 360)] {
+        expected[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(on_wire, Some(expected), "the key reached the client at the prepared position");
     assert!(Arc::ptr_eq(cell.as_ref().unwrap(), &original));
     assert_eq!(answer, Some(XAuthorityClientInputDelivery {
         client: client_id,
         delivery: XAuthorityInputDeliveryId::from_raw(97010),
-        outcome: XAuthorityInputDeliveryOutcome::RouteRejected,
-    }), "the actual common refusal answers the original admission before stop");
+        outcome: XAuthorityInputDeliveryOutcome::Flushed,
+    }), "the delivery answers the original admission before stop");
     assert_eq!(cell.unwrap().answer(), answer, "service exit cannot rewrite the original answer");
-    assert_collected_running(&observe_worker(&custody, &registry), "key refusal");
+    assert_collected_running(&observe_worker(&custody, &registry), "key delivery");
     assert_eq!(order.taken, 2, "the control and the key were taken: {order:?}");
-    assert_eq!(order.refused, 1);
-    assert_eq!(
-        order.last_refusal,
-        Some(PrivateExecutionRefusal::Native(private_native::Refusal::MissingQueryScope)),
-        "the native source requires a pointer observation (masks {event_mask:#x}): {order:?}"
-    );
+    assert_eq!(order.refused, 0, "(masks {event_mask:#x}): {order:?}");
+    assert_eq!(order.last_refusal, None, "{order:?}");
     let _ = std::fs::remove_file(&socket_path);
 }
 

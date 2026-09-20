@@ -198,7 +198,9 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
 /// compared against the owner's, and if they agree the view is open from the
 /// first request rather than from the first focus change. Whether it
 /// published is not an error either way; a retained focus is published by
-/// the change that next applies one.
+/// the change that next applies one. The pointer's starting position is
+/// observed the same way, over the root at the screen's centre, so a key can
+/// be delivered before anything has moved the pointer over a surface.
 #[cfg(unix)]
 fn prepare_service_runner(
     private: PrivateXServerFrontend,
@@ -243,6 +245,16 @@ fn prepare_service_runner(
                 .map_err(|refusal| {
                     X11SetupSocketError::new(format!(
                         "prepared focus could not be published: {refusal:?}"
+                    ))
+                })?;
+            runner
+                .frontend()
+                .broker
+                .registry
+                .publish_prepared_pointer(&runtime)
+                .map_err(|refusal| {
+                    X11SetupSocketError::new(format!(
+                        "prepared pointer could not be observed: {refusal:?}"
                     ))
                 })
         });
