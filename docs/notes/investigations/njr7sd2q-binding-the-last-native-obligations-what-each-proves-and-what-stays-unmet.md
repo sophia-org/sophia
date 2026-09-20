@@ -213,6 +213,24 @@ dependent counter on an accepted effect, and
 `a_poisoned_owner_reports_unavailable_rather_than_nothing_to_do` is the
 settlement owner. The reading rule earned its keep twice more.
 
+**Written the same evening, and bound.** Five witnesses in
+`tests/support/private_ingress_refusals.rs`, each on `PrivateIngress::submit`
+over a frontend whose store the control reads the credit of:
+
+| witness | what its assertions establish |
+| --- | --- |
+| `a_delivery_identity_already_live_is_refused_at_admission_and_the_live_one_is_untouched` | a second grant submitting a live delivery id is refused `DeliveryAlreadyTracked` with the route intact; the live delivery keeps the very cell its admission minted; no credit moves; the refused grant is accepted with an id of its own; both run |
+| `an_ingress_whose_request_numbers_are_spent_refuses_exhausted_and_stays_exhausted` | the ingress counter at its end refuses `Exhausted`, rolls back the delivery reservation and no credit, refuses again rather than accepting, and another producer is unaffected |
+| `an_order_that_exhausted_its_positions_refuses_every_later_submission_and_keeps_what_it_accepted` | the latch set as the order sets it refuses `Exhausted`, keeps what was accepted, and a drain does not reset it; the stream's counter is not driven to its end, which the scope says |
+| `an_authority_nobody_can_read_refuses_a_submission_as_unavailable_not_denied` | common poisoned: `Unavailable`, route intact, reservation rolled back, no credit |
+| `a_revoked_admission_is_refused_as_a_denial_at_submission_and_the_work_comes_back` | the admission revoked through the boundary: `Denied`, route intact, reservation rolled back, no credit |
+
+The two arms whose answer was predicted from the code rather than measured
+came out as predicted: a revoked admission is a decision and is refused as
+one, and an unreadable authority is refused as nothing established. With
+these, every clause has a witness on the path the obligation names, and
+the row is bound to nineteen tests.
+
 ### `native_internal_wait`: the recorded reason no longer stands
 
 The lane recorded it unmet because "nothing accrues to the meter from the
@@ -234,12 +252,15 @@ invariant, which is what the obligation names.
 
 ## Finding and resolution
 
-Four of the six were bindable or writable on the day, and one binding was
-a test that did not exist. Two stay unmet with the reason beside them, one
-because five of its seven producers do not exist, one because two of its
-eleven clauses have no witness and three more are witnessed only off the
-ingress path. The runner has no partial verdict, so the honest count of
-forty is the count of rows that hold whole.
+Five of the six were bindable or writable on the day, and two of the
+bindings were tests that did not exist: the stalled reader and the five
+ingress refusals. One stays unmet with the reason beside it, because five of
+its seven producers do not exist. With the lane's two, three rows read
+NORESULT: `native_executor_order` (a split or a rewording, Mason's call),
+`native_internal_wait` (a witness to write, now that the meter is known to
+be live) and `native_protected_action` (t139, behaviour to build). The
+runner has no partial verdict, so the honest count of forty is the count of
+rows that hold whole.
 
 ## Validation and remaining work
 
@@ -249,10 +270,8 @@ forty is the count of rows that hold whole.
 - [x] `native_no_fallback`: the refusal half bound; the ambient half is the
       M4 group, named in the scope.
 - [x] `native_executor_order`: unmet with the reason and the split option.
-- [ ] `native_ingress_admission`: write the missing witnesses (duplicate
-      delivery identity, ingress-path exhaustion and its latch, the
-      authority-denial and authority-unreachable arms), then bind all
-      eleven.
+- [x] `native_ingress_admission`: the five missing witnesses written and
+      the row bound to nineteen tests.
 - [ ] `native_internal_wait`: witness that queue, delay and frozen waits
       charge no blocked time; bind.
 - [ ] t139: build the emergency-chord rule and bind

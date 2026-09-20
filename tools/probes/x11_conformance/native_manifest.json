@@ -401,7 +401,144 @@
       "id": "native_ingress_admission",
       "description": "Private producer admission distinguishes authorization denial, duplicate delivery identity, capacity, sequence exhaustion and unavailable/disconnected authority; every refusal returns owned work, rolls back only its own reserved credit, and preserves accepted work. Exhaustion never resets identities or silently retries forever. Consumer closure rejects later submissions and settles previously accepted work; queue poison is unavailable, not empty.",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::m3_acceptance::c_capacity"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_private_producer_is_told_denial_apart_from_saturation"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_revoked_admission_is_refused_as_a_denial_at_submission_and_the_work_comes_back"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_delivery_identity_already_live_is_refused_at_admission_and_the_live_one_is_untouched"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::an_ingress_whose_request_numbers_are_spent_refuses_exhausted_and_stays_exhausted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::an_order_that_exhausted_its_positions_refuses_every_later_submission_and_keeps_what_it_accepted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_producer_is_told_which_refusal_it_met"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_store_refuses_a_reservation_before_it_would_reissue_an_identity"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "positions_are_refused_rather_than_reused_when_exhausted"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::an_authority_nobody_can_read_refuses_a_submission_as_unavailable_not_denied"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::producers_are_refused_once_their_consumer_is_gone"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::work_refused_by_the_order_takes_its_reservation_back"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "ready_stream"
+          },
+          "test": "a_refusal_destroys_nothing_it_was_handed"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_refused_control_comes_back_to_its_producer"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::review_owner_saturation_cannot_discard_two_already_accepted_controls"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::losing_a_prepared_runner_closes_its_producers_and_carries_its_hold"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::accepted_work_is_answered_when_its_consumer_goes_away"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::m3_acceptance::c_poison"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::an_unreachable_queue_is_not_reported_as_a_finished_one"
+        }
+      ],
+      "evidence_scope": "Eleven clauses, each carried on the private ingress or control producer path by a test whose assertions are the clause: capacity apart from denial and exhaustion (c_capacity); denial apart from saturation, both for a closed control revision and for a revoked admission; a live delivery identity refused as itself with the live one untouched; sequence exhaustion on the ingress counter, on the order's latch, on the control registry, on the settlement store and on the sequence allocator, terminal every time; an unreadable authority and an unreadable order refused as unavailable and a gone consumer as disconnected; every refusal handing the work back, rolling back only its own reservation and credit, and leaving accepted work in place; consumer closure refusing later work and settling what it accepted. The order's own sequence counter is not driven to its end, so the latch is witnessed as set rather than as being set."
     },
     {
       "id": "native_executor_order",

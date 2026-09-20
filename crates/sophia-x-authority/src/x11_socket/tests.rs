@@ -1363,6 +1363,10 @@ include!(concat!(
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_ingress_refusals.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/support/private_frozen_transient.rs"
 ));
 
