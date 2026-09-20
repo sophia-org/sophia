@@ -21,23 +21,11 @@ impl ExternalProbeRenderDeviceProvider {
     /// session does, so a probe that needs the layouts says which stage it
     /// lost rather than failing to start.
     fn measured(device: std::fs::File) -> Result<Self, Box<dyn std::error::Error>> {
-        let import_formats = match device
-            .try_clone()
-            .map_err(|_| sophia_backend_live::LiveDmaBufCapabilityError::DeviceUnavailable)
-            .and_then(sophia_backend_live::query_dma_buf_import_formats)
-        {
-            Ok(formats) => formats
-                .into_iter()
-                .map(
-                    |row| sophia_x_authority::XServerFrontendDmaBufImportFormat {
-                        format: row.format,
-                        modifiers: row.modifiers,
-                    },
-                )
-                .collect(),
+        let import_formats = match measure_dma_buf_import_formats(&device) {
+            Ok(formats) => formats,
             Err(reason) => {
                 eprintln!(
-                    "sophia_x_authority_probe schema=1 status=degraded reason=dma_buf_import_capabilities_unavailable error={reason:?}"
+                    "sophia_x_authority_probe schema=1 status=degraded reason=dma_buf_import_capabilities_unavailable error={reason}"
                 );
                 Vec::new()
             }
@@ -47,6 +35,41 @@ impl ExternalProbeRenderDeviceProvider {
             import_formats,
         })
     }
+}
+
+/// The node's DMA-BUF import inventory, measured by the backend the live
+/// session uses.
+#[cfg(feature = "native-session")]
+fn measure_dma_buf_import_formats(
+    device: &std::fs::File,
+) -> Result<Vec<sophia_x_authority::XServerFrontendDmaBufImportFormat>, String> {
+    device
+        .try_clone()
+        .map_err(|_| sophia_backend_live::LiveDmaBufCapabilityError::DeviceUnavailable)
+        .and_then(sophia_backend_live::query_dma_buf_import_formats)
+        .map(|formats| {
+            formats
+                .into_iter()
+                .map(
+                    |row| sophia_x_authority::XServerFrontendDmaBufImportFormat {
+                        format: row.format,
+                        modifiers: row.modifiers,
+                    },
+                )
+                .collect()
+        })
+        .map_err(|error| format!("{error:?}"))
+}
+
+/// Without the native session, the backend that measures a node is not
+/// built. The inventory is then empty and the probe says so: the same
+/// degraded path a node that cannot be measured takes, so the probes still
+/// build and run in the default configuration.
+#[cfg(not(feature = "native-session"))]
+fn measure_dma_buf_import_formats(
+    _device: &std::fs::File,
+) -> Result<Vec<sophia_x_authority::XServerFrontendDmaBufImportFormat>, String> {
+    Err("native session feature not built".into())
 }
 
 impl XServerFrontendRenderDeviceProvider for ExternalProbeRenderDeviceProvider {
