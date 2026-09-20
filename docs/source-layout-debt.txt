@@ -40,7 +40,6 @@ large crates/sophia-x-authority/src/property.rs
 large crates/sophia-x-authority/src/wire.rs
 large crates/sophia-x-authority/src/x11_socket/connection/server.rs
 large crates/sophia-x-authority/src/x11_socket/tests.rs
-large crates/sophia-x-authority/src/x11_socket/tests/routing.rs
 large crates/sophia-x-authority/tests/authority/resources.rs
 large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs
 large crates/sophia-x-authority/tests/x11_wire/core_dispatch.rs
