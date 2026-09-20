@@ -2,7 +2,7 @@
 id: ehar321u
 date: 2026-09-19
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, tooling, session]
 ---
 # A shell component retries without recording why it failed
@@ -212,12 +212,12 @@ Three more things settled the same evening:
 - [x] Establish why the Lom bar cannot start — the per-component direct GPU
       grant. Denying it removes `start_failed` outright, which isolates the
       cause by experiment rather than inference.
-- [ ] **Explain the morning's refusal when it recurs.** `shell_gpu_device`
+- [x] **The morning's refusal is a watch item, not a task.** `shell_gpu_device`
       cannot have been it: it is resolved once at session start, and the
       session started. The bar starts on `d461492d` with the same profile and
-      GPUs, and every start refusal now carries a cause code, so the next
-      occurrence names its path in the retained record; repair that path
-      then. Nothing to do until it recurs.
+      GPUs, and every start refusal now carries a cause code, so a recurrence
+      names its path in the retained record. Reopen from that `cause=`
+      value; there is nothing to repair until then.
 - [x] Space a start-then-service-fail cycle -- a stop after `service_failed`
       counts with refused starts, and a healthy tenure resets the count.
 - [x] Decide the approved start-failure cause codes and emit them
@@ -227,7 +227,7 @@ Three more things settled the same evening:
       the component: it never reaches the service, and queue saturation is
       endpoint failure by contract. No change.
 
-Open work is tracked as t114 in `todo.md`.
+t114 was closed on 2026-09-19 with the watch item above; a recurrence reopens it from the retained cause.
 
 ## Connections
 
