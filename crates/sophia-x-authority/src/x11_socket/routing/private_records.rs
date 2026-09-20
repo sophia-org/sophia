@@ -171,6 +171,10 @@ struct PrivateDeliveryCustody {
     /// caller supplied; this is what the ledger minted, so holding it is
     /// holding the completion of that exact admission and of no other.
     completion: Option<Arc<PrivateDeliveryCompletion>>,
+    /// Where the writer answers when nobody admitted this event: a release
+    /// the ledger made when its source departed. Exclusive with
+    /// `completion`; a custody with neither owes no event at all.
+    unadmitted: Option<Arc<PrivateUnadmittedCompletion>>,
     /// The writer's own answer, once there is one, kept apart from what it
     /// settled.
     outcome_seen: Option<XAuthorityInputDeliveryOutcome>,
@@ -181,13 +185,24 @@ struct PrivateDeliveryCustody {
 
 #[cfg(unix)]
 impl PrivateDeliveryCustody {
+    /// Whether this custody owes its recipient an event at all.
+    ///
+    /// AN EVENT IS OWED WHEN SOMETHING CAN ANSWER FOR IT: the completion the
+    /// ledger minted at admission, or the cell a departed source's release
+    /// carries instead. A custody with neither -- a StateOnly release that
+    /// ended a hold without producing an event -- owes nothing, and every
+    /// ordering decision below excludes it on that ground.
+    fn owes_event(&self) -> bool {
+        self.completion.is_some() || self.unadmitted.is_some()
+    }
+
     /// Whether this debt's event is still owed a handover.
     ///
     /// READ FROM THE PHASE, never from the slot. An empty slot means either
     /// nothing taken yet or a handover that never reported, and only the phase
     /// tells them apart.
     fn owes_handover(&self) -> bool {
-        self.completion.is_some()
+        self.owes_event()
             && !self.recipient_termination
             && matches!(
                 self.dispatch,
@@ -215,9 +230,34 @@ impl PrivateDeliveryCustody {
     /// An unfinished handover -- owed, or begun and unreported -- is what a
     /// later event of the same hold must not overtake.
     fn handover_unfinished(&self) -> bool {
-        self.completion.is_some()
+        self.owes_event()
             && !self.recipient_termination
             && !matches!(self.dispatch, PrivateDispatchPhase::Enqueued)
+    }
+
+    /// The writer's own answer, through whichever cell it came.
+    fn writer_outcome(&self) -> Option<XAuthorityInputDeliveryOutcome> {
+        self.completion
+            .as_ref()
+            .and_then(|cell| cell.answer())
+            .map(|answer| answer.outcome)
+            .or_else(|| self.unadmitted.as_ref().and_then(|cell| cell.answer()))
+    }
+
+    /// The finalizer a capsule of this custody answers through, if anything
+    /// can answer for it. An admitted custody needs the delivery it was
+    /// admitted as; an unadmitted one names none.
+    fn finalizer(
+        &self,
+        recovery: &InputRecovery,
+        delivery: Option<XAuthorityInputDeliveryId>,
+        client: XServerFrontendClientId,
+    ) -> Option<PrivateDeliveryFinalizer> {
+        if let Some(cell) = self.unadmitted.as_ref() {
+            return Some(finalizer_for_unadmitted(recovery, cell, client));
+        }
+        let completion = self.completion.as_ref()?;
+        Some(finalizer_from_held(recovery, completion, delivery?, client))
     }
 
     /// Begin custody for a debt, holding the completion it was created with.
@@ -228,8 +268,19 @@ impl PrivateDeliveryCustody {
             dispatch: PrivateDispatchPhase::Untaken,
             attempt: None,
             completion,
+            unadmitted: None,
             outcome_seen: None,
             recipient_termination: false,
+        }
+    }
+
+    /// Begin custody for an event nobody admitted, with a cell of its own
+    /// for the writer's answer.
+    #[cfg_attr(not(test), allow(dead_code))] // Constructed by the departed release visit next.
+    fn unadmitted(order: u64) -> Self {
+        Self {
+            unadmitted: Some(Arc::default()),
+            ..Self::new(order, None)
         }
     }
 }
@@ -426,6 +477,7 @@ impl PrivateSettlingRelease {
     /// lookup to pair with it, so there is no interval in which the delivery
     /// could be pruned and re-admitted between establishing identity and
     /// reading the outcome.
+    #[cfg_attr(not(test), allow(dead_code))] // Controls read the admitted cell directly.
     fn completion_answer(&self) -> Option<XAuthorityClientInputDelivery> {
         self.custody.completion.as_ref()?.answer()
     }

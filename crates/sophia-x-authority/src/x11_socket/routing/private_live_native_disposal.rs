@@ -26,18 +26,14 @@ impl PrivateDeliveryCustody {
     fn writer_settled(&self) -> bool {
         self.attempt.is_none()
             && self.pending.is_none()
-            && self
-                .completion
-                .as_ref()
-                .and_then(|cell| cell.answer())
-                .is_some_and(|answer| {
-                    self.recipient_termination
-                        || matches!(
-                            answer.outcome,
-                            XAuthorityInputDeliveryOutcome::Flushed
-                                | XAuthorityInputDeliveryOutcome::ClientDisconnected
-                        )
-                })
+            && self.writer_outcome().is_some_and(|outcome| {
+                self.recipient_termination
+                    || matches!(
+                        outcome,
+                        XAuthorityInputDeliveryOutcome::Flushed
+                            | XAuthorityInputDeliveryOutcome::ClientDisconnected
+                    )
+            })
     }
 }
 

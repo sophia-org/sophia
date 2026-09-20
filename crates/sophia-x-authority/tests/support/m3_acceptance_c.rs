@@ -1779,7 +1779,7 @@ fn held_capsule(
             .delivery()
             .finalizer()
             .and_then(|finalizer| finalizer.completion.answer()),
-        finalizer_delivery: capsule.delivery().finalizer().map(|held| held.delivery),
+        finalizer_delivery: capsule.delivery().finalizer().and_then(|held| held.delivery),
         finalizer_client: capsule.delivery().finalizer().map(|held| held.client),
         endpoint: Some(capsule.delivery().endpoint().clone()),
         answers_for_this_origin: capsule.delivery().emission().answers_for(registry),

@@ -135,6 +135,10 @@ fn state_only_no_holder_and_survivor_do_not_repeat_xkb_or_create_emissions() {
         PrivateReleaseBinding::RecipientTerminationRequired
     );
     assert!(release.delivery.is_none() && release.custody.completion.is_none());
+    // NOTHING CAN ANSWER FOR IT, so it owes no event and is never a head: the
+    // ground on which a suppressed release stays out of the ordering, which
+    // is not the ground a departed source's release stands on.
+    assert!(!release.custody.owes_event() && !release.custody_handover_unfinished());
     assert!(release.custody.attempt.is_none() && release.custody.pending.is_none());
     let held = release.native.as_mut().unwrap().key_mut().unwrap();
     assert_eq!(

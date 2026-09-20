@@ -651,7 +651,10 @@ impl std::error::Error for XServerFrontendRouteError {}
 #[derive(Debug)]
 #[allow(dead_code)] // The ordered writer/consumer integration supplies production calls.
 pub(crate) struct XAuthorityOrderedDelivery {
-    delivery: crate::XAuthorityInputDeliveryId,
+    /// `None` for a capsule nobody admitted: a release the ledger made when
+    /// its source departed has no request, and so no delivery identity. Its
+    /// writer answers through the finalizer alone.
+    delivery: Option<crate::XAuthorityInputDeliveryId>,
     emission: crate::x11_socket::PrivateOrderedEmission,
     /// How this delivery's writer answers it.
     ///
@@ -732,10 +735,28 @@ impl XAuthorityOrderedDelivery {
             return Err((XAuthorityOrderedAssemblyRefusal::DeliveryMissing, emission));
         };
         Ok(Self {
-            delivery,
+            delivery: Some(delivery),
             emission,
             finalizer: None,
         })
+    }
+
+    /// A capsule for an event nobody admitted.
+    ///
+    /// It names no delivery, because none was ever issued for it, and its
+    /// writer answers through the finalizer it is given and nothing else.
+    /// The emission is expected to carry no delivery either: one that did
+    /// would be an admitted event assembled the wrong way.
+    pub(crate) fn unadmitted(emission: crate::x11_socket::PrivateOrderedEmission) -> Self {
+        debug_assert!(
+            emission.delivery().is_none(),
+            "an emission with a delivery is assembled through from_emission"
+        );
+        Self {
+            delivery: None,
+            emission,
+            finalizer: None,
+        }
     }
 
     /// Give this capsule the finalizer its writer will answer through.
@@ -758,7 +779,12 @@ impl XAuthorityOrderedDelivery {
     pub(crate) fn client(&self) -> XServerFrontendClientId {
         XServerFrontendClientId::from_raw(self.emission.connection().recipient)
     }
-    pub(crate) fn delivery(&self) -> crate::XAuthorityInputDeliveryId {
+    /// The delivery this capsule was admitted as, if anyone admitted it.
+    ///
+    /// Production asks this, which does not presume. The controls that only
+    /// ever assemble admitted capsules keep a `delivery()` that does, defined
+    /// beside them rather than here.
+    pub(crate) fn admitted_delivery(&self) -> Option<crate::XAuthorityInputDeliveryId> {
         self.delivery
     }
     pub(crate) fn incarnation(&self) -> Option<sophia_input_authority::HoldIncarnation> {

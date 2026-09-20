@@ -42,15 +42,17 @@ fn stow_press_capsule(
     recovery: &InputRecovery,
     recipient: XServerFrontendClientId,
 ) {
-    match XAuthorityOrderedDelivery::from_emission(emission) {
+    let wrapped = if custody.unadmitted.is_some() {
+        Ok(XAuthorityOrderedDelivery::unadmitted(emission))
+    } else {
+        XAuthorityOrderedDelivery::from_emission(emission)
+    };
+    match wrapped {
         Ok(mut capsule) => {
-            if let Some(completion) = custody.completion.as_ref() {
-                capsule.carry_finalizer(std::sync::Arc::new(finalizer_from_held(
-                    recovery,
-                    completion,
-                    capsule.delivery(),
-                    recipient,
-                )));
+            if let Some(finalizer) =
+                custody.finalizer(recovery, capsule.admitted_delivery(), recipient)
+            {
+                capsule.carry_finalizer(std::sync::Arc::new(finalizer));
             }
             custody.pending = Some(PrivatePendingDelivery::Capsule(capsule));
             custody.dispatch = PrivateDispatchPhase::Pending;
@@ -487,16 +489,14 @@ fn dispatch_custody(
         // id: that is the late acquisition a prune and a re-admission defeat,
         // and it would hand these bytes a finalizer for somebody else's
         // admission.
-        let mut finalizer = self.terminal.settling[index].completion().map(|completion| {
-            finalizer_from_held(
-                &self.broker.registry.input_recovery,
-                completion,
-                self.terminal.settling[index]
-                    .delivery()
-                    .expect("a release with a completion has a delivery"),
-                self.terminal.settling[index].reached().client(),
-            )
-        });
+        let mut finalizer = self.terminal.settling[index].custody.finalizer(
+            &self.broker.registry.input_recovery,
+            self.terminal.settling[index].delivery(),
+            self.terminal.settling[index].reached().client(),
+        );
+        // Whether anything can answer for this delivery, read before the
+        // finalizer is handed to the capsule below.
+        let answerable = finalizer.is_some();
         // The destination slot is prepared before anything is taken from the
         // hold, so an emission never leaves its obligation with nowhere to be.
         if self.terminal.settling[index].custody.pending.is_none() {
@@ -508,7 +508,12 @@ fn dispatch_custody(
                 return Some(false);
             };
             let release = &mut self.terminal.settling[index];
-            match XAuthorityOrderedDelivery::from_emission(emission) {
+            let wrapped = if release.custody.unadmitted.is_some() {
+                Ok(XAuthorityOrderedDelivery::unadmitted(emission))
+            } else {
+                XAuthorityOrderedDelivery::from_emission(emission)
+            };
+            match wrapped {
                 Ok(mut capsule) => {
                     // The writer answers through a finalizer bound to this
                     // debt's own admission, so both are answering one
@@ -545,10 +550,12 @@ fn dispatch_custody(
         // and is carried whole; fetching it again by delivery id would accept
         // whatever admission holds that number now, and on a retry it would
         // overwrite a correct handle with a replacement one.
-        if self.terminal.settling[index].completion().is_none() {
-            // Custody that is missing cannot be enqueued past. A delivery
-            // handed over with no way to recognise its own answer is one whose
-            // attempt nothing can ever finish.
+        if !answerable {
+            // A delivery with nothing to answer for it cannot be enqueued
+            // past: handed over with no way to recognise its own answer, its
+            // attempt is one nothing can ever finish. Either cell answers --
+            // the completion the ledger minted, or the one a departed
+            // source's release carries.
             self.relinquish_outstanding_attempt(claim.token);
             return Some(false);
         }
@@ -637,7 +644,7 @@ fn dispatch_custody(
         // The handle this release has carried since it was recorded is the one
         // that answers it. Nothing refreshes it here.
         debug_assert!(
-            release.completion().is_some(),
+            release.custody.owes_event(),
             "custody was checked before the handover began"
         );
         let Some(PrivatePendingDelivery::Capsule(capsule)) = release.custody.pending.take() else {
@@ -797,10 +804,10 @@ fn dispatch_custody(
             if release.attempt().is_none() || release.outcome_seen().is_some() {
                 continue;
             }
-            let Some(receipt) = release.completion_answer() else {
+            let Some(outcome) = release.custody.writer_outcome() else {
                 continue;
             };
-            release.record_outcome(receipt.outcome);
+            release.record_outcome(outcome);
         }
     }
 
@@ -871,7 +878,7 @@ fn dispatch_custody(
     fn owes_receipt_settlement(&self) -> bool {
         self.terminal.settling.iter().any(|release| {
             release.attempt().is_some()
-                && (release.outcome_seen().is_some() || release.completion_answer().is_some())
+                && (release.outcome_seen().is_some() || release.custody.writer_outcome().is_some())
         })
     }
 
