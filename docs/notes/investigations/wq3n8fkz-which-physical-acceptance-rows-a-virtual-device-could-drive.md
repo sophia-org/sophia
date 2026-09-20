@@ -111,6 +111,49 @@ Note also that `@physical` rows historically pair with an installed release and
 real outputs; a virtual input device does not make a session headless, and the
 GPU half of t009, t011 and t081 still wants real hardware.
 
+## May a virtual device supply the emergency chord?
+
+t094 decided the general case -- a uinput device is admitted and marked
+`virtual=true`, never refused -- and left this one to t145. It is not
+hypothetical, and the answer is already implied by two facts.
+
+**Our own tooling does it today.** `uinput_text_injector.py` has
+`--chord recovery`, and it is `KEY_LEFTCTRL, KEY_LEFTALT, KEY_BACKSPACE` --
+keycode 14 being the exact `EVDEV_KEY_BACKSPACE` that t139 pinned as the
+reserved chord. A virtual device can trigger emergency recovery now, and that
+is how the recovery path gets exercised at all.
+
+**Refusing it would not raise the bar.** `/dev/uinput` is gated by the `input`
+group: `tools/setup_sophia_uinput.sh` installs the udev rule and adds the user
+to it. Membership in that group already permits *reading every input device* --
+every keystroke, including passwords. That is a strictly greater privilege than
+restarting a session. Refusing the chord from a virtual source would leave the
+larger capability untouched and break the only legitimate automated use of the
+smaller one.
+
+So: **allowed, and marked** -- the same shape t094 chose for devices, for the
+same reason. What must not happen is a virtual trigger being mistaken for a
+physical one, and t094's `virtual=true|false` on the evidence line is exactly
+what prevents it. The rule this note proposes, mirroring the two-keyboard
+verifier:
+
+> An emergency chord from a virtual device is a valid **rehearsal** of the
+> recovery path and never a valid **acceptance** of it. Any row that accepts
+> emergency recovery requires `virtual=false` on the source, as the attended
+> two-keyboard verifier requires it on both keyboards.
+
+That keeps t077 and t019 drivable unattended while leaving their acceptance
+claim resting on hardware. **This is a security policy recommendation rather
+than a settled decision; it is recorded here so it is visible and overrulable
+rather than assumed.**
+
+Note the contrast with t139, and that it is not a contradiction. t139 refuses
+the chord from a *synthetic* source -- an XTEST injector inside the authority,
+which never reaches the seat. A uinput device is not synthetic in that sense:
+libinput enumerates it as a device and the physical path genuinely runs. The
+two rules protect different boundaries, and a virtual device crosses the one
+t139 was never about.
+
 ## Connections
 
 - [Private native input authority and XTEST adapter](../plans/7xqjn8rp-private-native-input-authority-and-xtest-adapter.md) --
