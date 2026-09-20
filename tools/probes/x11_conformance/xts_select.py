@@ -18,10 +18,12 @@ CASE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
 
 
 def case_sources(root, suite, case):
-    """The `.m` sources of one case, or an error naming what is missing."""
-    matches = sorted(p for p in (root / suite).glob(f'*/{case}/*.m') if p.is_file())
+    """The `.m` source of one case: `xts5/<section>/<case>.m`, or, for a case
+    that carries data files, `xts5/<section>/<case>/<case>.m`."""
+    matches = sorted(p for pattern in (f'*/{case}.m', f'*/{case}/{case}.m')
+                     for p in (root / suite).glob(pattern) if p.is_file())
     if not matches:
-        raise ValueError(f'case has no .m source under {root / suite}/*/{case}: {case}')
+        raise ValueError(f'case has no .m source under {root / suite}/*/{case}.m or */{case}/{case}.m: {case}')
     return matches
 
 
@@ -33,10 +35,11 @@ def purposes_of(sources):
 
 
 def scenario_path(root, suite, sources):
-    """The path the suite's scenario file names the case by, `/Xlib3/XDestroyWindow`,
-    which is also how TET's journal names it."""
-    directory = sources[0].parent.relative_to(root / suite)
-    return f'/{directory.as_posix()}'
+    """The path the suite's scenario file names the case by, which is the
+    source's path under the suite without its suffix: `/Xlib4/XDestroyWindow`
+    for a file case, `/Xlib4/XMapWindow/XMapWindow` for a directory case. TET's
+    journal names the case the same way."""
+    return '/' + sources[0].relative_to(root / suite).with_suffix('').as_posix()
 
 
 def select(root, suite, cases):

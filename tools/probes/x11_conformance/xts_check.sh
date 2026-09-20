@@ -46,21 +46,33 @@ template="$suite/tetexec.cfg.in"
 # persists across cases), and the vendor fields left for the suite to read.
 config="$suite/tetexec.cfg"
 {
-    grep -v '^XT_DISPLAY=\|^XT_FONTPATH=\|^XT_FONTPATH_GOOD=\|^XT_RESET_DELAY=' "$template"
-    printf 'XT_DISPLAY=%s\n' "${DISPLAY:-:99}"
+    grep -v '^DISPLAY=\|^XT_FONTPATH=\|^XT_FONTPATH_GOOD=\|^XT_RESET_DELAY=' "$template"
+    # The suite reads DISPLAY (the config var xts-config derives from
+    # xdpyinfo); XT_DISPLAY is not a key it knows. Empty font paths because
+    # no font opcode is decoded, no reset delay because the host persists.
+    printf 'DISPLAY=%s\n' "${DISPLAY:-:99}"
     printf 'XT_FONTPATH=\nXT_FONTPATH_GOOD=\nXT_RESET_DELAY=0\n'
 } >"$config"
 
-results="$root/results"
+# tcc writes its journal directly into the directory it is given; the
+# adapter reads exactly one results/*/journal, so the run gets a directory
+# of its own under results.
+results="$root/results/$scenario"
 mkdir -p "$results"
 export TET_ROOT="$root"
 export TET_EXECUTE="$suite"
+# Every program libtool built is a wrapper: it finds its binary beside
+# itself but names the checkout's original absolute path for its libraries,
+# and the adapter runs a private copy elsewhere. The loader skips a missing
+# directory, so naming every built library directory of this copy is enough.
+libdirs="$(find "$root" -type d -name .libs 2>/dev/null | tr '\n' ':')"
+export LD_LIBRARY_PATH="${libdirs}${LD_LIBRARY_PATH:-}"
 # The same invocation the checkout's xts-run makes: execute, journal under
 # results, this configuration, the xts5 suite, the named scenario.
 "$tcc" -e -i "$results" -x "$config" xts5 "$scenario"
 status=$?
-[ -n "$(find "$results" -mindepth 2 -maxdepth 2 -name journal -type f 2>/dev/null)" ] || {
-    echo "tcc wrote no journal under $results" >&2
+[ -s "$results/journal" ] || {
+    echo "tcc wrote no journal at $results/journal" >&2
     exit 1
 }
 exit "$status"

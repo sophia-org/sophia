@@ -9,9 +9,9 @@ import unittest
 HERE = Path(__file__).resolve().parent
 
 
-def fabricate(root, case, directory, assertions):
-    source = root / 'xts5' / directory / case / f'{case}.m'
-    source.parent.mkdir(parents=True)
+def fabricate(root, case, directory, assertions, with_data=False):
+    source = root / 'xts5' / directory / (f'{case}/{case}.m' if with_data else f'{case}.m')
+    source.parent.mkdir(parents=True, exist_ok=True)
     body = f'>># {case}\n' + ''.join(f'>>ASSERTION Good A\n>>CODE\nx{n}();\n' for n in range(assertions))
     source.write_text(body)
     scenario_file = root / 'xts5' / 'tet_scen'
@@ -36,7 +36,8 @@ class SelectionTests(unittest.TestCase):
             root = Path(tmp)
             fabricate(root, 'XDestroyWindow', 'Xlib3', 3)
             fabricate(root, 'XInternAtom', 'Xlib4', 2)
-            result, manifest = self.run_select(root, 'XDestroyWindow', 'XInternAtom', install=True)
+            fabricate(root, 'XMapWindow', 'Xlib4', 1, with_data=True)
+            result, manifest = self.run_select(root, 'XDestroyWindow', 'XInternAtom', 'XMapWindow', install=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             rows = json.loads(manifest.read_text())
             self.assertEqual(rows, [
@@ -45,9 +46,10 @@ class SelectionTests(unittest.TestCase):
                 {'case': '/Xlib3/XDestroyWindow', 'purpose': 3},
                 {'case': '/Xlib4/XInternAtom', 'purpose': 1},
                 {'case': '/Xlib4/XInternAtom', 'purpose': 2},
+                {'case': '/Xlib4/XMapWindow/XMapWindow', 'purpose': 1},
             ])
             scenario = (root / 'xts5/tet_scen').read_text()
-            self.assertIn('\nselected-core\n\t"selected scenario selected-core: 2 cases"\n\t/Xlib3/XDestroyWindow\n\t/Xlib4/XInternAtom\n', scenario)
+            self.assertIn('\nselected-core\n\t"selected scenario selected-core: 3 cases"\n\t/Xlib3/XDestroyWindow\n\t/Xlib4/XInternAtom\n\t/Xlib4/XMapWindow/XMapWindow\n', scenario)
             self.assertTrue(scenario.startswith('all\n'), 'the suite\'s own scenarios stay first')
             # Installing again replaces the block rather than adding a second.
             again, _ = self.run_select(root, 'XDestroyWindow', install=True)
