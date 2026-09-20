@@ -14,6 +14,9 @@ use pointer_focus::*;
 #[path = "input/route_report.rs"]
 mod route_report;
 use route_report::*;
+#[path = "input/device_lifecycle.rs"]
+mod device_lifecycle;
+use device_lifecycle::*;
 
 type SessionPointerPlacement = sophia_engine::OutputUnionPointerState;
 
@@ -721,7 +724,10 @@ fn route_input_events_with_launcher(
         pointer_boundary_entries: Vec::new(),
         pointer_boundary_reversals: Vec::new(),
         pointer_output_transitions: Vec::new(),
-        device_announcements: 0,
+        devices_added: Vec::new(),
+        devices_removed: Vec::new(),
+        devices_keyed: Vec::new(),
+        device_release_deliveries: Vec::new(),
     };
     if routing_mode == PhysicalInputRoutingMode::Full
         && let (Some(held), Some(state), Some(projections), Some(release_sender)) = (
@@ -830,6 +836,9 @@ fn route_input_events_with_launcher(
             sophia_protocol::InputEventKind::Key { keycode, pressed } => {
                 if !control_plane_applied {
                     report.keys_observed = report.keys_observed.saturating_add(1);
+                    if !report.devices_keyed.contains(&event.device) {
+                        report.devices_keyed.push(event.device);
+                    }
                     keyboard_coverage.observe_key_at_device(event.device, keycode, pressed);
                     let launcher_text=launcher.as_mut().map(|(capture,keyboard)|keyboard.observe(keycode,pressed,capture.active()));
 
@@ -1139,9 +1148,36 @@ fn route_input_events_with_launcher(
                 }
                 report.deliveries.push(delivery);
             }
-            sophia_protocol::InputEventKind::DeviceAdded { .. }
-            | sophia_protocol::InputEventKind::DeviceRemoved => {
-                report.device_announcements = report.device_announcements.saturating_add(1);
+            sophia_protocol::InputEventKind::DeviceAdded {
+                keyboard,
+                pointer,
+                touch,
+                virtual_bus,
+            } => {
+                report.devices_added.push(DeviceArrival {
+                    device: event.device,
+                    keyboard,
+                    pointer,
+                    touch,
+                    virtual_bus,
+                });
+            }
+            sophia_protocol::InputEventKind::DeviceRemoved => {
+                let removal = release_departed_device(
+                    event.device,
+                    client_keys,
+                    input_sender,
+                    &mut report.ingress_saturation,
+                    modifiers,
+                    key_repeat,
+                    virtual_terminal_chord,
+                    emergency_chord,
+                    keyboard_coverage,
+                    next_input_delivery,
+                    now_msec,
+                    &mut report.device_release_deliveries,
+                )?;
+                report.devices_removed.push(removal);
             }
             kind @ (sophia_protocol::InputEventKind::PointerMotion
             | sophia_protocol::InputEventKind::PointerButton { .. }

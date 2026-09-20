@@ -191,6 +191,21 @@ impl SessionClientKeyState {
         destination.extend(self.pressed.iter().copied());
     }
 
+    /// The keys one device still holds, across every surface.
+    pub fn copy_device_keys(
+        &self,
+        device: DeviceId,
+        destination: &mut Vec<SessionClientPressedKey>,
+    ) {
+        destination.clear();
+        destination.extend(
+            self.pressed
+                .iter()
+                .copied()
+                .filter(|pressed| pressed.device == device),
+        );
+    }
+
     pub fn record_synthetic_release(&mut self, key: SessionClientPressedKey) {
         if let Some(index) = self.pressed.iter().position(|pressed| *pressed == key) {
             self.pressed.swap_remove(index);
@@ -357,6 +372,11 @@ impl VirtualTerminalChordState {
             self.devices.remove(&device);
         }
         action
+    }
+
+    /// The device left the seat, and whatever chord it was building with it.
+    pub fn forget_device(&mut self, device: DeviceId) {
+        self.devices.remove(&device);
     }
 
     pub fn pressed_modifier_keycodes_for(&self, device: DeviceId) -> [Option<u32>; 4] {

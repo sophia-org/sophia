@@ -58,7 +58,14 @@ pub(super) struct PhysicalInputRouteReport {
     pub(super) pointer_boundary_entries: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
     pub(super) pointer_boundary_reversals: Vec<(sophia_engine::PointerBoundaryContact, Option<usize>)>,
     pub(super) pointer_output_transitions: Vec<(sophia_engine::PointerOutputTransition, bool)>,
-    /// Device arrivals and departures seen on this pass. Announced only for
-    /// now; the release-on-departure turn lands with its own controls.
-    pub(super) device_announcements: usize,
+    /// Devices that joined the seat on this pass.
+    pub(super) devices_added: Vec<DeviceArrival>,
+    /// Devices that left the seat on this pass, with what each released.
+    pub(super) devices_removed: Vec<DeviceRemoval>,
+    /// Devices a key was observed from on this pass, first key only.
+    pub(super) devices_keyed: Vec<DeviceId>,
+    /// Releases issued for departed devices' keys. Tracked apart from
+    /// `deliveries`: these are releases the seat owes, so they extend the
+    /// release barrier the way a flush does.
+    pub(super) device_release_deliveries: Vec<XAuthorityInputDeliveryId>,
 }
