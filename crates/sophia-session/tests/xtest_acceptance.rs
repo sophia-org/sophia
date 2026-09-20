@@ -40,3 +40,18 @@ fn evidence_record_names_the_group_and_every_subcase() {
     }));
     assert!(refused.is_err());
 }
+
+// This lane's groups are appended here and the top of the file is left for
+// the adapter lane's, so the two never share a hunk.
+
+#[test]
+#[ignore = "run through cargo xtask check m5-acceptance"]
+fn registration_admission() {
+    support::groups::registration_admission();
+}
+
+#[test]
+#[ignore = "run through cargo xtask check m5-acceptance"]
+fn version_negotiation() {
+    support::groups::version_negotiation();
+}
