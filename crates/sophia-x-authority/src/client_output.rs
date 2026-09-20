@@ -23,11 +23,11 @@ include!("client_output/helpers.rs");
 
 pub const X_CLIENT_OUTPUT_RECORD_LEN: usize = 32;
 
-const X_KEY_PRESS: u8 = 2;
-const X_KEY_RELEASE: u8 = 3;
-const X_BUTTON_PRESS: u8 = 4;
-const X_BUTTON_RELEASE: u8 = 5;
-const X_MOTION_NOTIFY: u8 = 6;
+pub(crate) const X_KEY_PRESS: u8 = 2;
+pub(crate) const X_KEY_RELEASE: u8 = 3;
+pub(crate) const X_BUTTON_PRESS: u8 = 4;
+pub(crate) const X_BUTTON_RELEASE: u8 = 5;
+pub(crate) const X_MOTION_NOTIFY: u8 = 6;
 const X_FOCUS_IN: u8 = 9;
 const X_FOCUS_OUT: u8 = 10;
 const X_EXPOSE: u8 = 12;

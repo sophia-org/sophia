@@ -166,6 +166,7 @@ include!("x11_socket/connection/private_service_order.rs");
 include!("x11_socket/connection/private_service.rs");
 include!("x11_socket/connection/protocol_routing.rs");
 include!("x11_socket/connection/pixmap_publication.rs");
+include!("x11_socket/connection/xtest.rs");
 include!("x11_socket/connection/dispatch.rs");
 include!("x11_socket/connection/event_state.rs");
 include!("x11_socket/connection/focus.rs");

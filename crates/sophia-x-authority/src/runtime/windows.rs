@@ -174,6 +174,24 @@ impl XAuthorityRuntime {
              .map_err(Into::into)
      }
  
+     /// The surface a window is presented through, if it is one this
+     /// namespace may see.
+     ///
+     /// `None` for the root, which is no client's window and has no surface:
+     /// it is the output, not something presented on it. A caller that needs
+     /// to inject at the bare root asks for that explicitly rather than
+     /// getting a surface that does not exist.
+     pub(crate) fn window_surface(
+         &self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+     ) -> Option<sophia_protocol::SurfaceId> {
+         self.resources
+             .lookup(namespace, window, XResourceKind::Window)
+             .ok()?;
+         self.windows.get(window).map(|record| record.surface)
+     }
+
      pub fn validate_window_access(
          &self,
          namespace: NamespaceId,

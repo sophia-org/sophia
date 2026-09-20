@@ -520,7 +520,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // connection has been registered and its private lifecycle attached, so
     // asking at this point is asking about a client the authority has not met
     // and is refused every time.
-    let mut injector: Option<Box<dyn crate::XTestInjector>> = None;
+    let mut xtest: Option<XTestConnection> = None;
     let client_lease = setup_lease.ok_or_else(|| {
         X11SetupSocketError::new("Sophia X Server Frontend did not retain a setup client lease")
     })?;
@@ -653,14 +653,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // client goes on being served everything else; what it loses is
             // XTEST, which it is then told is absent rather than left to
             // discover one refusal at a time.
-            injector = admission_lease
+            xtest = admission_lease
                 .as_ref()
                 .zip(injection_policy.as_ref())
                 .and_then(|(lease, policy)| {
                     policy
                         .issue(lease.context(), crate::X_TEST_INJECTION_DEVICE)
                         .ok()
-                });
+                })
+                .map(XTestConnection::new);
             routing.attach_connection_state(
                 &registration,
                 namespace,
@@ -958,7 +959,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 sequence,
                 major_opcode,
                 client_id: client.raw(),
-                injection: if injector.is_some() {
+                injection: if xtest.is_some() {
                     crate::XTestAdmission::Admitted
                 } else {
                     crate::XTestAdmission::Absent
@@ -1002,6 +1003,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let mut request_stage = X11ObservedRequestStage::Other;
             let mut pixmap_publication_prefix = Vec::new();
             let mut pixmap_prefix_refused = false;
+            // Kept from the decode so an accepted request can be acted on
+            // after the guard that validated it is released. Only the
+            // dispatcher's refusal is decided under that guard.
+            let mut fake_input: Option<XTestFakeInputRequest> = None;
+            let mut grab_control: Option<u8> = None;
             let (
                 mut output,
                 cpu_buffer_updates,
@@ -1025,6 +1031,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 &request,
             ) {
                 Ok(mut request) => {
+                    fake_input = XTestFakeInputRequest::from_request(&request);
+                    if let crate::XWireRequest::XTestGrabControl { impervious } = &request {
+                        grab_control = Some(*impervious);
+                    }
                     let create_surface_route = if let crate::XWireRequest::CreateWindow {
                         packet:
                             crate::XAuthorityRequestPacket {
@@ -2351,6 +2361,35 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     )
                 }
             };
+            // An accepted XTEST request, acted on now that the guard which
+            // validated it is released. Acceptance is the absence of an error:
+            // FakeInput and GrabControl owe no reply, so an empty output set is
+            // the dispatcher saying yes.
+            if output.outputs.is_empty() {
+                if let (Some(connection), Some(impervious)) = (xtest.as_mut(), grab_control) {
+                    connection.impervious = impervious == 1;
+                }
+                if let (Some(connection), Some(request)) = (xtest.as_ref(), fake_input) {
+                    let planned = {
+                        let runtime = lock_x11_request_runtime(
+                            &state.runtime,
+                            &state.control_runtime_pending,
+                        )?;
+                        connection.plan(&runtime, namespace, request)
+                    };
+                    // Nothing here reaches the client. FakeInput has no reply
+                    // and the reference sends none, so an error synthesised
+                    // for a refusal would desynchronise its sequence
+                    // accounting. Refusals are recorded; the barrier, when it
+                    // lands, is what a client waits on.
+                    match planned {
+                        Ok(plan) => {
+                            let _ = connection.submit(plan);
+                        }
+                        Err(_unplanned) => {}
+                    }
+                }
+            }
             // Validation is complete; opening the pinned device must not hold
             // the authority lock or substitute a newer connection generation.
             if output.outputs.iter().any(|item| matches!(item,
