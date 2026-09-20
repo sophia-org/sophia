@@ -54,6 +54,41 @@ fn a_profile_is_required_and_all_means_both() {
             "--target-dir=/t",
             "--xts-root=/x",
         ]),
+        // Root and manifest without a scenario used to parse, and the
+        // adapter then blocked on the missing scenario every time.
+        arguments(&[
+            "--profile=xtest",
+            "--output=/o",
+            "--target-dir=/t",
+            "--xts-root=/x",
+            "--xts-expected=/p.json",
+        ]),
+        arguments(&[
+            "--profile=xtest",
+            "--output=/o",
+            "--target-dir=/t",
+            "--xts-scenario=selected-core",
+        ]),
+        arguments(&[
+            "--profile=xtest",
+            "--output=/o",
+            "--target-dir=/t",
+            "--xts-root=/x",
+            "--xts-expected=/p.json",
+            "--xts-scenario=selected-core",
+            "--xts-timeout=1786",
+        ]),
+        // The adapter's deadline must leave the gate its own margin.
+        arguments(&[
+            "--profile=xtest",
+            "--output=/o",
+            "--target-dir=/t",
+            "--timeout=600",
+            "--xts-root=/x",
+            "--xts-expected=/p.json",
+            "--xts-scenario=selected-core",
+            "--xts-timeout=600",
+        ]),
     ] {
         assert!(options(&missing).is_err(), "{missing:?}");
     }
@@ -63,9 +98,23 @@ fn a_profile_is_required_and_all_means_both() {
         "--target-dir=/t",
         "--xts-root=/x",
         "--xts-expected=/p.json",
+        "--xts-scenario=selected-core",
     ]))
     .unwrap();
     assert_eq!(xts.xts_root, Some(PathBuf::from("/x")));
+    assert_eq!(xts.xts_scenario.as_deref(), Some("selected-core"));
+    assert_eq!(xts.xts_timeout, 600);
+    let slow = options(&arguments(&[
+        "--profile=xtest",
+        "--output=/o",
+        "--target-dir=/t",
+        "--xts-root=/x",
+        "--xts-expected=/p.json",
+        "--xts-scenario=selected-core",
+        "--xts-timeout=1500",
+    ]))
+    .unwrap();
+    assert_eq!(slow.xts_timeout, 1500);
 }
 
 fn report(status: &str, required: u64, executed: u64, failures: &[&str]) -> serde_json::Value {

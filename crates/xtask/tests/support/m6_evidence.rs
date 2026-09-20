@@ -2,7 +2,9 @@
 //! The composition's own rules: absence is never a pass, snapshots must be
 //! byte-identical, and a citation is checked and labelled, never stood
 //! behind. No gate runs here.
-use super::m6::{COMPONENTS, cite_canonical, cite_core, judge_component, options, overall};
+use super::m6::{
+    COMPONENTS, cite_canonical, cite_core, judge_component, options, overall, x11_profile_arguments,
+};
 use super::types::SourceIdentity;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -46,10 +48,45 @@ fn options_take_the_two_paths_and_only_named_citations() {
         arguments(&["--output=/o"]),
         arguments(&["--output=/o", "--target-dir=/t", "--component=m3"]),
         arguments(&["--output=/o", "--target-dir=/t", "--xts-root=/x"]),
+        arguments(&[
+            "--output=/o",
+            "--target-dir=/t",
+            "--xts-root=/x",
+            "--xts-expected=/p.json",
+        ]),
+        arguments(&["--output=/o", "--target-dir=/t", "--xts-timeout=600"]),
         arguments(&["--output=/o", "--target-dir=/t", "--timeout=1801"]),
     ] {
         assert!(options(&refused).is_err(), "{refused:?}");
     }
+}
+
+#[test]
+fn the_profile_component_is_handed_every_xts_option_or_none() {
+    let plain = options(&arguments(&["--output=/o", "--target-dir=/t"])).unwrap();
+    assert_eq!(
+        x11_profile_arguments(&plain),
+        vec!["--profile=all".to_owned()]
+    );
+    let xts = options(&arguments(&[
+        "--output=/o",
+        "--target-dir=/t",
+        "--xts-root=/x",
+        "--xts-expected=/p.json",
+        "--xts-scenario=selected-core",
+        "--xts-timeout=900",
+    ]))
+    .unwrap();
+    assert_eq!(
+        x11_profile_arguments(&xts),
+        vec![
+            "--profile=all".to_owned(),
+            "--xts-root=/x".to_owned(),
+            "--xts-expected=/p.json".to_owned(),
+            "--xts-scenario=selected-core".to_owned(),
+            "--xts-timeout=900".to_owned(),
+        ]
+    );
 }
 
 #[test]

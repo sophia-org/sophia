@@ -35,6 +35,8 @@ pub(super) struct EvidenceOptions {
     pub canonical_report: Option<PathBuf>,
     pub xts_root: Option<PathBuf>,
     pub xts_expected: Option<PathBuf>,
+    pub xts_scenario: Option<String>,
+    pub xts_timeout: Option<u64>,
 }
 
 pub(super) fn options(arguments: &[String]) -> Result<EvidenceOptions, String> {
@@ -46,6 +48,8 @@ pub(super) fn options(arguments: &[String]) -> Result<EvidenceOptions, String> {
         canonical_report: None,
         xts_root: None,
         xts_expected: None,
+        xts_scenario: None,
+        xts_timeout: None,
     };
     for argument in arguments {
         let (name, value) = argument
@@ -59,6 +63,10 @@ pub(super) fn options(arguments: &[String]) -> Result<EvidenceOptions, String> {
             "--canonical-report" => parsed.canonical_report = Some(value.into()),
             "--xts-root" => parsed.xts_root = Some(value.into()),
             "--xts-expected" => parsed.xts_expected = Some(value.into()),
+            "--xts-scenario" => parsed.xts_scenario = Some(value.to_owned()),
+            "--xts-timeout" => {
+                parsed.xts_timeout = Some(value.parse().map_err(|_| "invalid XTS timeout")?);
+            }
             _ => {
                 return Err(format!(
                     "unsupported option {name}; partial evidence/filtering is forbidden"
@@ -73,10 +81,37 @@ pub(super) fn options(arguments: &[String]) -> Result<EvidenceOptions, String> {
     {
         return Err("provide --output and --target-dir with a timeout in 1..=1800 seconds".into());
     }
-    if parsed.xts_root.is_some() != parsed.xts_expected.is_some() {
-        return Err("XTS needs both --xts-root and --xts-expected, or neither".into());
+    let xts_given = [
+        parsed.xts_root.is_some(),
+        parsed.xts_expected.is_some(),
+        parsed.xts_scenario.is_some(),
+    ];
+    let xts_all = xts_given.iter().all(|given| *given);
+    if !xts_all && (xts_given.iter().any(|given| *given) || parsed.xts_timeout.is_some()) {
+        return Err(
+            "XTS needs --xts-root, --xts-expected and --xts-scenario together, or none; --xts-timeout only with them".into(),
+        );
     }
     Ok(parsed)
+}
+
+/// What the profile component is asked for: every profile, and the whole
+/// XTS selection or none of it. The profile gate refuses a partial one, and
+/// this is where the composition used to drop the scenario and read BLOCKED
+/// on every run.
+pub(super) fn x11_profile_arguments(opts: &EvidenceOptions) -> Vec<String> {
+    let mut arguments = vec!["--profile=all".to_owned()];
+    if let (Some(root), Some(expected), Some(scenario)) =
+        (&opts.xts_root, &opts.xts_expected, &opts.xts_scenario)
+    {
+        arguments.push(format!("--xts-root={}", root.display()));
+        arguments.push(format!("--xts-expected={}", expected.display()));
+        arguments.push(format!("--xts-scenario={scenario}"));
+        if let Some(timeout) = opts.xts_timeout {
+            arguments.push(format!("--xts-timeout={timeout}"));
+        }
+    }
+    arguments
 }
 
 /// One produced component: the gate's own verdict, and whether it counts.
@@ -314,7 +349,7 @@ pub(super) fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, Stri
     process::arm_subreaper()?;
     if arguments.iter().any(|argument| argument == "--help") {
         return Ok(vec![
-            "cargo xtask check m6-evidence --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--core-report=/PATH/report.json] [--canonical-report=/PATH/report.json] [--xts-root=/XTS --xts-expected=/PURPOSES.json]".into(),
+            "cargo xtask check m6-evidence --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--core-report=/PATH/report.json] [--canonical-report=/PATH/report.json] [--xts-root=/XTS --xts-expected=/PURPOSES.json --xts-scenario=NAME [--xts-timeout=SECONDS]]".into(),
         ]);
     }
     let mut opts = options(arguments)?;
@@ -376,12 +411,7 @@ fn execute(repo: &Path, opts: &EvidenceOptions) -> Result<Vec<String>, String> {
             .arg(format!("--output={}", output.display()))
             .arg(format!("--target-dir={}", opts.target.display()));
         if name == "x11-profile" {
-            command.arg("--profile=all");
-            if let (Some(root), Some(expected)) = (&opts.xts_root, &opts.xts_expected) {
-                command
-                    .arg(format!("--xts-root={}", root.display()))
-                    .arg(format!("--xts-expected={}", expected.display()));
-            }
+            command.args(x11_profile_arguments(opts));
         }
         let execution = process::run(
             &mut command,
