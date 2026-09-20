@@ -993,7 +993,12 @@ fixture and every mutation that would let a failed run pass, and runs under
 signed commit and binary digest bound. A uinput keyboard is admitted like any
 other and announced with `virtual=true`; the verifier requires both keyboards
 to be hardware, so a rehearsal with a virtual keyboard exercises the path but
-can never satisfy the claim.
+can never satisfy the claim. A key remapper such as keyd presents every
+keyboard as one virtual device, which is that case as a machine's ordinary
+configuration; the gate refuses while one runs and asks for it to be stopped
+for the duration. `tools/keyboard_independence_walkthrough.py` checks these
+preconditions, names the keyboards, explains the phases, runs the gate and
+reads the result back; `--check` does everything but run it.
 
 ## Retiring `DEFAULT_DISPLAY`
 
