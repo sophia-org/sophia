@@ -19,7 +19,7 @@ The measurable exits for this architecture plan are:
 
 ## Task details
 
-Refer to task `id:t136` in `todo.md`.
+Refer to task `id:t141` in `todo.md`.
 
 ### Tier 1: Standardized Socket Directories
 Sophia creates a single, standard runtime root directory on the host:
@@ -39,6 +39,35 @@ A single Sophia session supervisor process runs a `tokio` async event loop and b
 * `UnixListener::bind("/run/user/[uid]/sophia/confined-1/X0")`
 
 When a connection is accepted, the multiplexer matches the file descriptor to the specific listener, automatically tagging all downstream transactions on that stream with the correct `NamespaceId` and isolating their states in memory.
+
+## What this changes in work already landed
+
+Two standing conclusions rest on the fact that a namespace belongs to a
+listener, and this plan moves that fact. Neither is a conflict today -- nothing
+here is implemented -- but both must be revisited by whoever builds it.
+
+**t138's idle-window reclaim assumes one accepting thread.** A departed
+connection's continuation place is given back during the run by
+`reclaim_idle_departures`, called from `drive_routed_service` when it is told
+no connection frame is active. That reading is honest for exactly one reason:
+the service frame is the only thread that starts a client worker, and it holds
+the frontend exclusively while it does, so "zero now" is stable until it acts
+again. **A tokio loop accepting on several listeners breaks that premise.**
+The count could go from zero to non-zero between the reading and the mint, and
+the token minted would then assert something false -- which matters because
+eight of the nine consumers of that token depend on the quiesce it asserts.
+The reclaim must be re-derived on the new threading model, not ported.
+
+**t124's conclusion about selections is inverted by this plan.** A cross-client
+selection works today partly because a display is one namespace: two X clients
+on one socket always share one, so the clipboard portal is never on the path.
+Per-namespace listeners make cross-namespace the ordinary case -- a confined
+browser copying to a trusted editor is precisely two namespaces -- so the
+`SameNamespace`, `UnknownRequestorNamespace` and `Portal` branches in
+`clipboard.rs` become live for the first time, and the portal becomes load
+bearing for ordinary copy and paste rather than an unexercised path. That is
+what the portal is for; the point is that it moves from untested to
+essential, and t124's evidence does not cover it.
 
 ## Connections
 

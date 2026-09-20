@@ -47,6 +47,14 @@ A task looks like this:
 - Contexts describe the work: `@physical`, `@development`, or `@planning`.
 - `id:` is a stable, repository-unique task identity. Keep it when a task moves
   or completes. Never use the CLI's changing display line number as a durable ID.
+- **Identities are never recycled.** A new task takes the next number above
+  every `id:` that has ever been used, in `todo.md` and in the `done-*.md`
+  files together -- not the lowest number that happens to be free. A completed
+  task keeps its identity for ever, and the evidence that closed it is reached
+  by that identity: notes, commit messages and gate reports all cite it. Giving
+  a new task an old number silently re-points every one of those citations at
+  work it never described. Two live rows sharing a number is the visible
+  failure; the quiet one is worse.
 - `order:` is the reviewed ordering key. Choose the lowest open order in
   `+critical` unless the user names another scope. Preserve the CP-14.3 stage
   ordering, then CP-15.1 and CP-15.2, and their linked exit conditions.
