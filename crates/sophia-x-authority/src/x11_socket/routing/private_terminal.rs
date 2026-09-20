@@ -848,7 +848,12 @@ impl PrivateXServerFrontend {
             let PrivateOrderedItem::Ran { custody, .. } = &delivering[0] else {
                 unreachable!("checked above")
             };
-            custody.observe()
+            let taken = custody.observe();
+            // Outside common, which observing released before returning. This
+            // is also what frees the grant's one completion cell, so it is
+            // the moment a submitter refused `Saturated` can usefully retry.
+            custody.flush_report();
+            taken
         };
         let completion = match observed {
             Ok(completion) => completion,

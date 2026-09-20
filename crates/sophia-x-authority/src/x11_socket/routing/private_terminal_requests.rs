@@ -26,8 +26,18 @@ impl PrivateOutstandingRequest {
             return Ok(false);
         }
         let completion = match custody.observed_outcome.get() {
+            // Already observed, so any waiter was already woken by the
+            // observation that took this outcome. Waking again would be
+            // harmless and pointless.
             Some(completion) => Some(completion),
-            None => custody.observe()?,
+            None => {
+                let taken = custody.observe()?;
+                // Outside common: observing releases it before returning.
+                // Nothing is raised when the observation failed, because
+                // nothing was established to wake anyone about.
+                custody.flush_report();
+                taken
+            }
         };
         let disposable = match completion {
             Some(Completion::Cancelled | Completion::Refused(_)) => {

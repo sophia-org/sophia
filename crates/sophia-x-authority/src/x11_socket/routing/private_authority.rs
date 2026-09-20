@@ -403,6 +403,10 @@ pub struct PrivateReservation {
     submit: sophia_input_authority::SubmitHandle,
     admission: sophia_protocol::ClientAdmissionId,
     grant: sophia_input_authority::GrantId,
+    /// Where this request's internal-processing outcome is reported, if
+    /// anyone asked to be told. Travels with the work rather than being
+    /// looked up, so publishing needs no registry and no search.
+    barrier: Option<PrivateBarrierTicket>,
 }
 
 #[cfg(unix)]
@@ -435,6 +439,7 @@ impl PrivateReservation {
             observed_outcome: std::cell::Cell::new(None),
             accepted_store_credit: None,
             phase: std::cell::Cell::new(PrivateRequestPhase::Unused),
+            barrier: self.barrier.take(),
         }
     }
 }
@@ -517,6 +522,8 @@ pub struct PrivateOutstandingRequest {
     /// An unexposed reservation, an interrupted attempt, a proved effect-free
     /// deferral and a terminal result have different retention obligations.
     phase: std::cell::Cell<PrivateRequestPhase>,
+    /// Where this request's outcome is reported, if anyone is waiting.
+    barrier: Option<PrivateBarrierTicket>,
 }
 
 /// How far a reserved request got.
@@ -623,8 +630,38 @@ impl PrivateOutstandingRequest {
             // release it.
             self.observed.set(true);
             self.observed_outcome.set(Some(outcome));
+            // The second of two publication points, and the one that is not
+            // optional. A cancellation written by a revocation or a control
+            // transition never runs the execution callback at all, so this is
+            // where it first becomes readable. First writer wins, so a
+            // request already answered by its own execution keeps that answer
+            // instead of having it replaced by the cell being reclaimed.
+            self.report(outcome);
         }
         taken
+    }
+
+    /// Store this request's outcome for whoever is waiting on it.
+    ///
+    /// Called under the common guard, where the authority permits nothing
+    /// fallible after the effect, so this only ever copies into a slot that
+    /// already exists.
+    fn report(&self, completion: sophia_input_authority::RequestCompletion) {
+        if let Some(ticket) = &self.barrier {
+            ticket.report(completion);
+        }
+    }
+
+    /// Raise the wake for an outcome this request already stored.
+    ///
+    /// Never under the common guard: notification routing stays outside the
+    /// critical section, and a wake is one write to an eventfd that is
+    /// allowed to fail. Failing means the waiter departed, which costs
+    /// nothing, because the outcome is committed where a waiter would look.
+    pub(crate) fn flush_report(&self) {
+        if let Some(ticket) = &self.barrier {
+            ticket.flush();
+        }
     }
 }
 
@@ -752,6 +789,9 @@ impl PrivateReservationRole {
             submit: self.submit,
             admission: self.admission,
             grant: self.grant,
+            // Attached by the producer that accepted the work, which is the
+            // only place that knows whether anyone is waiting on it.
+            barrier: None,
         })
     }
 }

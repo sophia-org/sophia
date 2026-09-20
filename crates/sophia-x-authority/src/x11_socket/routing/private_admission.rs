@@ -299,6 +299,14 @@ pub struct PrivateIngress {
     /// producer's own numbering should not advance because somebody else sent
     /// something.
     requests: Arc<std::sync::atomic::AtomicU64>,
+    /// Where this producer's completions are reported, if it asked for them.
+    ///
+    /// `None` is the ordinary shape and changes nothing: work is reserved,
+    /// published and answered to nobody, which is what every producer except
+    /// an injection adapter wants. A `OnceLock` because installing a second
+    /// slot once a reservation already exists would arm the wrong one, and a
+    /// lock-free read keeps this off the cost of submitting.
+    barrier: std::sync::OnceLock<PrivateRequestBarrier>,
 }
 
 /// A producer of control work, bound to one instance's shared admission.
@@ -383,6 +391,17 @@ impl PrivateControlProducer {
 
 #[cfg(unix)]
 impl PrivateIngress {
+    /// Report this producer's internal-processing completions to `barrier`.
+    ///
+    /// Once, and before the first submission: a slot installed after a
+    /// reservation exists could be armed too late to catch that reservation's
+    /// completion, and the request it belongs to would wait for an answer
+    /// that already went nowhere. Reports false if one is already installed.
+    #[cfg_attr(not(test), allow(dead_code))] // No adapter installs one yet.
+    pub fn report_completions_to(&self, barrier: PrivateRequestBarrier) -> bool {
+        self.barrier.set(barrier).is_ok()
+    }
+
     /// Accept work into the shared order, stamping it first.
     ///
     /// Position is assigned as the entry is published, inside the shared
@@ -444,6 +463,13 @@ impl PrivateIngress {
             match role.reserve(stamp, request) {
                 Ok(mut reservation) => {
                     reservation.input_completion = completion;
+                    // Armed here and not later: the runner cannot see a
+                    // request that has not been published, so a slot armed
+                    // before publication cannot be missed by the execution
+                    // that answers it. Arming after would leave a window
+                    // where the answer arrives before anywhere exists to put
+                    // it.
+                    reservation.barrier = self.barrier.get().map(|barrier| barrier.arm(request));
                     envelope.reservation = Some(reservation);
                 }
                 Err(refusal) => {

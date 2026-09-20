@@ -36,6 +36,7 @@ impl PrivateXServerFrontend {
             admission: Arc::clone(&self.admission),
             role: None,
             requests: Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            barrier: std::sync::OnceLock::new(),
         }
     }
 
@@ -76,6 +77,7 @@ impl PrivateXServerFrontend {
             admission: Arc::clone(&self.admission),
             role: Some(self.reservation_role_for(client, device, expected)?),
             requests: Arc::new(std::sync::atomic::AtomicU64::new(1)),
+            barrier: std::sync::OnceLock::new(),
         })
     }
 
