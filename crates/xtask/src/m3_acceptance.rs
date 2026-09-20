@@ -7,6 +7,7 @@ mod host;
 mod identity;
 mod m4;
 mod m5;
+mod m6;
 mod process;
 mod profiles;
 mod types;
@@ -42,6 +43,11 @@ pub fn run_m4(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> 
     }
 }
 
+/// M6: every t093 gate on one exact source, composed into one verdict.
+pub fn run_m6(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
+    m6::run(repo, arguments)
+}
+
 /// The X11 conformance profiles, xtest and native-input, as a gate.
 pub fn run_profiles(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     profiles::run(repo, arguments)
@@ -72,3 +78,6 @@ mod m5_tests;
 
 #[path = "../tests/support/x11_profile.rs"]
 mod profile_tests;
+
+#[path = "../tests/support/m6_evidence.rs"]
+mod m6_tests;

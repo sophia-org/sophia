@@ -144,7 +144,20 @@ pub(super) fn judge(
                 .collect()
         })
         .unwrap_or_default();
-    verdict.source_commit = report["source_commit"].as_str().map(str::to_owned);
+    // The two probes record their source in different places: native.py at
+    // the top of its report, run.py under `identity`. Both are read, and a
+    // report that names no commit at all is judged on its own rules alone.
+    let commit_field = if report["source_commit"].is_string() {
+        &report["source_commit"]
+    } else {
+        &report["identity"]["source_commit"]
+    };
+    let dirty_field = if report["source_dirty"].is_boolean() {
+        &report["source_dirty"]
+    } else {
+        &report["identity"]["source_dirty"]
+    };
+    verdict.source_commit = commit_field.as_str().map(str::to_owned);
     if let Some(named) = verdict.source_commit.as_deref()
         && named != commit
     {
@@ -153,7 +166,7 @@ pub(super) fn judge(
         ));
         return verdict;
     }
-    if report["source_dirty"].as_bool() == Some(true) {
+    if dirty_field.as_bool() == Some(true) {
         verdict.detail = Some("the report says the source it ran was dirty".into());
         return verdict;
     }

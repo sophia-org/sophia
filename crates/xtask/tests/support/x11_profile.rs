@@ -115,6 +115,17 @@ fn a_profile_passes_only_on_its_own_complete_report_for_this_source() {
         judge(Some(&dirty), Some(0), false, "abc").status,
         "NORESULT"
     );
+    // run.py keeps its source under `identity`; it is read there too.
+    let wire = serde_json::json!({"status": "PASS", "required": 40, "executed": 40, "failures": [],
+                                  "identity": {"source_commit": "def", "source_dirty": false}});
+    assert_eq!(judge(Some(&wire), Some(0), false, "abc").status, "NORESULT");
+    assert_eq!(judge(Some(&wire), Some(0), false, "def").status, "PASS");
+    let mut wire_dirty = wire.clone();
+    wire_dirty["identity"]["source_dirty"] = serde_json::Value::Bool(true);
+    assert_eq!(
+        judge(Some(&wire_dirty), Some(0), false, "def").status,
+        "NORESULT"
+    );
     // A report without counts cannot be judged, whatever its status says.
     let bare = serde_json::json!({"status": "PASS"});
     assert_eq!(judge(Some(&bare), Some(0), false, "abc").status, "NORESULT");
