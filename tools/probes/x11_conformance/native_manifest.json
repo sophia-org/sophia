@@ -78,7 +78,16 @@
       "id": "native_first_press",
       "description": "First press and last release reconcile authority and recorded recipient",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "retention"
+          },
+          "test": "retiring_one_injector_preserves_the_other_and_both_references_settle"
+        }
+      ]
     },
     {
       "id": "native_overlap",
@@ -148,19 +157,46 @@
       "id": "native_revoke_pending",
       "description": "Revocation before final guard discards pending work without effects",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "revoke_before_execution_cancels_without_callback_or_debt"
+        }
+      ]
     },
     {
       "id": "native_revoke_applied",
       "description": "Revocation after authority application preserves debt before writer completion",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "committed_completion_and_debt_survive_revocation_without_a_wakeup"
+        }
+      ]
     },
     {
       "id": "native_publication",
       "description": "Publication transition refuses old focus/seat snapshot during the gap",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "execution_refuses_while_a_transition_has_not_published"
+        }
+      ]
     },
     {
       "id": "native_thaw",
@@ -172,19 +208,54 @@
       "id": "native_reconnect",
       "description": "New connection or grant generation inherits no queued work or holds",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "connection_binding"
+          },
+          "test": "independent_reconnect_grant_does_not_inherit_old_request_or_source"
+        }
+      ]
     },
     {
       "id": "native_retirement",
       "description": "Retirement and tombstones persist until native and recipient obligations settle",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "ledger"
+          },
+          "test": "transport_settlement_alone_does_not_discharge_native_reconciliation"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "sixteen_retired_cells_pin_slots_until_each_exact_completion_is_consumed"
+        }
+      ]
     },
     {
       "id": "native_stale_release",
       "description": "Delayed old writer release cannot clear a newer recipient hold",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempt_retention"
+          },
+          "test": "old_finished_attempt_cannot_settle_new_hold_after_record_and_attempt_slot_reuse"
+        }
+      ]
     },
     {
       "id": "native_recipient_removal",
@@ -196,7 +267,16 @@
       "id": "native_debt_capacity",
       "description": "More than64 simultaneous debts remain represented without retirement allocation",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "attempts"
+          },
+          "test": "sixty_four_attempts_do_not_drop_the_sixty_fifth_debt_or_retry_inflight_work"
+        }
+      ]
     },
     {
       "id": "native_completion",
@@ -294,7 +374,15 @@
       "id": "native_transport_wait",
       "description": "Only actual EAGAIN/POLLOUT blockage accumulates toward six-second recovery",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_send_counts_only_what_it_waited_on_this_recipient"
+        }
+      ]
     },
     {
       "id": "native_stalled_reader",
