@@ -149,12 +149,16 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
         XWireRequest::FillPoly {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
-            damage: Some(Rect {
-                x: 5,
-                y: 6,
-                width: 11,
-                height: 15,
-            }),
+            shape: 0,
+            coordinate_mode: 0,
+            // The vertices themselves. The decoder used to keep only their
+            // bounding box, which is why the polygon could be reported and
+            // never filled.
+            points: vec![
+                XPoint { x: 5, y: 6 },
+                XPoint { x: 15, y: 16 },
+                XPoint { x: 8, y: 20 },
+            ],
         }
     );
 
@@ -174,11 +178,13 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
         XWireRequest::PolyFillArc {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
-            damage: vec![Rect {
+            arcs: vec![sophia_x_authority::XArc {
                 x: 7,
                 y: 8,
                 width: 41,
                 height: 31,
+                angle1: 0,
+                angle2: 23040,
             }],
         }
     );

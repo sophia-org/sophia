@@ -300,33 +300,46 @@ fn decode_fill_poly(
     Ok(XWireRequest::FillPoly {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
-        damage: point_damage_bounds(context, point_bytes),
+        shape: bytes[12],
+        coordinate_mode: bytes[13],
+        points: decode_points(context, point_bytes),
     })
 }
 
-fn point_damage_bounds(context: XWireClientContext, point_bytes: &[u8]) -> Option<Rect> {
-    let mut min_x = i32::MAX;
-    let mut min_y = i32::MAX;
-    let mut max_x = i32::MIN;
-    let mut max_y = i32::MIN;
-    for point in point_bytes.chunks_exact(4) {
-        let x = i32::from(context.byte_order.i16(&point[0..2]));
-        let y = i32::from(context.byte_order.i16(&point[2..4]));
-        min_x = min_x.min(x);
-        min_y = min_y.min(y);
-        max_x = max_x.max(x);
-        max_y = max_y.max(y);
-    }
-    if min_x == i32::MAX {
-        None
-    } else {
-        Some(Rect {
-            x: min_x,
-            y: min_y,
-            width: max_x.saturating_sub(min_x).saturating_add(1),
-            height: max_y.saturating_sub(min_y).saturating_add(1),
+/// Read a list of sixteen-bit coordinate pairs.
+fn decode_points(context: XWireClientContext, point_bytes: &[u8]) -> Vec<XPoint> {
+    point_bytes
+        .chunks_exact(4)
+        .map(|point| XPoint {
+            x: context.byte_order.i16(&point[0..2]),
+            y: context.byte_order.i16(&point[2..4]),
         })
+        .collect()
+}
+
+/// Resolve `CoordModePrevious` into absolute points.
+///
+/// The first point is always absolute whichever mode is asked for; only the
+/// ones after it are relative. Getting that wrong offsets an entire shape by
+/// its own first vertex.
+pub(crate) fn absolute_points(points: &[XPoint], coordinate_mode: u8) -> Vec<XPoint> {
+    if coordinate_mode == 0 {
+        return points.to_vec();
     }
+    let mut out = Vec::with_capacity(points.len());
+    let mut pen = XPoint { x: 0, y: 0 };
+    for (index, point) in points.iter().enumerate() {
+        pen = if index == 0 {
+            *point
+        } else {
+            XPoint {
+                x: pen.x.saturating_add(point.x),
+                y: pen.y.saturating_add(point.y),
+            }
+        };
+        out.push(pen);
+    }
+    out
 }
 
 fn decode_poly_fill_rectangle(
@@ -399,16 +412,50 @@ fn decode_poly_fill_arc(
     Ok(XWireRequest::PolyFillArc {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
-        damage: arc_damage_bounds(context, X_POLY_FILL_ARC, X_POLY_FILL_ARC_REQ_LEN, bytes)?,
+        arcs: decode_arcs(context, X_POLY_FILL_ARC, X_POLY_FILL_ARC_REQ_LEN, bytes)?,
     })
 }
 
-fn arc_damage_bounds(
+fn decode_poly_arc(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_POLY_ARC, X_POLY_ARC_REQ_LEN, bytes.len())?;
+    Ok(XWireRequest::PolyArc {
+        drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+        arcs: decode_arcs(context, X_POLY_ARC, X_POLY_ARC_REQ_LEN, bytes)?,
+    })
+}
+
+fn decode_poly_point(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_POLY_POINT, X_POLY_POINT_REQ_LEN, bytes.len())?;
+    let point_bytes = &bytes[X_POLY_POINT_REQ_LEN..];
+    if !point_bytes.len().is_multiple_of(4) {
+        return Err(XWireParseError::InvalidLength {
+            opcode: X_POLY_POINT,
+            expected_at_least: X_POLY_POINT_REQ_LEN + point_bytes.len().div_ceil(4) * 4,
+            actual: bytes.len(),
+        });
+    }
+    Ok(XWireRequest::PolyPoint {
+        drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+        coordinate_mode: bytes[1],
+        points: decode_points(context, point_bytes),
+    })
+}
+
+/// Read a list of twelve-byte arcs.
+fn decode_arcs(
     context: XWireClientContext,
     opcode: u8,
     header_len: usize,
     bytes: &[u8],
-) -> Result<Vec<Rect>, XWireParseError> {
+) -> Result<Vec<crate::XArc>, XWireParseError> {
     let arc_bytes = &bytes[header_len..];
     if !arc_bytes.len().is_multiple_of(12) {
         return Err(XWireParseError::InvalidLength {
@@ -417,17 +464,17 @@ fn arc_damage_bounds(
             actual: bytes.len(),
         });
     }
-
-    let mut damage = Vec::with_capacity(arc_bytes.len() / 12);
-    for arc in arc_bytes.chunks_exact(12) {
-        damage.push(Rect {
-            x: i32::from(context.byte_order.i16(&arc[0..2])),
-            y: i32::from(context.byte_order.i16(&arc[2..4])),
-            width: i32::from(context.byte_order.u16(&arc[4..6])),
-            height: i32::from(context.byte_order.u16(&arc[6..8])),
-        });
-    }
-    Ok(damage)
+    Ok(arc_bytes
+        .chunks_exact(12)
+        .map(|arc| crate::XArc {
+            x: context.byte_order.i16(&arc[0..2]),
+            y: context.byte_order.i16(&arc[2..4]),
+            width: context.byte_order.u16(&arc[4..6]),
+            height: context.byte_order.u16(&arc[6..8]),
+            angle1: context.byte_order.i16(&arc[8..10]),
+            angle2: context.byte_order.i16(&arc[10..12]),
+        })
+        .collect())
 }
 
 fn decode_image_text16(

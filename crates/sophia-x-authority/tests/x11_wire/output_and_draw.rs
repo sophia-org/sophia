@@ -726,14 +726,23 @@ fn x11_dispatch_poly_fill_rectangle_emits_core_draw_transaction() {
         response.transactions[0].surface,
         SurfaceId::new(0x220101, 1)
     );
-    assert_eq!(
-        response.transactions[0].damage,
-        Region::single(Rect {
-            x: 4,
-            y: 5,
-            width: 11,
-            height: 16,
-        })
+    // The polygon is filled now, so the damage covers the pixels it painted
+    // rather than the hull of its vertices. The scanline fill samples row
+    // centres, so a sliver narrower than a pixel at the apex paints nothing
+    // and is not reported.
+    let damage = response.transactions[0].damage.rects.clone();
+    assert_eq!(damage.len(), 1, "one conservative rectangle, not one per span");
+    let painted = damage[0];
+    assert!(
+        painted.x >= 4
+            && painted.y >= 5
+            && painted.x + painted.width <= 15
+            && painted.y + painted.height <= 21,
+        "the damage stays inside the vertex hull: {painted:?}"
+    );
+    assert!(
+        painted.width > 5 && painted.height > 10,
+        "and covers the body of the triangle: {painted:?}"
     );
 
     let fill_arcs = decode_x11_core_request(
@@ -761,14 +770,22 @@ fn x11_dispatch_poly_fill_rectangle_emits_core_draw_transaction() {
         response.transactions[0].surface,
         SurfaceId::new(0x220101, 1)
     );
-    assert_eq!(
-        response.transactions[0].damage,
-        Region::single(Rect {
-            x: 6,
-            y: 7,
-            width: 22,
-            height: 12,
-        })
+    // A full revolution, so the fill covers the ellipse the arc bounds. The
+    // damage is what was painted, which sits inside that box rather than
+    // being it: the scanline fill rounds at the rim.
+    let damage = response.transactions[0].damage.rects.clone();
+    assert_eq!(damage.len(), 1);
+    let painted = damage[0];
+    assert!(
+        painted.x >= 6
+            && painted.y >= 7
+            && painted.x + painted.width <= 28
+            && painted.y + painted.height <= 19,
+        "the damage stays inside the arc's bounding box: {painted:?}"
+    );
+    assert!(
+        painted.width > 18 && painted.height > 9,
+        "and covers the body of the ellipse: {painted:?}"
     );
 }
 

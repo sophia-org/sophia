@@ -319,6 +319,52 @@ impl XAuthorityRuntime {
         )
     }
 
+    /// Paint spans, but report a single rectangle covering them.
+    ///
+    /// A filled polygon is many one-row spans, and sending each as its own
+    /// damage rectangle makes a small triangle cost a dozen patches. Damage is
+    /// a conservative over-approximation by definition, so the painting stays
+    /// exact and the report is the bounding box.
+    pub fn apply_span_fill(
+        &mut self,
+        transaction: TransactionId,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        spans: &[Rect],
+        gc: &XGraphicsContextValues,
+    ) -> XAuthorityResponsePacket {
+        let Some(bounds) = bounding_rect(spans) else {
+            return XAuthorityResponsePacket::accepted(transaction);
+        };
+        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+            Ok(target) => target,
+            Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
+        };
+        let Some(buffer) = self.software_buffers.paint_damage(window, size, spans, gc) else {
+            return XAuthorityResponsePacket::rejected(
+                transaction,
+                XAuthorityRuntimeError::InvalidResource,
+            );
+        };
+        let Some(generation) = window_generation else {
+            return XAuthorityResponsePacket::accepted(transaction);
+        };
+        let handle = buffer.handle();
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Paint {
+            rects: spans.to_vec(),
+            gc: gc.clone(),
+        });
+        self.finish_drawing_update(XDrawingUpdate::core_draw(
+            transaction,
+            namespace,
+            window,
+            handle,
+            Region::single(bounds),
+            generation,
+            250,
+        ))
+    }
+
     pub fn apply_core_draw_with_gc(
         &mut self,
         transaction: TransactionId,
@@ -920,4 +966,30 @@ impl XAuthorityRuntime {
             },
         )))
     }
+}
+
+/// The smallest rectangle covering every span.
+fn bounding_rect(spans: &[Rect]) -> Option<Rect> {
+    let mut bounds: Option<Rect> = None;
+    for span in spans {
+        if span.width <= 0 || span.height <= 0 {
+            continue;
+        }
+        bounds = Some(match bounds {
+            None => *span,
+            Some(current) => {
+                let left = current.x.min(span.x);
+                let top = current.y.min(span.y);
+                let right = (current.x + current.width).max(span.x + span.width);
+                let bottom = (current.y + current.height).max(span.y + span.height);
+                Rect {
+                    x: left,
+                    y: top,
+                    width: right - left,
+                    height: bottom - top,
+                }
+            }
+        });
+    }
+    bounds
 }

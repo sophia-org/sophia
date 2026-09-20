@@ -47,6 +47,8 @@ const X_CREATE_PIXMAP: u8 = 53;
 const X_FREE_PIXMAP: u8 = 54;
 const X_CREATE_GC: u8 = 55;
 const X_CHANGE_GC: u8 = 56;
+const X_COPY_GC: u8 = 57;
+const X_SET_DASHES: u8 = 58;
 const X_SET_CLIP_RECTANGLES: u8 = 59;
 const X_FREE_GC: u8 = 60;
 const X_CLEAR_AREA: u8 = 61;
@@ -56,6 +58,8 @@ const X_POLY_SEGMENT: u8 = 66;
 const X_POLY_RECTANGLE: u8 = 67;
 const X_FILL_POLY: u8 = 69;
 const X_POLY_FILL_RECTANGLE: u8 = 70;
+const X_POLY_POINT: u8 = 64;
+const X_POLY_ARC: u8 = 68;
 const X_POLY_FILL_ARC: u8 = 71;
 const X_PUT_IMAGE: u8 = 72;
 const X_GET_IMAGE: u8 = 73;
@@ -596,6 +600,8 @@ const X_OPEN_FONT_REQ_LEN: usize = 12;
 const X_CLOSE_FONT_REQ_LEN: usize = 8;
 const X_QUERY_FONT_REQ_LEN: usize = 8;
 const X_QUERY_TEXT_EXTENTS_REQ_LEN: usize = 8;
+const X_COPY_GC_REQ_LEN: usize = 16;
+const X_SET_DASHES_REQ_LEN: usize = 12;
 const X_SET_FONT_PATH_REQ_LEN: usize = 8;
 const X_GET_FONT_PATH_REQ_LEN: usize = 4;
 const X_LIST_FONTS_REQ_LEN: usize = 8;
@@ -614,6 +620,8 @@ const X_POLY_RECTANGLE_REQ_LEN: usize = 12;
 const X_FILL_POLY_REQ_LEN: usize = 16;
 const X_POLY_FILL_RECTANGLE_REQ_LEN: usize = 12;
 const X_POLY_FILL_ARC_REQ_LEN: usize = 12;
+const X_POLY_POINT_REQ_LEN: usize = 12;
+const X_POLY_ARC_REQ_LEN: usize = 12;
 const X_PUT_IMAGE_REQ_LEN: usize = 24;
 const X_POLY_TEXT8_REQ_LEN: usize = 16;
 const X_POLY_TEXT16_REQ_LEN: usize = 16;
@@ -684,6 +692,12 @@ pub const X_IMAGE_TEXT16_MAX_BYTES: usize = 64 * 1024;
 /// The request carries no count; its length is recovered from the request
 /// length, so this is the bound on what that arithmetic may produce.
 pub const X_QUERY_TEXT_EXTENTS_MAX_CHARS: usize = 32 * 1024;
+
+/// The longest dash pattern a client may set.
+///
+/// A pattern is walked once per segment, so its length is work per line. Real
+/// patterns are two or four entries; this bounds a pathological one.
+pub const X_SET_DASHES_MAX_LEN: usize = 255;
 pub const X_ALLOC_NAMED_COLOR_MAX_NAME_BYTES: usize = 256;
 
 /// The compositing and antialiased-text extension every modern toolkit asks

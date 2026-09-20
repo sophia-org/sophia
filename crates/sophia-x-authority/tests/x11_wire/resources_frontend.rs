@@ -1562,3 +1562,241 @@ fn poly_segment_paints_its_segments_rather_than_only_reporting_them() {
         "and nothing between them: the segments are disjoint, not a path"
     );
 }
+
+#[test]
+fn copy_gc_moves_only_the_components_its_mask_names() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let window = 0x220191;
+
+    let create = decode_x11_core_request(
+        context(namespace, 1000, XByteOrder::LittleEndian),
+        &create_window_request(XByteOrder::LittleEndian, window, 0, 0, 64, 64),
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 1),
+        create,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    for (sequence, gc, foreground) in [(2u16, 0x220192u32, 0x00ff_0000u32), (3, 0x220193, 0x0000_00ff)] {
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence) + 1000, XByteOrder::LittleEndian),
+            &create_gc_values_request(
+                XByteOrder::LittleEndian,
+                gc,
+                window,
+                3,
+                u32::MAX,
+                foreground,
+                0,
+                1,
+                0,
+            ),
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 55),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+    }
+
+    // Copy the foreground alone. The line width the destination carries must
+    // survive, because the mask did not name it.
+    let request = decode_x11_core_request(
+        context(namespace, 1004, XByteOrder::LittleEndian),
+        &copy_gc_request(XByteOrder::LittleEndian, 0x220192, 0x220193, 1 << 2),
+    )
+    .unwrap();
+    let copied = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 57),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(copied.outputs.is_empty(), "a valid copy is not an error");
+
+    // An unknown source is the client's error, not a silent no-op.
+    let request = decode_x11_core_request(
+        context(namespace, 1005, XByteOrder::LittleEndian),
+        &copy_gc_request(XByteOrder::LittleEndian, 0x2201ff, 0x220193, 1 << 2),
+    )
+    .unwrap();
+    let refused = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 57),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        refused.outputs.as_slice(),
+        [XClientOutput::Error(error)] if error.code == XErrorCode::BadGraphicsContext
+    ));
+}
+
+#[test]
+fn set_dashes_reports_an_unknown_context_before_it_judges_the_pattern() {
+    // The server's order. A request that is wrong in two ways must name the
+    // resource first, or a client debugging a bad identifier is told its
+    // pattern is at fault.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    text_window_and_gc(
+        namespace,
+        0x2201a1,
+        0x2201a2,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let cases: [(&[u8], u32, Option<XErrorCode>); 4] = [
+        (&[4, 4], 0x2201a2, None),
+        (&[3], 0x2201a2, None),
+        (&[4, 0], 0x2201a2, Some(XErrorCode::BadValue)),
+        // Both wrong: the unknown context wins.
+        (&[4, 0], 0x2201ff, Some(XErrorCode::BadGraphicsContext)),
+    ];
+    for (index, (dashes, gc, expected)) in cases.into_iter().enumerate() {
+        let sequence = u16::try_from(index).unwrap() + 3;
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence) + 1100, XByteOrder::LittleEndian),
+            &set_dashes_request(XByteOrder::LittleEndian, gc, 0, dashes),
+        )
+        .unwrap();
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 58),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        match expected {
+            None => assert!(result.outputs.is_empty(), "case {index}"),
+            Some(code) => assert!(
+                matches!(
+                    result.outputs.as_slice(),
+                    [XClientOutput::Error(error)] if error.code == code
+                ),
+                "case {index}: {:?}",
+                result.outputs
+            ),
+        }
+    }
+
+    // An empty pattern is refused at decode, before any of this.
+    assert!(
+        decode_x11_core_request(
+            context(namespace, 1200, XByteOrder::LittleEndian),
+            &set_dashes_request(XByteOrder::LittleEndian, 0x2201a2, 0, &[]),
+        )
+        .map(|request| dispatch_x11_wire_request(
+            dispatch_context(namespace, 9, XByteOrder::LittleEndian, 58),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        ))
+        .is_ok_and(|result| !result.outputs.is_empty()),
+        "an empty dash pattern is a bad value"
+    );
+}
+
+#[test]
+fn points_and_arcs_paint_rather_than_only_reporting_damage() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    for (opcode, request_bytes) in [
+        (
+            64u8,
+            poly_point_request(
+                XByteOrder::LittleEndian,
+                0x2201b1,
+                0x2201b2,
+                0,
+                &[(10, 10), (20, 20), (30, 30)],
+            ),
+        ),
+        (
+            68,
+            poly_arc_request(
+                XByteOrder::LittleEndian,
+                0x2201b1,
+                0x2201b2,
+                &[(5, 5, 40, 40, 0, 360 * 64)],
+            ),
+        ),
+    ] {
+        let mut runtime = XAuthorityRuntime::new();
+        for (sequence, opcode, bytes) in [
+            (
+                1u16,
+                1u8,
+                create_window_request(XByteOrder::LittleEndian, 0x2201b1, 0, 0, 64, 64),
+            ),
+            (
+                2,
+                55,
+                create_gc_values_request(
+                    XByteOrder::LittleEndian,
+                    0x2201b2,
+                    0x2201b1,
+                    3,
+                    u32::MAX,
+                    0x00ff_ffff,
+                    0,
+                    1,
+                    0,
+                ),
+            ),
+        ] {
+            let request = decode_x11_core_request(
+                context(namespace, u64::from(sequence) + 1300, XByteOrder::LittleEndian),
+                &bytes,
+            )
+            .unwrap();
+            dispatch_x11_wire_request(
+                dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+                request,
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            );
+        }
+
+        let request =
+            decode_x11_core_request(context(namespace, 1310, XByteOrder::LittleEndian), &request_bytes)
+                .unwrap();
+        let drawn = dispatch_x11_wire_request(
+            dispatch_context(namespace, 3, XByteOrder::LittleEndian, opcode),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        assert!(drawn.outputs.is_empty(), "opcode {opcode} is not an error");
+        let XAuthorityCpuBufferUpdate::Replace(snapshot) = runtime
+            .take_cpu_buffer_update()
+            .unwrap_or_else(|| panic!("opcode {opcode} reached the raster"))
+        else {
+            panic!("the first update replaces the buffer");
+        };
+        assert!(
+            snapshot.bytes.iter().any(|byte| *byte != 0),
+            "opcode {opcode} painted nothing, which is what it used to do"
+        );
+    }
+}

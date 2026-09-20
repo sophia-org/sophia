@@ -65,6 +65,7 @@ pub use font::*;
 pub use frontend_config::*;
 pub use frontend_types::*;
 pub use ready_stream::*;
+pub use software::geometry::arc::XArc;
 pub use synthetic_executor::*;
 
 /// Whether the operator asked to watch protocol traffic.

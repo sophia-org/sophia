@@ -24,6 +24,8 @@ fn dispatch_core_resource_request(
             | XWireRequest::QueryTextExtents { .. }
             | XWireRequest::SetFontPath
             | XWireRequest::GetFontPath
+            | XWireRequest::CopyGraphicsContext { .. }
+            | XWireRequest::SetDashes { .. }
             | XWireRequest::CreatePixmap { .. }
             | XWireRequest::FreePixmap { .. }
     ) {
@@ -468,6 +470,86 @@ fn dispatch_core_resource_request(
         // The font path is session configuration. Refusing a client's attempt
         // to change it is the safeguard that lets a host path be exposed at
         // all: nothing a client sends can add a directory to search.
+        XWireRequest::CopyGraphicsContext {
+            source,
+            destination,
+            value_mask,
+        } => {
+            let outputs = match runtime.copy_graphics_context(
+                context.namespace,
+                source,
+                destination,
+                value_mask,
+            ) {
+                Ok(()) => Vec::new(),
+                Err(error) => {
+                    core_resource_validation_error(
+                        context,
+                        error,
+                        XErrorCode::BadGraphicsContext,
+                        destination,
+                    )
+                    .outputs
+                }
+            };
+            XDispatchResult {
+                response: None,
+                outputs,
+                metadata_candidates: Vec::new(),
+            }
+        }
+        XWireRequest::SetDashes {
+            gc,
+            dash_offset,
+            ref dashes,
+        } => {
+            // The server's own order: an unknown graphics context is reported
+            // before the pattern is judged, and only then is an empty or
+            // zero-length pattern a bad value. A dash of zero length would
+            // never advance.
+            let outputs = if dashes.is_empty() || dashes.contains(&0) {
+                if let Err(error) = runtime.validate_graphics_context(context.namespace, gc) {
+                    core_resource_validation_error(
+                        context,
+                        error,
+                        XErrorCode::BadGraphicsContext,
+                        gc,
+                    )
+                    .outputs
+                } else {
+                    vec![XClientOutput::Error(crate::XClientError {
+                        code: XErrorCode::BadValue,
+                        sequence: context.sequence,
+                        resource_id: 0,
+                        minor_code: 0,
+                        major_code: context.major_opcode,
+                    })]
+                }
+            } else {
+                match runtime.set_graphics_context_dashes(
+                    context.namespace,
+                    gc,
+                    dash_offset,
+                    dashes,
+                ) {
+                    Ok(()) => Vec::new(),
+                    Err(error) => {
+                        core_resource_validation_error(
+                            context,
+                            error,
+                            XErrorCode::BadGraphicsContext,
+                            gc,
+                        )
+                        .outputs
+                    }
+                }
+            };
+            XDispatchResult {
+                response: None,
+                outputs,
+                metadata_candidates: Vec::new(),
+            }
+        }
         XWireRequest::SetFontPath => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Error(crate::XClientError {

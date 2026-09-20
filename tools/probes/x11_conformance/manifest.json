@@ -1048,6 +1048,16 @@
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
     },
+    "57": {
+      "name": "X_COPY_GC",
+      "cases": [],
+      "coverage_debt": "Component-wise copy honouring the value mask. Covered by a wire test; no independent case yet."
+    },
+    "58": {
+      "name": "X_SET_DASHES",
+      "cases": [],
+      "coverage_debt": "Pattern replacement with the server error ordering, an odd pattern doubled. Covered by a wire test; no independent case yet."
+    },
     "59": {
       "name": "X_SET_CLIP_RECTANGLES",
       "cases": [],
@@ -1068,6 +1078,11 @@
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
     },
+    "64": {
+      "name": "X_POLY_POINT",
+      "cases": [],
+      "coverage_debt": "Points painted through the ordinary fill, CoordModePrevious resolved. Covered by a wire test; no independent case yet."
+    },
     "65": {
       "name": "X_POLY_LINE",
       "cases": [],
@@ -1082,6 +1097,11 @@
       "name": "X_POLY_RECTANGLE",
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+    },
+    "68": {
+      "name": "X_POLY_ARC",
+      "cases": [],
+      "coverage_debt": "Stroked as the chord polyline the filled arc is built from. Covered by a wire test; no independent case yet."
     },
     "69": {
       "name": "X_FILL_POLY",

@@ -5,6 +5,7 @@ use sophia_protocol::{Rect, Size};
 
 use crate::{XFontHandle, XGraphicsContextValues, XPoint, XResourceId};
 
+pub(crate) mod geometry;
 mod pixmap_exports;
 mod raster_ops;
 mod raster_replay;
@@ -597,8 +598,9 @@ impl XSoftwareBufferStore {
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let width = i32::from(gc.line_width.max(1));
+        let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
         for (from, to) in segments {
-            draw_line(buffer, *from, *to, width, gc);
+            draw_dashed(buffer, *from, *to, width, gc, &mut dashes);
         }
         let published_damage = Some(damage);
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
@@ -617,8 +619,12 @@ impl XSoftwareBufferStore {
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let width = i32::from(gc.line_width.max(1));
+        // The dash pattern is walked across the whole polyline rather than
+        // restarted at each vertex, so a dashed outline is dashed evenly
+        // around its corners instead of putting a dash at every one.
+        let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
         for pair in points.windows(2) {
-            draw_line(buffer, pair[0], pair[1], width, gc);
+            draw_dashed(buffer, pair[0], pair[1], width, gc, &mut dashes);
         }
         let published_damage = Some(damage);
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
@@ -892,4 +898,34 @@ pub(crate) struct XTextDraw<'a> {
     pub text: &'a [u16],
     pub image: bool,
     pub font: XFontHandle,
+}
+
+/// Draw one line, honouring the graphics context's line style.
+///
+/// A solid line is drawn whole. `LineOnOffDash` paints only the on runs;
+/// `LineDoubleDash` paints the off runs in the background colour, which is
+/// what makes a two-colour dashed border possible.
+fn draw_dashed(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    from: XPoint,
+    to: XPoint,
+    width: i32,
+    gc: &XGraphicsContextValues,
+    state: &mut geometry::dash::XDashState,
+) {
+    if gc.line_style == crate::X_LINE_SOLID {
+        draw_line(buffer, from, to, width, gc);
+        return;
+    }
+    for run in geometry::dash::split(from, to, &gc.dashes, state) {
+        if run.on {
+            draw_line(buffer, run.from, run.to, width, gc);
+        } else if gc.line_style == crate::X_LINE_DOUBLE_DASH {
+            let background = XGraphicsContextValues {
+                foreground: gc.background,
+                ..gc.clone()
+            };
+            draw_line(buffer, run.from, run.to, width, &background);
+        }
+    }
 }

@@ -832,6 +832,66 @@ fn get_font_path_request(byte_order: XByteOrder) -> Vec<u8> {
     out
 }
 
+/// A `CopyGC` request naming which components to copy.
+fn copy_gc_request(byte_order: XByteOrder, source: u32, destination: u32, mask: u32) -> Vec<u8> {
+    let mut out = vec![57, 0];
+    push_u16(&mut out, byte_order, 4);
+    push_u32(&mut out, byte_order, source);
+    push_u32(&mut out, byte_order, destination);
+    push_u32(&mut out, byte_order, mask);
+    out
+}
+
+fn set_dashes_request(byte_order: XByteOrder, gc: u32, offset: u16, dashes: &[u8]) -> Vec<u8> {
+    let mut out = vec![58, 0];
+    push_u16(&mut out, byte_order, ((12 + padded_len_for_test(dashes.len())) / 4) as u16);
+    push_u32(&mut out, byte_order, gc);
+    push_u16(&mut out, byte_order, offset);
+    push_u16(&mut out, byte_order, u16::try_from(dashes.len()).unwrap());
+    out.extend_from_slice(dashes);
+    pad_to_four(&mut out);
+    out
+}
+
+fn poly_point_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    coordinate_mode: u8,
+    points: &[(i16, i16)],
+) -> Vec<u8> {
+    let mut out = vec![64, coordinate_mode];
+    push_u16(&mut out, byte_order, (12 + points.len() * 4) as u16 / 4);
+    push_u32(&mut out, byte_order, drawable);
+    push_u32(&mut out, byte_order, gc);
+    for (x, y) in points {
+        push_i16(&mut out, byte_order, *x);
+        push_i16(&mut out, byte_order, *y);
+    }
+    out
+}
+
+fn poly_arc_request(
+    byte_order: XByteOrder,
+    drawable: u32,
+    gc: u32,
+    arcs: &[(i16, i16, u16, u16, i16, i16)],
+) -> Vec<u8> {
+    let mut out = vec![68, 0];
+    push_u16(&mut out, byte_order, (12 + arcs.len() * 12) as u16 / 4);
+    push_u32(&mut out, byte_order, drawable);
+    push_u32(&mut out, byte_order, gc);
+    for (x, y, width, height, angle1, angle2) in arcs {
+        push_i16(&mut out, byte_order, *x);
+        push_i16(&mut out, byte_order, *y);
+        push_u16(&mut out, byte_order, *width);
+        push_u16(&mut out, byte_order, *height);
+        push_i16(&mut out, byte_order, *angle1);
+        push_i16(&mut out, byte_order, *angle2);
+    }
+    out
+}
+
 fn image_text8_request(
     byte_order: XByteOrder,
     drawable: u32,

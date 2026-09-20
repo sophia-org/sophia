@@ -44,6 +44,41 @@ impl XAuthorityRuntime {
             .map_err(Into::into)
     }
 
+    /// Whether a graphics context exists and belongs to this namespace.
+    pub fn validate_graphics_context(
+        &self,
+        namespace: NamespaceId,
+        gc: crate::XResourceId,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.graphics_contexts.get(namespace, gc).map(|_| ()).map_err(Into::into)
+    }
+
+    /// Copy graphics context components, as `CopyGC` asks.
+    pub fn copy_graphics_context(
+        &mut self,
+        namespace: NamespaceId,
+        source: crate::XResourceId,
+        destination: crate::XResourceId,
+        mask: u32,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.graphics_contexts
+            .copy(namespace, source, destination, mask)
+            .map_err(Into::into)
+    }
+
+    /// Replace a graphics context's dash pattern, as `SetDashes` asks.
+    pub fn set_graphics_context_dashes(
+        &mut self,
+        namespace: NamespaceId,
+        gc: crate::XResourceId,
+        dash_offset: u16,
+        dashes: &[u8],
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.graphics_contexts
+            .set_dashes(namespace, gc, dash_offset, dashes)
+            .map_err(Into::into)
+    }
+
     pub(crate) fn graphics_context_depth_values_and_font(
         &self,
         namespace: NamespaceId,

@@ -13,6 +13,8 @@ fn dispatch_core_drawing_request(
             | XWireRequest::PolyRectangle { .. }
             | XWireRequest::PolySegment { .. }
             | XWireRequest::PolyFillArc { .. }
+            | XWireRequest::PolyArc { .. }
+            | XWireRequest::PolyPoint { .. }
             | XWireRequest::PolyText8 { .. }
             | XWireRequest::ImageText8 { .. }
             | XWireRequest::PolyText16 { .. }
@@ -273,41 +275,78 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::PolyFillArc {
-            drawable, damage, ..
+        XWireRequest::PolyFillArc { drawable, gc, arcs } => {
+            // A filled arc is the polygon its curve encloses, closed through
+            // the centre or straight across as the graphics context's arc mode
+            // says. Until now this recorded damage and painted nothing.
+            let transaction = context.transaction;
+            let values = match core_draw_gc(context, runtime, drawable, gc) {
+                Ok(values) => values,
+                Err((error, code, resource)) => {
+                    return Handled(core_draw_validation_error(
+                        context, transaction, error, code, resource,
+                    ));
+                }
+            };
+            let pie_slice = values.arc_mode == crate::X_ARC_PIE_SLICE;
+            let polygons: Vec<Vec<crate::XPoint>> = arcs
+                .iter()
+                .map(|arc| crate::software::geometry::arc::fill_polygon(*arc, pie_slice))
+                .collect();
+            core_polygon_draw(context, runtime, drawable, &polygons, &values, true)
+        }
+        XWireRequest::PolyArc { drawable, gc, arcs } => {
+            let transaction = context.transaction;
+            let values = match core_draw_gc(context, runtime, drawable, gc) {
+                Ok(values) => values,
+                Err((error, code, resource)) => {
+                    return Handled(core_draw_validation_error(
+                        context, transaction, error, code, resource,
+                    ));
+                }
+            };
+            // Stroked as the polyline the curve traces, so a stroked arc and a
+            // filled one are built from the same points and cannot disagree.
+            let segments: Vec<(crate::XPoint, crate::XPoint)> = arcs
+                .iter()
+                .flat_map(|arc| {
+                    let points = crate::software::geometry::arc::polyline(*arc);
+                    points
+                        .windows(2)
+                        .map(|pair| (pair[0], pair[1]))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            core_segment_draw(context, runtime, drawable, &segments, &values)
+        }
+        XWireRequest::PolyPoint {
+            drawable,
+            gc,
+            coordinate_mode,
+            points,
         } => {
             let transaction = context.transaction;
-            if runtime
-                .validate_pixmap_access(context.namespace, drawable)
-                .is_ok()
-            {
-                return Handled(XDispatchResult {
-                    response: Some(XAuthorityResponsePacket::accepted(transaction)),
-                    outputs: Vec::new(),
-                    metadata_candidates: Vec::new(),
-                });
-            }
-            let mut region = Region::empty();
-            for rect in damage {
-                region.push(rect);
-            }
-            let response =
-                runtime.apply_core_draw(transaction, context.namespace, drawable, region);
-            let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
-                vec![XClientOutput::Error(x_error_from_runtime(
-                    error,
-                    context.sequence,
-                    context.major_opcode,
-                    0,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
-            } else {
-                Vec::new()
+            let values = match core_draw_gc(context, runtime, drawable, gc) {
+                Ok(values) => values,
+                Err((error, code, resource)) => {
+                    return Handled(core_draw_validation_error(
+                        context, transaction, error, code, resource,
+                    ));
+                }
             };
-            XDispatchResult {
-                response: Some(response),
-                outputs,
-                metadata_candidates: Vec::new(),
-            }
+            let points = crate::wire::absolute_points(&points, coordinate_mode);
+            // A point is a one-pixel rectangle, so it goes through the same
+            // fill as everything else and inherits clip and function.
+            let rectangles: Vec<Rect> = points
+                .iter()
+                .map(|point| Rect {
+                    x: i32::from(point.x),
+                    y: i32::from(point.y),
+                    width: 1,
+                    height: 1,
+                })
+                .collect();
+            core_rectangle_fill(context, runtime, drawable, &rectangles, &values)
         }
         XWireRequest::PolyText8 {
             drawable,
@@ -369,41 +408,24 @@ fn dispatch_core_drawing_request(
             },
         ),
         XWireRequest::FillPoly {
-            drawable, damage, ..
+            drawable,
+            gc,
+            coordinate_mode,
+            points,
+            ..
         } => {
             let transaction = context.transaction;
-            if damage.is_none()
-                || runtime
-                    .validate_pixmap_access(context.namespace, drawable)
-                    .is_ok()
-            {
-                return Handled(XDispatchResult {
-                    response: Some(XAuthorityResponsePacket::accepted(transaction)),
-                    outputs: Vec::new(),
-                    metadata_candidates: Vec::new(),
-                });
-            }
-            let response = runtime.apply_core_draw(
-                transaction,
-                context.namespace,
-                drawable,
-                Region::single(damage.unwrap()),
-            );
-            let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
-                vec![XClientOutput::Error(x_error_from_runtime(
-                    error,
-                    context.sequence,
-                    context.major_opcode,
-                    0,
-                    u32::try_from(drawable.local.raw()).unwrap_or(0)))]
-            } else {
-                Vec::new()
+            let values = match core_draw_gc(context, runtime, drawable, gc) {
+                Ok(values) => values,
+                Err((error, code, resource)) => {
+                    return Handled(core_draw_validation_error(
+                        context, transaction, error, code, resource,
+                    ));
+                }
             };
-            XDispatchResult {
-                response: Some(response),
-                outputs,
-                metadata_candidates: Vec::new(),
-            }
+            let points = crate::wire::absolute_points(&points, coordinate_mode);
+            let winding = values.fill_rule == crate::X_FILL_WINDING;
+            core_polygon_draw(context, runtime, drawable, &[points], &values, winding)
         }
         XWireRequest::PutImage {
             format,
@@ -578,4 +600,86 @@ fn core_draw_gc(
         ));
     }
     Ok(values)
+}
+
+/// Fill polygons by scanline and paint the spans through the ordinary fill.
+fn core_polygon_draw(
+    context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
+    drawable: XResourceId,
+    polygons: &[Vec<crate::XPoint>],
+    values: &crate::XGraphicsContextValues,
+    winding: bool,
+) -> XDispatchResult {
+    let spans: Vec<Rect> = polygons
+        .iter()
+        .flat_map(|points| crate::software::geometry::polygon::fill(points, winding))
+        .collect();
+    core_rectangle_fill(context, runtime, drawable, &spans, values)
+}
+
+/// Paint a list of rectangles, reporting the drawable's own errors.
+fn core_rectangle_fill(
+    context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
+    drawable: XResourceId,
+    rectangles: &[Rect],
+    values: &crate::XGraphicsContextValues,
+) -> XDispatchResult {
+    let response = runtime.apply_span_fill(
+        context.transaction,
+        context.namespace,
+        drawable,
+        rectangles,
+        values,
+    );
+    let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+        vec![XClientOutput::Error(x_error_from_runtime(
+            error,
+            context.sequence,
+            context.major_opcode,
+            0,
+            u32::try_from(drawable.local.raw()).unwrap_or(0),
+        ))]
+    } else {
+        Vec::new()
+    };
+    XDispatchResult {
+        response: Some(response),
+        outputs,
+        metadata_candidates: Vec::new(),
+    }
+}
+
+/// Stroke disjoint segments, reporting the drawable's own errors.
+fn core_segment_draw(
+    context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
+    drawable: XResourceId,
+    segments: &[(crate::XPoint, crate::XPoint)],
+    values: &crate::XGraphicsContextValues,
+) -> XDispatchResult {
+    let response = runtime.apply_segment_draw(
+        context.transaction,
+        context.namespace,
+        drawable,
+        segments,
+        values,
+    );
+    let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+        vec![XClientOutput::Error(x_error_from_runtime(
+            error,
+            context.sequence,
+            context.major_opcode,
+            0,
+            u32::try_from(drawable.local.raw()).unwrap_or(0),
+        ))]
+    } else {
+        Vec::new()
+    };
+    XDispatchResult {
+        response: Some(response),
+        outputs,
+        metadata_candidates: Vec::new(),
+    }
 }

@@ -311,6 +311,16 @@ pub enum XWireRequest {
     },
     SetFontPath,
     GetFontPath,
+    CopyGraphicsContext {
+        source: XResourceId,
+        destination: XResourceId,
+        value_mask: u32,
+    },
+    SetDashes {
+        gc: XResourceId,
+        dash_offset: u16,
+        dashes: Vec<u8>,
+    },
     CreateColormap {
         alloc: u8,
         colormap: XResourceId,
@@ -416,12 +426,25 @@ pub enum XWireRequest {
     FillPoly {
         drawable: XResourceId,
         gc: XResourceId,
-        damage: Option<Rect>,
+        shape: u8,
+        coordinate_mode: u8,
+        points: Vec<XPoint>,
     },
     PolyFillArc {
         drawable: XResourceId,
         gc: XResourceId,
-        damage: Vec<Rect>,
+        arcs: Vec<crate::XArc>,
+    },
+    PolyArc {
+        drawable: XResourceId,
+        gc: XResourceId,
+        arcs: Vec<crate::XArc>,
+    },
+    PolyPoint {
+        drawable: XResourceId,
+        gc: XResourceId,
+        coordinate_mode: u8,
+        points: Vec<XPoint>,
     },
     ShmQueryVersion,
     ShmGetImage {
@@ -1320,6 +1343,41 @@ pub fn decode_x11_core_request(
         // Decoded so the refusal is a proper protocol error rather than an
         // unknown opcode. A client that dies on BadRequest -- xterm installs
         // an error handler that exits -- must be able to ask and be told no.
+        X_COPY_GC => {
+            require_exact_len(X_COPY_GC, X_COPY_GC_REQ_LEN, bytes.len())?;
+            let value_mask = context.byte_order.u32(&bytes[12..16]);
+            if value_mask & !0x007f_ffff != 0 {
+                return Err(XWireParseError::InvalidValue(value_mask));
+            }
+            Ok(XWireRequest::CopyGraphicsContext {
+                source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+                value_mask,
+            })
+        }
+        X_SET_DASHES => {
+            require_len(X_SET_DASHES, X_SET_DASHES_REQ_LEN, bytes.len())?;
+            let dash_len = usize::from(context.byte_order.u16(&bytes[10..12]));
+            if dash_len > X_SET_DASHES_MAX_LEN {
+                return Err(XWireParseError::PropertyValueTooLarge {
+                    len: dash_len,
+                    max: X_SET_DASHES_MAX_LEN,
+                });
+            }
+            let expected = X_SET_DASHES_REQ_LEN + padded_len(dash_len);
+            if bytes.len() != expected {
+                return Err(XWireParseError::InvalidLength {
+                    opcode: X_SET_DASHES,
+                    expected_at_least: expected,
+                    actual: bytes.len(),
+                });
+            }
+            Ok(XWireRequest::SetDashes {
+                gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                dash_offset: context.byte_order.u16(&bytes[8..10]),
+                dashes: bytes[X_SET_DASHES_REQ_LEN..X_SET_DASHES_REQ_LEN + dash_len].to_vec(),
+            })
+        }
         X_SET_FONT_PATH => {
             require_len(X_SET_FONT_PATH, X_SET_FONT_PATH_REQ_LEN, bytes.len())?;
             Ok(XWireRequest::SetFontPath)
@@ -1344,6 +1402,8 @@ pub fn decode_x11_core_request(
         X_FILL_POLY => decode_fill_poly(context, bytes),
         X_POLY_FILL_RECTANGLE => decode_poly_fill_rectangle(context, bytes),
         X_POLY_FILL_ARC => decode_poly_fill_arc(context, bytes),
+        X_POLY_ARC => decode_poly_arc(context, bytes),
+        X_POLY_POINT => decode_poly_point(context, bytes),
         X_PUT_IMAGE => decode_put_image(context, bytes),
         X_GET_IMAGE => decode_get_image(context, bytes),
         X_POLY_TEXT8 => decode_poly_text8(context, bytes),

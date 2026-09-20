@@ -196,12 +196,29 @@ fn decode_create_gc(
             2 => values.foreground = value,
             3 => values.background = value,
             4 => values.line_width = u16::try_from(value).unwrap_or(u16::MAX),
+            5 => values.line_style = u8::try_from(value).unwrap_or(u8::MAX),
+            6 => values.cap_style = u8::try_from(value).unwrap_or(u8::MAX),
+            7 => values.join_style = u8::try_from(value).unwrap_or(u8::MAX),
             8 => values.fill_style = u8::try_from(value).unwrap_or(u8::MAX),
+            9 => values.fill_rule = u8::try_from(value).unwrap_or(u8::MAX),
+            10 => values.tile = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            11 => values.stipple = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            12 => values.tile_stipple_x_origin = value as i16,
+            13 => values.tile_stipple_y_origin = value as i16,
             14 => values.font = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            15 => values.subwindow_mode = u8::try_from(value).unwrap_or(u8::MAX),
             16 => values.graphics_exposures = value != 0,
             17 => values.clip_x_origin = value as i16,
             18 => values.clip_y_origin = value as i16,
             19 => values.clip_mask = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            20 => values.dash_offset = u16::try_from(value).unwrap_or(u16::MAX),
+            // One value sets every dash to the same length, which is the
+            // shorthand the protocol defines; SetDashes carries a pattern.
+            21 => {
+                let length = u8::try_from(value).unwrap_or(u8::MAX).max(1);
+                values.dashes = vec![length, length];
+            }
+            22 => values.arc_mode = u8::try_from(value).unwrap_or(u8::MAX),
             _ => {}
         }
     }
@@ -244,12 +261,29 @@ fn decode_change_gc(
             2 => values.foreground = value,
             3 => values.background = value,
             4 => values.line_width = u16::try_from(value).unwrap_or(u16::MAX),
+            5 => values.line_style = u8::try_from(value).unwrap_or(u8::MAX),
+            6 => values.cap_style = u8::try_from(value).unwrap_or(u8::MAX),
+            7 => values.join_style = u8::try_from(value).unwrap_or(u8::MAX),
             8 => values.fill_style = u8::try_from(value).unwrap_or(u8::MAX),
+            9 => values.fill_rule = u8::try_from(value).unwrap_or(u8::MAX),
+            10 => values.tile = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            11 => values.stipple = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            12 => values.tile_stipple_x_origin = value as i16,
+            13 => values.tile_stipple_y_origin = value as i16,
             14 => values.font = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            15 => values.subwindow_mode = u8::try_from(value).unwrap_or(u8::MAX),
             16 => values.graphics_exposures = value != 0,
             17 => values.clip_x_origin = value as i16,
             18 => values.clip_y_origin = value as i16,
             19 => values.clip_mask = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+            20 => values.dash_offset = u16::try_from(value).unwrap_or(u16::MAX),
+            // One value sets every dash to the same length, which is the
+            // shorthand the protocol defines; SetDashes carries a pattern.
+            21 => {
+                let length = u8::try_from(value).unwrap_or(u8::MAX).max(1);
+                values.dashes = vec![length, length];
+            }
+            22 => values.arc_mode = u8::try_from(value).unwrap_or(u8::MAX),
             _ => {}
         }
     }
