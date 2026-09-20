@@ -278,7 +278,23 @@
       "id": "native_recipient_removal",
       "description": "Route removal while recipient lives retains targeted debt",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::private_native_tests::vanished_emission_target_retains_the_real_release_debt_and_does_not_reuse_press_bytes"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::lifecycle_integration_native_hold_debt_is_not_query_cleanup"
+        }
+      ],
+      "evidence_scope": "The recipient window is removed from the selection and hierarchy state while its client stays admitted: the release resolves to DeliverTo the exact incarnation, the event refuses HierarchyMissing, the ledger still reports that incarnation as the next debt, and the press emission's slot is not reused. A close request on the query lifecycle, driven through retirement, leaves the native hold debt and the hold in place. No writer, disconnect or wire-level claim."
     },
     {
       "id": "native_debt_capacity",
@@ -463,7 +479,44 @@
       "id": "native_lock_order",
       "description": "Guarded APIs and contending writers preserve selected lock order",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::pending_control_gets_the_next_output_lock"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::pending_control_gets_the_next_runtime_lock"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::pending_control_wins_the_request_runtime_lock_race"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::focus_encoding_takes_input_authority_before_event_selections"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::one_step_takes_one_item_and_marks_it_before_common"
+        }
+      ],
+      "evidence_scope": "Guarded lock APIs under real contention: a pending control is granted the runtime lock and the output lock ahead of an ordinary contender that was already waiting, on three separate APIs. Contending writers: the focus writer takes input authority before core event selections, the order the input writer uses, pinned by poison precedence rather than a scheduled race; the order's mark runs above common and the queue guard is released before common is taken. This witnesses the order the code documents for the edges named; no test executes the whole selected rank as an audit, and the plan's written rank list differs from the code's documented rank in two placements, recorded in the binding note."
     },
     {
       "id": "native_no_fallback",
