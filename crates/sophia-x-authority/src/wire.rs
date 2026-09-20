@@ -9,6 +9,7 @@ use crate::{
 };
 
 include!("wire/constants.rs");
+include!("wire/constants_xtest.rs");
 include!("wire/core/color_cursor.rs");
 include!("wire/core/drawing.rs");
 include!("wire/core/discovery.rs");

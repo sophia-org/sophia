@@ -115,7 +115,13 @@ fn validate_fake_input(
             // the root: a window that exists and is not the root is a value
             // the request does not accept, which is a different fault from a
             // resource that does not exist.
-            if root != 0 {
+            if root != 0 && root != crate::X_SETUP_DEFAULT_ROOT {
+                // The root is recognised by its id and never looked up: it is
+                // synthetic, no client's window, and absent from the resource
+                // table a lookup would consult. Anything else is looked up,
+                // and a window that exists but is not the root is a value the
+                // request does not accept, which is a different fault from a
+                // resource that does not exist.
                 let window = crate::XResourceId::new(u64::from(root), 1);
                 if runtime
                     .validate_window_access(context.namespace, window)
@@ -123,9 +129,7 @@ fn validate_fake_input(
                 {
                     return xtest_error(context, XErrorCode::BadWindow, minor, root);
                 }
-                if root != crate::X_SETUP_DEFAULT_ROOT {
-                    return bad_value(root);
-                }
+                return bad_value(root);
             }
         }
     }

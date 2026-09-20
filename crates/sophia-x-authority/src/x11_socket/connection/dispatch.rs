@@ -520,7 +520,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // connection has been registered and its private lifecycle attached, so
     // asking at this point is asking about a client the authority has not met
     // and is refused every time.
-    let mut xtest: Option<XTestConnection> = None;
+    let mut injector: Option<Box<dyn crate::XTestInjector>> = None;
     let client_lease = setup_lease.ok_or_else(|| {
         X11SetupSocketError::new("Sophia X Server Frontend did not retain a setup client lease")
     })?;
@@ -653,15 +653,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // client goes on being served everything else; what it loses is
             // XTEST, which it is then told is absent rather than left to
             // discover one refusal at a time.
-            xtest = admission_lease
+            injector = admission_lease
                 .as_ref()
                 .zip(injection_policy.as_ref())
                 .and_then(|(lease, policy)| {
                     policy
                         .issue(lease.context(), crate::X_TEST_INJECTION_DEVICE)
                         .ok()
-                })
-                .map(XTestConnection::new);
+                });
             routing.attach_connection_state(
                 &registration,
                 namespace,
@@ -750,6 +749,16 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             None => None,
         }
     } else { None };
+    // Taken up only now, because its waits need the gate the query owner just
+    // produced. A notifier that cannot be made leaves the client without the
+    // extension rather than with a request that fails mid-way: it is told
+    // XTEST is absent, which is true of it.
+    let mut xtest: Option<XTestConnection> = injector
+        .take()
+        .and_then(|injector| {
+            XTestConnection::new(injector, private_query.as_ref().map(|(_, gate)| gate.clone()))
+                .ok()
+        });
     let mut owned = X11ClientLifetime {
         // Registered only once the handle that can end a stalled write is in
         // hand, so a refusal registers nothing that would need taking back.
@@ -1008,6 +1017,30 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // dispatcher's refusal is decided under that guard.
             let mut fake_input: Option<XTestFakeInputRequest> = None;
             let mut grab_control: Option<u8> = None;
+            // A FakeInput's delay is taken here, from the bytes, before the
+            // request is decoded or validated. That is the reference order:
+            // the delay precedes detail and root validation, so a malformed
+            // request carrying one waits and only then answers its error.
+            // Reading it here rather than from the decoded request is what
+            // makes that order possible, since decoding and validating happen
+            // under a guard that must not wait.
+            if let Some(connection) = xtest.as_ref()
+                && major_opcode == crate::X_TEST_MAJOR_OPCODE
+                && request.len() >= 12
+                && request[1] == crate::X_TEST_FAKE_INPUT_MINOR_OPCODE
+            {
+                let delay = setup.byte_order.u32(&request[8..12]);
+                if delay != 0 {
+                    match connection.delay(stream, delay)? {
+                        XTestWaitEnd::Departed => return Ok(()),
+                        // Revoked while waiting: the request proceeds to be
+                        // refused by an authority that no longer admits it,
+                        // which emits nothing, exactly as the reference
+                        // cancels a sleeping client's work.
+                        XTestWaitEnd::Cancelled | XTestWaitEnd::Settled => {}
+                    }
+                }
+            }
             let (
                 mut output,
                 cpu_buffer_updates,
@@ -2369,7 +2402,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 if let (Some(connection), Some(impervious)) = (xtest.as_mut(), grab_control) {
                     connection.impervious = impervious == 1;
                 }
-                if let (Some(connection), Some(request)) = (xtest.as_ref(), fake_input) {
+                if let (Some(connection), Some(request)) = (xtest.as_mut(), fake_input) {
                     let planned = {
                         let runtime = lock_x11_request_runtime(
                             &state.runtime,
@@ -2380,12 +2413,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // Nothing here reaches the client. FakeInput has no reply
                     // and the reference sends none, so an error synthesised
                     // for a refusal would desynchronise its sequence
-                    // accounting. Refusals are recorded; the barrier, when it
-                    // lands, is what a client waits on.
+                    // accounting. What the client gets instead is that its
+                    // next request is not read until this one has been
+                    // processed, which is the barrier below.
                     match planned {
-                        Ok(plan) => {
-                            let _ = connection.submit(plan);
-                        }
+                        Ok(plan) => match connection.submit_and_await(stream, plan)? {
+                            XTestWaitEnd::Departed => return Ok(()),
+                            XTestWaitEnd::Settled | XTestWaitEnd::Cancelled => {}
+                        },
                         Err(_unplanned) => {}
                     }
                 }

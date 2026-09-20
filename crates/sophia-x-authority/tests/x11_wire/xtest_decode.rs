@@ -382,3 +382,176 @@ fn xtest_tells_an_admitted_client_an_undefined_minor_does_not_exist() {
     assert_eq!(error.code, XErrorCode::BadRequest);
     assert_eq!(error.minor_code, 9);
 }
+
+fn admitted_context(sequence: u16, byte_order: XByteOrder) -> XDispatchContext {
+    XDispatchContext {
+        injection: XTestAdmission::Admitted,
+        ..dispatch_context(NamespaceId::from_raw(7), sequence, byte_order, X_TEST_MAJOR_OPCODE)
+    }
+}
+
+fn fake_input_request(event_type: u8, detail: u8, root: u32, events: usize) -> XWireRequest {
+    XWireRequest::XTestFakeInput {
+        event_type: event_type & X_TEST_EVENT_TYPE_MASK,
+        sent_event_type: event_type,
+        detail,
+        delay: 0,
+        root,
+        root_x: 0,
+        root_y: 0,
+        events,
+    }
+}
+
+#[test]
+fn xtest_fake_input_refuses_in_the_reference_order_with_the_refused_value() {
+    // Each row is one refusal the reference server makes, with the value it
+    // names. The order matters and is observable: a request with a bad type
+    // AND a bad detail reports the type, and a core type with two records is
+    // a length fault whatever its detail.
+    let table: [(&str, XWireRequest, XErrorCode, u32); 10] = [
+        ("type 0", fake_input_request(0, 38, 0, 1), XErrorCode::BadValue, 0),
+        ("type 35", fake_input_request(35, 38, 0, 1), XErrorCode::BadValue, 35),
+        // The send-event bit is masked for dispatch and reported as sent.
+        ("type 0x87", fake_input_request(0x87, 38, 0, 1), XErrorCode::BadValue, 0x87),
+        ("two records", fake_input_request(2, 38, 0, 2), XErrorCode::BadLength, 0),
+        ("key below 8", fake_input_request(2, 7, 0, 1), XErrorCode::BadValue, 7),
+        ("button 0", fake_input_request(4, 0, 0, 1), XErrorCode::BadValue, 0),
+        ("button 11", fake_input_request(5, 11, 0, 1), XErrorCode::BadValue, 11),
+        ("motion detail 2", fake_input_request(6, 2, 0, 1), XErrorCode::BadValue, 2),
+        // A root that is no window at all.
+        ("unknown root", fake_input_request(6, 0, 0x00c0_0999, 1), XErrorCode::BadWindow, 0x00c0_0999),
+        // Type before detail: this one has both wrong and names the type.
+        ("type then detail", fake_input_request(7, 0, 0, 1), XErrorCode::BadValue, 7),
+    ];
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        for (label, request, code, value) in table.iter().cloned() {
+            let result = dispatch_x11_wire_request(
+                admitted_context(40, byte_order),
+                request,
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            );
+            let [XClientOutput::Error(error)] = result.outputs.as_slice() else {
+                panic!("{byte_order:?} {label}: exactly one error is owed");
+            };
+            assert_eq!(error.code, code, "{byte_order:?} {label}");
+            assert_eq!(error.resource_id, value, "{byte_order:?} {label} names its value");
+            assert_eq!(error.minor_code, u16::from(X_TEST_FAKE_INPUT_MINOR_OPCODE));
+            assert_eq!(error.major_code, X_TEST_MAJOR_OPCODE);
+        }
+    }
+}
+
+#[test]
+fn xtest_fake_input_accepts_every_core_type_and_owes_no_reply() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        for (event_type, detail) in [(2u8, 38u8), (3, 38), (4, 1), (5, 10), (6, 0), (6, 1)] {
+            let result = dispatch_x11_wire_request(
+                admitted_context(41, byte_order),
+                fake_input_request(event_type, detail, 0, 1),
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            );
+            // Acceptance is the absence of an error. FakeInput has no reply,
+            // and the reference sends none, so a reply here would be a bug
+            // the client could see in its sequence accounting.
+            assert!(
+                result.outputs.is_empty() && result.response.is_none(),
+                "{byte_order:?} type {event_type} detail {detail}: {:?}",
+                result.outputs
+            );
+        }
+    }
+}
+
+#[test]
+fn xtest_fake_input_motion_root_must_be_the_root() {
+    // A window that exists and is not the root is BadValue, which is a
+    // different fault from a resource that does not exist.
+    let byte_order = XByteOrder::LittleEndian;
+    let namespace = NamespaceId::from_raw(7);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let child = 0x0022_0001u32;
+    let created = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, byte_order, 1),
+        decode_x11_core_request(
+            context(namespace, 1, byte_order),
+            &create_window_request(byte_order, child, 10, 20, 64, 48),
+        )
+        .expect("a window to create"),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        !created.outputs.iter().any(|o| matches!(o, XClientOutput::Error(_))),
+        "the fixture window must exist: {:?}",
+        created.outputs
+    );
+
+    let refused = dispatch_x11_wire_request(
+        admitted_context(42, byte_order),
+        fake_input_request(6, 0, child, 1),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    let [XClientOutput::Error(error)] = refused.outputs.as_slice() else {
+        panic!("a non-root window is refused");
+    };
+    assert_eq!(error.code, XErrorCode::BadValue);
+    assert_eq!(error.resource_id, child);
+
+    let accepted = dispatch_x11_wire_request(
+        admitted_context(43, byte_order),
+        fake_input_request(6, 0, X_SETUP_DEFAULT_ROOT, 1),
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(accepted.outputs.is_empty(), "the root itself is accepted");
+}
+
+#[test]
+fn xtest_grab_control_takes_a_strict_boolean() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        for impervious in [0u8, 1] {
+            let result = dispatch_x11_wire_request(
+                admitted_context(44, byte_order),
+                XWireRequest::XTestGrabControl { impervious },
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            );
+            assert!(result.outputs.is_empty(), "{byte_order:?} {impervious} is accepted");
+        }
+        let result = dispatch_x11_wire_request(
+            admitted_context(45, byte_order),
+            XWireRequest::XTestGrabControl { impervious: 2 },
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        let [XClientOutput::Error(error)] = result.outputs.as_slice() else {
+            panic!("two is not a boolean");
+        };
+        // The core protocol lets many BOOL fields pass any nonzero. This one
+        // does not, and it names the value it refused.
+        assert_eq!(error.code, XErrorCode::BadValue);
+        assert_eq!(error.resource_id, 2);
+    }
+}
