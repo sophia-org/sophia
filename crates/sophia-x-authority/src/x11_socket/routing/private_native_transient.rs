@@ -240,4 +240,59 @@ impl BaseGuards<'_> {
         storage.as_mut().expect("installed before effect").committed = true;
         Ok(())
     }
+
+    /// Motion over the bare root that nobody selected.
+    ///
+    /// The pointer still moved. What it owes is the query state -- where the
+    /// pointer is, over the root, with the modifiers and buttons as they
+    /// stand -- and nothing to any client. No emission is installed and no
+    /// delivery is bound, because there is no recipient to bind; the mapper
+    /// is untouched, because motion changes no button. The effect boundary
+    /// is still marked: a query answered after this has seen the move.
+    pub(super) fn observe_root_motion(
+        &mut self,
+        permit: &mut ExecutionPermit<'_>,
+        route: &XAuthorityRoutedInput,
+    ) -> Result<(), Refusal> {
+        if permit.identity() != self.origin.identity {
+            return Err(Refusal::ForeignOrigin);
+        }
+        if route.request.kind != InputEventKind::PointerMotion {
+            return Err(Refusal::WrongPhase);
+        }
+        if self.authority.pointer_frozen(self.origin.namespace) {
+            return Err(Refusal::PointerFrozen);
+        }
+        let pointer = self
+            .pointers
+            .get(&(self.origin.namespace, self.origin.seat))
+            .ok_or(Refusal::MissingMapper)?;
+        if !self.authority.has_ordered_namespace(self.origin.namespace) {
+            return Err(Refusal::MissingQueryScope);
+        }
+        let modifiers = self
+            .authority
+            .pointer_query_state(self.origin.namespace)
+            .mask
+            & 0xff;
+        let mut query = pointer_event(route, 0, false, modifiers | pointer.state());
+        query.kind = XAuthorityPointerEventKind::Motion;
+        permit.begin_external_effect().map_err(Refusal::Authority)?;
+        self.authority.observe_query_input(
+            self.origin.namespace,
+            XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            XAuthorityInputEvent::Pointer(query),
+        );
+        Ok(())
+    }
+
+    /// The namespace these guards were taken for.
+    pub(super) fn namespace(&self) -> NamespaceId {
+        self.origin.namespace
+    }
+
+    /// The pointer grab in force, if any, read under these guards.
+    pub(super) fn pointer_grab(&self) -> Option<crate::XActiveInputGrab> {
+        self.authority.pointer_grab(self.origin.namespace)
+    }
 }

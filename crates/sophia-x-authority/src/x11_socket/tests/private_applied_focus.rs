@@ -897,4 +897,75 @@ mod private_applied_focus {
     }
     include!("private_focus_destruction.rs");
     include!("private_focus_lifecycle.rs");
+
+    #[test]
+    fn the_prepared_focus_is_published_when_the_runtime_agrees_it_is_on_the_root() {
+        let fixture = fixture();
+        assert!(!fixture.published(), "installation alone applies nothing");
+
+        let runtime = fixture.state.runtime.lock().unwrap();
+        assert_eq!(
+            fixture
+                .private
+                .broker
+                .registry
+                .publish_prepared_focus(&runtime),
+            Ok(true)
+        );
+        assert!(fixture.published());
+        // Once. Saying it again is not a second application.
+        assert_eq!(
+            fixture
+                .private
+                .broker
+                .registry
+                .publish_prepared_focus(&runtime),
+            Ok(false)
+        );
+        assert!(fixture.published());
+    }
+
+    #[test]
+    fn a_retained_focus_on_a_window_is_not_published_by_preparation() {
+        let fixture = fixture();
+        {
+            // What an earlier invocation left behind: focus on a window this
+            // owner has no route for. Publishing the root over it would route
+            // by a focus the runtime does not have.
+            let mut runtime = fixture.state.runtime.lock().unwrap();
+            runtime.set_input_focus(namespace(), window(), 2).unwrap();
+        }
+
+        let runtime = fixture.state.runtime.lock().unwrap();
+        assert_eq!(
+            fixture
+                .private
+                .broker
+                .registry
+                .publish_prepared_focus(&runtime),
+            Ok(false)
+        );
+        assert!(!fixture.published());
+    }
+
+    #[test]
+    fn a_focus_change_already_begun_owns_publication_over_preparation() {
+        let fixture = fixture();
+        let claim = fixture.reserve(window());
+        fixture
+            .apply(&claim, X11FocusChange::Surface { window: window() })
+            .unwrap();
+        let before = fixture.published();
+
+        let runtime = fixture.state.runtime.lock().unwrap();
+        assert_eq!(
+            fixture
+                .private
+                .broker
+                .registry
+                .publish_prepared_focus(&runtime),
+            Ok(false)
+        );
+        assert_eq!(fixture.published(), before);
+    }
 }

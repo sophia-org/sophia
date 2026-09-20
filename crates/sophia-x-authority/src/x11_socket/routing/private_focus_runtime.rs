@@ -110,3 +110,47 @@ impl XPrivateFocusRuntimeSource {
             .map_err(|_| unavailable)?
     }
 }
+
+#[cfg(unix)]
+impl XServerFrontendRouteRegistry {
+    /// Publish the focus an instance starts with, if it is the one the
+    /// applied owner was built assuming.
+    ///
+    /// A fresh publication describes focus on the root, reverting to parent,
+    /// and is unpublished: nothing has been applied yet, and publication is
+    /// the statement that what the view routes by has been fully applied and
+    /// its output owed to nobody. For an instance whose runtime has exactly
+    /// that focus, the statement is already true, and leaving it unsaid makes
+    /// every pointer route refuse until some client happens to change focus.
+    /// So it is said here, once, by the service that prepared the runner,
+    /// holding the runtime to compare against.
+    ///
+    /// Nothing is published if the runtime's focus is anything else: a focus
+    /// retained from an earlier invocation names a window this owner has no
+    /// route for, and the next focus change will publish it properly. And
+    /// nothing is published if a focus change has already begun, because
+    /// that change owns the publication from here on.
+    ///
+    /// Reports whether it published.
+    pub(crate) fn publish_prepared_focus(
+        &self,
+        runtime: &XAuthorityRuntime,
+    ) -> Result<bool, PrivateAppliedRegistryRefusal> {
+        let owner = self
+            .private_applied
+            .get()
+            .ok_or(PrivateAppliedRegistryRefusal::NoPrivateOwner)?;
+        let mut state = owner
+            .publication
+            .lock()
+            .map_err(|_| PrivateAppliedRegistryRefusal::PublicationUnavailable)?;
+        if state.published || state.revision != 0 || state.focus.is_some() {
+            return Ok(false);
+        }
+        if runtime.input_focus(owner.namespace) != (state.focus_window, state.focus_revert_to) {
+            return Ok(false);
+        }
+        state.published = true;
+        Ok(true)
+    }
+}

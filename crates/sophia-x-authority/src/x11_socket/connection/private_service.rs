@@ -777,32 +777,8 @@ pub(crate) fn serve_private_frontend_until_stopped(
             order: Box::default(),
         });
     }
-    // THE ONE CONTINUING EXECUTION OWNER IS PREPARED HERE, after the
-    // listener is bound and before any connection can be admitted or any
-    // producer asked for: one keyboard history, namespace, seat and native
-    // association for the invocation, and the applied owner installed once
-    // as part of it (promotion establishes each connection's served endpoint
-    // through that owner). The runner is made on this thread and never
-    // leaves it. A refusal hands the frontend back, and it is finalised into
-    // its settlement like every other setup refusal; the port is closed, so
-    // a caller sees Ended, never a service that stays NotReady for good.
-    let runner = match private.prepare_runner(namespace, service.owner()) {
-        Ok(runner) => runner,
-        Err((refusal, private)) => {
-            producers.close();
-            let settlement = private.shutdown();
-            return Err(PrivateServiceFailure::Failed {
-                error: X11SetupSocketError::new(format!(
-                    "private runner could not be prepared: {refusal:?}"
-                )),
-                settlement: Box::new(settlement),
-                unresolved_egress: Vec::new(),
-                workers: Vec::new(),
-                maintenance: Vec::new(),
-                order: Box::default(),
-            });
-        }
-    };
+    let runner =
+        prepare_service_runner(private, &frontend.state, namespace, service, &mut producers)?;
     let cancellation = Arc::new(AtomicBool::new(false));
     let ordered_egress = Arc::new(XAuthorityOrderedEgress::new(
         transaction_sender,

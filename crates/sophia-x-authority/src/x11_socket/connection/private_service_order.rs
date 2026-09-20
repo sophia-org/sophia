@@ -182,3 +182,74 @@ impl RoutedBrokerAccess for LeasedPrivateBroker<'_, '_> {
         routing_tests::stage_after_admission_closed(&self.runner.frontend().broker.registry);
     }
 }
+
+/// THE ONE CONTINUING EXECUTION OWNER IS PREPARED HERE, after the listener
+/// is bound and before any connection can be admitted or any producer asked
+/// for: one keyboard history, namespace, seat and native association for the
+/// invocation, and the applied owner installed once as part of it (promotion
+/// establishes each connection's served endpoint through that owner). The
+/// runner is made on the service thread and never leaves it. A refusal hands
+/// the frontend back, and it is finalised into its settlement like every
+/// other setup refusal; the port is closed, so a caller sees Ended, never a
+/// service that stays NotReady for good.
+///
+/// The focus the instance starts with is published in the same breath, while
+/// nothing can have changed it: the runtime's focus for this namespace is
+/// compared against the owner's, and if they agree the view is open from the
+/// first request rather than from the first focus change. Whether it
+/// published is not an error either way; a retained focus is published by
+/// the change that next applies one.
+#[cfg(unix)]
+fn prepare_service_runner(
+    private: PrivateXServerFrontend,
+    state: &X11CoreSocketServerState,
+    namespace: NamespaceId,
+    service: &PrivateServiceLease<'_>,
+    producers: &mut PrivateProducerPort,
+) -> Result<PrivatePreparedRunner, PrivateServiceFailure> {
+    let failed = |error: X11SetupSocketError, settlement: PrivateSettlement| {
+        PrivateServiceFailure::Failed {
+            error,
+            settlement: Box::new(settlement),
+            unresolved_egress: Vec::new(),
+            workers: Vec::new(),
+            maintenance: Vec::new(),
+            order: Box::default(),
+        }
+    };
+    let runner = match private.prepare_runner(namespace, service.owner()) {
+        Ok(runner) => runner,
+        Err((refusal, private)) => {
+            producers.close();
+            let settlement = private.shutdown();
+            return Err(failed(
+                X11SetupSocketError::new(format!(
+                    "private runner could not be prepared: {refusal:?}"
+                )),
+                settlement,
+            ));
+        }
+    };
+    let published = state
+        .runtime
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))
+        .and_then(|runtime| {
+            runner
+                .frontend()
+                .broker
+                .registry
+                .publish_prepared_focus(&runtime)
+                .map_err(|refusal| {
+                    X11SetupSocketError::new(format!(
+                        "prepared focus could not be published: {refusal:?}"
+                    ))
+                })
+        });
+    if let Err(error) = published {
+        producers.close();
+        let settlement = runner.shutdown();
+        return Err(failed(error, settlement));
+    }
+    Ok(runner)
+}

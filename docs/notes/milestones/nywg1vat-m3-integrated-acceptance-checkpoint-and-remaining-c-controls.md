@@ -285,3 +285,33 @@ A twenty-of-twenty contained aggregate is still not the whole of t093. Local
 finish-branch integration is complete; root master and the Session/dock tree
 have not imported it, and nothing was pushed. M4–M6, Session integration,
 public XTEST discovery and physical acceptance remain outside this result.
+
+## Refinement under M5: the initial focus is published
+
+Recorded 2026-09-20, under t093's M5 work, because it changes what one of
+the twenty cases pins.
+
+Group B's `pending_focus_refuses` was pinned as a refusal named `Unpublished`:
+the applied-routing view started unpublished and published only when the
+first focus change was applied, so on a fresh instance every route refused
+until some client changed focus. M5's XTEST profile showed what that costs.
+The reference server delivers MotionNotify to a client selecting on the root
+with no focus ever set, and this instance already tells every client that
+asks, through GetInputFocus, that its focus is applied on the root reverting
+to parent. Refusing to route by a focus the instance reports as applied was
+an inconsistency, not an obligation.
+
+Preparation now publishes that initial focus, once, when the runtime's focus
+for the namespace is exactly the one a fresh publication describes; a focus
+retained from an earlier invocation is left for the next change to publish,
+and a change already begun owns publication from there on. The case's
+obligation is unchanged in substance and its refusal is now named more
+exactly: a key sent for a focus that is queued but not applied is refused
+`FocusNotApplied`, because the key has no applied focus window, and the
+pending one is not consulted. The service test that pinned a press before
+any focus change as refused now pins it delivered to the window under the
+pointer, which is what the protocol routes a button by; the focus change
+that follows still replays nothing and re-answers nothing.
+
+The twenty cases pass again on the refined source; the run is recorded with
+M5's own evidence rather than restated here.

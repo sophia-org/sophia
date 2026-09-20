@@ -42,10 +42,14 @@ fn b_applied_focus() {
             else {
                 panic!("the original pending-focus input must be refused");
             };
+            // The instance's initial focus, the root, is published from
+            // preparation; what is not applied is the focus this key was
+            // sent for. The refusal names that: the key has no applied
+            // focus window to go to, and the pending one is not consulted.
             assert!(matches!(
                 refusal,
                 PrivateExecutionRefusal::Native(private_native::Refusal::Resolution(
-                    PrivateAppliedRefusal::Unpublished
+                    PrivateAppliedRefusal::FocusNotApplied
                 ))
             ));
             let completion = custody.observe().unwrap();
@@ -82,7 +86,7 @@ fn b_applied_focus() {
     let focus_worker = release.entered();
     allow_key.entered();
     assert!(
-        !service
+        service
             .registry
             .private_applied
             .get()
@@ -90,7 +94,9 @@ fn b_applied_focus() {
             .publication
             .lock()
             .unwrap()
-            .published
+            .focus
+            .is_none(),
+        "the queued focus is not applied until its writer applies it"
     );
     ingress
         .submit(
@@ -108,7 +114,7 @@ fn b_applied_focus() {
         refused.answer().unwrap().outcome,
         XAuthorityInputDeliveryOutcome::RouteRejected
     );
-    let pending = json!({"source":refused_source,"writer":format!("{focus_worker:?}"),"queued_focus":112000,"key_cell":Arc::as_ptr(&refused) as usize,"outcome":"RouteRejected","published":false});
+    let pending = json!({"source":refused_source,"writer":format!("{focus_worker:?}"),"queued_focus":112000,"key_cell":Arc::as_ptr(&refused) as usize,"outcome":"RouteRejected","focus_applied":false});
     release.release();
     assert_eq!(
         ack_for(&service.acks, 112000)

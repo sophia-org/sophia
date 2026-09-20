@@ -696,13 +696,17 @@ fn focus_then_a_press_and_release_submitted_through_the_services_own_producers_r
 }
 
 #[test]
-fn a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow_focus() {
-    // THE PENDING/APPLIED DISTINCTION, FROM THE INPUT SIDE: nothing has
-    // published this connection's applied state, so the runner's execution
-    // refuses the press (Unpublished) rather than delivering it somewhere
-    // plausible. The actual refusal answers the original receipt, allowing
-    // a fresh request after focus; applying focus never replays the old one.
-    // Final observations follow ordinary stop and worker collection.
+fn a_press_before_any_focus_change_goes_by_the_pointer_and_focus_replays_nothing() {
+    // THE PENDING/APPLIED DISTINCTION, FROM THE INPUT SIDE. An instance
+    // starts with its focus on the root, and that focus is applied: the
+    // runtime reports it to every client that asks, and preparation
+    // publishes it. So a press that arrives before any focus change is not
+    // input for a state nobody has published; it is routed the way the
+    // protocol routes a button, by the pointer, to the window under it.
+    // What a focus change owes is FocusIn and nothing else: the earlier
+    // press is neither replayed nor re-answered, and a fresh request after
+    // focus is its own delivery. Final observations follow ordinary stop
+    // and worker collection.
     let (launched, socket_path) = launch_producing("producer-unpublished", 9602, 4);
     launched
         .access
@@ -728,9 +732,10 @@ fn a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow
     ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96110), 272, true))
         .expect("the order accepts the press");
-    let nothing = read_event(&mut client, 2);
+    let first_press = read_event(&mut client, 3);
     let cell = delivery_cell(&launched.registry, 96110);
-    // The applied state arrives afterwards; the refused press is not replayed.
+    // The applied state arrives afterwards; the delivered press is not
+    // replayed and its answer does not change.
     control
         .submit(
             &lease,
@@ -748,9 +753,9 @@ fn a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow
     let still_nothing = read_event(&mut client, 2);
     let answered_after_focus = cell.as_ref().and_then(|cell| cell.answer());
     let fresh = ingress
-        .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96111), 272, true))
+        .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96111), 272, false))
         .map_err(|refusal| format!("{refusal:?}"));
-    let new_press = read_event(&mut client, 3);
+    let release = read_event(&mut client, 3);
     let fresh_answer = delivery_cell(&launched.registry, 96111).and_then(|cell| {
         waited_for(|| cell.answer().is_some());
         cell.answer()
@@ -761,32 +766,34 @@ fn a_press_before_applied_focus_is_answered_refused_and_a_fresh_press_can_follow
         .expect("the service is listening for commands");
     let client_ended = eof_within(&mut client, 3);
     let registry = launched.registry.clone();
-    let outcome = produced_outcome(launched, "unpublished press");
+    let outcome = produced_outcome(launched, "press before focus");
     let seen = observe_worker(&custody, &registry);
     let order = outcome.order.expect("the tally");
-    assert_eq!(nothing, None, "nothing was delivered for the refused press");
-    assert!(fresh.is_ok(), "the answered refusal allows a fresh request: {fresh:?}");
+    assert_eq!(
+        first_press,
+        Some(expected_button_event(true, sequence, window, 1)),
+        "the press before any focus change reaches the window under the pointer"
+    );
+    assert!(fresh.is_ok(), "a fresh request after focus is accepted: {fresh:?}");
     assert_eq!(
         focus_ack.map(|ack| ack.acknowledgement.outcome),
         Some(XAuthorityControlOutcome::Delivered)
     );
     assert_eq!(focus_in, Some(expected_focus_in(sequence, window)));
     assert_eq!(still_nothing, None, "the applied focus replays nothing");
-    assert_eq!(answered_after_focus.map(|receipt| receipt.outcome), Some(XAuthorityInputDeliveryOutcome::RouteRejected));
-    assert_eq!(new_press, Some(expected_button_event(true, sequence, window, 1)), "fresh={fresh_answer:?}; order={order:?}; error={:?}; terminal={:?}", outcome.error, outcome.terminal);
+    assert_eq!(
+        answered_after_focus.map(|receipt| receipt.outcome),
+        Some(XAuthorityInputDeliveryOutcome::Flushed),
+        "focus does not re-answer a delivered press"
+    );
+    assert_eq!(release, Some(expected_button_event(false, sequence, window, 1)), "fresh={fresh_answer:?}; order={order:?}; error={:?}; terminal={:?}", outcome.error, outcome.terminal);
     assert_eq!(fresh_answer.map(|receipt| receipt.outcome), Some(XAuthorityInputDeliveryOutcome::Flushed));
     assert!(client_ended);
     assert_eq!(outcome.ok, Some(true), "{:?}", outcome.error);
-    assert_eq!(order.taken, 3, "two presses and the control: {order:?}");
-    assert_eq!(order.refused, 1, "{order:?}");
-    assert_eq!(
-        order.last_refusal,
-        Some(PrivateExecutionRefusal::Native(private_native::Refusal::Resolution(
-            PrivateAppliedRefusal::Unpublished
-        ))),
-        "{order:?}"
-    );
+    assert_eq!(order.taken, 3, "the press, the control and the release: {order:?}");
+    assert_eq!(order.refused, 0, "{order:?}");
+    assert_eq!(order.last_refusal, None, "{order:?}");
     assert_eq!(order.routed, 1);
-    assert_collected_running(&seen, "unpublished press");
+    assert_collected_running(&seen, "press before focus");
     let _ = std::fs::remove_file(&socket_path);
 }
