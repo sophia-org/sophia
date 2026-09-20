@@ -553,3 +553,100 @@ fn fixture_connection() -> sophia_input_authority::ConnectionIdentity {
         connection_generation: 1,
     }
 }
+
+/// The release a departing source owes is claimable and finishable like any
+/// other: the record its revocation retired is what the attempt scheduler
+/// hands out next, and one finished attempt with both bits frees it.
+///
+/// THE TERMINAL SIDE RESTS ON THIS. A departed source's release has no
+/// request, no completion cell and no delivery identity; what it has is a
+/// ledger record whose holders reached zero inside `revoke_grant`, and the
+/// only way that record leaves the ledger is an attempt claimed against it
+/// and finished. If the ledger refused the claim, nothing built on it could
+/// ever settle.
+#[test]
+fn a_departing_sources_owed_release_is_claimed_and_finished_like_any_other() {
+    let mut f = fixture();
+    let (id, cap, ctx) = granted(&mut f);
+    let token = reserve(&mut f, cap, ctx);
+    f.authority
+        .execute_reserved(&f.issuer, token, fixture_connection(), |permit| {
+            permit.press(key(), recipient())?;
+            Ok(())
+        })
+        .unwrap();
+    let debt = f.authority.revoke_grant(&f.issuer, id).unwrap();
+    assert_eq!((debt.owed_releases, debt.survivors), (1, 0));
+    let (hold, settlement) = f
+        .authority
+        .next_debt(&mut 0)
+        .expect("the retired press retains its debt");
+    assert!(
+        !settlement.native_reconciled && !settlement.recipient_settled,
+        "nothing has answered the debt yet: {settlement:?}"
+    );
+
+    // THE NATIVE HALF FIRST, as the terminal's own recording supplies it once
+    // the keyboard has been released under the reconciliation permit: the
+    // scheduler refuses to claim an attempt for a debt whose native half is
+    // not in, so this is the order the terminal has to keep. The revoked
+    // grant is still the owner the ledger authorises for it.
+    assert!(
+        !f.authority
+            .settle(
+                &f.issuer,
+                Some(id),
+                key(),
+                hold,
+                SettlementBit {
+                    native_reconciled: true,
+                    recipient_settled: false,
+                },
+            )
+            .unwrap(),
+        "the native half alone settles nothing"
+    );
+
+    // CLAIMED AGAINST THE RETIRED RECORD. The source is gone; the debt is not.
+    let mut cursor = 0;
+    let claim = f
+        .authority
+        .claim_next_attempt(&f.issuer, &mut cursor)
+        .expect("the scheduler answers")
+        .expect("the retired record is the next debt");
+    assert_eq!(
+        claim.hold, hold,
+        "the attempt is for the departing source's own hold"
+    );
+
+    // FINISHED ONCE, FREED ONCE. The writer's answer supplies the recipient
+    // half through the attempt; the record goes and a second finish settles
+    // nothing.
+    assert!(
+        f.authority
+            .finish_attempt(
+                &f.issuer,
+                claim.token,
+                SettlementBit {
+                    native_reconciled: false,
+                    recipient_settled: true,
+                },
+            )
+            .unwrap(),
+        "the finished attempt frees the retired record"
+    );
+    assert!(f.authority.next_debt(&mut 0).is_none(), "no debt remains");
+    assert!(
+        !f.authority
+            .finish_attempt(
+                &f.issuer,
+                claim.token,
+                SettlementBit {
+                    native_reconciled: true,
+                    recipient_settled: true,
+                },
+            )
+            .unwrap(),
+        "a second finish of the same attempt settles nothing"
+    );
+}
