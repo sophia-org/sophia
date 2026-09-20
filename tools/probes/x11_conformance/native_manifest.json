@@ -473,7 +473,16 @@
       "id": "native_stalled_reader",
       "description": "Real private stalled socket reader is contained while healthy peer continues",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::m3_acceptance::a_stalled_private_reader_is_contained_while_a_healthy_peer_continues"
+        }
+      ],
+      "evidence_scope": "One running private service over real sockets with two admitted clients. One stops reading; its writer flushes into the kernel buffer until a send blocks, and that delivery is answered TimedOut at the declared six-second allowance and its socket ended, drained to its end by the test. While that send is blocked the other client's GetInputFocus is answered, a scroll and a key press and release routed to it are read back as their exact core frames and settled Flushed, and it is served again after the stall ends; the instance stops cleanly. Written for this obligation; no wire-probe or session-level claim."
     },
     {
       "id": "native_lock_order",

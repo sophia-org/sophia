@@ -50,3 +50,5 @@ include!("m3_acceptance_input_support.rs");
 include!("m3_acceptance_keyboard.rs");
 
 include!("m3_acceptance_ordered_input.rs");
+
+include!("private_stalled_reader.rs");
