@@ -60,6 +60,20 @@ and with newer siblings restacked below older ones; allocation order cannot
 accidentally satisfy the stacking assertion. Each behavior has its own mandatory
 case so a passing notification-presence check cannot hide an ordering failure.
 
+Drawing, graphics-context, pixmap and image cases (`drawing_cases.py`) judge a
+request by what it left in the drawable: every pixel assertion reads the target
+back through GetImage in ZPixmap form, decoded with the server's advertised
+image byte order, never by the absence of an error. Expected pixels follow the
+protocol's own pixelization rules (filled rectangles cover [x, x+width) by
+[y, y+height); thin horizontal, vertical and 45-degree lines pass through pixel
+centers; an arc is inscribed in its rectangle, so a full disc holds its center
+and none of the box corners). Exposure obligations are read as events:
+NoExposure for a wholly available copy source, GraphicsExposure for the missing
+part, Expose for a ClearArea that asked for it, and silence when
+graphics-exposures is False. Refusals cover extents, depth, XID choice,
+enumerated values, root/depth binding, freed resources and InputOnly drawables.
+These cases certify the software fixture's raster, not GPU composition.
+
 `manifest.json` binds the mandatory profile to cases, core request numbers and
 extension obligations. Every required case must produce exactly one PASS per
 byte order. Missing, duplicate, unexecuted, unknown, malformed, NORESULT,

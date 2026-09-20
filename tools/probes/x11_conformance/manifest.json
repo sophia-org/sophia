@@ -205,6 +205,46 @@
     {
       "id": "get_geometry_errors",
       "mandatory": true
+    },
+    {
+      "id": "pixmap_lifecycle",
+      "mandatory": true
+    },
+    {
+      "id": "gc_lifecycle",
+      "mandatory": true
+    },
+    {
+      "id": "gc_dashes_clip",
+      "mandatory": true
+    },
+    {
+      "id": "clear_area",
+      "mandatory": true
+    },
+    {
+      "id": "copy_area",
+      "mandatory": true
+    },
+    {
+      "id": "copy_plane",
+      "mandatory": true
+    },
+    {
+      "id": "poly_primitives",
+      "mandatory": true
+    },
+    {
+      "id": "fill_primitives",
+      "mandatory": true
+    },
+    {
+      "id": "put_get_image",
+      "mandatory": true
+    },
+    {
+      "id": "query_best_size",
+      "mandatory": true
     }
   ],
   "features": [
@@ -585,6 +625,121 @@
       ],
       "cases": [
         "get_geometry_errors"
+      ]
+    },
+    {
+      "name": "CreatePixmap and FreePixmap lifecycle, extents, depth, InputOnly drawables and XID reuse, read back through GetImage",
+      "accepted_core_opcodes": [
+        53,
+        54,
+        73,
+        1
+      ],
+      "cases": [
+        "pixmap_lifecycle"
+      ]
+    },
+    {
+      "name": "Graphics contexts: creation, ChangeGC, selected-component CopyGC, root/depth binding, value refusals and freed-context refusal",
+      "accepted_core_opcodes": [
+        55,
+        56,
+        57,
+        60,
+        70
+      ],
+      "cases": [
+        "gc_lifecycle"
+      ]
+    },
+    {
+      "name": "SetDashes refuses empty and zero dashes; SetClipRectangles confines output, an empty list disables it, clip-mask None restores it",
+      "accepted_core_opcodes": [
+        58,
+        59,
+        56
+      ],
+      "cases": [
+        "gc_dashes_clip"
+      ]
+    },
+    {
+      "name": "ClearArea paints the background pixel, extends zero extents to the window edge, reports Expose only on request, refuses pixmaps and InputOnly windows",
+      "accepted_core_opcodes": [
+        61,
+        73,
+        1,
+        8
+      ],
+      "cases": [
+        "clear_area"
+      ]
+    },
+    {
+      "name": "CopyArea copies a rectangle, reports NoExposure for a wholly available source and GraphicsExposure for the missing part, and is silent when graphics-exposures is False",
+      "accepted_core_opcodes": [
+        62,
+        73
+      ],
+      "cases": [
+        "copy_area"
+      ]
+    },
+    {
+      "name": "CopyPlane expands one source plane into foreground and background pixels from any source depth and refuses non-single bit-planes",
+      "accepted_core_opcodes": [
+        63,
+        73
+      ],
+      "cases": [
+        "copy_plane"
+      ]
+    },
+    {
+      "name": "PolyPoint, PolyLine, PolySegment and PolyRectangle place the specified pixels in Origin and Previous modes",
+      "accepted_core_opcodes": [
+        64,
+        65,
+        66,
+        67,
+        73
+      ],
+      "cases": [
+        "poly_primitives"
+      ]
+    },
+    {
+      "name": "PolyFillRectangle, FillPoly and the arc requests fill the specified regions and truncate angles beyond 360 degrees",
+      "accepted_core_opcodes": [
+        69,
+        70,
+        71,
+        68,
+        73
+      ],
+      "cases": [
+        "fill_primitives"
+      ]
+    },
+    {
+      "name": "PutImage and GetImage round-trip ZPixmap and Bitmap data, honour plane-mask, clip outside images and refuse mismatched depth, pad, format and rectangles",
+      "accepted_core_opcodes": [
+        72,
+        73,
+        1,
+        8
+      ],
+      "cases": [
+        "put_get_image"
+      ]
+    },
+    {
+      "name": "QueryBestSize answers every class with nonzero sizes and refuses unknown classes, InputOnly tile/stipple queries and absent drawables",
+      "accepted_core_opcodes": [
+        97
+      ],
+      "cases": [
+        "query_best_size"
       ]
     }
   ],
@@ -1030,108 +1185,133 @@
     },
     "53": {
       "name": "X_CREATE_PIXMAP",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "pixmap_lifecycle"
+      ]
     },
     "54": {
       "name": "X_FREE_PIXMAP",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "pixmap_lifecycle"
+      ]
     },
     "55": {
       "name": "X_CREATE_GC",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "gc_lifecycle"
+      ]
     },
     "56": {
       "name": "X_CHANGE_GC",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "gc_lifecycle",
+        "gc_dashes_clip"
+      ]
     },
     "57": {
       "name": "X_COPY_GC",
-      "cases": [],
-      "coverage_debt": "Component-wise copy honouring the value mask. Covered by a wire test; no independent case yet."
+      "cases": [
+        "gc_lifecycle"
+      ]
     },
     "58": {
       "name": "X_SET_DASHES",
-      "cases": [],
-      "coverage_debt": "Pattern replacement with the server error ordering, an odd pattern doubled. Covered by a wire test; no independent case yet."
+      "cases": [
+        "gc_dashes_clip"
+      ]
     },
     "59": {
       "name": "X_SET_CLIP_RECTANGLES",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "gc_dashes_clip"
+      ]
     },
     "60": {
       "name": "X_FREE_GC",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "gc_lifecycle"
+      ]
     },
     "61": {
       "name": "X_CLEAR_AREA",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "clear_area"
+      ]
     },
     "62": {
       "name": "X_COPY_AREA",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "copy_area"
+      ]
     },
     "63": {
       "name": "X_COPY_PLANE",
-      "cases": [],
-      "coverage_debt": "One plane expanded through the foreground and background, emitted as runs. A bit plane naming other than one plane is refused at decode. Covered by a wire test; no independent case yet."
+      "cases": [
+        "copy_plane"
+      ]
     },
     "64": {
       "name": "X_POLY_POINT",
-      "cases": [],
-      "coverage_debt": "Points painted through the ordinary fill, CoordModePrevious resolved. Covered by a wire test; no independent case yet."
+      "cases": [
+        "poly_primitives"
+      ]
     },
     "65": {
       "name": "X_POLY_LINE",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "poly_primitives"
+      ]
     },
     "66": {
       "name": "X_POLY_SEGMENT",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "poly_primitives"
+      ]
     },
     "67": {
       "name": "X_POLY_RECTANGLE",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "poly_primitives"
+      ]
     },
     "68": {
       "name": "X_POLY_ARC",
-      "cases": [],
-      "coverage_debt": "Stroked as the chord polyline the filled arc is built from. Covered by a wire test; no independent case yet."
+      "cases": [
+        "fill_primitives"
+      ]
     },
     "69": {
       "name": "X_FILL_POLY",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fill_primitives"
+      ]
     },
     "70": {
       "name": "X_POLY_FILL_RECTANGLE",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fill_primitives",
+        "gc_lifecycle"
+      ]
     },
     "71": {
       "name": "X_POLY_FILL_ARC",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fill_primitives"
+      ]
     },
     "72": {
       "name": "X_PUT_IMAGE",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "put_get_image"
+      ]
     },
     "73": {
       "name": "X_GET_IMAGE",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "put_get_image",
+        "pixmap_lifecycle",
+        "copy_area"
+      ]
     },
     "74": {
       "name": "X_POLY_TEXT8",
@@ -1245,8 +1425,9 @@
     },
     "97": {
       "name": "X_QUERY_BEST_SIZE",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "query_best_size"
+      ]
     },
     "98": {
       "name": "X_QUERY_EXTENSION",

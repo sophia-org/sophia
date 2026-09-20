@@ -35,9 +35,31 @@ class Client:
         self.base, self.mask = self.unpack('II', data, 4)
         vendor_len = self.u16(data, 16)
         assert data[20] > 0, 'setup has no root'
-        screen = 32 + ((vendor_len + 3) & ~3) + data[21] * 8
+        # Image and bitmap conventions are server constants, not connection
+        # byte order; pixel oracles decode with these, never with self.order.
+        self.image_byte_order, self.bitmap_bit_order = data[22], data[23]
+        self.bitmap_scanline_unit, self.bitmap_scanline_pad = data[24], data[25]
+        formats = 32 + ((vendor_len + 3) & ~3)
+        self.formats = {data[formats + 8 * i]: (data[formats + 8 * i + 1], data[formats + 8 * i + 2])
+                        for i in range(data[21])}
+        screen = formats + data[21] * 8
         self.root = self.u32(data, screen)
+        self.default_colormap = self.u32(data, screen + 4)
+        self.white_pixel, self.black_pixel = self.unpack('II', data, screen + 8)
+        self.root_visual = self.u32(data, screen + 32)
         self.depth = data[screen + 38]
+        self.visuals = {}
+        offset = screen + 40
+        for _ in range(data[screen + 39]):
+            depth, visual_count = data[offset], self.u16(data, offset + 2)
+            offset += 8
+            for _ in range(visual_count):
+                visual = self.u32(data, offset)
+                self.visuals[visual] = {'depth': depth, 'class': data[offset + 4],
+                                        'bits_per_rgb': data[offset + 5],
+                                        'colormap_entries': self.u16(data, offset + 6),
+                                        'masks': self.unpack('III', data, offset + 8)}
+                offset += 24
         self.next_id = 1
 
     def __enter__(self):

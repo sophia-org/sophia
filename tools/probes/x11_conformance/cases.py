@@ -2,6 +2,7 @@
 import socket
 import time
 from wire import Client
+from drawing_cases import CASES as DRAWING_CASES
 
 
 def client(context):
@@ -797,4 +798,5 @@ CASES = {'setup': setup,
          'destroy_subwindows_order': destroy_subwindows_order,
          'destroy_subwindows_invalid': destroy_subwindows_invalid,
          'destroy_peer_close_subscribers': destroy_peer_close_subscribers,
-         'destroy_mapped': destroy_mapped}
+         'destroy_mapped': destroy_mapped,
+         **DRAWING_CASES}

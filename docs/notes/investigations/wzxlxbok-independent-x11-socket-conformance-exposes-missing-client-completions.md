@@ -9,8 +9,11 @@ tags: [investigation, x11, conformance]
 
 ## Current independent result
 
-The final 2026-09-12 gate executes **100 cases: 100 PASS, zero nonpassing**
-on clean source c690b7cd, incorporating runtime 9be53aff. A fresh host build and
+The final 2026-09-12 gate executed **100 cases: 100 PASS, zero nonpassing**
+on clean source c690b7cd, incorporating runtime 9be53aff. That profile still
+passes on 2026-09-19 (`.artifacts/x11-conformance/baseline-d7aa48d4/`); the
+[drawing family baseline](#drawing-family-baseline) below then added twenty
+executions and is the current result. A fresh host build and
 twenty strict reporting regressions pass. Evidence is
 `.artifacts/x11-conformance/final-100/`, with exact source and host/harness hashes.
 
@@ -77,6 +80,62 @@ UnmapNotify and mapped destruction (t084/t087) independently pass, as do
 NoOperation (t085), extension discovery (t086) and extension refusal classification
 (t088). Those task closures do not claim complete coverage of every operation.
 
+## Drawing family baseline
+
+On 2026-09-19 the gate gained ten mandatory cases for the pixmap,
+graphics-context, drawing and image requests, the eighteen rows the colormap
+commit `d461492d` had left as explicit debt among them. The cases live in
+`tools/probes/x11_conformance/drawing_cases.py` and judge every request by
+reading the drawable back through GetImage, decoded with the server's
+advertised image byte order; expected pixels follow the protocol's own
+pixelization rules. Coverage moved from 29 to 51 of the 97 decoded core
+requests; 46 rows of debt remain. Opcodes newly covered: 53-73 and 97.
+
+Before the cases were written, a throwaway probe confirmed the software
+fixture returns exact pixels for both pixmaps and viewable windows in both
+byte orders, so a pixel assertion here is evidence about the request, not about
+the oracle.
+
+Run on clean source **1468790e** with host SHA256 `29b1be9c87f3a89f27e97d2d40a35895f5294075aae3bb07f0653058fe1bafd0`, evidence at
+`.artifacts/x11-conformance/baseline-1468790e/`:
+**120 executions: 102 PASS, 18 FAIL/TIMEOUT; gate exit 1.** The fifty
+previously mandatory cases keep passing. `pixmap_lifecycle` passes in both
+orders. The nine remaining cases fail identically in both orders, each at the
+first obligation the host does not meet, so the assertions after that point in
+each case are not yet exercised. A timeout below means the host answered a
+request with neither the required error nor the required event and the client
+waited out its deadline.
+
+| case | first unmet obligation | specification |
+| --- | --- | --- |
+| `gc_lifecycle` | CopyGC between contexts of different depth completes without BadMatch | "The two gcontexts must have the same root and the same depth (or a Match error results)" |
+| `gc_dashes_clip` | SetClipRectangles accepts ordering 4 without BadValue | ordering is `{UnSorted, YSorted, YXSorted, YXBanded}`; Value is in the request's error list |
+| `clear_area` | ClearArea with exposures True on a visible window generates no Expose (mapping the same window does) | "if exposures is True, then one or more exposure events are generated for regions of the rectangle that are either visible or are being retained in a backing store" |
+| `copy_area` | a source rectangle partly outside the source pixmap produces no GraphicsExposure; NoExposure for a wholly available source does arrive | "if regions outside the boundaries of the source drawable are specified ... GraphicsExposure events for all corresponding destination regions are generated", "Regardless of ... whether the destination is a window or a pixmap" |
+| `copy_plane` | CopyPlane generates no NoExposure | "the equivalent of a CopyArea is performed, with all the same exposure semantics" |
+| `poly_primitives` | PolyPoint accepts coordinate-mode 2 without BadValue | coordinate-mode is `{Origin, Previous}`; Value is in the error list |
+| `fill_primitives` | FillPoly accepts shape 3 without BadValue | shape is `{Complex, Nonconvex, Convex}`; Value is in the error list |
+| `put_get_image` | PutImage in ZPixmap format with left-pad 4 returns BadValue, carrying the drawable as the bad value, instead of BadMatch | "The left-pad must be zero for ZPixmap format (or a Match error results)" |
+| `query_best_size` | QueryBestSize with class 3 replies 16x16 instead of BadValue | class is `{Cursor, Tile, Stipple}`; Value is in the error list |
+
+Everything the passing prefixes establish is real evidence: pixmap creation,
+extents, depth and XID refusals, InputOnly drawables, depth-one pixmaps, free
+and reuse; GC creation, ChangeGC, selected-component CopyGC and the drawable
+depth check on drawing; dash refusals and rectangle clipping including the
+empty list and clip-mask None; ClearArea to the background pixel without
+exposures; CopyArea pixel copies and NoExposure; CopyPlane plane expansion
+from a same-depth and a depth-one source; PolyPoint in both coordinate modes,
+thin horizontal, vertical, joined and diagonal PolyLine, PolySegment and
+PolyRectangle pixels; PolyFillRectangle, FillPoly in both modes, the inscribed
+full disc, angle truncation and the thin ring; ZPixmap and Bitmap PutImage
+round trips, plane-mask, clipping of an outside image, the depth and Bitmap
+refusals; and QueryBestSize replies for every valid class. None of that is
+certification of the unexercised remainder.
+
+The nine failures are queued as two repair rows, t128 for the six refusals and
+t129 for the three exposure events. The gate stays red until they land, as it
+did for the destruction family.
+
 ## Gate and coverage
 
 On 2026-09-12 the operator assigned Codex the broader independent X11 protocol
@@ -98,6 +157,8 @@ Missing/unexecuted mandatory results, NORESULT, unsupported/untested verdicts,
 duplicates and deadlines fail. A decoder-declaration inventory prevents new
 requests from disappearing from the coverage ledger. At the integrated baseline it inventories
 77 decoded core requests: 28 have named cases, 49 have explicit coverage debt.
+On 2026-09-19 it inventories 97 decoded core requests: 51 have named cases, 46
+have explicit coverage debt.
 DestroySubwindows and NoOperation are both named; both now independently pass. This is a substantial selected behavioral gate, not full X11 certification.
 Query/version coverage does not certify every operation of an extension.
 
