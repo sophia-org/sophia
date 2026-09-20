@@ -235,11 +235,65 @@ def toolchain_path(source):
     return Path(result.decode().strip()).resolve(strict=True)
 
 
-def required_tool(name):
-    path = shutil.which(name)
-    if path is None:
-        raise ValueError(f'missing canonical check dependency: {name}')
-    return Path(path).resolve(strict=True)
+def elf_interpreter(path):
+    """The program interpreter an ELF executable asks for, or None.
+
+    None for a statically linked executable and for anything that is not
+    ELF; the caller decides what that means. Reads only the headers."""
+    with open(path, 'rb') as handle:
+        header = handle.read(64)
+        if header[:4] != b'\x7fELF' or header[4] != 2 or header[5] != 1:
+            return None
+        phoff = int.from_bytes(header[32:40], 'little')
+        phentsize = int.from_bytes(header[54:56], 'little')
+        phnum = int.from_bytes(header[56:58], 'little')
+        for index in range(phnum):
+            handle.seek(phoff + index * phentsize)
+            entry = handle.read(phentsize)
+            if int.from_bytes(entry[:4], 'little') != 3:  # PT_INTERP
+                continue
+            offset = int.from_bytes(entry[8:16], 'little')
+            size = int.from_bytes(entry[32:40], 'little')
+            handle.seek(offset)
+            return handle.read(size).split(b'\0', 1)[0].decode(errors='replace')
+    return None
+
+
+def runs_in_containment(path):
+    """Whether the container can execute this binary: static, or dynamically
+    linked against the system loader the private root carries. A binary
+    linked against another loader (a linuxbrew build, for one) exists on the
+    host and cannot start inside, where exec reports the file itself missing."""
+    interpreter = elf_interpreter(path)
+    return interpreter is None or interpreter.startswith(('/lib', '/usr/lib'))
+
+
+def required_tool(name, explicit=None):
+    """The executable the container will run for `name`: the explicit path
+    if one was given, else the first on PATH that containment can execute.
+    Every candidate refused is named with the loader it asks for, so a
+    missing or unusable helper is a blocker with its reason, not a search
+    result that quietly changes the verdict."""
+    if explicit is not None:
+        path = Path(explicit).resolve(strict=True)
+        if not runs_in_containment(path):
+            raise ValueError(f'{name} at {path} is dynamically linked against '
+                             f'{elf_interpreter(path)}, which containment cannot provide')
+        return path
+    refused = []
+    for directory in os.environ.get('PATH', '').split(os.pathsep):
+        candidate = Path(directory or '.') / name
+        if not (candidate.is_file() and os.access(candidate, os.X_OK)):
+            continue
+        path = candidate.resolve(strict=True)
+        if runs_in_containment(path):
+            return path
+        refused.append(f'{path} (linked against {elf_interpreter(path)})')
+    if refused:
+        raise ValueError(f'no {name} on PATH runs in containment; refused '
+                         + ', '.join(refused)
+                         + f'; install a system-linked or static {name}, or pass --{name}')
+    raise ValueError(f'missing canonical check dependency: {name}')
 
 
 def check_paths(source, output, target):
@@ -505,6 +559,7 @@ def main():
         parser.add_argument(f'--{sibling}-commit', help='exact lowercase 40-hex signed commit identity')
     parser.add_argument('--validate-only', action='store_true', help='versions, optional signature preflight and offline metadata only; no check/build/test')
     parser.add_argument('--timeout', type=float, default=1800)
+    parser.add_argument('--rg', type=Path, help='the ripgrep executable to mount; default: the first on PATH that containment can execute')
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--verification-sha256', help=argparse.SUPPRESS)
     parser.add_argument('--activation-fd', type=int, default=-1, help=argparse.SUPPRESS)
@@ -530,7 +585,14 @@ def main():
         print(json.dumps(report, indent=2))
         return 2
     toolchain = toolchain_path(source)
-    ripgrep = required_tool('rg')
+    try:
+        ripgrep = required_tool('rg', args.rg)
+    except (OSError, ValueError) as error:
+        report = {'status': 'BLOCKED', 'full_check_executed': False,
+                  'detail': f'canonical check dependency: {error}'}
+        (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        print(json.dumps(report, indent=2))
+        return 2
     tools = ('rustc', 'rustdoc', 'cargo', 'cargo-fmt', 'rustfmt', 'cargo-clippy', 'clippy-driver')
     tool_hashes = {name: file_digest(toolchain / 'bin' / name) for name in tools}
     registry = args.registry.resolve(strict=True)

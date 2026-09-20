@@ -281,7 +281,13 @@ python3 -B tools/probes/x11_conformance/offline_check.py \
 
 Both output and target must be distinct, disk-backed children of the main
 checkout's `.artifacts`; build targets under `/tmp` are refused. The source
-must be clean and committed. The wrapper copies the exact commit into an
+must be clean and committed. The `rg` that is mounted must be one the
+container can execute: statically linked, or linked against the system
+loader the private root carries. A build linked against another loader,
+such as linuxbrew's, exists on the host and cannot start inside, where exec
+reports the file itself missing; the wrapper skips such a candidate on
+`PATH`, names it and its loader in a `BLOCKED` report if nothing else is
+found, and accepts `--rg PATH` to name the executable outright. The wrapper copies the exact commit into an
 independent repository with one parent commit, records its tree/archive hash and
 toolchain hashes, and mounts only the offline registry cache from Cargo home. It generates a
 loopback-only `/etc/hosts` for regular-file refusal tests, generates its loader

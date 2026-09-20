@@ -281,17 +281,66 @@ class OfflineCheckTests(unittest.TestCase):
             stdin=subprocess.DEVNULL, capture_output=True, text=True,
             check=True, timeout=30)
 
+    @staticmethod
+    def elf(path, interpreter=None):
+        """A minimal ELF64 executable: static when no interpreter is given,
+        else carrying one PT_INTERP naming it. Headers only; never run."""
+        phnum = 0 if interpreter is None else 1
+        header = (b'\x7fELF' + bytes([2, 1, 1, 0]) + bytes(8)
+                  + (2).to_bytes(2, 'little') + (62).to_bytes(2, 'little') + (1).to_bytes(4, 'little')
+                  + bytes(8) + (64).to_bytes(8, 'little') + bytes(8) + bytes(4)
+                  + (64).to_bytes(2, 'little') + (56).to_bytes(2, 'little') + phnum.to_bytes(2, 'little')
+                  + bytes(6))
+        body = header
+        if interpreter is not None:
+            name = interpreter.encode() + b'\0'
+            program = ((3).to_bytes(4, 'little') + bytes(4) + (120).to_bytes(8, 'little')
+                       + bytes(16) + len(name).to_bytes(8, 'little') + len(name).to_bytes(8, 'little')
+                       + bytes(8))
+            body = header + program + name
+        path.write_bytes(body)
+        path.chmod(0o755)
+
     def test_missing_required_search_tool_is_a_blocker_not_retired_source_debt(self):
-        with patch.object(gate.shutil, 'which', return_value=None):
-            with self.assertRaisesRegex(ValueError, 'missing canonical check dependency: rg'):
-                gate.required_tool('rg')
         with tempfile.TemporaryDirectory() as temporary:
+            with patch.dict(os.environ, {'PATH': temporary}):
+                with self.assertRaisesRegex(ValueError, 'missing canonical check dependency: rg'):
+                    gate.required_tool('rg')
             executable = Path(temporary) / 'rg'
-            executable.write_text('fixture executable path only\n')
+            self.elf(executable)
             alias = Path(temporary) / 'alias'
             alias.symlink_to(executable)
-            with patch.object(gate.shutil, 'which', return_value=str(alias)):
+            with patch.dict(os.environ, {'PATH': temporary}):
                 self.assertEqual(gate.required_tool('rg'), executable)
+            self.assertEqual(gate.required_tool('rg', alias), executable)
+
+    def test_a_search_tool_containment_cannot_execute_is_named_with_its_loader_not_found_later(self):
+        # A build linked against a loader the private root does not carry
+        # exists on the host and cannot start inside, where exec reports the
+        # file itself missing. The refusal names the loader, and a usable
+        # candidate later on PATH is taken instead of it.
+        with tempfile.TemporaryDirectory() as temporary:
+            foreign = Path(temporary) / 'foreign'
+            system = Path(temporary) / 'system'
+            foreign.mkdir()
+            system.mkdir()
+            self.elf(foreign / 'rg', '/home/linuxbrew/.linuxbrew/lib/ld.so')
+            self.elf(system / 'rg', '/lib64/ld-linux-x86-64.so.2')
+            self.assertEqual(gate.elf_interpreter(foreign / 'rg'), '/home/linuxbrew/.linuxbrew/lib/ld.so')
+            self.assertFalse(gate.runs_in_containment(foreign / 'rg'))
+            self.assertTrue(gate.runs_in_containment(system / 'rg'))
+            with patch.dict(os.environ, {'PATH': os.pathsep.join([str(foreign), str(system)])}):
+                self.assertEqual(gate.required_tool('rg'), system / 'rg')
+            with patch.dict(os.environ, {'PATH': str(foreign)}):
+                with self.assertRaisesRegex(ValueError, r'linked against /home/linuxbrew/.linuxbrew/lib/ld.so.*--rg'):
+                    gate.required_tool('rg')
+            with self.assertRaisesRegex(ValueError, 'dynamically linked against /home/linuxbrew'):
+                gate.required_tool('rg', foreign / 'rg')
+            # Not ELF at all is left to the preflight inside, as before.
+            script = Path(temporary) / 'script'
+            script.write_text('#!/bin/sh\n')
+            script.chmod(0o755)
+            self.assertIsNone(gate.elf_interpreter(script))
 
     def test_preflight_executes_helpers_with_version_only_and_bounded_waits(self):
         with patch.object(gate.subprocess, 'check_output', return_value='fixture version\n') as command:
