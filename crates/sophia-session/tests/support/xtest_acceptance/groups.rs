@@ -20,7 +20,7 @@ fn sees_xtest(client: &mut Client) -> bool {
 
 /// The opcode an admitted client is told XTEST answers on, with the facts
 /// discovery owes alongside it.
-fn discover(client: &mut Client) -> u8 {
+pub(crate) fn discover(client: &mut Client) -> u8 {
     let reply = client.query_extension(b"XTEST");
     assert_eq!(reply[8], 1, "an admitted connection is not offered XTEST");
     let opcode = reply[9];
@@ -59,7 +59,7 @@ fn well_formed_requests(order: Order, window: u32) -> [(u8, Vec<u8>); 4] {
 /// A FakeInput body in the 2.1 layout: type, detail, a delay, the root
 /// window, the coordinates, and the trailing byte that is padding rather
 /// than a device selector.
-fn fake_input(
+pub(crate) fn fake_input(
     order: Order,
     kind: u8,
     detail: u8,
@@ -184,10 +184,10 @@ pub fn version_negotiation() {
 }
 
 /// The minor FakeInput answers on.
-const FAKE_INPUT: u8 = 2;
+pub(crate) const FAKE_INPUT: u8 = 2;
 /// The X error codes these groups read back.
 const BAD_REQUEST: u8 = 1;
-const BAD_VALUE: u8 = 2;
+pub(crate) const BAD_VALUE: u8 = 2;
 const BAD_WINDOW: u8 = 3;
 const BAD_LENGTH: u8 = 16;
 
@@ -455,11 +455,11 @@ pub fn fake_input_encoding() {
 /// What an observer selects: key and button transitions and pointer motion.
 const OBSERVER_MASK: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6);
 /// The event codes of the core input family.
-const KEY_PRESS: u8 = 2;
+pub(crate) const KEY_PRESS: u8 = 2;
 const KEY_RELEASE: u8 = 3;
 const BUTTON_PRESS: u8 = 4;
 const BUTTON_RELEASE: u8 = 5;
-const MOTION_NOTIFY: u8 = 6;
+pub(crate) const MOTION_NOTIFY: u8 = 6;
 /// The QueryPointer state bit for button one.
 const BUTTON1_MASK: u16 = 1 << 8;
 
