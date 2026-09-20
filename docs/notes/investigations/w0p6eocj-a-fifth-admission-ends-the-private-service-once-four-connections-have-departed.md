@@ -68,9 +68,14 @@ before the row landed, and the source agrees:
 a driver that is not attached yet.` The driver has no production caller at
 all; only `x11_socket/tests/routing.rs` drives it, four visits at a time.
 The return is reached from the driver and from the retained drive in
-`private_retained_drive.rs`, which runs under the same keeper. So t138 is
-not "write reclamation"; it is "attach the driver that was written", and
-the code says so about itself.
+`private_retained_drive.rs`, and that drive runs under the same keeper,
+verified at three lines: its entry point `drive_retained_output_step` is at
+`private_retained_drive.rs:271`, its only production caller is
+`private_maintenance_scheduler.rs:188` inside `maintain_step`, and
+`maintain_step` is what `private_input/service.rs:534` runs a bounded
+number of times after the invocation has ended. So t138 is not "write
+reclamation"; it is "attach the driver that was written", and the code says
+so about itself.
 
 The lane's generalisation is worth keeping beside it: reclamation in this
 instance is written against a maintenance keeper that runs only after the
@@ -79,7 +84,10 @@ reclamation path hung off it is dead during the run. The lifecycle sweep
 was one such path, and c2931f65 gave a departing connection a full pass of
 its own instead of a shared cursor unit; the continuation driver is
 another, with no live attachment at all. Each path has had to be given a
-live driver separately.
+live driver separately. That is three paths on that keeper, the lifecycle
+sweep, the terminal visits and the retained output, and one, the
+continuation driver, with no attachment; anyone taking t138 should grep for
+the keeper before assuming their path is live during the run.
 
 The owner is the private-input authority in `sophia-x-authority`; the work
 is t138, taken by the adapter lane. Until it lands, an instance that has
