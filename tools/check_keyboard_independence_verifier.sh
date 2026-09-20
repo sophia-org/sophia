@@ -30,10 +30,8 @@ reject_mutation() {
 
 reject_mutation session.log '/status=removed device=256/d' 'a run where only the media interface was removed'
 reject_mutation session.log '/status=removed device=/d' 'a run with no removal'
-reject_mutation session.log 's/status=removed device=261 released=0/status=removed device=261 released=1/' 'a second interface that also released a key'
-reject_mutation session.log 's/status=removed device=256 released=1/status=removed device=256 released=0/' 'a removal that released nothing'
-reject_mutation session.log 's/status=removed device=256 released=1/status=removed device=256 released=2/' 'a removal that released more than the one held key'
-reject_mutation session.log '/reason=device_removed device=256 count=1/d' 'a removal without its release flush'
+reject_mutation session.log 's/status=removed device=261 released=0/status=removed device=261 released=1/' 'a second interface that released a key without the flush that says so'
+reject_mutation session.log '/reason=device_removed device=256 count=1/d' 'a removal that released a key without its release flush'
 reject_mutation session.log 's/status=added device=260 /status=added device=256 /; s/key_observed device=260/key_observed device=256/' 'a replug under the removed identity'
 reject_mutation session.log 's/status=added device=260 /status=added device=258 /; s/key_observed device=260/key_observed device=258/' 'a replug under an identity announced before the removal'
 reject_mutation session.log '/key_observed device=260/d' 'a replugged keyboard nobody typed on'
@@ -53,7 +51,7 @@ reject_mutation guard_pinned.log '/status=triggered/d' 'a pinned guard that neve
 
 # The guide and the gate must ask for the steps the verifier requires, in the
 # order it requires them.
-mapfile -t steps < <(grep -oE "status=(key_observed|removed|added)[^']*" "$guide" | sed -E 's/ .*//' | uniq)
+mapfile -t steps < <(grep -oE "status=(key_observed|removed|added)[^'\"]*" "$guide" | sed -E 's/ .*//' | uniq)
 expected_steps=(status=key_observed status=removed status=added status=key_observed)
 [[ "${steps[*]}" == "${expected_steps[*]}" ]] || {
     echo "keyboard independence guide waits on ${steps[*]}, the verifier requires ${expected_steps[*]}" >&2

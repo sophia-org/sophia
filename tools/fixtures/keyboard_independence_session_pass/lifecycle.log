@@ -1,0 +1,2 @@
+sophia_session_lifecycle schema=1 status=entering phase=session installed=true build=false manual_service=false runtime=owner vt=local
+sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=0 emergency=false handoff=display_manager

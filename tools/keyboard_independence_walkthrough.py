@@ -131,7 +131,7 @@ def explain(a, b):
     say('  1. Tap Left Shift on B.')
     say('  2. Press and HOLD Left Shift on A, and keep holding.')
     say('  3. Still holding A: tap Left Shift on B once; wait 3 s.')
-    say('  4. Still holding A: UNPLUG keyboard A. The screen advances when Sophia releases its one key.')
+    say('  4. Still holding A: UNPLUG keyboard A. The screen advances when Sophia sees it leave.')
     say('  5. Plug A back in; the screen advances when Sophia announces it under a new identity.')
     say('  6. Tap Left Shift on A.')
     say(f'  7. On B, type {PROOF_TEXT} and press Enter. The session ends at once.')

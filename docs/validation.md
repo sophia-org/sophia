@@ -956,49 +956,51 @@ Check their deterministic fixtures without taking hardware ownership:
 tools/check_atomic_scanout_verifiers.sh
 ```
 
-## Keyboard Independence Physical Gate
+## Keyboard Independence on Hardware
 
-Two physical keyboards on one seat, attended, for t094. The backend mints an
-identity per device and announces arrivals and departures on the packet
-stream; the session releases a departed device's held keys on its own turn.
-Headless controls pin each of those pieces; only this gate proves them on
-hardware, where one keyboard is unplugged while it holds a key.
+Two physical keyboards on one seat, for t094. The backend mints an identity
+per device and announces arrivals and departures on the packet stream; the
+session releases whatever a departed device still held that the kernel did
+not. Headless controls pin each of those pieces; hardware shows them on two
+real keyboards, one of them unplugged and replugged.
 
-From any text console that is not the display manager's, with two keyboards
-attached and the one to be unplugged named first:
+**The ordinary-session path, which is the acceptance path.** Install the
+candidate as the live session (`tools/install_session_from_head.sh`), log in,
+type a few keys on each keyboard, unplug the second keyboard, type on the
+first, plug the second back in, type on it, and log out. Keep the session
+short: the recorder rotates early segments of a long session away. Then:
 
 ```sh
-SOPHIA_KEYBOARD_A=/dev/input/by-id/...-event-kbd \
-SOPHIA_KEYBOARD_B=/dev/input/by-id/...-event-kbd \
-    tools/run_keyboard_independence_gate_tty4.sh
+tools/verify_keyboard_independence_session.sh            # newest finished session
+tools/verify_keyboard_independence_session.sh ~/.local/state/sophia/sessions/<id>
 ```
 
-The runner binds the clean, signed commit and the release binary, then
-`tools/keyboard_independence_physical_gate.sh` runs three phases. Two
-input-guard runs come first, on the seat and pinned to keyboard A: a chord
-split across the two keyboards must not arm, the whole chord on A arms and
-then triggers. Then the session runs with Kitty showing
-`tools/fixtures/keyboard_independence_guide.sh`: a shift on B, a shift held on
-A, A unplugged while held (the session must record `status=removed ...
-released=1`), A replugged (a new identity, never the old one), a shift on the
-returned A, and the proof phrase typed on B. The text proof requires an
-unshifted phrase, which is the control that A's shift was released.
+It reads the session's manifest (release commit and binary digest), outcome
+and lifecycle (a clean, installed, non-emergency exit), health (no storage
+errors) and the retained event records, and requires two hardware keyboards
+typed on, a removal of one of them, keys routed by the seat between that
+removal and the return, the return announced under an identity never seen
+before and typed on, and no class-identity fallbacks. The kernel releases a
+USB keyboard's keys itself when it goes, so `released=0` on the removal is
+the ordinary reading; a nonzero count must carry the session's flush record.
+`tools/check_keyboard_independence_session_verifier.sh` pins the verifier
+against a fixture session and sixteen mutations and runs under
+`cargo xtask check`. The summary it prints is the evidence for the milestone
+note. A uinput keyboard is admitted and announced with `virtual=true`; the
+verifier requires hardware on both sides, so a rehearsal with a virtual
+keyboard exercises the path but never satisfies the claim.
 
-`tools/verify_keyboard_independence_physical.sh EVIDENCE_DIR` reads the three
-logs; `tools/check_keyboard_independence_verifier.sh` pins it against a
-fixture and every mutation that would let a failed run pass, and runs under
-`cargo xtask check`. A verified run is archived by
-`tools/archive_keyboard_independence_physical_run.sh` under
-`$XDG_STATE_HOME/sophia/promotion/keyboard-independence-runs/NNNN` with the
-signed commit and binary digest bound. A uinput keyboard is admitted like any
-other and announced with `virtual=true`; the verifier requires both keyboards
-to be hardware, so a rehearsal with a virtual keyboard exercises the path but
-can never satisfy the claim. A key remapper such as keyd presents every
-keyboard as one virtual device, which is that case as a machine's ordinary
-configuration; the gate refuses while one runs and asks for it to be stopped
-for the duration. `tools/keyboard_independence_walkthrough.py` checks these
-preconditions, names the keyboards, explains the phases, runs the gate and
-reads the result back; `--check` does everything but run it.
+**The attended gate, optional.** `tools/keyboard_independence_physical_gate.sh`
+through `tools/run_keyboard_independence_gate_tty4.sh` (any text console but
+the display manager's) adds what a passive record cannot witness: the
+emergency chord split across the two keyboards must not arm the input guard,
+on the seat and pinned to one keyboard, and the proof phrase typed after the
+unplug must be unshifted. It runs two guard phases and a session with a guide
+in Kitty, verified by `tools/verify_keyboard_independence_physical.sh` and
+archived by `tools/archive_keyboard_independence_physical_run.sh`;
+`tools/keyboard_independence_walkthrough.py` checks its preconditions, names
+the keyboards and explains each phase. It refuses while a key remapper such as
+keyd runs, since a remapper presents every keyboard as one virtual device.
 
 ## Retiring `DEFAULT_DISPLAY`
 

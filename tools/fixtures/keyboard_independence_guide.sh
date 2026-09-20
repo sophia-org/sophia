@@ -76,15 +76,18 @@ wait_for_count '^sophia_live_session_input_device schema=1 status=key_observed d
 
 show_step 'Press and HOLD LEFT SHIFT on keyboard A. Keep holding it until told to let go.'
 wait_for_count '^sophia_live_session_input_device schema=1 status=key_observed device=[0-9]+$' 2
+unplugged="$(grep -E '^sophia_live_session_input_device schema=1 status=key_observed device=[0-9]+$' "$evidence" \
+    | sed -n '2p' | sed 's/.*device=//')"
 
 show_step 'STILL HOLDING keyboard A: press and release LEFT SHIFT on keyboard B once.
 Wait three seconds. Keyboard A must still be held.'
 sleep 3
 
 show_step 'STILL HOLDING the shift on keyboard A: UNPLUG keyboard A now.
-Sophia must release the one key it held, and nothing else.'
-wait_for_count '^sophia_live_session_input_device schema=1 status=removed device=[0-9]+ released=1$' 1
-removed_line="$(line_of '^sophia_live_session_input_device schema=1 status=removed device=[0-9]+ released=1$')"
+Sophia must see keyboard A leave. The kernel releases its keys itself; Sophia
+releases whatever the kernel did not.'
+wait_for_count "^sophia_live_session_input_device schema=1 status=removed device=$unplugged released=[0-9]+\$" 1
+removed_line="$(line_of "^sophia_live_session_input_device schema=1 status=removed device=$unplugged released=[0-9]+\$")"
 
 show_step 'Plug keyboard A back in and wait. Sophia must announce it under a new identity.'
 wait_for_line_after '^sophia_live_session_input_device schema=1 status=added device=[0-9]+ keyboard=true .* virtual=false ' "$removed_line"

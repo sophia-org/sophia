@@ -47,22 +47,33 @@ seat_keyboards="$(sed -n 's/.* keyboards=\([0-9]*\).*/\1/p' <<<"$poller_ready" |
     || fail "the seat opened with fewer than two keyboards: ${seat_keyboards:-none}"
 
 # One keyboard is several kernel devices (a media interface beside the main
-# one), so one unplug is several removals. Exactly one of them held the key;
-# every other removal in the run must have released nothing.
+# one), so one unplug is several removals. The one that counts is the removal
+# of a hardware keyboard somebody had typed on. The kernel releases a USB
+# keyboard's keys itself when it goes; the session releases whatever the
+# kernel did not, and says so with a flush when it did.
 mapfile -t removal_lines < <(grep -En "${device_record}status=removed device=[0-9]+ released=[0-9]+$" "$session" || true)
 (( ${#removal_lines[@]} >= 1 )) || fail "no device removal was recorded"
-mapfile -t held_removals < <(printf '%s\n' "${removal_lines[@]}" | grep -E ' released=1$' || true)
-(( ${#held_removals[@]} == 1 )) || fail "expected exactly one removal releasing the one held key, found ${#held_removals[@]}"
-if printf '%s\n' "${removal_lines[@]}" | grep -Eq ' released=([2-9]|[1-9][0-9]+)$'; then
-    fail "a removal released more than the one key the unplugged keyboard held"
-fi
-removal_line="${held_removals[0]%%:*}"
-removed="$(sed -n 's/.* device=\([0-9]*\) released=.*/\1/p' <<<"${held_removals[0]}")"
-grep -Eq "^sophia_live_session_keys schema=1 status=released reason=device_removed device=$removed count=1$" "$session" \
-    || fail "the removal's release was not recorded as a device_removed flush of one key"
-if [[ "$(grep -Ec '^sophia_live_session_keys schema=1 status=released reason=device_removed ' "$session")" != 1 ]]; then
-    fail "more than one device_removed flush was recorded"
-fi
+unplug=""
+for removal in "${removal_lines[@]}"; do
+    line="${removal%%:*}"
+    candidate="$(sed -E 's/.*device=([0-9]+) released=.*/\1/' <<<"$removal")"
+    if head -n "$((line - 1))" "$session" | grep -Eq "${device_record}status=key_observed device=$candidate\$" \
+        && head -n "$((line - 1))" "$session" | grep -Eq "${device_record}status=added device=$candidate keyboard=true .* virtual=false "; then
+        unplug="$removal"
+        break
+    fi
+done
+[[ -n "$unplug" ]] || fail "no removed device was a hardware keyboard that had been typed on"
+removal_line="${unplug%%:*}"
+removed="$(sed -E 's/.*device=([0-9]+) released=.*/\1/' <<<"$unplug")"
+for removal in "${removal_lines[@]}"; do
+    released="$(sed -E 's/.*released=([0-9]+)$/\1/' <<<"$removal")"
+    if (( released > 0 )); then
+        grep -Eq "^sophia_live_session_keys schema=1 status=released reason=device_removed device=$(sed -E 's/.*device=([0-9]+) released=.*/\1/' <<<"$removal") count=$released\$" "$session" \
+            || fail "a removal released $released keys without the flush that says so"
+    fi
+done
+released="$(sed -E 's/.*released=([0-9]+)$/\1/' <<<"$unplug")"
 
 before() { awk -v limit="$removal_line" 'NR < limit' "$session"; }
 after() { awk -v limit="$removal_line" 'NR > limit' "$session"; }
@@ -70,11 +81,6 @@ after() { awk -v limit="$removal_line" 'NR > limit' "$session"; }
 keyboard_added='status=added device=([0-9]+) keyboard=true pointer=(true|false) touch=(true|false) virtual=false source=udev$'
 mapfile -t keyboards_before < <(before | grep -Eo "${device_record}${keyboard_added}" | sed -E 's/.*device=([0-9]+) .*/\1/')
 (( ${#keyboards_before[@]} >= 2 )) || fail "fewer than two hardware keyboards were announced before the removal"
-printf '%s\n' "${keyboards_before[@]}" | grep -qx "$removed" \
-    || fail "the removed device $removed was not announced as a hardware keyboard"
-if before | grep -Eq "${device_record}status=added device=$removed .* virtual=true "; then
-    fail "the removed device was announced as virtual"
-fi
 
 mapfile -t keyed_before < <(before | grep -Eo "${device_record}status=key_observed device=[0-9]+$" | sed -E 's/.*device=//' | sort -u)
 (( ${#keyed_before[@]} >= 2 )) || fail "keys were observed from fewer than two devices before the removal"
@@ -125,4 +131,4 @@ verify_guard() {
 verify_guard seat udev ">= 2"
 verify_guard pinned paths "== 1"
 
-echo "keyboard independence physical evidence passed: removed=$removed returned=$returned"
+echo "keyboard independence physical evidence passed: removed=$removed released=$released returned=$returned"
