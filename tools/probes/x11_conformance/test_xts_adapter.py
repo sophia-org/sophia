@@ -61,7 +61,12 @@ class AdapterTests(unittest.TestCase):
             result = isolated_case(Path('/usr/bin/false'), 'xtest_discovery', 'little', 2,
                                    Path(temporary) / 'host.log')
         self.assertEqual(result['status'], 'FAIL')
-        self.assertEqual(result['detail'], 'host exited 1 before bind')
+        # The private host publishes readiness after its service reports it,
+        # so a host that never starts is reported there rather than at the
+        # bind the core profile watches for. They are different faults: one
+        # says the service never came up, the other that it came up and could
+        # not take the socket.
+        self.assertEqual(result['detail'], 'private host exited 1 before readiness')
 
     def test_noresult_and_missing_purpose_fail(self):
         for kwargs in ({'verdict': 'NORESULT'}, {'omit': True}):
