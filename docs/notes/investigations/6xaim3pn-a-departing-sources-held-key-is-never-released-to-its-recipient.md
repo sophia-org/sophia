@@ -164,6 +164,43 @@ delivery comes back `WriteFailed` or `ClientDisconnected` from a socket that
 is gone, rather than a clean `TargetGone`. Settling has to treat those as
 terminal or the release never finishes and the instance cannot stop.
 
+## What was built, and the one thing left
+
+Built and on master as of `c2931f65`, with the two-injector case green in
+both byte orders and thirty-eight of forty on the wire:
+
+**The departure is now noticed when it happens.** It was not, and the note
+above was wrong to say it was. A connection finishing its own cleanup drove
+the retirement ring by one budget unit, and one unit is one slot at the
+maintenance sweep's shared cursor, so a departing connection retired
+whichever connection that cursor happened to point at. The injector's grant
+was in fact revoked as the second-to-last line of the conformance host's
+log, after everything else the instance did. A connection retiring its own
+admission now makes one pass over every slot, which is still bounded by a
+ring reserved before any connection was admitted.
+
+That is the whole of why `xtest_two_injectors` failed, and it now passes:
+the first source's departure reaches the ledger while the second still holds
+the key, the aggregate survives, and the second source's own release ends it
+once.
+
+**The release is built.** The post-ledger half of `release_key` is factored
+and shared, `retire_key_release` performs it under a reconciliation permit
+without calling the ledger again, and a rotated terminal visit finds the
+work, installs the emission, and moves the hold into the settling with a
+custody carrying no completion cell and no delivery identity.
+
+**It is not delivered, and here is exactly why.** `handover_unfinished` asks
+whether a custody holds a completion cell and treats one that does not as
+owing nothing. A release with no delivery identity has no cell, so it is
+never offered as its recipient's output head, never claims a delivery
+attempt, and its capsule is never built. The condition is correct for the
+case it was written for -- a suppressed release owes nothing -- and wrong
+for this one, which owes an event and has no cell to answer for it. What the
+predicate wants to ask is whether an event is owed, not whether a completion
+is held, and every ordering decision in the terminal rests on it, so that is
+its own change with its own tests rather than a line changed in passing.
+
 ## Connections
 
 - [Private native input authority and XTEST adapter](../plans/7xqjn8rp-private-native-input-authority-and-xtest-adapter.md) --
