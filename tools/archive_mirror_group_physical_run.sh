@@ -38,7 +38,19 @@ profile_sha256="$(sha256sum "$profile" | awk '{ print $1 }')"
 
 evidence_sha256="$(sha256sum "$evidence" | awk '{ print $1 }')"
 install -d -m 700 "$run_root"
-if grep -rlFx --include=manifest "evidence_sha256=$evidence_sha256" "$run_root" 2>/dev/null | grep -q .; then
+# CAPTURED RATHER THAN `... | grep -q .`, AND NOT BECAUSE THIS ONE BROKE.
+# Under `set -o pipefail` a `grep -q` that matches exits at once and a
+# still-running producer upstream dies of SIGPIPE, so the pipeline reports
+# failure and a match reads as no match. This site is in fact safe from it:
+# `grep -rl` emits only matching paths, far too little to fill its block
+# buffer, so it flushes at exit -- after the walk has already finished. That
+# is a property of how little this particular producer prints, not of the
+# shape, and it is not a property anyone reviewing the line can see. Captured
+# so the guard does not rest on it. The same shape over a long log was a live
+# false pass in verify_mixed_output_evidence.sh.
+archived_already="$(grep -rlFx --include=manifest "evidence_sha256=$evidence_sha256" \
+    "$run_root" 2>/dev/null || true)"
+if [[ -n "$archived_already" ]]; then
     echo "mirror-group physical evidence is already archived" >&2
     exit 1
 fi

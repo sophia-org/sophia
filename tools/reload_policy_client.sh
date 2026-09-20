@@ -88,8 +88,12 @@ for _ in $(seq 1 100); do
     # Started is not working. A committed layout is the session's own word
     # that the replacement negotiated the protocol and produced a projection
     # it accepted, which a binary that merely launches cannot fake.
-    if tail -n "+$before" "$log" 2>/dev/null \
-        | grep -qE "sophia_live_wm schema=[0-9]+ status=(layout_committed|focus_committed)"; then
+    # Captured rather than `grep -q`: pipefail plus a `tail` over a long
+    # session log turns the first match into a SIGPIPE and the match into a
+    # miss, which would read as the replacement never settling.
+    committed="$(tail -n "+$before" "$log" 2>/dev/null \
+        | grep -m1 -E "sophia_live_wm schema=[0-9]+ status=(layout_committed|focus_committed)" || true)"
+    if [[ -n "$committed" ]]; then
         settled="$replacement"
         break
     fi

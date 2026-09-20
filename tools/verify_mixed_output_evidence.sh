@@ -75,9 +75,17 @@ sed -n "${effect_line},${first_presented_line}p" "$EVIDENCE" \
 
 # Where a plan does exist -- every frame after the topology committed -- the
 # extended head must still bind at its own scale: no sampling, no fallback.
-if sed -n "$((first_presented_line + 1)),\$p" "$EVIDENCE" \
+# CAPTURED, NOT `grep -qv`. This is the check's whole job, so it must not be
+# able to fail open. Under `set -o pipefail` a `grep -qv` exits the instant it
+# finds a sampled frame -- the thing we are looking for -- the `sed` walking a
+# multi-megabyte evidence log dies of SIGPIPE, and pipefail turns the detection
+# into a false. The gate would then report clean precisely because it found
+# the fault, and more readily the longer the run. `-m1` keeps the early exit
+# for speed; the capture is what makes the verdict survive it.
+sampled_frame="$(sed -n "$((first_presented_line + 1)),\$p" "$EVIDENCE" \
     | grep -E "sophia_live_head_composition_plan schema=2 status=ready .* head=$extended_head " \
-    | grep -qvE " mapping=exact .* downsampled=0 upsampled=0 mixed=0 .* fallback=0 unavailable=0 "; then
+    | grep -m1 -vE " mapping=exact .* downsampled=0 upsampled=0 mixed=0 .* fallback=0 unavailable=0 " || true)"
+if [[ -n "$sampled_frame" ]]; then
     echo "The extended head composed a sampled or fallback frame after the topology committed." >&2
     exit 1
 fi
