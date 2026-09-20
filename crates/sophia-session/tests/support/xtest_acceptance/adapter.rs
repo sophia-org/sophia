@@ -207,11 +207,18 @@ pub fn cancellation_half_close() {
         // pending ever happened is a question only something still connected
         // can answer, and this connection injects nothing itself.
         //
-        // FOUR CONNECTIONS IN ALL, which is what this instance admits at
-        // once: this one and one injector per subcase, each of which is gone
-        // before the next arrives. A fifth would be refused rather than
-        // served, and a group that quietly needed one would be measuring the
-        // limit rather than the obligation.
+        // FOUR CONNECTIONS IN ALL: this one and one injector per subcase,
+        // each of which is gone before the next arrives.
+        //
+        // NOT BECAUSE FOUR IS THE LIMIT. The instance admits four at once and
+        // two of these four have departed by the end, so a fifth ought to be
+        // free. It is not, and a fifth does not merely get refused: it
+        // completes its setup and is then reset, and the invocation ends
+        // saying it has no retained place for it. A departed connection's
+        // place is never given back, because the driver that would give it
+        // back was never attached to anything that runs (t138). So the group
+        // is shaped by a leak rather than by a bound, and the count here is
+        // load-bearing until that row lands.
         let mut witness = instance.connect(order, None);
         let _witness_row = newest_admission(&instance, &mut witness, &mut seen);
         let resting = pointer(&mut witness);
