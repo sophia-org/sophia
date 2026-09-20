@@ -2,7 +2,7 @@
 id: wq3n8fkz
 date: 2026-09-20
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, session, tooling]
 ---
 # Which physical acceptance rows a virtual device could drive
@@ -161,3 +161,34 @@ t139 was never about.
 - t094, in plan with the obligations lane, covers per-physical-device identity
   through backend and Session ingress: the same territory, and where a virtual
   device's identity would have to be honest.
+
+## Overtaken by events — 2026-09-20, same day
+
+Eight of the eleven rows this note sorted closed within hours of it being
+written, and none of them closed the way it proposed. The operator had been
+running Sophia/Hagia/Lom as an ordinary dev session for several days; asked
+directly, they accepted t004, t007, t009, t011, t012, t019 and t068 on that
+use, and t077 on having signed with pinentry several times. Daily driving is
+the acceptance these rows were asking for, and it had already happened.
+
+That is worth recording plainly rather than quietly deleting the tables. The
+note reasoned carefully about *how to produce evidence unattended* and never
+asked whether the evidence already existed. Its own last section came close --
+"driving a session is not accepting one" -- and the corollary went unsaid:
+**if only a person can accept, ask the person before building the rig.**
+
+What survives:
+
+- **The uinput analysis is still correct**, and still the answer for anything
+  that must run unattended or repeatably. The emitter gap in
+  `uinput_text_injector.py` (no `BTN_LEFT`, no `REL_Y`, no wheel) is real, and
+  the three rows left -- t060, t062, t081 -- are exactly the ones it blocks.
+  They are also the three the operator did *not* accept on daily use, which is
+  a fair signal they need deliberate exercise rather than incidental use.
+- **The XTEST verdict stands** and is the durable half: XTEST is the wrong
+  layer for seat behaviour by construction, not by omission.
+- **The virtual-chord policy recommendation stands**, unaffected: rehearsal
+  yes, acceptance no, `virtual=false` required for any row accepting emergency
+  recovery. t145 still owns the decision.
+
+The tables above are kept as written, with this section as their correction.

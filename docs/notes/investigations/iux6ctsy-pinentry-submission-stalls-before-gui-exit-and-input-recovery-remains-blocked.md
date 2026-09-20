@@ -2,7 +2,7 @@
 id: iux6ctsy
 date: 2026-09-12
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, input, session, x11, pinentry]
 ---
 # Pinentry submission stalls before GUI exit and input recovery remains blocked
@@ -726,3 +726,30 @@ Incidentally against
 twenty hours of ordinary use ending in a deliberate clean exit is not a
 reproduction, and is worth noting on a report that has stayed open on an
 unattributed crash.
+
+### Accepted — 2026-09-20
+
+The other two of t077's four are given, and the row is closed.
+
+Focus, input delivery and close rest on the operator signing with pinentry
+several times in ordinary live sessions on installed `0.1.0-5590c597d89f`.
+That is the thing this note exists for: the reported lockout was a submission
+that reached pinentry's completion handler and then stalled, with terminal
+`--pinentry-mode loopback` needed to unlock the key. It is not happening.
+Corroborated, weakly but independently, by three commits signed from inside
+the session window at 19:05 and 19:15 that verify good.
+
+The session's own records do not name pinentry, and that is worth saying
+rather than leaving as a gap in the evidence: it is an ordinary X client, so
+its window appears as a surface like any other and the absence of the word
+proves nothing either way. The acceptance is the operator's observation, which
+is what an `@physical` row asks for.
+
+VT and clean shutdown were recorded above from the ordinary logout of a
+twenty-hour session.
+
+**The root cause named at the top of this note is still unlocated**, and
+closing the row does not locate it. What is accepted is that the lockout does
+not reproduce in ordinary use across many signings; if it returns, it returns
+with this note's findings intact and the control-recovery repair already in
+place beneath it.
