@@ -1,0 +1,4 @@
+sophia_session_input_guard schema=2 status=ready source=udev seat=seat0 devices=4 keyboards=2
+sophia_keyboard_independence_guard schema=1 status=split_chord_ignored phase=seat
+sophia_session_input_guard schema=1 status=armed
+sophia_session_input_guard schema=1 status=triggered

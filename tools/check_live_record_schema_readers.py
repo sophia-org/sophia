@@ -25,6 +25,7 @@ PROOF_READERS = (
     'verify_installed_native_chrome_session.sh',
     'verify_installed_truecolor_session.sh',
     'verify_installed_xterm_session.sh',
+    'verify_keyboard_independence_physical.sh',
     'verify_live_session_milestone4_evidence.sh',
     'verify_live_session_persistent_evidence.sh',
     'verify_mirror_group_physical.sh',

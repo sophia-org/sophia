@@ -11,9 +11,9 @@ TARGET_VT="${SOPHIA_TTY_NUMBER:-3}"
 }
 TARGET_TTY="/dev/tty$TARGET_VT"
 case "$SESSION_PROFILE" in
-    hagia|hagia-policy|kitty|native|standalone) ;;
+    hagia|hagia-policy|keyboard-independence|kitty|native|standalone) ;;
     *)
-        echo "SOPHIA_TTY_PROFILE must be hagia, hagia-policy, kitty, native, or standalone." >&2
+        echo "SOPHIA_TTY_PROFILE must be hagia, hagia-policy, keyboard-independence, kitty, native, or standalone." >&2
         exit 1
         ;;
 esac
@@ -32,6 +32,8 @@ if [[ ! -t 0 || "$(tty)" != "$TARGET_TTY" ]]; then
     echo "Switch to tty$TARGET_VT, log in, then run:" >&2
     if [[ "$SESSION_PROFILE" == hagia-policy ]]; then
         echo "  $ROOT_DIR/tools/start_sophia_hagia_policy_tty4.sh" >&2
+    elif [[ "$SESSION_PROFILE" == keyboard-independence ]]; then
+        echo "  $ROOT_DIR/tools/run_keyboard_independence_gate_tty4.sh" >&2
     elif [[ "$SESSION_PROFILE" == native ]]; then
         echo "  $ROOT_DIR/tools/start_sophia_native_hot_reload_tty3.sh" >&2
     elif [[ "$SESSION_PROFILE" == standalone ]]; then
@@ -435,6 +437,7 @@ case "$SESSION_PROFILE" in
     kitty) tools/run_sophia_kitty_session.sh "$@" ;;
     hagia) tools/run_sophia_session.sh "$@" ;;
     hagia-policy) tools/hagia_policy_physical_gate.sh "$@" ;;
+    keyboard-independence) tools/keyboard_independence_physical_gate.sh "$@" ;;
     native) tools/run_sophia_session.sh "$@" ;;
     standalone) tools/run_sophia_session.sh "$@" ;;
 esac
