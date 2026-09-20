@@ -43,7 +43,13 @@ use sophia_x_authority::{
 };
 use wire::{Order, Peer};
 
-/// The bound every wait in here uses. `wire.rs` reads this from its parent.
+/// The bound on readiness and on the wire. `wire.rs` reads this from its parent.
+///
+/// NOT THE BOUND ON A WAIT FOR THE BRIDGE. Those are `STALL`, `CEILING` and
+/// `UNSIGNALLED` below, and they are measured in opportunities rather than in
+/// seconds. This one bounds a socket read, a socket write and the readiness
+/// of a service that has just been started, which are single blocking calls
+/// with nothing to observe in between.
 ///
 /// GENEROUS ON PURPOSE. A passing control never waits, so the only thing this
 /// sizes is how much contention a failing one tolerates before it calls a busy
@@ -248,6 +254,66 @@ impl Fixture {
             .unwrap()
     }
 
+    /// Drive one coordinator step, keeping whatever it decided.
+    ///
+    /// The effects go into the harvest so a readiness poll cannot eat them; the
+    /// report comes back so a caller that needs the commit outcomes themselves
+    /// -- what was applied, and whether this service held a mapping fact for it
+    /// -- can read them without draining the harvest to find out.
+    fn pump(&mut self) -> Pumped {
+        let mut committed = self
+            .handle_mut()
+            .apply_committed(Duration::from_millis(5))
+            .expect("the bridge is readable");
+        // THE VERDICT IS TAKEN BEFORE THE HARVEST. The effects leave for the
+        // harvest on the next line, and whether any of them was submitted is
+        // the one signal that says the order took something. A caller reading
+        // the returned report could not tell: its `effects` is always empty.
+        let advanced = advanced(&committed);
+        self.harvest.append(&mut committed.effects);
+        Pumped {
+            advanced,
+            report: committed,
+        }
+    }
+
+    /// One pump, judged for a wait: `found` reads the step's report and the
+    /// harvest it has just fed, and a service that has ended is `Lost` at once.
+    fn step<T>(
+        &mut self,
+        found: impl FnOnce(&mut Self, &crate::private_input::PrivateInputCommitted) -> Option<T>,
+    ) -> Progress<T> {
+        let pumped = self.pump();
+        if ended(&pumped.report) {
+            return Progress::Lost(self.ended_report());
+        }
+        match found(self, &pumped.report) {
+            Some(value) => Progress::Done(value),
+            None if pumped.advanced => Progress::Worked,
+            None => Progress::Idle,
+        }
+    }
+
+    /// Stop a service that reported itself gone, and say what it said.
+    ///
+    /// THE SERVICE'S OWN ACCOUNT, NOT THE WAIT'S. What a wait can see of a dead
+    /// service is `Ended` on every call; what is worth reading is how it ended,
+    /// which only the stop reports. The handle is taken, so nothing pumps a
+    /// stopped service afterwards.
+    fn ended_report(&mut self) -> String {
+        let status = self.handle().status();
+        let outcome = self.handle.take().expect("a service to stop").stop();
+        format!(
+            "the private input service ended while this waited; status {status:?}; \
+             invocation {:?}; failure {:?}; execution {:?}; at close {:?}; thread {:?}",
+            outcome.invocation,
+            outcome.failure,
+            outcome.execution,
+            outcome.execution_at_close,
+            outcome.service_thread
+        )
+    }
+
     /// Wait until a custody place reports a started worker.
     ///
     /// REQUIRED BEFORE ANY FAULT. Registered attachment is production and the
@@ -255,39 +321,22 @@ impl Fixture {
     /// lifetime evidence -- it is the state before the thing being tested has
     /// happened. Damaging a service that has not yet started a worker would
     /// prove nothing about custody at all.
-    /// Drive one coordinator step, keeping whatever it decided.
-    ///
-    /// The effects go into the harvest so a readiness poll cannot eat them; the
-    /// report comes back so a caller that needs the commit outcomes themselves
-    /// -- what was applied, and whether this service held a mapping fact for it
-    /// -- can read them without draining the harvest to find out.
-    fn pump(&mut self) -> crate::private_input::PrivateInputCommitted {
-        let mut committed = self
-            .handle_mut()
-            .apply_committed(Duration::from_millis(5))
-            .expect("the bridge is readable");
-        self.harvest.append(&mut committed.effects);
-        committed
-    }
-
     fn running_row(&mut self) -> sophia_x_authority::PrivateCustodySnapshotRow {
-        let deadline = std::time::Instant::now() + WAIT;
-        loop {
-            self.pump();
-            let snapshot = self.custody();
-            if let Some(row) = snapshot
-                .rows
-                .iter()
-                .find(|row| row.worker == PrivateCustodyWorkerStanding::Running)
-            {
-                return *row;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "no custody place reported a started worker within the bound: {snapshot:?}"
-            );
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        wait_for(
+            self,
+            "a custody place reporting a started worker",
+            |fixture| format!("{:?}", fixture.custody()),
+            |fixture| {
+                fixture.step(|fixture, _| {
+                    fixture
+                        .custody()
+                        .rows
+                        .iter()
+                        .find(|row| row.worker == PrivateCustodyWorkerStanding::Running)
+                        .copied()
+                })
+            },
+        )
     }
 
     /// Drive commits until the real admission effect exists, and return the
@@ -298,30 +347,27 @@ impl Fixture {
     /// admitted target and was never a surface this service had routed
     /// anything to; input submitted against it proved nothing about delivery.
     fn admitted_surface(&mut self) -> sophia_protocol::SurfaceId {
-        let deadline = std::time::Instant::now() + WAIT;
-        loop {
+        let effect = wait_for(
+            self,
+            "a committed admission for the create/map/draw",
+            |fixture| format!("the harvest holds {:?}", fixture.harvest),
             // THE WHOLE HARVEST, not just this step. The admission may have
             // been committed while something else was driving the service.
-            if let Some(effect) = self
-                .harvest
-                .iter()
-                .find(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
-                .copied()
-            {
-                let submitted = effect
-                    .submitted()
-                    .expect("the order took the admission it committed");
-                self.await_ack(submitted);
-                return effect.surface();
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "a create/map/draw produced a committed admission within the bound: {:?}",
-                self.harvest
-            );
-            self.pump();
-            std::thread::sleep(Duration::from_millis(1));
-        }
+            |fixture| {
+                fixture.step(|fixture, _| {
+                    fixture
+                        .harvest
+                        .iter()
+                        .find(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
+                        .copied()
+                })
+            },
+        );
+        let submitted = effect
+            .submitted()
+            .expect("the order took the admission it committed");
+        self.await_ack(submitted);
+        effect.surface()
     }
 
     /// Wait for the exact acknowledgement of one submitted control.
@@ -330,30 +376,39 @@ impl Fixture {
     /// outcome has to be `Delivered`; any acknowledgement arriving while this
     /// waits is not evidence about this one.
     fn await_ack(&self, submitted: crate::private_input::PrivateInputSubmitted) {
-        let deadline = std::time::Instant::now() + WAIT;
-        loop {
-            for ack in self
-                .handle()
-                .drain_acknowledgements_within(Duration::from_millis(10))
-            {
-                let seen = ack.acknowledgement;
-                if seen.transaction == submitted.transaction
-                    && seen.surface == submitted.surface
-                    && seen.kind == submitted.kind
+        // ANY ACKNOWLEDGEMENT IS PROGRESS, including one for another
+        // transaction: the service ran and answered something.
+        wait_for(
+            &mut (),
+            &format!("the acknowledgement for {submitted:?}"),
+            |_| format!("the service is {:?}", self.handle().readiness()),
+            |_| {
+                let mut drained = false;
+                for ack in self
+                    .handle()
+                    .drain_acknowledgements_within(Duration::from_millis(10))
                 {
-                    assert_eq!(
-                        seen.outcome,
-                        sophia_x_authority::XAuthorityControlOutcome::Delivered,
-                        "the control this waited for was delivered: {seen:?}"
-                    );
-                    return;
+                    drained = true;
+                    let seen = ack.acknowledgement;
+                    if seen.transaction == submitted.transaction
+                        && seen.surface == submitted.surface
+                        && seen.kind == submitted.kind
+                    {
+                        assert_eq!(
+                            seen.outcome,
+                            sophia_x_authority::XAuthorityControlOutcome::Delivered,
+                            "the control this waited for was acknowledged but not delivered: {seen:?}"
+                        );
+                        return Progress::Done(());
+                    }
                 }
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the acknowledgement for {submitted:?} arrived within the bound"
-            );
-        }
+                if drained {
+                    Progress::Worked
+                } else {
+                    not_yet(self.handle())
+                }
+            },
+        );
     }
 
     /// Establish focus on a surface this service actually admitted.
@@ -397,24 +452,25 @@ impl Fixture {
         // route and a client that went, so the exact outcome and the exact
         // delivery identity are both required before this counts as an
         // accepted obligation.
-        let deadline = std::time::Instant::now() + WAIT;
-        loop {
-            if let Some(settled) = self.handle().runtime.observer.settled(accepted.delivery) {
-                assert_eq!(settled.delivery, accepted.delivery);
-                assert_eq!(
-                    settled.outcome,
-                    sophia_x_authority::XAuthorityInputDeliveryOutcome::Flushed,
-                    "the obligation this waited on was delivered: {settled:?}"
-                );
-                break;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "delivery {:?} settled within the bound",
-                accepted.delivery
-            );
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        let settled = spin_for(
+            self,
+            &format!("a terminal answer for delivery {:?}", accepted.delivery),
+            |fixture| {
+                format!(
+                    "the ledger still holds it as {:?}",
+                    fixture.handle().runtime.observer.state(accepted.delivery)
+                )
+            },
+            |fixture| match fixture.handle().runtime.observer.settled(accepted.delivery) {
+                Some(settled) => Progress::Done(settled),
+                None => not_yet(fixture.handle()),
+            },
+        );
+        assert_eq!(
+            settled.outcome,
+            sophia_x_authority::XAuthorityInputDeliveryOutcome::Flushed,
+            "the obligation this waited on settled without being delivered: {settled:?}"
+        );
         accepted.delivery
     }
 
@@ -722,26 +778,30 @@ fn an_unreadable_surface_ledger_refuses_rather_than_reporting_an_empty_one() {
     peer.draw(window);
     peer.confirm_geometry(window);
 
-    let deadline = std::time::Instant::now() + WAIT;
-    loop {
-        match fixture
+    wait_for(
+        &mut fixture,
+        "the redraw reaching the bridge and being refused on the unreadable ledger",
+        |fixture| format!("the order still owes {:?}", fixture.handle().outstanding()),
+        |fixture| match fixture
             .handle_mut()
             .apply_committed(Duration::from_millis(10))
         {
-            Err(_) => break,
+            Err(_) => Progress::Done(()),
             Ok(report) => {
                 assert_eq!(
                     report.batches_observed, 0,
                     "a call that took work read the unreadable ledger as empty: {report:?}"
                 );
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "the redraw reached the bridge within the bound"
-                );
-                std::thread::sleep(Duration::from_millis(1));
+                if ended(&report) {
+                    Progress::Lost(fixture.ended_report())
+                } else if advanced(&report) {
+                    Progress::Worked
+                } else {
+                    Progress::Idle
+                }
             }
-        }
-    }
+        },
+    );
 
     // UNREADABLE IS DURABLE, NOT A ONE-OFF.
     assert!(
@@ -774,21 +834,21 @@ fn a_control_for_a_departed_connection_is_refused() {
     // WAITED FOR, NOT ASSUMED. An earlier version read `admitted().first()`
     // immediately after connecting and found nothing, because admission is the
     // boundary's act and had not happened yet.
-    let deadline = std::time::Instant::now() + WAIT;
-    let seen = loop {
-        let admitted = fixture
-            .handle()
-            .admitted()
-            .expect("the boundary is readable");
-        if let Some(seen) = admitted.first().copied() {
-            break seen;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the peer was admitted within the bound"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    };
+    let seen = spin_for(
+        &mut (),
+        "the peer's admission at the boundary",
+        |_| format!("the boundary holds {:?}", fixture.handle().admitted()),
+        |_| {
+            let admitted = fixture
+                .handle()
+                .admitted()
+                .expect("the boundary is readable");
+            match admitted.first().copied() {
+                Some(seen) => Progress::Done(seen),
+                None => not_yet(fixture.handle()),
+            }
+        },
+    );
     let live = crate::private_input::PrivateInputConnection {
         client: seen.client,
         admission: seen.admission,
@@ -816,24 +876,25 @@ fn a_control_for_a_departed_connection_is_refused() {
 
     // NOW THE CONNECTION REALLY DEPARTS, and that exact admission must go.
     drop(peer);
-    let deadline = std::time::Instant::now() + WAIT;
-    loop {
-        let admitted = fixture
-            .handle()
-            .admitted()
-            .expect("the boundary is readable");
-        let departed = !admitted
-            .iter()
-            .any(|row| row.client == live.client && row.admission == live.admission && !row.closed);
-        if departed {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the dropped peer's admission closed within the bound: {admitted:?}"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    spin_for(
+        &mut (),
+        "the dropped peer's admission closing",
+        |_| format!("the boundary holds {:?}", fixture.handle().admitted()),
+        |_| {
+            let admitted = fixture
+                .handle()
+                .admitted()
+                .expect("the boundary is readable");
+            let departed = !admitted.iter().any(|row| {
+                row.client == live.client && row.admission == live.admission && !row.closed
+            });
+            if departed {
+                Progress::Done(())
+            } else {
+                not_yet(fixture.handle())
+            }
+        },
+    );
 
     let refused = fixture.handle().submit_action(
         live,
@@ -1570,14 +1631,20 @@ fn an_unwind_on_the_serving_thread_still_collects() {
     drop(fixture.probe_socket());
 
     let runtime = std::sync::Arc::clone(&fixture.handle().runtime);
-    let deadline = std::time::Instant::now() + WAIT;
-    while !fault.fired() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the armed fault fired on the serving thread within the bound"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    // NO `not_yet` HERE: the fault is what ends the service, so an ending is
+    // the thing waited for, not a reason to give up.
+    spin_for(
+        &mut (),
+        "the armed fault firing on the serving thread",
+        |_| format!("the service is {:?}", runtime.readiness()),
+        |_| {
+            if fault.fired() {
+                Progress::Done(())
+            } else {
+                Progress::Idle
+            }
+        },
+    );
 
     let handle = fixture.handle.take().unwrap();
     let outcome = handle.stop();
@@ -1714,22 +1781,28 @@ fn await_flushed(
     runtime: &std::sync::Arc<crate::private_input::service::PrivateInputRuntime>,
     delivery: sophia_x_authority::XAuthorityInputDeliveryId,
 ) {
-    let deadline = std::time::Instant::now() + WAIT;
-    loop {
-        if let Some(settled) = runtime.observer.settled(delivery) {
-            assert_eq!(
-                settled.outcome,
-                sophia_x_authority::XAuthorityInputDeliveryOutcome::Flushed,
-                "delivery {delivery:?} was delivered: {settled:?}"
-            );
-            return;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "delivery {delivery:?} settled within the bound"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    let settled = spin_for(
+        &mut (),
+        &format!("a terminal answer for delivery {delivery:?}"),
+        |_| {
+            format!(
+                "the ledger holds it as {:?}",
+                runtime.observer.state(delivery)
+            )
+        },
+        |_| match runtime.observer.settled(delivery) {
+            Some(settled) => Progress::Done(settled),
+            None => match runtime.readiness() {
+                PrivateInputReadiness::Ready => Progress::Idle,
+                gone => Progress::Lost(format!("the service is {gone:?}")),
+            },
+        },
+    );
+    assert_eq!(
+        settled.outcome,
+        sophia_x_authority::XAuthorityInputDeliveryOutcome::Flushed,
+        "delivery {delivery:?} settled without being delivered: {settled:?}"
+    );
 }
 
 /// Take exactly one receipt off the channel, without observing it.
@@ -1959,22 +2032,20 @@ fn an_unmapped_surface_gets_no_route_until_it_is_mapped() {
     // written by the very code under test -- so the defect made the wait time
     // out instead of making the routing assertion below fire, and the control
     // reported a timeout rather than the fault it had actually found.
-    let deadline = std::time::Instant::now() + WAIT;
-    let mut applied = None;
-    while applied.is_none() {
-        let report = fixture.pump();
-        applied = report
-            .outcomes
-            .iter()
-            .find(|outcome| !outcome.applied.is_empty())
-            .map(|outcome| outcome.applied.clone());
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the unmapped draw reached a commit within the bound"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    let unmapped = applied.expect("the loop only leaves with one");
+    let unmapped = wait_for(
+        &mut fixture,
+        "a commit for the unmapped draw",
+        |fixture| format!("the harvest holds {:?}", fixture.harvest),
+        |fixture| {
+            fixture.step(|_, report| {
+                report
+                    .outcomes
+                    .iter()
+                    .find(|outcome| !outcome.applied.is_empty())
+                    .map(|outcome| outcome.applied.clone())
+            })
+        },
+    );
     // Give the bridge a moment to stage anything that commit decided, so the
     // assertion below is about what was routed rather than about what has not
     // been reached yet.
@@ -1994,22 +2065,20 @@ fn an_unmapped_surface_gets_no_route_until_it_is_mapped() {
     peer.map(window);
     peer.confirm_geometry(window);
 
-    let deadline = std::time::Instant::now() + WAIT;
-    loop {
-        fixture.pump();
-        if fixture
-            .harvest
-            .iter()
-            .any(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
-        {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "mapping the window admitted it within the bound"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    wait_for(
+        &mut fixture,
+        "an admission for the mapped window",
+        |fixture| format!("the harvest holds {:?}", fixture.harvest),
+        |fixture| {
+            fixture.step(|fixture, _| {
+                fixture
+                    .harvest
+                    .iter()
+                    .any(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
+                    .then_some(())
+            })
+        },
+    );
 
     let admissions: Vec<_> = fixture
         .harvest
@@ -2034,22 +2103,20 @@ fn an_unmapped_surface_gets_no_route_until_it_is_mapped() {
     // AND A LATER DRAW CONFIGURES RATHER THAN ADMITTING AGAIN.
     peer.draw(window);
     peer.confirm_geometry(window);
-    let deadline = std::time::Instant::now() + WAIT;
-    loop {
-        fixture.pump();
-        if fixture
-            .harvest
-            .iter()
-            .any(|effect| effect.kind() == XAuthorityControlKind::ConfigureSurface)
-        {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "a further draw configured the admitted surface within the bound"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    wait_for(
+        &mut fixture,
+        "a configure for the admitted surface after a further draw",
+        |fixture| format!("the harvest holds {:?}", fixture.harvest),
+        |fixture| {
+            fixture.step(|fixture, _| {
+                fixture
+                    .harvest
+                    .iter()
+                    .any(|effect| effect.kind() == XAuthorityControlKind::ConfigureSurface)
+                    .then_some(())
+            })
+        },
+    );
     assert_eq!(
         fixture
             .harvest
@@ -2231,32 +2298,37 @@ fn a_control_refused_for_now_keeps_its_place_and_its_transaction() {
     }
     peer.confirm_geometry(window);
 
-    let deadline = std::time::Instant::now() + WAIT;
-    let mut refused = None;
-    while refused.is_none() {
-        let report = fixture
-            .handle_mut()
-            .apply_committed(Duration::from_millis(50))
-            .expect("the bridge is readable");
-        // The classification is restated here rather than borrowed from the
-        // bridge, so a change to what counts as "later" cannot quietly change
-        // what this control is testing.
-        refused = report.refused.iter().find_map(|refusal| match refusal {
-            crate::private_input::PrivateInputControlError::Refused(
-                sophia_x_authority::AdmissionRefusal::Saturated
-                | sophia_x_authority::AdmissionRefusal::Unavailable
-                | sophia_x_authority::AdmissionRefusal::AuthorityUnreadable,
-                command,
-            ) => Some(*command),
-            _ => None,
-        });
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the order refused a control for capacity within the bound \
-             (the control ceiling is input_capacity * 2)"
-        );
-    }
-    let refused = refused.expect("the loop only leaves with one");
+    let refused = wait_for(
+        &mut fixture,
+        "a control refused for capacity (the ceiling is input_capacity * 2)",
+        |fixture| format!("the order still owes {:?}", fixture.handle().outstanding()),
+        |fixture| {
+            let report = fixture
+                .handle_mut()
+                .apply_committed(Duration::from_millis(50))
+                .expect("the bridge is readable");
+            if ended(&report) {
+                return Progress::Lost(fixture.ended_report());
+            }
+            // The classification is restated here rather than borrowed from
+            // the bridge, so a change to what counts as "later" cannot quietly
+            // change what this control is testing.
+            let refused = report.refused.iter().find_map(|refusal| match refusal {
+                crate::private_input::PrivateInputControlError::Refused(
+                    sophia_x_authority::AdmissionRefusal::Saturated
+                    | sophia_x_authority::AdmissionRefusal::Unavailable
+                    | sophia_x_authority::AdmissionRefusal::AuthorityUnreadable,
+                    command,
+                ) => Some(*command),
+                _ => None,
+            });
+            match refused {
+                Some(command) => Progress::Done(command),
+                None if advanced(&report) => Progress::Worked,
+                None => Progress::Idle,
+            }
+        },
+    );
     let refused_transaction = control_transaction(&refused);
 
     // STILL OWED, NOT DISCARDED. This is what the mutation destroys.
@@ -2272,34 +2344,388 @@ fn a_control_refused_for_now_keeps_its_place_and_its_transaction() {
     // NOTHING BEHIND IT OVERTOOK IT, AND IT KEPT ITS OWN TRANSACTION. Minting a
     // fresh one would leave the first outstanding and unanswerable, and two
     // acknowledgements could then arrive for one committed decision.
-    let deadline = std::time::Instant::now() + WAIT;
-    let mut delivered = false;
-    while !delivered {
-        let report = fixture
-            .handle_mut()
-            .apply_committed(Duration::from_millis(50))
-            .expect("the bridge is readable");
-        for submitted in report
+    wait_for(
+        &mut fixture,
+        &format!("the deferred control going out under transaction {refused_transaction:?}"),
+        |fixture| format!("the order still owes {:?}", fixture.handle().outstanding()),
+        |fixture| {
+            let report = fixture
+                .handle_mut()
+                .apply_committed(Duration::from_millis(50))
+                .expect("the bridge is readable");
+            if ended(&report) {
+                return Progress::Lost(fixture.ended_report());
+            }
+            let mut delivered = false;
+            for submitted in report
+                .effects
+                .iter()
+                .filter_map(|effect| effect.submitted())
+            {
+                if submitted.transaction == refused_transaction {
+                    delivered = true;
+                } else {
+                    assert!(
+                        submitted.transaction < refused_transaction || delivered,
+                        "a control minted after the refused one was delivered ahead of it: \
+                         {submitted:?} before {refused_transaction:?}"
+                    );
+                }
+            }
+            match delivered {
+                true => Progress::Done(()),
+                false if advanced(&report) => Progress::Worked,
+                false => Progress::Idle,
+            }
+        },
+    );
+    drop(peer);
+}
+
+/// How long a wait tolerates nothing happening at all.
+///
+/// TODAY'S WHOLE BOUND, DELIBERATELY. Nothing measured says how long a gap
+/// between two units of work may get on a starved host; what was measured is
+/// that a *total* of twenty seconds is too small. Making the gap bound the old
+/// total makes this a strict relaxation: a gap this long implies a total this
+/// long, so nothing that passes today can fail here.
+const STALL: Duration = Duration::from_secs(20);
+
+/// How long a wait may keep seeing work and still never arrive.
+///
+/// A BACKSTOP, NOT A BUDGET. A wait that reaches this has been fed work the
+/// whole time and still has no answer, which is a different failure from a
+/// starved one and says so. It is also what keeps these controls able to kill
+/// a mutation that leaves the bridge busy but never delivers.
+const CEILING: Duration = Duration::from_secs(120);
+
+/// The bound for a wait with no progress signal, where only the number can
+/// move. Three times the old one: a passing spin costs nothing, so the only
+/// price of a generous number is how long a genuinely broken run takes.
+const UNSIGNALLED: Duration = Duration::from_secs(60);
+
+/// What one attempt at a wait observed.
+enum Progress<T> {
+    /// The thing waited for is here.
+    Done(T),
+    /// Not here, but the system moved, so the stall bound starts again.
+    Worked,
+    /// Not here, and nothing happened.
+    Idle,
+    /// Cannot arrive any more, for the reason given. The wait fails at once
+    /// rather than spending a bound on a service that has already ended.
+    Lost(String),
+}
+
+/// Wait for `step` to answer `Done`, bounded by a stall and by a ceiling.
+///
+/// THE BUDGET IS OPPORTUNITIES, NOT SECONDS. Every attempt contains its own
+/// wait, so a busy host stretches the budget by itself: a pump spends its
+/// whole `within` in a blocking receive, and a sleeping attempt returns when
+/// this thread is next scheduled. A wall clock instead measures the machine,
+/// which is how a control that was merely starved came to report a defect.
+///
+/// `goal` NAMES THE THING WAITED FOR AND IS NOT A SENTENCE. A noun phrase has
+/// no truth value, so it cannot read as a true statement in a panic, which is
+/// what fourteen of these messages used to do. `seen` is called only on
+/// failure, so a site keeps its diagnostic without paying for it while
+/// passing.
+#[track_caller]
+fn wait_for<S, T>(
+    subject: &mut S,
+    goal: &str,
+    seen: impl Fn(&S) -> String,
+    step: impl FnMut(&mut S) -> Progress<T>,
+) -> T {
+    bounded(STALL, subject, goal, seen, step)
+}
+
+/// Wait for `attempt` to answer `Done`, with no progress signal to reset on.
+///
+/// WHY THESE ARE NOT `wait_for`. Nothing observable stands between asking and
+/// the answer: the delivery ledger offers a terminal answer for one identity
+/// and no count of anything, and the step that would produce a progress
+/// signal runs on the serving thread rather than here. Pumping the bridge
+/// would manufacture a signal from work that cannot advance this wait, which
+/// is worse than saying plainly that this bound is a clock. Grep this name to
+/// find every wait still measured that way.
+#[track_caller]
+fn spin_for<S, T>(
+    subject: &mut S,
+    goal: &str,
+    seen: impl Fn(&S) -> String,
+    attempt: impl FnMut(&mut S) -> Progress<T>,
+) -> T {
+    bounded(UNSIGNALLED, subject, goal, seen, attempt)
+}
+
+/// The one loop under both waits; `stall` is how long nothing may happen.
+///
+/// EVERY MESSAGE IS GENERATED HERE, so a site cannot write one that describes
+/// success, and each says which bound fired, how long the wait had been
+/// going, and what the site could see at that moment.
+#[track_caller]
+fn bounded<S, T>(
+    stall: Duration,
+    subject: &mut S,
+    goal: &str,
+    seen: impl Fn(&S) -> String,
+    mut step: impl FnMut(&mut S) -> Progress<T>,
+) -> T {
+    let began = std::time::Instant::now();
+    let ceiling = began + CEILING;
+    let mut quiet_until = began + stall;
+    loop {
+        match step(subject) {
+            Progress::Done(value) => return value,
+            Progress::Worked => {
+                quiet_until = std::time::Instant::now() + stall;
+                continue;
+            }
+            Progress::Idle => {}
+            // `seen` is not consulted here: `why` is the service's own
+            // account, and reading the subject after its service was stopped
+            // for that account would only find the handle gone.
+            Progress::Lost(why) => panic!(
+                "{goal} cannot happen now, after {:?}: {why}",
+                began.elapsed()
+            ),
+        }
+        let now = std::time::Instant::now();
+        assert!(
+            now < ceiling,
+            "{goal} did not happen, though the bridge kept working, in {:?}: {}",
+            now - began,
+            seen(subject)
+        );
+        assert!(
+            now < quiet_until,
+            "{goal} did not happen, and nothing this wait could see moved for {stall:?}, after {:?}: {}",
+            now - began,
+            seen(subject)
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// What one pump did, with the verdict its report cannot carry.
+struct Pumped {
+    /// Whether the bridge moved, judged while the effects were still in the
+    /// report. See [`advanced`].
+    advanced: bool,
+    /// The step's report. Its `effects` is empty: they went to the harvest.
+    report: crate::private_input::PrivateInputCommitted,
+}
+
+/// Whether one coordinator step moved the bridge, as opposed to restating a
+/// refusal it had already made.
+///
+/// A DEFERRED REFUSAL IS NOT PROGRESS. The bridge stops at the first entry the
+/// order defers and reports that entry's effect and its refusal again on every
+/// call, so a head that cannot go out produces a non-empty report for ever. A
+/// wait that read any non-empty report as movement would restart its budget on
+/// exactly the state the budget exists to catch -- and the control that
+/// saturates the queue on purpose is the one it would then never catch.
+fn advanced(report: &crate::private_input::PrivateInputCommitted) -> bool {
+    report.batches_observed > 0
+        || report.commits > 0
+        || report
             .effects
             .iter()
-            .filter_map(|effect| effect.submitted())
-        {
-            if submitted.transaction == refused_transaction {
-                delivered = true;
-            } else {
-                assert!(
-                    submitted.transaction < refused_transaction || delivered,
-                    "a control minted after the refused one was delivered ahead of it: \
-                     {submitted:?} before {refused_transaction:?}"
-                );
-            }
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the deferred control was delivered under its original transaction"
-        );
+            .any(|effect| effect.submitted().is_some())
+        || report.refused.iter().any(released)
+}
+
+/// Whether the bridge reported that its service has ended.
+///
+/// RESTATED ON EVERY CALL, LIKE A DEFERRED REFUSAL, and just as much not
+/// progress; but unlike one it is final, so a wait that sees it has nothing
+/// left to wait for. Measured 2026-09-20: a service that died under load
+/// reported this for 150 seconds while a control waited out its bound, and
+/// the failure named the bound rather than the death.
+fn ended(report: &crate::private_input::PrivateInputCommitted) -> bool {
+    use crate::private_input::PrivateInputControlError as Error;
+    report
+        .refused
+        .iter()
+        .any(|refusal| matches!(refusal, Error::Ended))
+}
+
+/// `Idle`, unless the service has ended, which is `Lost` with its readiness.
+///
+/// FOR A WAIT THAT NEVER SEES THE BRIDGE. One that reads the boundary or the
+/// delivery ledger gets no `Ended`; readiness is the one cheap fact that still
+/// says the service is gone, and every wait in here begins after it was
+/// `Ready`, so anything else is an ending.
+fn not_yet<T>(handle: &PrivateInputHandle) -> Progress<T> {
+    match handle.readiness() {
+        PrivateInputReadiness::Ready => Progress::Idle,
+        gone => Progress::Lost(format!("the service is {gone:?}")),
     }
-    drop(peer);
+}
+
+/// Whether a refusal took its entry off the queue.
+///
+/// The complement of the order's own retryable set: a retryable refusal keeps
+/// the entry at the head and says the same thing on the next call, so it is
+/// not news. `Ended` and `Exhausted` are excluded for the same reason -- both
+/// are restated on every call while the work stays exactly where it was.
+fn released(refusal: &crate::private_input::PrivateInputControlError) -> bool {
+    use crate::private_input::PrivateInputControlError as Error;
+    use sophia_x_authority::AdmissionRefusal as Refusal;
+    matches!(
+        refusal,
+        Error::ConnectionGone
+            | Error::Refused(
+                Refusal::Exhausted | Refusal::ConsumerGone | Refusal::ForeignServiceOwner,
+                _,
+            )
+    )
+}
+
+#[test]
+fn only_a_step_that_moved_the_bridge_counts_as_progress() {
+    use crate::private_input::{
+        PrivateInputCommitted, PrivateInputCommittedEffect, PrivateInputControlError as Error,
+        PrivateInputSubmitted,
+    };
+    use sophia_x_authority::{
+        AdmissionRefusal as Refusal, XAuthorityClientControlCommand, XAuthorityControlCommand,
+        XAuthorityControlKind, XServerFrontendClientId,
+    };
+    let transaction = sophia_protocol::TransactionId::from_raw(7);
+    let surface = sophia_protocol::SurfaceId::new(11, 1);
+    let command = |refusal| {
+        Error::Refused(
+            refusal,
+            XAuthorityClientControlCommand {
+                client: XServerFrontendClientId::from_raw(1),
+                command: XAuthorityControlCommand::ClearFocus {
+                    transaction,
+                    surface,
+                },
+            },
+        )
+    };
+    let effect = |submitted| {
+        PrivateInputCommittedEffect::new(
+            transaction,
+            surface,
+            XAuthorityControlKind::ClearFocus,
+            None,
+            submitted,
+        )
+    };
+
+    // An idle step is exactly the default, so the default is the base case.
+    assert!(!advanced(&PrivateInputCommitted::default()));
+    for (moved, report) in [
+        (
+            true,
+            PrivateInputCommitted {
+                batches_observed: 1,
+                ..Default::default()
+            },
+        ),
+        (
+            true,
+            PrivateInputCommitted {
+                commits: 1,
+                ..Default::default()
+            },
+        ),
+        (
+            true,
+            PrivateInputCommitted {
+                effects: vec![effect(Some(PrivateInputSubmitted {
+                    transaction,
+                    surface,
+                    kind: XAuthorityControlKind::ClearFocus,
+                }))],
+                ..Default::default()
+            },
+        ),
+        // THE SHAPE THIS PREDICATE EXISTS FOR. A deferred head reports its
+        // effect with nothing submitted and its retryable refusal, on every
+        // call, while the queue does not move. Reading that as movement is
+        // what would let a wedged bridge reset a budget for ever.
+        (
+            false,
+            PrivateInputCommitted {
+                effects: vec![effect(None)],
+                refused: vec![command(Refusal::Saturated)],
+                ..Default::default()
+            },
+        ),
+        (
+            false,
+            PrivateInputCommitted {
+                refused: vec![command(Refusal::Unavailable)],
+                ..Default::default()
+            },
+        ),
+        (
+            false,
+            PrivateInputCommitted {
+                refused: vec![command(Refusal::AuthorityUnreadable)],
+                ..Default::default()
+            },
+        ),
+        // These took the entry off the queue, so the next call will say
+        // something different.
+        (
+            true,
+            PrivateInputCommitted {
+                refused: vec![command(Refusal::Exhausted)],
+                ..Default::default()
+            },
+        ),
+        (
+            true,
+            PrivateInputCommitted {
+                refused: vec![command(Refusal::ConsumerGone)],
+                ..Default::default()
+            },
+        ),
+        (
+            true,
+            PrivateInputCommitted {
+                refused: vec![command(Refusal::ForeignServiceOwner)],
+                ..Default::default()
+            },
+        ),
+        (
+            true,
+            PrivateInputCommitted {
+                refused: vec![Error::ConnectionGone],
+                ..Default::default()
+            },
+        ),
+        // Restated on every call while the work stays staged.
+        (
+            false,
+            PrivateInputCommitted {
+                refused: vec![Error::Ended],
+                ..Default::default()
+            },
+        ),
+        (
+            false,
+            PrivateInputCommitted {
+                refused: vec![Error::Exhausted],
+                ..Default::default()
+            },
+        ),
+        (
+            false,
+            PrivateInputCommitted {
+                refused: vec![Error::Unavailable],
+                ..Default::default()
+            },
+        ),
+    ] {
+        assert_eq!(advanced(&report), moved, "{report:?}");
+    }
 }
 
 /// The transaction a control command carries, whichever kind it is.
@@ -2348,25 +2774,30 @@ fn a_committed_draw_is_reconciled_to_the_engine_predecessor() {
     peer.draw(window);
     peer.confirm_geometry(window);
 
-    let deadline = std::time::Instant::now() + WAIT;
-    let mut seen = Vec::new();
-    let mut committed_an_applied_surface = false;
-    while !committed_an_applied_surface {
-        let report = fixture.pump();
-        for outcome in &report.outcomes {
-            seen.push(outcome.outcome);
-            if outcome.outcome == sophia_protocol::TransactionOutcome::Committed
-                && !outcome.applied.is_empty()
-            {
-                committed_an_applied_surface = true;
-            }
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the draw reached a commit within the bound: outcomes so far {seen:?}"
-        );
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    // SHARED BETWEEN THE STEP AND THE DIAGNOSTIC, which is why it is a cell:
+    // the step appends, and the failure message reads.
+    let seen = std::cell::RefCell::new(Vec::new());
+    wait_for(
+        &mut fixture,
+        "a commit that applied a surface for the draw",
+        |_| format!("outcomes so far {:?}", seen.borrow()),
+        |fixture| {
+            fixture.step(|_, report| {
+                let mut seen = seen.borrow_mut();
+                let mut committed_an_applied_surface = false;
+                for outcome in &report.outcomes {
+                    seen.push(outcome.outcome);
+                    if outcome.outcome == sophia_protocol::TransactionOutcome::Committed
+                        && !outcome.applied.is_empty()
+                    {
+                        committed_an_applied_surface = true;
+                    }
+                }
+                committed_an_applied_surface.then_some(())
+            })
+        },
+    );
+    let seen = seen.into_inner();
 
     assert!(
         !seen.contains(&sophia_protocol::TransactionOutcome::RejectedStaleSurface),
