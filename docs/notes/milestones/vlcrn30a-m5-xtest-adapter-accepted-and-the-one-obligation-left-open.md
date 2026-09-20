@@ -22,8 +22,10 @@ rather than once.
 in both byte orders, as accepted. The four that remained were one obligation
 rather than four, stated below rather than left to be inferred from a count;
 it is closed since, and the profile reads forty of forty through
-`cargo xtask check x11-profile --profile=xtest` from 2026-09-20 (t136 at
-`48008e36`, its note linked below). The paragraphs that follow record what
+`cargo xtask check x11-profile --profile=xtest` from 2026-09-20 (t136, its
+note linked below), forty-two of forty-two once the reserved-chord case
+joined it the same evening (t139); M6's composition is
+[cfko9jxl](cfko9jxl-m6-accepted-the-whole-of-t093-on-one-source.md). The paragraphs that follow record what
 was open when the milestone was accepted.
 
 ## What the extension is

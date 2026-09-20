@@ -127,8 +127,11 @@ Two things it found that are not its subject:
   `Flushed`. The Session decides the route; whether the private source
   should refuse a key whose route names the focus while the pointer is
   elsewhere, or deliver it to the focus as the core protocol does, is a
-  question about the routing model. Recorded, not filed; it bears on XTEST
-  key injection while the pointer is over another window.
+  question about the routing model. The lane filed and closed it as t140
+  (`98a9bf41`): the core rule was already in `normal_key_target`, a key
+  goes to focus when the pointer's branch is disjoint from it, and
+  `key_pointer_path` had been refusing before that rule was reached; it now
+  answers with the root alone and the existing path delivers at focus.
 - The stale attributes above. Not removed here: the lane is in the
   continuation store (t138) and found the same pattern lying to them there;
   a sweep is one change, not a side edit of a binding commit.
@@ -335,8 +338,10 @@ obligation means; refuse the chord at the adapter so the wire itself says
 synthetic cannot supply it, which the probe can bind; or build the
 authority's physical-only recognition the comment anticipates, which is new
 behaviour and the plan says M6 adds none. The lane's advice, carried here,
-is that the adapter's refusal and the executor's invariant are different
-witnesses and both are worth having.
+was that the adapter's refusal and the executor's invariant are different
+witnesses; as built, the one refusal lives in the executor and the wire case
+observes it, because a plan-time refusal cannot read the seat's modifier
+state and FakeInput has no reply for an error.
 
 ## Finding and resolution
 
