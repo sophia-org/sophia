@@ -52,3 +52,4 @@ include!("m3_acceptance_keyboard.rs");
 include!("m3_acceptance_ordered_input.rs");
 
 include!("private_stalled_reader.rs");
+include!("private_internal_wait.rs");

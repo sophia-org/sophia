@@ -590,8 +590,23 @@
       "id": "native_internal_wait",
       "description": "Delay, frozen work, scheduler and control waits never accrue recipient nonresponse",
       "mandatory": true,
-      "implementation": null,
-      "unmet_because": "UNMET, AND CURRENTLY TRUE FOR THE WRONG REASON. The meter it names is X_AUTHORITY_ORDERED_BLOCKED_LIMIT in writers/blocked_send.rs, whose own header says the measurement is exercised by controls and not yet by a writer. Nothing accrues to it from the live path at all, so 'internal waits never accrue' holds because nothing accrues. A test bound now would record a property the instance does not have; the binding becomes possible when the writer begins feeding that meter."
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::m3_acceptance::a_delivery_that_waited_behind_the_output_lock_past_the_allowance_is_still_flushed"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_send_counts_only_what_it_waited_on_this_recipient"
+        }
+      ],
+      "evidence_scope": "A real private service over a real socket: the connection's output lock, the one a control write takes, is held from before a key delivery is accepted until past the whole six-second allowance; no receipt and no bytes come while it is held, and once it goes the delivery is answered Flushed, not TimedOut, and the event reaches the recipient whole. With the unit control that the meter accrues only measured waiting on the recipient, the live path is shown to charge a delivery for nothing but that. Queue, delay and frozen waits sit before the writer takes the delivery and so before its meter exists, by construction of X11OrderedSendState; they are not separately timed here. An earlier reason on this row said the meter was not fed by the live path; the ordered writer feeds it."
     },
     {
       "id": "native_transport_wait",

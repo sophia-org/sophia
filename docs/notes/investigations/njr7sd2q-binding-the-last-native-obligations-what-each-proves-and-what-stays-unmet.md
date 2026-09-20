@@ -237,9 +237,22 @@ The lane recorded it unmet because "nothing accrues to the meter from the
 live path". The trace above shows the meter is fed by the live ordered
 writer, so that reason is gone. What the obligation asks, that delay,
 frozen work, scheduler and control waits never accrue recipient
-nonresponse, is now a property the code has and a test can witness: a
-delivery that waited in the queue or behind a delay and then flushed must
-not have been charged blocked time. Re-read, not yet bound.
+nonresponse, is now a property the code has and a test can witness.
+
+**Written and bound the same evening.**
+`a_delivery_that_waited_behind_the_output_lock_past_the_allowance_is_still_flushed`
+in `tests/support/private_internal_wait.rs`, beside the stalled reader: a
+real service and one real client; the connection's output lock, the one a
+control write takes, held from before a key delivery is accepted until past
+the whole six-second allowance. While it is held no receipt and no bytes
+come; when it goes, the delivery is answered `Flushed` and the event
+arrives whole, at 7.5 s, which is the allowance plus the release. Had the
+wait behind the lock counted, the delivery would have been past the
+allowance and answered `TimedOut` with the socket ended. Bound with the
+unit control that only measured waiting on the recipient accrues
+(`a_send_counts_only_what_it_waited_on_this_recipient`). Queue, delay and
+frozen waits sit before the writer takes a delivery and so before its meter
+exists, by construction; the scope says they are not separately timed.
 
 ### `native_protected_action`: retracted by the lane, owed, and t139
 
@@ -255,12 +268,12 @@ invariant, which is what the obligation names.
 Five of the six were bindable or writable on the day, and two of the
 bindings were tests that did not exist: the stalled reader and the five
 ingress refusals. One stays unmet with the reason beside it, because five of
-its seven producers do not exist. With the lane's two, three rows read
-NORESULT: `native_executor_order` (a split or a rewording, Mason's call),
-`native_internal_wait` (a witness to write, now that the meter is known to
-be live) and `native_protected_action` (t139, behaviour to build). The
-runner has no partial verdict, so the honest count of forty is the count of
-rows that hold whole.
+its seven producers do not exist. `native_internal_wait`, which the lane
+had recorded unmet on a stale reason, is bound too. Two rows read NORESULT:
+`native_executor_order` (a split or a rewording, Mason's call) and
+`native_protected_action` (t139, behaviour to build). The runner has no
+partial verdict, so the honest count of forty is the count of rows that
+hold whole: thirty-eight.
 
 ## Validation and remaining work
 
@@ -272,8 +285,8 @@ rows that hold whole.
 - [x] `native_executor_order`: unmet with the reason and the split option.
 - [x] `native_ingress_admission`: the five missing witnesses written and
       the row bound to nineteen tests.
-- [ ] `native_internal_wait`: witness that queue, delay and frozen waits
-      charge no blocked time; bind.
+- [x] `native_internal_wait`: the output-lock witness written and the row
+      bound.
 - [ ] t139: build the emergency-chord rule and bind
       `native_protected_action`.
 - [ ] Decisions for Mason: the plan's rank list against the code's; the
