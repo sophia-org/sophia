@@ -590,7 +590,7 @@ fn root_size(client: &mut Client) -> (i16, i16) {
 /// reply does not wait for it, so a row read the instant the setup returns
 /// can be absent. A round trip on the connection puts its setup behind it,
 /// and the row is then read until it is there, within the wire bound.
-fn newest_admission(
+pub(crate) fn newest_admission(
     instance: &Instance,
     client: &mut Client,
     seen: &mut Vec<XServerFrontendClientId>,

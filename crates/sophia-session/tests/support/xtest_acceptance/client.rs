@@ -268,6 +268,42 @@ impl Client {
         names
     }
 
+    /// Close this connection's writing half, leaving the reading half open.
+    ///
+    /// NOT A DISCONNECT. The peer has said it will send no more requests and
+    /// nothing else: the ones it already sent are still in the socket, it is
+    /// still entitled to their answers, and it is still reading.
+    pub fn half_close(&mut self) {
+        self.stream
+            .shutdown(std::net::Shutdown::Write)
+            .expect("the writing half closes");
+    }
+
+    /// Read until the server closes, reporting whether it did within the
+    /// wire bound. Anything still owed arrives first and is discarded here,
+    /// so a caller that wants those reads them before asking this.
+    pub fn ended(&mut self) -> bool {
+        let deadline = Instant::now() + WAIT;
+        let mut discard = [0; 32];
+        loop {
+            let Some(remaining) = deadline
+                .checked_duration_since(Instant::now())
+                .filter(|duration| !duration.is_zero())
+            else {
+                return false;
+            };
+            if self.stream.set_read_timeout(Some(remaining)).is_err() {
+                return false;
+            }
+            match self.stream.read(&mut discard) {
+                Ok(0) => return true,
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(_) => return false,
+            }
+        }
+    }
+
     /// Round-trip one request so everything before it has been answered.
     pub fn sync(&mut self) {
         let reply = self.reply(43, 0, &[]);

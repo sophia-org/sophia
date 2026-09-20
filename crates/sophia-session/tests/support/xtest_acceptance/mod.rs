@@ -6,7 +6,7 @@
 //! the gate parses; the record's shape is what `cargo xtask check
 //! m5-acceptance` requires, so it is pinned here and in the gate's own tests.
 
-pub mod barrier;
+pub mod adapter;
 pub mod client;
 pub mod groups;
 

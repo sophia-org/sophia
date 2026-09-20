@@ -44,7 +44,13 @@ fn evidence_record_names_the_group_and_every_subcase() {
 #[test]
 #[ignore = "run through cargo xtask check m5-acceptance"]
 fn processing_barrier() {
-    support::barrier::processing_barrier();
+    support::adapter::processing_barrier();
+}
+
+#[test]
+#[ignore = "run through cargo xtask check m5-acceptance"]
+fn cancellation_half_close() {
+    support::adapter::cancellation_half_close();
 }
 
 // This lane's groups are appended here and the top of the file is left for
