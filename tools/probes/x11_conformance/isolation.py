@@ -45,24 +45,55 @@ def fd_identity(fd):
 
 
 @contextmanager
-def _activation(delegated_fds):
+def _activation(delegated_fds, relayed):
     # Actual namespace descriptors prevent a forged JSON namespace-name string
     # from authorizing an unsandboxed --inside invocation.
+    #
+    # ONE CROSSING, ONE PAYLOAD PER ENTRY. A relayed activation is for an entry
+    # the first one starts inside the same namespaces, which needs its own
+    # validation rather than the first vouching for it. Every payload records
+    # these namespaces, so each entry proves the same crossing independently.
+    # They differ only in the descriptors each is given: the first is told
+    # about everything that crosses, because its own scan refuses an inherited
+    # descriptor it was not told about, and each relayed entry is told only
+    # about its own.
     with ExitStack() as stack:
-        namespaces = {name: stack.enter_context(open(f'/proc/self/ns/{name}', 'rb')).fileno()
-                      for name in NAMESPACES}
-        payload = {'namespaces': namespaces,
-                   'descriptors': {str(fd): fd_identity(fd) for fd in delegated_fds}}
-        encoded = json.dumps(payload).encode()
-        if len(encoded) > 4096:
-            raise IsolationError('too many delegated descriptors')
-        reader, writer = os.pipe2(os.O_CLOEXEC)
-        stack.callback(os.close, reader)
-        try:
-            os.write(writer, encoded)
-        finally:
-            os.close(writer)
-        yield reader, tuple(namespaces.values())
+        # A SET PER ENTRY, NOT ONE SHARED. Validation closes the namespace
+        # descriptors it was given, so entries sharing a set would leave the
+        # second validating against descriptors the first had already closed.
+        entries = []
+        for _ in range(len(relayed) + 1):
+            reader, writer = os.pipe2(os.O_CLOEXEC)
+            stack.callback(os.close, reader)
+            entries.append((reader, writer,
+                            {name: stack.enter_context(open(f'/proc/self/ns/{name}', 'rb')).fileno()
+                             for name in NAMESPACES}))
+        readers = tuple(reader for reader, _, _ in entries)
+        # The first entry's own activation pipe and namespace descriptors are
+        # consumed by its validation, so they are not among the descriptors it
+        # is told it holds. Everything meant for a later entry is, because its
+        # scan refuses an inherited descriptor it was not told about.
+        carried = (tuple(delegated_fds) + readers[1:]
+                   + tuple(fd for group in relayed for fd in group)
+                   + tuple(fd for _, _, held in entries[1:] for fd in held.values()))
+        for (_, writer, namespaces), granted in zip(entries, (carried, *relayed)):
+            payload = {'namespaces': namespaces,
+                       'descriptors': {str(fd): fd_identity(fd) for fd in granted}}
+            encoded = json.dumps(payload).encode()
+            if len(encoded) > 4096:
+                raise IsolationError('too many delegated descriptors')
+            try:
+                os.write(writer, encoded)
+            finally:
+                os.close(writer)
+        # What each relayed entry must inherit to validate and work: its own
+        # activation pipe, the namespace descriptors that prove its crossing,
+        # and the capabilities it was granted. The first entry passes exactly
+        # this on, rather than guessing from what it holds.
+        inheritance = tuple((reader, *held.values(), *group)
+                            for (reader, _, held), group in zip(entries[1:], relayed))
+        yield (readers, tuple(fd for _, _, held in entries for fd in held.values()),
+               carried, inheritance)
 
 
 def _validate_mount(mount):
@@ -84,11 +115,15 @@ def _validate_mount(mount):
     return source
 
 
-def command(bwrap, argv, mounts, activation_fd):
+def command(bwrap, argv, mounts, activation_fds, relayed_fds=()):
     """Build a confined command; use launch() to enforce FD/environment hygiene.
 
     The literal argument {activation_fd} is replaced with the runner-owned pipe.
     Inner Python entrypoints must validate_entry(int(argument)) before doing work.
+    A relayed activation is named {activation_fd_2}, {activation_fd_3} and so
+    on, in the order it was requested; the entry passes one to the process it
+    starts rather than validating it, along with every descriptor named by the
+    matching {relayed_fds_2}, which that process must inherit exactly.
     """
     if not argv or not Path(argv[0]).is_absolute():
         raise IsolationError('inner executable must be absolute')
@@ -114,16 +149,28 @@ def command(bwrap, argv, mounts, activation_fd):
         result += ['--bind' if mount.writable else '--ro-bind', str(source), str(destination)]
     for name, value in ENVIRONMENT.items():
         result += ['--setenv', name, value]
-    return result + ['--'] + [str(activation_fd) if arg == '{activation_fd}' else str(arg)
-                             for arg in argv]
+    activation_fds = ((activation_fds,) if isinstance(activation_fds, int)
+                      else tuple(activation_fds))
+    named = {'{activation_fd}': str(activation_fds[0])}
+    for position, fd in enumerate(activation_fds[1:], start=2):
+        named[f'{{activation_fd_{position}}}'] = str(fd)
+    for position, group in enumerate(relayed_fds, start=2):
+        named[f'{{relayed_fds_{position}}}'] = ','.join(str(fd) for fd in group)
+    return result + ['--'] + [named.get(str(arg), str(arg)) for arg in argv]
 
 
-def launch(argv, *, mounts=(), delegated_fds=(), timeout=30, bwrap=None):
+def launch(argv, *, mounts=(), delegated_fds=(), timeout=30, bwrap=None,
+           relayed_activations=()):
     """Run an owned private process group with exact descriptor inheritance.
 
     Returns CompletedProcess (124 on absolute timeout). No subprocess stdin or
     ambient sockets are inherited. Delegated descriptors are intentional runner
     capabilities, and are kept open after entry validation for its caller.
+
+    `relayed_activations` is one tuple of descriptors per additional entry the
+    inner process will start beside itself, in the same namespaces. Each gets
+    its own activation pipe describing this crossing and naming only those
+    descriptors, so it validates its own entry rather than being vouched for.
     """
     if not 0 < timeout <= 1800:
         raise IsolationError('timeout must be in (0, 1800]')
@@ -131,13 +178,15 @@ def launch(argv, *, mounts=(), delegated_fds=(), timeout=30, bwrap=None):
     if not bwrap:
         raise IsolationError('BLOCKED: bubblewrap is unavailable')
     delegated_fds = tuple(delegated_fds)
-    if len(set(delegated_fds)) != len(delegated_fds) or any(fd < 3 for fd in delegated_fds):
+    relayed = tuple(tuple(group) for group in relayed_activations)
+    crossing = delegated_fds + tuple(fd for group in relayed for fd in group)
+    if len(set(crossing)) != len(crossing) or any(fd < 3 for fd in crossing):
         raise IsolationError('delegated descriptors must be unique and above stderr')
-    with _activation(delegated_fds) as (reader, namespace_fds):
-        arguments = command(bwrap, argv, mounts, reader)
+    with _activation(delegated_fds, relayed) as (readers, namespace_fds, _carried, inheritance):
+        arguments = command(bwrap, argv, mounts, readers, inheritance)
         with subprocess.Popen(arguments, env=ENVIRONMENT, stdin=subprocess.DEVNULL,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              close_fds=True, pass_fds=(reader, *namespace_fds, *delegated_fds),
+                              close_fds=True, pass_fds=(*readers, *namespace_fds, *crossing),
                               start_new_session=True) as process:
             try:
                 stdout, stderr = process.communicate(timeout=timeout)

@@ -65,11 +65,11 @@ class ContractTests(unittest.TestCase):
             isolation.validate_entry(-1)
 
     def test_actual_namespace_descriptors_do_not_authorize_direct_entry(self):
-        with isolation._activation(()) as (reader, namespace_fds):
+        with isolation._activation((), ()) as (readers, namespace_fds, _carried, _relayed):
             result = subprocess.run(
-                ['/usr/bin/python3', '-B', str(HERE / 'isolation_probe.py'), str(reader)],
+                ['/usr/bin/python3', '-B', str(HERE / 'isolation_probe.py'), str(readers[0])],
                 env=isolation.ENVIRONMENT, stdin=subprocess.DEVNULL,
-                capture_output=True, pass_fds=(reader, *namespace_fds), timeout=5)
+                capture_output=True, pass_fds=(*readers, *namespace_fds), timeout=5)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(b'every required namespace', result.stderr)
 
@@ -175,6 +175,43 @@ class RealIsolationTests(unittest.TestCase):
             report = self.invoke('--delegated', str(writer.fileno()),
                                  delegated_fds=(writer.fileno(),))
             self.assertTrue(report['delegated'])
+            self.assertEqual(reader.recv(100), b'authorized instance capability')
+        finally:
+            reader.close()
+            writer.close()
+
+    def test_relayed_activation_starts_a_second_validated_entry(self):
+        # The entry that crosses is not always the one that needs the socket.
+        # A relayed activation lets the first entry start a second beside it,
+        # in the same namespaces, which validates its own crossing and is told
+        # only about its own capability.
+        reader, writer = socket.socketpair()
+        try:
+            reader.settimeout(1)
+            relayed = writer.fileno()
+            code = ('import json, os, subprocess, sys\n'
+                    "sys.path.insert(0, '/work/iso')\n"
+                    'from isolation import validate_entry\n'
+                    'held = validate_entry(int(sys.argv[1]))\n'
+                    'second, capability = int(sys.argv[2]), int(sys.argv[4])\n'
+                    "inherited = tuple(int(fd) for fd in sys.argv[3].split(','))\n"
+                    'assert {second, capability} <= held, sorted(held)\n'
+                    'assert set(inherited) <= held, (sorted(inherited), sorted(held))\n'
+                    "run = subprocess.run(['/usr/bin/python3', '-B',\n"
+                    "    '/work/iso/isolation_probe.py', str(second),\n"
+                    "    '--delegated', str(capability)], env=dict(os.environ),\n"
+                    '    stdin=subprocess.DEVNULL, capture_output=True,\n'
+                    '    pass_fds=inherited, timeout=10)\n'
+                    "print(json.dumps({'second': run.returncode,\n"
+                    "    'reason': run.stderr.decode()[-200:]}))\n")
+            result = isolation.launch(
+                ['/usr/bin/python3', '-B', '-c', code, '{activation_fd}',
+                 '{activation_fd_2}', '{relayed_fds_2}', str(relayed)],
+                mounts=[isolation.Mount(HERE, '/work/iso')],
+                relayed_activations=((relayed,),), timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr[-400:])
+            report = json.loads(result.stdout)
+            self.assertEqual(report['second'], 0, report['reason'])
             self.assertEqual(reader.recv(100), b'authorized instance capability')
         finally:
             reader.close()
