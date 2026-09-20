@@ -19,9 +19,11 @@ The measurable exits for this architecture plan are:
    review below: there is no sprawl today, there is an absence of the feature.)
 2. **Clean Container Command Lines:** Confined application launch command lines remain identical across sandboxes, requiring exactly one standardized directory bind-mount.
 3. **Hard Path Exclusion:** Confined applications are physically blocked from reaching or connecting to the main trusted socket path on the host.
-4. **Copy and paste between namespaces works through the portal.** A
-   portal-granted PRIMARY transfer completes across two listeners, proven by a
-   test that today does not exist -- every cross-namespace test proves refusal.
+4. **Copy and paste between namespaces works through the portal, for PRIMARY
+   as well as CLIPBOARD.** The CLIPBOARD round trip was already proven over two
+   sockets by `cross_namespace_executor_installs_property_and_notifies_requestor`;
+   PRIMARY was the gap, and the one branch that distinguishes them is the
+   selection-name guard in `src/runtime/clipboard.rs`. Both are covered now.
 
 ## Task details
 
@@ -131,15 +133,15 @@ above every one ever used.
    contract as "one directory, mounted at `/tmp/.X11-unix` inside the
    sandbox, containing only that group's socket"; bwrap and unshare both
    satisfy it. Do not name bwrap in the contract.
-2. **Prove a portal-granted transfer works across two listeners.** Every
-   cross-namespace test in `tests/x11_wire/admission_frontend.rs` proves
-   refusal (`..._reject_cross_namespace_window_property_and_selection_access`).
-   Add its counterpart: two clients on two listeners, a PRIMARY transfer
-   granted by the clipboard portal, the bytes arrive. Without this, shipping
-   confined groups makes paste between sandboxes fail silently -- the exact
-   class of bug t124 is. This is a real gap in the existing product, not just
-   in this plan, and it can be written today against `clipboard.rs`'s
-   `CrossNamespace` branch.
+2. **Prove the portal-granted transfer for PRIMARY.** The review first said
+   every cross-namespace test proves refusal; that was wrong.
+   `tests/x11_wire/clipboard_frontend.rs` already drove two sockets on one
+   frontend through a real portal broker to a requestor that reads the bytes
+   -- for CLIPBOARD. PRIMARY is what xterm's mouse selection uses, and the
+   only branch that differs is the selection-name guard at
+   `src/runtime/clipboard.rs:176`, so the body is parametrised over the
+   selection and both are covered. Done; without it, shipping confined groups
+   would have let paste between sandboxes fail silently -- t124's class.
 
 ### Phase 1 -- t141: socket directories and path exclusion (Tier 1)
 
@@ -236,11 +238,11 @@ selection works today partly because a display is one namespace: two X clients
 on one socket always share one, so the clipboard portal is never on the path.
 Per-namespace listeners make cross-namespace the ordinary case -- a confined
 browser copying to a trusted editor is precisely two namespaces -- so the
-`SameNamespace`, `UnknownRequestorNamespace` and `Portal` branches in
-`clipboard.rs` become live for the first time, and the portal becomes load
-bearing for ordinary copy and paste rather than an unexercised path. That is
-what the portal is for; the point is that it moves from untested to
-essential, and t124's evidence does not cover it.
+`CrossNamespace` branch in `clipboard.rs` becomes the everyday path rather
+than the exception, and the portal becomes load bearing for ordinary copy and
+paste. That is what the portal is for. It is proven over two sockets for
+CLIPBOARD and, as of the PRIMARY test, for PRIMARY -- what t124's evidence
+covers is the same-display case, which is the other one.
 
 ## Connections
 

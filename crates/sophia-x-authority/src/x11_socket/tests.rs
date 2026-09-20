@@ -1291,6 +1291,7 @@ include!("tests/private_worker_attachment.rs");
 include!("tests/private_worker_attachment_exits.rs");
 include!("tests/private_failed_retention.rs");
 include!("tests/private_deferred_cleanup.rs");
+include!("tests/private_idle_reclaim.rs");
 include!("tests/private_deferred_cleanup_service.rs");
 #[path = "../../tests/support/private_exclusive_bind.rs"]
 mod private_exclusive_bind;

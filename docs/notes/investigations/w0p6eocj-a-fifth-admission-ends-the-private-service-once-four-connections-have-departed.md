@@ -2,7 +2,7 @@
 id: w0p6eocj
 date: 2026-09-20
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation]
 ---
 # A fifth admission ends the private service once four connections have departed
@@ -306,12 +306,62 @@ with no join. The control now reads handle-or-reaped, the same rewrite
 `d_worker_exit` took. 0 failures in 40 single-threaded runs after, against
 1 in 10 before.
 
+## The custody layer, closed -- and "a build, not a patch" corrected
+
+I recorded the evidence custody as "not addressable during the run at all",
+because its retirement lives on `PrivateRetainedExecutionResources`, a type
+built only after the invocation ends. That was read off the impl block, not
+the function. `retire_completed_custody` is an associated function that reads
+nothing of `self`; the retained type was only its namespace. Its per-custody
+prerequisites -- the seven checks in `completed_custody_evidence` -- all hold
+during the run once the idle window has reaped the worker, discharged the
+deferred cleanup and driven the continuation home. Only two gates were
+invocation-wide, and both prove facts about the invocation rather than the
+custody: `witness.completed`, and `control_completion().outstanding() ==
+Some(0)`.
+
+The second of those protects something real. Control cleanup pairs each
+unanswered control record with its connection's custody slot, so a custody
+must outlive its own client's unanswered records. It does not need to outlive
+anybody else's, which is what the instance-wide count could not say. The live
+path asks per client instead -- a new pure query, `outstanding_for(client)`,
+beside `outstanding()`, since `reconcile_client` walks the same records and
+may abandon one, which is right on a teardown path and wrong on every idle
+turn.
+
+So the idle window now ends with the custody: reap, discharge, drive the
+continuation, retire -- each step leaving what the next needs, no turn
+looping to force the four for one connection. The per-custody body is
+factored out of `retire_completed_custody` and shared by both callers, and
+it locates the custody by pointer under the inventory lock rather than taking
+an index. That closed a trap the first live caller fell into: a custody's
+`identity().index` is its place in the CONTINUATION store, and the custody
+INVENTORY is a different table with its own indices; the invocation-end visit
+never noticed because it walks the inventory with its own cursor. The count
+is `saturating_sub` now, as `release_unexposed` already was, since two
+retirement paths must not be able to underflow it into a panic.
+
+**Measured, ten rounds on one instance admitting four: every round connects
+and is answered, `failure None`, and `workers Some([])` -- every departed
+worker collected during the run.** The fifth admission is served. That run is
+now a permanent regression test,
+`departures_are_reclaimed_during_the_run_and_the_instance_keeps_admitting`
+in `sophia-session`'s `xtest_acceptance.rs`, not an M5 group: M5's inventory
+is the plan's eight XTEST obligations and reclaim is not one. It fails without
+the custody retirement.
+
+The unit control for the custody pins the two refusals the worker fixture can
+stage -- nothing retired while a frame is active, and nothing retired for a
+discharged custody whose continuation never settled -- and says why the
+positive half is not there: that fixture stops the worker but never ends the
+wire, so the place is never returned and `storage_returned` stays false,
+which is exactly the state in which retiring would be wrong.
+
 ## Remaining work
 
-- [ ] Reclaim the evidence custody during the run. Needs a live receiver for
-      the completion visit; today it is only on the retained resources. This
-      is what stands between a long-lived instance and admitting its
-      `max_concurrent_clients + 1`th connection.
+- [x] Reclaim the evidence custody during the run. Done, as above; the
+      "needs a live receiver" reading was wrong, the retirement never read
+      one.
 - [ ] Do not widen the collection token to the other paths that take it.
       Eight of nine need the quiesce; the idle window is how this change
       avoided the question, and the next one should avoid it the same way.

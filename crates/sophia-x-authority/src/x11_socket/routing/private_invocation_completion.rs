@@ -192,7 +192,7 @@ impl PrivateRetainedExecutionResources {
                 .lock()
                 .map_err(|_| Refusal::StoreUnreadable)?,
         );
-        let (index, custody) = {
+        let custody = {
             let kept = service
                 .owner
                 .inventory
@@ -204,7 +204,9 @@ impl PrivateRetainedExecutionResources {
             }
             let index = cursor.custody % kept.places.len();
             cursor.custody = (index + 1) % kept.places.len();
-            (index, kept.places[index].as_ref().cloned())
+            // The index served the cursor above; the retirement finds the
+            // custody by pointer, not by a number handed across.
+            kept.places[index].as_ref().cloned()
         };
         let Some(custody) = custody else {
             return Ok(PrivateTerminalVisit::CustodyRetired { retired: false });
@@ -212,7 +214,43 @@ impl PrivateRetainedExecutionResources {
         if !custody.cleanup_record().published_by(origin) {
             return Ok(PrivateTerminalVisit::OtherInvocation);
         }
-        Self::completed_custody_evidence(&custody, collected)?;
+        Self::retire_one_completed_custody(&custody, collected, service)?;
+        Ok(PrivateTerminalVisit::CustodyRetired { retired: true })
+    }
+
+    /// Retire ONE custody whose work is proved complete: take its place back
+    /// and let its evidence lose its last owner.
+    ///
+    /// THE PER-CUSTODY BODY, SHARED BY TWO CALLERS. The invocation-end visit
+    /// above reaches it behind two instance-wide gates -- the invocation
+    /// completed, and no control record outstanding anywhere -- and a cursor.
+    /// The idle-window reclaim reaches it during the run with neither: the
+    /// seven checks in `completed_custody_evidence` are per-custody and are
+    /// the whole of what retiring this one custody needs, and the one thing
+    /// the instance-wide control gate was protecting -- that a custody must
+    /// outlive its client's unanswered control records, since control cleanup
+    /// pairs each record with its connection's slot -- the live caller asks
+    /// per client instead. Neither caller reads anything of the retained
+    /// resources; this was never a method and the retained type was only its
+    /// namespace.
+    ///
+    /// THE PLACE IS FOUND BY THE CUSTODY, NOT NAMED BY A CALLER. Between the
+    /// evidence and the take the aggregate is released and a place can have
+    /// moved on to a successor, so the take was always guarded by
+    /// `Arc::ptr_eq`; locating by the same pointer under the same lock makes
+    /// that guard the lookup. It also closes a trap the first live caller
+    /// fell into: a custody carries a place index in the CONTINUATION store
+    /// (`identity().index`), and the custody INVENTORY is a different table
+    /// with its own indices. Handing an index across was handing the wrong
+    /// one, and the only reason the invocation-end visit never noticed is
+    /// that it walks the inventory with its own cursor.
+    fn retire_one_completed_custody(
+        custody: &Arc<PrivateEvidenceCustody>,
+        collected: Option<&PrivateConnectionsCollected>,
+        service: &PrivateServiceLease<'_>,
+    ) -> Result<(), PrivateTerminalDriveRefusal> {
+        use PrivateTerminalDriveRefusal as Refusal;
+        Self::completed_custody_evidence(custody, collected)?;
         let removed = {
             let mut kept = service
                 .owner
@@ -220,22 +258,24 @@ impl PrivateRetainedExecutionResources {
                 .kept
                 .lock()
                 .map_err(|_| Refusal::StoreUnreadable)?;
-            if !kept
+            let Some(index) = kept
                 .places
-                .get(index)
-                .and_then(Option::as_ref)
-                .is_some_and(|other| Arc::ptr_eq(other, &custody))
-            {
+                .iter()
+                .position(|place| place.as_ref().is_some_and(|other| Arc::ptr_eq(other, custody)))
+            else {
                 return Err(Refusal::RecipientUnavailable);
-            }
+            };
             let removed = kept.places[index].take();
-            kept.taken -= 1;
+            // Saturating, as `release_unexposed` already is: there are two
+            // retirement paths now, and a count that can underflow would turn
+            // a double retirement into a panic instead of a skewed number.
+            kept.taken = kept.taken.saturating_sub(1);
             removed
         };
         // No aggregate guard is held while source payloads or join evidence
         // lose their last owner. Reader-held Arc pins may intentionally remain.
         drop(removed);
-        Ok(PrivateTerminalVisit::CustodyRetired { retired: true })
+        Ok(())
     }
 
     fn completed_custody_evidence(

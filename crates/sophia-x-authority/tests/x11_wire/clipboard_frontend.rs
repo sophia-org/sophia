@@ -1,6 +1,15 @@
+/// The cross-namespace transfer, granted by the portal, over two real sockets
+/// on one frontend: the requestor reads the bytes back.
+///
+/// ONE BODY FOR BOTH SELECTIONS. CLIPBOARD and PRIMARY take the same path
+/// through the portal; the only branch that tells them apart is the
+/// selection-name guard in `runtime/clipboard.rs`, which admits exactly
+/// those two names. PRIMARY is what a mouse selection in xterm takes, and it
+/// was the one with no witness -- the t124 report was a PRIMARY transfer --
+/// so the body is parametrised rather than copied, and each name gets its
+/// own test below.
 #[cfg(unix)]
-#[test]
-fn cross_namespace_executor_installs_property_and_notifies_requestor() {
+fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selection_name: &str) {
     use std::io::Write;
     use std::net::Shutdown;
     use std::num::NonZeroUsize;
@@ -159,7 +168,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
         .write_all(&intern_atom_request(
             XByteOrder::LittleEndian,
             false,
-            "CLIPBOARD",
+            selection_name,
         ))
         .unwrap();
     let selection = read_u32(XByteOrder::LittleEndian, &read_x_record(&mut owner)[8..12]);
@@ -373,6 +382,20 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor() {
 }
 
 #[cfg(unix)]
+#[cfg(unix)]
+#[test]
+fn cross_namespace_executor_installs_property_and_notifies_requestor() {
+    cross_namespace_executor_installs_property_and_notifies_requestor_for("CLIPBOARD");
+}
+
+/// PRIMARY is predefined atom 1, so interning it by name returns the
+/// predefined atom and the guard sees "PRIMARY" with nothing new in the table.
+#[cfg(unix)]
+#[test]
+fn cross_namespace_executor_transfers_primary_and_notifies_requestor() {
+    cross_namespace_executor_installs_property_and_notifies_requestor_for("PRIMARY");
+}
+
 #[test]
 fn x_server_frontend_assigns_distinct_connection_identities() {
     use std::io::Write;

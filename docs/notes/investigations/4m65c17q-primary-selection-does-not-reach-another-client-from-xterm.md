@@ -66,6 +66,11 @@ So the earlier note was wrong to say nothing in the gates exercises a
 cross-client selection transfer. What is missing is a *real-client* smoke,
 which is a different thing and still missing.
 
+The cross-*display* counterpart -- two namespaces, the transfer granted by
+the clipboard portal -- is proven as well, in
+`tests/x11_wire/clipboard_frontend.rs`, for CLIPBOARD and, since this was
+written, for PRIMARY.
+
 **CUT_BUFFER0 works too, and is now covered.** Added
 `cut_buffer_zero_on_the_root_is_readable_by_another_client`
 (`tests/x11_wire/selection_cut_buffer.rs`): one client writes the buffer on

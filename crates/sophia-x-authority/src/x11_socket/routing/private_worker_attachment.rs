@@ -448,6 +448,45 @@ fn reclaim_idle_departures(
             progressed += 1;
         }
     }
+    // THEN THE PLACE, which is what the discharge hands to the continuation
+    // store, and only a settled continuation gives it back.
+    progressed += registry.drive_departed_continuations();
+    // AND LAST THE CUSTODY, because it is the last thing a departed connection
+    // holds and the only thing the admission after it runs out of once the
+    // place has come back. Each step above leaves what the next one needs --
+    // the join for the discharge, the discharge's commitment and the returned
+    // place for the evidence -- and one turn may not finish all four for one
+    // connection. The next idle turn continues; nothing here loops to force
+    // it.
+    //
+    // WITHOUT THE INSTANCE-WIDE GATES, AND WITH THE ONE THING THEY PROTECTED.
+    // The invocation-end visit retires a custody only once the invocation has
+    // completed and no control record is outstanding anywhere. Neither is a
+    // fact about this custody. What the control gate was protecting is real:
+    // control cleanup pairs each record with its connection's custody slot,
+    // so a custody must outlive its OWN client's unanswered records. So that is
+    // what is asked, per client, and nothing about anybody else's.
+    let controls = registry.control_completion();
+    for pin in service.custodies_of(registry) {
+        let client = pin.cleanup_record().client;
+        if controls
+            .as_ref()
+            .and_then(|controls| controls.outstanding_for(client))
+            != Some(0)
+        {
+            continue;
+        }
+        let custody = Arc::clone(&pin.custody);
+        if PrivateRetainedExecutionResources::retire_one_completed_custody(
+            &custody,
+            Some(&collected),
+            service,
+        )
+        .is_ok()
+        {
+            progressed += 1;
+        }
+    }
     progressed
 }
 

@@ -502,6 +502,27 @@ impl ControlCompletionRegistry {
         self.inner.lock().ok().map(|inner| inner.records.len())
     }
 
+    /// How many of those belong to one client, or `None` if the registry
+    /// could not be read.
+    ///
+    /// A COUNT AND NOTHING ELSE. `reconcile_client` walks the same records
+    /// and may abandon one on the way, which is right on a teardown path and
+    /// wrong for a question asked on every idle turn; this reads and touches
+    /// nothing. It exists so a departed connection's evidence custody can be
+    /// retired during the run: control cleanup pairs each record with its
+    /// connection's custody slot, so a custody must outlive its own client's
+    /// unanswered records -- and no other client's, which is what the
+    /// instance-wide count could not say.
+    pub fn outstanding_for(&self, client: XServerFrontendClientId) -> Option<usize> {
+        self.inner.lock().ok().map(|inner| {
+            inner
+                .records
+                .iter()
+                .filter(|held| held.phase.client() == client)
+                .count()
+        })
+    }
+
     /// How many are holding an acknowledgement that could not be published,
     /// or `None` if the registry could not be read.
     pub fn owed(&self) -> Option<usize> {
