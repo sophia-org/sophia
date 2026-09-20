@@ -332,8 +332,12 @@ hold whole: thirty-eight.
 - [ ] t139: decide between witnessing the construction, refusing at the
       adapter, and building the authority's recognition; then bind
       `native_protected_action`.
-- [ ] Decisions for Mason: the plan's rank list against the code's; the
-      executor-order split; the key-over-another-surface route refusal.
+- [x] Decided 2026-09-20 with Mason: the selected rank is the code's, and
+      the plan's paragraph is corrected to it; `native_executor_order` is
+      reworded to the producers that exist and bound to six tests; t139
+      closes by refusing the chord at the adapter and witnessing the
+      construction. The key-over-another-surface route refusal is the
+      lane's row.
 - [ ] The stale `allow(dead_code)` and "not attached yet" comments along
       the ordered writer chain: one sweep, after t138 lands.
 
