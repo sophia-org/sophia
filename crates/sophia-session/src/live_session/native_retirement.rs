@@ -1,5 +1,28 @@
 use super::*;
 
+/// Records each retired Present the Engine refused to apply. The screen shows
+/// that candidate while the committed set does not, which is the state a
+/// reader needs named when the next frame looks wrong.
+pub(super) fn record_discarded_presents(
+    discarded: &[sophia_backend_live::LiveProductionDiscardedPresent],
+) {
+    for present in discarded {
+        let outcome = match present.outcome {
+            sophia_protocol::TransactionOutcome::RejectedStaleSurface => "stale_surface",
+            sophia_protocol::TransactionOutcome::RejectedInvalidSurface => "invalid_surface",
+            sophia_protocol::TransactionOutcome::TimedOut => "timed_out",
+            sophia_protocol::TransactionOutcome::Committed => "committed",
+        };
+        crate::session_println!(
+            "sophia_live_session_present schema=5 status=discarded transaction={} surface={} outcome={outcome} baseline_generation={} current_generation={}",
+            present.transaction.raw(),
+            present.surface.index(),
+            present.baseline_generation,
+            present.current_generation,
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct NativePresentRetirementObservation {
     pub surface: SurfaceId,

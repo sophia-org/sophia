@@ -255,7 +255,6 @@ impl LiveProductionVisualRuntime {
                 ))
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
-        let border_candidate = prepared.candidate().to_vec();
         // Sources are read from the scene against the candidate this Present plans,
         // never from a set captured when it was enqueued. A Present held behind a
         // layout epoch plans a scene that moved on while it waited.
@@ -281,7 +280,6 @@ impl LiveProductionVisualRuntime {
                     .and_then(|displayed| self.displayed_direct_frame(displayed.layer.image_id))
             },
         )?;
-        self.record_focus_ring_observation(&border_candidate, false)?;
         let mut output_head_frames = output_display_lists
             .into_iter()
             .map(|(output, output_display_list)| {
@@ -320,6 +318,13 @@ impl LiveProductionVisualRuntime {
                 image = current_layer.image_id.raw(),
                 "skipped Present absent from lowered physical head frames"
             );
+            // The clearing repaint reaches the heads, so its chrome is observed
+            // as the Present turn's view of the scene.
+            self.record_focus_ring_observation(
+                prepared.candidate(),
+                LiveChromeObservationSource::Present,
+                false,
+            )?;
             native_scanout.queue_retained_output_head_composition_frames(output_head_frames)?;
             self.skip_unpresentable(
                 transaction,
@@ -368,6 +373,14 @@ impl LiveProductionVisualRuntime {
             }));
         }
         let output_count = self.outputs.output_count();
+        // Chrome is observed only for frames that reach a head. A Present
+        // deferred or rejected above composed nothing the screen will show, and
+        // recording it would seed a pair of generations no scanout produced.
+        self.record_focus_ring_observation(
+            prepared.candidate(),
+            LiveChromeObservationSource::Present,
+            false,
+        )?;
         let frames = native_scanout
             .queue_present_output_head_composition_frames(transaction, output_head_frames)?;
         self.present_scheduler.pop_front();

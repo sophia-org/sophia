@@ -893,6 +893,15 @@ impl LiveProductionVisualRuntime {
         let msc = clock.msc;
         let outputs = submitted.frames().map(|(output, _)| output).collect();
         let direct = retirement.direct;
+        // Read before the settlement consumes the prepared commit: if the
+        // Engine refuses the candidate, this and the current generation are
+        // what say whether an intake landed between prepare and retire.
+        let baseline_generation = submitted
+            .prepared
+            .baseline()
+            .iter()
+            .find(|state| state.surface == submitted.surface)
+            .map_or(0, |state| state.committed_generation);
         let (production, presentation_feedback) =
             (&mut self.production, &mut self.presentation_feedback);
         let mut completion = production
@@ -940,6 +949,27 @@ impl LiveProductionVisualRuntime {
             // was promoted; eviction of an image no exporter staged is a
             // no-op, so this is stated rather than branched.
             native_scanout.evict_renderer_image(submitted.displayed_layer.image_id)?;
+            // The flip showed this candidate and the Engine kept the older
+            // state, so the screen and the committed set now disagree until the
+            // surface's next Present lands. The session reads that from its
+            // service report; the warn alone left the frame that follows
+            // unexplained.
+            if self.discarded_presents.len() < DISCARDED_PRESENT_CAPACITY {
+                let current_generation = self
+                    .production
+                    .committed_surfaces()
+                    .iter()
+                    .find(|state| state.surface == submitted.surface)
+                    .map_or(0, |state| state.committed_generation);
+                self.discarded_presents
+                    .push(crate::LiveProductionDiscardedPresent {
+                        transaction: submitted.transaction,
+                        surface: submitted.surface,
+                        outcome: completion.commit.outcome,
+                        baseline_generation,
+                        current_generation,
+                    });
+            }
             tracing::warn!(
                 transaction = completion.commit.transaction.raw(),
                 outcome = ?completion.commit.outcome,

@@ -396,6 +396,8 @@ fn interaction_records_distinguish_delivery_rejection_and_chrome_without_payload
         "sophia_live_explicit_pointer_grab schema=1 deferred=2 cancelled=1",
         "sophia_live_explicit_pointer_grab schema=1 prepared=1 activated=1 released=0 aborted=0 rejected=2",
         "sophia_live_compositor_chrome_set schema=1 status=composed generation=42 eligible_surfaces=2 frames=2 focused_frames=1 unfocused_frames=1 focus_rings=1 primitives=3 clearance=2",
+        "sophia_live_compositor_chrome_frame schema=1 generation=42 source=present in_flight=true surface=7 x=-8 y=33 width=1266 height=694 focused=true",
+        "sophia_live_session_present schema=5 status=discarded transaction=42 surface=7 outcome=stale_surface baseline_generation=3 current_generation=4",
         "sophia_live_session_present_feedback schema=1 kind=complete transaction=42 routed=true ust=234569038838 msc=19564390",
         "sophia_live_session_present_feedback schema=1 kind=idle transaction=42 routed=true",
     ];
@@ -432,6 +434,8 @@ fn interaction_vocabulary_is_scoped_and_rejects_unbounded_values() {
         "sophia_live_explicit_pointer_grab prepared=secret status=secret reason=secret",
         "sophia_live_session_pointer status=secret reason=secret",
         "sophia_live_compositor_chrome_set frames=18446744073709551616",
+        "sophia_live_compositor_chrome_frame source=secret x=secret y=1.5 focused=maybe",
+        "sophia_live_session_present status=secret outcome=secret",
     ] {
         assert_eq!(
             reduced_record(record).as_deref(),

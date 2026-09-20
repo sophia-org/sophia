@@ -898,6 +898,7 @@
                             native_frame_idle_service_cycles = 0;
                         }
                     }
+                    record_discarded_presents(&service.discarded_presents);
                     if let Some(retired) = service.retired_present {
                         let NativePresentRetirementObservation {
                             surface,

@@ -201,6 +201,53 @@ pub struct LiveChromeSetObservation {
     pub clearance: i32,
 }
 
+/// Which production path composed the chrome an observation belongs to.
+///
+/// The Present turn, the CPU production turn and the cadence repaint each
+/// build a display list. Naming the path is what lets a reader tell "two
+/// turns disagree about one frame" from "one frame moved".
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveChromeObservationSource {
+    Present,
+    Production,
+    Repaint,
+}
+
+impl LiveChromeObservationSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Present => "present",
+            Self::Production => "production",
+            Self::Repaint => "repaint",
+        }
+    }
+}
+
+/// One framed surface as the chrome set that produced `generation` drew it.
+///
+/// The chrome-set record carries only a hash, so two alternating generations
+/// name nothing. These companions name the frame and the geometry it hugged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveChromeFrameObservation {
+    pub generation: u64,
+    pub source: LiveChromeObservationSource,
+    /// Whether a Present owned the scanout when this chrome was composed.
+    pub in_flight: bool,
+    pub surface: SurfaceId,
+    /// The frame's inner rectangle: the surface geometry the border hugs.
+    pub geometry: Rect,
+    pub focused: bool,
+}
+
+/// Companions kept between authority turns. The printer drains them once a
+/// turn; a flood beyond this is dropped, and the set record still names it.
+pub(crate) const CHROME_FRAME_OBSERVATION_CAPACITY: usize = 64;
+/// Every chrome-set change up to this many is spelled out per frame; later
+/// ones only on powers of two, the pacing the Present defer report uses.
+pub(crate) const CHROME_SET_CHANGE_DETAIL_LIMIT: u64 = 16;
+/// Discarded retirements kept for the next native service report.
+pub(crate) const DISCARDED_PRESENT_CAPACITY: usize = 32;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveFloatingOutline {
     pub surface: SurfaceId,
@@ -352,6 +399,15 @@ pub struct LiveProductionVisualRuntime {
     last_focus_ring_observation: Option<LiveFocusRingObservation>,
     pending_chrome_set_observation: Option<LiveChromeSetObservation>,
     last_chrome_set_observation: Option<LiveChromeSetObservation>,
+    /// Per-frame companions of chrome-set changes not yet printed. Bounded by
+    /// `CHROME_FRAME_OBSERVATION_CAPACITY`.
+    pending_chrome_frame_observations: Vec<LiveChromeFrameObservation>,
+    /// Chrome-set changes seen so far, which paces the companions.
+    chrome_set_changes: u64,
+    /// Retired Presents whose Engine candidate was not applied, waiting for
+    /// the native service report to carry them out. Bounded; the overflow is
+    /// already counted by `present_rejections`.
+    discarded_presents: Vec<crate::LiveProductionDiscardedPresent>,
     present_feedback: VecDeque<crate::LivePresentFeedbackOutcome>,
     present_feedback_overflowed: bool,
     /// Per output, the Present whose own buffer is on the screen right now.
@@ -481,6 +537,9 @@ impl LiveProductionVisualRuntime {
             last_focus_ring_observation: None,
             pending_chrome_set_observation: None,
             last_chrome_set_observation: None,
+            pending_chrome_frame_observations: Vec::new(),
+            chrome_set_changes: 0,
+            discarded_presents: Vec::new(),
             present_feedback: VecDeque::with_capacity(PRESENT_FEEDBACK_CAPACITY),
             present_feedback_overflowed: false,
             displayed_direct_presents: BTreeMap::new(),
@@ -781,11 +840,16 @@ impl LiveProductionVisualRuntime {
         let text_cache = &self.text_cache;
         let mut native_scanout = native_scanout;
         let create_native_frames = native_scanout.is_some();
+        // Native head frames are never composed from the committed set while a
+        // Present owns the scanout: the preservation rule above withheld the
+        // scanout. The chrome invariant below leans on this, so it is stated.
+        debug_assert!(!create_native_frames || !self.present_scheduler.has_in_flight());
         let primary_logical_target = std::cell::Cell::new(None);
         let primary_logical_target_ref = &primary_logical_target;
         let mut adapter = LiveProductionCpuCycleAdapter::new(
             scene,
             &self.presentation_order,
+            &self.chrome_surfaces,
             updates,
             raised_surface,
             focused_surface,
@@ -947,7 +1011,17 @@ impl LiveProductionVisualRuntime {
             }
         }
         if report.submission.composed {
-            self.record_focus_ring_observation(&report.committed_surfaces, false)?;
+            // Chrome follows what the heads show. While a Present owns the
+            // scanout its candidate is on screen, not the set this turn's
+            // intakes committed; observing the latter here and the former on
+            // the Present turn framed one stale surface in two places on
+            // alternate scanouts.
+            let displayed = self.displayed_surface_view().to_vec();
+            self.record_focus_ring_observation(
+                &displayed,
+                LiveChromeObservationSource::Production,
+                false,
+            )?;
         }
         // Native input advances only when retire_native_scanout_output
         // observes the corresponding accepted page flip.
@@ -1351,7 +1425,10 @@ impl LiveProductionVisualRuntime {
         output_descriptors: &[sophia_engine::HeadlessOutput],
         native_scanout: &mut LiveProductionNativeScanout,
     ) -> Result<LiveProductionCpuSubmission, Box<dyn std::error::Error>> {
-        let committed = self.production.committed_surfaces().to_vec();
+        // The same view the retained head frames below are planned from, so a
+        // repaint's software list, its chrome observation and its head frames
+        // cannot describe three different scenes.
+        let committed = self.displayed_surface_view().to_vec();
         let display_list = self.prepare_repaint(&committed, raised_surface, focused_surface)?;
         let output = output_descriptors
             .first()
@@ -1366,7 +1443,7 @@ impl LiveProductionVisualRuntime {
                 cursor_presentation.composition_position(),
             )?
             .clone();
-        self.record_focus_ring_observation(&committed, true)?;
+        self.record_focus_ring_observation(&committed, LiveChromeObservationSource::Repaint, true)?;
         let head_batches = self.retained_output_head_composition_frames(scene, native_scanout)?;
         let output_count = self.outputs.output_count();
         let primary_output = self.outputs.primary_output();

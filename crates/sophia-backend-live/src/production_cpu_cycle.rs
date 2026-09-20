@@ -1,7 +1,7 @@
 use crate::{LiveCpuBufferUpdate, LiveCpuCompositionReport, LiveProductionComposedFrame};
 use sophia_engine::{
     HeadlessOutput, ProductionPresentationAdapter, ProductionRetirement, SurfaceChromeStyle,
-    surface_chrome_display_list,
+    surface_chrome_display_list_for_surfaces,
 };
 use sophia_protocol::{CommittedSurfaceState, Point, SurfaceId, TransactionCommit};
 use sophia_renderer_live::{LiveCpuPresentationLayer, LiveProductionCpuScene};
@@ -31,6 +31,11 @@ pub struct LiveProductionCpuCycleSubmission<Tick> {
 pub struct LiveProductionCpuCycleAdapter<'scene, 'layout, Submit> {
     scene: &'scene mut LiveProductionCpuScene,
     presentation_order: &'layout [SurfaceId],
+    /// The surfaces the session authorised a frame for. The software frame
+    /// must frame the same set the head frames and the chrome observation
+    /// frame; framing every surface in the order put borders on popups no
+    /// head ever showed one on.
+    chrome_surfaces: &'layout [SurfaceId],
     updates: Option<Vec<LiveCpuBufferUpdate>>,
     raised_surface: Option<SurfaceId>,
     focused_surface: Option<SurfaceId>,
@@ -48,6 +53,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
     pub fn new(
         scene: &'scene mut LiveProductionCpuScene,
         presentation_order: &'layout [SurfaceId],
+        chrome_surfaces: &'layout [SurfaceId],
         updates: Vec<LiveCpuBufferUpdate>,
         raised_surface: Option<SurfaceId>,
         focused_surface: Option<SurfaceId>,
@@ -62,6 +68,7 @@ impl<'scene, 'layout, Submit> LiveProductionCpuCycleAdapter<'scene, 'layout, Sub
         Self {
             scene,
             presentation_order,
+            chrome_surfaces,
             updates: Some(updates),
             raised_surface,
             focused_surface,
@@ -122,9 +129,10 @@ where
                 .output_descriptors
                 .first()
                 .ok_or("software composition has no output descriptor")?;
-            let display_list = surface_chrome_display_list(
+            let display_list = surface_chrome_display_list_for_surfaces(
                 output.id,
                 &presentation_order,
+                self.chrome_surfaces,
                 committed,
                 self.focused_surface,
                 self.surface_chrome_style,

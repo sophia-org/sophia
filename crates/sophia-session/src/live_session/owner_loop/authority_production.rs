@@ -206,6 +206,20 @@
                         chrome.clearance,
                     );
                 }
+                for frame in runtime.take_chrome_frame_observations() {
+                    crate::session_println!(
+                        "sophia_live_compositor_chrome_frame schema=1 generation={} source={} in_flight={} surface={} x={} y={} width={} height={} focused={}",
+                        frame.generation,
+                        frame.source.as_str(),
+                        frame.in_flight,
+                        frame.surface.index(),
+                        frame.geometry.x,
+                        frame.geometry.y,
+                        frame.geometry.width,
+                        frame.geometry.height,
+                        frame.focused,
+                    );
+                }
                 // GPU preservation may defer a CPU turn the pacer admitted.
                 // Its retained damage still needs a later cadence repaint.
                 if cpu_cadence_eligible {

@@ -376,16 +376,24 @@ impl LiveProductionVisualRuntime {
         }
     }
 
+    /// What the heads are showing: the in-flight Present candidate while one
+    /// owns the scanout, else the committed set.
+    ///
+    /// Chrome and its observation derive from this and only this. A turn that
+    /// reads the raw committed set while a Present is in flight frames pixels
+    /// that are not on screen, and the turn after frames the ones that are.
+    pub(super) fn displayed_surface_view(&self) -> &[CommittedSurfaceState] {
+        self.present_scheduler
+            .in_flight_candidate()
+            .unwrap_or_else(|| self.production.committed_surfaces())
+    }
+
     pub(super) fn retained_composition_source_set(
         &self,
         scene: &LiveProductionCpuScene,
         in_flight_direct_transaction: Option<TransactionId>,
     ) -> Result<LiveProductionRetainedCompositionSourceSet, Box<dyn std::error::Error>> {
-        let committed = self
-            .present_scheduler
-            .in_flight_candidate()
-            .unwrap_or_else(|| self.production.committed_surfaces())
-            .to_vec();
+        let committed = self.displayed_surface_view().to_vec();
         let retained_order =
             live_production_retained_surface_order(&self.presentation_order, &committed);
         let display_lists = self
@@ -785,9 +793,13 @@ impl LiveProductionVisualRuntime {
         Ok(true)
     }
 
+    /// Observes the chrome one path composed from `committed_surfaces`, which
+    /// every caller takes from `displayed_surface_view` or, on the Present
+    /// turn, from the candidate about to become it.
     pub(super) fn record_focus_ring_observation(
         &mut self,
         committed_surfaces: &[CommittedSurfaceState],
+        source: LiveChromeObservationSource,
         force: bool,
     ) -> Result<(), CompositorDisplayListError> {
         let display_list = self.display_list(committed_surfaces, &self.presentation_order)?;
@@ -839,6 +851,35 @@ impl LiveProductionVisualRuntime {
         if self.last_chrome_set_observation != Some(observation) {
             self.last_chrome_set_observation = Some(observation);
             self.pending_chrome_set_observation = Some(observation);
+            self.chrome_set_changes = self.chrome_set_changes.saturating_add(1);
+            let detailed = self.chrome_set_changes <= CHROME_SET_CHANGE_DETAIL_LIMIT
+                || self.chrome_set_changes.is_power_of_two();
+            if detailed {
+                let in_flight = self.present_scheduler.has_in_flight();
+                for border in display_list.borders() {
+                    let CompositorNodeId::SurfaceChrome {
+                        surface,
+                        role: SurfaceChromeRole::Frame,
+                    } = border.node
+                    else {
+                        continue;
+                    };
+                    if self.pending_chrome_frame_observations.len()
+                        >= CHROME_FRAME_OBSERVATION_CAPACITY
+                    {
+                        break;
+                    }
+                    self.pending_chrome_frame_observations
+                        .push(LiveChromeFrameObservation {
+                            generation: summary.generation,
+                            source,
+                            in_flight,
+                            surface,
+                            geometry: border.inner,
+                            focused: self.focused_surface == Some(surface),
+                        });
+                }
+            }
         }
         Ok(())
     }
@@ -849,6 +890,10 @@ impl LiveProductionVisualRuntime {
 
     pub fn take_chrome_set_observation(&mut self) -> Option<LiveChromeSetObservation> {
         self.pending_chrome_set_observation.take()
+    }
+
+    pub fn take_chrome_frame_observations(&mut self) -> Vec<LiveChromeFrameObservation> {
+        std::mem::take(&mut self.pending_chrome_frame_observations)
     }
 }
 

@@ -115,7 +115,8 @@ use metadata_broker::LiveMetadataBroker;
 use metadata_shell::{LiveMetadataShell, LiveMetadataShellPoll};
 use native_retirement::{
     NativePresentRetirementObservation, correlate_physical_input_page_flip,
-    record_native_present_retirement, record_native_software_present_retirement,
+    record_discarded_presents, record_native_present_retirement,
+    record_native_software_present_retirement,
 };
 use policy_transport_worker::{
     PolicyTransportCommand, PolicyTransportEvent, PolicyTransportWorker,

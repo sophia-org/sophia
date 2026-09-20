@@ -216,11 +216,27 @@ pub fn reduce_software_present_frame_observation(
     }
 }
 
+/// A retired Present whose Engine candidate was not applied.
+///
+/// The flip showed the candidate's pixels, so the screen and the committed set
+/// disagree until the surface's next Present lands. The generations say why: a
+/// `current_generation` above `baseline_generation` means an authority intake
+/// landed between prepare and retire.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LiveProductionDiscardedPresent {
+    pub transaction: TransactionId,
+    pub surface: SurfaceId,
+    pub outcome: TransactionOutcome,
+    pub baseline_generation: u64,
+    pub current_generation: u64,
+}
+
 #[derive(Debug)]
 pub struct LiveProductionNativeServiceReport {
     pub ticks: Vec<LiveBackendRuntimeTickReport>,
     pub retired_present: Option<LiveProductionRetiredPresent>,
     pub retired_software_presents: Vec<LiveProductionRetiredSoftwarePresent>,
+    pub discarded_presents: Vec<LiveProductionDiscardedPresent>,
     pub effects: Vec<OutputFrameServiceEffect>,
 }
 
@@ -371,6 +387,7 @@ impl LiveProductionVisualRuntime {
             ticks,
             retired_present,
             retired_software_presents,
+            discarded_presents: std::mem::take(&mut self.discarded_presents),
             effects,
         })
     }

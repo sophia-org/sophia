@@ -587,3 +587,437 @@ fn a_repaint_raise_never_becomes_the_chrome_focus() {
     // An explicit absence of focus clears it, even while something is raised.
     assert_eq!(repaint(&mut runtime, Some(focused), None), (None, 0));
 }
+
+/// Two production paths, one frame. While a Present owns the scanout, the CPU
+/// production turn and the cadence repaint observe the in-flight candidate the
+/// heads are showing, never the committed set it was prepared against.
+///
+/// This is the live defect of 2026-09-19: a surface the layout had moved to the
+/// other output while its resize epoch never visually completed kept its old
+/// committed rectangle, and every second turn framed it there, in the gaps
+/// around the window that had taken its place.
+#[test]
+fn chrome_follows_the_displayed_view_while_a_present_is_in_flight() {
+    let primary = OutputId::from_raw(1);
+    let outputs = [
+        HeadlessOutput {
+            id: primary,
+            size: Size {
+                width: 2560,
+                height: 1440,
+            },
+            scale: 1,
+        },
+        HeadlessOutput {
+            id: OutputId::from_raw(2),
+            size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            scale: 1,
+        },
+    ];
+    let window = SurfaceId::new(1, 1);
+    let neighbour = SurfaceId::new(2, 1);
+    // Where the window was committed, and where the layout moved it. The
+    // session assigns managed windows to the primary output and lets the
+    // second head show them by geometry, so both rectangles live in the
+    // primary's list whichever head paints them.
+    let old = Rect {
+        x: 8,
+        y: 40,
+        width: 640,
+        height: 480,
+    };
+    let new = Rect {
+        x: 1300,
+        y: 40,
+        width: 320,
+        height: 240,
+    };
+    let neighbour_geometry = Rect {
+        x: 1300,
+        y: 300,
+        width: 320,
+        height: 240,
+    };
+    let size_of = |geometry: Rect| Size {
+        width: geometry.width,
+        height: geometry.height,
+    };
+
+    let mut runtime = runtime();
+    runtime.set_surface_chrome_style(SurfaceChromeStyle {
+        frame: SurfaceFrameStyle {
+            width: 4,
+            ..SurfaceFrameStyle::default()
+        },
+        ..SurfaceChromeStyle::default()
+    });
+    let mut scene = LiveProductionCpuScene::new(outputs[0].size);
+    let transaction = TransactionId::from_raw(500);
+    let committed_transaction = |surface, geometry: Rect, handle| SurfaceTransaction {
+        input_region: None,
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        presentation_extent: size_of(geometry),
+        content: SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle },
+            size_of(geometry),
+        ),
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let cpu_buffer = |surface, handle, geometry: Rect| {
+        LiveProductionCpuBufferUpdate::new(
+            transaction,
+            surface,
+            LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle,
+                size: size_of(geometry),
+                stride: u32::try_from(geometry.width * 4).unwrap(),
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 1,
+                bytes: Arc::new(vec![
+                    0xff;
+                    usize::try_from(geometry.width * geometry.height * 4)
+                        .unwrap()
+                ]),
+            }),
+        )
+    };
+    let batch = LiveProductionAuthorityBatch {
+        groups: vec![LiveProductionAuthorityGroup {
+            transaction,
+            transactions: vec![
+                committed_transaction(window, old, 11),
+                committed_transaction(neighbour, neighbour_geometry, 12),
+            ],
+            cpu_buffer_updates: vec![
+                cpu_buffer(window, 11, old),
+                cpu_buffer(neighbour, 12, neighbour_geometry),
+            ],
+            removed_surfaces: Vec::new(),
+            present_submissions: Vec::new(),
+            software_present_submissions: Vec::new(),
+        }],
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+    };
+    let empty = LiveProductionAuthorityBatch {
+        groups: Vec::new(),
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+    };
+    let placed = |surface, rank, geometry, output, handle| LayerSnapshot {
+        source: BufferSource::CpuBuffer { handle },
+        ..window_layer(surface, rank, geometry, Some(output))
+    };
+    let layout_before = [
+        placed(window, 0, old, primary, 11),
+        placed(neighbour, 1, neighbour_geometry, primary, 12),
+    ];
+    let layout_after = [
+        placed(window, 0, new, primary, 11),
+        placed(neighbour, 1, neighbour_geometry, primary, 12),
+    ];
+    let cycle = |runtime: &mut LiveProductionVisualRuntime,
+                 scene: &mut LiveProductionCpuScene,
+                 batch: &LiveProductionAuthorityBatch,
+                 layout: &[LayerSnapshot]| {
+        runtime
+            .run_cpu_production_cycle(LiveProductionCycleRequest {
+                batch,
+                scene,
+                raised_surface: None,
+                focused_surface: Some(window),
+                cursor_presentation: LiveProductionCursorPresentation::Software(None),
+                defer_frame: false,
+                output_descriptors: &outputs,
+                native_scanout: None,
+                wm_update: None,
+                presentation_layout: layout,
+                geometry_routed_surfaces: &[],
+                chrome_surfaces: &[window, neighbour],
+                indicator_publication: None,
+                staged_cpu_buffer_handles: &[],
+            })
+            .unwrap();
+        runtime.take_chrome_set_observation()
+    };
+
+    let first = cycle(&mut runtime, &mut scene, &batch, &layout_before)
+        .expect("the first composition frames both windows");
+    assert_eq!(first.frames, 2);
+    assert_eq!(first.focused_frames, 1);
+    // The first change's companions are not what this test is about.
+    let _ = runtime.take_chrome_frame_observations();
+
+    // The layout moves the window. Its next Present, the pixels at the new
+    // size, is prepared against the committed set, which still holds the old
+    // rectangle, and then owns the scanout. A move alone changes neither the
+    // order nor the routing, so the layout reports nothing to repaint.
+    assert!(!runtime.apply_presentation_layout(&layout_after, &[]));
+    let present_transaction = TransactionId::from_raw(501);
+    let candidate = SurfaceTransaction {
+        input_region: None,
+        transaction: present_transaction,
+        authority: AuthorityKind::SophiaX,
+        surface: window,
+        namespace: None,
+        target_geometry: new,
+        presentation_extent: size_of(new),
+        content: SurfaceContentSet::singleton(BufferSource::DmaBuf { handle: 28 }, size_of(new)),
+        damage: Region::empty(),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let prepared = runtime.production.prepare_present_transaction(&candidate);
+    assert!(prepared.is_ready());
+    let present = LiveProductionSubmittedPresent::new(
+        BTreeMap::from([(primary, LiveProductionNativeFrameId::from_raw(7))]),
+        primary,
+        candidate.key(),
+        present_transaction,
+        window,
+        prepared,
+        LiveRetainedRendererImageLayer {
+            image_id: LiveRendererImageId::from_raw(28),
+            size: size_of(new),
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            placement: LiveCompositionPlacement {
+                target: new,
+                clip: None,
+                transform: Transform::IDENTITY,
+                alpha: 1.0,
+                sampling: HeadSamplingClass::Exact,
+            },
+        },
+    )
+    .unwrap();
+    runtime.present_scheduler.mark_rendering(present);
+    assert!(runtime.present_scheduler.has_in_flight());
+
+    // The Present turn frames the candidate: the window at its new place.
+    let view = runtime.displayed_surface_view().to_vec();
+    runtime
+        .record_focus_ring_observation(&view, LiveChromeObservationSource::Present, false)
+        .unwrap();
+    let presented = runtime
+        .take_chrome_set_observation()
+        .expect("the moved window changes the chrome");
+    assert_eq!(presented.frames, 2);
+    assert_eq!(presented.focused_frames, 1);
+    let frames = runtime.take_chrome_frame_observations();
+    assert_eq!(frames.len(), 2, "one companion per framed surface");
+    let moved = frames
+        .iter()
+        .find(|frame| frame.surface == window)
+        .expect("the window's frame is named");
+    assert_eq!(moved.geometry, new);
+    assert!(moved.focused);
+    assert!(moved.in_flight);
+    assert_eq!(moved.source, LiveChromeObservationSource::Present);
+    assert_eq!(moved.generation, presented.generation);
+
+    // The committed set still frames the window where it was. Observing it
+    // would flip the generation back, which is the alternation this pins.
+    let stale = runtime
+        .display_list(
+            runtime.production.committed_surfaces(),
+            &runtime.presentation_order,
+        )
+        .unwrap();
+    assert_ne!(
+        compositor_chrome_summary(&stale, runtime.focused_surface).generation,
+        presented.generation,
+        "the committed rectangle must differ, or the control proves nothing"
+    );
+
+    // Every following turn, of either kind, frames what the heads show.
+    for _ in 0..4 {
+        assert_eq!(
+            runtime.displayed_surface_view(),
+            runtime.present_scheduler.in_flight_candidate().unwrap()
+        );
+        assert!(
+            cycle(&mut runtime, &mut scene, &empty, &layout_after).is_none(),
+            "a CPU production turn must not re-frame the committed rectangle"
+        );
+        let view = runtime.displayed_surface_view().to_vec();
+        runtime
+            .record_focus_ring_observation(&view, LiveChromeObservationSource::Repaint, true)
+            .unwrap();
+        assert!(
+            runtime.take_chrome_set_observation().is_none(),
+            "a cadence repaint must not re-frame the committed rectangle"
+        );
+        assert!(runtime.take_chrome_frame_observations().is_empty());
+    }
+}
+
+/// The software frame frames the surfaces the session authorised, the same set
+/// the head frames and the chrome observation frame. It used to frame every
+/// surface in the presentation order, popups included.
+#[test]
+fn the_software_frame_frames_only_the_authorised_surfaces() {
+    let primary = OutputId::from_raw(1);
+    let outputs = [HeadlessOutput {
+        id: primary,
+        size: Size {
+            width: 2560,
+            height: 1440,
+        },
+        scale: 1,
+    }];
+    let framed = SurfaceId::new(1, 1);
+    let popup = SurfaceId::new(2, 1);
+    let framed_geometry = Rect {
+        x: 100,
+        y: 100,
+        width: 400,
+        height: 300,
+    };
+    let popup_geometry = Rect {
+        x: 1000,
+        y: 500,
+        width: 200,
+        height: 120,
+    };
+    let size_of = |geometry: Rect| Size {
+        width: geometry.width,
+        height: geometry.height,
+    };
+    let transaction = TransactionId::from_raw(600);
+    let committed_transaction = |surface, geometry: Rect, handle| SurfaceTransaction {
+        input_region: None,
+        transaction,
+        authority: AuthorityKind::SophiaX,
+        surface,
+        namespace: None,
+        target_geometry: geometry,
+        presentation_extent: size_of(geometry),
+        content: SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle },
+            size_of(geometry),
+        ),
+        damage: Region::single(geometry),
+        readiness: SurfaceTransactionReadiness::Ready,
+        timeout_msec: 250,
+        previous_committed_generation: 0,
+    };
+    let cpu_buffer = |surface, handle, geometry: Rect| {
+        LiveProductionCpuBufferUpdate::new(
+            transaction,
+            surface,
+            LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle,
+                size: size_of(geometry),
+                stride: u32::try_from(geometry.width * 4).unwrap(),
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                generation: 1,
+                bytes: Arc::new(vec![
+                    0xff;
+                    usize::try_from(geometry.width * geometry.height * 4)
+                        .unwrap()
+                ]),
+            }),
+        )
+    };
+    let batch = LiveProductionAuthorityBatch {
+        groups: vec![LiveProductionAuthorityGroup {
+            transaction,
+            transactions: vec![
+                committed_transaction(framed, framed_geometry, 21),
+                committed_transaction(popup, popup_geometry, 22),
+            ],
+            cpu_buffer_updates: vec![
+                cpu_buffer(framed, 21, framed_geometry),
+                cpu_buffer(popup, 22, popup_geometry),
+            ],
+            removed_surfaces: Vec::new(),
+            present_submissions: Vec::new(),
+            software_present_submissions: Vec::new(),
+        }],
+        dma_buf_registrations: Vec::new(),
+        fence_registrations: Vec::new(),
+        released_dma_bufs: Vec::new(),
+        released_fences: Vec::new(),
+    };
+    let layout = [
+        LayerSnapshot {
+            source: BufferSource::CpuBuffer { handle: 21 },
+            ..window_layer(framed, 0, framed_geometry, Some(primary))
+        },
+        LayerSnapshot {
+            source: BufferSource::CpuBuffer { handle: 22 },
+            ..window_layer(popup, 1, popup_geometry, None)
+        },
+    ];
+    let compose = |chrome_surfaces: &[SurfaceId]| {
+        let mut runtime = runtime();
+        runtime.set_surface_chrome_style(SurfaceChromeStyle {
+            frame: SurfaceFrameStyle {
+                width: 1,
+                ..SurfaceFrameStyle::default()
+            },
+            ..SurfaceChromeStyle::default()
+        });
+        let mut scene = LiveProductionCpuScene::new(outputs[0].size);
+        let (submission, _, _) = runtime
+            .run_cpu_production_cycle(LiveProductionCycleRequest {
+                batch: &batch,
+                scene: &mut scene,
+                raised_surface: None,
+                focused_surface: Some(framed),
+                cursor_presentation: LiveProductionCursorPresentation::Software(None),
+                defer_frame: false,
+                output_descriptors: &outputs,
+                native_scanout: None,
+                wm_update: None,
+                presentation_layout: &layout,
+                geometry_routed_surfaces: &[popup],
+                chrome_surfaces,
+                indicator_publication: None,
+                staged_cpu_buffer_handles: &[],
+            })
+            .unwrap();
+        submission.composition
+    };
+    let pixel = |report: &LiveCpuCompositionReport, x: i32, y: i32| {
+        let stride = usize::try_from(report.frame.stride).unwrap();
+        let offset = usize::try_from(y).unwrap() * stride + usize::try_from(x).unwrap() * 4;
+        report.frame.bytes[offset..offset + 4].to_vec()
+    };
+    // One pixel left of the popup, in the band a frame would occupy.
+    let beside_popup = (
+        popup_geometry.x - 1,
+        popup_geometry.y + popup_geometry.height / 2,
+    );
+    let far_background = (2000, 1200);
+
+    let only_framed = compose(&[framed]);
+    assert_eq!(
+        pixel(&only_framed, beside_popup.0, beside_popup.1),
+        pixel(&only_framed, far_background.0, far_background.1),
+        "an unauthorised surface gets no frame in the software composition"
+    );
+
+    let both = compose(&[framed, popup]);
+    assert_ne!(
+        pixel(&both, beside_popup.0, beside_popup.1),
+        pixel(&both, far_background.0, far_background.1),
+        "an authorised surface is framed"
+    );
+    assert_ne!(only_framed.checksum, both.checksum);
+}

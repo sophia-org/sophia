@@ -889,13 +889,29 @@ fn interaction_field(record: &str, key: &str, value: &str) -> bool {
             "anchor_admission" | "anchor_unmapped" | "anchor_owner" | "no_anchor"
         ),
         ("sophia_live_compositor_chrome_set", "status") => value == "composed",
+        ("sophia_live_compositor_chrome_frame", "source") => {
+            matches!(value, "present" | "production" | "repaint")
+        }
+        // Compositor-owned frame placement, the same coordinates the WM chrome
+        // record already carries; never a pointer position or client payload.
+        ("sophia_live_compositor_chrome_frame", "x" | "y") => bounded_signed_pixel(value),
         ("sophia_live_session_present_feedback", "kind") => matches!(value, "idle" | "complete"),
         ("sophia_live_session_present_feedback", "mode") => {
             matches!(value, "Copy" | "Flip" | "Skip" | "SuboptimalCopy")
         }
-        ("sophia_live_session_present", "status") => value == "retired",
+        ("sophia_live_session_present", "status") => matches!(value, "retired" | "discarded"),
+        ("sophia_live_session_present", "outcome") => {
+            matches!(value, "stale_surface" | "invalid_surface" | "timed_out")
+        }
         _ => false,
     }
+}
+
+fn bounded_signed_pixel(value: &str) -> bool {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && value.parse::<i32>().is_ok()
 }
 
 // Native shell acceptance reads the bounded lifecycle vocabulary from the
