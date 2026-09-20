@@ -61,3 +61,54 @@ pub(super) fn release_departed_device(
     deliveries.extend(owed);
     Ok(DeviceRemoval { device, released })
 }
+
+/// Says what the pass did to the seat's devices, once per fact: every
+/// arrival with what it can do, every departure with what it released, and
+/// the first key from each device. Only opaque identities appear here.
+pub(super) fn announce_device_lifecycle(
+    report: &PhysicalInputRouteReport,
+    udev_managed: bool,
+    devices_keyed: &mut std::collections::BTreeSet<DeviceId>,
+) -> std::io::Result<()> {
+    if report.devices_added.is_empty()
+        && report.devices_removed.is_empty()
+        && report.devices_keyed.is_empty()
+    {
+        return Ok(());
+    }
+    let source = if udev_managed { "udev" } else { "paths" };
+    for arrival in &report.devices_added {
+        crate::session_println!(
+            "sophia_live_session_input_device schema=1 status=added device={} keyboard={} pointer={} touch={} virtual={} source={source}",
+            arrival.device.raw(),
+            arrival.keyboard,
+            arrival.pointer,
+            arrival.touch,
+            arrival.virtual_bus,
+        );
+    }
+    for removal in &report.devices_removed {
+        crate::session_println!(
+            "sophia_live_session_input_device schema=1 status=removed device={} released={}",
+            removal.device.raw(),
+            removal.released,
+        );
+        if removal.released != 0 {
+            crate::session_println!(
+                "sophia_live_session_keys schema=1 status=released reason=device_removed device={} count={}",
+                removal.device.raw(),
+                removal.released,
+            );
+        }
+    }
+    for device in &report.devices_keyed {
+        if devices_keyed.insert(*device) {
+            crate::session_println!(
+                "sophia_live_session_input_device schema=1 status=key_observed device={}",
+                device.raw(),
+            );
+        }
+    }
+    use std::io::Write as _;
+    std::io::stdout().flush()
+}

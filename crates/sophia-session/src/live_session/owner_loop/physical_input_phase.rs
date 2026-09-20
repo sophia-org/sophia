@@ -317,6 +317,22 @@ macro_rules! drain_physical_input {
                 .events_expected
                 .saturating_add(report.deliveries.len());
             input_delivery.track(input_sender, report.deliveries.iter().copied(), false)?;
+            // A departed device's releases are releases the seat owes, so
+            // they are tracked the way a flush is: behind the release barrier.
+            input_delivery.events_expected = input_delivery
+                .events_expected
+                .saturating_add(report.device_release_deliveries.len());
+            input_delivery.track(
+                input_sender,
+                report.device_release_deliveries.iter().copied(),
+                true,
+            )?;
+            client_key_release_barrier.extend(report.device_release_deliveries.iter().copied());
+            announce_device_lifecycle(
+                &report,
+                poller.policy_report().udev_managed,
+                &mut input_observations.devices_keyed,
+            )?;
             let repeat_report = route_due_key_repeat_with_saturation(
                 &mut key_repeat,
                 seat,

@@ -293,6 +293,19 @@ fn retained_announcements_are_served_before_the_first_live_read() {
 }
 
 #[test]
+fn a_reopened_seat_never_reissues_an_identity_a_departed_device_had() {
+    let mut first_seat = NativeLibinputDeviceRoster::new();
+    let departed = first_seat.admit(&keyboard("event7")).device;
+    drop(first_seat);
+
+    let mut reopened = NativeLibinputDeviceRoster::new();
+    let returned = reopened.admit(&keyboard("event7")).device;
+
+    assert_ne!(returned, departed);
+    assert!(returned.raw() > departed.raw());
+}
+
+#[test]
 fn the_seat_report_starts_without_fallbacks() {
     assert_eq!(NativeLibinputPolicyReport::default().identity_fallbacks, 0);
 }

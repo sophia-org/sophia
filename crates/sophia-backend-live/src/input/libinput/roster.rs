@@ -1,11 +1,17 @@
 use crate::prelude::*;
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// The first identity the roster mints. The seat's class identities are
-/// small (the session pins 1 and 2), and a minted identity must never be
+/// The first identity ever minted in a process. The seat's class identities
+/// are small (the session pins 1 and 2), and a minted identity must never be
 /// mistaken for one of them.
 pub const NATIVE_LIBINPUT_FIRST_MINTED_DEVICE_RAW: u64 = 256;
+
+/// One counter for the whole process, not one per roster: a seat that is
+/// closed and reopened builds a new roster, and a device returning to it
+/// must not be handed an identity a device that left the old one had.
+static NEXT_MINTED_RAW: AtomicU64 = AtomicU64::new(NATIVE_LIBINPUT_FIRST_MINTED_DEVICE_RAW);
 
 /// The kernel bus type a uinput device reports, `BUS_VIRTUAL` in
 /// `linux/input.h`.
@@ -41,13 +47,13 @@ pub struct NativeLibinputDeviceRecord {
 }
 
 /// The devices currently on the seat, keyed by the kernel name libinput
-/// reports on every event. Every admission mints a fresh identity, so a
-/// device that leaves and returns is a new one and nothing that remembered
-/// the old identity can be fooled by the return.
+/// reports on every event. Every admission mints a fresh identity, never
+/// reissued in this process, so a device that leaves and returns is a new
+/// one and nothing that remembered the old identity can be fooled by the
+/// return.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeLibinputDeviceRoster {
     entries: BTreeMap<String, NativeLibinputDeviceRecord>,
-    next_raw: u64,
 }
 
 impl Default for NativeLibinputDeviceRoster {
@@ -60,7 +66,6 @@ impl NativeLibinputDeviceRoster {
     pub const fn new() -> Self {
         Self {
             entries: BTreeMap::new(),
-            next_raw: NATIVE_LIBINPUT_FIRST_MINTED_DEVICE_RAW,
         }
     }
 
@@ -70,11 +75,10 @@ impl NativeLibinputDeviceRoster {
     /// way a removal would have taken it.
     pub fn admit(&mut self, identity: &NativeDeviceIdentity) -> NativeLibinputDeviceRecord {
         let record = NativeLibinputDeviceRecord {
-            device: DeviceId::from_raw(self.next_raw),
+            device: DeviceId::from_raw(NEXT_MINTED_RAW.fetch_add(1, Ordering::AcqRel)),
             capabilities: identity.capabilities,
             virtual_bus: identity.virtual_bus,
         };
-        self.next_raw = self.next_raw.saturating_add(1);
         self.entries.insert(identity.sysname.clone(), record);
         record
     }
