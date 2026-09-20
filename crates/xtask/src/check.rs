@@ -1,6 +1,6 @@
 //! Canonical deterministic repository checks.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -273,46 +273,145 @@ fn layout(repo: &Path) -> Result<(), String> {
         &String::from_utf8(output.stderr)
             .map_err(|error| format!("source-layout audit emitted non-UTF-8: {error}"))?,
     );
-    let observed = text
+    // AN ERROR THIS CANNOT READ IS NOT AN ERROR THIS MAY IGNORE. Unrecognised
+    // failures used to be dropped by the filter below and the audit's own exit
+    // status is never decisive here -- it is non-zero whenever any debt stands,
+    // which is always -- so a check added with a message of its own would have
+    // been invisible to this gate rather than enforced by it.
+    let unreadable = text
         .lines()
-        .filter_map(normalize_layout_error)
-        .collect::<BTreeSet<_>>();
+        .filter(|line| line.starts_with("error: "))
+        .filter(|line| normalize_layout_error(line).is_none())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if !unreadable.is_empty() {
+        return Err(format!(
+            "source-layout audit reported failures this gate cannot read, so it \
+             cannot say whether they are known:\n{}",
+            unreadable.join("\n")
+        ));
+    }
+    let mut observed_flags = BTreeSet::new();
+    let mut observed_sizes = BTreeMap::new();
+    for failure in text.lines().filter_map(normalize_layout_error) {
+        match failure {
+            LayoutFailure::Flag(identity) => {
+                observed_flags.insert(identity);
+            }
+            LayoutFailure::Size { path, lines } => {
+                // One path can be reported by more than one pass; the largest
+                // reading is the one the ceiling answers.
+                let entry = observed_sizes.entry(path).or_insert(lines);
+                *entry = (*entry).max(lines);
+            }
+        }
+    }
     let ledger_path = repo.join("docs/source-layout-debt.txt");
-    let ledger = std::fs::read_to_string(&ledger_path)
-        .map_err(|error| format!("could not read {}: {error}", ledger_path.display()))?
+    let ledger_text = std::fs::read_to_string(&ledger_path)
+        .map_err(|error| format!("could not read {}: {error}", ledger_path.display()))?;
+    let mut ledger_flags = BTreeSet::new();
+    let mut ledger_ceilings = BTreeMap::new();
+    for row in ledger_text
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
-    if observed == ledger {
+    {
+        match parse_layout_row(row)? {
+            LayoutFailure::Flag(identity) => {
+                ledger_flags.insert(identity);
+            }
+            LayoutFailure::Size { path, lines } => {
+                ledger_ceilings.insert(path, lines);
+            }
+        }
+    }
+
+    let mut introduced = observed_flags
+        .difference(&ledger_flags)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut retired = ledger_flags
+        .difference(&observed_flags)
+        .cloned()
+        .collect::<Vec<_>>();
+    // GROWTH IS ITS OWN FAILURE, and the reason this gate exists in this form.
+    // A ledgered file that is allowed to grow without limit is a file nobody
+    // is watching; recording the size it was admitted at is what makes every
+    // later commit answer for making it worse.
+    let mut grown = Vec::new();
+    for (path, lines) in &observed_sizes {
+        match ledger_ceilings.get(path) {
+            None => introduced.push(format!("large {path} ({lines} lines)")),
+            Some(ceiling) if lines > ceiling => {
+                grown.push(format!(
+                    "{path} is {lines} lines, past its recorded {ceiling}"
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    for path in ledger_ceilings.keys() {
+        if !observed_sizes.contains_key(path) {
+            retired.push(format!("large {path}"));
+        }
+    }
+    if introduced.is_empty() && retired.is_empty() && grown.is_empty() {
         return Ok(());
     }
-    let introduced = observed.difference(&ledger).cloned().collect::<Vec<_>>();
-    let retired = ledger.difference(&observed).cloned().collect::<Vec<_>>();
     Err(format!(
-        "source-layout debt ledger changed\nnew: {}\nretired: {}",
+        "source-layout debt ledger changed\nnew: {}\nretired: {}\ngrown: {}",
         display_set(&introduced),
-        display_set(&retired)
+        display_set(&retired),
+        display_set(&grown)
     ))
 }
 
-fn normalize_layout_error(line: &str) -> Option<String> {
+/// One audit failure, in the form the ledger records it.
+///
+/// A size failure keeps its count, and that is the whole point of the split.
+/// The identity used to be the path alone, so a file already in the ledger had
+/// its size recorded once and never checked again -- which is how one test
+/// file reached forty thousand lines with this gate green over every commit
+/// that grew it. A flag failure has no magnitude and keeps exact identity.
+enum LayoutFailure {
+    Flag(String),
+    Size { path: String, lines: usize },
+}
+
+fn normalize_layout_error(line: &str) -> Option<LayoutFailure> {
     let message = line.strip_prefix("error: ")?;
     if let Some(path) = message.strip_prefix("inline tests in ") {
-        return Some(format!("inline-tests {path}"));
+        return Some(LayoutFailure::Flag(format!("inline-tests {path}")));
     }
     if let Some(path) = message.strip_prefix("direct library printing in ") {
-        return Some(format!("direct-print {path}"));
+        return Some(LayoutFailure::Flag(format!("direct-print {path}")));
     }
     let (path, rest) = message.split_once(" has ")?;
-    if rest
-        .split_once(" lines")
-        .is_some_and(|(count, _)| count.bytes().all(|byte| byte.is_ascii_digit()))
-    {
-        return Some(format!("large {path}"));
+    let (count, _) = rest.split_once(" lines")?;
+    let lines = count.parse::<usize>().ok()?;
+    Some(LayoutFailure::Size {
+        path: path.to_owned(),
+        lines,
+    })
+}
+
+/// A ledger row: `large <path> <ceiling>` for a size, `<category> <path>` for
+/// a flag. The ceiling is a cap and not a measurement, so a file that shrinks
+/// needs no edit; only growing past it does.
+fn parse_layout_row(row: &str) -> Result<LayoutFailure, String> {
+    if let Some(rest) = row.strip_prefix("large ") {
+        let (path, ceiling) = rest
+            .rsplit_once(' ')
+            .ok_or_else(|| format!("ledger row needs a line ceiling: {row}"))?;
+        let lines = ceiling
+            .parse::<usize>()
+            .map_err(|_| format!("ledger row has a non-numeric ceiling: {row}"))?;
+        return Ok(LayoutFailure::Size {
+            path: path.to_owned(),
+            lines,
+        });
     }
-    None
+    Ok(LayoutFailure::Flag(row.to_owned()))
 }
 
 fn display_set(values: &[String]) -> String {

@@ -187,6 +187,13 @@ still fails `tools/audit_source_layout.sh`. Exact identities prevent a new
 violation from hiding behind an unchanged numeric count and make retirement
 visible as a reviewed path change.
 
+A size row also carries the count it was admitted at, and growing past it
+fails the gate naming the path, the count and the ceiling together. Shrinking
+is free, so the number is a cap and not a measurement. The gate additionally
+refuses any `error:` line its normalizer cannot read, because the audit's own
+exit status is not decisive here -- it is non-zero whenever any debt stands --
+so an unrecognised failure would otherwise be dropped rather than enforced.
+
 Hardware gates remain explicit because they require a real TTY, DRM ownership,
 and operator authorization. Their argument parsing, evidence verification, and
 archive logic belong in `sophia-conformance`; the minimal TTY takeover adapter
