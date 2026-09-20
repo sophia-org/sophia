@@ -8,8 +8,13 @@ import re
 
 def declared_core_requests(root):
     directory = root / 'crates/sophia-x-authority/src'
-    constants = dict((name, int(value)) for name, value in re.findall(
-        r'const (X_\w+): u8 = (\d+);', (directory / 'wire/constants.rs').read_text()))
+    # Every constants file the wire keeps, not the one it had when this was
+    # written: the decoder's arms name constants from all of them, and a
+    # constant that moved to its own file is not a request that vanished.
+    constants = {}
+    for path in sorted((directory / 'wire').glob('constants*.rs')):
+        constants.update((name, int(value)) for name, value in re.findall(
+            r'const (X_\w+): u8 = (\d+);', path.read_text()))
     decoder = (directory / 'wire.rs').read_text().split('pub fn decode_x11_core_request(', 1)[1]
     arms = re.findall(r'^        (X_\w+) =>', decoder, re.MULTILINE)
     if len(arms) < 50:
