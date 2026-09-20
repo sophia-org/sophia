@@ -26,9 +26,14 @@ fn the_executors_reserved_chord_is_the_guards_emergency_chord() {
         "Control and Mod1, the mask Control_L/R and Alt_L/R produce"
     );
     assert!(
-        [EVDEV_KEY_LEFTCTRL, EVDEV_KEY_RIGHTCTRL, EVDEV_KEY_LEFTALT, EVDEV_KEY_RIGHTALT]
-            .iter()
-            .all(|key| *key != EVDEV_KEY_BACKSPACE),
+        [
+            EVDEV_KEY_LEFTCTRL,
+            EVDEV_KEY_RIGHTCTRL,
+            EVDEV_KEY_LEFTALT,
+            EVDEV_KEY_RIGHTALT
+        ]
+        .iter()
+        .all(|key| *key != EVDEV_KEY_BACKSPACE),
         "the modifiers are never the completing key"
     );
 }
