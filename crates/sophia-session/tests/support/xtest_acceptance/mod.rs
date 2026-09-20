@@ -42,7 +42,9 @@ const INSTANCE: u64 = 733;
 /// One private Session service, its socket, and its ending.
 pub struct Instance {
     lifetime: PrivateInputLifetimeOwner,
-    handle: Option<sophia_session::private_input::PrivateInputHandle>,
+    /// Behind a lock because `apply_committed` takes the handle exclusively
+    /// and a group drives it while its clients are connected.
+    handle: std::sync::Mutex<Option<sophia_session::private_input::PrivateInputHandle>>,
     directory: PathBuf,
     socket: PathBuf,
 }
@@ -67,7 +69,7 @@ impl Instance {
         );
         Self {
             lifetime,
-            handle: Some(handle),
+            handle: std::sync::Mutex::new(Some(handle)),
             directory,
             socket,
         }
@@ -77,6 +79,18 @@ impl Instance {
         &self.socket
     }
 
+    /// The service's own view: admissions, grants, delivery receipts, and
+    /// the commit bridge a group has to drive itself. A group reads it beside
+    /// the wire so that what a client saw and what the service accounted for
+    /// are both in the evidence.
+    pub fn with_handle<T>(
+        &self,
+        read: impl FnOnce(&mut sophia_session::private_input::PrivateInputHandle) -> T,
+    ) -> T {
+        let mut held = self.handle.lock().expect("the handle is not poisoned");
+        read(held.as_mut().expect("a live service"))
+    }
+
     /// Connect a client. A cookie makes it an admitted one; none makes it an
     /// ordinary connection that may not inject.
     pub fn connect(&self, order: Order, cookie: Option<[u8; 32]>) -> Client {
@@ -84,8 +98,14 @@ impl Instance {
     }
 
     /// Stop the service and hand back what it collected.
-    pub fn finish(mut self) -> PrivateInputOutcome {
-        let outcome = self.handle.take().expect("a live service").stop();
+    pub fn finish(self) -> PrivateInputOutcome {
+        let handle = self
+            .handle
+            .lock()
+            .expect("the handle is not poisoned")
+            .take()
+            .expect("a live service");
+        let outcome = handle.stop();
         let _ = std::fs::remove_dir_all(&self.directory);
         let _ = &self.lifetime;
         outcome

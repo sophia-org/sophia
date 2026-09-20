@@ -5,8 +5,12 @@
 //! record the gate reads. A group asserts as it goes, so a subcase named in
 //! the record it emits is one that held.
 
-use super::{COOKIE, Client, Evidence, Instance, Order, XTEST_MAJOR};
+use super::{Answer, COOKIE, Client, Evidence, Instance, Order, SCREEN, WAIT, XTEST_MAJOR};
 use sophia_session::private_input::PrivateInputGrantPolicy;
+use sophia_x_authority::{
+    PrivateAdmittedConnection, XAuthorityClientInputDelivery, XAuthorityControlKind,
+    XAuthorityControlOutcome, XAuthorityInputDeliveryOutcome, XServerFrontendClientId,
+};
 use std::time::{Duration, Instant};
 
 /// Every extension name the server lists, and whether XTEST is among them.
@@ -444,6 +448,492 @@ pub fn fake_input_encoding() {
             "root_motion_only",
             "no_reply",
             "delay_full_domain",
+        ],
+    );
+}
+
+/// What an observer selects: key and button transitions and pointer motion.
+const OBSERVER_MASK: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6);
+/// The event codes of the core input family.
+const KEY_PRESS: u8 = 2;
+const KEY_RELEASE: u8 = 3;
+const BUTTON_PRESS: u8 = 4;
+const BUTTON_RELEASE: u8 = 5;
+const MOTION_NOTIFY: u8 = 6;
+/// The QueryPointer state bit for button one.
+const BUTTON1_MASK: u16 = 1 << 8;
+
+/// A window at (7, 9), 80 by 60, mapped and selecting key, button and motion
+/// events, with motion selected on the root too so a motion outside the
+/// window is reported as well.
+///
+/// NOT OVERRIDE-REDIRECT. A map here is policy-pending until the service
+/// admits the window as a surface, and the admission refuses a window that
+/// is already mapped, which an override-redirect map would be.
+fn observer_window(client: &mut Client) -> u32 {
+    let order = client.order();
+    let root = client.root();
+    let window = client.resource(1);
+    let mut create = Vec::new();
+    create.extend(order.u32(window));
+    create.extend(order.u32(root));
+    for value in [7u16, 9, 80, 60, 0, 1] {
+        create.extend(order.u16(value));
+    }
+    create.extend(order.u32(0)); // CopyFromParent visual.
+    create.extend(order.u32(1 << 11)); // The event mask alone.
+    create.extend(order.u32(OBSERVER_MASK));
+    client.send(1, 0, &create);
+    client.send(8, 0, &order.u32(window));
+    let mut root_mask = Vec::new();
+    root_mask.extend(order.u32(root));
+    root_mask.extend(order.u32(1 << 11));
+    root_mask.extend(order.u32(1 << 6));
+    client.send(2, 0, &root_mask);
+    client.sync();
+    window
+}
+
+/// Give `window` the focus, and confirm the server reports it.
+fn focus_window(client: &mut Client, window: u32) {
+    let order = client.order();
+    let mut focus = Vec::new();
+    focus.extend(order.u32(window));
+    focus.extend(order.u32(0));
+    client.send(42, 0, &focus);
+    let reply = client.reply(43, 0, &[]);
+    assert_eq!(
+        order.read32(&reply[8..]),
+        window,
+        "the instance did not commit the requested focus"
+    );
+}
+
+/// The next input event of `kind` reported against `window`, with other
+/// events set aside, draining the service's delivery receipts while it
+/// waits. A reply or an error is a fault: nothing was asked.
+///
+/// THE DRAIN IS PART OF THE WAIT, NOT A CONVENIENCE. A delivery's ticket is
+/// given back only when the session observes its receipt, and a live
+/// coordinator does that continuously; a group that only read the wire would
+/// see its observer go quiet once the tickets ran out, and would be
+/// measuring its own neglect. What is drained is kept, because it is the
+/// second witness to the delivery.
+fn input_event(
+    instance: &Instance,
+    client: &mut Client,
+    receipts: &mut Vec<XAuthorityClientInputDelivery>,
+    kind: u8,
+    window: u32,
+) -> Vec<u8> {
+    let order = client.order();
+    let began = Instant::now();
+    loop {
+        match client.try_answer(Duration::from_millis(50)) {
+            Some(Answer::Event(event))
+                if event[0] & 0x7f == kind && order.read32(&event[12..]) == window =>
+            {
+                assert_eq!(event[0], kind, "the injected event arrived as a SendEvent");
+                return event;
+            }
+            Some(Answer::Event(_)) => {}
+            Some(Answer::Reply(reply)) => {
+                panic!("a reply while waiting for event {kind}: {reply:?}")
+            }
+            Some(Answer::Error(error)) => {
+                panic!("an error while waiting for event {kind}: {error:?}")
+            }
+            None => assert!(
+                began.elapsed() < WAIT,
+                "event {kind} on window {window:#x} did not arrive within {WAIT:?}; receipts so far {receipts:?}"
+            ),
+        }
+        receipts.extend(
+            instance
+                .with_handle(|handle| handle.drain_deliveries())
+                .expect("receipts are readable")
+                .observed,
+        );
+    }
+}
+
+/// Where the pointer is on the root, and which buttons are down.
+fn query_pointer(client: &mut Client) -> ((i16, i16), u16) {
+    let order = client.order();
+    let reply = client.reply(38, 0, &order.u32(client.root()));
+    assert_eq!(reply[1], 1, "the pointer is not on the instance's screen");
+    (
+        (
+            order.read16(&reply[16..]) as i16,
+            order.read16(&reply[18..]) as i16,
+        ),
+        order.read16(&reply[24..]),
+    )
+}
+
+/// The root's size as the server reports it, so the clipping bound is read
+/// rather than assumed.
+fn root_size(client: &mut Client) -> (i16, i16) {
+    let order = client.order();
+    let reply = client.reply(14, 0, &order.u32(client.root()));
+    (
+        order.read16(&reply[16..]) as i16,
+        order.read16(&reply[18..]) as i16,
+    )
+}
+
+/// The one admission the boundary has gained for `client`, which has just
+/// connected.
+///
+/// WAITED FOR, NOT ASSUMED. Admission is the boundary's act and the setup
+/// reply does not wait for it, so a row read the instant the setup returns
+/// can be absent. A round trip on the connection puts its setup behind it,
+/// and the row is then read until it is there, within the wire bound.
+fn newest_admission(
+    instance: &Instance,
+    client: &mut Client,
+    seen: &mut Vec<XServerFrontendClientId>,
+) -> PrivateAdmittedConnection {
+    client.sync();
+    let began = Instant::now();
+    loop {
+        let rows = instance
+            .with_handle(|handle| handle.admitted())
+            .expect("the boundary is readable");
+        let new: Vec<_> = rows
+            .iter()
+            .filter(|row| !seen.contains(&row.client))
+            .copied()
+            .collect();
+        match new.as_slice() {
+            [row] => {
+                seen.push(row.client);
+                return *row;
+            }
+            [] => assert!(
+                began.elapsed() < WAIT,
+                "the connection's admission did not appear at the boundary within {WAIT:?}"
+            ),
+            _ => panic!("more than one admission is new: {new:?}"),
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// Wait until the kept receipts report `count` deliveries to `client`
+/// flushed to its socket, draining more as needed.
+fn flushed_deliveries(
+    instance: &Instance,
+    receipts: &mut Vec<XAuthorityClientInputDelivery>,
+    client: XServerFrontendClientId,
+    count: usize,
+) {
+    let began = Instant::now();
+    loop {
+        let flushed = receipts
+            .iter()
+            .filter(|receipt| {
+                receipt.client == client
+                    && receipt.outcome == XAuthorityInputDeliveryOutcome::Flushed
+            })
+            .count();
+        if flushed >= count {
+            return;
+        }
+        assert!(
+            began.elapsed() < WAIT,
+            "{flushed} of {count} deliveries to {client:?} were reported flushed within {WAIT:?}: {receipts:?}"
+        );
+        receipts.extend(
+            instance
+                .with_handle(|handle| handle.drain_deliveries_within(Duration::from_millis(50)))
+                .expect("receipts are readable")
+                .observed,
+        );
+    }
+}
+
+/// Draw into the observer's window and drive the commit bridge until the
+/// service admits it as a surface and the order acknowledges the admission.
+///
+/// THE COMMIT BRIDGE IS THE GROUP'S TO DRIVE. In a live session the
+/// coordinator pumps `apply_committed`; here nothing does unless the group
+/// does, and a key resolves its recipient through the focused window's
+/// surface, which only an admission creates. Without this a key is planned
+/// against no target and silently goes nowhere, which is not a delivery
+/// failure the wire can see.
+fn admit_surface(instance: &Instance, observer: &mut Client, window: u32) {
+    let order = observer.order();
+    let gc = observer.resource(2);
+    let mut create_gc = Vec::new();
+    for value in [gc, window, 0] {
+        create_gc.extend(order.u32(value));
+    }
+    observer.send(55, 0, &create_gc);
+    let mut rectangle = Vec::new();
+    rectangle.extend(order.u32(window));
+    rectangle.extend(order.u32(gc));
+    for value in [0u16, 0, 8, 8] {
+        rectangle.extend(order.u16(value));
+    }
+    observer.send(70, 0, &rectangle);
+    // The geometry round trip orders the draw behind a reply, as the
+    // session's own controls do before they wait on a commit.
+    observer.reply(14, 0, &order.u32(window));
+    let began = Instant::now();
+    let submitted = loop {
+        assert!(
+            began.elapsed() < WAIT,
+            "the observer's window was not admitted as a surface within {WAIT:?}"
+        );
+        let report = instance
+            .with_handle(|handle| handle.apply_committed(Duration::from_millis(10)))
+            .expect("the bridge is readable");
+        if let Some(submitted) = report
+            .effects
+            .iter()
+            .filter(|effect| effect.kind() == XAuthorityControlKind::AdmitSurface)
+            .find_map(|effect| effect.submitted())
+        {
+            break submitted;
+        }
+    };
+    loop {
+        assert!(
+            began.elapsed() < WAIT,
+            "the admission {submitted:?} was not acknowledged within {WAIT:?}"
+        );
+        let acknowledged = instance
+            .with_handle(|handle| handle.drain_acknowledgements_within(Duration::from_millis(10)))
+            .into_iter()
+            .map(|ack| ack.acknowledgement)
+            .find(|ack| ack.transaction == submitted.transaction && ack.kind == submitted.kind);
+        if let Some(ack) = acknowledged {
+            assert_eq!(
+                ack.outcome,
+                XAuthorityControlOutcome::Delivered,
+                "the admission was acknowledged but not delivered: {ack:?}"
+            );
+            return;
+        }
+    }
+}
+
+pub fn fake_input_effects() {
+    let mut evidence = Evidence::default();
+    // ONE INSTANCE PER BYTE ORDER. The first order's observer and injector
+    // depart before the second's connect, and a departed connection is not
+    // collected until the service stops (t134); on an instance carrying
+    // those rows a key injected by the second order's client was routed to
+    // the injector's own connection and rejected, though the new observer's
+    // focus was confirmed. A fresh instance per order keeps the group about
+    // the effects and leaves that to t134.
+    for (order, name) in [
+        (Order::Little, "effects-little"),
+        (Order::Big, "effects-big"),
+    ] {
+        let instance = Instance::start(name, PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+        let mut seen = Vec::new();
+        let mut observer = instance.connect(order, Some(COOKIE));
+        let observer_row = newest_admission(&instance, &mut observer, &mut seen);
+        let mut receipts = Vec::new();
+        let window = observer_window(&mut observer);
+        admit_surface(&instance, &mut observer, window);
+        focus_window(&mut observer, window);
+        let mut injector = instance.connect(order, Some(COOKIE));
+        let injector_row = newest_admission(&instance, &mut injector, &mut seen);
+        let opcode = discover(&mut injector);
+        let root = injector.root();
+        let body =
+            |kind, detail, delay, root, x, y| fake_input(order, kind, detail, delay, root, x, y);
+        let (width, height) = root_size(&mut injector);
+        assert_eq!(
+            (i32::from(width), i32::from(height)),
+            SCREEN,
+            "the instance's root is the advertised screen"
+        );
+
+        // DELIVERED TO THE ADMITTED DEVICE. The injector's admission is the
+        // one that presented evidence for this instance and holds the one
+        // grant an injector gets; a key it injects, with no motion sent
+        // before it, arrives at the focused window as the keycode sent, and
+        // the service's own receipts show both deliveries flushed to the
+        // observer. Neither witness alone would do: the wire shows what a
+        // client saw, the receipts show what the service accounted for.
+        let record = instance
+            .with_handle(|handle| handle.admission_record(injector_row.admission))
+            .expect("records are readable")
+            .expect("the injector's admission is recorded");
+        assert!(
+            record.instance_verified,
+            "the injector's admission carries this instance's evidence"
+        );
+        assert_eq!(
+            injector_row.grants, 1,
+            "an admitted injector holds one grant: {injector_row:?}"
+        );
+        injector.send(opcode, FAKE_INPUT, &body(KEY_PRESS, 38, 0, 0, 0, 0));
+        injector.send(opcode, FAKE_INPUT, &body(KEY_RELEASE, 38, 0, 0, 0, 0));
+        injector.sync();
+        let press = input_event(&instance, &mut observer, &mut receipts, KEY_PRESS, window);
+        let release = input_event(&instance, &mut observer, &mut receipts, KEY_RELEASE, window);
+        assert_eq!(
+            (press[1], release[1]),
+            (38, 38),
+            "the keycode delivered is the keycode injected"
+        );
+        flushed_deliveries(&instance, &mut receipts, observer_row.client, 2);
+
+        // SYNCHRONOUS, WITHIN THE REQUEST. The request after a motion reads
+        // the new position, with nothing waited on in between; a release
+        // injected after a press carries the press in its state, and the
+        // press does not carry itself, so each request was processed before
+        // the next was taken.
+        let inside = (20i16, 20i16);
+        injector.send(
+            opcode,
+            FAKE_INPUT,
+            &body(MOTION_NOTIFY, 0, 0, 0, inside.0, inside.1),
+        );
+        assert_eq!(
+            query_pointer(&mut injector).0,
+            inside,
+            "the request after a motion did not see it"
+        );
+        // The motion is reported against the window under the pointer, which
+        // is the observer's own once the pointer is inside it; the root, which
+        // also selected motion, is where it would go otherwise.
+        let motion = input_event(
+            &instance,
+            &mut observer,
+            &mut receipts,
+            MOTION_NOTIFY,
+            window,
+        );
+        assert_eq!(
+            (
+                order.read16(&motion[20..]) as i16,
+                order.read16(&motion[22..]) as i16
+            ),
+            inside,
+            "the motion reported to the observer is the motion injected"
+        );
+        injector.send(opcode, FAKE_INPUT, &body(BUTTON_PRESS, 1, 0, 0, 0, 0));
+        injector.send(opcode, FAKE_INPUT, &body(BUTTON_RELEASE, 1, 0, 0, 0, 0));
+        injector.sync();
+        let press = input_event(
+            &instance,
+            &mut observer,
+            &mut receipts,
+            BUTTON_PRESS,
+            window,
+        );
+        let release = input_event(
+            &instance,
+            &mut observer,
+            &mut receipts,
+            BUTTON_RELEASE,
+            window,
+        );
+        assert_eq!(
+            (press[1], release[1]),
+            (1, 1),
+            "button one was delivered as button one"
+        );
+        assert_eq!(
+            order.read16(&press[28..]) & BUTTON1_MASK,
+            0,
+            "the press reports the state after itself"
+        );
+        assert_ne!(
+            order.read16(&release[28..]) & BUTTON1_MASK,
+            0,
+            "the release lost the press before it"
+        );
+        flushed_deliveries(&instance, &mut receipts, observer_row.client, 5);
+
+        // THE DELAY COMES BEFORE VALIDATION. A request that will be refused
+        // for its detail, and one that will be refused for its root, each
+        // carrying a delay, are refused only once the delay has passed: the
+        // reference sleeps first and judges after, and so does this.
+        let nowhere = injector.resource(9);
+        for (label, request, code, value) in [
+            (
+                "a keycode below eight",
+                body(KEY_PRESS, 7, 300, 0, 0, 0),
+                BAD_VALUE,
+                7,
+            ),
+            (
+                "a root that is no window",
+                body(MOTION_NOTIFY, 0, 300, nowhere, 0, 0),
+                BAD_WINDOW,
+                nowhere,
+            ),
+        ] {
+            let began = Instant::now();
+            refused(&mut injector, opcode, &request, code, value);
+            let waited = began.elapsed();
+            assert!(
+                waited >= Duration::from_millis(300),
+                "{label} was refused after {waited:?}, before its delay had passed"
+            );
+        }
+
+        // CLIPPED, NEVER REFUSED, AND THE CORNER IS REACHABLE. The far corner
+        // of the CARD16 domain lands on the last pixel, one less than the
+        // width and the height; a relative step past it stays there; the
+        // other corner lands on the origin, and a step past that stays too.
+        let corner = (width - 1, height - 1);
+        injector.send(
+            opcode,
+            FAKE_INPUT,
+            &body(MOTION_NOTIFY, 0, 0, root, i16::MAX, i16::MAX),
+        );
+        assert_eq!(
+            query_pointer(&mut injector).0,
+            corner,
+            "the far corner is one less than the size"
+        );
+        injector.send(opcode, FAKE_INPUT, &body(MOTION_NOTIFY, 1, 0, 0, 50, 50));
+        assert_eq!(
+            query_pointer(&mut injector).0,
+            corner,
+            "a relative step past the corner stays on it"
+        );
+        injector.send(
+            opcode,
+            FAKE_INPUT,
+            &body(MOTION_NOTIFY, 0, 0, root, i16::MIN, i16::MIN),
+        );
+        assert_eq!(
+            query_pointer(&mut injector).0,
+            (0, 0),
+            "the near corner is the origin"
+        );
+        injector.send(opcode, FAKE_INPUT, &body(MOTION_NOTIFY, 1, 0, 0, -50, -50));
+        assert_eq!(
+            query_pointer(&mut injector).0,
+            (0, 0),
+            "a relative step past the origin stays on it"
+        );
+
+        injector.sync();
+        observer.sync();
+        // The motions above were reported to the observer too; their receipts
+        // are observed so nothing is left owed at the stop.
+        flushed_deliveries(&instance, &mut receipts, observer_row.client, 5);
+        drop(injector);
+        drop(observer);
+        evidence.collect(instance.finish(), false);
+    }
+    evidence.emit(
+        "fake_input_effects",
+        &[
+            "delivered_to_admitted_device",
+            "synchronous_before_completion",
+            "delay_before_validation",
+            "clipped_position_reachable",
         ],
     );
 }
