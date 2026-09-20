@@ -1163,6 +1163,21 @@
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
     },
+    "80": {
+      "name": "X_COPY_COLORMAP_AND_FREE",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+    },
+    "81": {
+      "name": "X_INSTALL_COLORMAP",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+    },
+    "82": {
+      "name": "X_UNINSTALL_COLORMAP",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+    },
     "84": {
       "name": "X_ALLOC_COLOR",
       "cases": [],
@@ -1172,6 +1187,31 @@
       "name": "X_ALLOC_NAMED_COLOR",
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+    },
+    "86": {
+      "name": "X_ALLOC_COLOR_CELLS",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+    },
+    "87": {
+      "name": "X_ALLOC_COLOR_PLANES",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+    },
+    "88": {
+      "name": "X_FREE_COLORS",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+    },
+    "89": {
+      "name": "X_STORE_COLORS",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+    },
+    "90": {
+      "name": "X_STORE_NAMED_COLOR",
+      "cases": [],
+      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
     },
     "91": {
       "name": "X_QUERY_COLORS",

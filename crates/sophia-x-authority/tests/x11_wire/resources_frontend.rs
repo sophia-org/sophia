@@ -2005,3 +2005,96 @@ fn copy_plane_expands_one_bit_into_foreground_and_background() {
         );
     }
 }
+
+#[test]
+fn a_true_color_server_answers_the_colormap_family_rather_than_refusing_it() {
+    // None of these can be served on a TrueColor visual, but all of them must
+    // be answered: they arrive on ordinary teardown paths, and a client that
+    // meets BadRequest may treat it as fatal.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let window = 0x2201e1;
+    let colormap = 0x2201e2;
+
+    let _ = window;
+    let request = decode_x11_core_request(
+        context(namespace, 1601, XByteOrder::LittleEndian),
+        &create_colormap_request(
+            XByteOrder::LittleEndian,
+            colormap,
+            X_SETUP_DEFAULT_ROOT,
+            X_SETUP_DEFAULT_VISUAL,
+        ),
+    )
+    .unwrap();
+    let created = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 78),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(created.outputs.is_empty(), "the colormap is created");
+
+    // Read-write allocation has no cells to give; storing into a read-only
+    // colormap is denied; installing and freeing are accepted no-ops.
+    let cases: [(u8, Option<XErrorCode>); 8] = [
+        (80, Some(XErrorCode::BadAlloc)),
+        (86, Some(XErrorCode::BadAlloc)),
+        (87, Some(XErrorCode::BadAlloc)),
+        (89, Some(XErrorCode::BadAccess)),
+        (90, Some(XErrorCode::BadAccess)),
+        (81, None),
+        (82, None),
+        (88, None),
+    ];
+    for (index, (opcode, expected)) in cases.into_iter().enumerate() {
+        let sequence = u16::try_from(index).unwrap() + 3;
+        let mut bytes = vec![opcode, 0];
+        push_u16(&mut bytes, XByteOrder::LittleEndian, 2);
+        push_u32(&mut bytes, XByteOrder::LittleEndian, colormap);
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence) + 1600, XByteOrder::LittleEndian),
+            &bytes,
+        )
+        .unwrap_or_else(|error| panic!("opcode {opcode} decodes: {error:?}"));
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        match expected {
+            None => assert!(result.outputs.is_empty(), "opcode {opcode}"),
+            Some(code) => assert!(
+                matches!(
+                    result.outputs.as_slice(),
+                    [XClientOutput::Error(error)] if error.code == code
+                ),
+                "opcode {opcode}: {:?}",
+                result.outputs
+            ),
+        }
+    }
+
+    // An unknown colormap is named as such, ahead of the family's own answer.
+    let mut bytes = vec![86u8, 0];
+    push_u16(&mut bytes, XByteOrder::LittleEndian, 2);
+    push_u32(&mut bytes, XByteOrder::LittleEndian, 0x2201ff);
+    let request =
+        decode_x11_core_request(context(namespace, 1700, XByteOrder::LittleEndian), &bytes).unwrap();
+    let refused = dispatch_x11_wire_request(
+        dispatch_context(namespace, 20, XByteOrder::LittleEndian, 86),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(matches!(
+        refused.outputs.as_slice(),
+        [XClientOutput::Error(error)] if error.code == XErrorCode::BadColor
+    ));
+}

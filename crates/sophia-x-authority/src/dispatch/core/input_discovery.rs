@@ -23,6 +23,7 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::QueryColors { .. }
             | XWireRequest::CreateColormap { .. }
             | XWireRequest::FreeColormap { .. }
+            | XWireRequest::ColormapRequest { .. }
             | XWireRequest::AllocNamedColor { .. }
             | XWireRequest::LookupColor { .. }
             | XWireRequest::AllocColor { .. }
@@ -345,6 +346,44 @@ fn dispatch_core_input_discovery_request(
                     XDispatchResult {
                         response: None,
                         outputs: output.into_iter().collect(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // A TrueColor visual has no allocable cells and a read-only
+                // colormap, so these requests are answered rather than served.
+                // They are decoded at all so the answer is the protocol's own
+                // error: a client meeting BadRequest may treat it as fatal,
+                // and these arrive on ordinary teardown paths.
+                XWireRequest::ColormapRequest { kind, colormap } => {
+                    let known = runtime.colormap_visual(context.namespace, colormap).is_ok();
+                    let outputs = if !known {
+                        vec![color_error(
+                            context,
+                            XErrorCode::BadColor,
+                            u32::try_from(colormap.local.raw()).unwrap_or(0),
+                        )]
+                    } else {
+                        match kind {
+                            crate::XColormapRequestKind::AllocCells
+                            | crate::XColormapRequestKind::AllocPlanes
+                            | crate::XColormapRequestKind::CopyAndFree => {
+                                vec![color_error(context, XErrorCode::BadAlloc, 0)]
+                            }
+                            crate::XColormapRequestKind::StoreColors
+                            | crate::XColormapRequestKind::StoreNamedColor => {
+                                vec![color_error(context, XErrorCode::BadAccess, 0)]
+                            }
+                            // Installing is a no-op on a visual whose colormap
+                            // is always installed, and freeing colours that
+                            // were never allocated is not an error.
+                            crate::XColormapRequestKind::Install
+                            | crate::XColormapRequestKind::Uninstall
+                            | crate::XColormapRequestKind::FreeColors => Vec::new(),
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
                         metadata_candidates: Vec::new(),
                     }
                 }

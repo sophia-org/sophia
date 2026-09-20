@@ -91,6 +91,24 @@ pub enum XPolyTextItem {
     Font { font: XResourceId },
 }
 
+/// The colormap requests a TrueColor-only server declines.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XColormapRequestKind {
+    /// Read-write allocation: there are no allocable cells on a TrueColor
+    /// visual, so the answer is `BadAlloc`.
+    AllocCells,
+    AllocPlanes,
+    CopyAndFree,
+    /// Storing into a read-only colormap is `BadAccess`.
+    StoreColors,
+    StoreNamedColor,
+    /// Accepted and ignored: a TrueColor colormap is always installed.
+    Install,
+    Uninstall,
+    /// Accepted: nothing was allocated, so nothing needs freeing.
+    FreeColors,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XWireRequest {
     Authority(XAuthorityRequestPacket),
@@ -311,6 +329,14 @@ pub enum XWireRequest {
     },
     SetFontPath,
     GetFontPath,
+    /// A colormap request this TrueColor server answers without serving.
+    ///
+    /// Decoded so the refusal is the protocol's own error rather than
+    /// `BadRequest`, which some clients treat as fatal.
+    ColormapRequest {
+        kind: XColormapRequestKind,
+        colormap: XResourceId,
+    },
     CopyGraphicsContext {
         source: XResourceId,
         destination: XResourceId,
@@ -1262,6 +1288,22 @@ impl core::fmt::Display for XWireParseError {
 
 impl std::error::Error for XWireParseError {}
 
+/// Read the colormap every one of these requests names, at the same offset.
+///
+/// `StoreNamedColor` puts its colormap there too, after the one-byte mode.
+fn decode_colormap_request(
+    context: XWireClientContext,
+    bytes: &[u8],
+    opcode: u8,
+    kind: XColormapRequestKind,
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(opcode, 8, bytes.len())?;
+    Ok(XWireRequest::ColormapRequest {
+        kind,
+        colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+    })
+}
+
 pub fn decode_x11_core_request(
     context: XWireClientContext,
     bytes: &[u8],
@@ -1451,6 +1493,54 @@ pub fn decode_x11_core_request(
                 colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
             })
         }
+        X_COPY_COLORMAP_AND_FREE => decode_colormap_request(
+            context,
+            bytes,
+            X_COPY_COLORMAP_AND_FREE,
+            XColormapRequestKind::CopyAndFree,
+        ),
+        X_INSTALL_COLORMAP => decode_colormap_request(
+            context,
+            bytes,
+            X_INSTALL_COLORMAP,
+            XColormapRequestKind::Install,
+        ),
+        X_UNINSTALL_COLORMAP => decode_colormap_request(
+            context,
+            bytes,
+            X_UNINSTALL_COLORMAP,
+            XColormapRequestKind::Uninstall,
+        ),
+        X_ALLOC_COLOR_CELLS => decode_colormap_request(
+            context,
+            bytes,
+            X_ALLOC_COLOR_CELLS,
+            XColormapRequestKind::AllocCells,
+        ),
+        X_ALLOC_COLOR_PLANES => decode_colormap_request(
+            context,
+            bytes,
+            X_ALLOC_COLOR_PLANES,
+            XColormapRequestKind::AllocPlanes,
+        ),
+        X_FREE_COLORS => decode_colormap_request(
+            context,
+            bytes,
+            X_FREE_COLORS,
+            XColormapRequestKind::FreeColors,
+        ),
+        X_STORE_COLORS => decode_colormap_request(
+            context,
+            bytes,
+            X_STORE_COLORS,
+            XColormapRequestKind::StoreColors,
+        ),
+        X_STORE_NAMED_COLOR => decode_colormap_request(
+            context,
+            bytes,
+            X_STORE_NAMED_COLOR,
+            XColormapRequestKind::StoreNamedColor,
+        ),
         X_ALLOC_COLOR => decode_alloc_color(context, bytes),
         X_ALLOC_NAMED_COLOR => decode_named_color(context, bytes),
         X_LOOKUP_COLOR => decode_named_color(context, bytes),
