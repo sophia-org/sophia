@@ -1,0 +1,234 @@
+[
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib5/XGetSelectionOwner",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XGetSelectionOwner",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XGetSelectionOwner",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib13/XSetInputFocus",
+    "purpose": 13
+  }
+]

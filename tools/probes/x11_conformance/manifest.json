@@ -245,6 +245,10 @@
     {
       "id": "query_best_size",
       "mandatory": true
+    },
+    {
+      "id": "force_screen_saver",
+      "mandatory": true
     }
   ],
   "features": [
@@ -740,6 +744,15 @@
       ],
       "cases": [
         "query_best_size"
+      ]
+    },
+    {
+      "name": "ForceScreenSaver accepts both defined modes and refuses any other",
+      "accepted_core_opcodes": [
+        115
+      ],
+      "cases": [
+        "force_screen_saver"
       ]
     }
   ],
@@ -1479,6 +1492,12 @@
         "reply_errors"
       ],
       "baseline": "Required core request missing from decoder at b3941c04; strict case must fail until implemented."
+    },
+    "115": {
+      "name": "X_FORCE_SCREEN_SAVER",
+      "cases": [
+        "force_screen_saver"
+      ]
     }
   }
 }

@@ -14,6 +14,7 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::GetKeyboardMapping { .. }
             | XWireRequest::GetKeyboardControl
             | XWireRequest::Bell
+            | XWireRequest::ForceScreenSaver { .. }
             | XWireRequest::TranslateCoordinates { .. }
             | XWireRequest::QueryPointer { .. }
             | XWireRequest::QueryExtension { .. }
@@ -91,6 +92,30 @@ fn dispatch_core_input_discovery_request(
                     outputs: Vec::new(),
                     metadata_candidates: Vec::new(),
                 },
+                XWireRequest::ForceScreenSaver { mode } => {
+                    // Reset is 0 and Activate is 1. This host blanks nothing
+                    // and has no idle timer, so both are accepted and move
+                    // no state; the suite's per-test reset needs exactly
+                    // that. A mode outside the pair is the Value error the
+                    // protocol names, reporting the mode as its value.
+                    const X_SCREEN_SAVER_ACTIVATE: u8 = 1;
+                    XDispatchResult {
+                        response: None,
+                        outputs: (mode > X_SCREEN_SAVER_ACTIVATE)
+                            .then(|| {
+                                XClientOutput::Error(crate::XClientError {
+                                    code: XErrorCode::BadValue,
+                                    sequence: context.sequence,
+                                    resource_id: u32::from(mode),
+                                    minor_code: 0,
+                                    major_code: context.major_opcode,
+                                })
+                            })
+                            .into_iter()
+                            .collect(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
                 XWireRequest::TranslateCoordinates {
                     source,
                     destination,
