@@ -203,7 +203,7 @@ impl XServerFrontendRouteRegistry {
                 });
             }
         };
-        self.route_to_client(
+        self.route_control_to_client(
             previous.client,
             &previous_incarnation,
             sender,
@@ -234,7 +234,7 @@ impl XServerFrontendRouteRegistry {
     ) -> Result<(), XServerFrontendRouteError> {
         let senders = self.client_senders(route.client)?;
         let incarnation = senders.connection_state.clone();
-        self.route_to_client(
+        self.route_control_to_client(
             route.client,
             &incarnation,
             senders.control,

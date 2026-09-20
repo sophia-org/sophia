@@ -221,6 +221,10 @@ fn drive_routed_service(
             progressed |= broker.answer_producers()? != 0;
             let routed = broker.serve_order()?;
             progressed |= routed != 0;
+            // A control a full channel would not take last turn goes now if
+            // the channel has room: backpressure from a client that was
+            // merely descheduled is a turn that moved nothing, not a fault.
+            progressed |= broker.flush_deferred_controls()? != 0;
             // AFTER ROUTING, FROM THIS FRAME. A connection that published its
             // readiness since the last turn gets its worker here; one that
             // was already visited is not visited again.

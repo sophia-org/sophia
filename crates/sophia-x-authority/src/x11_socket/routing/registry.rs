@@ -67,6 +67,10 @@ struct XServerFrontendRouteRegistry {
     per_client_protocol_capacity: NonZeroUsize,
     per_client_presentation_capacity: NonZeroUsize,
     source_payload_sender: SyncSender<crate::ClipboardSourcePayload>,
+    /// Controls a full per-client channel would not take, kept per client in
+    /// the order they were routed; the private path's, see
+    /// `registry/control_backlog.rs` for its bound and its lock order.
+    control_backlog: Arc<Mutex<BTreeMap<XServerFrontendClientId, VecDeque<XDeferredRoutedControl>>>>,
 }
 
 #[cfg(unix)]
@@ -972,6 +976,7 @@ impl XServerFrontendRouteRegistry {
 include!("registry/present.rs");
 include!("registry/ordered.rs");
 include!("registry/delivery.rs");
+include!("registry/control_backlog.rs");
 include!("registry/present_msc.rs");
 
 include!("registry/present_layout.rs");

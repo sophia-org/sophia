@@ -527,6 +527,7 @@ impl XServerFrontendRouteBroker {
                 per_client_protocol_capacity: capacities.protocol,
                 per_client_presentation_capacity: capacities.presentations,
                 source_payload_sender,
+                control_backlog: Arc::new(Mutex::new(BTreeMap::new())),
             },
             input_sender,
             input_receiver,
