@@ -956,6 +956,45 @@ Check their deterministic fixtures without taking hardware ownership:
 tools/check_atomic_scanout_verifiers.sh
 ```
 
+## Keyboard Independence Physical Gate
+
+Two physical keyboards on one seat, attended, for t094. The backend mints an
+identity per device and announces arrivals and departures on the packet
+stream; the session releases a departed device's held keys on its own turn.
+Headless controls pin each of those pieces; only this gate proves them on
+hardware, where one keyboard is unplugged while it holds a key.
+
+From tty4, with two keyboards attached and the one to be unplugged named
+first:
+
+```sh
+SOPHIA_KEYBOARD_A=/dev/input/by-id/...-event-kbd \
+SOPHIA_KEYBOARD_B=/dev/input/by-id/...-event-kbd \
+    tools/run_keyboard_independence_gate_tty4.sh
+```
+
+The runner binds the clean, signed commit and the release binary, then
+`tools/keyboard_independence_physical_gate.sh` runs three phases. Two
+input-guard runs come first, on the seat and pinned to keyboard A: a chord
+split across the two keyboards must not arm, the whole chord on A arms and
+then triggers. Then the session runs with Kitty showing
+`tools/fixtures/keyboard_independence_guide.sh`: a shift on B, a shift held on
+A, A unplugged while held (the session must record `status=removed ...
+released=1`), A replugged (a new identity, never the old one), a shift on the
+returned A, and the proof phrase typed on B. The text proof requires an
+unshifted phrase, which is the control that A's shift was released.
+
+`tools/verify_keyboard_independence_physical.sh EVIDENCE_DIR` reads the three
+logs; `tools/check_keyboard_independence_verifier.sh` pins it against a
+fixture and every mutation that would let a failed run pass, and runs under
+`cargo xtask check`. A verified run is archived by
+`tools/archive_keyboard_independence_physical_run.sh` under
+`$XDG_STATE_HOME/sophia/promotion/keyboard-independence-runs/NNNN` with the
+signed commit and binary digest bound. A uinput keyboard is admitted like any
+other and announced with `virtual=true`; the verifier requires both keyboards
+to be hardware, so a rehearsal with a virtual keyboard exercises the path but
+can never satisfy the claim.
+
 ## Retiring `DEFAULT_DISPLAY`
 
 The `DEFAULT_DISPLAY` EGL smoke is temporary, but it is not removable merely

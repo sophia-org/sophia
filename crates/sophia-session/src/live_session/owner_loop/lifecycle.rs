@@ -152,6 +152,11 @@
                                     device_map,
                                     Some(controller.device_opener()),
                                 )?;
+                                // A reopened seat announces its devices under new identities. What
+                                // the old ones still held is released now, so no key outlives the
+                                // device that pressed it.
+                                flush_all_client_keys!("input_reopened");
+                                keyboard_coverage.forget_all_devices();
                                 modifiers = config.keyboard_mapper();
                                 virtual_terminal_chord = VirtualTerminalChordState::default();
                                 emergency_chord = EmergencyChordState::armed();
@@ -175,6 +180,8 @@
                             device_map,
                             Some(controller.device_opener()),
                         )?;
+                        flush_all_client_keys!("input_reopened");
+                        keyboard_coverage.forget_all_devices();
                         modifiers = config.keyboard_mapper();
                         virtual_terminal_chord = VirtualTerminalChordState::default();
                         emergency_chord = EmergencyChordState::armed();
@@ -234,6 +241,8 @@
                     device_map,
                     Some(controller.device_opener()),
                 )?;
+                flush_all_client_keys!("input_reopened");
+                keyboard_coverage.forget_all_devices();
                 modifiers = config.keyboard_mapper();
                 key_repeat.cancel_seat(seat);
                 virtual_terminal_chord = VirtualTerminalChordState::default();
@@ -385,6 +394,8 @@
                     device_map,
                     Some(controller.device_opener()),
                 )?;
+                flush_all_client_keys!("input_reopened");
+                keyboard_coverage.forget_all_devices();
                 cursor_updates = CursorUpdateState::new(pointer.position().is_some());
                 seat_state = seat_state.acquired();
                 render_owners.seat_active = seat_state == sophia_backend_live::LiveSeatState::Active;

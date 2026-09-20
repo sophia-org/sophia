@@ -457,6 +457,18 @@ impl XServerFrontendRouteRegistry {
                     route.delivery,
                 );
             }
+            // A device announcement is consumed on the session's physical
+            // turn and never routed. One that reaches a client route is
+            // rejected the way an unmappable button is, so the sender hears
+            // that nothing was delivered.
+            InputEventKind::DeviceAdded { .. } | InputEventKind::DeviceRemoved => {
+                tracing::warn!("sophia_x11_input_route status=rejected reason=device_announcement client={} content=redacted", client.raw());
+                return self.send_input_delivery(
+                    client,
+                    route.delivery,
+                    XAuthorityInputDeliveryOutcome::RouteRejected,
+                );
+            }
         };
         drop(pointers);
         let lease_update = route.route_lease.and_then(|identity| {

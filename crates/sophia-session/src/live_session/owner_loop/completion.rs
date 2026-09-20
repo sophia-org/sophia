@@ -749,6 +749,10 @@
             policy.pointers,
             policy.touch_devices,
         );
+        crate::session_println!(
+            "sophia_live_session_input_device schema=1 status=summary fallbacks={}",
+            policy.identity_fallbacks,
+        );
     }
     let native_resources = native_totals.resources;
     let native_target_creations = native_resources.target_creations;

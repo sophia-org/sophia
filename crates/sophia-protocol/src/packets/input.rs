@@ -36,6 +36,21 @@ pub enum InputEventKind {
         keycode: u32,
         pressed: bool,
     },
+    /// A physical device joined the seat. The packet's `device` is its
+    /// identity for as long as it stays; a device that leaves and returns is
+    /// announced again under a new one. Names and paths never travel here.
+    DeviceAdded {
+        keyboard: bool,
+        pointer: bool,
+        touch: bool,
+        /// The kernel reports the device on the virtual bus: a uinput device,
+        /// admitted like any other and marked so evidence cannot mistake it
+        /// for hardware.
+        virtual_bus: bool,
+    },
+    /// The device left the seat. Every key it still held is owed a release,
+    /// which the session issues on seeing this.
+    DeviceRemoved,
 }
 
 #[derive(Clone, Debug, PartialEq)]

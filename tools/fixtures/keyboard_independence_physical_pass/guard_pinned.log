@@ -1,0 +1,4 @@
+sophia_session_input_guard schema=2 status=ready source=paths seat=explicit devices=1 keyboards=1
+sophia_keyboard_independence_guard schema=1 status=split_chord_ignored phase=pinned
+sophia_session_input_guard schema=1 status=armed
+sophia_session_input_guard schema=1 status=triggered

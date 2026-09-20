@@ -518,6 +518,9 @@ impl XServerFrontendRouteRegistry {
             InputEventKind::PointerMotion
             | InputEventKind::PointerButton { .. }
             | InputEventKind::PointerAxis { .. } => authority.pointer_frozen(namespace),
+            // An announcement is never frozen: it is not delivered, so there
+            // is nothing a grab could hold back.
+            InputEventKind::DeviceAdded { .. } | InputEventKind::DeviceRemoved => false,
         })
     }
 

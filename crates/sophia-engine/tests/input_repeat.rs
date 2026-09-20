@@ -80,3 +80,20 @@ fn repeat_seat_storage_fails_closed_at_fixed_capacity() {
     );
     assert_eq!(repeat.metrics().seat_capacity_exhausted, 1);
 }
+
+#[test]
+fn a_departed_device_cancels_only_its_own_repeat() {
+    let mut repeat = KeyRepeatState::new(KeyRepeatConfig::new(500, 40).unwrap());
+    let mut held = target(1, 2, 30);
+    held.device = DeviceId::from_raw(258);
+    let other = target(2, 3, 30);
+    repeat.arm(held, 0, true);
+    repeat.arm(other, 0, true);
+
+    assert_eq!(repeat.cancel_device(DeviceId::from_raw(257)), 0);
+    assert_eq!(repeat.active_target(held.seat), Some(held));
+    assert_eq!(repeat.cancel_device(DeviceId::from_raw(258)), 1);
+    assert_eq!(repeat.active_target(held.seat), None);
+    assert_eq!(repeat.active_target(other.seat), Some(other));
+    assert_eq!(repeat.metrics().cancelled, 1);
+}

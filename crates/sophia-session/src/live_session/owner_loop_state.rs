@@ -66,6 +66,8 @@ struct InputObservationState {
     pointer_axis_routed: bool,
     client_positioned_pointer_axis_routed: bool,
     return_suppressed: bool,
+    /// Devices a key has been observed from, so each is announced once.
+    devices_keyed: std::collections::BTreeSet<DeviceId>,
 }
 
 struct CursorUpdateState {

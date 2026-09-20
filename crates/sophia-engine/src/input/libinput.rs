@@ -49,6 +49,44 @@ impl LibinputEventSource {
     }
 
     pub fn push_event(&mut self, event: InputEventPacket) -> LibinputEventIngest {
+        match event.kind {
+            // An announcement is the registration. A device offering none of
+            // the kinds this source routes is announced and left unregistered,
+            // so its later events, if it ever had any, stay unknown.
+            sophia_protocol::InputEventKind::DeviceAdded {
+                keyboard,
+                pointer,
+                touch,
+                ..
+            } => {
+                let kind = if keyboard {
+                    Some(LibinputDeviceKind::Keyboard)
+                } else if pointer {
+                    Some(LibinputDeviceKind::Pointer)
+                } else if touch {
+                    Some(LibinputDeviceKind::Touch)
+                } else {
+                    None
+                };
+                if let Some(kind) = kind {
+                    self.register_device(LibinputDeviceDescriptor {
+                        seat: event.seat,
+                        device: event.device,
+                        kind,
+                    });
+                }
+                self.pending.push(event);
+                return LibinputEventIngest::Accepted;
+            }
+            sophia_protocol::InputEventKind::DeviceRemoved => {
+                if self.remove_device(event.device).is_none() {
+                    return LibinputEventIngest::UnknownDevice;
+                }
+                self.pending.push(event);
+                return LibinputEventIngest::Accepted;
+            }
+            _ => {}
+        }
         let Some(device) = self.devices.get(&event.device) else {
             return LibinputEventIngest::UnknownDevice;
         };

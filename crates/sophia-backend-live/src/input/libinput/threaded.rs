@@ -113,6 +113,7 @@ pub struct ThreadedNativeLibinputEventPoller {
     max_queue_dwell_msec: usize,
     event_timings: VecDeque<ThreadedNativeInputEventTiming>,
     saturation: Arc<Mutex<NativeInputAcquisitionSaturation>>,
+    inventory: Arc<Mutex<Vec<NativeLibinputDeviceRecord>>>,
     max_read_per_poll: usize,
     worker: Option<JoinHandle<()>>,
 }
@@ -130,6 +131,14 @@ impl ThreadedNativeLibinputEventPoller {
         self.policy
             .lock()
             .map_or_else(|_| NativeLibinputPolicyReport::default(), |policy| *policy)
+    }
+
+    /// The devices the worker's seat holds right now, as opaque records.
+    /// Published by the reader on every change; a poisoned lock reads empty.
+    pub fn device_inventory(&self) -> Vec<NativeLibinputDeviceRecord> {
+        self.inventory
+            .lock()
+            .map_or_else(|_| Vec::new(), |inventory| inventory.clone())
     }
 
     pub fn drain_event_timings(&mut self) -> Vec<ThreadedNativeInputEventTiming> {
@@ -373,7 +382,8 @@ fn open_threaded_native_libinput_poller(
             Ok(poller) => {
                 let policy = poller.reader().policy_report();
                 let handle = poller.reader().policy_handle();
-                let _ = startup_sender.send(Ok((policy, handle)));
+                let inventory = poller.reader().inventory_handle();
+                let _ = startup_sender.send(Ok((policy, handle, inventory)));
                 poller
             }
             Err(error) => {
@@ -394,7 +404,7 @@ fn open_threaded_native_libinput_poller(
         let _ = health_sender.try_send(result);
     });
     match startup_receiver.recv_timeout(Duration::from_secs(5)) {
-        Ok(Ok((_policy, policy))) => Ok(ThreadedNativeLibinputEventPoller {
+        Ok(Ok((_policy, policy, inventory))) => Ok(ThreadedNativeLibinputEventPoller {
             receiver,
             health,
             policy,
@@ -405,6 +415,7 @@ fn open_threaded_native_libinput_poller(
             max_queue_dwell_msec: 0,
             event_timings: VecDeque::new(),
             saturation,
+            inventory,
             max_read_per_poll,
             worker: Some(worker),
         }),
