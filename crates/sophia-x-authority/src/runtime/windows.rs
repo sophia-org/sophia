@@ -596,6 +596,7 @@ impl XAuthorityRuntime {
          self.forget_window_shapes(window);
          self.window_background_pixels.remove(&window);
          self.window_visuals.remove(&window);
+         self.release_window_cursor(window);
          self.input_only_windows.remove(&window);
          self.glx_drawables.retain(|_, record| match record.backing {
              XGlxDrawableBacking::Window(underlying) => underlying != window,

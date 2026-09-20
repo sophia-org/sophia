@@ -1136,3 +1136,26 @@ fn expect_raster_fallback(outcome: XSurfaceRasterOutcome, message: &str) -> XRas
         XSurfaceRasterOutcome::Satisfied(_) => panic!("{message}: unexpectedly satisfied"),
     }
 }
+
+fn change_window_cursor_request(byte_order: XByteOrder, window: u32, cursor: u32) -> Vec<u8> {
+    let mut out = vec![2, 0];
+    push_u16(&mut out, byte_order, 4);
+    push_u32(&mut out, byte_order, window);
+    push_u32(&mut out, byte_order, 1 << 14);
+    push_u32(&mut out, byte_order, cursor);
+    out
+}
+
+fn create_cursor_request(byte_order: XByteOrder, cursor: u32, source: u32) -> Vec<u8> {
+    let mut out = vec![93, 0];
+    push_u16(&mut out, byte_order, 8);
+    push_u32(&mut out, byte_order, cursor);
+    push_u32(&mut out, byte_order, source);
+    push_u32(&mut out, byte_order, 0);
+    // Six colour components, then the hotspot. The values decide nothing
+    // here; the request's length does, and it is what makes this a cursor.
+    for _ in 0..8 {
+        push_u16(&mut out, byte_order, 0);
+    }
+    out
+}

@@ -124,6 +124,8 @@ pub enum XWireRequest {
         override_redirect: bool,
         event_mask: Option<u32>,
         do_not_propagate_mask: Option<u32>,
+        /// Raw, for the same reason the change request carries it raw.
+        cursor: Option<u32>,
         /// The window was created InputOnly: it can be the target of input
         /// and geometry requests but never of a drawing request.
         input_only: bool,
@@ -133,6 +135,9 @@ pub enum XWireRequest {
         override_redirect: Option<bool>,
         event_mask: Option<u32>,
         do_not_propagate_mask: Option<u32>,
+        /// Raw, because zero is None in the attribute: the window stops
+        /// having a cursor of its own rather than naming resource zero.
+        cursor: Option<u32>,
     },
     GetWindowAttributes {
         window: XResourceId,

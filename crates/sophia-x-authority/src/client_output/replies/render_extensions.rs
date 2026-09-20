@@ -21,6 +21,7 @@ fn encode_render_extension_reply(
             | XClientReply::XfixesFetchRegion { .. }
             | XClientReply::ShapeQueryVersion { .. }
             | XClientReply::XTestGetVersion { .. }
+            | XClientReply::XTestCompareCursor { .. }
             | XClientReply::ShapeQueryExtents { .. }
             | XClientReply::ShapeInputSelected { .. }
             | XClientReply::ShapeGetRectangles { .. }
@@ -107,6 +108,14 @@ fn encode_render_extension_reply(
                     // eight, which is not where the request carries them.
                     out[1] = major_version;
                     put_u16(byte_order, &mut out[8..10], minor_version);
+                    out
+                }
+                XClientReply::XTestCompareCursor { sequence, same } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    // The answer is the detail byte, which is where a reply
+                    // with nothing else to say puts its one value.
+                    out[1] = u8::from(same);
                     out
                 }
                 XClientReply::ShapeQueryExtents {

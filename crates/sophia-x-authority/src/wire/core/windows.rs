@@ -169,6 +169,7 @@ fn decode_change_window_attributes(
     let mut event_mask = None;
     let mut do_not_propagate_mask = None;
     let mut override_redirect = None;
+    let mut cursor = None;
     let mut value_cursor = X_CHANGE_WINDOW_ATTRIBUTES_REQ_LEN;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
@@ -182,6 +183,7 @@ fn decode_change_window_attributes(
             9 => override_redirect = Some(value != 0),
             11 => event_mask = Some(value),
             12 => do_not_propagate_mask = Some(value),
+            14 => cursor = Some(value),
             _ => {}
         }
     }
@@ -190,6 +192,7 @@ fn decode_change_window_attributes(
         override_redirect,
         event_mask,
         do_not_propagate_mask,
+        cursor,
     })
 }
 
@@ -213,6 +216,7 @@ fn decode_create_window(
     let mut event_mask = None;
     let mut do_not_propagate_mask = None;
     let mut colormap = None;
+    let mut cursor = None;
     let mut override_redirect = false;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
@@ -228,6 +232,7 @@ fn decode_create_window(
             11 => event_mask = Some(value),
             12 => do_not_propagate_mask = Some(value),
             13 => colormap = Some(XResourceId::new(u64::from(value), 1)),
+            14 => cursor = Some(value),
             _ => {}
         }
     }
@@ -268,6 +273,7 @@ fn decode_create_window(
         override_redirect,
         event_mask,
         do_not_propagate_mask,
+        cursor,
         input_only: class == 2,
     })
 }

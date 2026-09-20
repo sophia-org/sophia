@@ -13,6 +13,9 @@ pub enum XErrorCode {
     BadAccess,
     BadAlloc,
     BadColor,
+    /// A cursor that does not exist. Core error six, which nothing refused
+    /// until a request arrived that names a cursor.
+    BadCursor,
     BadGraphicsContext,
     BadIdChoice,
     BadName,
@@ -47,6 +50,7 @@ impl XErrorCode {
             Self::BadAccess => 10,
             Self::BadAlloc => 11,
             Self::BadColor => 12,
+            Self::BadCursor => 6,
             Self::BadGraphicsContext => 13,
             Self::BadIdChoice => 14,
             Self::BadName => 15,

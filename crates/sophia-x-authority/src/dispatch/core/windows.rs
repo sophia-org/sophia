@@ -170,10 +170,34 @@ fn dispatch_core_window_request(
                 XWireRequest::ChangeWindowAttributes {
                     window,
                     override_redirect,
+                    cursor,
                     ..
                 } => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
+                    // The cursor first, and separately: it names a second
+                    // resource, so it is the one attribute here that can be
+                    // refused for something other than the window. A refusal
+                    // names the cursor, because that is what was wrong.
+                    if let Some(cursor) = cursor
+                        && runtime
+                            .validate_drawable_access(context.namespace, window)
+                            .is_ok()
+                        && let Err(error) =
+                            runtime.set_window_cursor(context.namespace, window, cursor)
+                    {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                0,
+                                cursor,
+                            ))],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
                     let outputs = if let Err(error) =
                         runtime.validate_drawable_access(context.namespace, window)
                     {

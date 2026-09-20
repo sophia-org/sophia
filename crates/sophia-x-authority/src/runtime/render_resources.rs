@@ -898,6 +898,10 @@ impl XAuthorityRuntime {
             .lookup(namespace, cursor, XResourceKind::Cursor)?;
         self.resources.remove(cursor);
         self.render_cursor_images.remove(&cursor);
+        // A window still naming this cursor would answer questions about a
+        // cursor nobody owns, and would answer them wrongly the moment the
+        // id is issued again to something else.
+        self.release_cursor_attribute_uses(cursor);
         Ok(())
     }
 

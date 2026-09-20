@@ -136,6 +136,71 @@ fn validate_fake_input(
     xtest_accepted()
 }
 
+/// Answer whether a window's cursor is the one named.
+///
+/// The window is checked first and the cursor second, which is the order the
+/// request reads and therefore the order a client can rely on: a request that
+/// names neither correctly hears about the window.
+///
+/// Zero is None and one is CurrentCursor, and both are answered without
+/// looking anything up, because neither is a resource. None asks whether the
+/// window shows no cursor at all, which is a real state -- a window whose
+/// ancestors up to the root have none shows none. CurrentCursor asks whether
+/// the window shows what the pointer is showing, which is read from where the
+/// pointer actually is rather than from what the window would like.
+fn compare_cursor(
+    context: XDispatchContext,
+    window: crate::XResourceId,
+    cursor: u32,
+    runtime: &XAuthorityRuntime,
+) -> XDispatchResult {
+    let minor = crate::X_TEST_COMPARE_CURSOR_MINOR_OPCODE;
+    let window_raw = u32::try_from(window.local.raw()).unwrap_or(u32::MAX);
+    if window.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT)
+        && runtime
+            .validate_window_access(context.namespace, window)
+            .is_err()
+    {
+        return xtest_error(context, XErrorCode::BadWindow, minor, window_raw);
+    }
+    let shown = runtime.window_effective_cursor(context.namespace, window);
+    let same = match cursor {
+        crate::X_TEST_CURSOR_NONE => shown.is_none(),
+        crate::X_TEST_CURSOR_CURRENT => {
+            let position = runtime
+                .input_authority_mut()
+                .pointer_query_state(context.namespace)
+                .position;
+            let current = position.and_then(|position| {
+                runtime.cursor_under_point(
+                    context.namespace,
+                    i32::from(position.root_x),
+                    i32::from(position.root_y),
+                )
+            });
+            shown == current
+        }
+        named => {
+            let named = crate::XResourceId::new(u64::from(named), 1);
+            if runtime
+                .validate_cursor_access(context.namespace, named)
+                .is_err()
+            {
+                return xtest_error(context, XErrorCode::BadCursor, minor, cursor);
+            }
+            shown == Some(named)
+        }
+    };
+    XDispatchResult {
+        response: None,
+        outputs: vec![XClientOutput::Reply(XClientReply::XTestCompareCursor {
+            sequence: context.sequence,
+            same,
+        })],
+        metadata_candidates: Vec::new(),
+    }
+}
+
 /// XTEST, answered against the one decision about whether this client may
 /// inject.
 ///
@@ -188,7 +253,9 @@ fn dispatch_xtest_request(
         XWireRequest::XTestUnimplemented { .. } => {
             xtest_error(context, XErrorCode::BadRequest, minor, 0)
         }
-        // CompareCursor joins here with the window cursor attribute.
+        XWireRequest::XTestCompareCursor { window, cursor } => {
+            compare_cursor(context, *window, *cursor, runtime)
+        }
         _ => xtest_error(context, XErrorCode::BadImplementation, minor, 0),
     })
 }

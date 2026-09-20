@@ -43,6 +43,7 @@ include!("runtime/shape.rs");
 include!("runtime/sync.rs");
 include!("runtime/windows.rs");
 include!("runtime/window_allocation.rs");
+include!("runtime/window_cursors.rs");
 include!("runtime/glx_resources.rs");
 include!("runtime/pointer_query.rs");
 
@@ -228,6 +229,8 @@ pub struct XAuthorityRuntime {
     graphics_contexts: XGraphicsContextTable,
     window_background_pixels: BTreeMap<crate::XResourceId, u32>,
     window_visuals: BTreeMap<crate::XResourceId, (u8, u32, crate::XResourceId)>,
+    /// The cursor each window asks for, absent when it shows its parent's.
+    window_cursors: BTreeMap<crate::XResourceId, crate::XResourceId>,
     /// Windows created InputOnly. They take input and geometry requests but
     /// have no pixels, so the drawing family refuses them.
     input_only_windows: BTreeSet<crate::XResourceId>,
@@ -300,6 +303,7 @@ impl Default for XAuthorityRuntime {
             graphics_contexts: Default::default(),
             window_background_pixels: Default::default(),
             window_visuals: Default::default(),
+            window_cursors: Default::default(),
             input_only_windows: Default::default(),
             window_allocation: Default::default(),
             colormaps: Default::default(),

@@ -188,6 +188,7 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
     assert_eq!(
         attributes,
         XWireRequest::ChangeWindowAttributes {
+            cursor: None,
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             override_redirect: None,
             event_mask: None,

@@ -97,3 +97,8 @@ const X_TEST_FAKE_INPUT_EVENT_LEN: usize = 32;
 const X_TEST_FAKE_INPUT_HEADER_LEN: usize =
     X_TEST_FAKE_INPUT_REQ_LEN - X_TEST_FAKE_INPUT_EVENT_LEN;
 const X_TEST_GRAB_CONTROL_REQ_LEN: usize = 8;
+
+/// `CompareCursor`'s cursor argument: no cursor at all, not resource zero.
+pub const X_TEST_CURSOR_NONE: u32 = 0;
+/// `CompareCursor`'s cursor argument: whatever the pointer is showing now.
+pub const X_TEST_CURSOR_CURRENT: u32 = 1;

@@ -555,3 +555,160 @@ fn xtest_grab_control_takes_a_strict_boolean() {
         assert_eq!(error.resource_id, 2);
     }
 }
+
+/// Put a window carrying its own cursor into a fresh runtime, and answer
+/// with the ids of the window and the cursor.
+fn window_with_a_cursor(
+    byte_order: XByteOrder,
+    namespace: NamespaceId,
+    runtime: &mut XAuthorityRuntime,
+    atoms: &mut XAtomTable,
+    properties: &mut XPropertyTable,
+) -> (u32, u32) {
+    let window = 0x0026_0001u32;
+    let pixmap = 0x0026_0002u32;
+    let cursor = 0x0026_0003u32;
+    let mut send = |sequence: u16, opcode: u8, bytes: Vec<u8>| {
+        let request = decode_x11_core_request(context(namespace, u64::from(sequence), byte_order), &bytes)
+            .expect("a well-formed fixture request");
+        let result = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, byte_order, opcode),
+            request,
+            runtime,
+            atoms,
+            properties,
+        );
+        assert!(
+            !result
+                .outputs
+                .iter()
+                .any(|output| matches!(output, XClientOutput::Error(_))),
+            "{byte_order:?} fixture request {opcode} refused: {:?}",
+            result.outputs
+        );
+    };
+    send(1, 1, create_window_request(byte_order, window, 10, 20, 64, 48));
+    send(2, 53, create_pixmap_request(byte_order, 1, pixmap, window, 1, 1));
+    send(3, 93, create_cursor_request(byte_order, cursor, pixmap));
+    send(4, 2, change_window_cursor_request(byte_order, window, cursor));
+    (window, cursor)
+}
+
+#[test]
+fn xtest_compare_cursor_answers_the_windows_own_cursor_and_none() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let namespace = NamespaceId::from_raw(7);
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        let (window, cursor) = window_with_a_cursor(
+            byte_order,
+            namespace,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        let mut compare = |sequence: u16, window: u32, cursor: u32| {
+            dispatch_x11_wire_request(
+                admitted_context(sequence, byte_order),
+                XWireRequest::XTestCompareCursor {
+                    window: XResourceId::new(u64::from(window), 1),
+                    cursor,
+                },
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            )
+        };
+
+        let same = compare(50, window, cursor);
+        let [XClientOutput::Reply(XClientReply::XTestCompareCursor { same, .. })] =
+            same.outputs.as_slice()
+        else {
+            panic!("{byte_order:?} CompareCursor owes a reply: {:?}", same.outputs);
+        };
+        assert!(*same, "{byte_order:?} the window shows the cursor it was given");
+
+        // Zero is None, and None is a real answer: this window has a cursor,
+        // so it does not show none.
+        let none = compare(51, window, 0);
+        let [XClientOutput::Reply(XClientReply::XTestCompareCursor { same, .. })] =
+            none.outputs.as_slice()
+        else {
+            panic!("{byte_order:?} CompareCursor owes a reply");
+        };
+        assert!(!*same, "{byte_order:?} a window with a cursor shows something");
+
+        // One is CurrentCursor. Nothing has observed the pointer in this
+        // runtime, so what it shows is nothing, which the window does not
+        // match. The question is still answered rather than refused.
+        let current = compare(52, window, 1);
+        let [XClientOutput::Reply(XClientReply::XTestCompareCursor { same, .. })] =
+            current.outputs.as_slice()
+        else {
+            panic!("{byte_order:?} CurrentCursor is answered, not refused");
+        };
+        assert!(!*same, "{byte_order:?} an unobserved pointer shows no cursor");
+    }
+}
+
+#[test]
+fn xtest_compare_cursor_refuses_the_window_before_the_cursor() {
+    // Both are wrong. The window is reported, because that is the order the
+    // request reads and therefore the order a client can rely on.
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let namespace = NamespaceId::from_raw(7);
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        let (window, _) = window_with_a_cursor(
+            byte_order,
+            namespace,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+        let absent_window = 0x0026_0111u32;
+        let absent_cursor = 0x0026_0222u32;
+        for (named_window, named_cursor, code, value) in [
+            (absent_window, absent_cursor, XErrorCode::BadWindow, absent_window),
+            (absent_window, 0, XErrorCode::BadWindow, absent_window),
+            (absent_window, 1, XErrorCode::BadWindow, absent_window),
+            (window, absent_cursor, XErrorCode::BadCursor, absent_cursor),
+        ] {
+            let result = dispatch_x11_wire_request(
+                admitted_context(53, byte_order),
+                XWireRequest::XTestCompareCursor {
+                    window: XResourceId::new(u64::from(named_window), 1),
+                    cursor: named_cursor,
+                },
+                &mut runtime,
+                &mut atoms,
+                &mut properties,
+            );
+            let [XClientOutput::Error(error)] = result.outputs.as_slice() else {
+                panic!("{byte_order:?} {named_window:#x}/{named_cursor:#x} must be refused");
+            };
+            assert_eq!(error.code, code, "{byte_order:?} {named_window:#x}/{named_cursor:#x}");
+            assert_eq!(error.resource_id, value);
+            assert_eq!(error.minor_code, u16::from(X_TEST_COMPARE_CURSOR_MINOR_OPCODE));
+            assert_eq!(error.major_code, X_TEST_MAJOR_OPCODE);
+        }
+    }
+}
+
+#[test]
+fn the_cursor_attribute_is_decoded_in_both_orders() {
+    for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let namespace = NamespaceId::from_raw(7);
+        let bytes = change_window_cursor_request(byte_order, 0x0026_0001, 0x0026_0003);
+        let request = decode_x11_core_request(context(namespace, 1, byte_order), &bytes)
+            .expect("a well-formed attribute request");
+        let XWireRequest::ChangeWindowAttributes { cursor, window, .. } = request else {
+            panic!("{byte_order:?} decoded the wrong request");
+        };
+        // Raw, because zero is None in this attribute rather than a resource.
+        assert_eq!(cursor, Some(0x0026_0003));
+        assert_eq!(window.local.raw(), 0x0026_0001);
+    }
+}

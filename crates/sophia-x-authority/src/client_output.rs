@@ -20,6 +20,7 @@ include!("client_output/replies/xkb.rs");
 include!("client_output/errors.rs");
 include!("client_output/events.rs");
 include!("client_output/helpers.rs");
+include!("client_output/reply_records.rs");
 
 pub const X_CLIENT_OUTPUT_RECORD_LEN: usize = 32;
 
@@ -523,6 +524,11 @@ pub enum XClientReply {
         major_version: u8,
         minor_version: u16,
     },
+    /// `XTestCompareCursor`. One bit, and it rides the detail byte.
+    XTestCompareCursor {
+        sequence: u16,
+        same: bool,
+    },
     ShapeQueryExtents {
         sequence: u16,
         bounding_shaped: bool,
@@ -859,92 +865,6 @@ pub enum XClientReply {
         sequence: u16,
         colors: Vec<XColorRgb16>,
     },
-}
-
-/// One device in an XI1 `ListInputDevices` reply.
-///
-/// Separate from `XXiDeviceInfo` because XI1 and XI2 describe a device
-/// differently: XI1 names the type with an atom, reports a `DeviceUse`, and has
-/// no vocabulary for scroll classes. Both are projected from one table in the
-/// XI dispatcher, so the difference is a shape difference, not a second truth.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XXiLegacyDeviceInfo {
-    pub device_id: u8,
-    pub device_type: u32,
-    pub device_use: u8,
-    pub name: String,
-    pub classes: Vec<XXiLegacyDeviceClass>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum XXiLegacyDeviceClass {
-    Key { min_keycode: u8, max_keycode: u8 },
-    Button { button_count: u16 },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XXiDeviceInfo {
-    pub device_id: u16,
-    pub device_type: u16,
-    pub attachment: u16,
-    pub name: String,
-    pub classes: Vec<XXiDeviceClass>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum XXiDeviceClass {
-    Key {
-        source_id: u16,
-        keys: Vec<u32>,
-    },
-    Button {
-        source_id: u16,
-        button_count: u16,
-    },
-    Valuator {
-        source_id: u16,
-        number: u16,
-        label: u32,
-        min: i64,
-        max: i64,
-        value: i64,
-    },
-    Scroll {
-        source_id: u16,
-        number: u16,
-        scroll_type: u16,
-        flags: u32,
-        increment: i64,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XRandrModeInfo {
-    pub id: u32,
-    pub width: u16,
-    pub height: u16,
-    pub refresh_millihz: u32,
-    /// The scanout timing this mode runs, when the output reported one.
-    ///
-    /// `None` means the encoder has to describe a mode it was never told the
-    /// shape of, which it does by declaring no blanking at all -- a modeline
-    /// that cannot physically exist, and therefore cannot be mistaken for a
-    /// measured one.
-    pub timing: Option<sophia_protocol::OutputModeTiming>,
-    pub name: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct XRandrMonitorInfo {
-    pub name: u32,
-    pub primary: bool,
-    pub x: i16,
-    pub y: i16,
-    pub width: u16,
-    pub height: u16,
-    pub mm_width: u32,
-    pub mm_height: u32,
-    pub outputs: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
