@@ -101,8 +101,8 @@ descriptors and connections to a different authority are not.
 | M2 | Review the common API for executor integration | Own and repair `sophia-input-authority`, its pool and identity regressions, and independent evidence |
 | M3 | Ordered writer, delivery arbitration, real receipts and origin-bound terminal/debt consumer | Applied routing and native proof, prepared runner/service budget/watchdog, exact lifecycle integration, independent fault controls |
 | M4 | Expose production Session controller and broker integration with deterministic topology/clock adapters | Build the private Session host and containment runner with fabricated endpoint negatives |
-| M5 | Implement all four XTEST 2.1 requests, admission and cancellation | Independent clients in both byte orders with absolute deadlines |
-| M6 | Affected Rust tests, default build, warnings and workspace checks | All profiles, retained provenance, honest XTS result, tracking and coordinated integration |
+| M5 | [Implement all four XTEST 2.1 requests](#m5-execution-contract), admission and cancellation | Independent clients in both byte orders with absolute deadlines |
+| M6 | [Affected Rust tests](#m6-execution-contract), default build, warnings and workspace checks | All profiles, retained provenance, honest XTS result, tracking and coordinated integration |
 
 Separate targets and worktrees prevent stale include-file and build-cache
 comparisons. No merge precedes coordination of runtime, gate and tracking diffs.
@@ -137,6 +137,180 @@ public discovery, hardware acceptance or t094 completion belongs to this slice.
 
 The [M4 ownership investigation](../investigations/znh5pw3b-m4-private-session-ownership-and-contained-acceptance.md)
 records source findings, failed runs and the limits of each contained result.
+
+### M5 execution contract
+
+M5 starts from the integrated M4 tip and adds the XTEST 2.1 adapter. Session
+already owns the authority, the issuer, admissions, receipts and the execution
+keeper; M5 adds the protocol surface that reaches them, and the completion path
+that does not yet exist. The major is 146; the collision check is done, and the
+assigned range runs 130 through 145.
+
+The extension is not advertised until all four requests and real server-grab
+imperviousness answer. Discovery and every request path share one admission
+decision, so a client refused the extension finds it absent from QueryExtension
+and ListExtensions, and a guessed opcode on major 146 answers `BadAccess`, not
+`BadRequest`. `advertised_extension_names` and `extension_query_result` agree,
+as they do for SHAPE, and the compatibility-matrix row that lists XTEST among
+the deliberate exclusions is retired in the same change.
+
+GetVersion answers a constant 2.1 for every requested version. That is worth
+stating plainly, because "negotiates down" overstates it: the reference server
+never reads the requested version at all and replies with its own constant, and
+our twenty wire cases likewise demand 2.1 for requested 1, 2 and 65535. The
+extension defines no events and no errors, so QueryExtension answers a
+first_event and a first_error of zero and XTEST raises core errors only.
+
+CompareCursor looks the window up first, before the pointer and before the
+cursor, so a request carrying both a bad window and a bad cursor answers
+`BadWindow`. A drawable that is not a window is `BadWindow`, not `BadMatch`.
+The value one is CurrentCursor and is intercepted before any resource lookup;
+None compares against a window whose cursor is explicitly none; any other value
+is a cursor resource and answers `BadCursor` when it is not one. The comparison
+is against the window's effective cursor, the inherited one, rather than only a
+cursor set on that window.
+
+FakeInput accepts event types 2 through 6 in the 36-byte request, masking the
+send-event bit from the type while reporting the unmasked byte in the error
+value. The trailing 2.1 padding is not a device selector and XI events are
+refused, so a core request carries no way to name a device and always reaches
+the device this connection's admission granted. Detail is a keycode for the key
+types; a button from one through the button count for the button types, with
+zero refused; and strictly zero or one for motion, absolute or relative, where
+two is `BadValue` rather than a second spelling of relative. The root window is
+consulted for motion only and ignored for key and button events: None means the
+pointer's current screen, a valid non-root window is `BadValue`, and an XID
+that is not a window is `BadWindow`. Coordinates are never refused, only
+clipped, and the highest reachable position is one less than the width and the
+height. FakeInput has no success reply, and its delay spans the full CARD32
+domain on bounded monotonic state.
+
+GrabControl takes a strict boolean: anything other than zero or one is
+`BadValue`. Imperviousness belongs to the connection, persists until the same
+client clears it or departs, and exempts that client from a server grab's
+dispatch pause without letting it take a grab another client already holds.
+
+Two ordering facts are fixed here because they stay invisible until something
+depends on them. The delay is taken before detail and root are validated, so a
+malformed request carrying a delay waits and only then answers its error. And
+the reference server processes fake input synchronously inside the request
+rather than enqueuing it, so by the time the request finishes the synthesised
+events are already delivered. Our barrier must give that same guarantee through
+the completion path below, rather than by imitating a queue.
+
+The processing barrier is the obligation most likely to be got wrong, and the
+one piece of M5 with no existing mechanism. `RequestCompletion` is published
+inside the common guard after the effect, and it is the fact the next request
+waits for: not enqueue, not timer expiry, not presentation. Today it is
+consumed inside the runner by `PrivateOutstandingRequest::observe` and never
+reaches an adapter, because `PrivateInputSubmission::submit_*` returns once the
+work is accepted into the shared order. M5 therefore builds a notification path
+from that publication to the submitting connection, and parks the connection on
+it through the existing `ConnectionWait` and `ConnectionNotifier` machinery
+rather than a second one. Paused ingress masks POLLIN, latches RDHUP once, and
+waits on cancellation and the completion notifier without spinning, as the
+server-grab pause loop already does. Healthy peers continue meanwhile.
+Disconnect and revocation cancel pending work; a write-half-close finishes
+pending work and drains buffered later requests before actual EOF. The single
+completion cell per grant already serialises one request in flight, so what is
+missing is the notification and not the ordering.
+
+`cargo xtask check m5-acceptance` has eight mandatory groups: registration and
+admission, version negotiation, cursor comparison, fake input encoding, fake
+input effects, the processing barrier, cancellation and half-close, and grab
+control. Groups are obligation classes rather than requests, so a failure names
+a behaviour. The gate follows M4's pattern rather than M3's: the inventory is
+compiled in, bindings name exact tests, and the aggregate is PASS only when
+every group passes, NOT_RUN otherwise. Case tests carry `#[ignore]` so an
+ordinary `cargo test` cannot claim acceptance. The gate builds `sophia-session`
+with a new `xtest_acceptance` target, because admission, cancellation and the
+barrier are Session obligations the standalone conformance host does not hold.
+M3 and M4 pass again on the same source.
+
+The gate's mechanical footprint is small and is written down so it is not
+rediscovered: a `Gate` variant beside `M3` and `M4` with its `command` and
+`directory` arms, a `run_m5` mirroring `run_m4`, a `check` dispatch arm, a
+usage line, a module supplying the inventory, bindings, aggregate and case
+validation, and build and self-test arms selecting the new package and target.
+One edit is not Rust: the contained entry point accepts a closed tuple of gate
+names and refuses anything else, so the new name is added there or the run
+cannot start. Its data is an inventory, a bindings map and a README under
+`tools/probes/m5_acceptance/`, with the inventory's `plan_source_commit` pinned
+to the revision of this plan that the contract was derived from.
+
+Independent evidence is the twenty cases already written in
+`tools/probes/x11_conformance/xtest_manifest.json`, run in both byte orders
+under absolute deadlines. That manifest is the inventory: a case that fails is
+a repair, not a manifest edit. Two repairs are known before the work starts.
+The xtest profile builds a host command from `--private-input` and a positional
+socket, while the M4 host requires a disjoint exact option set and rejects
+both, so the profile cannot launch it today. And the M4 host never calls
+`issue`, so it carries no adapter at all; M5 adds one. The four `xtest_setup_*`
+cases exercise M4's authorization obligation at the wire rather than new M5
+scope, and are named here as behaviour M5 must not regress.
+
+t093 owns the xtest and native conformance profiles; t057 owns the core profile
+and its manifest. Neither task claims the other's pass. M5 also binds
+`native_internal_wait` and `native_transport_wait`, two of the twenty native
+obligations whose implementation is still null, because both describe the
+barrier this milestone builds. The remaining eighteen fall to M6.
+
+No discovery enablement, hardware acceptance, t094 completion or default build
+change belongs to this slice.
+
+### M6 execution contract
+
+M6 starts from a passing M5 and establishes that the whole of t093 holds on one
+exact source. It adds no behaviour.
+
+Mandatory evidence is the list this plan already names, each item bound to a
+command that produces it: the hundred-case core baseline, the forty native
+authority and executor obligations, the real stalled-reader and containment
+tests, and the XTEST wire cases in both byte orders. Missing, duplicate,
+foreign, unexecuted, timed-out or nonpassing mandatory cases fail. Zero matched
+Rust tests is not a pass. M3, M4 and M5 each pass again on the final integrated
+source, as each gate's own record already requires of its predecessor.
+
+The conformance probe supports the core, native-input and xtest profiles, and
+no gate, recipe or script invokes any of them; they are run by hand from the
+README. M6 registers the xtest and native profiles so that this evidence is
+produced by a gate rather than by whoever remembered. The core profile stays
+with t057, which owns that gate; M6 cites its result and does not reproduce it.
+
+Binding the native profile is real work, not wiring. Twenty of its forty
+obligations carry a null implementation, and the runner reports every unbound
+obligation as MISSING and fails the profile, so the native evidence cannot be
+complete today. M5 binds the two that describe its barrier; M6 binds the
+remaining eighteen, or moves any that genuinely belong to a later milestone out
+of the mandatory set and says why. Reclassifying an obligation is a decision
+that gets recorded; leaving it null and calling the profile green is not
+available, and the runner would not allow it.
+
+XTS is a separate dependency and is reported honestly. It uses the same
+containment boundary and requires explicit test purposes. An absent checkout or
+a missing TET executable is BLOCKED and unrun, never suite success, and a
+BLOCKED XTS does not stop the rest of M6 from reporting.
+
+Profiles and warnings run on the final exact source: default build,
+all-features, strict Clippy, formatting, layout and the full contained
+workspace run, with provenance retained separately from the behavioural
+verdicts.
+
+Mutation negatives carry M4's lesson forward rather than repeating it. On a
+suite reading twenty-two of twenty-two and eight of eight, four of seven
+mutations survived, and two of the three kills were incidental: they broke the
+pipeline until unrelated controls timed out. So each negative is killed by its
+own targeted control; a vacuity guard is not anchored on the thing the defect
+rewrites; and a refusal judged unreachable is looked at again, because one of
+them was reachable through a real capacity ceiling.
+
+The milestone record takes the shape of the M4 record: the result with its
+exact identities, what the negatives changed, the defects the slice repaired,
+the limits of the result, and what remains. M6 does not enable discovery, does
+not authorize installation or default enablement, and does not substitute for
+physical acceptance under t094, t077, t060 or t062. Closing t093 is a separate
+decision that requires discovery to stay disabled and t094 to remain
+acknowledged as open.
 
 ### M3 closure gates (all required under t093)
 
@@ -357,9 +531,12 @@ intentional delay cannot make a healthy recipient eligible for termination.
 
 ## X adapter contract
 
-The client discovers the extension major through QueryExtension. The proposed
-major is 146, subject to a collision check; core opcode 88 remains FreeColors.
-GetVersion negotiates down to 2.1 when asked for 2.2. Implement GetVersion,
+The client discovers the extension major through QueryExtension. The major is
+146; core opcode 88 remains FreeColors. The collision check is done and is
+recorded in the [M5 execution contract](#m5-execution-contract): the assigned
+range runs 130 through 145. GetVersion answers a constant 2.1 for every
+requested version rather than negotiating, which is what the reference server
+does and what the wire cases demand. Implement GetVersion,
 CompareCursor, FakeInput and real server-grab imperviousness through GrabControl
 before advertising the extension. Discovery paths share one admission decision.
 An implemented but disabled or unauthorized guessed opcode returns BadAccess.
