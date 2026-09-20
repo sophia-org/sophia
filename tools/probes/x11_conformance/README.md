@@ -169,7 +169,11 @@ The adapter requires the separate checkout's `check.sh`, built `xts5` directory,
 executable TET `tcc`, bubblewrap, the exact selected-purpose manifest and the
 selected scenario. It copies the external tree privately, excludes old results
 and `tetexec.cfg`, then runs with a tmpfs root and explicit runtime/data mounts,
-a private `/tmp/.X11-unix/X99`, network namespace and `/dev`. Host `/run`, `/etc`
+a private `/tmp/.X11-unix/X99`, network namespace and `/dev`. Every program
+libtool built in the checkout is a wrapper that names the checkout's original
+absolute path for its libraries; `check.sh` names every built library
+directory of the private copy in `LD_LIBRARY_PATH` instead, since the loader
+skips a directory that is not there. Host `/run`, `/etc`
 and home directories are not mounted; a read-only host root is not sufficient to
 hide pathname sockets. An old wrapper hardcoding a host display cannot reach
 that display. First-run unknowns to confirm and record: TET's journal header
