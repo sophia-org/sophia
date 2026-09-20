@@ -913,9 +913,25 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 // grabbed, and a harness that paused with everyone else could
                 // never release it. Asked before the owner is read, because
                 // an impervious client has no interest in who holds the grab.
+                //
+                // EXCEPT FOR A GRABSERVER OF ITS OWN (opcode 36), which is
+                // the one request the exemption must not carry past this
+                // pause. GrabServer defines no error, so a client that asked
+                // for it cannot be told it failed; what the reference does
+                // instead is defer, and this pause IS that deferral -- it
+                // parks the client, re-reads the owner on every wake, and
+                // lets the request through once the grab is free. Past it
+                // there is nothing that waits, only `let _ = grab_server(..)`
+                // discarding AlreadyGrabbed, so an exempted GrabServer was
+                // silently dropped where every client's used to wait.
+                //
+                // A harness is entitled to have its OTHER requests served
+                // through somebody else's grab. It is not entitled to have a
+                // grab it asked for quietly thrown away.
                 if xtest
                     .as_ref()
                     .is_some_and(|connection| connection.impervious)
+                    && major_opcode != 36
                 {
                     break;
                 }

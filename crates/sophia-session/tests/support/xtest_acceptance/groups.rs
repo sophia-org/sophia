@@ -1298,33 +1298,54 @@ pub fn grab_control() {
         });
         reply_arrives(&mut ordinary, ordinary_sequence);
 
-        // IT CANNOT TAKE A GRAB ANOTHER CLIENT HOLDS. Not paused, its
-        // GrabServer reaches the server and changes nothing: the ordinary
-        // client stays paused through the impervious client's grab and
-        // ungrab, and is released only by the holder.
-        let mut after_grab = 0;
-        let mut after_ungrab = 0;
-        while_grabbed(&mut owner, || {
+        // IT WAITS FOR A GRAB ANOTHER CLIENT HOLDS, RATHER THAN LOSING THE
+        // REQUEST. GrabServer defines no error, so a client whose grab found
+        // the server already held cannot be told; what the reference does
+        // instead is defer, and the connection loop's pause IS that deferral.
+        // A client's own GrabServer is therefore the one request
+        // imperviousness must not carry past the pause: past it nothing
+        // waits, only a discarded AlreadyGrabbed, and the request would
+        // silently never happen.
+        //
+        // HELD AND RELEASED BY HAND HERE, NOT THROUGH `while_grabbed`. That
+        // helper syncs the owner after its UngrabServer, and once this grab
+        // is deferred rather than dropped the impervious client takes the
+        // server in exactly that gap -- so the owner's own round trip would
+        // be paused behind the grab it had just released, and the helper
+        // would never return.
+        owner.send(GRAB_SERVER, 0, &[]);
+        owner.sync();
+        let deferred_grab = {
             impervious.send(GRAB_SERVER, 0, &[]);
-            impervious.sync();
-            let (sequence, answered) = answered_within(&mut ordinary, PAUSE_WATCH);
+            // NOT SYNCED. The request is parked behind the holder, so a round
+            // trip here would wait on a release this client cannot make.
+            let (sequence, answered) = answered_within(&mut impervious, PAUSE_WATCH);
             assert!(
                 !answered,
-                "an impervious client's GrabServer took the grab from its holder"
+                "an impervious client's own GrabServer was not deferred behind the holder"
             );
-            after_grab = sequence;
-            impervious.send(UNGRAB_SERVER, 0, &[]);
-            impervious.sync();
-            let (sequence, answered) = answered_within(&mut ordinary, PAUSE_WATCH);
-            assert!(
-                !answered,
-                "an impervious client's UngrabServer released a grab it never held"
-            );
-            after_ungrab = sequence;
-        });
-        // Both probes are answered, in order, once the holder releases.
-        reply_arrives(&mut ordinary, after_grab);
-        reply_arrives(&mut ordinary, after_ungrab);
+            sequence
+        };
+        // Released without a round trip, for the reason above.
+        owner.send(UNGRAB_SERVER, 0, &[]);
+
+        // AND TAKES IT WHEN THE HOLDER RELEASES. The probe behind that
+        // GrabServer arriving is what says the grab went through, so by the
+        // time this returns the impervious client is the holder.
+        reply_arrives(&mut impervious, deferred_grab);
+
+        // WHICH IS A REAL GRAB, held against everybody else. Asked only now,
+        // with nothing of this client's outstanding across the handover: a
+        // probe sent before the release could be answered on either side of
+        // it, and would be pinning the scheduler rather than the grab.
+        let (paused_by_it, answered) = answered_within(&mut ordinary, PAUSE_WATCH);
+        assert!(
+            !answered,
+            "an ordinary client was answered under the grab the impervious client took"
+        );
+        impervious.send(UNGRAB_SERVER, 0, &[]);
+        impervious.sync();
+        reply_arrives(&mut ordinary, paused_by_it);
 
         // IT PERSISTS UNTIL THE SAME CLIENT CLEARS IT. Nothing has cleared
         // it, so a further grab leaves the impervious client answering;

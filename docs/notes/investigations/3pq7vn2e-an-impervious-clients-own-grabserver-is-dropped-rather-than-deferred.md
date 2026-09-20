@@ -2,7 +2,7 @@
 id: 3pq7vn2e
 date: 2026-09-20
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, x11]
 ---
 # An impervious client's own GrabServer is dropped rather than deferred
@@ -61,6 +61,29 @@ holds -- still holds under deferral, since waiting for the holder is not
 taking. The assertion that a paused client is answered only on the holder's
 release is the one that changes, because the impervious client would then be
 waiting too.
+
+## Resolution
+
+Repaired 2026-09-20. The exemption is now a condition on the bypass rather
+than new machinery, exactly as this note anticipated: the pause is skipped
+for an impervious client's requests except its own GrabServer, which goes
+through the pause and is therefore deferred the way every client's was before
+M5.
+
+The `grab_control` subcase that pinned the consequence is rewritten and now
+pins the deferral: the impervious client's GrabServer is not answered while
+another client holds the server, it takes the grab when the holder releases,
+and an ordinary client is then paused by that grab until the impervious
+client ungrabs -- which proves the grab was really taken rather than merely
+not lost.
+
+Two shape notes for anyone reading the control. The subcase no longer uses
+`while_grabbed`: that helper syncs the owner after its UngrabServer, and a
+deferred grab is taken in exactly that gap, so the owner's own round trip
+would be paused behind the grab it had just released and the helper would
+never return. And the ordinary client's probe is sent only after the
+handover, because one sent before it could be answered on either side and
+would pin the scheduler rather than the grab.
 
 ## Connections
 
