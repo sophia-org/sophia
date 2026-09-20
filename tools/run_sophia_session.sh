@@ -341,6 +341,9 @@ cleanup() {
         restored_kd="$(python3 "$TTY_MODE_HELPER" get 2>/dev/null || echo unavailable)"
         restored_keyboard="$(python3 "$TTY_MODE_HELPER" get-keyboard 2>/dev/null || echo unavailable)"
         restored_termios="$(stty -g 2>/dev/null || echo unavailable)"
+        # keyd_restored is a conclusion: true means there was nothing to put
+        # back or it is back, and on a machine without keyd it reads true on
+        # every run. keyd_seen is the observation it rests on.
         keyd_restored=true
         if [[ "$keyd_was_running" == true ]] && ! pgrep -x keyd >/dev/null 2>&1; then
             keyd_restored=false
@@ -352,8 +355,8 @@ cleanup() {
             "$emergency" \
             "$emergency_session_shutdown" \
             "$emergency_session_exit_status" >>"$RECOVERY_LOG"
-        printf 'sophia_tty_recovery_verification schema=1 profile=%s keyboard_mode_before=%s keyboard_mode_after=%s keyd_restored=%s\n' \
-            "$SESSION_PROFILE" "$keyboard_mode" "$restored_keyboard" "$keyd_restored" \
+        printf 'sophia_tty_recovery_verification schema=1 profile=%s keyboard_mode_before=%s keyboard_mode_after=%s keyd_seen=%s keyd_restored=%s\n' \
+            "$SESSION_PROFILE" "$keyboard_mode" "$restored_keyboard" "$keyd_was_running" "$keyd_restored" \
             >>"$RECOVERY_LOG"
         if [[ "$restored_kd" != "$kd_mode" \
             || "$restored_keyboard" != "$keyboard_mode" \
