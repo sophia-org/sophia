@@ -112,7 +112,7 @@ and nothing here is XTS evidence until a real scenario has run. Obtaining
 it is an operator step, once, outside the repository:
 
 ```sh
-xbps-install -S libXt-devel libXaw-devel xorg-util-macros   # the rest is present
+xbps-install -S libXt-devel libXaw-devel libXmu-devel xorg-util-macros bdftopcf
 git clone https://gitlab.freedesktop.org/xorg/test/xts.git ~/src/xts
 cd ~/src/xts && ./autogen.sh && make -j                      # no install
 ```
@@ -121,15 +121,20 @@ The freedesktop GitLab refuses scripted fetches, so the clone needs a
 browser-authenticated session or a mirror the operator trusts; record the
 commit. Under a current GCC the K&R-era sources may need
 `CFLAGS='-std=gnu89 -Wno-error=implicit-function-declaration -Wno-error=implicit-int'`.
-The build must leave an executable `tcc` under the root (the adapter globs
-`**/tcc`) and the `xts5/` case directories with their `.m` sources.
+The tree bundles TET, built to `src/tet3/tcc/tcc`; configure also wants
+`bdftopcf` for the test fonts. Configure in-tree, so the paths it bakes are
+relative.
 
-Two files from this directory go into the checkout. `xts_check.sh` is copied
-to the root as `check.sh`: inside the adapter's sandbox it regenerates
-`xts5/tetexec.cfg` (display `:99`, empty font paths, no reset delay), finds
-the checkout's `tcc`, and runs the selected scenario with the journal placed
-where the adapter looks. `xts_select.py` enumerates the selection from the
-suite that will run, never by hand:
+One file from this directory goes into the checkout, over the `check.sh`
+its configure generates. The generated one regenerates `xts5/tetexec.cfg`
+through `xts-config`, which runs `xset q` and `xdpyinfo` against the display,
+and the fixture host decodes neither the font-path nor the keyboard-control
+requests those need. `xts_check.sh`, copied to the root as `check.sh`, writes
+the configuration from the suite's own template instead (display `:99`,
+empty font paths, no reset delay) and runs the bundled TET at
+`src/tet3/tcc/tcc` the way `xts-run` does, with the journal placed where the
+adapter looks. `xts_select.py` enumerates the selection from the suite that
+will run, never by hand:
 
 ```sh
 python3 -B tools/probes/x11_conformance/xts_select.py \
@@ -140,9 +145,11 @@ python3 -B tools/probes/x11_conformance/xts_select.py \
 ```
 
 It counts each case's purposes from the `>>ASSERTION` markers of its `.m`
-sources, names the case by the `/tset/...` path TET journals use, writes the
-manifest, and with `--install` writes `xts5/tet_scen.selected-core` for
-`check.sh`. `tcc` selects whole cases, so every purpose of a selected case is
+sources, names the case the way the suite's scenario file and TET's journal
+do (`/Xlib3/XDestroyWindow`), writes the manifest, and with `--install`
+appends a `selected-core` scenario to `xts5/tet_scen`, replacing an earlier
+one of that name, since the runner selects scenarios by name from that one
+file. `tcc` selects whole cases, so every purpose of a selected case is
 mandatory and must pass. Select the window, atom, property, selection and
 focus requests the software fixture decodes; requests that need real devices,
 fonts or text do not belong. Grow the selection by measurement: a case the
