@@ -25,9 +25,26 @@ to let an obligation be silently optional -- `native obligations may not be
 silently optional` -- which is the right rule, so the only honest record is
 mandatory, unmet, and a reason beside it.
 
-`native_protected_action` names a protected chord. There is no such concept
-anywhere in `crates/`: the protection has not been built, so there is no
-behaviour to witness and nothing adjacent may stand in for it.
+`native_protected_action` names a protected chord, and **the first reading of
+this row was wrong**. It recorded that no such concept exists anywhere in
+`crates/`. That was a search for the word "protected" rather than for the
+concept, which this codebase calls the *emergency chord*:
+`sophia-engine/src/shortcut.rs:70` reserves Ctrl-Alt-Backspace so that it is
+"never available to a policy client, whatever it registers", and
+`sophia-config` carries a configurable `emergency-chord` that a window manager
+may neither bind nor override.
+
+So the protection is real and half-built. The authority already distinguishes
+physical sources from synthetic ones, and `registry/execution.rs:32` already
+says "Physical emergency recognition must run before aggregate". What is
+missing is the rule joining the two: nothing stops a synthetic source from
+supplying that chord, and XTEST injects any keycode at or above eight --
+evdev 14 is Backspace, so X keycode 22 with Control and Alt held is exactly
+the reserved chord. Injection needs an admitted client holding the instance
+cookie, which bounds it; but a reserved emergency path that a trusted input
+source can forge is the thing this obligation exists to prevent.
+
+This is behaviour to build. It must not be retired from the mandatory set.
 
 `native_internal_wait` is the more interesting one. It says internal waits
 must never accrue recipient nonresponse, and the meter it names --

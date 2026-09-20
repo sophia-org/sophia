@@ -379,7 +379,7 @@
       "description": "Synthetic cannot supply protected chord and cannot taint sufficient fixture physical chord",
       "mandatory": true,
       "implementation": null,
-      "unmet_because": "UNMET, AND NOTHING CAN PROVE IT YET. A protected chord does not exist in this codebase: the concept the obligation names has not been built, so there is no behaviour to witness and no test may be bound to something adjacent. Recorded here so the next reader does not spend the search again; it stays mandatory because it is genuinely owed, not because it was overlooked."
+      "unmet_because": "UNMET, AND OWED. An earlier reading of this row recorded that a protected chord does not exist in this codebase; that was a search for the word rather than the concept, and it was wrong. The concept is the emergency chord: sophia-engine/src/shortcut.rs reserves Ctrl-Alt-Backspace so that it is never available to a policy client whatever it registers, and sophia-config keeps a configurable emergency-chord a window manager may neither bind nor override. The input authority already anticipates the other half -- registry/execution.rs says physical emergency recognition must run before the aggregate -- and already distinguishes physical sources from synthetic ones. What is missing is the rule that joins them: nothing stops a synthetic source supplying that chord, and XTEST injects any keycode. This is behaviour to build, not an obligation to retire."
     },
     {
       "id": "native_ingress_admission",
