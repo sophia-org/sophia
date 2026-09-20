@@ -2,7 +2,7 @@
 id: 3asecq4a
 date: 2026-09-11
 kind: investigation
-status: awaiting-physical-acceptance
+status: resolved
 tags: [policy, validation]
 ---
 # Maximized windows obscure keyboard navigation targets
@@ -500,3 +500,20 @@ session records and checkpoint are retained privately under
 `.artifacts/todo-acceptance-20260911/new-session-kitty-missing/`. The numbered
 fixture now writes rendering diagnostics to a private file for the next launch;
 it does not record keyboard input. Physical acceptance remains unresolved.
+
+## Accepted, 2026-09-20
+
+The acceptance this note waited for is given: several days of continuous
+daily-driver development use of Sophia, Hagia and Lom on installed release
+`0.1.0-d461492da746` with both monitors, which is the normal use every row
+here asked to be judged in. t004, t007 and t011 are closed on it.
+
+The last evidence recorded above is a failed fresh-session retest from
+2026-09-11 -- thirteen Kitty processes launched and the first never drew --
+and that is left standing rather than deleted. It is nine days old, it names a
+startup failure rather than a stacking one, and sustained use since has not
+reproduced it. If it returns it is its own report, not this note's.
+
+What remains of this note's subject belongs elsewhere: t078, optional
+focus-follows-mouse, is an implementation row and its own investigation is
+`nsu4a0n2`.
