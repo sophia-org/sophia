@@ -202,7 +202,24 @@
       "id": "native_thaw",
       "description": "Thawed work revalidates generation, epoch and publication",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "deferred_requests"
+          },
+          "test": "deferred_work_preserves_revocation_and_replacement_connection_checks"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "deferred_requests"
+          },
+          "test": "deferred_work_cannot_be_restamped_after_a_publication_or_security_transition"
+        }
+      ]
     },
     {
       "id": "native_reconnect",
@@ -282,7 +299,24 @@
       "id": "native_completion",
       "description": "Reserved completion survives wake coalescing and grant-slot retirement",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "old_token_cannot_take_or_abandon_a_reused_slots_new_request"
+        },
+        {
+          "package": "sophia-input-authority",
+          "target": {
+            "kind": "test",
+            "name": "completions"
+          },
+          "test": "committed_completion_and_debt_survive_revocation_without_a_wakeup"
+        }
+      ]
     },
     {
       "id": "native_capacity",
@@ -344,7 +378,8 @@
       "id": "native_protected_action",
       "description": "Synthetic cannot supply protected chord and cannot taint sufficient fixture physical chord",
       "mandatory": true,
-      "implementation": null
+      "implementation": null,
+      "unmet_because": "UNMET, AND NOTHING CAN PROVE IT YET. A protected chord does not exist in this codebase: the concept the obligation names has not been built, so there is no behaviour to witness and no test may be bound to something adjacent. Recorded here so the next reader does not spend the search again; it stays mandatory because it is genuinely owed, not because it was overlooked."
     },
     {
       "id": "native_ingress_admission",
@@ -362,13 +397,47 @@
       "id": "native_executor_liveness",
       "description": "Stuck before guard, inside execution and after commit fail owned instance without replay",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_watchdog"
+          },
+          "test": "lock_acquisition_stall_expires_without_taking_the_execution_lock"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_watchdog"
+          },
+          "test": "dropping_execution_latches_failure_even_before_the_deadline"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_watchdog"
+          },
+          "test": "independent_descriptor_ends_a_blocked_write_while_output_lock_is_held"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "test",
+            "name": "private_watchdog"
+          },
+          "test": "post_commit_stall_cannot_be_overwritten_by_late_finish"
+        }
+      ]
     },
     {
       "id": "native_internal_wait",
       "description": "Delay, frozen work, scheduler and control waits never accrue recipient nonresponse",
       "mandatory": true,
-      "implementation": null
+      "implementation": null,
+      "unmet_because": "UNMET, AND CURRENTLY TRUE FOR THE WRONG REASON. The meter it names is X_AUTHORITY_ORDERED_BLOCKED_LIMIT in writers/blocked_send.rs, whose own header says the measurement is exercised by controls and not yet by a writer. Nothing accrues to it from the live path at all, so 'internal waits never accrue' holds because nothing accrues. A test bound now would record a property the instance does not have; the binding becomes possible when the writer begins feeding that meter."
     },
     {
       "id": "native_transport_wait",
