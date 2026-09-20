@@ -685,3 +685,44 @@ separate authority containment incident is tracked as t089/kwhei4x4; attended
 acceptance remains suspended pending containment and a new operator decision.
 The foreground identity implementation is now passive, with isolated regression
 coverage; its former connecting launcher is disabled and preserved separately.
+
+### VT and clean shutdown accepted on the installed release — 2026-09-20
+
+Two of the four things t077 names -- "healthy focus, close, VT and clean
+shutdown on the installed release" -- are evidenced by an ordinary logout at
+the end of a twenty-hour daily-driver session. The row stays open on the other
+two, which belong to the signing dialog itself.
+
+The session is
+`~/.local/state/sophia/sessions/00000001789865605605-d9c9a7e7-…`, exited by
+the configured `Ctrl+Alt+Delete` binding (`session:logout` in
+`~/.config/hagia/config.kdl:88`).
+
+**Clean shutdown.** `outcome` reads `status=exited`, `exit_status=0`. The
+lifecycle log shows every phase entered and completed -- preflight,
+input_guard, graphics_takeover, session -- and closes
+`status=returned phase=handoff installed=true exit_status=0 emergency=false
+handoff=display_manager`. `installed=true` is the row's "on the installed
+release"; `emergency=false` says this was the ordinary logout path and not
+recovery, which matters because the same chord family reaches both. No fatal
+or panic line anywhere in the 9.4 MB event log, and `storage_errors=0` in both
+`health` and `application-health`.
+
+**VT.** `sophia_tty_recovery schema=3 profile=hagia kd_mode_before=0
+kd_mode_after=0 termios_restored=true emergency=false
+session_shutdown=not_requested`, with
+`sophia_tty_recovery_verification schema=1 keyboard_mode_before=3
+keyboard_mode_after=3 keyd_restored=true`. The console came back with its
+keyboard mode and termios as they were found, and keyd restored.
+
+**What this does not touch.** The signing-dialog lockout itself -- bounded
+input-delivery and control recovery, and healthy focus and close of the
+pinentry dialog -- is untested by a logout and is what t077 still waits on.
+This section is recorded so that half is not re-run for evidence it already
+has.
+
+Incidentally against
+[the runtime crash with no specific cause](fltuldiq-runtime-session-crash-retains-no-specific-cause.md):
+twenty hours of ordinary use ending in a deliberate clean exit is not a
+reproduction, and is worth noting on a report that has stayed open on an
+unattributed crash.
