@@ -10,7 +10,6 @@
 /// that reported idleness for any of these would say a connection had nothing
 /// owed when what happened was that this worker could not serve it.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateWorkerRefusal {
     /// A holder panicked inside the home. Not recovered into serving.
@@ -40,7 +39,6 @@ enum PrivateWorkerRefusal {
 /// either from the other is how a flag becomes a wire outcome nobody
 /// established.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateWorkerTrigger {
     /// The owner's own step ended ordinary serving.
@@ -70,7 +68,6 @@ enum PrivateWorkerTrigger {
 /// was in a state nothing may serve through -- and leaves a body looking as
 /// though it left for its own reasons.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateWorkerAsk {
     /// What the owner said.
@@ -81,7 +78,6 @@ enum PrivateWorkerAsk {
 
 /// What a worker body did.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PrivateWorkerOutcome {
     /// This body's reason for leaving.
@@ -107,7 +103,6 @@ struct PrivateWorkerOutcome {
 /// FIXED, AND NOT IN THE BODY'S FRAME. Whatever a departing worker leaves has
 /// to outlive the frame that leaves it, including a frame that unwinds.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateWorkerExit {
     /// The classification, written before `left` on any normal return.
     outcome: Mutex<Option<PrivateWorkerOutcome>>,
@@ -131,7 +126,6 @@ struct PrivateWorkerExit {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl PrivateWorkerExit {
     fn unstarted() -> Self {
         Self {
@@ -162,6 +156,7 @@ impl PrivateWorkerExit {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls; production reads the exit through the join.
     fn outcome(&self) -> Option<PrivateWorkerOutcome> {
         *self
             .outcome
@@ -187,7 +182,6 @@ impl Drop for PrivateWorkerLeaving<'_> {
 /// would be deciding which connection it belongs to, and that decision is the
 /// startup transaction's.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Built by a caller no production site has yet.
 struct PrivateWorkerBody<'a> {
     /// This connection's home. BORROWED, NEVER TAKEN: the payload stays where
     /// it lives, and this worker is one of the things the relocation exists to
@@ -220,7 +214,6 @@ struct PrivateWorkerBody<'a> {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Run by a caller no production site has yet.
 impl PrivateWorkerBody<'_> {
     /// Serve this connection until something ends it.
     fn run(&self) -> PrivateWorkerOutcome {

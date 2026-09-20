@@ -11,7 +11,6 @@
 /// carrying something, and what to do with it is whoever reads this record's
 /// business; turning it into a boolean here would decide that by discarding it.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 enum PrivateJoinResult {
     /// The worker's frame returned.
     Returned,
@@ -23,6 +22,7 @@ enum PrivateJoinResult {
     /// holding one bare could not be borrowed on another thread even to read
     /// which of these two it is. Readers take this when they want the payload;
     /// the writer never does, because it puts the payload in on the way past.
+    #[cfg_attr(not(test), allow(dead_code))] // The payload is taken by controls; production asks only which variant this is.
     Panicked(Mutex<Box<dyn std::any::Any + Send>>),
 }
 
@@ -32,7 +32,6 @@ enum PrivateJoinResult {
 /// is taken, it says an attempt claimed this record and may have consumed
 /// something -- not that a join was entered, and not that the worker has left.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateReapingPhase {
     /// No attempt has consumed a handle through this record.
@@ -63,7 +62,6 @@ enum PrivateReapingPhase {
 /// THE CALLER KEEPS IT, outside the frame that does the joining, so a reaping
 /// that fails or unwinds still leaves whatever it had established readable.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateJoinEvidence {
     /// WHETHER THE ONE RIGHT TO PUBLISH INTO THIS HOME IS STILL HERE.
     ///
@@ -92,7 +90,6 @@ struct PrivateJoinEvidence {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl PrivateJoinEvidence {
     /// Take the one right to publish into this home, if it is here.
     ///
@@ -134,7 +131,6 @@ impl PrivateJoinEvidence {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 struct PrivateReapingRecord<'a> {
     /// The slot this record was bound to, and the only one it will ever act
     /// on.
@@ -183,7 +179,6 @@ struct PrivateReapingRecord<'a> {
 
 /// What a reaping attempt found.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateReaped {
     /// This attempt joined this connection's worker. The result is in the
@@ -217,7 +212,6 @@ enum PrivateReaped {
 
 /// What a worker's exit record said, read after the join result was retained.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrivateExitReading {
     /// The body left a classification.
@@ -241,7 +235,6 @@ enum PrivateExitReading {
 
 /// Everything one reaping attempt reports.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PrivateReaping {
     /// What this attempt did.
@@ -261,7 +254,6 @@ struct PrivateReaping {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Read by a caller no production site has yet.
 impl<'a> PrivateReapingRecord<'a> {
     /// A record for a join nobody has asked for yet, over one connection's
     /// registered source.
@@ -295,6 +287,7 @@ impl<'a> PrivateReapingRecord<'a> {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn phase(&self) -> PrivateReapingPhase {
         self.evidence.phase()
     }
@@ -316,6 +309,7 @@ impl<'a> PrivateReapingRecord<'a> {
     /// gone and still read the result through it. That is a reader holding
     /// evidence, which is allowed; what the component rules out is an
     /// OPERATION being the only thing that kept it.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn join_evidence(&self) -> Arc<PrivateJoinEvidence> {
         Arc::clone(&self.evidence)
     }
@@ -343,7 +337,6 @@ impl<'a> PrivateReapingRecord<'a> {
     /// it finished with. It is not an ending, a receipt, a fence, a settlement, or
     /// permission to drive this connection's home.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Nothing reaps a worker yet.
     fn reap(&self) -> PrivateReaping {
 
         // CLAIMED FIRST. Everything below this point is one attempt's, and a

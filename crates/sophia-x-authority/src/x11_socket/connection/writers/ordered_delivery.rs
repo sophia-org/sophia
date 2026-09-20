@@ -13,7 +13,6 @@
 /// writer that had copied out the parts it wanted would be answering for
 /// something it could no longer name.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 struct X11OrderedInFlight {
     delivery: XAuthorityOrderedDelivery,
     /// Which frame of this delivery's emission is in hand.
@@ -27,7 +26,6 @@ struct X11OrderedInFlight {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 impl X11OrderedInFlight {
     fn delivery(&self) -> &XAuthorityOrderedDelivery {
         &self.delivery
@@ -54,6 +52,7 @@ impl X11OrderedInFlight {
     }
 
     /// How long this delivery's recipient has kept it waiting.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn blocked(&self) -> Duration {
         self.send.blocked()
     }
@@ -77,7 +76,6 @@ impl X11OrderedInFlight {
 
 /// Why an ordered delivery was not taken.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedTakeRefusal {
     /// Nothing was waiting.
@@ -114,7 +112,6 @@ enum X11OrderedTakeRefusal {
 /// capsule exists. So the capsule keeps its own finalizer and stays unanswered
 /// until something establishes a fact about the admission it came from.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedAdmissionRefusal {
     /// The capsule names an endpoint this writer does not serve.
@@ -130,7 +127,6 @@ enum X11OrderedAdmissionRefusal {
 /// writer's entitlement and not about the capsule. Nothing is re-encoded,
 /// re-addressed or given a replacement finalizer.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 struct X11OrderedRefusedDelivery {
     delivery: XAuthorityOrderedDelivery,
@@ -145,15 +141,17 @@ struct X11OrderedRefusedDelivery {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 impl X11OrderedRefusedDelivery {
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn delivery(&self) -> &XAuthorityOrderedDelivery {
         &self.delivery
     }
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn cause(&self) -> Option<X11OrderedAdmissionRefusal> {
         self.cause
     }
     /// Who these bytes were owed to, which is not this writer's endpoint.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn client(&self) -> XServerFrontendClientId {
         self.delivery.client()
     }
@@ -166,7 +164,6 @@ impl X11OrderedRefusedDelivery {
 /// would have a window in which the queue had given the delivery up and
 /// nothing had taken responsibility for it.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 fn take_ordered_delivery(
     queue: &Receiver<XAuthorityOrderedDelivery>,
     served: &XAuthorityServedConnection,
@@ -211,7 +208,6 @@ fn take_ordered_delivery(
 
 /// What one writing step did for the delivery in hand.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedWriteStep {
     /// Nothing is in flight.
@@ -229,7 +225,6 @@ enum X11OrderedWriteStep {
 
 /// Why a writing step could not be taken.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 enum X11OrderedWriteFailure {
     /// The frame could not be sent.
@@ -240,7 +235,7 @@ enum X11OrderedWriteFailure {
     /// early here would report itself written with an event missing, and the
     /// count and the encoder disagreeing is a fact worth surfacing rather than
     /// rounding off.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Carried for the reading; nothing reads them in either configuration.
     MissingFrame { frame: usize, of: usize },
 }
 
@@ -273,7 +268,6 @@ enum X11OrderedWriteFailure {
 /// causes is charged to the delivery it belongs to, rather than to whatever
 /// came after it.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 fn write_one_ordered_frame(
     socket: &UnixStream,
     in_flight: &mut Option<X11OrderedInFlight>,
@@ -348,7 +342,6 @@ fn write_one_ordered_frame(
 /// step says is a fact about a visit that has already happened, and nothing in
 /// one owns anything.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedServeStep {
     /// Nothing was waiting and nothing is in flight.
@@ -436,7 +429,6 @@ enum X11OrderedServeStep {
 /// and no delivery is re-encoded: the only dispositions are finishing it or
 /// ending the connection.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 fn serve_one_ordered_delivery(
     socket: &UnixStream,
     served: &XAuthorityServedConnection,

@@ -10,9 +10,7 @@
 /// Carried out beside the resources it was given, never instead of them.
 #[cfg(unix)]
 // ForeignReceiver, TransportUnavailable and Unserved are recorded by binding,
-// which connection setup now does. The rest are the serving loop's, and it is
-// not attached yet.
-#[cfg_attr(not(test), allow(dead_code))]
+// which connection setup does. The rest are the serving loop's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedServingRefusal {
     /// The receiver was minted by a different registration.
@@ -53,9 +51,7 @@ enum X11OrderedServingRefusal {
 /// here and this would retain it -- the soundness is the call site's, and it
 /// is not a property this type can check.
 #[cfg(unix)]
-// Bound by connection setup; its handles are read by the serving loop, which
-// is not attached yet.
-#[cfg_attr(not(test), allow(dead_code))]
+// Bound by connection setup; its handles are read by the serving loop.
 struct XAuthorityOrderedTransport {
     ordered: XAuthorityOrderedReceiver,
     /// This connection's actual serialized output.
@@ -138,8 +134,8 @@ impl XAuthorityOrderedTransport {
 /// that a measured wait ran out, and a caller that could name the terminal
 /// outcome could assert either of those by writing an enum.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))] // Production closes only as SupervisorStopped; the other causes are constructed by controls.
 enum X11OrderedCloseCause {
     /// The connection itself ended.
     ConnectionEnded,
@@ -157,9 +153,9 @@ enum X11OrderedCloseCause {
 /// anything went wrong, and would read an empty queue as a producer that had
 /// stopped -- which it is not, while senders are still held elsewhere.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 struct X11OrderedClosing {
     /// Why, for whoever reads this afterwards. Never published.
+    #[cfg_attr(not(test), allow(dead_code))] // Never published, as it says; read by controls.
     cause: X11OrderedCloseCause,
     /// Whether this close actually ended the wire, and what happened if not.
     ///
@@ -194,7 +190,6 @@ struct X11OrderedClosing {
 
 /// Why a wire was left holding an unfinished event.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedUnterminatedCause {
     /// The connection's own output could not be acquired, so exclusion could
@@ -206,7 +201,6 @@ enum X11OrderedUnterminatedCause {
 
 /// Whether a close has actually ended its connection.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedTermination {
     /// The wire is ended. Only this authorises an outcome derived from it.
@@ -228,7 +222,6 @@ const X11_ORDERED_CLOSE_ATTEMPTS: u8 = 3;
 
 /// What one bounded step of a close did.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedCloseStep {
     /// This close has not begun, so there is nothing to advance.
@@ -268,7 +261,6 @@ enum X11OrderedCloseStep {
 /// construction, from the registration that made them, there is nothing a
 /// per-call caller can substitute.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 struct X11OrderedServingOwner {
     served: XAuthorityServedConnection,
     queue: Receiver<XAuthorityOrderedDelivery>,
@@ -280,9 +272,6 @@ struct X11OrderedServingOwner {
     /// way to be told. It is cloned out before the receiver is taken, so this
     /// is the same notice the senders were counted against and not a fresh one
     /// that nothing publishes to.
-    ///
-    /// Nothing here waits on it yet.
-    #[cfg_attr(not(test), allow(dead_code))] // The worker that waits is not landed.
     wake: Arc<PrivateOrderedWake>,
     output: Arc<Mutex<UnixStream>>,
     shutdown: UnixStream,
@@ -342,7 +331,6 @@ struct X11OrderedServingOwner {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // The per-connection loop is not attached yet.
 impl X11OrderedServingOwner {
     /// Bind this connection's output to the registration that created it.
     ///
@@ -364,8 +352,8 @@ impl X11OrderedServingOwner {
     /// on the way out of a failed preparation would destroy work that was
     /// admitted and answer for none of it. Nothing is moved into this owner
     /// until the fallible part has succeeded.
+    #[cfg_attr(not(test), allow(dead_code))] // Superseded by prepare_for_registration and commit in production; controls that build a home directly use this.
     #[allow(clippy::result_large_err)] // The transport travels out whole rather than being dropped.
-    #[cfg_attr(not(test), allow(dead_code))] // Superseded by prepare/commit.
     fn for_registration(
         frontend: &crate::x11_socket::PrivateXServerFrontend,
         record: &PrivateCleanupRecord,
@@ -813,6 +801,7 @@ impl X11OrderedServingOwner {
     ///
     /// Read so a control can require that reservation was reservation: a store
     /// that grew while holding custody never had the room it claimed.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn retention_capacity(&self) -> (usize, usize) {
         (self.unanswered.capacity(), self.foreign.capacity())
     }

@@ -5,11 +5,11 @@
 // goes on the wire is decided elsewhere; this owns the bytes from the moment
 // they may leave until the moment the whole frame is known to have gone.
 //
-// Exercised by controls and not yet by a writer: this is the measurement and
-// the custody, and the ordered path that will consume them is still being
-// built. Marked rather than wired early, because turning accumulated waiting
-// into a delivery's outcome is a separate decision from being able to measure
-// it.
+// Consumed by the ordered writer: `send_pending_frame` is what
+// `write_one_ordered_frame` calls for every frame, and the waiting it
+// accumulates becomes the delivery's `TimedOut` when it reaches the limit
+// below. The measurement and the custody live here; the decision that turns
+// them into an outcome is the writer's.
 
 /// How long one delivery may spend waiting on its recipient before that
 /// recipient is treated as unable to take it.
@@ -19,17 +19,14 @@
 /// alternative is a writer that waits for one forever while everything behind
 /// it waits for the writer.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 const X_AUTHORITY_ORDERED_BLOCKED_LIMIT: Duration = Duration::from_secs(6);
 
 /// How long one wait may last before the accumulated total is looked at again.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 const X_AUTHORITY_ORDERED_BLOCKED_SLICE: Duration = Duration::from_millis(50);
 
 /// Why a frame did not reach the socket.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 enum X11FrameSendFailure {
     /// Nothing is in hand to send.
@@ -52,12 +49,14 @@ enum X11FrameSendFailure {
     /// beginning of an event: writing another frame now would put a second
     /// event's opening bytes inside the first one's body, and an X11 client
     /// has no way to notice that or recover from it.
+    #[cfg_attr(not(test), allow(dead_code))] // Carried for the reading; production ends the connection on any failure.
     Incomplete { sent: usize, len: usize },
     /// This recipient did not take the rest of the frame within the limit.
     ///
     /// Carries how much of the frame went out, because that decides what can
     /// be done next and nothing else establishes it. Anything other than zero
     /// means the wire holds part of an event.
+    #[cfg_attr(not(test), allow(dead_code))] // Carried for the reading; production maps this to TimedOut and ends the connection.
     Blocked { written: usize, blocked: Duration },
     /// Waiting for the recipient to become writable could not be performed.
     ///
@@ -65,8 +64,10 @@ enum X11FrameSendFailure {
     /// and it never declined. Kept apart from blocking so that a deadline is
     /// never built out of a failed wait, and it is no more a settlement fact
     /// than a deadline is.
+    #[cfg_attr(not(test), allow(dead_code))] // The error is carried for the reading; production classifies by variant.
     WaitFailed(std::io::Error),
     /// The send failed for a reason of its own.
+    #[cfg_attr(not(test), allow(dead_code))] // The error is carried for the reading; production classifies by variant.
     Io(std::io::Error),
 }
 
@@ -78,7 +79,6 @@ enum X11FrameSendFailure {
 /// cannot say that happened, and a resume that trusted it would send the same
 /// bytes twice.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum X11OrderedSendProgress {
     /// This many bytes of the frame have been accepted, and that is known.
@@ -95,7 +95,6 @@ enum X11OrderedSendProgress {
 /// would send the tail of one event as though it were the tail of another.
 /// Owning them is what makes the offset mean anything.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 struct X11OrderedFrame<B> {
     bytes: B,
     progress: X11OrderedSendProgress,
@@ -112,7 +111,6 @@ struct X11OrderedFrame<B> {
 /// recipient and a delivery together, so an accumulator shared between them
 /// would let an earlier stall be spent against a later deadline.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 struct X11OrderedSendState<B = Vec<u8>> {
     frame: Option<X11OrderedFrame<B>>,
     blocked: Duration,
@@ -129,7 +127,6 @@ impl<B> Default for X11OrderedSendState<B> {
 }
 
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 impl<B: AsRef<[u8]>> X11OrderedSendState<B> {
     /// Take the next frame of this delivery, if the last one is finished.
     ///
@@ -205,6 +202,7 @@ impl<B: AsRef<[u8]>> X11OrderedSendState<B> {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn blocked(&self) -> Duration {
         self.blocked
     }
@@ -213,6 +211,7 @@ impl<B: AsRef<[u8]>> X11OrderedSendState<B> {
     ///
     /// Derived from what was sent, never set. A flag a caller could raise
     /// would be a claim about the wire made by something that cannot see it.
+    #[cfg_attr(not(test), allow(dead_code))] // Read by controls.
     fn frame_complete(&self) -> bool {
         self.frame.as_ref().is_some_and(|frame| {
             frame.progress == X11OrderedSendProgress::Sent(frame.bytes.as_ref().len())
@@ -234,7 +233,6 @@ impl<B: AsRef<[u8]>> X11OrderedSendState<B> {
 /// was held all describe something other than a recipient that will not take
 /// its bytes.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
 fn send_pending_frame<B: AsRef<[u8]>>(
     socket: &UnixStream,
     state: &mut X11OrderedSendState<B>,
@@ -336,7 +334,7 @@ fn send_pending_frame<B: AsRef<[u8]>>(
 /// give it the fatal class, and one client that stopped reading would end the
 /// service for every other.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(not(test), allow(dead_code))] // Not called by the writer, which classifies its own failures in serve_one_ordered_delivery; controls read this reading.
 fn x11_ordered_frame_error(context: &str, failure: X11FrameSendFailure) -> X11SetupSocketError {
     match failure {
         X11FrameSendFailure::NoFrame => {

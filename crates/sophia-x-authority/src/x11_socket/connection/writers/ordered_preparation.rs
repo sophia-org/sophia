@@ -11,7 +11,6 @@
 /// Holds no transport, so a preparation that is never committed costs the
 /// connection nothing.
 #[cfg(unix)]
-#[cfg_attr(not(test), allow(dead_code))] // Nothing promotes in production yet.
 struct PreparedOrderedServing {
     served: XAuthorityServedConnection,
     retention: usize,
@@ -28,7 +27,6 @@ impl PreparedOrderedServing {
     /// between a connection's transport leaving its storage and its owner
     /// arriving there, which is why everything that could fail happened
     /// before it.
-    #[cfg_attr(not(test), allow(dead_code))] // Nothing promotes in production yet.
     fn commit(self, transport: XAuthorityOrderedTransport) -> PrivateServingHome {
         let mut home = self.home;
         *home = Some(X11OrderedServingOwner {
