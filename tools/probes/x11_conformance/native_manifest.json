@@ -407,7 +407,8 @@
       "id": "native_executor_order",
       "description": "Actual key, pointer, repeat, control, connection-mutation, thaw and cleanup producers share one runnable-admission order; controlled concurrency preserves completed-send precedence and exact identities at consumption, not only in returned ordinals, and saturation retains payloads and genuine completions",
       "mandatory": true,
-      "implementation": null
+      "implementation": null,
+      "unmet_because": "UNMET AS WRITTEN. Of the seven producer kinds named, two admit into the one shared order in production: routed input (key and pointer through PrivateIngress) and control (PrivateControlProducer). Repeat is admitted and then refused RepeatUnsupported at execution; connection mutation, thaw and cleanup never enter the order, by the design the code records: thaw is a side deque that does not go back through admission, cleanup runs on the deferred-cleanup path with the class reserved and no producer, and connection mutations are applied through the registry. What is proved for the two that exist, and would bind as clause-level obligations if the obligation is split: two producer classes share one order with exact identities at consumption (two_producer_classes_share_one_order), a completed send is never overtaken by one that started later (a_send_that_returned_is_never_overtaken_by_one_that_started_later), and saturation returns the refused payload and settles every accepted item exactly once (a_publication_that_fails_leaves_the_reservation_with_its_producer, review_owner_saturation_cannot_discard_two_already_accepted_controls, work_refused_by_the_order_takes_its_reservation_back). Binding those to this row would report PASS on five producer kinds nobody built; the split, or a rewording to the producers that exist, is a recorded decision."
     },
     {
       "id": "native_executor_liveness",
@@ -531,7 +532,23 @@
       "id": "native_no_fallback",
       "description": "Unavailable or revoked instance authority refuses without ambient backend acquisition",
       "mandatory": true,
-      "implementation": null
+      "implementation": [
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_revoked_admission_stops_a_later_execution"
+        },
+        {
+          "package": "sophia-x-authority",
+          "target": {
+            "kind": "lib"
+          },
+          "test": "x11_socket::routing_tests::a_boundary_nobody_can_read_is_not_a_client_nobody_admitted"
+        }
+      ],
+      "evidence_scope": "The refusal half: a revoked admission's grant is refused NoCurrentAdmission before the permit, and stays refused under a replacement admission; an authority boundary nobody can read is refused Unreachable rather than read as nobody admitted. The absence of any ambient backend acquisition is not a property a unit test can witness: the crate has no portal, bus, libei or display-client dependency and reads no DISPLAY, WAYLAND_DISPLAY or bus address, and the M4 group no_ambient_fallback launches the real host under fabricated ambient names and requires the refusal; that group is gate-only and runs in m6-evidence on the same source as this profile, which is where the composed claim is complete."
     },
     {
       "id": "m2_input_domain",
