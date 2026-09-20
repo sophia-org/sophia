@@ -143,7 +143,38 @@ above every one ever used.
    selection and both are covered. Done; without it, shipping confined groups
    would have let paste between sandboxes fail silently -- t124's class.
 
-### Phase 1 -- t141: socket directories and path exclusion (Tier 1)
+### Phase 1 -- t141: socket directories and path exclusion (Tier 1) -- LANDED 2026-09-20
+
+The contract is written, sandbox-agnostic, as *Socket Directories* in
+`docs/namespaces-and-portals.md`; the launcher doc points at it without
+changing its deferred-confinement policy.
+
+**The trusted listener moved in the same commit, not the second one.** The
+reason it was deferred was that the live session's own sandbox mounts had not
+been read; reading them discharged the concern rather than answering it --
+`tools/activate_live_session_release.sh` only *checks* Bubblewrap's version
+and never invokes it, and names no runtime directory. The live session is not
+sandboxed by its launcher, so there were no mounts to conflict with. The
+alternative was landing a module nothing called, which is the failure this
+repository has spent the week removing.
+
+So the session binds at `$XDG_RUNTIME_DIR/sophia/display-<n>/shared/X<n>` and
+leaves the classic `/tmp/.X11-unix/X<n>` as a symbolic link to it. `connect`
+follows the link, so the sixteen files that name the classic path are
+unchanged. `XDG_RUNTIME_DIR` is now required for a live session, which is what
+`tools/desktop_comparison_tty3.sh` already required and what
+`live_xauthority_directory` already prefers.
+
+`verify_group` is asked before the socket is bound, which is the moment that
+matters: what it catches is something already waiting in the directory.
+
+**Not covered by any gate.** These six controls live in
+`src/live_session/tests/socket_directory_tests.rs` and run only under
+`--features native-session`, which no gate runs as a test -- xtask uses that
+feature for a release *build*, and the two shell scripts that test with it name
+individual targets. That is true of the crate's other 557 live-session tests
+as well, so it is a standing gap rather than one this row opened; worth its own
+row.
 
 Small, no runtime change, real security value.
 

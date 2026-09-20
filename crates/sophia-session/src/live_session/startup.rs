@@ -159,16 +159,52 @@ fn parse_display_number(display: &str) -> Result<u32, Box<dyn std::error::Error>
     Ok(display_number)
 }
 
-fn prepare_display_socket(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+/// Prepare where this display's trusted listener binds, and answer that path.
+///
+/// THE SOCKET LIVES IN THE LAYOUT NOW, and the classic path is a symbolic link
+/// to it. The layout is the thing a sandbox can mount one group of -- see
+/// *Socket Directories* in `docs/namespaces-and-portals.md` -- and a listener
+/// that binds outside it is a listener no group directory contains. The
+/// trusted group is the first to move because it is the one that exists: a
+/// confined group has nothing to bind yet, and a layout proved only by its own
+/// controls is a layout nothing has used.
+///
+/// THE LINK IS AT THE CLASSIC PATH, NOT IN THE GROUP DIRECTORY. `connect`
+/// follows it, so every client that names `/tmp/.X11-unix/X<n>` -- which is
+/// every client outside a sandbox, and every tool in this repository -- reaches
+/// the socket unchanged. A link the other way, inside a group directory, is
+/// the escape the layout exists to refuse, and `verify_group` refuses it.
+fn prepare_display_socket(
+    classic: &std::path::Path,
+    display_number: u32,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     std::fs::create_dir_all("/tmp/.X11-unix")?;
-    if !path.exists() {
-        return Ok(());
+    let layout = socket_directories::SocketDirectoryLayout::prepare(display_number)?;
+    let bind = layout.prepare_group(socket_directories::ClientGroup::Shared)?;
+    // ASKED BEFORE THE SOCKET GOES IN, which is the moment that matters: what
+    // this catches is something already waiting in the directory, and a
+    // directory found holding a link named `X<n>` is one somebody prepared.
+    // A stale socket from a previous run passes -- it wears the right name and
+    // is no link -- and is cleared below.
+    layout.verify_group(socket_directories::ClientGroup::Shared)?;
+    // ASKED OF BOTH PATHS, because either can be the one still serving. A live
+    // socket under the layout with no link at the classic path is a session
+    // this one would otherwise bind straight over.
+    for path in [classic, bind.as_path()] {
+        if UnixStream::connect(path).is_ok() {
+            return Err(format!("X display socket {} is already active", path.display()).into());
+        }
     }
-    if UnixStream::connect(path).is_ok() {
-        return Err(format!("X display socket {} is already active", path.display()).into());
+    // `symlink_metadata`, not `exists`: a dangling link left by a previous
+    // session answers false to `exists` and would then be in the way of the
+    // one made below.
+    for path in [classic, bind.as_path()] {
+        if std::fs::symlink_metadata(path).is_ok() {
+            std::fs::remove_file(path)?;
+        }
     }
-    std::fs::remove_file(path)?;
-    Ok(())
+    std::os::unix::fs::symlink(&bind, classic)?;
+    Ok(bind)
 }
 
 fn resolve_executable_on_path(name: &str) -> Option<std::path::PathBuf> {

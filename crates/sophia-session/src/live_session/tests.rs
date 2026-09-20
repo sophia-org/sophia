@@ -1580,3 +1580,5 @@ mod window_allocation;
 mod pointer_focus_tests;
 
 mod input_recovery_tests;
+
+mod socket_directory_tests;

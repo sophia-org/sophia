@@ -89,7 +89,9 @@ host policy, not the menu parser. Unsupported or missing commands are shown as
 unavailable. Entries requiring D-Bus activation are unavailable, as are terminal
 entries without an explicit adapter. File/URI opening, desktop actions and new
 application-confinement policies are deferred. No unsupported policy falls back
-to `trusted-host`.
+to `trusted-host`. When a confinement policy is chosen, the directory it mounts
+and the promise it keeps are already written: see *Socket Directories* in
+`namespaces-and-portals.md`.
 
 Each opening requests a fresh immutable catalog on a worker thread. A selection
 waits in the session's bounded application-admission queue. At dispatch the worker

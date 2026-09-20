@@ -95,6 +95,54 @@ decision for a particular transfer.
 A future frontend must assign every admitted client a Sophia namespace context
 so portal and metadata policy retain the same trust model across protocols.
 
+## Socket Directories
+
+A client group reaches its listener through a directory, and only through a
+directory. The layout is the session's; what mounts it is the sandbox's, and
+the contract between them is written here so that neither has to know the
+other's name.
+
+The session owns one runtime root per display, under the user's runtime
+directory:
+
+```text
+$XDG_RUNTIME_DIR/sophia/display-<n>/
+  shared/X<n>          the trusted listener, for classic clients
+  confined-<k>/X<n>    one listener per confined client group
+```
+
+Every group directory is owner-only, contains exactly one entry -- the socket
+named `X<n>` -- and contains no symbolic link. The socket name is the same in
+every group so that a client whose directory is mounted at the standard X11
+socket path sees `:<n>` and nothing about its launch has to change.
+
+**The contract a sandbox must keep.** A confined client is given exactly one
+group directory, mounted at `/tmp/.X11-unix` inside the sandbox, and is given
+nothing else under `$XDG_RUNTIME_DIR/sophia/`. That is the whole of it. It
+names no sandbox: Bubblewrap satisfies it with one bind, an unshare-based
+launcher satisfies it with one mount, and the session refuses to know which.
+What the contract buys is exit 3 of the socket-directory plan: a confined
+client cannot *reach* the trusted socket, as distinct from being denied at it.
+Denial is admission's job and stays so; the directory is a second layer under
+it, and a client that finds the trusted path simply absent has nothing to
+present credentials to.
+
+**What it does not change.** The listener is still transport, not identity.
+Which directory a connection arrived through proposes a namespace; admission
+still decides, from peer credentials and policy, and still refuses a listener
+it has no group for rather than defaulting. The MIT-MAGIC-COOKIE stays one per
+session, shared across directories: path exclusion, not the cookie, is what
+separates groups, and a group that could read another's directory would have
+the cookie already. The classic path `/tmp/.X11-unix/X<n>` on the host remains
+valid for clients outside any sandbox.
+
+**What is deferred.** The launcher's execution policy still says confinement
+is deferred, and this section does not change that: the layout and the
+contract exist so that when a confinement policy is chosen it has a directory
+to mount and a promise to keep, not so that one is chosen here. Serving
+several groups from one session process is the multiplexer half of the plan
+and is tracked separately.
+
 ## Admission
 
 ### Relationship To Scripting

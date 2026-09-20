@@ -95,6 +95,7 @@ pub(crate) mod direct_overlay_proof;
 pub(super) mod input_guard;
 mod metadata_broker;
 pub(crate) mod metadata_shell;
+mod socket_directories;
 use cpu_visual_progress::{CpuVisualProgress, presented_logical_checksum};
 use metadata_shell::live_shell_activation_surfaces;
 mod native_retirement;
@@ -353,8 +354,10 @@ pub(crate) fn run_persistent_xterm_session(
     } else {
         None
     };
-    prepare_display_socket(&config.socket_path)?;
+    // The display number first: the socket's place is inside this display's
+    // layout, so it cannot be prepared before the display is known.
     let display_number = parse_display_number(&config.display)?;
+    let bound_socket_path = prepare_display_socket(&config.socket_path, display_number)?;
     let (mut xauthority, xauthority_cookie) = LiveXAuthorityFile::create(display_number)?;
     let mut seat_controller = config
         .native_scanout
@@ -608,7 +611,10 @@ pub(crate) fn run_persistent_xterm_session(
     let policy_map_mode = LivePolicyMapMode::from_external_wm(wm_session.is_some());
     let output_topology = output_topology_from_engine_outputs(&initial_outputs)?;
 
-    let server_path = config.socket_path.clone();
+    // BOUND IN THE LAYOUT, NAMED BY THE CLASSIC PATH. The frontend binds where
+    // the group directory is; `config.socket_path` stays what every client and
+    // tool names, and reaches this through the link made above.
+    let server_path = bound_socket_path.clone();
     let session_generation = NEXT_SESSION_GENERATION
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |generation| {
             generation.checked_add(1)
