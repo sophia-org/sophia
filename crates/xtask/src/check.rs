@@ -115,6 +115,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         "tools/check_sophia_firefox_rendering_verifier.sh",
         "tools/check_mirror_group_physical_verifier.sh",
         "tools/check_keyboard_independence_verifier.sh",
+        "tools/check_keyboard_independence_session_verifier.sh",
         "tools/check_sophia_terminal_performance_reporter.sh",
         "tools/check_installed_native_verifiers.sh",
         "tools/check_lom_gpu_content_proof_verifiers.sh",

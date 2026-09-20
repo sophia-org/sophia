@@ -32,6 +32,7 @@ checks=(
     tools/check_frame_fed_output_verifier.sh
     tools/check_mirror_group_physical_verifier.sh
     tools/check_keyboard_independence_verifier.sh
+    tools/check_keyboard_independence_session_verifier.sh
     tools/check_native_egl_mixed_verifier.sh
     tools/check_session_terminal_arguments.sh
     tools/check_session_lifecycle_diagnostics.sh
