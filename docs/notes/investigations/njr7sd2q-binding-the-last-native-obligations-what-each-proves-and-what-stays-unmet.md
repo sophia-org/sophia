@@ -26,7 +26,7 @@ manifest's `evidence_scope` says so in the obligation's own words.
 
 ## Evidence
 
-### `native_lock_order`: bound at `2feacc07`
+### `native_lock_order`: bound at `849a9b53`
 
 "Guarded APIs and contending writers preserve selected lock order." The
 plan's vocabulary is the selected acquisition rank
@@ -60,7 +60,7 @@ two. The tests witness the order the code documents. Whether the plan's list
 is corrected to the code or the code is an inversion of a selection is a
 decision, recorded here rather than settled by a binding; the scope says so.
 
-### `native_recipient_removal`: bound at `2feacc07`
+### `native_recipient_removal`: bound at `849a9b53`
 
 "Route removal while recipient lives retains targeted debt."
 
@@ -72,10 +72,10 @@ decision, recorded here rather than settled by a binding; the scope says so.
 Neither makes a writer, disconnect or wire claim, and the scope says so.
 
 By hand each of the seven prints exactly one named `ok` under the runner's
-own command shape; the profile on `2feacc07` reads native-input FAIL with six
+own command shape; the profile on `849a9b53` reads native-input FAIL with six
 NORESULT, down from eight, and the two now PASS.
 
-### `native_stalled_reader`: written and bound at `7a9e9ab0`
+### `native_stalled_reader`: written and bound at `4c6cdca2`
 
 "Real private stalled socket reader is contained while healthy peer
 continues." The halves existed apart: the terminal-level control proves a
@@ -320,8 +320,8 @@ hold whole: thirty-eight.
 ## Validation and remaining work
 
 - [x] `native_lock_order` and `native_recipient_removal` bound; profile on
-      `2feacc07` reads six NORESULT.
-- [x] `native_stalled_reader`: written and bound at `7a9e9ab0`.
+      `849a9b53` reads six NORESULT.
+- [x] `native_stalled_reader`: written and bound at `4c6cdca2`.
 - [x] `native_no_fallback`: the refusal half bound; the ambient half is the
       M4 group, named in the scope.
 - [x] `native_executor_order`: unmet with the reason and the split option.
@@ -332,10 +332,27 @@ hold whole: thirty-eight.
 - [ ] t139: decide between witnessing the construction, refusing at the
       adapter, and building the authority's recognition; then bind
       `native_protected_action`.
-- [ ] Decisions for Mason: the plan's rank list against the code's; the
-      executor-order split; the key-over-another-surface route refusal.
+- [x] Decided 2026-09-20 with Mason: the selected rank is the code's, and
+      the plan's paragraph is corrected to it; `native_executor_order` is
+      reworded to the producers that exist and bound to six tests; t139
+      closes by refusing the chord at the adapter and witnessing the
+      construction. The key-over-another-surface route refusal is the
+      lane's row.
 - [ ] The stale `allow(dead_code)` and "not attached yet" comments along
       the ordered writer chain: one sweep, after t138 lands.
+
+## A note on the commit identities above
+
+On the evening of 2026-09-20 the shared master was rebased by the other lane
+before a push, which replayed this note's commits and the bindings' onto
+`1a69ccab` under new identities and flattened the three merge commits.
+Nothing changed in any tree, verified by diff. The identities cited here
+are the ones that exist after that: `849a9b53` (lock order and recipient
+removal), `4c6cdca2` (stalled reader), `2b4dee11` (no fallback, executor
+order unmet, t139 opened), `fcfc98ee` (the marker sweep), `1bfe3659`
+(ingress admission), `ae98d134` (internal wait), `7daa3bc7` and `563ed9c6`
+(the t139 facts). Gate reports under `.artifacts/` name the commits they
+ran on, some of which now exist only as trees.
 
 ## Connections
 

@@ -490,16 +490,26 @@ Fair cursors persist across stops. These are ceilings, not latency guarantees.
 
 ## Synchronization and execution
 
-The selected acquisition rank is outer X runtime, coordinator transition gate,
-common authority, surfaces,
-pointer state, frozen input, core subscriptions, clients, XFixes subscriptions,
-then X input authority. Acquire only needed locks through guarded APIs. Audit
-all integration writers; dependency direction alone does not establish order.
-Existing sequential epoch locks are not evidence of a current deadlock.
+The selected acquisition rank is the one the code documents per edge, and
+this paragraph was corrected to it on 2026-09-20 (decision recorded in
+[njr7sd2q](../investigations/njr7sd2q-binding-the-last-native-obligations-what-each-proves-and-what-stays-unmet.md)):
+the coordinator transition gate before common authority; under common, the
+admission bindings, then clients, then surfaces, then the native base, then
+exact selections, then publication; the ledger's own guard released before
+common is taken; the order's queue guard released before common; and in the
+focus and input writers, X input authority before core event selections,
+the one order both writers use (`375e92c7`). Acquire only needed locks
+through guarded APIs. Audit all integration writers; dependency direction
+alone does not establish order. Existing sequential epoch locks are not
+evidence of a current deadlock.
 
 The private executor retains actual xkbcommon state on its worker thread;
-there is no substitute modifier arithmetic. One sequence covers keys, pointer,
-repeat, state-only changes and cleanup. Modifier projections are read-only.
+there is no substitute modifier arithmetic. One runnable-admission order is
+shared by the producers that exist, routed input (keys and pointer) and
+control; as built, repeat is admitted and refused, thaw is a side deque that
+never re-enters admission, cleanup runs on the deferred-cleanup path, and
+connection mutations are applied through the registry (decision recorded
+2026-09-20, same note). Modifier projections are read-only.
 Delayed work takes its sequence position when runnable. Under the common and
 needed X guards, final execution revalidates authority, resolves current
 focus/grabs, applies state and records the actual recipient. All participating
