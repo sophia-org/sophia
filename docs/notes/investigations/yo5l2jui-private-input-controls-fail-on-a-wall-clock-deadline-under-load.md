@@ -74,7 +74,7 @@ the deferred control was delivered under its original transaction
 which describes the **success** condition, but only fires on timeout. A reader
 is told the opposite of what happened.
 
-### What the wait is actually starved by (2026-09-19)
+### What the wait was first read as (2026-09-19)
 
 Measured while adding three library tests for the XTEST injection policy, two
 of which start a private input service. The run is
@@ -96,49 +96,108 @@ test spending its whole budget; the passing runs of the same binary finish in
 being slower. Cutting the added tests back to one service returned the binary
 to 4.06 seconds and 4 of 4.
 
-This answers the first open item below. The wait is **starved, not stalled**:
-the same binary, the same tests and the same machine pass or fail according to
-how many other services are being started beside them, and the bridge is
-making progress throughout. It also decides between the candidate
-resolutions. Waiting on progress rather than elapsed time is the repair that
-addresses this; raising the budget moves the threshold by about one
-service-start, which is the margin that was just consumed by three ordinary
-tests.
+This was read, on 2026-09-19, as the wait being starved rather than stalled,
+because the same binary passed or failed according to how many other services
+were started beside it. That reading was wrong, and the next section says what
+the silence actually was. What the measurement does still show is that the
+margin is one service-start wide.
+
+### What the silence actually was (2026-09-20)
+
+The progress-reset wait was built first and measured under a deterministic
+load: 64 CPU spinners on the 32-core host, session library suite only.
+
+| control | stall bound | runs | failed | at |
+| --- | --- | --- | --- | --- |
+| unrepaired | 20 s wall clock | 10 | 8 | ~21 s |
+| progress-reset | 20 s stall | 10 | 7 | ~21 s |
+| progress-reset | 150 s stall | 3 | 1 | 151 s |
+
+Starvation and stall produce the same silence, so the repair could not tell
+them apart, and at 150 seconds the awaited delivery had still not arrived on
+a machine that finishes the test in 4.5 seconds otherwise. A probe that stops
+the service on the first `Ended` and prints the stop then found the answer in
+three failing runs out of six, identical each time:
+
+```text
+X11 route queue is full for client 1
+```
+
+**The service had died.** A bridge whose service has ended reports `Ended` on
+every `apply_committed`, which is correctly not progress, so the wait sat on a
+dead service until its bound expired and then reported the bound. The death
+itself, a two-deep per-client control queue filled by a merely descheduled
+client worker and a route error the private turn cannot survive, is a product
+defect in `sophia-x-authority`, recorded in
+[A full per-client control queue ends the whole private input service](1lv1gg5u-a-full-per-client-control-queue-ends-the-whole-private-input-service.md)
+and filed as t130.
+
+Also seen once in six under the same load, in a different family:
+`policy_transport_worker_tests::rejected_profile_admission_fails_before_negotiated`
+asserts `try_event()` is `Err` after the failure event and found another
+event there. Filed as t132.
 
 ## Finding and resolution
 
-The production code is not implicated by this evidence. The defect is in the
-controls: they bound an asynchronous wait with a wall clock, on a budget that
-full-suite concurrency can exceed, and report the timeout in language that
-describes success.
+Two defects, one in the controls and one in the product.
 
-Candidate resolutions, none yet chosen:
+**The controls** bounded an asynchronous wait with a wall clock, on a budget
+that suite concurrency can exceed, reported the timeout in language that
+described success, and could not tell a starved bridge from a dead one.
+Resolved 2026-09-20 in `private_input_session.rs`, all fifteen sites:
 
-1. **Wait on progress, not elapsed time.** Reset the budget whenever the pump
-   observes any effect, so the deadline measures a stalled bridge rather than a
-   busy machine.
-2. **Raise the budget.** Cheapest, and it moves the failure rate without
-   addressing the class; a busier machine reinstates it.
-3. **Bound concurrency for this package** so the controls do not compete with
-   the rest of the workspace. Hides the fragility rather than removing it.
+- One loop under two entry points, `wait_for` and `spin_for`, generates every
+  failure message. A site names its goal as a noun phrase and supplies a
+  `seen` closure that is evaluated only on failure, so the old shape, a
+  sentence that reads as true, is no longer expressible.
+- `wait_for` resets a 20-second stall bound on any movement of the bridge
+  (`advanced`: batches observed, commits, a submitted effect, or a refusal
+  that released its entry) and keeps a 120-second ceiling for a mutation
+  that keeps the bridge busy without delivering. A deferred head's restated
+  refusal is deliberately not movement. `spin_for` is for the waits with no
+  signal at all (a delivery's terminal answer, a boundary row, an armed
+  fault) and is bounded by a 60-second clock that says so.
+- A bridge that reports `Ended`, or a service whose readiness is no longer
+  `Ready`, is `Progress::Lost`: the wait stops the service and fails at once
+  with the stop's own account. On this host that turned a 20-second silence
+  into a 16-millisecond failure reading
+  `the private input service ended while this waited; ... X11 route queue is
+  full for client 1`.
+- `Fixture::pump` now judges movement before it moves the effects into the
+  harvest, and `Fixture::step` is the one pump-and-scan shape the sites use.
 
-Whichever is chosen, the 15 assertion messages should state what actually
-failed.
+**The product** ends the private service on a full control queue. That is
+t130, and until it lands the twelve-run bar below cannot be met: the controls
+will fail at the recorded rate, but in milliseconds and by name.
 
 ## Validation and remaining work
 
-- [x] Establish whether the wait is starved or genuinely stalled: starved, by
-      the controlled measurement above. Adding service-starting tests to the
-      binary decides it, and the bridge keeps making progress.
-- [ ] Choose a resolution and apply it to all 15 deadline sites.
-- [ ] Correct the assertion messages.
-- [ ] Re-measure over at least 12 runs under the gate's isolation, against the
-      3-in-12 baseline recorded above.
+- [x] Establish whether the wait is starved or genuinely stalled: neither.
+      The service was dead, by the stop report of 2026-09-20.
+- [x] Choose a resolution and apply it to all 15 deadline sites: progress
+      waits with a ceiling, and `Lost` on a dead service.
+- [x] Correct the assertion messages: generated, none written at a site.
+- [x] Deterministic trigger before and after: 64 spinners. Before, 8 of 10
+      failing at the 20-second bound with a message describing success.
+      After, the same runs fail at once naming the route-queue death; on the
+      quiet machine, 1 of 3 library runs, in 16 ms.
+- [ ] Re-measure over at least 12 runs under the gate's isolation once t130
+      has landed, against the 3-in-12 baseline.
+- [ ] The same wall-clock shape elsewhere is t131: `x11_socket/tests/routing.rs`
+      (12 sites), `tests/support/m3_acceptance_c.rs` (9),
+      `tests/connection_wait.rs` (6), the desktop comparison `workload.rs` (6),
+      the xterm command (6), the shell launcher (5), and the fixed-step class
+      such as
+      `state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw`
+      in `tests/support/private_state_only.rs`, which pumps a fixed count and
+      cannot say whether it waited long enough.
 
-Open work is tracked as t115 in `todo.md`.
+Open work is tracked as t115, t130, t131 and t132 in `todo.md`.
 
 ## Connections
 
+- [A full per-client control queue ends the whole private input service](1lv1gg5u-a-full-per-client-control-queue-ends-the-whole-private-input-service.md) --
+  what the silence was.
 - [M4 private Session acceptance and what mutation showed](../milestones/pq4wr7xn-m4-private-session-acceptance-and-what-mutation-showed.md) —
   records the controls these deadlines belong to, and why a control that can
   pass or fail for the wrong reason is the specific risk that milestone
