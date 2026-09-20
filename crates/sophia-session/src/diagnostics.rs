@@ -3,6 +3,7 @@ pub mod application;
 mod capture;
 mod commands;
 mod failure;
+mod input_device;
 mod recovery;
 mod shell_action;
 mod shell_component;

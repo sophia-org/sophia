@@ -32,6 +32,37 @@ fn x_lifecycle_records_keep_bounded_identity_and_exact_delivery_stage() {
 }
 
 #[test]
+fn device_records_keep_identity_capabilities_and_what_a_departure_released() {
+    for record in [
+        "sophia_live_session_input_device schema=1 status=added device=256 keyboard=true pointer=false touch=false virtual=false source=udev",
+        "sophia_live_session_input_device schema=1 status=key_observed device=256",
+        "sophia_live_session_input_device schema=1 status=removed device=256 released=1",
+        "sophia_live_session_input_device schema=1 status=summary fallbacks=0",
+        "sophia_live_session_keys schema=1 status=released reason=device_removed device=256 count=1",
+        "sophia_live_session_keys schema=1 status=released reason=input_reopened scope=all count=2",
+        "sophia_live_session_keys schema=1 status=released reason=seat_release surface=7 count=1",
+    ] {
+        assert_eq!(
+            reduced_record(&format!(
+                "{record} name=secret path=/dev/input/event5 sysname=event5"
+            )),
+            Some(record.into()),
+            "{record}"
+        );
+    }
+    assert_eq!(
+        reduced_record(
+            "sophia_live_session_input_device status=private_text device=event5 source=/dev/input virtual=maybe released=-1"
+        ),
+        Some("sophia_live_session_input_device".into())
+    );
+    assert_eq!(
+        reduced_record("sophia_live_session_keys status=held reason=unbounded_secret"),
+        Some("sophia_live_session_keys".into())
+    );
+}
+
+#[test]
 fn skipped_admission_evidence_is_distinct_from_presentation() {
     for status in ["armed", "committed", "presented", "retry_pixels"] {
         let record = format!(
