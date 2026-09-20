@@ -137,6 +137,24 @@ impl KeyRepeatState {
         cancelled
     }
 
+    /// The device left the seat; whatever it was repeating stops. A seat
+    /// holds one repeating key at a time, so this is at most one per seat
+    /// and touches no other device's key.
+    pub fn cancel_device(&mut self, device: DeviceId) -> usize {
+        let mut cancelled = 0usize;
+        for slot in self.seats.iter_mut().flatten() {
+            if slot.target.is_some_and(|target| target.device == device) {
+                slot.target = None;
+                cancelled = cancelled.saturating_add(1);
+            }
+        }
+        self.metrics.cancelled = self
+            .metrics
+            .cancelled
+            .saturating_add(u64::try_from(cancelled).unwrap_or(u64::MAX));
+        cancelled
+    }
+
     pub fn cancel_surface(&mut self, surface: SurfaceId) -> usize {
         let mut cancelled = 0usize;
         for slot in self.seats.iter_mut().flatten() {
