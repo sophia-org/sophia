@@ -178,7 +178,7 @@ fn live_termination_visits_charge_once_and_leave_other_native_classes_a_turn() {
     private.terminal.recipient_termination_turn = 2;
     let mut charged = 0;
     let step = private
-        .deliver_one(&mut |_, _| {
+        .deliver_one(None, &mut |_, _| {
             charged += 1;
             Ok(())
         })
@@ -195,7 +195,7 @@ fn live_termination_visits_charge_once_and_leave_other_native_classes_a_turn() {
     for _ in 0..12 {
         let mut charged = 0;
         let step = private
-            .deliver_one(&mut |_, _| {
+            .deliver_one(None, &mut |_, _| {
                 charged += 1;
                 Ok(())
             })

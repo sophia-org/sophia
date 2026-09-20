@@ -119,7 +119,7 @@ fn prepared_producer_retains_the_original_completion_through_ordered_execution()
     assert_eq!(held.delivery, id);
     assert!(Arc::ptr_eq(&held.cell, &original));
     assert_eq!(custody.phase.get(), PrivateRequestPhase::Settled);
-    assert!(matches!(private.deliver_one(&mut |_, _| Ok(())).unwrap(),
+    assert!(matches!(private.deliver_one(None, &mut |_, _| Ok(())).unwrap(),
         PrivateDeliveryStep::Advanced { report: Some(_), .. }));
 }
 
@@ -155,7 +155,7 @@ fn prepared_producer_never_reclaims_a_missing_or_replaced_accepted_completion() 
         assert!(private.terminal.holds.is_empty());
         assert!(private.terminal.settling.is_empty());
         assert!(original.answer().is_none());
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
         assert_eq!(private.terminal.undelivered.len(), 1);
         if let Some(replacement) = replacement {
             assert!(replacement.answer().is_none());

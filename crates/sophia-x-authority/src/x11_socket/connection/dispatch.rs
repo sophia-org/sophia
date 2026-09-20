@@ -392,7 +392,7 @@ impl X11QueryOwner<'_> {
         if self.finished { return Ok(()) }
         if let Some((owner, gate)) = &self.private {
             gate.close();
-            owner.drive(NonZeroUsize::new(1).unwrap()).map_err(|error| X11SetupSocketError::new(format!("private cleanup unavailable: {error:?}")))?;
+            owner.drive_every_slot().map_err(|error| X11SetupSocketError::new(format!("private cleanup unavailable: {error:?}")))?;
         } else {
             self.runtime.lock().map_err(|_| X11SetupSocketError::new("X11 runtime unavailable"))?.input_authority_mut().cleanup_owner(self.client.raw());
         }

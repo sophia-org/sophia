@@ -44,7 +44,7 @@ fn actual_refusal_answers_its_original_delivery_and_allows_bounded_grant_reuse()
         assert!(cell.answer().is_none());
         assert_eq!(durable.reserved(), Some(1));
         let private = fixture.runner.frontend.as_mut().unwrap();
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
         assert_eq!(
             cell.answer(),
             Some(XAuthorityClientInputDelivery {
@@ -77,7 +77,7 @@ fn refused_receipt_publication_keeps_the_item_and_retries_only_its_actual_outcom
     let recovery = private.broker.registry.input_recovery.clone();
     let entry = recovery.state.lock().unwrap().tickets.remove(&id).unwrap();
     let cell = entry.completion.clone();
-    private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     assert!(cell.answer().is_none());
     assert_eq!(durable.reserved(), Some(1));
     assert_eq!(private.terminal.undelivered.len(), 1);
@@ -91,7 +91,7 @@ fn refused_receipt_publication_keeps_the_item_and_retries_only_its_actual_outcom
     recovery.state.lock().unwrap().tickets.insert(id, entry);
     let mut charges = 0;
     private
-        .deliver_one(&mut |_, _| {
+        .deliver_one(None, &mut |_, _| {
             charges += 1;
             Ok(())
         })
@@ -129,7 +129,7 @@ fn refused_request_never_answers_a_replacement_delivery_with_the_same_number() {
     let replacement = recovery.completion_for(id).unwrap().unwrap();
     assert!(!Arc::ptr_eq(&original, &replacement));
     for _ in 0..3 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
         assert!(original.answer().is_none());
         assert!(replacement.answer().is_none());
         assert_eq!(durable.reserved(), Some(1));

@@ -47,7 +47,7 @@ fn frozen_requests_keep_original_custody_allow_controls_and_resume_in_order() {
     assert!(Arc::ptr_eq(&custody.input_completion().unwrap().cell, &original.1));
     assert_eq!(custody.phase.get(), PrivateRequestPhase::Settled);
     for _ in 0..2 {
-        assert!(matches!(private.deliver_one(&mut |_, _| Ok(())).unwrap(), PrivateDeliveryStep::Advanced { report: Some(_), .. }));
+        assert!(matches!(private.deliver_one(None, &mut |_, _| Ok(())).unwrap(), PrivateDeliveryStep::Advanced { report: Some(_), .. }));
     }
     assert!(private.terminal.turn.is_empty());
 }
@@ -125,6 +125,6 @@ fn recovery_cancellation_of_a_frozen_request_closes_the_same_common_reservation(
     assert_eq!(custody.phase.get(), PrivateRequestPhase::Settled);
     assert_eq!(custody.input_completion().unwrap().cell.answer().unwrap().outcome, XAuthorityInputDeliveryOutcome::EpochRevoked);
     assert!(private.terminal.holds.is_empty());
-    private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     assert!(private.terminal.turn.is_empty() && private.terminal.undelivered.is_empty());
 }

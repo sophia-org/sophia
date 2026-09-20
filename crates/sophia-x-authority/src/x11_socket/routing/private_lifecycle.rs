@@ -392,6 +392,34 @@ impl PrivateLifecycleOwner {
     /// input authority. Never takes outer runtime or waits for a worker. Each
     /// visited slot consumes budget, and the persistent cursor gives retained
     /// failures their turn without skipping the rest indefinitely.
+    /// One pass over every slot, for a connection retiring its own admission.
+    ///
+    /// THE SWEEP'S BUDGET IS FOR THE SWEEP, NOT FOR THIS. `drive` is cursored
+    /// and budgeted because the maintenance visit that calls it must leave
+    /// turns for everything else; one unit there means one slot, chosen by
+    /// where the shared cursor happens to stand. A connection finishing its
+    /// own cleanup is not sharing turns with anything: it knows an admission
+    /// has just closed, and spending one unit on a slot belonging to some
+    /// other connection is how a departure comes to be noticed only when the
+    /// service stops.
+    ///
+    /// Bounded by the ring, which is a fixed capacity reserved before any
+    /// connection was admitted, so this is a bound and not a sweep until
+    /// quiescent.
+    pub fn drive_every_slot(&self) -> Result<usize, PrivateLifecycleRefusal> {
+        let slots = self
+            .inner
+            .records
+            .lock()
+            .map_err(|_| PrivateLifecycleRefusal::Unreachable)?
+            .slots
+            .len();
+        match NonZeroUsize::new(slots) {
+            Some(budget) => self.drive(budget),
+            None => Ok(0),
+        }
+    }
+
     pub fn drive(&self, budget: NonZeroUsize) -> Result<usize, PrivateLifecycleRefusal> {
         self.inner
             .participant

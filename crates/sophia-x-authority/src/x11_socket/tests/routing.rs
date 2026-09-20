@@ -16,7 +16,7 @@ impl PrivateXServerFrontend {
             + 1;
         for _ in 0..visits {
             let Ok(PrivateDeliveryStep::Advanced { report, .. }) =
-                self.deliver_one(&mut |_, _| Ok(()))
+                self.deliver_one(None, &mut |_, _| Ok(()))
             else {
                 break;
             };
@@ -12517,7 +12517,7 @@ impl OrderedInbox {
                 return Ok(Some(found));
             }
             if matches!(
-                private.deliver_one(&mut |_, _| Ok(()))?,
+                private.deliver_one(None, &mut |_, _| Ok(()))?,
                 PrivateDeliveryStep::Idle
             ) {
                 break;
@@ -13051,10 +13051,10 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
         private.terminal.delivering.extend(turn);
     };
     run_by_hand(private, keyboards, 2441, 272, true);
-    private.deliver_one(&mut |_, _| Ok(())).expect("the press delivers");
+    private.deliver_one(None, &mut |_, _| Ok(())).expect("the press delivers");
     run_by_hand(private, keyboards, 2442, 272, false);
     private
-        .deliver_one(&mut |_, _| Ok(()))
+        .deliver_one(None, &mut |_, _| Ok(()))
         .expect("the release delivers");
     assert_eq!(private.terminal.settling.len(), 1);
     assert!(
@@ -13077,7 +13077,7 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
         // gets its step and keeps its place.
         loop {
             match private
-                .deliver_one(&mut |_, _| Ok(()))
+                .deliver_one(None, &mut |_, _| Ok(()))
                 .expect("a terminal step")
             {
                 PrivateDeliveryStep::Recorded { .. } => visits += 1,
@@ -13093,6 +13093,11 @@ fn steady_delivery_traffic_does_not_starve_an_older_native_proof() {
                     panic!("no receipt has been published in this control")
                 }
                 PrivateDeliveryStep::Idle => panic!("traffic was ready, so no step is idle"),
+                // This control lends no keyboards, so the visit that looks
+                // for a departed source's release is never offered one.
+                PrivateDeliveryStep::DepartedRelease { .. } => {
+                    unreachable!("no keyboards were lent, so no such visit is made")
+                }
                 PrivateDeliveryStep::SharedActivation { .. } => {}
                 PrivateDeliveryStep::TransientReceipt { .. } => {}
                 PrivateDeliveryStep::NativeDisposal { .. } => {}
@@ -13179,11 +13184,11 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     }
     for _ in 0..12 {
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
     }
     assert_eq!(
         private.terminal.settling[0].dispatch(),
@@ -13201,7 +13206,7 @@ fn an_outcome_is_owned_before_an_ordinary_observer_can_prune_it() {
         .expect("the answer is published");
 
     // One visit, so the terminal side takes custody of the outcome.
-    private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
 
     assert_eq!(
         private.terminal.settling[0].outcome_seen(),
@@ -13529,7 +13534,7 @@ fn a_retained_custody_refuses_the_next_operation_rather_than_being_replaced() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     };
 
@@ -13747,7 +13752,7 @@ fn a_blocked_head_stops_its_own_connection_while_another_recipient_progresses() 
         // Each visit must succeed. Discarding the result would let a failing
         // step pass for an empty queue.
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("a terminal step");
         while let Ok(capsule) = fixture.channels.ordered.try_recv() {
             seen_blocked.push(capsule.delivery());
@@ -13847,7 +13852,7 @@ fn an_unresolved_head_blocks_its_connection_without_being_offered_again() {
     // after the write-ahead leaves: the phase saying the handover began, and
     // the capsule still in the slot.
     private
-        .deliver_one(&mut |_, _| Ok(()))
+        .deliver_one(None, &mut |_, _| Ok(()))
         .expect("a step that prepares and hands over the first press");
     let queued: Vec<_> = std::iter::from_fn(|| channels.ordered.try_recv().ok()).collect();
     assert_eq!(
@@ -13860,7 +13865,7 @@ fn an_unresolved_head_blocks_its_connection_without_being_offered_again() {
     // NOTHING MORE IS HANDED OVER FOR THIS RECIPIENT. The staged head blocks
     // the press behind it, and is not offered again itself.
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(()));
+        let _ = private.deliver_one(None, &mut |_, _| Ok(()));
     }
     assert!(
         channels.ordered.try_recv().is_err(),
@@ -13946,7 +13951,7 @@ fn a_carried_older_press_is_handed_over_before_a_newer_held_press() {
     // Now drive the handovers and watch the order they reach the queue in.
     let mut order = Vec::new();
     for _ in 0..12 {
-        let _ = private.deliver_one(&mut |_, _| Ok(()));
+        let _ = private.deliver_one(None, &mut |_, _| Ok(()));
         while let Ok(capsule) = channels.ordered.try_recv() {
             order.push(capsule.delivery());
         }
@@ -14008,7 +14013,7 @@ fn a_final_release_carries_the_presss_own_custody_rather_than_replacing_it() {
         .expect("a readable order");
     private.terminal.delivering.extend(turn);
     private
-        .deliver_one(&mut |_, _| Ok(()))
+        .deliver_one(None, &mut |_, _| Ok(()))
         .expect("the press delivers");
     let press_cell = private.terminal.holds[0]
         .custody
@@ -14030,7 +14035,7 @@ fn a_final_release_carries_the_presss_own_custody_rather_than_replacing_it() {
         .expect("a readable order");
     private.terminal.delivering.extend(turn);
     private
-        .deliver_one(&mut |_, _| Ok(()))
+        .deliver_one(None, &mut |_, _| Ok(()))
         .expect("the release delivers");
 
     assert!(
@@ -14152,7 +14157,7 @@ fn a_release_whose_answer_could_never_be_recognised_refuses_and_keeps_its_hold()
         .expect("a readable order");
     private.terminal.delivering.extend(turn);
     private
-        .deliver_one(&mut |_, _| Ok(()))
+        .deliver_one(None, &mut |_, _| Ok(()))
         .expect("the press delivers");
     assert_eq!(private.terminal.holds.len(), 1);
     assert!(
@@ -14248,7 +14253,7 @@ fn a_release_holds_the_completion_of_the_admission_it_was_recorded_for() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     }
     assert_eq!(private.terminal.settling.len(), 1);
@@ -14351,12 +14356,12 @@ fn custody_of_the_answer_is_taken_before_the_handover_not_after_it_succeeds() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     }
     // Record the proof, so the release becomes eligible for an attempt.
     for _ in 0..4 {
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
         if private.terminal.settling[0].native_recorded() {
             break;
         }
@@ -14367,7 +14372,7 @@ fn custody_of_the_answer_is_taken_before_the_handover_not_after_it_succeeds() {
     // found, so the handover is attempted -- and refused.
     drop(channels);
 
-    let step = private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    let step = private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
     assert!(
         matches!(
             step,
@@ -14429,11 +14434,11 @@ fn a_reused_delivery_id_does_not_settle_the_debt_that_had_it_before() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     }
     for _ in 0..12 {
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
     }
     let delivery = private.terminal.settling[0]
         .delivery()
@@ -14542,7 +14547,7 @@ fn a_receipt_settles_only_what_it_establishes_and_never_authorises_a_replay() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     }
     assert_eq!(private.terminal.settling.len(), 2);
@@ -14550,7 +14555,7 @@ fn a_receipt_settles_only_what_it_establishes_and_never_authorises_a_replay() {
     // Drive until both releases have their proof recorded and their delivery
     // handed over.
     for _ in 0..24 {
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
     }
     for index in 0..2 {
         assert_eq!(
@@ -14577,7 +14582,7 @@ fn a_receipt_settles_only_what_it_establishes_and_never_authorises_a_replay() {
 
     // Answer both receipts.
     for _ in 0..4 {
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
     }
 
     // THE FLUSH SETTLED THE RECIPIENT'S HALF.
@@ -14658,14 +14663,14 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     }
     assert_eq!(private.terminal.settling.len(), 1);
     // THE PRESS THIS RELEASE ENDS GOES FIRST. It is the earlier event on the
     // same connection, so the release cannot overtake it.
     assert!(matches!(
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step"),
         PrivateDeliveryStep::Dispatched {
             enqueued: true,
             relinquished: false
@@ -14673,7 +14678,7 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
     ));
 
     assert!(matches!(
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step"),
         PrivateDeliveryStep::Recorded { recorded: true }
     ));
 
@@ -14682,7 +14687,7 @@ fn an_attempt_that_cannot_be_placed_is_given_back_and_keeps_its_capsule() {
     drop(registration);
     drop(channels);
 
-    let step = private.deliver_one(&mut |_, _| Ok(())).expect("a step");
+    let step = private.deliver_one(None, &mut |_, _| Ok(())).expect("a step");
     assert!(
         matches!(
             step,
@@ -14794,7 +14799,7 @@ fn a_release_that_cannot_build_does_not_hide_another_recipients() {
     // second, owed to a different connection, must still get there.
     for _ in 0..24 {
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("a terminal step");
     }
 
@@ -14855,7 +14860,7 @@ fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
             .expect("a readable order");
         private.terminal.delivering.extend(turn);
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the entry delivers");
     }
     assert_eq!(private.terminal.settling.len(), 1);
@@ -14863,7 +14868,7 @@ fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
     // THE PRESS THIS RELEASE ENDS GOES FIRST. It is the earlier event on the
     // same connection, so the release cannot overtake it.
     assert!(matches!(
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step"),
         PrivateDeliveryStep::Dispatched {
             enqueued: true,
             relinquished: false
@@ -14872,7 +14877,7 @@ fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
 
     // Its proof goes in, which is what makes it eligible for an attempt.
     assert!(matches!(
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step"),
         PrivateDeliveryStep::Recorded { recorded: true }
     ));
 
@@ -14888,7 +14893,7 @@ fn an_interrupted_handover_is_not_retried_just_because_its_slot_is_empty() {
     // FAILS CLOSED. No attempt is made, and the turn reports nothing to do
     // rather than inventing work from an absence.
     assert!(matches!(
-        private.deliver_one(&mut |_, _| Ok(())).expect("a step"),
+        private.deliver_one(None, &mut |_, _| Ok(())).expect("a step"),
         PrivateDeliveryStep::Idle
     ));
     assert!(
@@ -14966,7 +14971,7 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
     };
     // One step to deliver the release itself, charged under its own entry.
     assert!(matches!(
-        private.deliver_one(&mut charge).expect("a step"),
+        private.deliver_one(None, &mut charge).expect("a step"),
         PrivateDeliveryStep::Advanced { .. }
     ));
     assert!(
@@ -14982,7 +14987,7 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
 
     // The next step has nothing left to deliver, so it spends a recording
     // visit -- and asks to be charged for it first.
-    let step = private.deliver_one(&mut charge).expect("a step");
+    let step = private.deliver_one(None, &mut charge).expect("a step");
     assert!(
         matches!(step, PrivateDeliveryStep::Recorded { recorded: true }),
         "the visit recorded the release's native bit"
@@ -14998,7 +15003,7 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
     // native work too, and it charges under None for the same reason.
     charged.borrow_mut().clear();
     assert!(matches!(
-        private.deliver_one(&mut charge).expect("a step"),
+        private.deliver_one(None, &mut charge).expect("a step"),
         PrivateDeliveryStep::Dispatched { .. }
     ));
     assert_eq!(
@@ -15011,7 +15016,7 @@ fn a_proof_recording_visit_is_charged_and_watched_like_any_other_step() {
     // With nothing left owed, an empty order is idle again and costs nothing.
     let before = charged.borrow().len();
     assert!(matches!(
-        private.deliver_one(&mut charge).expect("a step"),
+        private.deliver_one(None, &mut charge).expect("a step"),
         PrivateDeliveryStep::Idle
     ));
     assert_eq!(
@@ -16767,7 +16772,7 @@ fn an_accepted_handover_is_observed_rather_than_offered_again() {
     // same transition twice with nothing downstream able to tell.
     for _ in 0..8 {
         private
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("a readable terminal step");
     }
     assert_eq!(
@@ -19924,7 +19929,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
         charged.borrow_mut().push(sequence);
         Ok(())
     };
-    let step = private.deliver_one(&mut charge).expect("a step");
+    let step = private.deliver_one(None, &mut charge).expect("a step");
     let PrivateDeliveryStep::Advanced { sequence, report } = step else {
         panic!("one entry disposed")
     };
@@ -19948,7 +19953,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
         "exactly one entry left the turn"
     );
 
-    let step = private.deliver_one(&mut charge).expect("a step");
+    let step = private.deliver_one(None, &mut charge).expect("a step");
     assert!(matches!(step, PrivateDeliveryStep::Advanced { .. }));
     assert_eq!(charged.borrow().len(), 2);
     assert_ne!(charged.borrow()[0], charged.borrow()[1], "a different entry");
@@ -19961,7 +19966,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     // owed. Those handovers are visits of their own, charged for and naming no
     // entry, because the entry that decided the event is already gone.
     for expected in [true, true] {
-        let step = private.deliver_one(&mut charge).expect("a step");
+        let step = private.deliver_one(None, &mut charge).expect("a step");
         assert!(matches!(
             step,
             PrivateDeliveryStep::Dispatched {
@@ -19980,7 +19985,7 @@ fn one_terminal_step_disposes_one_entry_and_charges_for_it() {
     // Nothing waiting is its own answer, and takes nothing.
     let before = charged.borrow().len();
     assert!(matches!(
-        private.deliver_one(&mut charge).expect("a step"),
+        private.deliver_one(None, &mut charge).expect("a step"),
         PrivateDeliveryStep::Idle
     ));
     assert_eq!(charged.borrow().len(), before, "an empty turn is not a step");
@@ -20014,7 +20019,7 @@ fn a_refused_entry_advancing_is_a_step_with_nothing_to_report() {
     let mut charged = 0;
     let step = fixture
         .private
-        .deliver_one(&mut |_, _| {
+        .deliver_one(None, &mut |_, _| {
             charged += 1;
             Ok(())
         })
@@ -20058,7 +20063,7 @@ fn a_refused_charge_leaves_the_entry_where_it_was() {
 
     let refused = fixture
         .private
-        .deliver_one(&mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved));
+        .deliver_one(None, &mut |_, _| Err(XServerFrontendRouteError::OrderedItemUnresolved));
     assert!(matches!(
         refused,
         Err(XServerFrontendRouteError::OrderedItemUnresolved)
@@ -24178,7 +24183,7 @@ fn a_connections_place_coming_back_answers_nothing_for_an_interrupted_handover()
             .frontend
             .as_mut()
             .unwrap()
-            .deliver_one(&mut |_, _| Ok(()))
+            .deliver_one(None, &mut |_, _| Ok(()))
             .expect("the executor keeps running");
     }
     assert!(
@@ -27415,7 +27420,7 @@ fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
     let queue_cells=[76010,76011,76012,76013].map(|id|recovery.completion_for(XAuthorityInputDeliveryId::from_raw(id)).unwrap().unwrap());
     let mut seen_b=Vec::new();let mut refused=0;let mut idle=0;
     for _ in 0..32 {
-        match p.deliver_one(&mut |_,_|Ok(())).unwrap() {
+        match p.deliver_one(None, &mut |_,_|Ok(())).unwrap() {
             PrivateDeliveryStep::Dispatched{enqueued:false,..}=>refused+=1,
             PrivateDeliveryStep::Idle=>idle+=1,
             _=>{},
@@ -27492,7 +27497,7 @@ fn a_full_recipient_does_not_consume_a_live_recipients_turn() {
 
     // Once. Further visits produce no duplicate for either recipient.
     for _ in 0..8 {
-        let _ = p.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = p.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     assert!(
         f.channels.ordered.try_recv().is_err(),
@@ -27653,7 +27658,7 @@ fn a_recipients_complete_event_order_is_preserved_across_press_and_release() {
     // Drive the actual terminal arbiter, including native recording/release
     // dispatch. Drain ALL queue entries after every visit, not merely presses.
     for _ in 0..16 {
-        let _=p.deliver_one(&mut |_,_|Ok(())).unwrap();
+        let _=p.deliver_one(None, &mut |_,_|Ok(())).unwrap();
         while let Ok(capsule)=f.channels.ordered.try_recv() {
             let id=capsule.delivery();
             let expected=[75510,75511,75512].iter().position(|n|id==XAuthorityInputDeliveryId::from_raw(*n)).expect("only these actual events exist");
@@ -27702,7 +27707,7 @@ fn an_indeterminate_head_keeps_its_custody_while_another_recipient_progresses() 
     record.custody.dispatch=PrivateDispatchPhase::Indeterminate;
     let mut seen_a=Vec::new();let mut seen_b=Vec::new();
     for _ in 0..8 {
-        let _=p.deliver_one(&mut |_,_|Ok(())).unwrap();
+        let _=p.deliver_one(None, &mut |_,_|Ok(())).unwrap();
         while let Ok(c)=f.channels.ordered.try_recv(){
             let index=if c.delivery()==XAuthorityInputDeliveryId::from_raw(75610){0}else{assert_eq!(c.delivery(),XAuthorityInputDeliveryId::from_raw(75611));1};
             assert!(Arc::ptr_eq(&cells[index],&c.finalizer().unwrap().completion));seen_a.push(c.delivery());
@@ -27900,7 +27905,7 @@ fn an_instrument_takes_the_admission_asked_for_and_keeps_the_others() {
 
     // Now let the rest go, so the whole stream is in hand.
     for _ in 0..12 {
-        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     inbox.collect(&f.channels.ordered);
     assert_eq!(
@@ -28527,7 +28532,7 @@ fn a_producer_does_not_send_an_old_capsule_through_a_replacement_entry() {
     // The replacement's row holds a different channel. Offering the old
     // capsule must not put it there.
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     assert!(
         channels.ordered.try_recv().is_err(),
@@ -28610,7 +28615,7 @@ fn a_producer_does_not_send_an_old_release_through_a_replacement_entry() {
     // The ledger may hand out an attempt; the row it would be served through
     // is not this release's, so nothing is written down and nothing is taken.
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     assert!(
         channels.ordered.try_recv().is_err(),
@@ -28779,7 +28784,7 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
 
     // Its own connection's event is served normally, once.
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     let mut flushed = 0;
     for _ in 0..16 {
@@ -29074,7 +29079,7 @@ fn a_close_adjudicates_the_queued_admission_before_letting_its_payload_go() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 77310);
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     assert!(cell.answer().is_none(), "nothing has answered it yet");
 
@@ -29125,7 +29130,7 @@ fn a_close_ends_the_socket_without_the_output_lock_it_may_be_stalled_under() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 77410);
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -29164,7 +29169,7 @@ fn a_close_under_a_held_claim_transfers_a_deferral_rather_than_an_answer() {
     let cell = admitted_cell(private, 77610);
     let recovery = private.broker.registry.input_recovery.clone();
     for _ in 0..8 {
-        let _ = private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        let _ = private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     // A real execution claim on this exact delivery, taken the ordinary way.
@@ -29340,7 +29345,7 @@ fn a_close_retains_the_exact_capsule_when_the_authority_cannot_answer() {
         .ordered
         .clone();
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     assert!(cell.answer().is_none());
 
@@ -29441,7 +29446,7 @@ fn a_close_offers_the_end_of_a_connection_whatever_caused_it() {
         let private = f.runner.frontend.as_mut().unwrap();
         let cell = admitted_cell(private, 77910);
         for _ in 0..8 {
-            private.deliver_one(&mut |_, _| Ok(())).unwrap();
+            private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
         }
         let (socket, _peer) = UnixStream::pair().unwrap();
         let (mut owner, _output) = serving_owner_for(&mut f, socket);
@@ -29480,7 +29485,7 @@ fn a_quiet_close_keeps_its_receiver_until_the_producers_are_actually_gone() {
         .ordered
         .clone();
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, _peer) = UnixStream::pair().unwrap();
@@ -29560,7 +29565,7 @@ fn an_unusable_output_is_not_reported_as_an_empty_queue() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 78110);
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, _peer) = UnixStream::pair().unwrap();
@@ -29607,7 +29612,7 @@ fn a_started_close_cannot_be_served_normally_again() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 78210);
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, _peer) = UnixStream::pair().unwrap();
@@ -29843,7 +29848,7 @@ fn an_unterminated_close_publishes_nothing_and_a_real_retry_publishes_once() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 78410);
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, _peer) = UnixStream::pair().unwrap();
@@ -29936,7 +29941,7 @@ fn a_close_stops_retrying_a_termination_that_keeps_refusing() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 78510);
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
     let (socket, _peer) = UnixStream::pair().unwrap();
     let (mut owner, _output) = serving_owner_for(&mut f, socket);
@@ -30106,7 +30111,7 @@ fn an_ordered_step_yields_to_control_and_acts_on_being_stopped() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 78710);
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -30212,7 +30217,7 @@ fn a_stop_set_while_waiting_for_the_output_is_seen_before_taking_custody() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 78810);
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -30308,7 +30313,7 @@ fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 78912);
     for _ in 0..16 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -30488,7 +30493,7 @@ fn a_stop_arriving_after_admission_also_ends_a_wire_mid_frame() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 79012);
     for _ in 0..16 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -30628,7 +30633,7 @@ fn a_stop_that_cannot_take_the_output_claims_nothing_and_says_why() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 79112);
     for _ in 0..16 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -30884,7 +30889,7 @@ fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
     let private = f.runner.frontend.as_mut().unwrap();
     let staged_cell = admitted_cell(private, 79312);
     for _ in 0..16 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
@@ -31158,7 +31163,7 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
     let private = f.runner.frontend.as_mut().unwrap();
     let cell = admitted_cell(private, 79710);
     for _ in 0..8 {
-        private.deliver_one(&mut |_, _| Ok(())).unwrap();
+        private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     }
 
     let PreparedOrderedFixture {

@@ -91,6 +91,15 @@ enum PrivateDeliveryStep {
         #[cfg_attr(not(test), allow(dead_code))]
         relinquished: bool,
     },
+    /// One visit went to a release the ledger made when a source departed.
+    ///
+    /// `released` says whether one was found and finished. False is the
+    /// ordinary answer: the question costs one look at the ledger and is
+    /// nearly always no, which is why it is asked on a rotation.
+    DepartedRelease {
+        #[allow(dead_code)]
+        released: bool,
+    },
     /// One receipt was answered against the debt it belongs to.
     Receipt {
         #[cfg_attr(not(test), allow(dead_code))]
@@ -642,6 +651,11 @@ impl PrivateXServerFrontend {
     /// sequence to name.
     fn deliver_one(
         &mut self,
+        // OPTIONAL BECAUSE ONE CALLER HAS NO KEYBOARDS TO LEND. The service's
+        // own turn always does; a fixture driving deliveries alone does not,
+        // and the only work that needs them is the release a departed source
+        // owes, which such a fixture is not exercising.
+        keyboards: Option<&mut PrivateKeyboards>,
         start: &mut dyn FnMut(
             Option<crate::ReadySequence>,
             std::time::Instant,
@@ -657,6 +671,29 @@ impl PrivateXServerFrontend {
             start(None, std::time::Instant::now())?;
             if let Some(step) = self.settle_one_receipt() {
                 return Ok(PrivateDeliveryStep::Receipt { step });
+            }
+        }
+
+        // A RELEASE THE LEDGER ALREADY MADE, owed to a recipient by a source
+        // that has gone. Nothing else will finish it: there is no request to
+        // carry it, no execution to decide it in and no submitter to answer,
+        // so if this turn does not look for it nothing ever does.
+        //
+        // ASKED ON A ROTATION, NOT EVERY TURN. Finding out takes common, and
+        // the answer is nearly always no, so paying for it on every delivery
+        // would tax the path a pointer uses to pay for the path a departure
+        // uses. The interval is short enough that a recipient waits turns
+        // rather than anything a client could feel.
+        if let Some(keyboards) = keyboards
+            && !self.terminal.holds.is_empty()
+            && self.native_owner.is_some()
+        {
+            self.terminal.departed_turn =
+                (self.terminal.departed_turn + 1) % PRIVATE_DEPARTED_RELEASE_INTERVAL;
+            if self.terminal.departed_turn == 0 {
+                start(None, std::time::Instant::now())?;
+                let released = self.release_departed_one(keyboards)?;
+                return Ok(PrivateDeliveryStep::DepartedRelease { released });
             }
         }
 

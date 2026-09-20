@@ -39,7 +39,7 @@ fn completed_ordered_input_returns_its_storage_credit_after_item_disposal() {
             "execution does not dispose the item"
         );
         assert!(matches!(
-            private.deliver_one(&mut |_, _| Ok(())).unwrap(),
+            private.deliver_one(None, &mut |_, _| Ok(())).unwrap(),
             PrivateDeliveryStep::Advanced {
                 report: Some(PrivateDelivered {
                     completion: Some(_),
@@ -178,7 +178,7 @@ fn refused_ordered_item_keeps_its_charge_through_retained_handover() {
     private.broker.registry.input_recovery.abort_enqueue(Some(
         XAuthorityInputDeliveryId::from_raw(99822),
     ));
-    private.deliver_one(&mut |_, _| Ok(())).unwrap();
+    private.deliver_one(None, &mut |_, _| Ok(())).unwrap();
     assert_eq!(private.terminal.undelivered.len(), 1);
     let settlement = fixture.runner.shutdown();
     assert_eq!(durable.reserved(), Some(1));

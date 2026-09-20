@@ -112,6 +112,11 @@ struct PrivateTerminalInventory {
     /// The next order stamp, so every event this instance decides can be put
     /// in the order its recipient must see them.
     next_event_order: u64,
+    /// Where the rotation that looks for a departed source's release stands.
+    departed_turn: usize,
+    /// The ledger's own cursor over released records, kept across visits so
+    /// the look moves rather than returning to the same record.
+    departed_cursor: usize,
     /// How many press handovers in a row have failed to progress.
     press_stall: u8,
     /// The connection whose head was offered last.
@@ -254,6 +259,8 @@ impl PrivateTerminalInventory {
             transients,
             pending_custody: None,
             next_event_order: 0,
+            departed_turn: 0,
+            departed_cursor: 0,
             press_stall: 0,
             last_offered: None,
             native_recording_cursor: 0,
@@ -390,6 +397,8 @@ impl PrivateTerminalInventory {
                 transients: PrivateTransientInventory::with_capacity(0),
                 pending_custody: None,
                 next_event_order: 0,
+                departed_turn: 0,
+                departed_cursor: 0,
                 press_stall: 0,
                 last_offered: None,
                 native_recording_cursor: 0,

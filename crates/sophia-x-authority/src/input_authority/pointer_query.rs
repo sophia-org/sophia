@@ -13,6 +13,14 @@ pub(crate) struct XPointerObservation {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct XPointerQueryState {
     pub position: Option<XPointerObservation>,
+    /// When the last input this namespace observed was stamped.
+    ///
+    /// KEPT SO A RELEASE NOBODY TIMED HAS A TIME. Every event a request
+    /// carries is stamped by its submitter, and a release caused by a source
+    /// departing has no request and no submitter to ask. This is the clock
+    /// every other event on the same namespace was stamped from, so a
+    /// release that takes it cannot travel backwards past the press it ends.
+    pub last_time_msec: u32,
     pub mask: u16,
     pub horizontal_scroll_v120: i32,
     pub vertical_scroll_v120: i32,
@@ -89,6 +97,15 @@ impl XInputAuthorityState {
         event: crate::XAuthorityInputEvent,
     ) {
         use crate::{XAuthorityInputEvent, XAuthorityPointerEventKind};
+        let time_msec = match event {
+            XAuthorityInputEvent::Key(key) => key.time_msec,
+            XAuthorityInputEvent::Pointer(pointer) => pointer.time_msec,
+        };
+        // Never rewound. Submitters stamp their own events and two sources
+        // need not agree, and a clock that went backwards here would let a
+        // release predate the press it ends.
+        let observed = &mut self.namespaces.entry(namespace).or_default().query;
+        observed.last_time_msec = observed.last_time_msec.max(time_msec);
         let pointer = match event {
             XAuthorityInputEvent::Key(key) => {
                 self.observe_query_modifiers(namespace, u16::from(key.modifiers_after));

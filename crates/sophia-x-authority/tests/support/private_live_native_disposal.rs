@@ -84,7 +84,7 @@ fn live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_r
     let mut starts = 0;
     assert!(
         private
-            .deliver_one(&mut |_, _| {
+            .deliver_one(None, &mut |_, _| {
                 starts += 1;
                 Err(XServerFrontendRouteError::LifecycleUnavailable)
             })
@@ -95,7 +95,7 @@ fn live_native_disposal_is_charged_before_observing_and_returns_only_the_exact_r
     let mut visits = 0;
     for _ in 0..12 {
         let step = private
-            .deliver_one(&mut |_, _| {
+            .deliver_one(None, &mut |_, _| {
                 visits += 1;
                 Ok(())
             })

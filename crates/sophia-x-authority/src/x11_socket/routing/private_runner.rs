@@ -355,6 +355,7 @@ impl PrivatePreparedRunner {
             frontend,
             service_origin,
             service,
+            keyboards,
             ..
         } = self;
         let admission = match service.prepare(
@@ -375,7 +376,7 @@ impl PrivatePreparedRunner {
         let result = frontend
             .as_mut()
             .expect("live runner")
-            .deliver_one(&mut |sequence, began| {
+            .deliver_one(Some(keyboards), &mut |sequence, began| {
                 // None is a proof-recording visit: real work with no ordered
                 // entry to name. It is admitted and watched the same way, and
                 // simply has nothing to report as taken or blocked.
@@ -635,6 +636,13 @@ impl PrivatePreparedRunner {
                             // Only confirmed facts are counted. An
                             // unanswered ledger changed nothing and is not a
                             // settlement, a return, or a delivery.
+                            // The look itself is the step, whether or not it
+                            // found one. A rotation that reported nothing
+                            // when it found nothing would make the turn read
+                            // as idle, and a turn that spent a visit is not.
+                            PrivateDeliveryStep::DepartedRelease { .. } => {
+                                progress.terminal_steps += 1;
+                            }
                             PrivateDeliveryStep::Receipt { step } => {
                                 progress.terminal_steps += 1;
                                 match step {

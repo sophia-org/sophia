@@ -99,13 +99,111 @@ impl Guards<'_> {
         } else {
             KeyReleaseDisposition::Deliver
         };
+        let built = self.finish_key_release(
+            hold,
+            keyboards,
+            incarnation,
+            thaw,
+            u32::try_from(route.request.time_msec).unwrap_or(u32::MAX),
+            route.delivery,
+        );
+        Ok((outcome, built))
+    }
+
+    /// Finish a release the ledger already made, because the source that was
+    /// holding the key departed.
+    ///
+    /// NOT A RELEASE THIS DECIDES. `revoke_grant` retires a departing source
+    /// and releases every input it held, and when that ends the aggregate the
+    /// ledger has already decided everything a release decides. What it
+    /// cannot do from there is tell the keyboard, or build the event the
+    /// recipient is owed, because neither is the ledger's to reach. This is
+    /// that half, and it asks the ledger for nothing.
+    ///
+    /// The permit is the reconciliation one rather than an execution permit,
+    /// which is the honest kind: there is no request being executed, the
+    /// incarnation comes from the permit rather than from a return value, and
+    /// the authority has already applied the only thing it was going to.
+    ///
+    /// The time is the authority's own last observation rather than a
+    /// request's, because the request that would have carried one does not
+    /// exist. That is the same clock every other event on this connection was
+    /// stamped from, so the release does not travel backwards past the press
+    /// it ends.
+    ///
+    /// The inner result is the event, or why it could not be built, which is
+    /// the same pair a requested release answers with and is kept apart for
+    /// the same reason: a release owing an event nobody could build is not a
+    /// release owing none.
+    pub(super) fn retire_key_release(
+        &mut self,
+        permit: &sophia_input_authority::NativeReconciliationPermit<'_>,
+        hold: &mut KeyHold,
+        keyboards: &mut PrivateKeyboards,
+        may_have_applied: &Cell<bool>,
+    ) -> Result<Result<Option<XAuthorityKeyEvent>, PrivateAppliedRefusal>, Refusal> {
+        if permit.identity() != self.origin.identity || permit.owner() != Some(hold.grant) {
+            return Err(Refusal::ForeignOrigin);
+        }
+        self.validate_key_hold(hold)?;
+        if !keyboards.answers_for(self.origin.identity) {
+            return Err(Refusal::ForeignOrigin);
+        }
+        let incarnation = permit.incarnation();
+        if Some(incarnation) != hold.incarnation || incarnation.input != hold.input {
+            return Err(Refusal::WrongRecipient);
+        }
+        // Read before anything native is touched, for the reason the request
+        // path reads it before its ledger call: a passive trigger release may
+        // retire the activation, and the receipt that answers it belongs to
+        // the activation as it stands now.
+        let thaw = hold
+            .activation
+            .and_then(|activation| {
+                self.authority
+                    .ordered_keyboard_thaw(self.origin.namespace, activation.stamp())
+            });
+        let time_msec = self
+            .authority
+            .pointer_query_state(self.origin.namespace)
+            .last_time_msec;
+        hold.status = Status::ReleaseEntered;
+        hold.release_disposition = KeyReleaseDisposition::Deliver;
+        may_have_applied.set(true);
+        Ok(self.finish_key_release(hold, keyboards, incarnation, thaw, time_msec, None))
+    }
+
+    /// Everything a release owes after the ledger has ended the aggregate.
+    ///
+    /// SEPARATED BECAUSE THE LEDGER STEP IS NOT ALWAYS HERE. A release a
+    /// request asked for ends the aggregate through its own execution permit,
+    /// immediately above this. A release a departing source caused ended it
+    /// inside `revoke_grant`, before anything native was told, and calling the
+    /// ledger again there would release one thing twice. What both owe from
+    /// that point is identical -- the key up in the keyboard's own history,
+    /// the modifiers as they now stand, the activation retired if this was
+    /// the last thing holding it, the residual when some part of that could
+    /// not be established, and the emission the terminal will carry to the
+    /// recipient -- so it is written once.
+    ///
+    /// `delivery` is an `Option` because a release nobody asked for names no
+    /// delivery, and an emission has always been able to carry that.
+    fn finish_key_release(
+        &mut self,
+        hold: &mut KeyHold,
+        keyboards: &mut PrivateKeyboards,
+        incarnation: HoldIncarnation,
+        thaw: Option<crate::OrderedKeyboardThaw>,
+        time_msec: u32,
+        delivery: Option<XAuthorityInputDeliveryId>,
+    ) -> Result<Option<XAuthorityKeyEvent>, PrivateAppliedRefusal> {
         let keyboard = match key_state(self.origin, keyboards) {
             Ok(state) if state.physical_key_state(hold.key) == crate::XkbPhysicalKeyState::Held => {
                 state
             }
             _ => {
                 hold.status = Status::Retained(Residual::KeyboardUnavailable);
-                return Ok((outcome, Err(PrivateAppliedRefusal::Interrupted)));
+                return Err(PrivateAppliedRefusal::Interrupted);
             }
         };
         let before = keyboard.ordered_state().expect("known held source key");
@@ -115,7 +213,7 @@ impl Guards<'_> {
         hold.release_xkb_applied = true;
         let Some(after) = keyboard.ordered_state() else {
             hold.status = Status::Retained(Residual::KeyboardUnavailable);
-            return Ok((outcome, Err(PrivateAppliedRefusal::Interrupted)));
+            return Err(PrivateAppliedRefusal::Interrupted);
         };
         let query_present = self.authority.has_ordered_namespace(self.origin.namespace);
         let position = self
@@ -131,7 +229,7 @@ impl Guards<'_> {
             pressed: false,
             state: modifiers | buttons.unwrap_or(0),
             modifiers_after: keyboard.modifier_mask() as u8,
-            time_msec: u32::try_from(route.request.time_msec).unwrap_or(u32::MAX),
+            time_msec,
         };
         // Never use observe_query_modifiers to recreate a missing namespace.
         if query_present {
@@ -192,9 +290,9 @@ impl Guards<'_> {
             // Common and the original XKB history have released the key. No
             // protocol key or StateNotify is constructed; the original
             // recipient still requires its own exact termination evidence.
-            return Ok((outcome, Ok(None)));
+            return Ok(None);
         }
-        let built = (|| {
+        (|| {
             if !query_present || buttons.is_none() {
                 return Err(PrivateAppliedRefusal::Interrupted);
             }
@@ -233,10 +331,9 @@ impl Guards<'_> {
             // exact connection is held; the key's target/forms stay inherited.
             plan.xkb_details = self.selections.xkb_state_details;
             let payload = KeyEmission::new(event, plan, position, before, after)?;
-            hold.release_emission =
-                Some(PrivateOrderedEmission::key(hold, route.delivery, payload));
+            hold.release_emission = Some(PrivateOrderedEmission::key(hold, delivery, payload));
             Ok(Some(event))
-        })();
-        Ok((outcome, built))
+        })()
     }
+
 }
