@@ -602,6 +602,21 @@ rules headlessly, but cannot prove independent hardware holds. Protected actions
 require sufficient physical holds and a physical trigger; synthetic holds must
 neither supply a missing component nor veto an independently sufficient chord.
 
+### Per-device identity, accepted 2026-09-20
+
+t094 is accepted on an ordinary session, recorded in
+[cfmn7st7](../milestones/cfmn7st7-t094-accepted-two-keyboards-on-one-seat-from-an-ordinary-session.md).
+The backend mints an identity per kernel device and announces arrivals and
+departures in band; the session keeps its chord, coverage, repeat and key
+ledger per device and releases what a departed device still held; the daily
+recorder keeps the records; and two real keyboards, one unplugged and
+replugged, showed the path end to end. Class identities remain a counted
+fallback. The kernel releases a USB keyboard's keys itself on unplug, so the
+session's release is for what the kernel does not. Not claimed: the split
+chord on hardware (pinned headlessly), any live-seat synthetic mode, or the
+authority's physical-source ledger, which is wired when that mode is built
+(t144). The paragraph above stands as the requirement this met.
+
 ## Baseline and tracking
 
 At `b8e7aeaa`, the fresh core run in

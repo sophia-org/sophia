@@ -965,10 +965,11 @@ not. Headless controls pin each of those pieces; hardware shows them on two
 real keyboards, one of them unplugged and replugged.
 
 **The ordinary-session path, which is the acceptance path.** Install the
-candidate as the live session (`tools/install_session_from_head.sh`), log in,
-type a few keys on each keyboard, unplug the second keyboard, type on the
-first, plug the second back in, type on it, and log out. Keep the session
-short: the recorder rotates early segments of a long session away. Then:
+candidate as the live session (`just install-session`), log in, type on the
+keyboard you will unplug, unplug it, type on the other, plug it back in, type
+on it, and log out; typing on the other keyboard before the unplug instead
+is also accepted. Keep the session short: the recorder rotates early segments
+of a long session away. Then:
 
 ```sh
 tools/verify_keyboard_independence_session.sh            # newest finished session
