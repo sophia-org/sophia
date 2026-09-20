@@ -142,14 +142,63 @@ service-wide quiesce is not a fact a live path can establish, because a new
 connection may be accepted at any moment -- which is exactly why the mint
 sits after the wait.
 
-The remaining work is therefore a decision, not a wiring fix. The per-custody
-prerequisites beside the token are already per-connection and already strong:
-the destruction is decided and deferred, and **this** custody's worker has
-published its join. The open question is whether the effects the discharge
-performs are all this connection's own -- the fence, the lease, the home's
-standing and the place plainly are -- or whether the number-keyed removal
-genuinely needs the service-wide quiesce, in which case the interval that
-already governs number reuse is where the answer lives.
+## Three links, not one, and all of them end at the same place
+
+Following it the rest of the way: everything that would give a place back is
+bound to the end of the invocation, by three independent gates.
+
+**One, the departure retains nothing.** A connection with an ordered worker
+takes the deferred branch of `Drop for
+XServerFrontendClientRouteRegistration`, and `private_destruction.rs` says
+that branch performs no standing change and no place return.
+
+**Two, the discharge needs a join nobody publishes during the run.**
+`deferred_cleanup_prerequisites` refuses `JoinUnpublished` until the
+custody's worker has been joined. The only production reaper is
+`collect_attached_workers`, and its only two callers are the private
+service's `collect` and its `drop`. (The `allow(dead_code) // Nothing reaps a
+worker yet` on `reap` is stale -- it is reached -- but only from there.)
+
+**Three, the discharge needs a token nobody can mint during the run.**
+`connections_collected` mints only when `active_client_worker_count() == 0`,
+and is documented as "minted only after the wait"; its callers are the same
+two.
+
+So a private instance reclaims a departed connection's place exactly once, at
+shutdown, for every connection at once. During the run there is no path at
+all. That is why the driver attached above finds nothing: it is the last link
+of a chain whose first two are also missing.
+
+## What the remaining work is
+
+Not a wiring fix and not one decision -- a live per-connection teardown for
+private instances: reap that connection's worker, discharge its cleanup,
+reclaim its place, all on the departure rather than at shutdown.
+
+The design question each link raises has an answer already in the source, and
+they agree. `clear_namespace_under_number` opens the number's interval itself
+and refuses when this record is not the occupant, so the number-keyed effects
+do not need a service-wide quiesce to be safe against a successor. And the
+same function says the rest is not number-keyed at all:
+
+> THE ENDPOINT WORK ABOVE IS NOT PART OF IT. This connection's gate, home and
+> place are its own by identity and were never reached by number, so they
+> neither need this permission nor lose anything by being done before it.
+
+The strongest evidence that the body is safe live is that it already runs
+live: `run_synchronous_cleanup` performs exactly these two effects from
+`Drop`, during the run, with no token at all. The deferred path differs only
+in that a worker was started, which is what the join prerequisite is for.
+
+What the collection token genuinely carries is registry identity --
+`governs` is an `Arc::ptr_eq`, and a test pins that another registry's token
+is no better than none. That property must survive. So the shape is a
+warrant that keeps the identity check and drops the quiesce, minted per
+departed connection rather than per collected service, and accepted only by
+the deferred-cleanup prerequisite -- not by the other paths that take the
+same token today (`private_retained_drive`, `private_terminal_drive`,
+`private_control_cleanup`, `private_invocation_completion`), which have not
+been examined and may well need the quiesce.
 
 ## Validation and remaining work
 
@@ -163,10 +212,16 @@ already governs number reuse is where the answer lives.
       frontend disconnects the one connection. Re-measured over ten rounds:
       the invocation reports `failure None` where it previously reported
       `X11SetupSocketError { ... no retained place is available ... }`.
-- [ ] Retain a departed connection's home during the run. The driver is live
-      and finds nothing to do until this lands; the fifth admission is still
-      refused, but it is refused alone now instead of ending the service.
-      Needs the decision above about the collection token.
+- [x] Find why the live driver reclaims nothing: the three gates above, all
+      of which end at the invocation's collection.
+- [ ] Build the live per-connection teardown: reap the departing connection's
+      worker, discharge its deferred cleanup under a warrant that keeps the
+      registry identity check and drops the service-wide quiesce, and let the
+      place come back on the departure. Re-run the probe for at least
+      `2 * max_concurrent_clients` rounds and require the fifth admission to
+      be served rather than merely refused alone.
+- [ ] Do not widen the warrant to the other paths that take the collection
+      token until each has been examined on its own.
 
 ## Connections
 
