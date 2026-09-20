@@ -2011,3 +2011,17 @@ validation passes 1128 tests, zero failures and one existing ignored test in 27
 groups; strict clippy, explicit include-file formatting, layout and diff pass.
 These are source/codec proofs, not a recipient worker or full Gate B. Key admission
 remains refused. No hardware, Session change, master move or default enablement.
+
+## Closed 2026-09-20
+
+t093 is closed, by Mason's decision after M6 read PASS on `f564b744`
+([cfko9jxl](../milestones/cfko9jxl-m6-accepted-the-whole-of-t093-on-one-source.md)),
+with the two conditions this plan set for closing it checked on that
+source: discovery stays disabled, since the session's grant policy defaults
+to `Disabled` and nothing outside tests and the explicit conformance host
+enables it, so XTEST is named to nobody by default; and t094 remains
+acknowledged open as deferred planning. Everything the plan lists as
+mandatory evidence is produced by a gate and composed on one content
+digest. What the close does not do is unchanged from M6: no discovery
+enablement, no installation or default enablement, no physical acceptance,
+which stays with t094, t077, t060 and t062.

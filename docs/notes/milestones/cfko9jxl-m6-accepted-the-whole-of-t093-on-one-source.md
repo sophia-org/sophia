@@ -151,7 +151,8 @@ witness existed, which is the same evidence read from the other side:
 
 ## Remaining work
 
-- Closing t093 itself, with discovery disabled and t094 acknowledged open.
+- Closing t093 itself: done the same night, by Mason, with discovery disabled
+  and t094 acknowledged open, recorded at the end of the plan.
 - t138 (the lane's), the continuation place returned during the run; the
   evidence-custody layer recorded rather than built.
 - t131, t132, t115's twelve-run bar, now that t130 is closed.
