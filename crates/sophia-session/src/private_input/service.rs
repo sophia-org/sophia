@@ -46,6 +46,12 @@ pub(super) struct PrivateInputRuntime {
     /// own and are untouched by this.
     pub(super) started: std::time::Instant,
     pub(super) next_delivery: AtomicU64,
+    /// The frontend's injection decision, answered by this runtime's own
+    /// issuance once it is published.
+    injection: Arc<super::injection::PrivateInputInjectionPolicy>,
+    /// Released when that publication happens, which is what the serving
+    /// thread waits for before it binds.
+    injection_ready: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
     /// This Session's own headless backend assembly.
     ///
     /// THE REAL ONE, held here rather than by a caller or an example, built
@@ -177,6 +183,26 @@ pub(super) struct ServiceClosed {
 }
 
 impl PrivateInputRuntime {
+    /// Give the injection policy the runtime it issues from, and let the
+    /// service bind.
+    ///
+    /// Called once, by the lifetime that owns this `Arc`, because the policy
+    /// was installed on the frontend before any `Arc` existed. The serving
+    /// thread waits for this: a client that connected before it happened
+    /// would be told the instance injects nothing, and a setup decision is
+    /// not one a connection can ask again.
+    pub(super) fn publish_injection(self: &Arc<Self>) {
+        self.injection.publish(self);
+        if let Some(released) = self
+            .injection_ready
+            .lock()
+            .ok()
+            .and_then(|mut held| held.take())
+        {
+            let _ = released.send(());
+        }
+    }
+
     /// Stand the service up.
     ///
     /// Everything that can be refused is refused here, on the caller's thread,
@@ -320,6 +346,8 @@ impl PrivateInputRuntime {
             sophia_engine::RendererSelection::default(),
         );
 
+        let injection = Arc::new(super::injection::PrivateInputInjectionPolicy::new());
+        let (injection_ready, injection_wait) = sync_channel::<()>(1);
         let frontend_config = XServerFrontendConfig::new(&socket_path, namespace)
             .map_err(PrivateInputRefusal::Configuration)?
             .with_max_concurrent_clients(max_concurrent_clients)
@@ -339,7 +367,13 @@ impl PrivateInputRuntime {
             // mapped. The two halves would be deciding the same thing
             // independently, and the frontend would always get there first.
             .with_policy_map_deferred(true)
-            .with_admission_policy(policy);
+            .with_admission_policy(policy)
+            // ONE DECISION, NOT TWO. Discovery and every XTEST request share
+            // the admission this answers with, so a connection Session would
+            // refuse a submission finds the extension absent rather than
+            // present and refusing.
+            .with_injection_policy(Arc::clone(&injection)
+                as Arc<dyn sophia_x_authority::XServerFrontendInjectionPolicy>);
 
         let store = PrivateSettlementOwner::with_capacity(settlement_capacity);
         let owner = Arc::new(
@@ -404,6 +438,12 @@ impl PrivateInputRuntime {
                 {
                     return;
                 }
+                // THE POLICY IS LIVE BEFORE THE SOCKET IS. Publishing it needs
+                // the runtime `Arc`, which does not exist until `start`
+                // returns, so binding waits for it. A closed channel means the
+                // caller is gone and serving proceeds to its own ending rather
+                // than waiting for a publication nobody will make.
+                let _ = injection_wait.recv();
 
                 // MADE HERE, AND IT STAYS HERE. Declared before the unwind
                 // boundary so a service that panics still leaves a keeper
@@ -545,6 +585,8 @@ impl PrivateInputRuntime {
             closing,
             participant,
             observer,
+            injection,
+            injection_ready: Mutex::new(Some(injection_ready)),
             retained_receipts: Mutex::new(std::collections::VecDeque::new()),
             retained_intake: Mutex::new(Vec::new()),
             access,

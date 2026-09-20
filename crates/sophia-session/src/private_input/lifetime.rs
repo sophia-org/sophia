@@ -186,9 +186,14 @@ impl PrivateInputLifetimeOwner {
             }
         }
         match PrivateInputRuntime::start(config, Arc::downgrade(&self.closing), faults) {
-            Ok(runtime) => Ok(PrivateInputHandle {
-                runtime: Arc::new(runtime),
-            }),
+            Ok(runtime) => {
+                let runtime = Arc::new(runtime);
+                // The service is waiting for this before it binds, so nothing
+                // can connect to a frontend whose injection policy has no
+                // runtime to issue from.
+                runtime.publish_injection();
+                Ok(PrivateInputHandle { runtime })
+            }
             Err(refusal) => {
                 // Nothing was started, so the claim goes back rather than
                 // making this lifetime unusable for a configuration that was

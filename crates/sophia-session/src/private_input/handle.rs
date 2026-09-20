@@ -530,44 +530,7 @@ impl PrivateInputHandle {
         context: ClientAdmissionContext,
         device: sophia_protocol::DeviceId,
     ) -> Result<PrivateInputSubmission, PrivateInputIssueRefusal> {
-        let live = self
-            .runtime
-            .participant
-            .admitted()
-            .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
-        // THE ROW THE BOUNDARY MATCHED, rather than fields assembled from the
-        // admission context. The boundary initialises a binding's generation
-        // from that context's auth provenance, so the number would agree; what
-        // the row adds is that the boundary is actually holding this admission.
-        // The exact admission is what separates a reconnecting client from the
-        // one that went.
-        let seen = super::admission::may_issue(
-            self.runtime.grants,
-            &self.runtime.admitted,
-            &self.runtime.registry,
-            context,
-            &live,
-        )?;
-        let ingress = self
-            .runtime
-            .access
-            .ingress_for_admission(
-                &self.runtime.owner.lease(),
-                seen.client,
-                device,
-                context.client_id,
-            )
-            .map_err(|_| PrivateInputIssueRefusal::ConnectionGone)?;
-        Ok(PrivateInputSubmission::new(
-            Arc::clone(&self.runtime),
-            ingress,
-            PrivateInputConnection {
-                client: seen.client,
-                admission: seen.admission,
-                connection_generation: seen.connection_generation,
-            },
-            device,
-        ))
+        issue_submission(&self.runtime, context, device)
     }
 
     /// Revoke one admission and retire exactly the grants it authorised.
@@ -671,6 +634,55 @@ impl PrivateInputHandle {
             .unwrap_or_default()
             .with_retention(runtime)
     }
+}
+
+/// Issue one connection's submission from the runtime that owns the grants.
+///
+/// A free function rather than a method, because the injection policy holds
+/// the runtime and must not build a `PrivateInputHandle` to reach this: a
+/// handle stops the service when it drops, so a temporary one would end the
+/// service the moment it answered a client.
+pub(super) fn issue_submission(
+    runtime: &Arc<super::service::PrivateInputRuntime>,
+    context: ClientAdmissionContext,
+    device: sophia_protocol::DeviceId,
+) -> Result<PrivateInputSubmission, PrivateInputIssueRefusal> {
+    let live = runtime
+        .participant
+        .admitted()
+        .map_err(|_| PrivateInputIssueRefusal::Unavailable)?;
+    // THE ROW THE BOUNDARY MATCHED, rather than fields assembled from the
+    // admission context. The boundary initialises a binding's generation
+    // from that context's auth provenance, so the number would agree; what
+    // the row adds is that the boundary is actually holding this admission.
+    // The exact admission is what separates a reconnecting client from the
+    // one that went.
+    let seen = super::admission::may_issue(
+        runtime.grants,
+        &runtime.admitted,
+        &runtime.registry,
+        context,
+        &live,
+    )?;
+    let ingress = runtime
+        .access
+        .ingress_for_admission(
+            &runtime.owner.lease(),
+            seen.client,
+            device,
+            context.client_id,
+        )
+        .map_err(|_| PrivateInputIssueRefusal::ConnectionGone)?;
+    Ok(PrivateInputSubmission::new(
+        Arc::clone(runtime),
+        ingress,
+        PrivateInputConnection {
+            client: seen.client,
+            admission: seen.admission,
+            connection_generation: seen.connection_generation,
+        },
+        device,
+    ))
 }
 
 impl Drop for PrivateInputHandle {
