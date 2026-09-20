@@ -25,6 +25,27 @@ a failed row keeps the aggregate failed. A nonzero exit may therefore mean
 either failure or incomplete acceptance. Read the report rather than inferring
 a verdict from the exit alone.
 
+Two facts the groups rest on, written down because each cost a wrong first
+attempt and neither is visible from the request definitions.
+
+A malformed request is refused on its length before anything decides who may
+make it. So a connection that guesses the XTEST major and sends a body of the
+wrong size is answered `BadLength`, not `BadAccess`, whatever its admission.
+A group proving that an ungranted connection is refused must therefore send
+well-formed requests: two length units for GetVersion and GrabControl, three
+for CompareCursor, nine for FakeInput. `well_formed_requests` in the groups'
+support builds one of each, and a refusal proved with anything else is a
+statement about the harness.
+
+The executor beneath FakeInput takes evdev codes rather than X ones, and the
+translation is not total. A keycode is the X one less eight. Buttons one,
+two, three, eight and nine are evdev 272, 274, 273, 275 and 276. Buttons four
+through seven, the wheel, have no evdev button at all and become one axis
+step on press. A case that fakes button four and waits for a ButtonPress
+will wait forever, and that is the design rather than a defect; none of the
+twenty wire cases does it, and a group that needs wheel input must assert the
+axis step instead.
+
 No group may bind to a library test. M4's lifetime row takes that escape and
 M5 does not need it: a bound library test runs in the binary that
 `crates/sophia-session/src/private_input.rs` pulls the private-input controls
