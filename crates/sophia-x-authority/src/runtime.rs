@@ -28,6 +28,7 @@ include!("runtime/clipboard.rs");
 include!("runtime/color.rs");
 include!("runtime/drawing.rs");
 include!("runtime/graphics_contexts.rs");
+include!("runtime/drawing/copy_plane.rs");
 include!("runtime/drawing/image_ops.rs");
 include!("runtime/render_resources.rs");
 include!("runtime/dmabuf_capabilities.rs");

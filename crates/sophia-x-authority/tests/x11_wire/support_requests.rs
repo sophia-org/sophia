@@ -892,6 +892,41 @@ fn poly_arc_request(
     out
 }
 
+/// A `ChangeGC` request setting only the clip mask.
+fn change_gc_clip_mask_request(byte_order: XByteOrder, gc: u32, mask: u32) -> Vec<u8> {
+    let mut out = vec![56, 0];
+    push_u16(&mut out, byte_order, 4);
+    push_u32(&mut out, byte_order, gc);
+    push_u32(&mut out, byte_order, 1 << 19);
+    push_u32(&mut out, byte_order, mask);
+    out
+}
+
+fn copy_plane_request(
+    byte_order: XByteOrder,
+    source: u32,
+    destination: u32,
+    gc: u32,
+    src: (i16, i16),
+    dst: (i16, i16),
+    extent: (u16, u16),
+    bit_plane: u32,
+) -> Vec<u8> {
+    let mut out = vec![63, 0];
+    push_u16(&mut out, byte_order, 8);
+    push_u32(&mut out, byte_order, source);
+    push_u32(&mut out, byte_order, destination);
+    push_u32(&mut out, byte_order, gc);
+    push_i16(&mut out, byte_order, src.0);
+    push_i16(&mut out, byte_order, src.1);
+    push_i16(&mut out, byte_order, dst.0);
+    push_i16(&mut out, byte_order, dst.1);
+    push_u16(&mut out, byte_order, extent.0);
+    push_u16(&mut out, byte_order, extent.1);
+    push_u32(&mut out, byte_order, bit_plane);
+    out
+}
+
 fn image_text8_request(
     byte_order: XByteOrder,
     drawable: u32,

@@ -5,6 +5,8 @@ use sophia_protocol::{Rect, Size};
 
 use crate::{XFontHandle, XGraphicsContextValues, XPoint, XResourceId};
 
+mod copy_plane;
+pub(crate) mod fill_pattern;
 pub(crate) mod geometry;
 mod pixmap_exports;
 mod raster_ops;
@@ -17,8 +19,9 @@ mod update;
 use pixmap_exports::XPixmapExportDamage;
 
 use raster_ops::{
-    copy_buffer_region, copy_xrgb8888, draw_glyph, draw_line, draw_rectangle_outline, fill_rect,
-    point_bounds, put_image_pixels, rectangle_outline_bounds, set_pixel,
+    XClipMask, copy_buffer_region, copy_xrgb8888, draw_glyph, draw_line, draw_rectangle_outline,
+    fill_rect, fill_rect_masked, point_bounds, put_image_pixels, rectangle_outline_bounds,
+    set_pixel,
 };
 pub(crate) use raster_variants::{
     XAuthorityRasterCommand, XAuthorityRasterStore, XOwnedTextDraw, XRasterPoint,
@@ -283,6 +286,20 @@ impl XSoftwareBufferStore {
         ))
     }
 
+    /// A copy of the tile or stipple a graphics context names, if any.
+    ///
+    /// Copied rather than borrowed because the destination is borrowed
+    /// mutably for the fill, and a pattern may legally be the destination
+    /// itself.
+    fn pattern_pixels(&self, gc: &XGraphicsContextValues) -> Option<XAuthorityCpuBufferSnapshot> {
+        let source = match gc.fill_style {
+            crate::X_FILL_TILED => gc.tile,
+            crate::X_FILL_STIPPLED | crate::X_FILL_OPAQUE_STIPPLED => gc.stipple,
+            _ => None,
+        }?;
+        self.buffers.get(&source).cloned()
+    }
+
     pub fn paint_damage(
         &mut self,
         drawable: XResourceId,
@@ -290,10 +307,21 @@ impl XSoftwareBufferStore {
         damage: &[Rect],
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuDrawResult> {
+        // A tile or stipple reads another drawable's pixels, so it is taken
+        // out of the store before the destination is borrowed mutably.
+        let pattern_pixels = self.pattern_pixels(gc);
+        let mask_pixels = gc
+            .clip_mask
+            .and_then(|mask| self.buffers.get(&mask).cloned());
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let pattern = fill_pattern::fill_pattern(gc, pattern_pixels.as_ref());
+        let clip_mask = XClipMask {
+            pixels: mask_pixels.as_ref(),
+            origin: (i32::from(gc.clip_x_origin), i32::from(gc.clip_y_origin)),
+        };
         for rect in damage {
-            fill_rect(buffer, *rect, gc.foreground, gc);
+            fill_rect_masked(buffer, *rect, pattern, clip_mask, gc);
         }
         let published_damage = union_rects(damage);
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);

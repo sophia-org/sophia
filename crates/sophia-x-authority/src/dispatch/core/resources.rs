@@ -48,8 +48,17 @@ fn dispatch_core_resource_request(
                     drawable,
                 ));
             }
-            if let Some(mask) = values.clip_mask {
-                return Handled(core_gc_pixmap_clip_refusal(context, mask));
+            // A clip mask must be a real depth-one pixmap; anything else is
+            // the client's error rather than a limit of this server.
+            if let Some(mask) = values.clip_mask
+                && let Err(error) = runtime.validate_clip_mask(context.namespace, mask)
+            {
+                return Handled(core_resource_validation_error(
+                    context,
+                    error,
+                    XErrorCode::BadPixmap,
+                    mask,
+                ));
             }
             if let Some(font) = values.font
                 && let Err(error) = runtime.validate_font_access(context.namespace, font)
@@ -94,8 +103,15 @@ fn dispatch_core_resource_request(
                     gc,
                 ));
             }
-            if let Some(mask) = values.clip_mask {
-                return Handled(core_gc_pixmap_clip_refusal(context, mask));
+            if let Some(mask) = values.clip_mask
+                && let Err(error) = runtime.validate_clip_mask(context.namespace, mask)
+            {
+                return Handled(core_resource_validation_error(
+                    context,
+                    error,
+                    XErrorCode::BadPixmap,
+                    mask,
+                ));
             }
             if value_mask & (1 << 14) != 0 {
                 let font = values.font.unwrap_or(XResourceId::new(0, 1));
@@ -721,16 +737,3 @@ fn core_resource_validation_error(
     }
 }
 
-fn core_gc_pixmap_clip_refusal(context: XDispatchContext, mask: XResourceId) -> XDispatchResult {
-    XDispatchResult {
-        response: None,
-        outputs: vec![XClientOutput::Error(crate::XClientError {
-            code: XErrorCode::BadImplementation,
-            sequence: context.sequence,
-            resource_id: u32::try_from(mask.local.raw()).unwrap_or(0),
-            minor_code: 0,
-            major_code: context.major_opcode,
-        })],
-        metadata_candidates: Vec::new(),
-    }
-}

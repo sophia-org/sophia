@@ -182,15 +182,18 @@ fn core_clip_origins_empty_regions_and_reset_control_pixels_in_both_orders() {
             None
         );
         assert_eq!(fixture.pixel(2, 1), [0, 0, 255, 0]);
-        let unsupported = change_gc_request(
+        // A clip mask is served now, so naming one that is not a pixmap is
+        // the client's error. It used to answer BadImplementation, which told
+        // a client its valid request was beyond this server.
+        let unknown_mask = change_gc_request(
             order,
             gc,
             (1 << 19) | (1 << 2),
             &[0xff, RenderFixture::PIXMAP],
         );
         assert_eq!(
-            RenderFixture::error_of(&clip_send(&mut fixture, order, &unsupported)),
-            Some(XErrorCode::BadImplementation)
+            RenderFixture::error_of(&clip_send(&mut fixture, order, &unknown_mask)),
+            Some(XErrorCode::BadPixmap)
         );
         let reset = change_gc_request(order, gc, 1 << 19, &[0]);
         for bytes in [&reset, &fill] {

@@ -23,6 +23,10 @@ pub const X_CAP_PROJECTING: u8 = 3;
 pub const X_JOIN_MITER: u8 = 0;
 pub const X_JOIN_ROUND: u8 = 1;
 pub const X_JOIN_BEVEL: u8 = 2;
+pub const X_FILL_SOLID: u8 = 0;
+pub const X_FILL_TILED: u8 = 1;
+pub const X_FILL_STIPPLED: u8 = 2;
+pub const X_FILL_OPAQUE_STIPPLED: u8 = 3;
 pub const X_FILL_EVEN_ODD: u8 = 0;
 pub const X_FILL_WINDING: u8 = 1;
 pub const X_CLIP_BY_CHILDREN: u8 = 0;
@@ -129,9 +133,6 @@ impl XGraphicsContextTable {
         if !id.is_valid() || !drawable.is_valid() {
             return Err(XAuthorityAccessError::InvalidResource);
         }
-        if values.clip_mask.is_some() {
-            return Err(XAuthorityAccessError::InvalidResource);
-        }
         if self.records.contains_key(&id) {
             return Err(XAuthorityAccessError::InvalidResource);
         }
@@ -183,11 +184,11 @@ impl XGraphicsContextTable {
         if record.namespace != namespace {
             return Err(XAuthorityAccessError::CrossNamespaceDenied);
         }
-        if values.clip_mask.is_some() {
-            return Err(XAuthorityAccessError::InvalidResource);
-        }
         if mask & (1 << 19) != 0 {
+            // A clip mask and a rectangle list are two spellings of one
+            // component, so setting either clears the other.
             record.values.clip_rectangles = None;
+            record.values.clip_mask = values.clip_mask;
         }
         if mask & (1 << 0) != 0 {
             record.values.function = values.function;

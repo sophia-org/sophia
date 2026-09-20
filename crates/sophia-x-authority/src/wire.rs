@@ -406,6 +406,19 @@ pub enum XWireRequest {
         width: u16,
         height: u16,
     },
+    CopyPlane {
+        source: XResourceId,
+        destination: XResourceId,
+        gc: XResourceId,
+        src_x: i16,
+        src_y: i16,
+        dst_x: i16,
+        dst_y: i16,
+        width: u16,
+        height: u16,
+        /// Exactly one bit, selecting the source plane to copy.
+        bit_plane: u32,
+    },
     PolySegment {
         drawable: XResourceId,
         gc: XResourceId,
@@ -1404,6 +1417,27 @@ pub fn decode_x11_core_request(
         X_POLY_FILL_ARC => decode_poly_fill_arc(context, bytes),
         X_POLY_ARC => decode_poly_arc(context, bytes),
         X_POLY_POINT => decode_poly_point(context, bytes),
+        X_COPY_PLANE => {
+            require_exact_len(X_COPY_PLANE, X_COPY_PLANE_REQ_LEN, bytes.len())?;
+            let bit_plane = context.byte_order.u32(&bytes[28..32]);
+            // Exactly one plane, as the protocol requires. Zero or several is
+            // a bad value rather than a copy of nothing.
+            if bit_plane.count_ones() != 1 {
+                return Err(XWireParseError::InvalidValue(bit_plane));
+            }
+            Ok(XWireRequest::CopyPlane {
+                source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+                gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[12..16])), 1),
+                src_x: context.byte_order.i16(&bytes[16..18]),
+                src_y: context.byte_order.i16(&bytes[18..20]),
+                dst_x: context.byte_order.i16(&bytes[20..22]),
+                dst_y: context.byte_order.i16(&bytes[22..24]),
+                width: context.byte_order.u16(&bytes[24..26]),
+                height: context.byte_order.u16(&bytes[26..28]),
+                bit_plane,
+            })
+        }
         X_PUT_IMAGE => decode_put_image(context, bytes),
         X_GET_IMAGE => decode_get_image(context, bytes),
         X_POLY_TEXT8 => decode_poly_text8(context, bytes),

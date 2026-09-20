@@ -99,6 +99,138 @@ pub(super) fn copy_buffer_region(
     })
 }
 
+/// Where a fill takes its colour, pixel by pixel.
+///
+/// `FillSolid` is the foreground everywhere. A tile repeats a pixmap's own
+/// pixels; a stipple uses a depth-one pixmap as a mask, painting the
+/// foreground where a bit is set and either leaving the rest alone
+/// (`FillStippled`) or painting the background there (`FillOpaqueStippled`).
+/// The pattern is anchored at the graphics context's tile-stipple origin, so
+/// abutting fills line up instead of each starting at its own corner.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum XFillPattern<'a> {
+    Solid(u32),
+    Tile {
+        pixels: &'a XAuthorityCpuBufferSnapshot,
+        origin: (i32, i32),
+    },
+    Stipple {
+        pixels: &'a XAuthorityCpuBufferSnapshot,
+        origin: (i32, i32),
+        foreground: u32,
+        /// `None` leaves an unset bit untouched.
+        background: Option<u32>,
+    },
+}
+
+impl XFillPattern<'_> {
+    /// The colour for one destination pixel, or `None` to leave it alone.
+    fn pixel_at(&self, x: i32, y: i32) -> Option<u32> {
+        match self {
+            Self::Solid(pixel) => Some(*pixel),
+            Self::Tile { pixels, origin } => sample(pixels, x - origin.0, y - origin.1),
+            Self::Stipple {
+                pixels,
+                origin,
+                foreground,
+                background,
+            } => {
+                // Any non-zero pixel is a set bit: a depth-one pixmap is held
+                // here as an ordinary buffer, so its bits arrived as whole
+                // pixels rather than packed.
+                match sample(pixels, x - origin.0, y - origin.1) {
+                    Some(value) if value & 0x00ff_ffff != 0 => Some(*foreground),
+                    Some(_) => *background,
+                    None => None,
+                }
+            }
+        }
+    }
+}
+
+/// Read one pixel of a pattern, wrapping so it repeats.
+fn sample(pixels: &XAuthorityCpuBufferSnapshot, x: i32, y: i32) -> Option<u32> {
+    if pixels.size.width <= 0 || pixels.size.height <= 0 {
+        return None;
+    }
+    let x = x.rem_euclid(pixels.size.width);
+    let y = y.rem_euclid(pixels.size.height);
+    let stride = usize::try_from(pixels.stride).ok()?;
+    let offset =
+        usize::try_from(y).ok()?.checked_mul(stride)? + usize::try_from(x).ok()?.checked_mul(4)?;
+    let bytes = pixels.bytes.get(offset..offset.checked_add(4)?)?;
+    Some(u32::from_le_bytes(bytes.try_into().ok()?))
+}
+
+/// A depth-one pixmap used as a clip mask.
+///
+/// Held beside the pattern rather than inside the graphics context, because
+/// the mask's pixels live in the drawable store and the context carries only
+/// its identifier.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct XClipMask<'a> {
+    pub pixels: Option<&'a XAuthorityCpuBufferSnapshot>,
+    pub origin: (i32, i32),
+}
+
+impl XClipMask<'_> {
+    /// Whether the mask admits a pixel. A mask that is present clips to its
+    /// own extent: outside it, nothing is drawn.
+    fn admits(&self, x: i32, y: i32) -> bool {
+        let Some(pixels) = self.pixels else {
+            return true;
+        };
+        let x = x - self.origin.0;
+        let y = y - self.origin.1;
+        if x < 0 || y < 0 || x >= pixels.size.width || y >= pixels.size.height {
+            return false;
+        }
+        let stride = usize::try_from(pixels.stride).unwrap_or(0);
+        let offset = usize::try_from(y).unwrap_or(0) * stride + usize::try_from(x).unwrap_or(0) * 4;
+        pixels.bytes.get(offset..offset + 4).is_some_and(|bytes| {
+            u32::from_le_bytes(bytes.try_into().unwrap_or([0; 4])) & 0x00ff_ffff != 0
+        })
+    }
+}
+
+/// Fill a rectangle from a pattern, under a clip mask.
+pub(super) fn fill_rect_masked(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    rect: Rect,
+    pattern: XFillPattern<'_>,
+    clip_mask: XClipMask<'_>,
+    gc: &XGraphicsContextValues,
+) {
+    let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, rect) else {
+        return;
+    };
+    let stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let bytes = bytes_mut(buffer);
+    for y in top..bottom {
+        for x in left..right {
+            if !pixel_in_clip_rects(x, y, gc) {
+                continue;
+            }
+            let (pixel_x, pixel_y) = (
+                i32::try_from(x).unwrap_or(i32::MAX),
+                i32::try_from(y).unwrap_or(i32::MAX),
+            );
+            if !clip_mask.admits(pixel_x, pixel_y) {
+                continue;
+            }
+            let Some(pixel) = pattern.pixel_at(pixel_x, pixel_y) else {
+                continue;
+            };
+            let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
+            if let Some(target) = bytes.get_mut(offset..offset.saturating_add(4)) {
+                let destination = u32::from_le_bytes(target.try_into().unwrap_or([0; 4]));
+                let output = apply_raster_function(pixel, destination, gc);
+                target.copy_from_slice(&output.to_le_bytes());
+            }
+        }
+    }
+}
+
 pub(super) fn fill_rect(
     buffer: &mut XAuthorityCpuBufferSnapshot,
     rect: Rect,
@@ -442,6 +574,12 @@ pub(super) fn clipped_bounds(size: Size, rect: Rect) -> Option<(usize, usize, us
 }
 
 pub(super) fn pixel_in_clip(x: usize, y: usize, gc: &XGraphicsContextValues) -> bool {
+    pixel_in_clip_rects(x, y, gc)
+}
+
+/// Whether the clip *rectangles* admit a pixel. A pixmap mask is consulted
+/// separately, by the caller that holds the store.
+fn pixel_in_clip_rects(x: usize, y: usize, gc: &XGraphicsContextValues) -> bool {
     if gc.clip_rectangles.is_none() {
         return true;
     }

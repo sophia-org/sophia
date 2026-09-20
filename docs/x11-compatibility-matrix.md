@@ -117,9 +117,19 @@ cleanly rather than being told it exists and ignored. MIT-SHM had advertised 1.2
 | `SetFontPath` 51 | refused, `BadAccess` | the safeguard; decoded so a client is told no rather than meeting `BadRequest` |
 | `GetFontPath` 52 | implemented | reports the configured directories and `built-ins` |
 | `PolySegment` 66 | implemented | segments paint and stay disjoint |
+| `CopyGC` 57, `SetDashes` 58 | implemented | mask-wise copy; server error ordering, odd pattern doubled |
+| `FillPoly` 69, `PolyFillArc` 71 | implemented | filled rather than reported; both fill rules |
+| `PolyArc` 68, `PolyPoint` 64 | implemented | chord polyline; `CoordModePrevious` resolved |
+| `CopyPlane` 63 | implemented | one plane expanded through foreground and background, as runs |
+| GC components | complete | line style, caps, joins, fill rule, tile, stipple, origins, subwindow mode, dashes, arc mode |
+| Tile and stipple fills | implemented | pattern anchored at the tile-stipple origin |
+| Pixmap clip mask | implemented | depth-one pixmap clips; other depths are `BadMatch` |
 
 Not proven: a host-font session under a real client has not yet been accepted
-physically, so the two-byte face is proven only by unit and wire evidence. Glyph
+physically, so the two-byte face is proven only by unit and wire evidence. The
+drawing work above is likewise unit and wire evidence only; no real client has
+exercised a tile, a stipple, a clip mask or a plane copy through this
+authority. Glyph
 repertoire is whatever the configured path supplies; nothing here claims Unicode
 coverage from the built-in element, which is one Latin-1 bitmap.
 

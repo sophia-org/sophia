@@ -1800,3 +1800,208 @@ fn points_and_arcs_paint_rather_than_only_reporting_damage() {
         );
     }
 }
+
+#[test]
+fn a_clip_mask_is_accepted_and_actually_clips() {
+    // A non-zero clip mask used to answer BadImplementation, which told a
+    // client its perfectly valid request was beyond this server. It is a
+    // depth-one pixmap now, and it clips.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let window = 0x2201c1;
+    let mask = 0x2201c2;
+    let gc = 0x2201c3;
+
+    for (sequence, opcode, bytes) in [
+        (
+            1u16,
+            1u8,
+            create_window_request(XByteOrder::LittleEndian, window, 0, 0, 32, 32),
+        ),
+        (
+            2,
+            53,
+            create_pixmap_request(XByteOrder::LittleEndian, 1, mask, window, 8, 8),
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence) + 1400, XByteOrder::LittleEndian),
+            &bytes,
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+    }
+
+    // A graphics context naming the mask is accepted.
+    let mut values = create_gc_values_request(
+        XByteOrder::LittleEndian,
+        gc,
+        window,
+        3,
+        u32::MAX,
+        0x00ff_ffff,
+        0,
+        1,
+        0,
+    );
+    let request =
+        decode_x11_core_request(context(namespace, 1410, XByteOrder::LittleEndian), &values)
+            .unwrap();
+    let created = dispatch_x11_wire_request(
+        dispatch_context(namespace, 3, XByteOrder::LittleEndian, 55),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(created.outputs.is_empty());
+    values.clear();
+
+    // A mask that is not a pixmap at all is the client's error, and names the
+    // pixmap rather than blaming the server.
+    let request = decode_x11_core_request(
+        context(namespace, 1411, XByteOrder::LittleEndian),
+        &change_gc_clip_mask_request(XByteOrder::LittleEndian, gc, 0x2201ff),
+    )
+    .unwrap();
+    let refused = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 56),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(
+        matches!(
+            refused.outputs.as_slice(),
+            [XClientOutput::Error(error)] if error.code == XErrorCode::BadPixmap
+        ),
+        "{:?}",
+        refused.outputs
+    );
+
+    // And a real depth-one mask is taken.
+    let request = decode_x11_core_request(
+        context(namespace, 1412, XByteOrder::LittleEndian),
+        &change_gc_clip_mask_request(XByteOrder::LittleEndian, gc, mask),
+    )
+    .unwrap();
+    let accepted = dispatch_x11_wire_request(
+        dispatch_context(namespace, 5, XByteOrder::LittleEndian, 56),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(accepted.outputs.is_empty(), "{:?}", accepted.outputs);
+}
+
+#[test]
+fn copy_plane_expands_one_bit_into_foreground_and_background() {
+    // The path every Xaw button icon and menu checkmark takes: a depth-one
+    // bitmap becomes coloured pixels. Where the plane's bit is set the
+    // destination takes the foreground, and where it is clear, the background.
+    let namespace = NamespaceId::from_raw(46);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let window = 0x2201d1;
+    let source = 0x2201d2;
+    let gc = 0x2201d3;
+
+    for (sequence, opcode, bytes) in [
+        (
+            1u16,
+            1u8,
+            create_window_request(XByteOrder::LittleEndian, window, 0, 0, 32, 32),
+        ),
+        (
+            2,
+            53,
+            create_pixmap_request(XByteOrder::LittleEndian, 24, source, window, 8, 8),
+        ),
+        (
+            3,
+            55,
+            create_gc_values_request(
+                XByteOrder::LittleEndian,
+                gc,
+                window,
+                3,
+                u32::MAX,
+                0x00ff_ffff,
+                0x0000_00ff,
+                1,
+                0,
+            ),
+        ),
+    ] {
+        let request = decode_x11_core_request(
+            context(namespace, u64::from(sequence) + 1500, XByteOrder::LittleEndian),
+            &bytes,
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+    }
+
+    let request = decode_x11_core_request(
+        context(namespace, 1510, XByteOrder::LittleEndian),
+        &copy_plane_request(
+            XByteOrder::LittleEndian,
+            source,
+            window,
+            gc,
+            (0, 0),
+            (2, 2),
+            (8, 8),
+            1,
+        ),
+    )
+    .unwrap();
+    let copied = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, XByteOrder::LittleEndian, 63),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    assert!(copied.outputs.is_empty(), "{:?}", copied.outputs);
+    let response = copied.response.expect("a copy produces a transaction");
+    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+
+    // A bit plane of zero, or of several bits, is a bad value rather than a
+    // copy of nothing.
+    for plane in [0u32, 0b11] {
+        assert!(
+            decode_x11_core_request(
+                context(namespace, 1520, XByteOrder::LittleEndian),
+                &copy_plane_request(
+                    XByteOrder::LittleEndian,
+                    source,
+                    window,
+                    gc,
+                    (0, 0),
+                    (0, 0),
+                    (8, 8),
+                    plane,
+                ),
+            )
+            .is_err(),
+            "bit plane {plane:#b} names other than one plane"
+        );
+    }
+}

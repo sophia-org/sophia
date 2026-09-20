@@ -44,6 +44,23 @@ impl XAuthorityRuntime {
             .map_err(Into::into)
     }
 
+    /// Whether a clip mask names a depth-one pixmap this namespace may use.
+    ///
+    /// The protocol admits only depth one here: a mask says whether a pixel is
+    /// drawn, not what colour it takes.
+    pub fn validate_clip_mask(
+        &self,
+        namespace: NamespaceId,
+        mask: crate::XResourceId,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.validate_pixmap_access(namespace, mask)?;
+        if self.drawable_depth(namespace, mask) == Ok(1) {
+            Ok(())
+        } else {
+            Err(XAuthorityRuntimeError::InvalidSurface)
+        }
+    }
+
     /// Whether a graphics context exists and belongs to this namespace.
     pub fn validate_graphics_context(
         &self,

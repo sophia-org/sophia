@@ -1078,6 +1078,11 @@
       "cases": [],
       "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
     },
+    "63": {
+      "name": "X_COPY_PLANE",
+      "cases": [],
+      "coverage_debt": "One plane expanded through the foreground and background, emitted as runs. A bit plane naming other than one plane is refused at decode. Covered by a wire test; no independent case yet."
+    },
     "64": {
       "name": "X_POLY_POINT",
       "cases": [],

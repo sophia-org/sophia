@@ -15,6 +15,7 @@ fn dispatch_core_drawing_request(
             | XWireRequest::PolyFillArc { .. }
             | XWireRequest::PolyArc { .. }
             | XWireRequest::PolyPoint { .. }
+            | XWireRequest::CopyPlane { .. }
             | XWireRequest::PolyText8 { .. }
             | XWireRequest::ImageText8 { .. }
             | XWireRequest::PolyText16 { .. }
@@ -318,6 +319,55 @@ fn dispatch_core_drawing_request(
                 })
                 .collect();
             core_segment_draw(context, runtime, drawable, &segments, &values)
+        }
+        XWireRequest::CopyPlane {
+            source,
+            destination,
+            gc,
+            src_x,
+            src_y,
+            dst_x,
+            dst_y,
+            width,
+            height,
+            bit_plane,
+        } => {
+            let transaction = context.transaction;
+            let values = match core_draw_gc(context, runtime, destination, gc) {
+                Ok(values) => values,
+                Err((error, code, resource)) => {
+                    return Handled(core_draw_validation_error(
+                        context, transaction, error, code, resource,
+                    ));
+                }
+            };
+            let response = runtime.apply_copy_plane(
+                transaction,
+                context.namespace,
+                source,
+                destination,
+                (i32::from(src_x), i32::from(src_y)),
+                (i32::from(dst_x), i32::from(dst_y)),
+                (i32::from(width), i32::from(height)),
+                bit_plane,
+                &values,
+            );
+            let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+                vec![XClientOutput::Error(x_error_from_runtime(
+                    error,
+                    context.sequence,
+                    context.major_opcode,
+                    0,
+                    u32::try_from(source.local.raw()).unwrap_or(0),
+                ))]
+            } else {
+                Vec::new()
+            };
+            XDispatchResult {
+                response: Some(response),
+                outputs,
+                metadata_candidates: Vec::new(),
+            }
         }
         XWireRequest::PolyPoint {
             drawable,
