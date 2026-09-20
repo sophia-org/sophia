@@ -964,8 +964,8 @@ stream; the session releases a departed device's held keys on its own turn.
 Headless controls pin each of those pieces; only this gate proves them on
 hardware, where one keyboard is unplugged while it holds a key.
 
-From tty4, with two keyboards attached and the one to be unplugged named
-first:
+From any text console that is not the display manager's, with two keyboards
+attached and the one to be unplugged named first:
 
 ```sh
 SOPHIA_KEYBOARD_A=/dev/input/by-id/...-event-kbd \

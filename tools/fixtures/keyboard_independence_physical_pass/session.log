@@ -2,17 +2,20 @@ sophia_live_session_input_pipeline schema=4 status=poller_ready source=udev seat
 2026-09-21T10:00:01.000Z sophia_live_session_input_device schema=1 status=added device=256 keyboard=true pointer=false touch=false virtual=false source=udev
 sophia_live_session_input_device schema=1 status=added device=257 keyboard=false pointer=true touch=false virtual=false source=udev
 sophia_live_session_input_device schema=1 status=added device=258 keyboard=true pointer=false touch=false virtual=false source=udev
+sophia_live_session_input_device schema=1 status=added device=261 keyboard=true pointer=false touch=false virtual=false source=udev
 sophia_live_session_input_device schema=1 status=added device=259 keyboard=true pointer=false touch=false virtual=true source=udev
 sophia_live_session_input schema=1 status=ready source=physical text=twokeyboards
 sophia_live_session_input_device schema=1 status=key_observed device=258
 sophia_live_session_input_device schema=1 status=key_observed device=256
 sophia_live_session_input_device schema=1 status=removed device=256 released=1
 sophia_live_session_keys schema=1 status=released reason=device_removed device=256 count=1
+sophia_live_session_input_device schema=1 status=removed device=261 released=0
 sophia_live_session_input_device schema=1 status=added device=260 keyboard=true pointer=false touch=false virtual=false source=udev
+sophia_live_session_input_device schema=1 status=added device=262 keyboard=true pointer=false touch=false virtual=false source=udev
 sophia_live_session_input_device schema=1 status=key_observed device=260
 sophia_live_session_input schema=2 status=complete source=physical text=twokeyboards expected_events=26 matched_events=26 pixel_change=true
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
-sophia_live_session_input_devices schema=1 source=udev added=5 removed=1 active=4 keyboards=3 pointers=1 touch=0
+sophia_live_session_input_devices schema=1 source=udev added=8 removed=2 active=6 keyboards=5 pointers=1 touch=0
 sophia_live_session_input_device schema=1 status=summary fallbacks=0
 sophia_live_session schema=16 status=bounded_complete display=:296 elapsed_msec=180000 physical_events=40 physical_keys_routed=30 physical_input=enabled native_presentation=enabled
 sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
