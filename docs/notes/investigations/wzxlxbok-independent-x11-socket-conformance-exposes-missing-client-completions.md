@@ -132,9 +132,65 @@ round trips, plane-mask, clipping of an outside image, the depth and Bitmap
 refusals; and QueryBestSize replies for every valid class. None of that is
 certification of the unexercised remainder.
 
-The nine failures are queued as two repair rows, t128 for the six refusals and
-t129 for the three exposure events. The gate stays red until they land, as it
-did for the destruction family.
+The nine failures were queued as two repair rows, t128 for the six refusals
+and t129 for the three exposure events, and the gate stayed red until they
+landed, as it did for the destruction family. The repairs are recorded in the
+next section.
+
+## Drawing family repairs
+
+The two repair rows landed on 2026-09-19 as commit `1bf9fddf`. Run on clean
+source **1bf9fddf** with host SHA256
+`ab8e580395bb8f5a8e883c178e54887b41f1d6f0641b0f68f68c14cff0ae033f`, evidence
+at `.artifacts/x11-conformance/baseline-1bf9fddf/`: **120 executions, 120
+PASS; gate exit 0.** Every case of the drawing family passes in both byte
+orders, and the fifty earlier cases keep passing.
+
+The nine obligations of the baseline table are met as the protocol states
+them. CopyGC between contexts of different depth is a Match error, judged
+after both contexts are found. A SetClipRectangles ordering above YXBanded, a
+PolyPoint or PolyLine coordinate mode above Previous, a FillPoly shape above
+Convex or coordinate mode above Previous, and a QueryBestSize class above
+Stipple are Value errors refused by the decoder. A ZPixmap PutImage with a
+nonzero left-pad, and an XY-format one with a left-pad at or above the bitmap
+scanline pad, are Match errors. ClearArea with exposures reports the cleared
+rectangle within a viewable window as one Expose with count zero. CopyArea
+and CopyPlane with graphics-exposures report each destination rectangle whose
+source lay outside the source drawable as a GraphicsExpose, in the order a
+banded region lists them and counted down to zero, cut to the destination and
+to the context's clip list; a wholly available source reports one NoExpose.
+The Xorg reference (`dix/dispatch.c`, `mi/miexpose.c`) was read for the
+details the protocol leaves open: the region algebra of the exposed area and
+the event order.
+
+Once the nine first obligations were met, the unexercised tails of the same
+cases found more, all repaired in the same commit and each with a routed test
+in `crates/sophia-x-authority/tests/x11_wire/drawing_completions.rs`:
+
+| defect | repair |
+| --- | --- |
+| a Value error carried zero where the protocol puts the refused value | every decoder refusal of a value now names it in the error's resource field, so a client reads which argument was wrong |
+| graphics-context components were stored without range checks, so `function 16` or `line-style 3` was accepted | CreateGC and ChangeGC refuse a component outside its enumeration, a dash of zero, and a line width or dash offset above 16 bits, naming the value |
+| a tile or stipple was stored unseen, so an unknown pixmap or one of the wrong depth was accepted | a tile must be a pixmap of the context's depth and a stipple one of depth one; an unknown one is a Pixmap error, the wrong depth a Match error |
+| CopyPlane copied a plane at or above the source depth | such a plane is a Value error naming the plane, after the source and destination are validated |
+| ClearArea accepted any nonzero exposures byte as True | a byte above one is a Value error naming it |
+| CreateWindow never decoded the class, so an InputOnly window was drawn into, cleared and measured like any other | the class is decoded (above InputOnly is a Value error) and recorded; an InputOnly window has depth zero, so no context matches it, ClearArea refuses it with Match, and QueryBestSize refuses a tile or stipple for it |
+
+Two expectations in the cases themselves were wrong and were corrected before
+the evidence run, each against the protocol text. An arc angle is an INT16 in
+64ths of a degree, so the largest overshoot a request can carry is just under
+512 degrees; the truncation case now sends 500 degrees rather than 720, which
+does not fit. A thin arc outline follows "the infinitely thin path" that
+"intersects the horizontal axis at [x, y+(height/2)] and [x+width,
+y+(height/2)]", so a 7x7 outline at (1,1) spans pixel columns and rows 1 to
+8, one more than the filled interior; the case now expects that box and
+requires the outline to reach each of its sides.
+
+Validation beyond the gate: the crate's offline tests pass (1153 unit and
+367 wire tests, nine of them new), `cargo fmt --check`, `git diff --check`
+and `cargo clippy --all-targets` are clean for the crate, and the gate's own
+unit tests pass. Coverage is unchanged at 51 of 97 decoded core requests; the
+remaining debt is the later slices named below.
 
 ## Gate and coverage
 
