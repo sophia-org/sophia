@@ -55,3 +55,9 @@ fn registration_admission() {
 fn version_negotiation() {
     support::groups::version_negotiation();
 }
+
+#[test]
+#[ignore = "run through cargo xtask check m5-acceptance"]
+fn fake_input_encoding() {
+    support::groups::fake_input_encoding();
+}

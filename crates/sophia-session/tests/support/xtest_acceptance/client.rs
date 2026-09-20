@@ -167,10 +167,24 @@ impl Client {
 
     /// Read the next thing the server sends, whatever kind it is.
     pub fn answer(&mut self) -> Answer {
-        let deadline = Instant::now() + WAIT;
+        self.read_answer(Instant::now() + WAIT).expect("an answer")
+    }
+
+    /// The next answer if one arrives within `within`, or `None`.
+    ///
+    /// For a request that is expected to hold the connection: proving that
+    /// nothing came is a different claim from proving what came, and a wait
+    /// that panics on silence cannot make it. A connection this returned
+    /// `None` for is not read again; bytes that arrived late would be read
+    /// against the wrong request.
+    pub fn try_answer(&mut self, within: Duration) -> Option<Answer> {
+        self.read_answer(Instant::now() + within).ok()
+    }
+
+    fn read_answer(&mut self, deadline: Instant) -> Result<Answer, String> {
         let mut head = [0; 32];
-        read_until(&mut self.stream, &mut head, deadline).expect("an answer");
-        match head[0] {
+        read_until(&mut self.stream, &mut head, deadline)?;
+        Ok(match head[0] {
             0 => Answer::Error(XError {
                 code: head[1],
                 sequence: self.order.read16(&head[2..]),
@@ -184,13 +198,13 @@ impl Client {
                 let mut reply = head.to_vec();
                 if extra > 0 {
                     let mut tail = vec![0; extra];
-                    read_until(&mut self.stream, &mut tail, deadline).expect("reply tail");
+                    read_until(&mut self.stream, &mut tail, deadline)?;
                     reply.extend(tail);
                 }
                 Answer::Reply(reply)
             }
             _ => Answer::Event(head.to_vec()),
-        }
+        })
     }
 
     /// The reply to a request, with events before it set aside.
