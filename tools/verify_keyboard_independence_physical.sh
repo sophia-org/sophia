@@ -57,8 +57,10 @@ unplug=""
 for removal in "${removal_lines[@]}"; do
     line="${removal%%:*}"
     candidate="$(sed -E 's/.*device=([0-9]+) released=.*/\1/' <<<"$removal")"
-    if head -n "$((line - 1))" "$session" | grep -Eq "${device_record}status=key_observed device=$candidate\$" \
-        && head -n "$((line - 1))" "$session" | grep -Eq "${device_record}status=added device=$candidate keyboard=true .* virtual=false "; then
+    # Counts, not grep -q: under pipefail a reader that exits at its first
+    # match kills head, and a match reads as a failure.
+    if (( $(head -n "$((line - 1))" "$session" | grep -Ec "${device_record}status=key_observed device=$candidate\$" || true) > 0 )) \
+        && (( $(head -n "$((line - 1))" "$session" | grep -Ec "${device_record}status=added device=$candidate keyboard=true .* virtual=false " || true) > 0 )); then
         unplug="$removal"
         break
     fi
@@ -86,16 +88,24 @@ mapfile -t keyed_before < <(before | grep -Eo "${device_record}status=key_observ
 (( ${#keyed_before[@]} >= 2 )) || fail "keys were observed from fewer than two devices before the removal"
 printf '%s\n' "${keyed_before[@]}" | grep -qx "$removed" || fail "no key was observed from the removed device before it left"
 
-returned="$(after | grep -Eo "${device_record}${keyboard_added}" | sed -E 's/.*device=([0-9]+) .*/\1/' | head -n 1 || true)"
-[[ -n "$returned" ]] || fail "no hardware keyboard was announced after the removal"
-[[ "$returned" != "$removed" ]] || fail "the replugged keyboard was given the identity the removed one had"
-if printf '%s\n' "${keyboards_before[@]}" | grep -qx "$returned"; then
-    fail "the replugged keyboard's identity $returned had been announced before the removal"
-fi
-returned_line="$(after | grep -En "${device_record}status=added device=$returned " | head -n 1 | cut -d: -f1)"
-after | awk -v limit="$returned_line" -v pattern="${device_record}status=key_observed device=$returned\$" \
-    'NR > limit && $0 ~ pattern { found = 1 } END { exit found ? 0 : 1 }' \
-    || fail "no key was observed from the replugged keyboard $returned after its announcement"
+# A returning keyboard is several kernel devices again; the one that counts
+# is announced under an identity never seen before and then typed on.
+mapfile -t announced_after < <(after | grep -Eo "${device_record}${keyboard_added}" | sed -E 's/.*device=([0-9]+) .*/\1/' || true)
+(( ${#announced_after[@]} > 0 )) || fail "no hardware keyboard was announced after the removal"
+returned=""
+for candidate in "${announced_after[@]}"; do
+    [[ "$candidate" != "$removed" ]] || fail "the replugged keyboard was given the identity the removed one had"
+    if printf '%s\n' "${keyboards_before[@]}" | grep -qx "$candidate"; then
+        fail "the replugged keyboard's identity $candidate had been announced before the removal"
+    fi
+    candidate_line="$(after | grep -En "${device_record}status=added device=$candidate " | head -n 1 | cut -d: -f1)"
+    if after | awk -v limit="$candidate_line" -v pattern="${device_record}status=key_observed device=$candidate\$" \
+        'NR > limit && $0 ~ pattern { found = 1 } END { exit found ? 0 : 1 }'; then
+        returned="$candidate"
+        break
+    fi
+done
+[[ -n "$returned" ]] || fail "no key was observed from any keyboard announced after the removal"
 
 grep -Eq "^sophia_live_session_input schema=1 status=ready source=physical text=$proof_text$" "$session" \
     || fail "physical input readiness for $proof_text is missing"
