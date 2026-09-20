@@ -187,6 +187,89 @@ fn protected_component_peer() {
 
 #[cfg(feature = "native-session")]
 #[test]
+fn component_scheduler_spaces_a_service_failure_like_a_refused_start() {
+    use sophia_session::shell_component_session::ShellComponentSession;
+    use std::time::{Duration, Instant};
+    let root =
+        std::env::temp_dir().join(format!("component-service-spacing-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let selection = sophia_config::ShellComponentConfig {
+        id: "bar".into(),
+        role: ShellComponentRole::Bar,
+        executable: "/nonexistent-sophia-component".into(),
+        config: None,
+        reservation: None,
+        gpu: sophia_config::ShellGpuMode::Denied,
+    };
+    let mut owner = ShellComponentSession::prepare(
+        &[selection],
+        28,
+        None,
+        &root,
+        ShellContentAdmissionPolicy::Granted {
+            discrete_input: true,
+        },
+    )
+    .unwrap();
+    owner.set_presentation_available(true).unwrap();
+    let outputs = [sophia_engine::HeadlessOutput {
+        id: sophia_protocol::OutputId::from_raw(1),
+        size: sophia_protocol::Size {
+            width: 64,
+            height: 64,
+        },
+        scale: 1,
+    }];
+    let mut runtime =
+        sophia_backend_live::LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let now = Instant::now();
+    // One refused start keeps the base interval.
+    assert!(owner.start_next(now, |_| true).is_err());
+    let first = owner.attempt(0).unwrap();
+    owner.poll(1024).unwrap();
+    owner.settle_revocations(Some(&mut runtime)).unwrap();
+    // A stop after a service failure is the second consecutive failure, so
+    // the spacing widens here rather than on the next refused start.
+    assert!(owner.record_service_failure(0, now).unwrap());
+    assert_eq!(
+        owner
+            .start_next(now + Duration::from_secs(1), |_| true)
+            .unwrap(),
+        None,
+        "the slot is spaced beyond the base interval"
+    );
+    assert!(
+        owner
+            .start_next(now + Duration::from_secs(2), |_| true)
+            .is_err()
+    );
+    let second = owner.attempt(0).unwrap();
+    assert_ne!(second, first);
+    owner.poll(1024).unwrap();
+    owner.settle_revocations(Some(&mut runtime)).unwrap();
+    // Three failures in a row: four seconds from the last attempt.
+    assert_eq!(
+        owner
+            .start_next(now + Duration::from_secs(5), |_| true)
+            .unwrap(),
+        None
+    );
+    assert!(
+        owner
+            .start_next(now + Duration::from_secs(6), |_| true)
+            .is_err()
+    );
+    assert_ne!(owner.attempt(0), Some(second));
+    owner.request_shutdown().unwrap();
+    owner.poll(1024).unwrap();
+    owner.settle_revocations(Some(&mut runtime)).unwrap();
+    assert!(owner.finish_after_backend_drop(()).unwrap().1.quiescent());
+    drop(owner);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(feature = "native-session")]
+#[test]
 #[ignore = "requires explicit Bemenu executable and nested device-hidden namespaces"]
 fn selected_bemenu_negotiates_through_production_protection() {
     protected_bemenu(|_, _| {});

@@ -60,10 +60,14 @@ pub struct ShellComponentSession {
     /// reports an error that does not carry the slot, so without this the
     /// retained record cannot name the component that failed.
     last_start_slot: Option<usize>,
-    /// Consecutive failed starts per slot, reset by a successful one. This
-    /// spaces the retry; it never stops it, because a condition that clears
-    /// on its own must still be able to bring the component up.
-    start_attempts: [u32; MAX_SHELL_COMPONENTS],
+    /// Consecutive failures per slot: refused starts, and stops the supervisor
+    /// requested because the component failed in service. This spaces the
+    /// retry; it never stops it, because a condition that clears on its own
+    /// must still be able to bring the component up.
+    failures: [u32; MAX_SHELL_COMPONENTS],
+    /// When the slot's current process was started, so a failure after a
+    /// healthy tenure counts afresh rather than on top of an old run.
+    started_at: [Option<std::time::Instant>; MAX_SHELL_COMPONENTS],
     /// Set on the visit where a slot's retry first spaces beyond the base
     /// interval, so the transition is recorded once rather than per attempt.
     entered_backoff: Option<usize>,
@@ -121,7 +125,8 @@ impl ShellComponentSession {
             start_cursor: 0,
             last_schedule: None,
             last_start_slot: None,
-            start_attempts: [0; MAX_SHELL_COMPONENTS],
+            failures: [0; MAX_SHELL_COMPONENTS],
+            started_at: std::array::from_fn(|_| None),
             entered_backoff: None,
         })
     }

@@ -23,6 +23,11 @@ pub(crate) use session_eprintln;
 pub mod application_catalog;
 pub mod backend_args;
 pub mod backend_evidence;
+// The start-cause vocabulary is shared by the emitter, which needs the native
+// session, and by evidence reduction, which does not. It lives outside the
+// gated module so the reducer builds in every configuration.
+#[cfg_attr(not(feature = "native-session"), allow(dead_code))]
+pub(crate) mod component_start_cause;
 #[cfg(feature = "native-session")]
 pub mod desktop_output_activation;
 #[cfg(feature = "native-session")]

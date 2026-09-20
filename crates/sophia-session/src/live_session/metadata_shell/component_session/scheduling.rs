@@ -9,6 +9,11 @@ const BACKOFF_BEGINS_AFTER: u32 = 2;
 /// The base retry interval, and the ceiling the spacing grows to.
 const RETRY_BASE: Duration = Duration::from_secs(1);
 const RETRY_CEILING: Duration = Duration::from_secs(60);
+/// A process that served this long before failing was not looping: its
+/// failure starts the count afresh instead of adding to one that ended
+/// before it came up. The ceiling is the natural bound, since a loop paced
+/// at the ceiling fails at least this often.
+const HEALTHY_TENURE: Duration = RETRY_CEILING;
 
 /// Space a slot's retry by its consecutive failures: one second, then
 /// doubling to a minute, and staying there.
@@ -81,26 +86,62 @@ impl ShellComponentSession {
             // way to attribute the retained record.
             self.last_start_slot = Some(slot);
             let outcome = self.start(slot);
-            let attempts = match outcome {
+            // A start that succeeds does not clear the count: a component
+            // that comes up and fails in service within its tenure is still
+            // looping, and the next failure must be spaced as the one before.
+            // Only serving through a healthy tenure clears it.
+            let failures = match outcome {
                 Ok(_) => {
-                    self.start_attempts[slot] = 0;
+                    self.started_at[slot] = Some(now);
                     0
                 }
                 Err(_) => {
-                    let attempts = self.start_attempts[slot].saturating_add(1);
-                    self.start_attempts[slot] = attempts;
-                    if attempts == BACKOFF_BEGINS_AFTER {
+                    let failures = self.count_failure(slot, now);
+                    if failures == BACKOFF_BEGINS_AFTER {
                         self.entered_backoff = Some(slot);
                     }
-                    attempts
+                    failures
                 }
             };
             self.retry_at[slot] = Some(
-                now.checked_add(retry_delay(attempts))
+                now.checked_add(retry_delay(failures))
                     .ok_or("component retry deadline overflow")?,
             );
             return outcome.map(Some);
         }
         Ok(None)
     }
+
+    /// Count a service failure against the slot's retry spacing, after the
+    /// caller has stopped the component. Returns whether this failure is the
+    /// one at which the spacing first widens, so the caller can record the
+    /// transition once, as it does for a refused start.
+    pub fn record_service_failure(&mut self, slot: usize, now: Instant) -> Result<bool> {
+        if slot >= self.plans.len() {
+            return Err("unknown component selection".into());
+        }
+        let failures = self.count_failure(slot, now);
+        self.retry_at[slot] = Some(
+            now.checked_add(retry_delay(failures))
+                .ok_or("component retry deadline overflow")?,
+        );
+        Ok(failures == BACKOFF_BEGINS_AFTER)
+    }
+
+    /// One more consecutive failure for the slot, unless its process had
+    /// served a healthy tenure, in which case this is the first of a new run.
+    fn count_failure(&mut self, slot: usize, now: Instant) -> u32 {
+        let healthy = self.started_at[slot]
+            .is_some_and(|began| now.saturating_duration_since(began) >= HEALTHY_TENURE);
+        let failures = if healthy {
+            1
+        } else {
+            self.failures[slot].saturating_add(1)
+        };
+        self.failures[slot] = failures;
+        self.started_at[slot] = None;
+        failures
+    }
 }
+
+mod tests;

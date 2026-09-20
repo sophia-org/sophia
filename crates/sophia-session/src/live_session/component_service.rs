@@ -112,7 +112,7 @@ pub(super) fn service_components(
         // carries an approved code. Without one a retained record says that a
         // start failed and never why, which cost 841 records and a
         // configuration change to answer once.
-        let cause = super::component_start_cause::classify(&error.to_string()).as_str();
+        let cause = crate::component_start_cause::classify(&error.to_string()).as_str();
         match components.last_start_slot() {
             Some(slot) => crate::session_eprintln!(
                 "sophia_shell_component schema=1 status=start_failed slot={slot} cause={cause} reason={error}"
@@ -264,6 +264,16 @@ pub(super) fn service_components(
                     key.slot
                 );
                 components.stop(key)?;
+                // A component that starts cleanly and then fails in service
+                // is a loop as much as one that never starts, and is spaced
+                // by the same count. The transition is recorded here because
+                // the next visit's selection clears it before reading it.
+                if components.record_service_failure(key.slot, Instant::now())? {
+                    crate::session_eprintln!(
+                        "sophia_shell_component schema=1 status=start_backoff slot={}",
+                        key.slot
+                    );
+                }
             }
         }
     }
