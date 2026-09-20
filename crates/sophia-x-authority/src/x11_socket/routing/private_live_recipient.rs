@@ -6,7 +6,7 @@
 impl PrivateDeliveryCustody {
     fn owns_terminated_output(&self) -> bool {
         self.pending.is_some()
-            || (self.completion.is_some() && self.dispatch == PrivateDispatchPhase::Untaken)
+            || (self.owes_event() && self.dispatch == PrivateDispatchPhase::Untaken)
     }
 
     fn answer_terminated_output(
@@ -14,12 +14,12 @@ impl PrivateDeliveryCustody {
         endpoint: &PrivateEndpointIdentity,
         recovery: &InputRecovery,
     ) {
-        let Some(completion) = self.completion.as_ref() else {
+        if !self.owes_event() {
             return;
-        };
+        }
         let (delivery, client, original) = match self.pending.as_ref() {
             Some(PrivatePendingDelivery::Capsule(capsule)) => (
-                Some(capsule.delivery()),
+                capsule.admitted_delivery(),
                 capsule.client(),
                 capsule.endpoint(),
             ),
@@ -30,13 +30,12 @@ impl PrivateDeliveryCustody {
             ),
             None => return,
         };
-        let Some(delivery) = delivery else {
-            return;
-        };
         if !endpoint.matches(original) || !original.ordered_termination() {
             return;
         }
-        let finalizer = finalizer_from_held(recovery, completion, delivery, client);
+        let Some(finalizer) = self.finalizer(recovery, delivery, client) else {
+            return;
+        };
         if finalizer.finalize(XAuthorityInputDeliveryOutcome::ClientDisconnected)
             != PrivateAdjudication::Refused
         {

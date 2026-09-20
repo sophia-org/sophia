@@ -81,7 +81,9 @@ impl PrivateXServerFrontend {
         let Some(next_order) = self.terminal.next_event_order.checked_add(1) else {
             return Ok(false);
         };
-        let custody = PrivateDeliveryCustody::new(self.terminal.next_event_order, None);
+        // A CELL OF ITS OWN, since no admission minted one: the writer answers
+        // into it, and that answer is what settles the recipient's half.
+        let custody = PrivateDeliveryCustody::unadmitted(self.terminal.next_event_order);
 
         let applied = std::cell::Cell::new(false);
         let holds = &mut self.terminal.holds;

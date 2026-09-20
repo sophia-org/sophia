@@ -142,7 +142,50 @@ fn verdict(status: &str) -> ProfileVerdict {
         exit: Some(0),
         timed_out: false,
         report: None,
+        descendants_found: 0,
+        descendants_reaped: 0,
+        remaining: Vec::new(),
+        collection_error: None,
     }
+}
+
+#[test]
+fn a_reaped_orphan_is_recorded_and_a_lingering_one_is_not_a_result() {
+    use super::profiles::collected;
+    use super::types::Collection;
+    let clean = Collection {
+        root_waited: true,
+        descendants_found: 0,
+        descendants_reaped: 0,
+        remaining: Vec::new(),
+        error: None,
+    };
+    assert!(collected(&clean));
+    // A child that outlived the entry by a moment and was reaped here is
+    // teardown, not a leak.
+    let reaped = Collection {
+        descendants_found: 2,
+        descendants_reaped: 2,
+        ..clean.clone()
+    };
+    assert!(collected(&reaped));
+    let lingering = Collection {
+        descendants_found: 1,
+        remaining: vec![4242],
+        error: Some("descendant collection deadline elapsed".into()),
+        ..clean.clone()
+    };
+    assert!(!collected(&lingering));
+    let unread = Collection {
+        error: Some("invalid child pid".into()),
+        ..clean.clone()
+    };
+    assert!(!collected(&unread));
+    let unwaited = Collection {
+        root_waited: false,
+        ..clean
+    };
+    assert!(!collected(&unwaited));
 }
 
 #[test]

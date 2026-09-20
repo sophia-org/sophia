@@ -94,6 +94,27 @@ pub(super) struct ProfileVerdict {
     pub exit: Option<i32>,
     pub timed_out: bool,
     pub report: Option<PathBuf>,
+    /// What the gate found still running when the profile's entry returned,
+    /// and what it did about it: orphans the subreaper reaped are recorded,
+    /// not counted against the profile; anything that could not be reaped
+    /// is, and the verdict says so.
+    pub descendants_found: usize,
+    pub descendants_reaped: usize,
+    pub remaining: Vec<u32>,
+    pub collection_error: Option<String>,
+}
+
+/// Whether the profile's processes were all collected once its entry
+/// returned.
+///
+/// A child of the entry that outlives it by a moment is reparented to this
+/// gate, which is the subreaper, and reaped there; that is teardown, not a
+/// leak, and the numbers are kept in the report for whoever wants to see
+/// them. What cannot be reaped within the collection deadline, or a
+/// collection that could not be read, is a process the profile genuinely
+/// left behind, and a PASS beside it is not a result.
+pub(super) fn collected(collection: &super::types::Collection) -> bool {
+    collection.root_waited && collection.remaining.is_empty() && collection.error.is_none()
 }
 
 /// Judge a profile by the report it wrote, against the source that was run.
@@ -119,6 +140,10 @@ pub(super) fn judge(
         exit,
         timed_out,
         report: None,
+        descendants_found: 0,
+        descendants_reaped: 0,
+        remaining: Vec::new(),
+        collection_error: None,
     };
     if timed_out {
         verdict.status = "TIMEOUT".into();
@@ -345,13 +370,16 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
             execution.timed_out,
             &source.commit,
         );
-        let collected = execution.collection.root_waited
-            && execution.collection.descendants_found == 0
-            && execution.collection.remaining.is_empty()
-            && execution.collection.error.is_none();
-        if !collected && verdict.status == "PASS" {
+        verdict.descendants_found = execution.collection.descendants_found;
+        verdict.descendants_reaped = execution.collection.descendants_reaped;
+        verdict.remaining = execution.collection.remaining.clone();
+        verdict.collection_error = execution.collection.error.clone();
+        if !collected(&execution.collection) && verdict.status == "PASS" {
             verdict.status = "NORESULT".into();
-            verdict.detail = Some("the profile left processes uncollected".into());
+            verdict.detail = Some(format!(
+                "the profile left processes that could not be collected: {:?} remaining, {:?}",
+                execution.collection.remaining, execution.collection.error
+            ));
         }
         verdict.report = report.is_some().then_some(report_path);
         profiles.insert(profile.clone(), verdict);

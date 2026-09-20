@@ -57,8 +57,32 @@ fn finalizer_from_held(
     PrivateDeliveryFinalizer {
         recovery: recovery.clone(),
         completion: Arc::clone(completion),
-        delivery,
+        delivery: Some(delivery),
         client,
+        unadmitted: None,
+    }
+}
+
+/// Build a finalizer for a delivery nobody admitted.
+///
+/// A release the ledger made when its source departed has no request behind
+/// it, so recovery never admitted it: there is no delivery id, no ticket and
+/// no compositor receipt to publish. What its writer can still say is what
+/// became of the bytes, and that goes into the cell its custody holds. The
+/// completion carried here is a fresh, never-answered cell, present because
+/// every finalizer names one; the answer lives in `unadmitted`.
+#[cfg(unix)]
+fn finalizer_for_unadmitted(
+    recovery: &InputRecovery,
+    unadmitted: &Arc<PrivateUnadmittedCompletion>,
+    client: XServerFrontendClientId,
+) -> PrivateDeliveryFinalizer {
+    PrivateDeliveryFinalizer {
+        recovery: recovery.clone(),
+        completion: Arc::default(),
+        delivery: None,
+        client,
+        unadmitted: Some(Arc::clone(unadmitted)),
     }
 }
 
@@ -82,8 +106,12 @@ fn finalizer_from_held(
 pub(crate) struct PrivateDeliveryFinalizer {
     recovery: InputRecovery,
     completion: Arc<PrivateDeliveryCompletion>,
-    delivery: XAuthorityInputDeliveryId,
+    /// `None` for a delivery nobody admitted: it has no identity to name.
+    delivery: Option<XAuthorityInputDeliveryId>,
     client: XServerFrontendClientId,
+    /// Where the answer goes when nobody admitted this delivery. Exclusive
+    /// with `delivery` being `Some`.
+    unadmitted: Option<Arc<PrivateUnadmittedCompletion>>,
 }
 
 #[cfg(unix)]
@@ -93,6 +121,7 @@ impl std::fmt::Debug for PrivateDeliveryFinalizer {
             .debug_struct("PrivateDeliveryFinalizer")
             .field("delivery", &self.delivery)
             .field("client", &self.client)
+            .field("unadmitted", &self.unadmitted.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -106,10 +135,51 @@ impl PrivateDeliveryFinalizer {
     /// gone with no answer, the entry is not the one this finalizer was made
     /// for, or the offer was declined.
     pub(crate) fn finalize(&self, outcome: XAuthorityInputDeliveryOutcome) -> PrivateAdjudication {
-        self.recovery
-            .adjudicate_for_held(&self.completion, self.client, self.delivery, outcome)
+        match (&self.unadmitted, self.delivery) {
+            // ANSWERED INTO THE CUSTODY'S OWN CELL, and never refused: a refusal
+            // would leave the writer owing an answer for ever, since no
+            // authority will ever come asking for this one. Written once; a
+            // second outcome for one write is a contradiction and the first
+            // stands.
+            (Some(cell), _) => {
+                if cell.publish(outcome) {
+                    PrivateAdjudication::Answered
+                } else {
+                    PrivateAdjudication::AlreadyAnswered
+                }
+            }
+            (None, Some(delivery)) => {
+                self.recovery
+                    .adjudicate_for_held(&self.completion, self.client, delivery, outcome)
+            }
+            (None, None) => PrivateAdjudication::Refused,
+        }
+    }
+}
+
+/// Where a writer answers a delivery nobody admitted.
+///
+/// OUTCOME ONLY. It names no delivery and no client, because there is no
+/// admission to name and no compositor receipt to publish; what it holds is
+/// the one thing the writer can establish about bytes it was handed, and the
+/// custody that owns this cell is the only reader. Written once, like the
+/// admitted completion beside it.
+#[cfg(unix)]
+#[derive(Debug, Default)]
+pub(crate) struct PrivateUnadmittedCompletion {
+    outcome: std::sync::OnceLock<XAuthorityInputDeliveryOutcome>,
+}
+
+#[cfg(unix)]
+impl PrivateUnadmittedCompletion {
+    /// Record the writer's answer; false if one already stands.
+    pub(crate) fn publish(&self, outcome: XAuthorityInputDeliveryOutcome) -> bool {
+        self.outcome.set(outcome).is_ok()
     }
 
+    pub(crate) fn answer(&self) -> Option<XAuthorityInputDeliveryOutcome> {
+        self.outcome.get().copied()
+    }
 }
 
 /// The one place a delivery's terminal outcome is ever written.
