@@ -14,6 +14,9 @@ def fabricate(root, case, directory, assertions):
     source.parent.mkdir(parents=True)
     body = f'>># {case}\n' + ''.join(f'>>ASSERTION Good A\n>>CODE\nx{n}();\n' for n in range(assertions))
     source.write_text(body)
+    scenario_file = root / 'xts5' / 'tet_scen'
+    if not scenario_file.exists():
+        scenario_file.write_text('all\n\t"everything"\n\t:include:/scenarios/Xlib3_scen\n\nXlib3\n\t"section"\n\t:include:/scenarios/Xlib3_scen\n')
 
 
 class SelectionTests(unittest.TestCase):
@@ -37,16 +40,22 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             rows = json.loads(manifest.read_text())
             self.assertEqual(rows, [
-                {'case': '/tset/Xlib3/XDestroyWindow/Test', 'purpose': 1},
-                {'case': '/tset/Xlib3/XDestroyWindow/Test', 'purpose': 2},
-                {'case': '/tset/Xlib3/XDestroyWindow/Test', 'purpose': 3},
-                {'case': '/tset/Xlib4/XInternAtom/Test', 'purpose': 1},
-                {'case': '/tset/Xlib4/XInternAtom/Test', 'purpose': 2},
+                {'case': '/Xlib3/XDestroyWindow', 'purpose': 1},
+                {'case': '/Xlib3/XDestroyWindow', 'purpose': 2},
+                {'case': '/Xlib3/XDestroyWindow', 'purpose': 3},
+                {'case': '/Xlib4/XInternAtom', 'purpose': 1},
+                {'case': '/Xlib4/XInternAtom', 'purpose': 2},
             ])
-            scenario = (root / 'xts5/tet_scen.selected-core').read_text()
-            self.assertEqual(scenario.splitlines()[0], 'selected-core')
-            self.assertIn('\t/tset/Xlib3/XDestroyWindow/Test', scenario)
-            self.assertIn('\t/tset/Xlib4/XInternAtom/Test', scenario)
+            scenario = (root / 'xts5/tet_scen').read_text()
+            self.assertIn('\nselected-core\n\t"selected scenario selected-core: 2 cases"\n\t/Xlib3/XDestroyWindow\n\t/Xlib4/XInternAtom\n', scenario)
+            self.assertTrue(scenario.startswith('all\n'), 'the suite\'s own scenarios stay first')
+            # Installing again replaces the block rather than adding a second.
+            again, _ = self.run_select(root, 'XDestroyWindow', install=True)
+            self.assertEqual(again.returncode, 0, again.stderr)
+            scenario = (root / 'xts5/tet_scen').read_text()
+            self.assertEqual(scenario.count('\nselected-core\n'), 1)
+            self.assertNotIn('/Xlib4/XInternAtom', scenario)
+            self.assertIn('\t"selected scenario selected-core: 1 cases"\n\t/Xlib3/XDestroyWindow\n', scenario)
 
     def test_a_case_without_sources_or_assertions_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:

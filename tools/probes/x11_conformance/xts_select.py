@@ -33,9 +33,10 @@ def purposes_of(sources):
 
 
 def scenario_path(root, suite, sources):
-    """The `/tset/...` path TET names the case by in its journal."""
+    """The path the suite's scenario file names the case by, `/Xlib3/XDestroyWindow`,
+    which is also how TET's journal names it."""
     directory = sources[0].parent.relative_to(root / suite)
-    return f'/tset/{directory.as_posix()}/Test'
+    return f'/{directory.as_posix()}'
 
 
 def select(root, suite, cases):
@@ -59,6 +60,22 @@ def scenario_text(name, lines):
     return f'{name}\n\t"selected scenario {name}: {len(lines)} cases"\n{body}\n'
 
 
+def install(scenario_file, name, lines):
+    """Append the scenario to the suite's own scenario file, replacing an
+    earlier block of the same name; the runner selects scenarios by name from
+    that one file."""
+    text = scenario_file.read_text()
+    block = scenario_text(name, lines)
+    pattern = re.compile(rf'^{re.escape(name)}\n(?:[ \t].*\n?)*', re.M)
+    if pattern.search(text):
+        text = pattern.sub(lambda _: block, text, count=1)
+    else:
+        if not text.endswith('\n'):
+            text += '\n'
+        text += '\n' + block
+    scenario_file.write_text(text)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--xts-root', type=Path, required=True)
@@ -67,7 +84,7 @@ def main():
     parser.add_argument('--case', action='append', default=[], help='a test case name such as XDestroyWindow')
     parser.add_argument('--manifest', type=Path, required=True, help='where to write the purpose manifest')
     parser.add_argument('--install', action='store_true',
-                        help='also write <root>/<suite>/tet_scen.<scenario> for check.sh')
+                        help='also append the scenario to <root>/<suite>/tet_scen for check.sh')
     args = parser.parse_args()
     if not re.match(r'^[a-z0-9-]+$', args.scenario):
         parser.error('scenario must be lowercase letters, digits and dashes')
@@ -81,7 +98,11 @@ def main():
         return 1
     args.manifest.write_text(json.dumps(rows, indent=2) + '\n')
     if args.install:
-        (root / args.suite / f'tet_scen.{args.scenario}').write_text(scenario_text(args.scenario, lines))
+        scenario_file = root / args.suite / 'tet_scen'
+        if not scenario_file.is_file():
+            print(f'selection failed: no scenario file at {scenario_file}', file=sys.stderr)
+            return 1
+        install(scenario_file, args.scenario, lines)
     print(json.dumps({'scenario': args.scenario, 'cases': lines, 'purposes': len(rows)}, indent=2))
     return 0
 
