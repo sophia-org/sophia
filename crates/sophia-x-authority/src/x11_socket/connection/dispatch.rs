@@ -874,6 +874,19 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let ancillary_fds = received.fds;
             let mut received_fds = Vec::new();
             loop {
+                // A client that asked to be impervious is not paused by
+                // another client's server grab. That is the whole of XTEST's
+                // GrabControl, and the reason it exists: a harness has to be
+                // able to drive a server that the client under test has
+                // grabbed, and a harness that paused with everyone else could
+                // never release it. Asked before the owner is read, because
+                // an impervious client has no interest in who holds the grab.
+                if xtest
+                    .as_ref()
+                    .is_some_and(|connection| connection.impervious)
+                {
+                    break;
+                }
                 let holder_present = {
                     let runtime = lock_x11_request_runtime(
                         &state.runtime,
@@ -947,6 +960,33 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     ConnectionWake::Departed => return Ok(()),
                 }
             }
+            // A FakeInput's delay is taken here, from the bytes, before this
+            // request is numbered and before it is given a transaction, and
+            // therefore before it owes an observation. That placement is the
+            // whole of it. The reference sleeps before it validates detail
+            // and root, so a malformed request carrying a delay waits and
+            // only then answers its error; and a ticket is an ordering
+            // obligation, so a request that holds one while it sleeps stops
+            // every later request on every other connection from publishing
+            // what it did. A second's delay must cost the client that asked
+            // for it a second and cost its neighbours nothing.
+            if let Some(connection) = xtest.as_mut()
+                && major_opcode == crate::X_TEST_MAJOR_OPCODE
+                && request.len() >= 12
+                && request[1] == crate::X_TEST_FAKE_INPUT_MINOR_OPCODE
+            {
+                let delay = setup.byte_order.u32(&request[8..12]);
+                if delay != 0 {
+                    match connection.delay(stream, delay)? {
+                        XTestWaitEnd::Departed => return Ok(()),
+                        // Revoked while waiting: the request proceeds to be
+                        // refused by an authority that no longer admits it,
+                        // which emits nothing, exactly as the reference
+                        // cancels a sleeping client's work.
+                        XTestWaitEnd::Cancelled | XTestWaitEnd::Settled => {}
+                    }
+                }
+            }
             sequence = sequence.wrapping_add(1);
             {
                 // Dispatch can wake a peer that immediately sends an event
@@ -1017,30 +1057,6 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // dispatcher's refusal is decided under that guard.
             let mut fake_input: Option<XTestFakeInputRequest> = None;
             let mut grab_control: Option<u8> = None;
-            // A FakeInput's delay is taken here, from the bytes, before the
-            // request is decoded or validated. That is the reference order:
-            // the delay precedes detail and root validation, so a malformed
-            // request carrying one waits and only then answers its error.
-            // Reading it here rather than from the decoded request is what
-            // makes that order possible, since decoding and validating happen
-            // under a guard that must not wait.
-            if let Some(connection) = xtest.as_ref()
-                && major_opcode == crate::X_TEST_MAJOR_OPCODE
-                && request.len() >= 12
-                && request[1] == crate::X_TEST_FAKE_INPUT_MINOR_OPCODE
-            {
-                let delay = setup.byte_order.u32(&request[8..12]);
-                if delay != 0 {
-                    match connection.delay(stream, delay)? {
-                        XTestWaitEnd::Departed => return Ok(()),
-                        // Revoked while waiting: the request proceeds to be
-                        // refused by an authority that no longer admits it,
-                        // which emits nothing, exactly as the reference
-                        // cancels a sleeping client's work.
-                        XTestWaitEnd::Cancelled | XTestWaitEnd::Settled => {}
-                    }
-                }
-            }
             let (
                 mut output,
                 cpu_buffer_updates,
