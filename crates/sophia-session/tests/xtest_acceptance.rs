@@ -73,3 +73,15 @@ fn fake_input_encoding() {
 fn fake_input_effects() {
     support::groups::fake_input_effects();
 }
+
+#[test]
+#[ignore = "run through cargo xtask check m5-acceptance"]
+fn cursor_comparison() {
+    support::groups::cursor_comparison();
+}
+
+#[test]
+#[ignore = "run through cargo xtask check m5-acceptance"]
+fn grab_control() {
+    support::groups::grab_control();
+}

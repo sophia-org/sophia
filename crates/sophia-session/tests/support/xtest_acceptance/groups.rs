@@ -5,7 +5,7 @@
 //! record the gate reads. A group asserts as it goes, so a subcase named in
 //! the record it emits is one that held.
 
-use super::{Answer, COOKIE, Client, Evidence, Instance, Order, SCREEN, WAIT, XTEST_MAJOR};
+use super::{Answer, COOKIE, Client, Evidence, Instance, Order, SCREEN, WAIT, XError, XTEST_MAJOR};
 use sophia_session::private_input::PrivateInputGrantPolicy;
 use sophia_x_authority::{
     PrivateAdmittedConnection, XAuthorityClientInputDelivery, XAuthorityControlKind,
@@ -937,6 +937,457 @@ pub fn fake_input_effects() {
             "synchronous_before_completion",
             "delay_before_validation",
             "clipped_position_reachable",
+        ],
+    );
+}
+
+/// The XTEST minors these two groups speak, and the core requests around them.
+const COMPARE_CURSOR: u8 = 1;
+const GRAB_CONTROL: u8 = 3;
+const GRAB_SERVER: u8 = 36;
+const UNGRAB_SERVER: u8 = 37;
+const GET_INPUT_FOCUS: u8 = 43;
+const BAD_CURSOR: u8 = 6;
+/// How long a paused connection is watched for the reply it must not get,
+/// and how long an unpaused one may take to answer. A pause is proved by
+/// silence, so the window has to be long enough that ordinary scheduling
+/// cannot account for it, and short enough that the group stays a test.
+const PAUSE_WATCH: Duration = Duration::from_millis(150);
+
+/// A window under `parent` at the origin, eight by eight, with no attributes.
+fn create_child(client: &mut Client, window: u32, parent: u32) {
+    let order = client.order();
+    let mut body = Vec::new();
+    body.extend(order.u32(window));
+    body.extend(order.u32(parent));
+    for value in [0, 0, 8, 8, 0, 1] {
+        body.extend(order.u16(value));
+    }
+    body.extend(order.u32(0));
+    body.extend(order.u32(0));
+    client.send(1, 0, &body);
+    client.sync();
+}
+
+/// A one-by-one cursor of depth one, from a pixmap this client makes.
+fn create_cursor(client: &mut Client, cursor: u32, pixmap: u32) {
+    let order = client.order();
+    let mut create_pixmap = Vec::new();
+    create_pixmap.extend(order.u32(pixmap));
+    create_pixmap.extend(order.u32(client.root()));
+    create_pixmap.extend(order.u16(1));
+    create_pixmap.extend(order.u16(1));
+    client.send(53, 1, &create_pixmap);
+    let mut create_cursor = Vec::new();
+    create_cursor.extend(order.u32(cursor));
+    create_cursor.extend(order.u32(pixmap));
+    create_cursor.extend(order.u32(0));
+    for value in [0u16, 0, 0, 65535, 65535, 65535, 0, 0] {
+        create_cursor.extend(order.u16(value));
+    }
+    client.send(93, 0, &create_cursor);
+    client.sync();
+}
+
+/// Set a window's cursor attribute: a cursor, or None for zero.
+fn set_window_cursor(client: &mut Client, window: u32, cursor: u32) {
+    let order = client.order();
+    let mut body = Vec::new();
+    body.extend(order.u32(window));
+    body.extend(order.u32(1 << 14));
+    body.extend(order.u32(cursor));
+    client.send(2, 0, &body);
+    client.sync();
+}
+
+/// What CompareCursor answers: `Ok(same)` or the error it refused with.
+fn compare_cursor(
+    client: &mut Client,
+    opcode: u8,
+    window: u32,
+    cursor: u32,
+) -> Result<bool, XError> {
+    let order = client.order();
+    let mut body = Vec::new();
+    body.extend(order.u32(window));
+    body.extend(order.u32(cursor));
+    let sequence = client.send(opcode, COMPARE_CURSOR, &body);
+    loop {
+        match client.answer() {
+            Answer::Reply(reply) => {
+                assert_eq!(
+                    order.read16(&reply[2..]),
+                    sequence,
+                    "reply belongs to another request"
+                );
+                assert!(
+                    reply[1] <= 1,
+                    "CompareCursor answered {} for same",
+                    reply[1]
+                );
+                return Ok(reply[1] == 1);
+            }
+            Answer::Error(error) => {
+                assert_eq!(error.sequence, sequence, "error belongs to another request");
+                assert_eq!(
+                    (error.major, error.minor),
+                    (opcode, u16::from(COMPARE_CURSOR))
+                );
+                return Err(error);
+            }
+            Answer::Event(_) => {}
+        }
+    }
+}
+
+pub fn cursor_comparison() {
+    let mut evidence = Evidence::default();
+    // One instance per byte order, as the other groups: the pointer and the
+    // windows this compares against are the instance's, and a fresh one per
+    // order keeps the second order's answers about its own windows.
+    for (order, name) in [(Order::Little, "cursor-little"), (Order::Big, "cursor-big")] {
+        let instance = Instance::start(name, PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+        let mut client = instance.connect(order, Some(COOKIE));
+        let opcode = discover(&mut client);
+        let root = client.root();
+        // Offsets one and two are the window and the GC `admit_surface`
+        // makes for it, as in the other groups; the rest are this group's.
+        let window = client.resource(1);
+        let pixmap = client.resource(3);
+        let cursor = client.resource(4);
+        let child = client.resource(5);
+        let bare = client.resource(6);
+        let nowhere = client.resource(9);
+        create_window(&mut client, window);
+        create_cursor(&mut client, cursor, pixmap);
+        create_child(&mut client, child, window);
+        create_window(&mut client, bare);
+
+        // THE WINDOW IS LOOKED UP FIRST. A request that names neither a window
+        // nor a cursor correctly hears about the window, whatever the cursor
+        // field says: None, CurrentCursor, or an id that is nothing.
+        for cursor_field in [0, 1, nowhere] {
+            let error = compare_cursor(&mut client, opcode, nowhere, cursor_field)
+                .expect_err("a window that does not exist is refused");
+            assert_eq!(
+                (error.code, error.value),
+                (BAD_WINDOW, nowhere),
+                "window before cursor, cursor field {cursor_field}: {error:?}"
+            );
+        }
+
+        // A DRAWABLE THAT IS NOT A WINDOW IS BadWindow, not BadDrawable and
+        // not BadMatch: the request takes a window, and a pixmap is not one.
+        let error = compare_cursor(&mut client, opcode, pixmap, cursor)
+            .expect_err("a pixmap is not a window");
+        assert_eq!((error.code, error.value), (BAD_WINDOW, pixmap), "{error:?}");
+
+        // A VALUE THAT IS NOT A CURSOR IS BadCursor, naming it.
+        let error = compare_cursor(&mut client, opcode, window, nowhere)
+            .expect_err("an id that is no cursor is refused");
+        assert_eq!(
+            (error.code, error.value),
+            (BAD_CURSOR, nowhere),
+            "{error:?}"
+        );
+        let error = compare_cursor(&mut client, opcode, window, pixmap)
+            .expect_err("a pixmap is not a cursor either");
+        assert_eq!((error.code, error.value), (BAD_CURSOR, pixmap), "{error:?}");
+
+        // CurrentCursor IS INTERCEPTED BEFORE ANY LOOKUP. One is not a
+        // resource this client made, and it is never looked up as one: the
+        // answer is a comparison, whatever it comes out as here.
+        compare_cursor(&mut client, opcode, window, 1)
+            .expect("CurrentCursor is answered rather than looked up");
+
+        // NONE AGAINST A WINDOW WHOSE CURSOR IS EXPLICITLY NONE. A fresh
+        // window shows no cursor, because nothing up to the root has one;
+        // set to None explicitly it still shows none; and once it has a
+        // cursor, None no longer matches it.
+        assert_eq!(
+            compare_cursor(&mut client, opcode, bare, 0),
+            Ok(true),
+            "a bare window shows no cursor"
+        );
+        set_window_cursor(&mut client, bare, 0);
+        assert_eq!(
+            compare_cursor(&mut client, opcode, bare, 0),
+            Ok(true),
+            "an explicit None shows no cursor"
+        );
+        assert_eq!(
+            compare_cursor(&mut client, opcode, bare, cursor),
+            Ok(false),
+            "no cursor is not this cursor"
+        );
+        set_window_cursor(&mut client, window, cursor);
+        assert_eq!(
+            compare_cursor(&mut client, opcode, window, cursor),
+            Ok(true),
+            "the cursor set is the cursor shown"
+        );
+        assert_eq!(
+            compare_cursor(&mut client, opcode, window, 0),
+            Ok(false),
+            "a window with a cursor does not show none"
+        );
+
+        // THE EFFECTIVE CURSOR IS INHERITED. The child set nothing and shows
+        // its parent's; and None on a window is not a cursor of its own but
+        // the instruction to show the parent's, so an explicit None on the
+        // child changes nothing about what it shows. The bare window above
+        // showed none for the same reason: nothing up to the root has one.
+        assert_eq!(
+            compare_cursor(&mut client, opcode, child, cursor),
+            Ok(true),
+            "the child shows its parent's cursor"
+        );
+        assert_eq!(
+            compare_cursor(&mut client, opcode, child, 0),
+            Ok(false),
+            "an inherited cursor is not none"
+        );
+        set_window_cursor(&mut client, child, 0);
+        assert_eq!(
+            compare_cursor(&mut client, opcode, child, cursor),
+            Ok(true),
+            "an explicit None on the child still shows the parent's cursor"
+        );
+
+        // AND CurrentCursor IS WHAT THE POINTER SHOWS. With the window mapped
+        // and admitted and the pointer inside it, the pointer shows the
+        // window's cursor, so CurrentCursor matches it and not the bare one.
+        client.send(8, 0, &order.u32(window));
+        admit_surface(&instance, &mut client, window);
+        let body = fake_input(order, MOTION_NOTIFY, 0, 0, root, 4, 4);
+        accepted(&mut client, opcode, &body);
+        assert_eq!(
+            query_pointer(&mut client).0,
+            (4, 4),
+            "the pointer is inside the window"
+        );
+        assert_eq!(
+            compare_cursor(&mut client, opcode, window, 1),
+            Ok(true),
+            "CurrentCursor is the pointer's cursor"
+        );
+        assert_eq!(
+            compare_cursor(&mut client, opcode, bare, 1),
+            Ok(false),
+            "a window showing none is not what the pointer shows"
+        );
+
+        client.sync();
+        drop(client);
+        evidence.collect(instance.finish(), false);
+    }
+    evidence.emit(
+        "cursor_comparison",
+        &[
+            "window_before_cursor",
+            "non_window_drawable_bad_window",
+            "current_cursor_intercepted",
+            "none_against_explicit_none",
+            "unknown_cursor_bad_cursor",
+            "effective_inherited_cursor",
+        ],
+    );
+}
+
+/// GrabControl with this value, accepted: the round trip after it answers.
+fn set_impervious(client: &mut Client, opcode: u8, impervious: u8) {
+    client.send(opcode, GRAB_CONTROL, &[impervious, 0, 0, 0]);
+    client.sync();
+}
+
+/// Send GetInputFocus and say whether its reply came within the watch. The
+/// sequence is returned so a reply that comes later can be matched.
+fn answered_within(client: &mut Client, within: Duration) -> (u16, bool) {
+    let order = client.order();
+    let sequence = client.send(GET_INPUT_FOCUS, 0, &[]);
+    let began = Instant::now();
+    loop {
+        match client.try_answer(within.saturating_sub(began.elapsed())) {
+            Some(Answer::Reply(reply)) => {
+                assert_eq!(
+                    order.read16(&reply[2..]),
+                    sequence,
+                    "reply belongs to another request"
+                );
+                return (sequence, true);
+            }
+            Some(Answer::Event(_)) => continue,
+            Some(Answer::Error(error)) => panic!("GetInputFocus answered an error: {error:?}"),
+            None => return (sequence, false),
+        }
+    }
+}
+
+/// The reply to `sequence`, which an earlier watch saw nothing of.
+fn reply_arrives(client: &mut Client, sequence: u16) {
+    let order = client.order();
+    loop {
+        match client.answer() {
+            Answer::Reply(reply) => {
+                assert_eq!(
+                    order.read16(&reply[2..]),
+                    sequence,
+                    "reply belongs to another request"
+                );
+                return;
+            }
+            Answer::Event(_) => {}
+            Answer::Error(error) => panic!("an error instead of the held reply: {error:?}"),
+        }
+    }
+}
+
+/// Hold the server grab on `owner` while `held` runs, and release it after.
+fn while_grabbed(owner: &mut Client, held: impl FnOnce()) {
+    owner.send(GRAB_SERVER, 0, &[]);
+    owner.sync();
+    held();
+    owner.send(UNGRAB_SERVER, 0, &[]);
+    owner.sync();
+}
+
+pub fn grab_control() {
+    let mut evidence = Evidence::default();
+    for (order, name) in [(Order::Little, "grab-little"), (Order::Big, "grab-big")] {
+        let instance = Instance::start(name, PrivateInputGrantPolicy::EnabledWithVerifiedEvidence);
+        let mut owner = instance.connect(order, Some(COOKIE));
+        let mut impervious = instance.connect(order, Some(COOKIE));
+        let mut ordinary = instance.connect(order, Some(COOKIE));
+        let opcode = discover(&mut impervious);
+
+        // A STRICT BOOLEAN. The core protocol lets many BOOL fields pass any
+        // nonzero; this one refuses two and refuses the top of the byte, each
+        // naming the value, and takes exactly zero and one.
+        for value in [2u8, 255] {
+            let error = impervious.error(opcode, GRAB_CONTROL, &[value, 0, 0, 0]);
+            assert_eq!(
+                (error.code, error.value),
+                (BAD_VALUE, u32::from(value)),
+                "{error:?}"
+            );
+            assert_eq!(
+                (error.major, error.minor),
+                (opcode, u16::from(GRAB_CONTROL))
+            );
+        }
+        set_impervious(&mut impervious, opcode, 0);
+        set_impervious(&mut impervious, opcode, 1);
+
+        // IMPERVIOUS DURING A SERVER GRAB. With the grab held by another
+        // client, an ordinary client's request is not answered while the
+        // impervious client's round trips keep completing; the ordinary
+        // client's answer arrives once the grab is released.
+        let mut ordinary_sequence = 0;
+        while_grabbed(&mut owner, || {
+            let (sequence, answered) = answered_within(&mut ordinary, PAUSE_WATCH);
+            assert!(
+                !answered,
+                "an ordinary client was answered under another client's server grab"
+            );
+            ordinary_sequence = sequence;
+            let (_, answered) = answered_within(&mut impervious, PAUSE_WATCH);
+            assert!(
+                answered,
+                "the impervious client was paused by another client's server grab"
+            );
+        });
+        reply_arrives(&mut ordinary, ordinary_sequence);
+
+        // IT CANNOT TAKE A GRAB ANOTHER CLIENT HOLDS. Not paused, its
+        // GrabServer reaches the server and changes nothing: the ordinary
+        // client stays paused through the impervious client's grab and
+        // ungrab, and is released only by the holder.
+        let mut after_grab = 0;
+        let mut after_ungrab = 0;
+        while_grabbed(&mut owner, || {
+            impervious.send(GRAB_SERVER, 0, &[]);
+            impervious.sync();
+            let (sequence, answered) = answered_within(&mut ordinary, PAUSE_WATCH);
+            assert!(
+                !answered,
+                "an impervious client's GrabServer took the grab from its holder"
+            );
+            after_grab = sequence;
+            impervious.send(UNGRAB_SERVER, 0, &[]);
+            impervious.sync();
+            let (sequence, answered) = answered_within(&mut ordinary, PAUSE_WATCH);
+            assert!(
+                !answered,
+                "an impervious client's UngrabServer released a grab it never held"
+            );
+            after_ungrab = sequence;
+        });
+        // Both probes are answered, in order, once the holder releases.
+        reply_arrives(&mut ordinary, after_grab);
+        reply_arrives(&mut ordinary, after_ungrab);
+
+        // IT PERSISTS UNTIL THE SAME CLIENT CLEARS IT. Nothing has cleared
+        // it, so a further grab leaves the impervious client answering;
+        // cleared with zero, the same connection is paused like any other;
+        // set again, it is exempt again.
+        while_grabbed(&mut owner, || {
+            let (_, answered) = answered_within(&mut impervious, PAUSE_WATCH);
+            assert!(
+                answered,
+                "imperviousness did not persist across a release and a new grab"
+            );
+        });
+        set_impervious(&mut impervious, opcode, 0);
+        let mut cleared_sequence = 0;
+        while_grabbed(&mut owner, || {
+            let (sequence, answered) = answered_within(&mut impervious, PAUSE_WATCH);
+            assert!(
+                !answered,
+                "a client that cleared its imperviousness was still exempt"
+            );
+            cleared_sequence = sequence;
+        });
+        reply_arrives(&mut impervious, cleared_sequence);
+        set_impervious(&mut impervious, opcode, 1);
+        while_grabbed(&mut owner, || {
+            let (_, answered) = answered_within(&mut impervious, PAUSE_WATCH);
+            assert!(
+                answered,
+                "imperviousness set again did not exempt the client"
+            );
+        });
+
+        // OR UNTIL IT DEPARTS. The impervious connection goes; a new
+        // connection from the same peer is not exempt, so the state left
+        // with the connection rather than with the client's credential.
+        drop(impervious);
+        let mut returned = instance.connect(order, Some(COOKIE));
+        returned.sync();
+        let mut returned_sequence = 0;
+        while_grabbed(&mut owner, || {
+            let (sequence, answered) = answered_within(&mut returned, PAUSE_WATCH);
+            assert!(
+                !answered,
+                "a new connection inherited a departed connection's imperviousness"
+            );
+            returned_sequence = sequence;
+        });
+        reply_arrives(&mut returned, returned_sequence);
+
+        ordinary.sync();
+        owner.sync();
+        drop(returned);
+        drop(ordinary);
+        drop(owner);
+        evidence.collect(instance.finish(), false);
+    }
+    evidence.emit(
+        "grab_control",
+        &[
+            "strict_boolean",
+            "impervious_during_server_grab",
+            "persists_until_cleared_or_departure",
+            "cannot_take_held_grab",
         ],
     );
 }
