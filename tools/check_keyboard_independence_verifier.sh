@@ -37,7 +37,7 @@ reject_mutation session.log 's/status=added device=260 /status=added device=258 
 reject_mutation session.log '/key_observed device=260/d' 'a replugged keyboard nobody typed on'
 reject_mutation session.log '/key_observed device=258/d' 'a run where only the unplugged keyboard was typed on'
 reject_mutation session.log 's/status=added device=256 keyboard=true pointer=false touch=false virtual=false/status=added device=256 keyboard=true pointer=false touch=false virtual=true/' 'an unplugged keyboard that was virtual'
-reject_mutation session.log 's/status=added device=260 keyboard=true pointer=false touch=false virtual=false/status=added device=260 keyboard=true pointer=false touch=false virtual=true/' 'a replugged keyboard that was virtual'
+reject_mutation session.log 's/status=added device=260 keyboard=true pointer=false touch=false virtual=false/status=added device=260 keyboard=true pointer=false touch=false virtual=true/; s/status=added device=262 keyboard=true pointer=true touch=false virtual=false/status=added device=262 keyboard=true pointer=true touch=false virtual=true/' 'a replugged keyboard that was virtual'
 reject_mutation session.log 's/status=summary fallbacks=0/status=summary fallbacks=3/' 'a seat that ran on class-identity fallbacks'
 reject_mutation session.log '/status=complete source=physical/d' 'a run without the physical text completion'
 reject_mutation session.log 's/physical_input=enabled/physical_input=disabled/' 'a completion without physical input'

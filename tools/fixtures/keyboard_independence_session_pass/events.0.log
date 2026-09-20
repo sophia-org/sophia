@@ -14,9 +14,9 @@
 14	1789900014000	15000	sophia_live_session_input_device schema=1 status=removed device=270 released=0
 15	1789900015000	16000	sophia_live_session_input_device schema=1 status=removed device=271 released=0
 16	1789900016000	17000	sophia_live_session_input_routing schema=1 key_observed_count=4 key_routed_count=4 key_no_focus_count=0
-17	1789900017000	18000	sophia_live_session_input_device schema=1 status=added device=275 keyboard=true pointer=false touch=false virtual=false source=udev
+17	1789900017000	18000	sophia_live_session_input_device schema=1 status=added device=275 keyboard=true pointer=true touch=false virtual=false source=udev
 18	1789900018000	19000	sophia_live_session_input_device schema=1 status=added device=276 keyboard=true pointer=false touch=false virtual=false source=udev
-19	1789900019000	20000	sophia_live_session_input_device schema=1 status=key_observed device=275
+19	1789900019000	20000	sophia_live_session_input_device schema=1 status=key_observed device=276
 20	1789900020000	21000	sophia_live_session_input_routing schema=1 key_observed_count=2 key_routed_count=2 key_no_focus_count=0
 21	1789900021000	22000	sophia_live_session_input_devices schema=1 source=udev added=8 removed=2 active=6 keyboards=5 pointers=1 touch=0
 22	1789900022000	23000	sophia_live_session_input_device schema=1 status=summary fallbacks=0

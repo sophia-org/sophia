@@ -10,8 +10,8 @@ sophia_live_session_input_device schema=1 status=key_observed device=256
 sophia_live_session_input_device schema=1 status=removed device=256 released=1
 sophia_live_session_keys schema=1 status=released reason=device_removed device=256 count=1
 sophia_live_session_input_device schema=1 status=removed device=261 released=0
+sophia_live_session_input_device schema=1 status=added device=262 keyboard=true pointer=true touch=false virtual=false source=udev
 sophia_live_session_input_device schema=1 status=added device=260 keyboard=true pointer=false touch=false virtual=false source=udev
-sophia_live_session_input_device schema=1 status=added device=262 keyboard=true pointer=false touch=false virtual=false source=udev
 sophia_live_session_input_device schema=1 status=key_observed device=260
 sophia_live_session_input schema=2 status=complete source=physical text=twokeyboards expected_events=26 matched_events=26 pixel_change=true
 sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false

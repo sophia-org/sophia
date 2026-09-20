@@ -53,6 +53,11 @@ done | sed -E 's/^.*(sophia_(live_[^ ]+|session_[^ ]+) schema=)/\1/' >"$records"
 device='^sophia_live_session_input_device schema=1 '
 keyboard_added="${device}status=added device=([0-9]+) keyboard=true pointer=(true|false) touch=(true|false) virtual=false source=udev\$"
 device_of() { sed -E 's/.*device=([0-9]+).*/\1/'; }
+# Lines [from, to] of the records, to the end when to is 0. One awk, so no
+# reader is left holding a pipe: under pipefail, head piped into grep -q is a
+# match reported as a failure, which is how a correct session read as one.
+slice() { awk -v a="$1" -v b="$2" 'NR >= a && (b == 0 || NR <= b)' "$records"; }
+seen() { (( $(slice "$2" "$3" | grep -Ec -- "$1" || true) > 0 )); }
 
 mapfile -t removals < <(grep -En "${device}status=removed device=[0-9]+ released=[0-9]+$" "$records" || true)
 (( ${#removals[@]} >= 1 )) || fail "no device was removed during the session${discarded:+ (records discarded: $discarded)}"
@@ -63,8 +68,8 @@ unplug=""
 for removal in "${removals[@]}"; do
     line="${removal%%:*}"
     candidate="$(device_of <<<"$removal")"
-    if head -n "$((line - 1))" "$records" | grep -Eq "${device}status=key_observed device=$candidate\$" \
-        && head -n "$((line - 1))" "$records" | grep -Eq "${device}status=added device=$candidate keyboard=true .* virtual=false "; then
+    if seen "${device}status=key_observed device=$candidate\$" 1 "$((line - 1))" \
+        && seen "${device}status=added device=$candidate keyboard=true .* virtual=false " 1 "$((line - 1))"; then
         unplug="$removal"
         break
     fi
@@ -75,47 +80,54 @@ removed="$(device_of <<<"$unplug")"
 for removal in "${removals[@]}"; do
     released="$(sed -E 's/.*released=([0-9]+)$/\1/' <<<"$removal")"
     if (( released > 0 )); then
-        grep -Eq "^sophia_live_session_keys schema=1 status=released reason=device_removed device=$(device_of <<<"$removal") count=$released\$" "$records" \
+        seen "^sophia_live_session_keys schema=1 status=released reason=device_removed device=$(device_of <<<"$removal") count=$released\$" 1 0 \
             || fail "a removal released $released keys without the flush that says so"
     fi
 done
 released="$(sed -E 's/.*released=([0-9]+)$/\1/' <<<"$unplug")"
 
-before() { head -n "$((unplug_line - 1))" "$records"; }
-after() { tail -n "+$((unplug_line + 1))" "$records"; }
+before() { slice 1 "$((unplug_line - 1))"; }
+after() { slice "$((unplug_line + 1))" 0; }
 mapfile -t keyboards_before < <(before | grep -Eo "${keyboard_added}" | device_of | sort -u)
-mapfile -t keyed_before < <(before | grep -Eo "${device}status=key_observed device=[0-9]+\$" | device_of | sort -u)
-(( ${#keyed_before[@]} >= 2 )) || fail "keys were observed from fewer than two devices before the unplug"
+# The other keyboard may be typed on before the unplug or while the first is
+# gone; the second is the stronger witness that the seat kept working.
+mapfile -t keyed < <(grep -Eo "${device}status=key_observed device=[0-9]+\$" "$records" | device_of | sort -u)
 other=""
-for candidate in "${keyed_before[@]}"; do
+for candidate in "${keyed[@]}"; do
     [[ "$candidate" != "$removed" ]] && printf '%s\n' "${keyboards_before[@]}" | grep -qx "$candidate" && other="$candidate" && break
 done
-[[ -n "$other" ]] || fail "no second hardware keyboard was typed on before the unplug"
+[[ -n "$other" ]] || fail "no second hardware keyboard present before the unplug was ever typed on"
 
+# A returning keyboard is several kernel devices again; the one that counts
+# is announced under an identity never seen before and then typed on.
 returned=""
 returned_line=""
+announced_after=0
 while read -r line_and_record; do
     candidate="$(device_of <<<"$line_and_record")"
     if ! printf '%s\n' "${keyboards_before[@]}" | grep -qx "$candidate" && [[ "$candidate" != "$removed" ]]; then
-        returned="$candidate"
-        returned_line="${line_and_record%%:*}"
-        break
+        announced_after=$((announced_after + 1))
+        line="${line_and_record%%:*}"
+        if seen "${device}status=key_observed device=$candidate\$" "$((line + 1))" 0; then
+            returned="$candidate"
+            returned_line="$line"
+            break
+        fi
     fi
-done < <(after | grep -En "${keyboard_added}" || true)
-[[ -n "$returned" ]] || fail "no hardware keyboard was announced under a new identity after the unplug"
-after | tail -n "+$((returned_line + 1))" | grep -Eq "${device}status=key_observed device=$returned\$" \
-    || fail "no key was observed from the returned keyboard $returned"
+done < <(grep -En "${keyboard_added}" "$records" | awk -F: -v limit="$unplug_line" '$1 > limit' || true)
+(( announced_after > 0 )) || fail "no hardware keyboard was announced under a new identity after the unplug"
+[[ -n "$returned" ]] || fail "no key was observed from any keyboard announced after the unplug"
 # The seat kept routing between the unplug and the return: a routing pass
 # with keys in it can only have come from a keyboard that stayed.
-after | head -n "$((returned_line - 1))" | grep -Eq '^sophia_live_session_input_routing schema=1 key_observed_count=[1-9][0-9]* key_routed_count=[1-9]' \
+seen '^sophia_live_session_input_routing schema=1 key_observed_count=[1-9][0-9]* key_routed_count=[1-9]' "$((unplug_line + 1))" "$((returned_line - 1))" \
     || fail "no keys were routed between the unplug and the return, so the remaining keyboard was not shown to keep working"
-grep -Eq "${device}status=summary fallbacks=0\$" "$records" \
+seen "${device}status=summary fallbacks=0\$" 1 0 \
     || fail "the seat ran on class-identity fallbacks, or its summary was not retained"
 
 cat <<SUMMARY
 keyboard independence accepted from session $(basename "$session")
   profile=$profile release_commit=$release_commit binary_sha256=$binary_sha256
-  keyboards typed on before the unplug: ${keyed_before[*]} (hardware: ${keyboards_before[*]})
+  keyboards typed on: ${keyed[*]} (hardware present before the unplug: ${keyboards_before[*]})
   unplugged: device $removed released=$released (the kernel releases a USB keyboard's keys itself; the session releases what it did not)
   kept routing: device $other typed between the unplug and the return
   returned: device $returned, a new identity, typed on after its announcement
