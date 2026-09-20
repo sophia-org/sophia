@@ -513,12 +513,13 @@ fn focus_window(client: &mut Client, window: u32) {
 /// events set aside, draining the service's delivery receipts while it
 /// waits. A reply or an error is a fault: nothing was asked.
 ///
-/// THE DRAIN IS PART OF THE WAIT, NOT A CONVENIENCE. A delivery's ticket is
-/// given back only when the session observes its receipt, and a live
-/// coordinator does that continuously; a group that only read the wire would
-/// see its observer go quiet once the tickets ran out, and would be
-/// measuring its own neglect. What is drained is kept, because it is the
-/// second witness to the delivery.
+/// THE DRAIN RELEASES NOTHING, AND IS NOT CLAIMED TO. Measured 2026-09-20 on
+/// one instance per byte order: the events arrive with this drain, with a
+/// committed pump in its place, and with neither, so nothing here waits on
+/// the session observing a receipt. It is kept because a live coordinator
+/// drains continuously, and because what is drained is the second witness
+/// to the delivery. What a key does depend on is the admission before it:
+/// see `admit_surface`.
 fn input_event(
     instance: &Instance,
     client: &mut Client,
@@ -723,11 +724,13 @@ pub fn fake_input_effects() {
     let mut evidence = Evidence::default();
     // ONE INSTANCE PER BYTE ORDER. The first order's observer and injector
     // depart before the second's connect, and a departed connection is not
-    // collected until the service stops (t134); on an instance carrying
-    // those rows a key injected by the second order's client was routed to
-    // the injector's own connection and rejected, though the new observer's
-    // focus was confirmed. A fresh instance per order keeps the group about
-    // the effects and leaves that to t134.
+    // collected until the service stops (t134). A departed client whose row
+    // stays open can still be named by the applied focus publication, and a
+    // key resolved against that publication answers for a connection that
+    // has gone: on a shared instance the second order's key was routed to
+    // the new injector and refused RouteRejected while the new observer held
+    // a focus GetInputFocus confirmed. A fresh instance per order keeps the
+    // group about the effects and leaves that to t134.
     for (order, name) in [
         (Order::Little, "effects-little"),
         (Order::Big, "effects-big"),
