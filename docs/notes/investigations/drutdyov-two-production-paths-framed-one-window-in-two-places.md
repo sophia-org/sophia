@@ -186,3 +186,67 @@ a separate fault: on relaunch at 20:23 Brave's window stayed black while its GPU
 process was killed by its own watchdog every thirty seconds, and at 20:24:52 the
 owner loop ended the session with `runtime_fatal ... failure_code=unclassified`.
 Neither is explained here.
+
+## t126: the gate was failing on its own shutdown — 2026-09-20
+
+Reproduced on master before changing anything, having first built an
+initramfs for `6.18.50_1`: the newest was `sophia-6.18.46_1.img` from
+2026-08-30 while the running kernel has been `6.18.50_1` since 2026-09-08,
+which is part of why the gate had gone unrun. The signature matched the
+record line for line.
+
+**It is not a client crash.** The ordering is the finding:
+
+```text
+quiescence schema=3 status=started reason=tick_limit timeout_msec=2000
+xterm: fatal IO error 11 (Resource temporarily unavailable) ... on X server ":181"
+client_fatal status=detected source=primary exit_status=84 action=bounded_cleanup
+client_fatal status=cleaned ... cleanup_errors=0
+session_failure status=failed phase=lifecycle failure_code=unclassified
+```
+
+The session begins shutting down on its own tick limit. That closes the X
+server its terminals are connected to, so xterm loses the connection and exits
+84 -- the shutdown working. The session then reports that consequence as an
+unclassified lifecycle failure, with `cleanup_errors=0` on the very next line.
+
+`owner_loop/lifecycle.rs` tested only `!status.success() && !config.normal_session`
+and never consulted quiescence, although `session_quiescence` is in scope in
+that file and another branch already guards with `is_none()`. The secondary
+detector had the same gap one branch away.
+
+Repaired by `terminal_exit_is_session_failure`, a pure predicate beside
+`successful_primary_exit_ends_session`: an exit is this session's failure only
+when the session was not already quiescing. The exit is still recorded either
+way; what the predicate decides is whether it ends the session as a failure.
+
+**After the repair the session completes.** `client_fatal` and
+`session_failure` are gone, quiescence reaches `status=complete
+reason=tick_limit elapsed_msec=50` with every pending count zero, and
+`sophia_qemu_guest` reports `status=complete ticks=300`. Composition is
+exercised and recorded: `runtime_committed=32`, `native_submissions=37`,
+`native_retirements=35`, `native_nonzero_exports=18`, `cpu_nonzero_frames=16`,
+`input_text_match=true`.
+
+## What still holds t126 open
+
+The gate now fails later and elsewhere, in
+`tools/verify_live_session_persistent_evidence.sh`, whose `positive_keys` list
+requires `runtime_surfaces` and `cpu_layers` to be non-zero. Both are zero
+here, and **the list appears to mix gauges with counters**:
+
+- `runtime_committed` accumulates through `record_runtime_commits`, which is
+  `saturating_add`. A counter.
+- `runtime_surfaces` is assigned `runtime.committed_surfaces().len()` at each
+  sample. A gauge, whose correct value at the end of a session whose client has
+  exited is zero -- which is now the ordinary path, where before the repair the
+  run never reached this verifier at all.
+
+`cpu_layers` is not yet traced to its source, and there is a reason not to
+guess: the known-good reference line in `tools/check_hagia_native_matchers.sh`
+carries `cpu_layers=0` *and* `runtime_surfaces=3`, so that list does not match
+a passing native session either. Deciding what those two keys are for is the
+remaining work, and weakening the assertion to make the gate green without
+knowing would be the wrong repair -- the gate exists to cover native scanout
+composition, and the composition evidence above is exactly what must keep
+being required.

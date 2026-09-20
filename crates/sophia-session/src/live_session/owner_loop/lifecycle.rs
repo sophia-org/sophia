@@ -413,7 +413,11 @@
         {
             crate::diagnostics::application::exited(primary_diagnostic, status);
             primary_exit_status = Some(status);
-            if !status.success() && !config.normal_session {
+            if terminal_exit_is_session_failure(
+                status.success(),
+                config.normal_session,
+                session_quiescence.is_some(),
+            ) {
                 let error =
                     format!("session client exited during live session with status {status}");
                 terminal_client_error = Some(("primary", error));
@@ -494,10 +498,17 @@
         while secondary_index < secondary_children.len() {
             if let Some(status) = secondary_children[secondary_index].child.try_wait()? {
                 crate::diagnostics::application::exited(secondary_children[secondary_index].diagnostic, status);
+                // OR THE SESSION IS ALREADY SHUTTING DOWN, for the reason
+                // `terminal_exit_is_session_failure` gives: quiescence closes
+                // the X server these clients are connected to, so their exit
+                // is the shutdown working rather than a fault. The primary
+                // path is where the QEMU gate reproduced it; this is the same
+                // bug one branch away.
                 if managed_child_exit_is_nonfatal(
                     config.normal_session,
                     secondary_children[secondary_index].launch_transaction,
-                ) {
+                ) || session_quiescence.is_some()
+                {
                     let diagnostic = secondary_children[secondary_index].diagnostic;
                     terminate_session_child(&mut secondary_children[secondary_index].child, true, diagnostic)?;
                     let launch_transaction =

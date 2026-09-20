@@ -206,6 +206,28 @@ fn successful_primary_exit_ends_session(input_proof_requested: bool) -> bool {
     !input_proof_requested
 }
 
+/// Whether a terminal client's non-zero exit is this session's failure.
+///
+/// A CLIENT THAT DIES WHILE THE SESSION IS SHUTTING IT DOWN IS NOT A FAULT.
+/// Quiescence closes the X server the clients are connected to, so a terminal
+/// loses its connection and exits non-zero as a direct consequence -- xterm
+/// reports `fatal IO error 11` and exits 84. Reported as a client fatal, that
+/// turned every deliberate shutdown into `session_failure failure_code=
+/// unclassified`, which is how the QEMU session gate stayed red from
+/// 2026-08-28: the session failed on the consequence of its own tick limit,
+/// with `cleanup_errors=0` on the very next line.
+///
+/// While the session is live it is still a fault, and that is the whole of the
+/// difference. The exit is recorded either way; what this decides is whether
+/// it ends the session as a failure.
+fn terminal_exit_is_session_failure(
+    status_success: bool,
+    normal_session: bool,
+    quiescing: bool,
+) -> bool {
+    !status_success && !normal_session && !quiescing
+}
+
 fn global_runtime_deadline_ends_session(input_proof_requested: bool) -> bool {
     !input_proof_requested
 }

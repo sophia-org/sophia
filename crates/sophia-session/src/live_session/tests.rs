@@ -64,7 +64,7 @@ use super::{
     route_input_events, session_failure_with_refused_requests, settle_session_fatal_error,
     stable_gpu_frame_proves_post_input_pixels, startup_submission_requirement,
     successful_primary_exit_ends_session, synchronize_runtime_surface_chrome_style,
-    take_settled_input_delivery_wait,
+    take_settled_input_delivery_wait, terminal_exit_is_session_failure,
 };
 use crate::live_session::{
     PRESENT_CADENCE_CAPACITY, RoutedInputIngressSaturation, policy_cause_subject_is_live,
@@ -1583,3 +1583,32 @@ mod pointer_focus_tests;
 mod input_recovery_tests;
 
 mod socket_directory_tests;
+
+#[test]
+fn a_terminal_that_dies_while_the_session_quiesces_is_not_the_session_s_failure() {
+    // The QEMU session gate stayed red from 2026-08-28 on exactly this.
+    // Quiescence closes the X server its terminals are connected to, so xterm
+    // loses the connection and exits 84 with `fatal IO error 11` -- the
+    // shutdown working, reported as a client fatal, which turned every
+    // deliberate tick-limit exit into session_failure failure_code=
+    // unclassified with cleanup_errors=0 on the next line.
+    assert!(
+        !terminal_exit_is_session_failure(false, false, true),
+        "a client the session is shutting down may exit non-zero"
+    );
+
+    // AND IT IS STILL A FAULT WHILE THE SESSION IS LIVE, which is the whole
+    // of the difference. Nothing else about the decision moves.
+    assert!(
+        terminal_exit_is_session_failure(false, false, false),
+        "a client that dies during a live session is still fatal"
+    );
+    assert!(
+        !terminal_exit_is_session_failure(true, false, false),
+        "a clean exit is never a failure"
+    );
+    assert!(
+        !terminal_exit_is_session_failure(false, true, false),
+        "a normal session owns its clients' exits"
+    );
+}
