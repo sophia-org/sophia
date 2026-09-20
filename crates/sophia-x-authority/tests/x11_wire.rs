@@ -15,6 +15,7 @@ include!("x11_wire/core_decode.rs");
 include!("x11_wire/graphics_decode.rs");
 include!("x11_wire/core_dispatch.rs");
 include!("x11_wire/extensions_dispatch.rs");
+include!("x11_wire/xtest_decode.rs");
 include!("x11_wire/render_picture_lifetime.rs");
 include!("x11_wire/render_clip_reset.rs");
 include!("x11_wire/withdrawn_state.rs");

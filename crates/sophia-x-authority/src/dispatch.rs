@@ -35,6 +35,7 @@ include!("dispatch/extensions/xf86_vidmode.rs");
 include!("dispatch/extensions/xc_misc.rs");
 include!("dispatch/extensions/render.rs");
 include!("dispatch/extensions/shape.rs");
+include!("dispatch/extensions/xtest.rs");
 include!("dispatch/extensions/xkb.rs");
 
 /// The GLX extensions Sophia offers.
@@ -309,6 +310,10 @@ pub fn dispatch_x11_wire_request(
         Unhandled(request) => request,
     };
     let request = match dispatch_shape_request(context, request, runtime) {
+        Handled(result) => return result,
+        Unhandled(request) => request,
+    };
+    let request = match dispatch_xtest_request(context, request, runtime) {
         Handled(result) => return result,
         Unhandled(request) => request,
     };
