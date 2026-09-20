@@ -84,6 +84,7 @@ include!("x11_socket/routing/private_runner.rs");
 include!("x11_socket/routing/private_runner_accounting.rs");
 include!("x11_socket/routing/private_execution_lifetime.rs");
 include!("x11_socket/routing/private_custody_snapshot.rs");
+include!("x11_socket/routing/private_request_barrier.rs");
 include!("x11_socket/routing/private_delivery_observer.rs");
 include!("x11_socket/routing/private_native_cleanup_receipt.rs");
 include!("x11_socket/routing/private_applied_state.rs");
