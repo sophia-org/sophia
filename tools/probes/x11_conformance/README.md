@@ -107,38 +107,67 @@ code is copied. This software fixture still does not certify namespace policy.
 
 ## Optional selected XTS5 adapter
 
-XTS is a separate checkout/build; the yserver checkout does not supply it.
-Once it is available, prepare a selected scenario in that checkout and a JSON
-array of its exact mandatory purpose identities:
+XTS is a separate checkout/build; the yserver checkout does not supply it,
+and nothing here is XTS evidence until a real scenario has run. Obtaining
+it is an operator step, once, outside the repository:
 
-```json
-[{"case":"/ACTUAL/BUILT/CASE/PATH","purpose":1}]
+```sh
+xbps-install -S libXt-devel libXaw-devel xorg-util-macros   # the rest is present
+git clone https://gitlab.freedesktop.org/xorg/test/xts.git ~/src/xts
+cd ~/src/xts && ./autogen.sh && make -j                      # no install
 ```
 
-Use actual paths and purpose IDs from that XTS build. The example above is a
-schema illustration, not a real selection or a passing baseline. Select the
-window/property/focus requests supported by the software fixture; requests
-requiring real devices do not belong in this adapter's acceptance profile.
+The freedesktop GitLab refuses scripted fetches, so the clone needs a
+browser-authenticated session or a mirror the operator trusts; record the
+commit. Under a current GCC the K&R-era sources may need
+`CFLAGS='-std=gnu89 -Wno-error=implicit-function-declaration -Wno-error=implicit-int'`.
+The build must leave an executable `tcc` under the root (the adapter globs
+`**/tcc`) and the `xts5/` case directories with their `.m` sources.
+
+Two files from this directory go into the checkout. `xts_check.sh` is copied
+to the root as `check.sh`: inside the adapter's sandbox it regenerates
+`xts5/tetexec.cfg` (display `:99`, empty font paths, no reset delay), finds
+the checkout's `tcc`, and runs the selected scenario with the journal placed
+where the adapter looks. `xts_select.py` enumerates the selection from the
+suite that will run, never by hand:
+
+```sh
+python3 -B tools/probes/x11_conformance/xts_select.py \
+  --xts-root ~/src/xts --scenario selected-core --install \
+  --case XDestroyWindow --case XMapWindow --case XInternAtom \
+  --case XChangeProperty --case XGetSelectionOwner --case XSetInputFocus \
+  --manifest tools/probes/x11_conformance/xts_expected_selected_core.json
+```
+
+It counts each case's purposes from the `>>ASSERTION` markers of its `.m`
+sources, names the case by the `/tset/...` path TET journals use, writes the
+manifest, and with `--install` writes `xts5/tet_scen.selected-core` for
+`check.sh`. `tcc` selects whole cases, so every purpose of a selected case is
+mandatory and must pass. Select the window, atom, property, selection and
+focus requests the software fixture decodes; requests that need real devices,
+fonts or text do not belong. Grow the selection by measurement: a case the
+fixture fails is listed with its journal line, never dropped silently, and a
+BLOCKED run stays BLOCKED with its blocker text.
 
 ```sh
 python3 -B tools/probes/x11_conformance/xts.py \
   --host .artifacts/x11-conformance-target/debug/examples/x11_conformance_host \
-  --xts-root /absolute/separate/xts \
+  --xts-root ~/src/xts \
   --scenario selected-core \
-  --expected /absolute/selected-purposes.json \
-  --output /tmp/sophia-selected-xts
+  --expected tools/probes/x11_conformance/xts_expected_selected_core.json \
+  --output /tmp/sophia-selected-xts --timeout 600
 ```
 
 The adapter requires the separate checkout's `check.sh`, built `xts5` directory,
 executable TET `tcc`, bubblewrap, the exact selected-purpose manifest and the
 selected scenario. It copies the external tree privately, excludes old results
 and `tetexec.cfg`, then runs with a tmpfs root and explicit runtime/data mounts,
-a private `/tmp/.X11-unix/X99`, network namespace and `/dev`. Host `/run` and
-home directories are not mounted; a read-only host root is not sufficient to
+a private `/tmp/.X11-unix/X99`, network namespace and `/dev`. Host `/run`, `/etc`
+and home directories are not mounted; a read-only host root is not sufficient to
 hide pathname sockets. An old wrapper hardcoding a host display cannot reach
-that display.
-The original XTS tree is not modified. The host/harness are copied inside the
-private filesystem so an isolated worktree under `/tmp` remains usable.
+that display. First-run unknowns to confirm and record: TET's journal header
+without `/etc/passwd`, locale warnings without `/usr/share/locale` bindings,
+and the suite startup's font-path calls with empty paths.
 
 Exactly one fresh journal is required. Every declared mandatory purpose must
 start and finish PASS. The numeric TET verdict must agree with its text;
@@ -148,9 +177,14 @@ comparator's PASS-to-NORESULT and missing-candidate-purpose false positives.
 No results from an older directory can supply a pass.
 
 With missing dependencies the adapter writes `BLOCKED`, `suite_executed=false`
-and concrete missing paths/tools, and exits 2. This host currently has no XTS
-checkout at `~/src/xts`, no built suite there and no TET `tcc` on PATH. No actual
-XTS5 scenario has been run. Synthetic TET fixtures test adapter isolation and
+and concrete missing paths/tools, and exits 2. Under the gates,
+`cargo xtask check x11-profile` and `m6-evidence` take `--xts-root`,
+`--xts-expected` and `--xts-scenario` together or not at all, and
+`--xts-timeout` (default 600 s, at most 1785, leaving the gate 30 s) becomes
+the adapter's own deadline. A PASS on `selected-core` claims that the
+manifested Xlib purposes pass against the software fixture host, and claims
+nothing about the rest of XTS5, devices, fonts, text, namespace policy or
+physical acceptance. Synthetic TET fixtures test adapter isolation and
 reporting only; they are not XTS evidence.
 
 ## Private native input and XTEST profiles

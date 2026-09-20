@@ -25,7 +25,15 @@ pub(super) struct ProfileOptions {
     pub xts_root: Option<PathBuf>,
     pub xts_expected: Option<PathBuf>,
     pub xts_scenario: Option<String>,
+    /// The adapter's own deadline in seconds, handed to it as `--timeout`.
+    /// A whole TET scenario is slower than a probe case, and the adapter's
+    /// default of two minutes read as TIMEOUT before anything had run.
+    pub xts_timeout: u64,
 }
+
+/// The adapter leaves itself 15 seconds for contained host cleanup; the
+/// gate leaves the adapter twice that before its own deadline applies.
+const XTS_GATE_MARGIN_SECS: u64 = 30;
 
 pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
     let mut parsed = ProfileOptions {
@@ -36,7 +44,9 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
         xts_root: None,
         xts_expected: None,
         xts_scenario: None,
+        xts_timeout: 600,
     };
+    let mut xts_timeout_given = false;
     for argument in arguments {
         let (name, value) = argument
             .split_once('=')
@@ -59,6 +69,10 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
             "--xts-root" => parsed.xts_root = Some(value.into()),
             "--xts-expected" => parsed.xts_expected = Some(value.into()),
             "--xts-scenario" => parsed.xts_scenario = Some(value.to_owned()),
+            "--xts-timeout" => {
+                parsed.xts_timeout = value.parse().map_err(|_| "invalid XTS timeout")?;
+                xts_timeout_given = true;
+            }
             _ => {
                 return Err(format!(
                     "unsupported option {name}; partial acceptance/filtering is forbidden"
@@ -76,8 +90,26 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
     {
         return Err("provide --output and --target-dir with a timeout in 1..=1800 seconds".into());
     }
-    if parsed.xts_root.is_some() != parsed.xts_expected.is_some() {
-        return Err("XTS needs both --xts-root and --xts-expected, or neither".into());
+    let xts_given = [
+        parsed.xts_root.is_some(),
+        parsed.xts_expected.is_some(),
+        parsed.xts_scenario.is_some(),
+    ];
+    let xts_all = xts_given.iter().all(|given| *given);
+    if (xts_given.iter().any(|given| *given) || xts_timeout_given) && !xts_all {
+        return Err(
+            "XTS needs --xts-root, --xts-expected and --xts-scenario together, or none; --xts-timeout only with them".into(),
+        );
+    }
+    if xts_all
+        && (parsed.xts_timeout == 0
+            || parsed.xts_timeout > 1785
+            || parsed.xts_timeout + XTS_GATE_MARGIN_SECS > parsed.timeout)
+    {
+        return Err(
+            "--xts-timeout must be 1..=1785 seconds and leave the gate 30 seconds of its own timeout"
+                .into(),
+        );
     }
     Ok(parsed)
 }
@@ -291,7 +323,7 @@ pub(super) fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, Stri
     process::arm_subreaper()?;
     if arguments.iter().any(|argument| argument == "--help") {
         return Ok(vec![
-            "cargo xtask check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json [--xts-scenario=NAME]]".into(),
+            "cargo xtask check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json --xts-scenario=NAME [--xts-timeout=SECONDS]]".into(),
         ]);
     }
     let mut opts = options(arguments)?;
@@ -497,14 +529,16 @@ fn xts(
         .arg("--expected")
         .arg(expected)
         .arg("--output")
-        .arg(&output);
+        .arg(&output)
+        .arg("--timeout")
+        .arg(opts.xts_timeout.to_string());
     if let Some(scenario) = &opts.xts_scenario {
         command.arg("--scenario").arg(scenario);
     }
     let execution = process::run(
         &mut command,
         &opts.output.join("xts5.log"),
-        Duration::from_secs(opts.timeout),
+        Duration::from_secs(opts.xts_timeout + XTS_GATE_MARGIN_SECS),
     )?;
     let report_path = output.join("report.json");
     let status = std::fs::read_to_string(&report_path)
