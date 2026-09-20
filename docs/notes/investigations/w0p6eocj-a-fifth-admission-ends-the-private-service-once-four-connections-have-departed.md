@@ -59,16 +59,39 @@ setup. This is the class t130 named, a per-client condition ending the whole
 service, reachable here by four ordinary departures on an instance that
 admits four at once.
 
+**The reclamation is written and never wired.** The adapter lane read it
+before the row landed, and the source agrees:
+`routing/private_ordered_continuation.rs` carries
+`drive_ordered_continuations` (line 628) and `return_ordered_continuation`
+(line 709), complete, under
+`#[cfg_attr(not(test), allow(dead_code))] // Handed over by teardown; read by
+a driver that is not attached yet.` The driver has no production caller at
+all; only `x11_socket/tests/routing.rs` drives it, four visits at a time.
+The return is reached from the driver and from the retained drive in
+`private_retained_drive.rs`, which runs under the same keeper. So t138 is
+not "write reclamation"; it is "attach the driver that was written", and
+the code says so about itself.
+
+The lane's generalisation is worth keeping beside it: reclamation in this
+instance is written against a maintenance keeper that runs only after the
+invocation ends, by a bounded number of visits on the way out, so every
+reclamation path hung off it is dead during the run. The lifecycle sweep
+was one such path, and c2931f65 gave a departing connection a full pass of
+its own instead of a shared cursor unit; the continuation driver is
+another, with no live attachment at all. Each path has had to be given a
+live driver separately.
+
 The owner is the private-input authority in `sophia-x-authority`; the work
-is t138. Until it lands, an instance that has seen `max_concurrent_clients`
-departures is one admission away from ending.
+is t138, taken by the adapter lane. Until it lands, an instance that has
+seen `max_concurrent_clients` departures is one admission away from ending.
 
 ## Validation and remaining work
 
 - [x] Measure collection after c2931f65: repaired, 10 ms in every round.
 - [x] Find what remains: retained places are not released for reuse.
-- [ ] t138: release a departed connection's retained place, or refuse the
-      admission that cannot get one without ending the service; re-run the
+- [ ] t138: attach a live driver for `drive_ordered_continuations` so a
+      departed connection's place returns during the run, and refuse rather
+      than end the service when an admission still finds none; re-run the
       probe for at least `2 * max_concurrent_clients` rounds.
 
 ## Connections
