@@ -512,6 +512,17 @@ pub enum XClientReply {
         major_version: u16,
         minor_version: u16,
     },
+    /// XTEST's version, which is a constant rather than a negotiation.
+    ///
+    /// The fields sit where the protocol puts them and not where the request
+    /// puts them: the major occupies the reply's detail byte and the minor
+    /// starts at byte eight. Carrying them as named fields keeps that
+    /// asymmetry in the encoder rather than in every caller.
+    XTestGetVersion {
+        sequence: u16,
+        major_version: u8,
+        minor_version: u16,
+    },
     ShapeQueryExtents {
         sequence: u16,
         bounding_shaped: bool,

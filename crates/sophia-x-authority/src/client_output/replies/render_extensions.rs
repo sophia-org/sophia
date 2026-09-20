@@ -20,6 +20,7 @@ fn encode_render_extension_reply(
             | XClientReply::XfixesQueryVersion { .. }
             | XClientReply::XfixesFetchRegion { .. }
             | XClientReply::ShapeQueryVersion { .. }
+            | XClientReply::XTestGetVersion { .. }
             | XClientReply::ShapeQueryExtents { .. }
             | XClientReply::ShapeInputSelected { .. }
             | XClientReply::ShapeGetRectangles { .. }
@@ -93,6 +94,19 @@ fn encode_render_extension_reply(
                     write_reply_header(byte_order, &mut out, sequence, 0);
                     put_u16(byte_order, &mut out[8..10], major_version);
                     put_u16(byte_order, &mut out[10..12], minor_version);
+                    out
+                }
+                XClientReply::XTestGetVersion {
+                    sequence,
+                    major_version,
+                    minor_version,
+                } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    // The major rides the detail byte and the minor starts at
+                    // eight, which is not where the request carries them.
+                    out[1] = major_version;
+                    put_u16(byte_order, &mut out[8..10], minor_version);
                     out
                 }
                 XClientReply::ShapeQueryExtents {

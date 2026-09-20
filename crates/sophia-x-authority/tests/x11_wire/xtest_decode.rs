@@ -312,3 +312,73 @@ fn xtest_refuses_an_unadmitted_client_with_access_not_request() {
         assert!(result.response.is_none(), "minor {minor} owes no reply");
     }
 }
+
+#[test]
+fn xtest_answers_an_admitted_client_a_constant_version() {
+    let namespace = NamespaceId::from_raw(7);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let admitted = XDispatchContext {
+        injection: XTestAdmission::Admitted,
+        ..dispatch_context(namespace, 91, XByteOrder::LittleEndian, X_TEST_MAJOR_OPCODE)
+    };
+
+    for requested in [(1u8, 0u16), (2, 2), (255, 65535)] {
+        let result = dispatch_x11_wire_request(
+            admitted,
+            XWireRequest::XTestGetVersion {
+                major_version: requested.0,
+                minor_version: requested.1,
+            },
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        );
+
+        let [XClientOutput::Reply(XClientReply::XTestGetVersion {
+            sequence,
+            major_version,
+            minor_version,
+        })] = result.outputs.as_slice()
+        else {
+            panic!("an admitted client is answered, not refused");
+        };
+        // The same answer whatever was asked for. The reference server never
+        // reads the requested version, and a client that asked for 2.2 is
+        // told 2.1 rather than being refused, because there is no
+        // negotiation to fail.
+        assert_eq!(*major_version, 2, "requested {requested:?}");
+        assert_eq!(*minor_version, 1, "requested {requested:?}");
+        assert_eq!(*sequence, 91);
+    }
+}
+
+#[test]
+fn xtest_tells_an_admitted_client_an_undefined_minor_does_not_exist() {
+    let namespace = NamespaceId::from_raw(7);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let admitted = XDispatchContext {
+        injection: XTestAdmission::Admitted,
+        ..dispatch_context(namespace, 92, XByteOrder::LittleEndian, X_TEST_MAJOR_OPCODE)
+    };
+
+    let result = dispatch_x11_wire_request(
+        admitted,
+        XWireRequest::XTestUnimplemented { minor_opcode: 9 },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+
+    let [XClientOutput::Error(error)] = result.outputs.as_slice() else {
+        panic!("an undefined minor is refused");
+    };
+    // BadRequest and not BadAccess. For a client that may use the extension,
+    // a minor it does not define is a request that does not exist, which is a
+    // different statement from one it may not make.
+    assert_eq!(error.code, XErrorCode::BadRequest);
+    assert_eq!(error.minor_code, 9);
+}
