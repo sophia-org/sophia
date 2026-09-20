@@ -142,6 +142,61 @@ Whether the content-pipeline error classification should distinguish transient
 backpressure is a fourth question, tracked with these because it shares the
 boundary.
 
+## The bar on the release now installed
+
+On the evening of 2026-09-19 the live session
+(`00000001789865605605-d9c9a7e7…`, release `d461492d`, started 20:53) runs
+the Lom bar under the session's bubblewrap with `gpu "direct"`, in the same
+profile (digest `aa2d41cc…`), on the same boot and the same two GPUs as the
+morning. Its four retained event logs, from 21:19 on, hold no
+`sophia_shell_component` record of any kind: no `start_failed`, no
+`service_failed`, no `process_retired`. The negotiation itself was rotated out
+with the session's first twenty-six minutes. The morning session
+(`…21426620`, release `92ca9b56`, 08:37) recorded 6369 `start_failed` and
+never one `negotiated`.
+
+Between the two releases lie 56 commits. On the component start path there
+are only the three diagnostics commits (`6dd557bd`, `658dad52`, `65ccbc96`);
+none touches the render device coordinator, the GPU grant, or the protected
+launch. So the morning's refusal was a condition of those sessions rather
+than a defect the code repairs deterministically on a dual-GPU host, and its
+text is gone with them. One thing the source does settle: `shell_gpu_device`
+is resolved once, in `component_lifecycle::prepare`, and a refusal there
+fails the session start. The morning session started, so its per-attempt
+refusal came from later in the start path -- the grant's revalidation, the
+protection domain, or the process layer -- every one of which now carries a
+cause code. The next occurrence is diagnosable from `cause=` alone, which is
+what this investigation set out to make true.
+
+Three more things settled the same evening:
+
+- **The cause vocabulary broke the crate without its native feature.** The
+  reducer in `diagnostics/shell_component.rs` reached into the feature-gated
+  `live_session` module for the admitted tokens, so `cargo check -p
+  sophia-session` and the repository's plain `cargo test` had failed since
+  `65ccbc96`. The vocabulary now lives at the crate root, in
+  `component_start_cause.rs`, shared by the emitter and the reducer.
+- **A start-then-service-fail cycle is spaced.** The count that spaces a
+  slot's retry is now its consecutive failures, where a failure is a refused
+  start or a stop after `service_failed`; a process that served a healthy
+  tenure (sixty seconds, the ceiling) before failing begins a new count. A
+  successful start no longer clears the count, because a component that
+  comes up and fails within its tenure is still looping. `start_backoff` is
+  recorded on the visit the spacing widens, from either path. Pinned by
+  `component_session/scheduling/tests.rs` and by the scheduler test in
+  `tests/shell_component_processes.rs`.
+- **Backpressure does not stop the bar, by design.** Socket-level
+  `WouldBlock` never reaches the service: the shell transport's write and
+  read loops stop at it and keep their queues
+  (`crates/sophia-runtime/src/shell_transport.rs`). The one queue-level
+  signal, `ContentQueueSaturated`, is already tolerated where a presentation
+  acknowledgement may lag (`observe_presentation` in
+  `metadata_shell/content.rs` returns `Ok(false)`); everywhere else it means
+  the peer stopped consuming its bounded ordered queue, which the policy IPC
+  contract defines as endpoint failure that revokes interaction
+  (`docs/sophia-policy-ipc.md`, `docs/target-resolved-input.md`). Stopping
+  the component there is that contract, not coarseness. No change.
+
 ## Validation and remaining work
 
 - [x] Name the component whose start failed — `start_next` now records the slot
@@ -157,19 +212,20 @@ boundary.
 - [x] Establish why the Lom bar cannot start — the per-component direct GPU
       grant. Denying it removes `start_failed` outright, which isolates the
       cause by experiment rather than inference.
-- [ ] **Repair the shell GPU grant on a dual-GPU host.** `shell_gpu_device`
-      requires the active render device to be available, admitted and
-      unambiguous; this host presents a discrete Navi 31 and an integrated
-      Raphael, both `amdgpu`. Which of its three errors applies is still
-      unknown, since all three are reduced away.
-- [ ] Space a start-then-service-fail cycle. The backoff in `658dad52` counts
-      consecutive start failures, so a component that starts cleanly and then
-      fails in service is not spaced by it and still loops once a second.
-- [ ] Decide the approved start-failure cause codes and emit them, so the next
-      occurrence is diagnosable from retained evidence rather than from a live
-      reproduction.
-- [ ] Separately assess whether `WouldBlock` on the panel socket should stop
-      the component at `component_service.rs:225`.
+- [ ] **Explain the morning's refusal when it recurs.** `shell_gpu_device`
+      cannot have been it: it is resolved once at session start, and the
+      session started. The bar starts on `d461492d` with the same profile and
+      GPUs, and every start refusal now carries a cause code, so the next
+      occurrence names its path in the retained record; repair that path
+      then. Nothing to do until it recurs.
+- [x] Space a start-then-service-fail cycle -- a stop after `service_failed`
+      counts with refused starts, and a healthy tenure resets the count.
+- [x] Decide the approved start-failure cause codes and emit them
+      (`65ccbc96`, `25c3bc5b`), and let the reducer's copy of them build in
+      every configuration.
+- [x] Separately assess whether `WouldBlock` on the panel socket should stop
+      the component: it never reaches the service, and queue saturation is
+      endpoint failure by contract. No change.
 
 Open work is tracked as t114 in `todo.md`.
 
