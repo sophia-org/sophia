@@ -34,6 +34,11 @@ pub enum RegistrationError {
     StaleRequest,
     RequestConsumed,
     WrongConnection,
+    /// The consumer refused the reserved request before asking the authority
+    /// to run it. Published like any refusal so the grant's cell is freed by
+    /// the observation that follows and nothing waits on work that will never
+    /// run; no effect was applied and no debt was created.
+    ConsumerRefused,
     Capacity(CapacityError),
 }
 

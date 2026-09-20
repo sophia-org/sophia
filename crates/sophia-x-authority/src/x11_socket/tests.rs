@@ -1367,6 +1367,14 @@ include!(concat!(
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_reserved_chord.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/private_refused_execution.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/support/private_frozen_transient.rs"
 ));
 

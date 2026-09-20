@@ -73,6 +73,16 @@ impl PrivateXServerFrontend {
             }
             Err(refusal) => {
                 self.terminal.current_freeze = None;
+                // A refusal the executor makes on the request's own terms is
+                // published as the request's completion, so the grant is free
+                // for the producer's next request and the delivery is answered
+                // as refused on the next retirement. Any other refusal keeps
+                // the request as it was, and if common cannot be reached the
+                // item is kept as it is: retirement finds it without an
+                // outcome, as before.
+                if refusal.declines_the_request() {
+                    let _published = custody.refuse_unexecuted();
+                }
                 self.terminal.turn.push(PrivateOrderedItem::Refused { sequence, custody, route, refusal });
             }
         }

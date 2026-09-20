@@ -105,6 +105,11 @@
       "id": "xtest_two_injectors",
       "mandatory": true,
       "fixture": "enabled"
+    },
+    {
+      "id": "xtest_reserved_chord",
+      "mandatory": true,
+      "fixture": "enabled"
     }
   ],
   "features": [
@@ -175,6 +180,12 @@
         "xtest_setup_missing_name",
         "xtest_setup_missing_data"
       ]
+    },
+    {
+      "name": "Reserved emergency chord: a synthetic source cannot supply Ctrl-Alt-Backspace, and every other press under the same modifiers is delivered",
+      "cases": [
+        "xtest_reserved_chord"
+      ]
     }
   ],
   "extensions": {
@@ -200,7 +211,8 @@
         "xtest_half_close",
         "xtest_full_delay_disconnect",
         "xtest_disconnect_release",
-        "xtest_two_injectors"
+        "xtest_two_injectors",
+        "xtest_reserved_chord"
       ]
     }
   },

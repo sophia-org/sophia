@@ -610,6 +610,40 @@ impl PrivateOutstandingRequest {
         self.phase.set(PrivateRequestPhase::DeferredBeforeEffect);
     }
 
+    /// The consumer refused this request before the authority ran it.
+    ///
+    /// Published through the reserved execution as the request's completion,
+    /// exactly as a refusal the authority itself makes is, and then observed
+    /// here: that frees the grant's one cell at once, wakes whoever waits on
+    /// the request, and leaves the outcome for the terminal to answer the
+    /// delivery with. Without this a request the executor declined before
+    /// entering the authority had no completion at all, and the grant stayed
+    /// busy for good: one refused injection wedged its producer.
+    ///
+    /// Only a request that never entered the authority is refused this way;
+    /// one that entered has a completion of its own coming.
+    pub(crate) fn refuse_unexecuted(&self) -> Result<(), PrivateAuthorityRefusal> {
+        if self.phase.get() != PrivateRequestPhase::Unused {
+            return Ok(());
+        }
+        self.controller.under_common_as_origin(|authority, issuer| {
+            authority
+                .execute_reserved(issuer, self.token, self.connection, |_permit| {
+                    Err(sophia_input_authority::RegistrationError::ConsumerRefused)
+                })
+                .map(|_completion| ())
+                .map_err(PrivateAuthorityRefusal::Authority)
+        })??;
+        let observed = self.observe().map(|_observed| ());
+        // Observing stores the outcome for whoever waits on this request;
+        // the wake is raised separately, outside common, and by the terminal
+        // on its own path. Nobody else raises it for this one, so it is
+        // raised here: a waiter left asleep on a stored refusal sat until its
+        // connection departed, and the dispatch ended unpublished.
+        self.flush_report();
+        observed
+    }
+
     /// Observe the outcome of this request, and only this one.
     ///
     /// This is what frees the grant's one cell, so the next request on it can
