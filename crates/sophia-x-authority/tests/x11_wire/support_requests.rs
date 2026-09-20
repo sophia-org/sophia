@@ -91,6 +91,7 @@ fn dispatch_context_with_transaction(
         sequence,
         major_opcode,
         client_id: 1,
+        injection: XTestAdmission::Absent,
     }
 }
 

@@ -196,7 +196,7 @@ fn dispatch_core_input_discovery_request(
                     }
                 }
                 XWireRequest::QueryExtension { name } => {
-                    let extension = extension_query_result(&name);
+                    let extension = extension_query_result(&name, context.injection);
                     if !extension.present {
                         // The only record of what this server was asked for and
                         // could not provide. A client asks once per extension
@@ -240,7 +240,7 @@ fn dispatch_core_input_discovery_request(
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::ListExtensions {
                         sequence: context.sequence,
-                        names: crate::dispatch::advertised_extension_names(),
+                        names: crate::dispatch::advertised_extension_names(context.injection),
                     })],
                     metadata_candidates: Vec::new(),
                 },

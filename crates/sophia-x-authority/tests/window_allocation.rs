@@ -73,6 +73,7 @@ fn dispatch(
             sequence: 10,
             transaction: TransactionId::from_raw(10),
             major_opcode: X_DRI3_MAJOR_OPCODE,
+            injection: XTestAdmission::Absent,
         },
         request,
         runtime,

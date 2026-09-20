@@ -216,6 +216,22 @@ fn glx_bad_value(context: &XDispatchContext, value: u32, minor: u8) -> XClientOu
     })
 }
 
+/// Whether this connection may fake input at the seat.
+///
+/// Rides the dispatch context so discovery and every request path share one
+/// decision. Two decisions in two places could disagree, and the disagreement
+/// would be a client that can see an extension it may not use.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum XTestAdmission {
+    /// XTEST is absent for this client: missing from QueryExtension and
+    /// ListExtensions, and every guessed opcode on its major answers
+    /// BadAccess. The default, and what every connection outside an
+    /// explicitly admitted private instance gets.
+    #[default]
+    Absent,
+    Admitted,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XDispatchContext {
     pub byte_order: XByteOrder,
@@ -227,6 +243,7 @@ pub struct XDispatchContext {
     pub sequence: u16,
     pub major_opcode: u8,
     pub client_id: u64,
+    pub injection: XTestAdmission,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -626,7 +643,7 @@ fn loggable_extension_name(name: &str) -> String {
 /// name, so the two can disagree. A test asserts every name here reports
 /// present, and that nothing outside it does -- a client that enumerates and
 /// then queries must not be told different things.
-pub(crate) fn advertised_extension_names() -> Vec<String> {
+pub(crate) fn advertised_extension_names(injection: XTestAdmission) -> Vec<String> {
     [
         X_SOPHIA_PRESENT_EXTENSION_NAME,
         X_MIT_SHM_EXTENSION_NAME,
@@ -646,11 +663,31 @@ pub(crate) fn advertised_extension_names() -> Vec<String> {
         X_BIG_REQUESTS_EXTENSION_NAME,
     ]
     .into_iter()
+    .chain(
+        // Named to a client that may use it and to nobody else. A client
+        // refused injection must not find XTEST here and then meet BadAccess
+        // on every request: that would be the server contradicting itself
+        // within one connection.
+        matches!(injection, XTestAdmission::Admitted).then_some(crate::X_TEST_EXTENSION_NAME),
+    )
     .map(str::to_owned)
     .collect()
 }
 
-fn extension_query_result(name: &str) -> XExtensionQueryResult {
+fn extension_query_result(name: &str, injection: XTestAdmission) -> XExtensionQueryResult {
+    // Answered before the table, because this is the one name whose presence
+    // depends on who is asking. Everything below is the same for every
+    // client.
+    if name == crate::X_TEST_EXTENSION_NAME {
+        return XExtensionQueryResult {
+            present: matches!(injection, XTestAdmission::Admitted),
+            major_opcode: crate::X_TEST_MAJOR_OPCODE,
+            // XTEST defines no events and no errors, so both bases are zero
+            // and it raises core errors only.
+            first_event: crate::X_TEST_FIRST_EVENT,
+            first_error: crate::X_TEST_FIRST_ERROR,
+        };
+    }
     match name {
         X_SOPHIA_PRESENT_EXTENSION_NAME => XExtensionQueryResult {
             present: true,

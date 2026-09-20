@@ -928,6 +928,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 sequence,
                 major_opcode,
                 client_id: client.raw(),
+                // Absent until a connection is issued an injector. Decided
+                // once at setup rather than per request, so a client cannot
+                // be refused discovery and then served a request.
+                injection: crate::XTestAdmission::Absent,
             };
             dispatch_started = false;
             dispatch_complete = false;

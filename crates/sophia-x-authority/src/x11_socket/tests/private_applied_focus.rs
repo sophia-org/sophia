@@ -522,6 +522,7 @@ mod private_applied_focus {
             sequence: 3,
             major_opcode: 42,
             client_id: client().raw(),
+            injection: crate::XTestAdmission::Absent,
         };
         let mut runtime = fixture.state.runtime.lock().unwrap();
         let (output, pending) = x11_dispatch_private_focus(

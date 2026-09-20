@@ -99,6 +99,7 @@ fn shared_zpixmap_upload_decodes_packed_depths_padding_crop_and_byte_order() {
                 sequence: 1,
                 major_opcode: X_MIT_SHM_MAJOR_OPCODE,
                 client_id: 1,
+                injection: XTestAdmission::Absent,
             };
             let mut atoms = XAtomTable::new();
             let mut properties = XPropertyTable::new();

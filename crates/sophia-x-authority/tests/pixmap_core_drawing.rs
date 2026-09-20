@@ -60,6 +60,7 @@ impl Client {
                 sequence: self.sequence,
                 major_opcode: opcode,
                 client_id: 1,
+                injection: XTestAdmission::Absent,
             },
             request,
             &mut self.runtime,
