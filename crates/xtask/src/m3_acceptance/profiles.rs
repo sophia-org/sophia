@@ -113,6 +113,17 @@ pub(super) struct ProfileVerdict {
 /// them. What cannot be reaped within the collection deadline, or a
 /// collection that could not be read, is a process the profile genuinely
 /// left behind, and a PASS beside it is not a result.
+///
+/// This is one of three collection predicates in this gate family, and they
+/// differ on purpose. `Execution::clean` in `evidence.rs` requires
+/// `descendants_found == 0`: it governs a build or an exact single-test run,
+/// where any descendant at all is anomalous. `launcher_collected` requires
+/// found to equal reaped: the launcher's own children are its to account
+/// for. A profile's entry is a runner that starts hosts and clients of its
+/// own, and a child of it still dying when it returns is reaped here rather
+/// than leaked, which is why this one asks only that nothing remained.
+/// Unifying them would reinstate a demotion of a passing profile that was
+/// measured to be teardown, so keep them apart.
 pub(super) fn collected(collection: &super::types::Collection) -> bool {
     collection.root_waited && collection.remaining.is_empty() && collection.error.is_none()
 }
