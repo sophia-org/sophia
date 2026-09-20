@@ -154,6 +154,11 @@ fn decode_set_clip_rectangles(
         X_SET_CLIP_RECTANGLES_REQ_LEN,
         bytes.len(),
     )?;
+    // Ordering is {UnSorted, YSorted, YXSorted, YXBanded}. The list is
+    // clipped the same way under all four, so only the range is judged.
+    if bytes[1] > 3 {
+        return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
+    }
     let rectangle_bytes = &bytes[X_SET_CLIP_RECTANGLES_REQ_LEN..];
     if !rectangle_bytes.len().is_multiple_of(8) {
         return Err(XWireParseError::InvalidLength {

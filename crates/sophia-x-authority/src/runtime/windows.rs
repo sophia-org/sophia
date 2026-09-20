@@ -391,6 +391,21 @@ impl XAuthorityRuntime {
          ))
      }
 
+     /// Record whether a window was created InputOnly.
+     pub fn set_window_input_only(&mut self, window: crate::XResourceId, input_only: bool) {
+         if input_only {
+             self.input_only_windows.insert(window);
+         } else {
+             self.input_only_windows.remove(&window);
+         }
+     }
+
+     /// Whether a window was created InputOnly: it has no pixels, so it can
+     /// be neither drawn into nor read back, and no context can match it.
+     pub fn window_is_input_only(&self, window: crate::XResourceId) -> bool {
+         self.input_only_windows.contains(&window)
+     }
+
      pub fn window_map_state(
          &self,
          namespace: NamespaceId,
@@ -563,6 +578,7 @@ impl XAuthorityRuntime {
          self.forget_window_shapes(window);
          self.window_background_pixels.remove(&window);
          self.window_visuals.remove(&window);
+         self.input_only_windows.remove(&window);
          self.glx_drawables.retain(|_, record| match record.backing {
              XGlxDrawableBacking::Window(underlying) => underlying != window,
              // Neither borrows a window, so neither is disturbed by one going.

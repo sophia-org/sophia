@@ -70,6 +70,12 @@ fn dispatch_core_resource_request(
                     font,
                 ));
             }
+            let depth = runtime
+                .drawable_depth(context.namespace, drawable)
+                .unwrap_or(0);
+            if let Err(refusal) = validate_gc_pattern_pixmaps(context, runtime, depth, &values) {
+                return Handled(refusal);
+            }
             let outputs = runtime
                 .create_graphics_context(context.namespace, gc, drawable, values)
                 .err()
@@ -95,14 +101,17 @@ fn dispatch_core_resource_request(
             value_mask,
             values,
         } => {
-            if let Err(error) = runtime.graphics_context_values(context.namespace, gc) {
-                return Handled(core_resource_validation_error(
-                    context,
-                    error,
-                    XErrorCode::BadGraphicsContext,
-                    gc,
-                ));
-            }
+            let depth = match runtime.graphics_context_depth_and_values(context.namespace, gc) {
+                Ok((depth, _)) => depth,
+                Err(error) => {
+                    return Handled(core_resource_validation_error(
+                        context,
+                        error,
+                        XErrorCode::BadGraphicsContext,
+                        gc,
+                    ));
+                }
+            };
             if let Some(mask) = values.clip_mask
                 && let Err(error) = runtime.validate_clip_mask(context.namespace, mask)
             {
@@ -112,6 +121,9 @@ fn dispatch_core_resource_request(
                     XErrorCode::BadPixmap,
                     mask,
                 ));
+            }
+            if let Err(refusal) = validate_gc_pattern_pixmaps(context, runtime, depth, &values) {
+                return Handled(refusal);
             }
             if value_mask & (1 << 14) != 0 {
                 let font = values.font.unwrap_or(XResourceId::new(0, 1));
@@ -186,14 +198,23 @@ fn dispatch_core_resource_request(
             }
         }
         XWireRequest::ClearArea {
+            exposures,
             window,
             x,
             y,
             width,
             height,
-            ..
         } => {
             let transaction = context.transaction;
+            // An InputOnly window has no background to restore.
+            if runtime.window_is_input_only(window) {
+                return Handled(core_resource_validation_error(
+                    context,
+                    XAuthorityRuntimeError::InvalidSurface,
+                    XErrorCode::BadMatch,
+                    window,
+                ));
+            }
             let geometry = runtime.window_geometry(context.namespace, window).ok();
             let clear_width = if width == 0 {
                 geometry
@@ -209,31 +230,38 @@ fn dispatch_core_resource_request(
             } else {
                 i32::from(height)
             };
+            let area = Rect {
+                x: i32::from(x),
+                y: i32::from(y),
+                width: clear_width,
+                height: clear_height,
+            };
             let response = match runtime.window_background_pixel(context.namespace, window) {
                 Ok(pixel) => runtime.apply_clear_with_pixel(
                     transaction,
                     context.namespace,
                     window,
-                    Region::single(Rect {
-                        x: i32::from(x),
-                        y: i32::from(y),
-                        width: clear_width,
-                        height: clear_height,
-                    }),
+                    Region::single(area),
                     pixel,
                 ),
                 Err(error) => XAuthorityResponsePacket::rejected(transaction, error),
             };
-            let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
-                vec![XClientOutput::Error(x_error_from_runtime(
-                    error,
-                    context.sequence,
-                    context.major_opcode,
-                    0,
-                    u32::try_from(window.local.raw()).unwrap_or(0),
-                ))]
-            } else {
-                Vec::new()
+            let outputs = match response.outcome {
+                XAuthorityResponseOutcome::Rejected(error) => {
+                    vec![XClientOutput::Error(x_error_from_runtime(
+                        error,
+                        context.sequence,
+                        context.major_opcode,
+                        0,
+                        u32::try_from(window.local.raw()).unwrap_or(0),
+                    ))]
+                }
+                XAuthorityResponseOutcome::Accepted if exposures => geometry
+                    .and_then(|geometry| clear_area_exposure(context, runtime, window, geometry, area))
+                    .map(XClientOutput::Event)
+                    .into_iter()
+                    .collect(),
+                XAuthorityResponseOutcome::Accepted => Vec::new(),
             };
             XDispatchResult {
                 response: Some(response),
@@ -491,22 +519,54 @@ fn dispatch_core_resource_request(
             destination,
             value_mask,
         } => {
-            let outputs = match runtime.copy_graphics_context(
-                context.namespace,
-                source,
-                destination,
-                value_mask,
-            ) {
-                Ok(()) => Vec::new(),
-                Err(error) => {
+            // Both contexts must exist, and then they must share a depth: a
+            // context is bound to the depth of the drawable it was made for,
+            // and copying components across depths is a Match error.
+            let depths = runtime
+                .graphics_context_depth_and_values(context.namespace, source)
+                .map_err(|error| (error, source))
+                .and_then(|(source_depth, _)| {
+                    runtime
+                        .graphics_context_depth_and_values(context.namespace, destination)
+                        .map(|(destination_depth, _)| (source_depth, destination_depth))
+                        .map_err(|error| (error, destination))
+                });
+            let outputs = match depths {
+                Err((error, gc)) => {
                     core_resource_validation_error(
                         context,
                         error,
                         XErrorCode::BadGraphicsContext,
+                        gc,
+                    )
+                    .outputs
+                }
+                Ok((source_depth, destination_depth)) if source_depth != destination_depth => {
+                    core_resource_validation_error(
+                        context,
+                        XAuthorityRuntimeError::InvalidSurface,
+                        XErrorCode::BadMatch,
                         destination,
                     )
                     .outputs
                 }
+                Ok(_) => match runtime.copy_graphics_context(
+                    context.namespace,
+                    source,
+                    destination,
+                    value_mask,
+                ) {
+                    Ok(()) => Vec::new(),
+                    Err(error) => {
+                        core_resource_validation_error(
+                            context,
+                            error,
+                            XErrorCode::BadGraphicsContext,
+                            destination,
+                        )
+                        .outputs
+                    }
+                },
             };
             XDispatchResult {
                 response: None,
@@ -699,6 +759,70 @@ fn core_resource_bad_id_choice(
         })],
         metadata_candidates: Vec::new(),
     }
+}
+
+/// The tile and stipple a context names must be pixmaps this client may
+/// use: a tile of the context's depth and a stipple of depth one. The
+/// protocol names Pixmap for an unknown one and Match for the wrong depth.
+fn validate_gc_pattern_pixmaps(
+    context: XDispatchContext,
+    runtime: &XAuthorityRuntime,
+    depth: u8,
+    values: &crate::XGraphicsContextValues,
+) -> Result<(), XDispatchResult> {
+    for (pixmap, required_depth) in [(values.tile, depth), (values.stipple, 1)] {
+        let Some(pixmap) = pixmap else {
+            continue;
+        };
+        if let Err(error) = runtime.validate_pixmap_access(context.namespace, pixmap) {
+            return Err(core_resource_validation_error(
+                context,
+                error,
+                XErrorCode::BadPixmap,
+                pixmap,
+            ));
+        }
+        if runtime.drawable_depth(context.namespace, pixmap) != Ok(required_depth) {
+            return Err(core_resource_validation_error(
+                context,
+                XAuthorityRuntimeError::InvalidSurface,
+                XErrorCode::BadMatch,
+                pixmap,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The Expose a ClearArea owes when the client asked for exposures: the
+/// cleared rectangle within a viewable window, in one event. Nothing is
+/// retained for an unviewable window, so nothing is reported for it.
+fn clear_area_exposure(
+    context: XDispatchContext,
+    runtime: &XAuthorityRuntime,
+    window: XResourceId,
+    geometry: Rect,
+    area: Rect,
+) -> Option<XClientEvent> {
+    if runtime.window_map_state(context.namespace, window) != Ok(crate::XMapState::Viewable) {
+        return None;
+    }
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: geometry.width,
+        height: geometry.height,
+    };
+    let exposed = rect_intersection(area, bounds)?;
+    Some(XClientEvent::Expose {
+        sequence: context.sequence,
+        window,
+        x: clamp_u16(exposed.x),
+        y: clamp_u16(exposed.y),
+        width: clamp_u16(exposed.width),
+        height: clamp_u16(exposed.height),
+        count: 0,
+    })
 }
 
 fn core_resource_validation_error(

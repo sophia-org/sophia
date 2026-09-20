@@ -20,8 +20,13 @@ pub(crate) fn decode_upload<'a>(
     gc: &XGraphicsContextValues,
     data: &'a [u8],
 ) -> Result<Cow<'a, [u8]>, XErrorCode> {
-    if format > 2 || (format == 2 && left_pad != 0) || left_pad >= 32 {
+    if format > 2 {
         return Err(XErrorCode::BadValue);
+    }
+    // Left-pad must be zero for ZPixmap and below the bitmap scanline pad
+    // for the XY formats; the protocol makes both a Match error, not Value.
+    if (format == X_IMAGE_FORMAT_Z_PIXMAP && left_pad != 0) || left_pad >= 32 {
+        return Err(XErrorCode::BadMatch);
     }
     if format == 0 && depth != 1 {
         return Err(XErrorCode::BadMatch);

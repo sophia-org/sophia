@@ -396,12 +396,20 @@ def fill_primitives(context):
         disc = painted(c, pid, 9, 9)
         assert (4, 4) in disc and not (corners & disc) and disc <= box, sorted(disc)
         fresh()
-        c.send(POLY_FILL_ARC, c.pack('II', pid, paint) + c.pack('hhHHhh', 1, 1, 7, 7, 0, 720 * 64))
+        # Angles are INT16 in 64ths of a degree, so the largest overshoot a
+        # request can carry is just under 512 degrees.
+        c.send(POLY_FILL_ARC, c.pack('II', pid, paint) + c.pack('hhHHhh', 1, 1, 7, 7, 0, 500 * 64))
         assert painted(c, pid, 9, 9) == disc, 'angles beyond 360 degrees are truncated'
         fresh()
+        # The thin outline follows the path through [x, y+height/2] and
+        # [x+width, y+height/2], so it spans the eight pixel columns and rows
+        # from 1 to 8, touching each side of that box and none of its corners.
         c.send(POLY_ARC, c.pack('II', pid, paint) + c.pack('hhHHhh', 1, 1, 7, 7, 0, 360 * 64))
         ring = painted(c, pid, 9, 9)
-        assert ring and (4, 4) not in ring and not (corners & ring) and ring <= box, sorted(ring)
+        outline_box = {(x, y) for x in range(1, 9) for y in range(1, 9)}
+        outline_corners = {(1, 1), (8, 1), (1, 8), (8, 8)}
+        assert ring and (4, 4) not in ring and not (outline_corners & ring) and ring <= outline_box, sorted(ring)
+        assert {(1, 4), (8, 4), (4, 1), (4, 8)} <= ring, sorted(ring)
 
 
 def put_get_image(context):

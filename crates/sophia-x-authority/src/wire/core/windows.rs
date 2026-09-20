@@ -107,6 +107,11 @@ fn decode_clear_area(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_CLEAR_AREA, X_CLEAR_AREA_REQ_LEN, bytes.len())?;
+    // Exposures is a BOOL, and the protocol lists Value among ClearArea's
+    // errors: a client that sends 2 is told which value was refused.
+    if bytes[1] > 1 {
+        return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
+    }
     Ok(XWireRequest::ClearArea {
         exposures: bytes[1] != 0,
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
@@ -229,6 +234,12 @@ fn decode_create_window(
     let window_raw = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(window_raw)?;
     let window = XResourceId::new(u64::from(window_raw), 1);
+    // Class is {CopyFromParent, InputOutput, InputOnly}. An InputOnly window
+    // is recorded so that the drawing family can refuse it: it has no pixels.
+    let class = context.byte_order.u16(&bytes[22..24]);
+    if class > 2 {
+        return Err(XWireParseError::InvalidValue(u32::from(class)));
+    }
     Ok(XWireRequest::CreateWindow {
         packet: XAuthorityRequestPacket {
             transaction: context.transaction,
@@ -257,6 +268,7 @@ fn decode_create_window(
         override_redirect,
         event_mask,
         do_not_propagate_mask,
+        input_only: class == 2,
     })
 }
 

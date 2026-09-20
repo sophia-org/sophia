@@ -98,23 +98,27 @@ pub fn x_error_from_wire_parse(
     major_code: u8,
     minor_code: u16,
 ) -> XClientError {
-    let code = match error {
+    // A Value error carries the refused value where other errors carry a
+    // resource id; a client reading it learns which argument was wrong.
+    let (code, resource_id) = match error {
         XWireParseError::Truncated { .. }
         | XWireParseError::InvalidLength { .. }
-        | XWireParseError::TrailingBytes(_) => XErrorCode::BadLength,
-        XWireParseError::UnknownOpcode(_) => XErrorCode::BadRequest,
-        XWireParseError::InvalidPropertyMode(_)
-        | XWireParseError::InvalidPropertyFormat(_)
-        | XWireParseError::InvalidEventType(_)
-        | XWireParseError::InvalidValue(_)
-        | XWireParseError::PropertyValueTooLarge { .. } => XErrorCode::BadValue,
-        XWireParseError::ResourceIdOutsideClientRange { .. } => XErrorCode::BadIdChoice,
+        | XWireParseError::TrailingBytes(_) => (XErrorCode::BadLength, 0),
+        XWireParseError::UnknownOpcode(_) => (XErrorCode::BadRequest, 0),
+        XWireParseError::InvalidPropertyMode(value)
+        | XWireParseError::InvalidPropertyFormat(value)
+        | XWireParseError::InvalidEventType(value) => (XErrorCode::BadValue, u32::from(*value)),
+        XWireParseError::InvalidValue(value) => (XErrorCode::BadValue, *value),
+        XWireParseError::PropertyValueTooLarge { .. } => (XErrorCode::BadValue, 0),
+        XWireParseError::ResourceIdOutsideClientRange { resource_id } => {
+            (XErrorCode::BadIdChoice, *resource_id)
+        }
     };
 
     XClientError {
         code,
         sequence,
-        resource_id: 0,
+        resource_id,
         minor_code,
         major_code,
     }

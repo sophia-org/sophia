@@ -254,6 +254,11 @@ impl XAuthorityRuntime {
         if let Ok(depth) = self.pixmap_depth(namespace, drawable) {
             return Ok(depth);
         }
+        // An InputOnly window has no pixels, so no context and no other
+        // drawable can match it; depth zero is how the server says so.
+        if self.window_is_input_only(drawable) {
+            return Ok(0);
+        }
         Ok(self.window_visual(drawable).0)
     }
 

@@ -146,6 +146,11 @@ fn decode_query_best_size(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_QUERY_BEST_SIZE, X_QUERY_BEST_SIZE_REQ_LEN, bytes.len())?;
+    // Class is {Cursor, Tile, Stipple}, judged before the drawable is looked
+    // up, as the server's own order has it.
+    if bytes[1] > 2 {
+        return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
+    }
     Ok(XWireRequest::QueryBestSize {
         class: bytes[1],
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
@@ -190,43 +195,66 @@ fn decode_create_gc(
             continue;
         }
         let value = next_value();
-        match bit {
-            0 => values.function = u8::try_from(value).unwrap_or(u8::MAX),
-            1 => values.plane_mask = value,
-            2 => values.foreground = value,
-            3 => values.background = value,
-            4 => values.line_width = u16::try_from(value).unwrap_or(u16::MAX),
-            5 => values.line_style = u8::try_from(value).unwrap_or(u8::MAX),
-            6 => values.cap_style = u8::try_from(value).unwrap_or(u8::MAX),
-            7 => values.join_style = u8::try_from(value).unwrap_or(u8::MAX),
-            8 => values.fill_style = u8::try_from(value).unwrap_or(u8::MAX),
-            9 => values.fill_rule = u8::try_from(value).unwrap_or(u8::MAX),
-            10 => values.tile = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            11 => values.stipple = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            12 => values.tile_stipple_x_origin = value as i16,
-            13 => values.tile_stipple_y_origin = value as i16,
-            14 => values.font = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            15 => values.subwindow_mode = u8::try_from(value).unwrap_or(u8::MAX),
-            16 => values.graphics_exposures = value != 0,
-            17 => values.clip_x_origin = value as i16,
-            18 => values.clip_y_origin = value as i16,
-            19 => values.clip_mask = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            20 => values.dash_offset = u16::try_from(value).unwrap_or(u16::MAX),
-            // One value sets every dash to the same length, which is the
-            // shorthand the protocol defines; SetDashes carries a pattern.
-            21 => {
-                let length = u8::try_from(value).unwrap_or(u8::MAX).max(1);
-                values.dashes = vec![length, length];
-            }
-            22 => values.arc_mode = u8::try_from(value).unwrap_or(u8::MAX),
-            _ => {}
-        }
+        decode_gc_value(bit, value, &mut values)?;
     }
     Ok(XWireRequest::CreateGraphicsContext {
         gc: XResourceId::new(u64::from(gc), 1),
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         values,
     })
+}
+
+/// Store one graphics-context value by its mask bit, refusing anything
+/// outside the range the protocol gives that component. The refused value
+/// travels in the error, as Value errors carry it.
+fn decode_gc_value(
+    bit: u32,
+    value: u32,
+    values: &mut XGraphicsContextValues,
+) -> Result<(), XWireParseError> {
+    let bad = || XWireParseError::InvalidValue(value);
+    let bounded = |max: u32| -> Result<u8, XWireParseError> {
+        if value > max {
+            return Err(bad());
+        }
+        Ok(u8::try_from(value).unwrap_or(u8::MAX))
+    };
+    match bit {
+        0 => values.function = bounded(15)?,
+        1 => values.plane_mask = value,
+        2 => values.foreground = value,
+        3 => values.background = value,
+        4 => values.line_width = u16::try_from(value).map_err(|_| bad())?,
+        5 => values.line_style = bounded(2)?,
+        6 => values.cap_style = bounded(3)?,
+        7 => values.join_style = bounded(2)?,
+        8 => values.fill_style = bounded(3)?,
+        9 => values.fill_rule = bounded(1)?,
+        10 => values.tile = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+        11 => values.stipple = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+        12 => values.tile_stipple_x_origin = value as i16,
+        13 => values.tile_stipple_y_origin = value as i16,
+        14 => values.font = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+        15 => values.subwindow_mode = bounded(1)?,
+        16 => values.graphics_exposures = bounded(1)? != 0,
+        17 => values.clip_x_origin = value as i16,
+        18 => values.clip_y_origin = value as i16,
+        19 => values.clip_mask = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
+        20 => values.dash_offset = u16::try_from(value).map_err(|_| bad())?,
+        // One value sets every dash to the same length, which is the
+        // shorthand the protocol defines; SetDashes carries a pattern. A
+        // zero-length dash would never advance, so it is refused here too.
+        21 => {
+            let length = u8::try_from(value).map_err(|_| bad())?;
+            if length == 0 {
+                return Err(bad());
+            }
+            values.dashes = vec![length, length];
+        }
+        22 => values.arc_mode = bounded(1)?,
+        _ => {}
+    }
+    Ok(())
 }
 
 fn decode_change_gc(
@@ -255,37 +283,7 @@ fn decode_change_gc(
         }
         let value = context.byte_order.u32(&bytes[cursor..cursor + 4]);
         cursor += 4;
-        match bit {
-            0 => values.function = u8::try_from(value).unwrap_or(u8::MAX),
-            1 => values.plane_mask = value,
-            2 => values.foreground = value,
-            3 => values.background = value,
-            4 => values.line_width = u16::try_from(value).unwrap_or(u16::MAX),
-            5 => values.line_style = u8::try_from(value).unwrap_or(u8::MAX),
-            6 => values.cap_style = u8::try_from(value).unwrap_or(u8::MAX),
-            7 => values.join_style = u8::try_from(value).unwrap_or(u8::MAX),
-            8 => values.fill_style = u8::try_from(value).unwrap_or(u8::MAX),
-            9 => values.fill_rule = u8::try_from(value).unwrap_or(u8::MAX),
-            10 => values.tile = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            11 => values.stipple = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            12 => values.tile_stipple_x_origin = value as i16,
-            13 => values.tile_stipple_y_origin = value as i16,
-            14 => values.font = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            15 => values.subwindow_mode = u8::try_from(value).unwrap_or(u8::MAX),
-            16 => values.graphics_exposures = value != 0,
-            17 => values.clip_x_origin = value as i16,
-            18 => values.clip_y_origin = value as i16,
-            19 => values.clip_mask = (value != 0).then(|| XResourceId::new(u64::from(value), 1)),
-            20 => values.dash_offset = u16::try_from(value).unwrap_or(u16::MAX),
-            // One value sets every dash to the same length, which is the
-            // shorthand the protocol defines; SetDashes carries a pattern.
-            21 => {
-                let length = u8::try_from(value).unwrap_or(u8::MAX).max(1);
-                values.dashes = vec![length, length];
-            }
-            22 => values.arc_mode = u8::try_from(value).unwrap_or(u8::MAX),
-            _ => {}
-        }
+        decode_gc_value(bit, value, &mut values)?;
     }
     Ok(XWireRequest::ChangeGraphicsContext {
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),

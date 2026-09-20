@@ -31,6 +31,7 @@ const X_MOTION_NOTIFY: u8 = 6;
 const X_FOCUS_IN: u8 = 9;
 const X_FOCUS_OUT: u8 = 10;
 const X_EXPOSE: u8 = 12;
+const X_GRAPHICS_EXPOSE: u8 = 13;
 const X_NO_EXPOSE: u8 = 14;
 const X_VISIBILITY_NOTIFY: u8 = 15;
 const X_DESTROY_NOTIFY: u8 = 17;
@@ -115,6 +116,20 @@ pub enum XClientEvent {
         width: u16,
         height: u16,
         count: u16,
+    },
+    /// One destination rectangle a CopyArea or CopyPlane could not fill
+    /// because its source lay outside the source drawable. `count` is the
+    /// number of rectangles still to come for the same request.
+    GraphicsExpose {
+        sequence: u16,
+        drawable: XResourceId,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+        minor_opcode: u16,
+        count: u16,
+        major_opcode: u8,
     },
     NoExpose {
         sequence: u16,
