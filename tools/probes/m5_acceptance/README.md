@@ -25,6 +25,13 @@ a failed row keeps the aggregate failed. A nonzero exit may therefore mean
 either failure or incomplete acceptance. Read the report rather than inferring
 a verdict from the exit alone.
 
+No group may bind to a library test. M4's lifetime row takes that escape and
+M5 does not need it: a bound library test runs in the binary that
+`crates/sophia-session/src/private_input.rs` pulls the private-input controls
+into, and those controls wait on a wall clock that eight service-starting
+groups would exhaust (t115). Every binding here is a bare name resolving
+inside the integration target.
+
 Every row runs the `sophia-session` integration target `xtest_acceptance`,
 because admission, cancellation and the barrier are Session obligations the
 standalone conformance host does not hold. Its case tests carry `#[ignore]`,

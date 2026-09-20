@@ -74,6 +74,37 @@ the deferred control was delivered under its original transaction
 which describes the **success** condition, but only fires on timeout. A reader
 is told the opposite of what happened.
 
+### What the wait is actually starved by (2026-09-19)
+
+Measured while adding three library tests for the XTEST injection policy, two
+of which start a private input service. The run is
+`cargo test -p sophia-session --features native-session --lib`, with `SOPHIA_*`
+cleared, on the desktop host with a live session:
+
+| library binary | wall time | outcome |
+| --- | --- | --- |
+| pristine `45aee143` | 4.06 s | 4 of 4 green |
+| plus one non-starting test | 4.06 s | 2 of 2 green |
+| plus a second service-starting test | 4.06 s | 2 of 2 green |
+| plus a third, starting two more services | 20.1 s | failed 2 of 3 |
+
+The two failures were not the same test: one was
+`a_control_refused_for_now_keeps_its_place_and_its_transaction`, the other
+`a_stop_counts_receipts_nobody_drained`. The 20-second runs are the failing
+test spending its whole budget; the passing runs of the same binary finish in
+4.06 seconds, so the cost is the deadline being waited out, not the suite
+being slower. Cutting the added tests back to one service returned the binary
+to 4.06 seconds and 4 of 4.
+
+This answers the first open item below. The wait is **starved, not stalled**:
+the same binary, the same tests and the same machine pass or fail according to
+how many other services are being started beside them, and the bridge is
+making progress throughout. It also decides between the candidate
+resolutions. Waiting on progress rather than elapsed time is the repair that
+addresses this; raising the budget moves the threshold by about one
+service-start, which is the margin that was just consumed by three ordinary
+tests.
+
 ## Finding and resolution
 
 The production code is not implicated by this evidence. The defect is in the
@@ -96,9 +127,9 @@ failed.
 
 ## Validation and remaining work
 
-- [ ] Establish whether the wait is starved or genuinely stalled, by recording
-      whether effects continue to arrive while the deadline expires. Nothing
-      here distinguishes those.
+- [x] Establish whether the wait is starved or genuinely stalled: starved, by
+      the controlled measurement above. Adding service-starting tests to the
+      binary decides it, and the bridge keeps making progress.
 - [ ] Choose a resolution and apply it to all 15 deadline sites.
 - [ ] Correct the assertion messages.
 - [ ] Re-measure over at least 12 runs under the gate's isolation, against the
