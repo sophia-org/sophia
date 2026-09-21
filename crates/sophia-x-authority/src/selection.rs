@@ -10,6 +10,25 @@ pub type XTimestamp = u32;
 pub const X_ATOM_NONE: XAtom = 0;
 pub const MAX_CLIPBOARD_TEXT_HANDOFF_BYTES: usize = 64 * 1024;
 
+/// `CurrentTime` on the wire. A client sends it to mean "whatever the server
+/// time is right now", and a server never reports it back as a real instant.
+pub const X_CURRENT_TIME: XTimestamp = 0;
+
+/// Whether `later` names an instant after `earlier` on the server clock.
+///
+/// A server timestamp is a 32-bit millisecond counter that wraps about every
+/// 49.7 days, so a plain `>` is wrong twice: right after a wrap every honest
+/// new time looks older than everything before it, and a client can name a
+/// time far in the future that would compare as older. X11 resolves this by
+/// reading the difference as a signed quantity: two times are ordered by
+/// which half of the counter's range separates them, which is correct for any
+/// pair less than about 24.8 days apart and is the only ordering a wrapping
+/// clock can support.
+#[must_use]
+pub fn x_time_is_after(later: XTimestamp, earlier: XTimestamp) -> bool {
+    later != earlier && later.wrapping_sub(earlier) < 0x8000_0000
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XSelectionChangeKind {
     SetOwner,

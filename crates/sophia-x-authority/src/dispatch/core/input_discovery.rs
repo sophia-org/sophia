@@ -46,10 +46,13 @@ fn dispatch_core_input_discovery_request(
                     }
                 }
                 XWireRequest::SetInputFocus {
-                    focus, revert_to, ..
+                    focus,
+                    revert_to,
+                    time,
                 } => {
                     let (previous, _) = runtime.input_focus(context.namespace);
-                    let applied = runtime.set_input_focus(context.namespace, focus, revert_to);
+                    let applied =
+                        x11_apply_focus_request(runtime, context, focus, revert_to, time);
                     input_focus_dispatch_result(context, focus, previous, applied)
                 }
                 XWireRequest::GetModifierMapping => XDispatchResult {
@@ -576,23 +579,68 @@ fn color_error(context: XDispatchContext, code: XErrorCode, resource_id: u32) ->
     })
 }
 
+/// What a focus request did, which X11 makes three-valued rather than two.
+///
+/// A request whose timestamp falls outside the window is neither applied nor
+/// an error. The protocol says it has no effect, so the client is owed
+/// nothing at all: no reply, no error, and no focus events. Without a third
+/// value that case is indistinguishable from success and the client is told
+/// the focus moved when it did not.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XFocusRequestOutcome {
+    Applied,
+    Ignored,
+    Refused(XAuthorityRuntimeError),
+}
+
+/// The whole of what SetInputFocus decides, in the order X11 states it.
+///
+/// Errors come first and are reported whatever the timestamp says, so a
+/// client that names an impossible revert_to or a window nobody created
+/// learns so even when its clock is also wrong. Only a request that would
+/// otherwise have succeeded is then measured against the server time, and
+/// only one that survives both moves the focus.
+pub(crate) fn x11_apply_focus_request(
+    runtime: &mut XAuthorityRuntime,
+    context: XDispatchContext,
+    focus: XResourceId,
+    revert_to: u8,
+    time: crate::XTimestamp,
+) -> XFocusRequestOutcome {
+    if let Err(error) = runtime.validate_input_focus(context.namespace, focus, revert_to) {
+        return XFocusRequestOutcome::Refused(error);
+    }
+    let Some(effective) = runtime.focus_time_admits(context.namespace, time, context.server_time)
+    else {
+        return XFocusRequestOutcome::Ignored;
+    };
+    match runtime.set_input_focus(context.namespace, focus, revert_to) {
+        Ok(()) => {
+            runtime.note_focus_change(context.namespace, effective);
+            XFocusRequestOutcome::Applied
+        }
+        Err(error) => XFocusRequestOutcome::Refused(error),
+    }
+}
+
 /// Shared exact core reply/event construction. The caller supplies the result
 /// of the actual effect producer; this routine changes no focus state.
 pub(crate) fn input_focus_dispatch_result(
     context: XDispatchContext,
     focus: XResourceId,
     previous: XResourceId,
-    applied: Result<(), XAuthorityRuntimeError>,
+    applied: XFocusRequestOutcome,
 ) -> XDispatchResult {
                     let outputs = match applied {
-                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                        XFocusRequestOutcome::Refused(error) => vec![XClientOutput::Error(x_error_from_runtime(
                             error,
                             context.sequence,
                             context.major_opcode,
                             0,
                             u32::try_from(focus.local.raw()).unwrap_or(0)))],
-                        Ok(()) if previous == focus => Vec::new(),
-                        Ok(()) => {
+                        XFocusRequestOutcome::Ignored => Vec::new(),
+                        XFocusRequestOutcome::Applied if previous == focus => Vec::new(),
+                        XFocusRequestOutcome::Applied => {
                             let mut outputs = Vec::with_capacity(2);
                             if previous.local.raw() != 0 {
                                 outputs.push(XClientOutput::Event(XClientEvent::Focus {

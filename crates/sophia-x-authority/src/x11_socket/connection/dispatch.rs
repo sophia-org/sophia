@@ -1406,7 +1406,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     };
                     let selection_property_read = selection_property_read_trace(&request);
                     let requested_input_focus = match &request {
-                        crate::XWireRequest::SetInputFocus { focus, revert_to, .. } => Some((*focus, *revert_to)),
+                        crate::XWireRequest::SetInputFocus { focus, revert_to, time } => Some((*focus, *revert_to, *time)),
                         _ => None,
                     };
                     let mapped_window = match &request {
@@ -1585,9 +1585,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     let mut output = match explicit_pointer_preparation {
                         _ if private_focus_routing.is_some() => {
                             runtime.begin_dispatch();
-                            let (focus, revert_to) = requested_input_focus.expect("focus guard");
+                            let (focus, revert_to, focus_time) = requested_input_focus.expect("focus guard");
                             let (output, pending) = x11_dispatch_private_focus(&mut runtime, dispatch_context, client,
-                                &focused_surface_window, private_focus_routing.expect("private owner"), focus, revert_to,
+                                &focused_surface_window, private_focus_routing.expect("private owner"), focus, revert_to, focus_time,
                                 state.runtime.clone(), state.control_runtime_pending.clone(), output_stream.clone(), output_control_pending.clone(), output_wire.clone())?;
                             pending_focus_publication = pending;
                             output
@@ -1950,10 +1950,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                     })?;
                             }
                         }
-                        if let Some((focus, _)) = requested_input_focus
-                            && private_focus_routing.is_none()
-                        {
-                            focused_surface_window.store(focus.local.raw(), Ordering::Release);
+                        if requested_input_focus.is_some() && private_focus_routing.is_none() {
+                            // A request the protocol discarded for its timestamp,
+                            // or refused outright, leaves the focus where it was.
+                            // The projection follows what the runtime actually
+                            // holds rather than what the client asked for.
+                            focused_surface_window.store(
+                                runtime.input_focus(namespace).0.local.raw(),
+                                Ordering::Release,
+                            );
                         }
                         let mut selections = core_event_selections.lock().map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")

@@ -637,12 +637,41 @@ fn x11_dispatch_private_focus(
     routing: &XServerFrontendRouteRegistry,
     window: XResourceId,
     revert_to: u8,
+    time: crate::XTimestamp,
     runtime_owner: Arc<Mutex<XAuthorityRuntime>>,
     control_runtime_pending: Arc<AtomicUsize>,
     output: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
 ) -> Result<(XDispatchResult, Option<X11PendingFocusPublication>), X11SetupSocketError> {
+    // Refusals and the clock are decided before anything is reserved. A
+    // request the protocol discards must leave no claim behind and publish
+    // no focus, or the ordering layer would wait on a change that never came.
+    let standing = runtime.input_focus(context.namespace).0;
+    if let Err(error) = runtime.validate_input_focus(context.namespace, window, revert_to) {
+        return Ok((
+            crate::dispatch::input_focus_dispatch_result(
+                context,
+                window,
+                standing,
+                crate::dispatch::XFocusRequestOutcome::Refused(error),
+            ),
+            None,
+        ));
+    }
+    let Some(effective_time) =
+        runtime.focus_time_admits(context.namespace, time, context.server_time)
+    else {
+        return Ok((
+            crate::dispatch::input_focus_dispatch_result(
+                context,
+                window,
+                standing,
+                crate::dispatch::XFocusRequestOutcome::Ignored,
+            ),
+            None,
+        ));
+    };
     let claim = routing
         .reserve_private_focus(client, window)
         .map_err(|cause| {
@@ -678,9 +707,12 @@ fn x11_dispatch_private_focus(
                 records: None,
                 emission: X11CoreFocusEmission::Waiting,
             });
-            Ok(())
+            runtime.note_focus_change(context.namespace, effective_time);
+            crate::dispatch::XFocusRequestOutcome::Applied
         }
-        Err(X11FocusApplyError::Runtime(cause)) => Err(cause),
+        Err(X11FocusApplyError::Runtime(cause)) => {
+            crate::dispatch::XFocusRequestOutcome::Refused(cause)
+        }
         Err(
             X11FocusApplyError::Superseded
             | X11FocusApplyError::State(

@@ -534,6 +534,7 @@ mod private_applied_focus {
             &fixture.private.broker.registry,
             target,
             1,
+            crate::X_CURRENT_TIME,
             fixture.state.runtime.clone(),
             fixture.state.control_runtime_pending.clone(),
             stream.clone(),

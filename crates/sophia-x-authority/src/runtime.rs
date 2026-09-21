@@ -241,6 +241,12 @@ pub struct XAuthorityRuntime {
     last_cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
     output_topology: OutputTopologySnapshot,
     input_focus: BTreeMap<NamespaceId, (crate::XResourceId, u8)>,
+    /// The last-focus-change time, kept per namespace beside the focus it
+    /// orders rather than once for the whole server as the protocol
+    /// describes it. The protocol has one focus so it has one time; we have
+    /// one focus per namespace, and a single shared time would let a change
+    /// in one namespace make an honest request in another look stale.
+    last_focus_change: BTreeMap<NamespaceId, crate::XTimestamp>,
     #[cfg(unix)]
     private_focus_source: Option<crate::x11_socket::XPrivateFocusRuntimeSource>,
     defer_policy_maps: bool,
@@ -312,6 +318,7 @@ impl Default for XAuthorityRuntime {
             last_cpu_buffer_updates: Vec::new(),
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
+            last_focus_change: Default::default(),
             #[cfg(unix)]
             private_focus_source: None,
             defer_policy_maps: false,
@@ -477,8 +484,13 @@ impl XAuthorityRuntime {
         Ok(())
     }
 
-    pub fn set_input_focus(
-        &mut self,
+    /// Everything SetInputFocus must refuse, with no state changed either way.
+    ///
+    /// Split out from the effect because X11 orders the two: the errors are
+    /// reported whatever the request's timestamp says, and only a request
+    /// that would otherwise succeed is then measured against the clock.
+    pub fn validate_input_focus(
+        &self,
         namespace: NamespaceId,
         focus: crate::XResourceId,
         revert_to: u8,
@@ -489,6 +501,60 @@ impl XAuthorityRuntime {
         if focus.local.raw() != 0 && focus.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
             self.validate_window_access(namespace, focus)?;
         }
+        Ok(())
+    }
+
+    /// The namespace's last-focus-change time, zero before its first change.
+    #[must_use]
+    pub fn last_focus_change(&self, namespace: NamespaceId) -> crate::XTimestamp {
+        self.last_focus_change
+            .get(&namespace)
+            .copied()
+            .unwrap_or(crate::X_CURRENT_TIME)
+    }
+
+    /// Whether a focus request bearing `time` may take effect, and at what
+    /// instant it would be recorded.
+    ///
+    /// X11 orders focus changes by the client's stated time rather than by
+    /// arrival, so a request is discarded outright when it names a moment
+    /// before the last change this namespace already made, or one the server
+    /// has not reached yet. Discarded is not an error: the protocol says such
+    /// a request has no effect, so the client is owed no reply, no error and
+    /// no events. `CurrentTime` is the client declining to name a moment and
+    /// passes both bounds, taking the server's own clock as its instant.
+    #[must_use]
+    pub fn focus_time_admits(
+        &self,
+        namespace: NamespaceId,
+        time: crate::XTimestamp,
+        server_time: crate::XTimestamp,
+    ) -> Option<crate::XTimestamp> {
+        if time == crate::X_CURRENT_TIME {
+            return Some(server_time);
+        }
+        if crate::x_time_is_after(self.last_focus_change(namespace), time)
+            || crate::x_time_is_after(time, server_time)
+        {
+            return None;
+        }
+        Some(time)
+    }
+
+    /// Records the instant a focus change took effect at. Only a request that
+    /// names a time does this: reversion moves the focus without moving the
+    /// clock, so a later request that was honest when it was sent still lands.
+    pub fn note_focus_change(&mut self, namespace: NamespaceId, time: crate::XTimestamp) {
+        self.last_focus_change.insert(namespace, time);
+    }
+
+    pub fn set_input_focus(
+        &mut self,
+        namespace: NamespaceId,
+        focus: crate::XResourceId,
+        revert_to: u8,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        self.validate_input_focus(namespace, focus, revert_to)?;
         self.input_focus.insert(namespace, (focus, revert_to));
         Ok(())
     }
