@@ -40,11 +40,18 @@ require_exactly_one \
     'sophia_qemu_recovery schema=1 status=complete qemu_exit=0' \
     'clean host completion'
 
-if ! grep -Eq '^sophia_live_session_input_pipeline schema=2 status=poller_ready devices=[1-9][0-9]* tap_capable=[0-9]+ tap_enabled=[0-9]+$' "$EVIDENCE_FILE"; then
+# Schema 4 names the seat it opened and splits the device count by kind. The
+# keyboard count carries the same weight as the guard's: this scenario proves a
+# key chord, and a poller holding pointers alone could not see one.
+if ! grep -Eq '^sophia_live_session_input_pipeline schema=4 status=poller_ready source=[a-z_]+ seat=[a-z_]+ devices=[1-9][0-9]* active=[1-9][0-9]* keyboards=[1-9][0-9]* pointers=[0-9]+ touch=[0-9]+ tap_capable=[0-9]+ tap_enabled=[0-9]+ pointer_configured=[0-9]+ settings_unsupported=[0-9]+$' "$EVIDENCE_FILE"; then
     echo "QEMU emergency recovery evidence is missing physical input readiness" >&2
     exit 1
 fi
-if ! grep -q '^sophia_session_input_guard schema=1 status=ready devices=[1-9][0-9]*$' "$EVIDENCE_FILE"; then
+# The guard's readiness line is schema 2 and names what it opened: a seat, its
+# devices, and how many of them are keyboards. The count that matters here is
+# the keyboards -- the chord this scenario fires is a key combination, and a
+# guard holding six devices and no keyboard could not observe it.
+if ! grep -Eq '^sophia_session_input_guard schema=2 status=ready source=[a-z_]+ seat=[a-z_]+ devices=[1-9][0-9]* keyboards=[1-9][0-9]*$' "$EVIDENCE_FILE"; then
     echo "QEMU emergency recovery evidence is missing independent input guard readiness" >&2
     exit 1
 fi
