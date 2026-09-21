@@ -96,6 +96,7 @@ pub(super) mod input_guard;
 mod metadata_broker;
 pub(crate) mod metadata_shell;
 mod socket_directories;
+mod startup_barrier;
 use cpu_visual_progress::{CpuVisualProgress, presented_logical_checksum};
 use metadata_shell::live_shell_activation_surfaces;
 mod native_retirement;
@@ -909,22 +910,8 @@ pub(crate) fn run_persistent_xterm_session(
         config.socket_path.clone(),
         config.normal_session,
     );
-    // Admit one primary-client transaction before launching the second, or
-    // both xterms race for the first committed surface and initial focus is
-    // nondeterministic. Two clients starting is the whole hazard; also
-    // requiring a startup proof was narrower, and let the QEMU session race.
     let initial_authority_batch =
-        if config.secondary_terminal || config.applications.startup.len() > 1 {
-            Some(
-                authority_receiver
-                    .recv_timeout(Duration::from_secs(5))
-                    .map_err(|error| {
-                        format!("primary xterm did not publish a startup frame: {error}")
-                    })?,
-            )
-        } else {
-            None
-        };
+        startup_barrier::await_primary_startup_frame(&config, &authority_receiver)?;
     if config.secondary_terminal {
         process.add_secondary_child(
             None,
