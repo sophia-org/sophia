@@ -57,6 +57,9 @@ macro_rules! drain_physical_input {
                 &empty_projections[..],
                 |runtime| runtime.input_projections(),
             );
+            // Read before the context borrows `wm_session` mutably for
+            // shortcuts; this only asks whether one exists.
+            let pointer_focus_policy_available = wm_session.is_some();
             let report = route_physical_input(
                 poller,
                 PhysicalInputRoutingContext {
@@ -93,6 +96,7 @@ macro_rules! drain_physical_input {
                     physical_text_proof: physical_text_proof.as_mut(),
                     keyboard_focus_handoff: &mut keyboard_focus_handoff,
                     pointer_focus_handoff: &mut pointer_focus_handoff,
+                    pointer_focus_policy_available,
                     applied_client_focus,
                     floating_gesture: &mut floating_pointer_gesture,
                     application_route_leases: &mut application_route_leases,
@@ -569,9 +573,26 @@ macro_rules! drain_physical_input {
                         continue;
                     }
                     PhysicalPolicyInput::ClickFocus(surface) => {
-                        let wm = wm_session
-                            .as_mut()
-                            .ok_or("pointer focus requested without a live WM session")?;
+                        // A SESSION WITHOUT A WM HAS NO FOCUS TO CHANGE. The
+                        // hover arm above already reads the absence that way
+                        // and continues; this arm made it fatal, which killed
+                        // every session configured for a pointer proof with no
+                        // window manager. That is the QEMU scenario exactly --
+                        // it passes `--expect-physical-pointer` and starts no
+                        // WM -- so the session announced `pointer status=ready
+                        // action=select`, the harness sent the click it had
+                        // just asked for, and the session died on the answer.
+                        // Dropping the request costs the proof nothing: focus
+                        // policy is not what a pointer proof measures, and the
+                        // button still routes to the client through the
+                        // authority, which is what moves the pixels it reads.
+                        let Some(wm) = wm_session.as_mut() else {
+                            crate::session_eprintln!(
+                                "sophia_live_wm schema=3 status=request_rejected source=pointer_focus reason=no_wm_session surface={}",
+                                surface.index(),
+                            );
+                            continue;
+                        };
                         match wm.enqueue_focus(surface, &layout, output)? {
                             LiveWmRequestAdmission::Admitted => {
                                 crate::session_println!(

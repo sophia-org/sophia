@@ -228,7 +228,102 @@ exercised and recorded: `runtime_committed=32`, `native_submissions=37`,
 `native_retirements=35`, `native_nonzero_exports=18`, `cpu_nonzero_frames=16`,
 `input_text_match=true`.
 
-## What still holds t126 open
+## What running the gate found — 2026-09-20
+
+The section this replaces was written from the session scenario's failure
+text. Running the gate showed that reading was incomplete in the way that
+matters: **the verifier was not being reached at all.** Three further defects
+killed the session first, and a fourth and fifth are in the verifiers.
+
+All of them trace to one thing. `4c05e428` (2026-07-26, "Implement ordered
+pointer focus handoff") assumed a window manager exists to complete a handoff.
+The last passing run is 2026-07-18, eight days earlier, and the gate then went
+unrun for seven weeks. The July evidence is what settles it: `wm_policy=disabled`
+with `physical_pointer_events=5 physical_pointer_routed=5`. The pointer proof
+worked without a WM, by design, until that commit.
+
+**1. A click with no WM was fatal.** `physical_input_phase.rs` answered a
+`ClickFocus` with `.ok_or("pointer focus requested without a live WM session")?`
+while the `Hover` arm three lines above treats the same absence as benign. The
+session printed `pointer schema=1 status=ready source=physical action=select`,
+the harness sent the click, and the session died on the answer to its own
+request. Now dropped and recorded.
+
+**2. The handoff swallowed the button.** A left press that opens an ordered
+handoff is withheld until the handoff answers. Nothing answers without a WM,
+so it expired — `focus_handoff_dropped reason=timeout` — and took the press
+with it: `pointer_button_count=3 pointer_routed_count=0`, suppressed under
+*neither* recorded reason. The routing context now offers the handoff only
+where something can close it (`pointer_focus_policy_available`, from
+`wm_session.is_some()`). With a WM nothing changes.
+
+This is **not** QEMU-specific and is the finding with the widest reach: the
+standalone, native and kitty-fallback profiles all run without a WM, so a
+left click on an unfocused window has been silently dropped in all of them
+since July. Hagia sessions (`wm_policy=external`) were never affected, which
+is why daily use never showed it.
+
+**3. Ticks were counted through the drain — caused by the repair above.**
+`begin_session_quiescence!` is idempotent and does not leave the loop, so the
+drain is made of ordinary idle turns and `metrics.session_ticks` kept
+incrementing past its own limit: 315 and 342 on two runs of the same 300-tick
+scenario. Before the quiescence repair the session failed out of the loop here
+and the counter stopped by accident. It now stops counting once the session
+has decided to stop, and reads 300 exactly, as July did.
+
+**4. The verifier required two gauges to be non-zero.** Confirmed as suspected
+above, and now measured rather than inferred. From a healthy run:
+`runtime_committed=48 runtime_surfaces=0 cpu_layers=0 cpu_nonzero_frames=16
+native_submissions=36 native_nonzero_exports=17 pointer_pixel_change=true`.
+Every counter healthy; the two gauges correctly zero. `runtime_surfaces` was
+`authority_surfaces_applied` when the list was written — hence July's
+`runtime_surfaces=117` exactly equalling `runtime_committed=117` — and the
+08-29 split made it `committed_surfaces().len()`. Both dropped from
+`positive_keys`, kept in `expected_keys`, following the precedent already in
+that list: `cpu_nonzero_pixel_bytes` is excluded in favour of its high-water
+twin.
+
+**5. Terminal-content readiness was asserted exactly-once.** That record is
+emitted per surface (`input_content_surface != Some(surface)`), not per
+session, so a two-terminal scenario legitimately produces two; across four
+runs it read 1, 1, 2, 1. Exactly-once belongs to the latched
+`sophia_live_session_startup` record beside it. Relaxed to at-least-one.
+
+### Where it stands, and what is left
+
+The persistent-evidence verifier now passes a healthy run, all four
+pass-fixtures still pass, all four negative fixtures still fail, and
+`sophia_qemu_guest` reports `status=complete ticks=300`.
+
+**The remaining blocker is the same defect as 4, in a second place.**
+`verify_qemu_session_evidence.sh:211-214` requires `cpu_layers >= 2` to prove
+two terminals composed together. It reads the same end-of-session gauge, and
+it only ever worked by accident: July's run has *no quiescence records at all*
+and ended with its clients alive, so the final report counted 2. Now
+quiescence drains the clients first and the final composition is empty.
+
+Both terminals are genuinely there — `surface=2097164` and `surface=4194316`
+both commit — so nothing is wrong with the session. `cpu_layers` appears
+exactly once in a 63KB log, so there is no per-frame record to fall back on,
+and the property the check wants (*at some point two terminal layers were
+composed together*) has no field. It needs a high-water `cpu_max_layers`, and
+`runtime_max_surfaces` beside it for the same reason, which is a schema bump.
+
+That was filed as deferred follow-up work when the plan was written; running
+the gate moved it onto the critical path. **t126 stays open on it.** Weakening
+the two-terminal check to green the gate would throw away the one assertion
+that the scenario exists to make.
+
+### A note on the fixtures
+
+The four pass-fixtures carry `cpu_layers=1` and `runtime_surfaces=20|41` and
+still pass — but they are recordings from the counter era and now pass for a
+reason that no longer holds. They are left as they are rather than
+re-recorded: a fixture rewritten to match current behaviour stops being
+independent evidence. They should be re-recorded from a real run once the
+high-water fields land.
+
+## What was thought to hold t126 open, before the gate was run
 
 The gate now fails later and elsewhere, in
 `tools/verify_live_session_persistent_evidence.sh`, whose `positive_keys` list

@@ -1462,7 +1462,20 @@
             {
                 begin_session_quiescence!("tick_limit");
             }
-            metrics.session_ticks = metrics.session_ticks.saturating_add(1);
+            // COUNT TICKS THE SESSION RAN, NOT TICKS IT SPENT LEAVING.
+            // `begin_session_quiescence!` is idempotent and does not leave the
+            // loop, so the drain that follows is made of ordinary idle turns.
+            // Counting those makes `session_ticks` overshoot its own limit by
+            // however long the drain happened to take -- 315 and 342 on two
+            // runs of the same 300-tick scenario -- and the number stops being
+            // the thing `--max-ticks` bounds. It reads 300 exactly here, as it
+            // did on the last passing run, because the session stops counting
+            // once it has decided to stop. Only reachable since the session
+            // began surviving its own quiescence; before that it failed out of
+            // the loop here and the counter stopped by accident.
+            if session_quiescence.is_none() {
+                metrics.session_ticks = metrics.session_ticks.saturating_add(1);
+            }
         }
 
         

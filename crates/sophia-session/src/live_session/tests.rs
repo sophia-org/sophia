@@ -1580,6 +1580,9 @@ mod window_allocation;
 #[path = "../../tests/support/pointer_focus.rs"]
 mod pointer_focus_tests;
 
+#[path = "../../tests/support/pointer_focus_handoff_routing.rs"]
+mod pointer_focus_handoff_routing;
+
 mod input_recovery_tests;
 
 mod socket_directory_tests;

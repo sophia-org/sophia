@@ -32,9 +32,9 @@ large crates/sophia-session/src/live_session.rs 1336
 large crates/sophia-session/src/live_session/config.rs 1452
 large crates/sophia-session/src/live_session/input.rs 1954
 large crates/sophia-session/src/live_session/owner_loop/completion.rs 1523
-large crates/sophia-session/src/live_session/owner_loop/lifecycle.rs 1469
-large crates/sophia-session/src/live_session/owner_loop/physical_input_phase.rs 1580
-large crates/sophia-session/src/live_session/tests.rs 1614
+large crates/sophia-session/src/live_session/owner_loop/lifecycle.rs 1482
+large crates/sophia-session/src/live_session/owner_loop/physical_input_phase.rs 1601
+large crates/sophia-session/src/live_session/tests.rs 1617
 large crates/sophia-session/src/live_session/tests/input_policy_tests.rs 1479
 large crates/sophia-session/src/live_session/tests/session_config_tests.rs 1782
 large crates/sophia-session/src/live_session/tests/wm_session_tests.rs 1638

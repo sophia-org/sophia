@@ -212,7 +212,17 @@ if [[ "${observed[schema]}" =~ ^(10|11|12|13|14|15|16|17)$ ]]; then
     fi
 fi
 if [[ "${observed[schema]}" =~ ^(10|11|12|13|14|15|16|17)$ ]] && [[ "${observed[input_events_expected]}" != "0" ]]; then
-    if [[ "$(grep -Ec '^sophia_live_session_input_pipeline schema=(1 status=terminal_content_ready|2 status=content_ready source=(cpu_visual_detail|stable_present_scanout))$' "$EVIDENCE_FILE" || true)" -ne 1 ]]; then
+    # AT LEAST ONE, NOT EXACTLY ONE. This record is emitted per surface, not
+    # per session: the guard is `input_content_surface != Some(surface)`, so
+    # each surface that becomes ready announces itself once. A two-terminal
+    # scenario legitimately produces two, and whether it does depends on
+    # whether the second terminal's content is detected before the session
+    # stops -- across four runs of the same scenario this read 1, 1, 2, 1.
+    # Exactly-once belongs to the `sophia_live_session_startup` record emitted
+    # beside it, which is latched by `startup_content_ready` and is what the
+    # other verifiers assert on. What matters here is that terminal content
+    # became ready at all.
+    if [[ "$(grep -Ec '^sophia_live_session_input_pipeline schema=(1 status=terminal_content_ready|2 status=content_ready source=(cpu_visual_detail|stable_present_scanout))$' "$EVIDENCE_FILE" || true)" -lt 1 ]]; then
         echo "persistent live-session evidence is missing terminal-content readiness" >&2
         exit 1
     fi
@@ -324,9 +334,32 @@ elif [[ "${observed[pointer_pixel_change]}" != "false" ]]; then
     exit 1
 fi
 
+# COUNTERS AND HIGH-WATER MARKS ONLY -- NEVER A GAUGE.
+# This record is emitted at bounded_complete, after the clients have gone, so
+# anything sampled rather than accumulated reads its end-of-session value and
+# a healthy run is indistinguishable from a dead one. The list already knows
+# this once: `cpu_nonzero_pixel_bytes` is absent and its high-water twin
+# `cpu_max_nonzero_pixel_bytes` stands in its place.
+#
+# `runtime_surfaces` and `cpu_layers` were in this list because both were
+# totals when it was written -- `runtime_surfaces` was
+# `authority_surfaces_applied`, which is why the last passing run (2026-07-18)
+# reads `runtime_surfaces=117` exactly equalling `runtime_committed=117`. The
+# 08-29 production/tooling split made it `runtime.committed_surfaces().len()`,
+# and `cpu_layers` is `report.layers_composed`, reset per composition. Both are
+# now correctly 0 at a clean end, so requiring them non-zero failed every
+# healthy session. They stay in `expected_keys`: a missing field is still a
+# failure, an end-of-session zero is not.
+#
+# Composition is still required, by the counters left here: `runtime_committed`
+# accumulates through `record_runtime_commits`, `cpu_nonzero_frames` counts
+# frames that carried pixels, and the `native_*` totals cover scanout. Nothing
+# yet asserts that surfaces or CPU layers ever existed at all -- only that
+# frames had content -- which wants `runtime_max_surfaces` and `cpu_max_layers`
+# and a schema bump, and is tracked separately rather than faked here.
 positive_keys=(
     elapsed_msec session_ticks authority_batches authority_transactions authority_queue_capacity
-    backend_ticks runtime_committed runtime_surfaces cpu_layers
+    backend_ticks runtime_committed
     cpu_max_nonzero_pixel_bytes cpu_nonzero_frames cpu_checksum
     native_submissions native_retirements native_callback_accepted
     native_nonzero_exports native_export_attempts

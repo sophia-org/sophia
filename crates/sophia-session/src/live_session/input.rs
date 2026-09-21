@@ -342,6 +342,13 @@ struct PhysicalInputRoutingContext<'a> {
     physical_text_proof: Option<&'a mut PhysicalTextProof>,
     keyboard_focus_handoff: &'a mut KeyboardFocusHandoffState,
     pointer_focus_handoff: &'a mut PointerFocusHandoffState,
+    /// Whether anything exists that can CLOSE an ordered focus handoff.
+    /// A press that opens one is withheld until the handoff answers, so
+    /// where nothing answers the press expires with it and the button is
+    /// never delivered. Only a WM session answers, and a session may run
+    /// without one -- the QEMU pointer proof does -- so the handoff is
+    /// offered only when it can be completed.
+    pointer_focus_policy_available: bool,
     applied_client_focus: Option<SurfaceId>,
     floating_gesture: &'a mut FloatingPointerGestureState,
     application_route_leases: &'a mut ApplicationRouteLeaseState,
@@ -401,6 +408,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         physical_text_proof,
         keyboard_focus_handoff,
         pointer_focus_handoff,
+        pointer_focus_policy_available,
         applied_client_focus,
         floating_gesture,
         application_route_leases,
@@ -444,7 +452,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         now_msec,
         physical_text_proof,
         Some(keyboard_focus_handoff),
-        Some(pointer_focus_handoff),
+        pointer_focus_policy_available.then_some(pointer_focus_handoff),
         applied_client_focus,
         Some(floating_gesture),
         Some(application_route_leases),
