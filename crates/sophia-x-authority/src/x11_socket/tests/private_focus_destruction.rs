@@ -50,6 +50,13 @@ fn create_focus_test_window(fixture: &Fixture, target: XResourceId, parent: XRes
 }
 
 fn assert_destroyed_focus(fixture: &Fixture, old: &PrivateFocusClaim) {
+    // Destroying the focus window reverts the focus, and these fixtures took
+    // it through an Engine surface focus, whose revert_to is PointerRoot. The
+    // protocol says a PointerRoot revert_to reverts to PointerRoot and keeps
+    // itself, so the focus is the PointerRoot sentinel rather than the root
+    // window. It read the root while destroy reset unconditionally and
+    // ignored revert_to.
+    let pointer_root = XResourceId::new(u64::from(crate::X_FOCUS_POINTER_ROOT), 1);
     assert_eq!(
         fixture
             .state
@@ -57,11 +64,11 @@ fn assert_destroyed_focus(fixture: &Fixture, old: &PrivateFocusClaim) {
             .lock()
             .unwrap()
             .input_focus(namespace()),
-        (root(), 1)
+        (pointer_root, crate::X_REVERT_TO_POINTER_ROOT)
     );
     assert_eq!(
         fixture.projection.load(Ordering::Acquire),
-        root().local.raw()
+        pointer_root.local.raw()
     );
     let publication = fixture
         .private

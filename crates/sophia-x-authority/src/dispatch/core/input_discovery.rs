@@ -593,6 +593,32 @@ pub(crate) enum XFocusRequestOutcome {
     Refused(XAuthorityRuntimeError),
 }
 
+/// The focus events a reversion made during this request owes the client.
+///
+/// Selection is not consulted here: this layer decides the requesting
+/// client's own copy, and the routing filter drops what the window did not
+/// ask for, exactly as it does for the events a focus request generates.
+fn focus_reversion_outputs(
+    context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
+) -> Vec<XClientOutput> {
+    runtime
+        .take_focus_reversions()
+        .into_iter()
+        .filter(|(namespace, _)| *namespace == context.namespace)
+        .flat_map(|(_, events)| events)
+        .map(|event| {
+            XClientOutput::Event(XClientEvent::Focus {
+                sequence: context.sequence,
+                focused: event.focused,
+                detail: event.detail,
+                event: event.window,
+                mode: crate::X_FOCUS_MODE_NORMAL,
+            })
+        })
+        .collect()
+}
+
 /// The whole of what SetInputFocus decides, in the order X11 states it.
 ///
 /// Errors come first and are reported whatever the timestamp says, so a

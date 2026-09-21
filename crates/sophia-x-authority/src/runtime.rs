@@ -247,6 +247,15 @@ pub struct XAuthorityRuntime {
     /// one focus per namespace, and a single shared time would let a change
     /// in one namespace make an honest request in another look stale.
     last_focus_change: BTreeMap<NamespaceId, crate::XTimestamp>,
+    /// Focus changes the server made by itself because the focus window
+    /// stopped being viewable, oldest first, each as the transition it was.
+    ///
+    /// Left here for the same reason as the active-window queue below: the
+    /// runtime owns the focus and knows when a window stops being viewable,
+    /// but it cannot reach a client's socket or its event selections. The
+    /// layer that can drains this and generates the FocusIn and FocusOut the
+    /// reversion owes.
+    focus_reversions: Vec<(NamespaceId, Vec<crate::XFocusTransitionEvent>)>,
     /// Focus changes not yet published as `_NET_ACTIVE_WINDOW`, oldest first.
     /// Left here because the runtime does not hold the property table; the
     /// layer that does drains this after each request or focus command.
@@ -323,6 +332,7 @@ impl Default for XAuthorityRuntime {
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
             last_focus_change: Default::default(),
+            focus_reversions: Vec::new(),
             active_window_changes: Vec::new(),
             #[cfg(unix)]
             private_focus_source: None,
@@ -561,6 +571,92 @@ impl XAuthorityRuntime {
     /// clock, so a later request that was honest when it was sent still lands.
     pub fn note_focus_change(&mut self, namespace: NamespaceId, time: crate::XTimestamp) {
         self.last_focus_change.insert(namespace, time);
+    }
+
+    /// The chain from the root down to `window`, root first.
+    fn window_ancestry_chain(&self, window: crate::XResourceId) -> Vec<crate::XResourceId> {
+        let mut chain = vec![window];
+        let mut candidate = window;
+        // The store's parent links are bounded and this walk is cycle-guarded,
+        // because a cycle here would hang a request rather than fail one.
+        for _ in 0..64 {
+            let Some(parent) = self.windows.get(candidate).map(|record| record.parent) else {
+                break;
+            };
+            if parent == candidate || chain.contains(&parent) {
+                break;
+            }
+            chain.push(parent);
+            candidate = parent;
+            if parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+                break;
+            }
+        }
+        chain.reverse();
+        chain
+    }
+
+    /// Whether a window may hold the focus: the root always may, and any other
+    /// window only while it and all its ancestors are mapped.
+    fn window_holds_focus_viewably(&self, window: crate::XResourceId) -> bool {
+        let raw = window.local.raw();
+        if raw == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+            return true;
+        }
+        self.windows
+            .get(window)
+            .is_some_and(|record| record.map_state == crate::XMapState::Viewable)
+    }
+
+    /// Moves the focus off a window that has stopped being viewable.
+    ///
+    /// X11 does not leave the focus on a window nobody can see. Where it goes
+    /// is the revert_to the client supplied when it took the focus, which is
+    /// why revert_to exists at all. This runs after anything that can change
+    /// viewability, and does nothing in the ordinary case where the focus is
+    /// still fine.
+    ///
+    /// The last-focus-change time is deliberately left alone: reverting is the
+    /// server acting, not a client naming a moment, so a request that was
+    /// honest when it was sent still lands afterwards.
+    pub(crate) fn revert_focus_if_unviewable(&mut self, namespace: NamespaceId) {
+        let (focus, revert_to) = self.input_focus(namespace);
+        let old = crate::XFocusTarget::from_resource(focus);
+        let crate::XFocusTarget::Window(window) = old else {
+            // None and PointerRoot are not windows and cannot stop being
+            // viewable, so there is nothing to revert from.
+            return;
+        };
+        if self.window_holds_focus_viewably(window) {
+            return;
+        }
+        let ancestry = |candidate: crate::XResourceId| self.window_ancestry_chain(candidate);
+        let viewable = |candidate: crate::XResourceId| self.window_holds_focus_viewably(candidate);
+        let chains = crate::XFocusChains {
+            root: crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1),
+            pointer: crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1),
+            ancestry: &ancestry,
+        };
+        let (new, new_revert_to) = crate::x_focus_reversion(revert_to, window, &chains, &viewable);
+        // The events are computed here, while the window tree still holds the
+        // chain they are described over. A destroy removes the record before
+        // this runs, so its old focus stands alone, which is the honest
+        // reading of a window that no longer exists.
+        let events = crate::x_focus_transition_events(old, new, &chains);
+        self.input_focus
+            .insert(namespace, (new.to_resource(), new_revert_to));
+        self.note_active_window(namespace, new.to_resource());
+        if !events.is_empty() {
+            self.focus_reversions.push((namespace, events));
+        }
+    }
+
+    /// Takes the reversions made since the last drain, for the layer that can
+    /// reach a client's event selections to turn into records.
+    pub fn take_focus_reversions(
+        &mut self,
+    ) -> Vec<(NamespaceId, Vec<crate::XFocusTransitionEvent>)> {
+        core::mem::take(&mut self.focus_reversions)
     }
 
     pub fn set_input_focus(

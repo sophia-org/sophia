@@ -311,7 +311,14 @@ pub fn dispatch_x11_wire_request(
     atoms: &mut XAtomTable,
     properties: &mut XPropertyTable,
 ) -> XDispatchResult {
-    let result = dispatch_x11_wire_request_inner(context, request, runtime, atoms, properties);
+    let mut result = dispatch_x11_wire_request_inner(context, request, runtime, atoms, properties);
+    // A request that made the focus window unviewable moved the focus by
+    // itself. What that owes belongs with this request's own output, because
+    // the protocol orders a reversion's FocusOut after the UnmapNotify that
+    // caused it and before anything the client does next.
+    result
+        .outputs
+        .extend(focus_reversion_outputs(context, runtime));
     // Behaviour behind `_NET_ACTIVE_WINDOW`: whatever this request did to the
     // input focus is on the root before the client hears the result.
     publish_noted_focus(runtime, properties, atoms, context.byte_order);
@@ -595,31 +602,6 @@ fn dispatch_poly_text(
         response: Some(response),
         outputs,
         metadata_candidates: Vec::new(),
-    }
-}
-
-/// Admits the root window alongside a client's own windows.
-///
-/// The root is synthetic here: it is never inserted into the resource table, so
-/// `validate_window_access` cannot find it and refuses it. Requests that name a
-/// window purely to scope something -- a grab, a cursor, an event selection --
-/// accept the root in X11, and refusing it turns an ordinary client idiom into a
-/// `BadWindow`. `validate_drawable_access` already admits the root for the same
-/// reason; this is the window-shaped half of that rule.
-///
-/// Requests that act *on* a window rather than scope to one keep using
-/// `validate_window_access` directly, because refusing the root is correct for
-/// them: reparenting, destroying, and creating a GLX drawable from the root are
-/// all errors.
-fn validate_window_or_root_access(
-    runtime: &XAuthorityRuntime,
-    namespace: NamespaceId,
-    window: XResourceId,
-) -> Result<(), XAuthorityRuntimeError> {
-    if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
-        Ok(())
-    } else {
-        runtime.validate_window_access(namespace, window)
     }
 }
 

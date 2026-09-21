@@ -150,3 +150,151 @@ fn x11_set_input_focus_refuses_an_out_of_range_revert_to_with_bad_value() {
         )
     );
 }
+
+/// Unmaps a window and returns what the client was sent for that request.
+fn unmap_outputs(
+    runtime: &mut XAuthorityRuntime,
+    atoms: &mut XAtomTable,
+    properties: &mut XPropertyTable,
+    namespace: NamespaceId,
+    sequence: u16,
+    window: XResourceId,
+) -> Vec<Vec<u8>> {
+    let mut request = vec![10u8, 0, 2, 0];
+    request.extend_from_slice(&u32::try_from(window.local.raw()).unwrap().to_le_bytes());
+    let decoded = decode_x11_core_request(
+        context(namespace, u64::from(sequence), XByteOrder::LittleEndian),
+        &request,
+    )
+    .unwrap();
+    let mut dispatch = dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 10);
+    dispatch.server_time = 4_242;
+    dispatch_x11_wire_request(dispatch, decoded, runtime, atoms, properties)
+        .encoded_outputs(XByteOrder::LittleEndian)
+}
+
+#[test]
+fn x11_unmapping_the_focus_window_reverts_the_focus_and_says_so() {
+    let (mut runtime, mut atoms, mut properties, namespace) = focus_fixture();
+    let base = focus_candidate_window(&mut runtime, namespace, 0x0b00_0001, true);
+    let child = focus_candidate_window(&mut runtime, namespace, 0x0b00_0002, true);
+    runtime.set_window_parent(namespace, child, base).unwrap();
+
+    // Focus the child with revert_to Parent, the case the protocol describes
+    // at length: the focus should climb to the closest viewable ancestor and
+    // forget that it was ever told to.
+    let mut request = vec![42u8, X_REVERT_TO_PARENT, 3, 0];
+    request.extend_from_slice(&u32::try_from(child.local.raw()).unwrap().to_le_bytes());
+    request.extend_from_slice(&X_CURRENT_TIME.to_le_bytes());
+    let decoded = decode_x11_core_request(
+        context(namespace, 1, XByteOrder::LittleEndian),
+        &request,
+    )
+    .unwrap();
+    let mut dispatch = dispatch_context(namespace, 1, XByteOrder::LittleEndian, 42);
+    dispatch.server_time = 4_242;
+    dispatch_x11_wire_request(dispatch, decoded, &mut runtime, &mut atoms, &mut properties);
+    assert_eq!(
+        (child, X_REVERT_TO_PARENT),
+        runtime.input_focus(namespace),
+        "the child holds the focus before anything is unmapped"
+    );
+
+    let outputs = unmap_outputs(
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+        namespace,
+        2,
+        child,
+    );
+    assert_eq!(
+        (base, X_REVERT_TO_NONE),
+        runtime.input_focus(namespace),
+        "the focus reverts to the parent and the revert_to becomes None"
+    );
+
+    // The child is told the focus left it and the base is told it arrived,
+    // which is the pair the conformance suite waits for.
+    let focus_events: Vec<(u8, u8)> = outputs
+        .iter()
+        .filter(|output| output[0] == 9 || output[0] == 10)
+        .map(|output| (output[0], output[1]))
+        .collect();
+    assert_eq!(
+        vec![(10, X_FOCUS_DETAIL_ANCESTOR), (9, X_FOCUS_DETAIL_INFERIOR)],
+        focus_events,
+        "a FocusOut on the child and a FocusIn on its parent: {outputs:?}"
+    );
+}
+
+#[test]
+fn x11_unmapping_the_focus_window_honours_pointer_root_and_none_reverts() {
+    for (revert_to, expected) in [
+        (X_REVERT_TO_POINTER_ROOT, X_FOCUS_POINTER_ROOT),
+        (X_REVERT_TO_NONE, X_FOCUS_NONE),
+    ] {
+        let (mut runtime, mut atoms, mut properties, namespace) = focus_fixture();
+        let window = focus_candidate_window(&mut runtime, namespace, 0x0c00_0001, true);
+        let mut request = vec![42u8, revert_to, 3, 0];
+        request.extend_from_slice(&u32::try_from(window.local.raw()).unwrap().to_le_bytes());
+        request.extend_from_slice(&X_CURRENT_TIME.to_le_bytes());
+        let decoded = decode_x11_core_request(
+            context(namespace, 1, XByteOrder::LittleEndian),
+            &request,
+        )
+        .unwrap();
+        let mut dispatch = dispatch_context(namespace, 1, XByteOrder::LittleEndian, 42);
+        dispatch.server_time = 4_242;
+        dispatch_x11_wire_request(dispatch, decoded, &mut runtime, &mut atoms, &mut properties);
+
+        unmap_outputs(
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+            namespace,
+            2,
+            window,
+        );
+        let (focus, kept) = runtime.input_focus(namespace);
+        assert_eq!(
+            u64::from(expected),
+            focus.local.raw(),
+            "revert_to {revert_to} reverts to exactly that value"
+        );
+        assert_eq!(
+            revert_to, kept,
+            "and keeps its revert_to, because there is nothing left to walk"
+        );
+    }
+}
+
+#[test]
+fn x11_a_reversion_does_not_move_the_last_focus_change_time() {
+    let (mut runtime, mut atoms, mut properties, namespace) = focus_fixture();
+    let window = focus_candidate_window(&mut runtime, namespace, 0x0d00_0001, true);
+    let mut request = vec![42u8, X_REVERT_TO_NONE, 3, 0];
+    request.extend_from_slice(&u32::try_from(window.local.raw()).unwrap().to_le_bytes());
+    request.extend_from_slice(&700u32.to_le_bytes());
+    let decoded =
+        decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap();
+    let mut dispatch = dispatch_context(namespace, 1, XByteOrder::LittleEndian, 42);
+    dispatch.server_time = 4_242;
+    dispatch_x11_wire_request(dispatch, decoded, &mut runtime, &mut atoms, &mut properties);
+    assert_eq!(700, runtime.last_focus_change(namespace));
+
+    unmap_outputs(
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+        namespace,
+        2,
+        window,
+    );
+    assert_eq!(
+        700,
+        runtime.last_focus_change(namespace),
+        "reverting is the server acting, not a client naming a moment, so a \
+         request that was honest when it was sent still lands afterwards"
+    );
+}

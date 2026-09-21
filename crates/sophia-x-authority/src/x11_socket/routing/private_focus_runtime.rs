@@ -80,14 +80,20 @@ impl XPrivateFocusRuntimeSource {
                 // The effect lives here, not behind a caller-supplied success bit.
                 // Error/unwind after invalidation leaves publication unavailable.
                 let surface = runtime.destroy_window_private_effect(namespace, window, &permit)?;
-                let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-                if runtime.input_focus(namespace) != (root, 1) {
+                // Destroying the focus window reverts the focus, and where it
+                // goes is the revert_to the client supplied rather than the
+                // root. This used to require the root and refuse anything
+                // else, which is what made destroy ignore revert_to. What
+                // still has to hold is that the focus left the window that no
+                // longer exists.
+                let (reverted, reverted_revert_to) = runtime.input_focus(namespace);
+                if reverted == window {
                     return Err(unavailable);
                 }
                 if let Some(connection) = connection.as_ref().and_then(|slot| slot.get()) {
                     connection
                         .focused_projection
-                        .store(root.local.raw(), Ordering::Release);
+                        .store(reverted.local.raw(), Ordering::Release);
                     // Old output/dependent continuations can no longer answer for
                     // this projection, even when raw window values later recur.
                     connection
@@ -99,8 +105,8 @@ impl XPrivateFocusRuntimeSource {
                     return Err(unavailable);
                 }
                 state.focus = None;
-                state.focus_window = root;
-                state.focus_revert_to = 1;
+                state.focus_window = reverted;
+                state.focus_revert_to = reverted_revert_to;
                 state.published = true;
                 // This publishes no key target. DestroyNotify, selection/hierarchy
                 // retirement and native/recipient debt remain their own owners'
