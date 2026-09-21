@@ -1689,6 +1689,7 @@ fn the_supported_claim_lists_only_hints_with_behaviour_behind_them() {
         X_EWMH_SUPPORTED_ATOM_NAMES,
         &[
             "_NET_SUPPORTING_WM_CHECK",
+            "_NET_ACTIVE_WINDOW",
             "_NET_WM_NAME",
             "_NET_WM_STATE",
             "_NET_WM_STATE_FULLSCREEN",
@@ -1702,7 +1703,6 @@ fn the_supported_claim_lists_only_hints_with_behaviour_behind_them() {
     );
     // Hints clients do ask about and Sophia does not honour stay out.
     for withheld in [
-        "_NET_ACTIVE_WINDOW",
         "_NET_CLIENT_LIST",
         "_NET_CURRENT_DESKTOP",
         "_NET_FRAME_EXTENTS",
@@ -1744,4 +1744,32 @@ fn seeding_the_advertisement_twice_leaves_one_answer() {
 
     assert_eq!(first, second);
     assert_eq!(first.len(), X_EWMH_SUPPORTED_ATOM_NAMES.len() * 4);
+}
+
+#[test]
+fn the_active_window_is_published_from_focus_and_never_reset_by_reseeding() {
+    let namespace = NamespaceId::from_raw(46);
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let order = XByteOrder::LittleEndian;
+    let read = |properties: &mut XPropertyTable, atoms: &mut XAtomTable| {
+        read_seeded_property(properties, atoms, namespace, X_SETUP_DEFAULT_ROOT, "_NET_ACTIVE_WINDOW")
+    };
+
+    seed_wm_advertisement(&mut properties, &mut atoms, namespace, order).unwrap();
+    // Present from the first connection, as a value: None is 0, not absence.
+    // A toolkit that finds the property missing asks for the name of the
+    // missing type, which is atom None, and libX11 answers that by exiting it.
+    assert_eq!(read(&mut properties, &mut atoms), 0u32.to_le_bytes().to_vec());
+
+    publish_active_window(&mut properties, &mut atoms, namespace, order, 0x0060_0001).unwrap();
+    assert_eq!(read(&mut properties, &mut atoms), 0x0060_0001u32.to_le_bytes().to_vec());
+
+    // A later client's seeding re-asserts the advertisement and must leave
+    // the focus where it is.
+    seed_wm_advertisement(&mut properties, &mut atoms, namespace, order).unwrap();
+    assert_eq!(read(&mut properties, &mut atoms), 0x0060_0001u32.to_le_bytes().to_vec());
+
+    publish_active_window(&mut properties, &mut atoms, namespace, order, 0).unwrap();
+    assert_eq!(read(&mut properties, &mut atoms), 0u32.to_le_bytes().to_vec());
 }

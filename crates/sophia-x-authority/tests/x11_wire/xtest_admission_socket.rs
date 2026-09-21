@@ -44,16 +44,16 @@ mod xtest_admission_socket {
         }
     }
 
-    struct XtestClient {
-        stream: UnixStream,
-        order: XByteOrder,
-        next: u32,
+    pub(super) struct XtestClient {
+        pub(super) stream: UnixStream,
+        pub(super) order: XByteOrder,
+        pub(super) next: u32,
     }
 
     impl XtestClient {
         /// GetInputFocus and its reply: a round trip that only completes if the
         /// connection is still being served.
-        fn barrier(&mut self) {
+        pub(super) fn barrier(&mut self) {
             let mut request = vec![43, 0];
             push_u16(&mut request, self.order, 1);
             self.stream.write_all(&request).unwrap();
@@ -70,7 +70,7 @@ mod xtest_admission_socket {
         }
     }
 
-    struct XtestFixture {
+    pub(super) struct XtestFixture {
         path: std::path::PathBuf,
         input: XAuthorityRoutedInputSender,
         controls: mpsc::SyncSender<XAuthorityClientControlCommand>,
@@ -83,7 +83,7 @@ mod xtest_admission_socket {
     }
 
     impl XtestFixture {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
                 "sophia-xtest-admission-{}-{}.sock",
                 std::process::id(),
@@ -131,7 +131,7 @@ mod xtest_admission_socket {
             Self { path, input, controls, acks, transactions, stop, server: Some(server), clients: 0, serial: 0 }
         }
 
-        fn connect(&mut self) -> XtestClient {
+        pub(super) fn connect(&mut self) -> XtestClient {
             let order = XByteOrder::LittleEndian;
             let mut stream = connect_x_socket(&self.path);
             stream.write_all(&setup_request(order, 11, 0, b"", b"")).unwrap();
@@ -141,7 +141,7 @@ mod xtest_admission_socket {
         }
 
         /// A mapped window with a committed surface, focused on the seat.
-        fn focused_window(&mut self, client: &mut XtestClient) -> u32 {
+        pub(super) fn focused_window(&mut self, client: &mut XtestClient) -> u32 {
             let window = client.next;
             client.next += 2;
             client.stream

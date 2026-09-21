@@ -6,13 +6,13 @@ use sophia_protocol::{
 };
 
 use crate::{
-    X_ATOM_ATOM, X_ATOM_CARDINAL, X_ATOM_NAME_NET_SUPPORTED, X_ATOM_NAME_NET_SUPPORTING_WM_CHECK,
-    X_ATOM_NAME_NET_WM_NAME, X_ATOM_NAME_NET_WM_STATE, X_ATOM_NAME_NET_WM_STATE_FULLSCREEN,
-    X_ATOM_NAME_NET_WM_STATE_HIDDEN, X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_HORZ,
-    X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_VERT, X_ATOM_NAME_NET_WM_STRUT,
-    X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_NET_WM_WINDOW_TYPE, X_ATOM_NAME_UTF8_STRING,
-    X_ATOM_NAME_WM_STATE, X_ATOM_WINDOW, XAtom, XAtomError, XAtomTable, XByteOrder, XResourceId,
-    is_metadata_candidate_name,
+    X_ATOM_ATOM, X_ATOM_CARDINAL, X_ATOM_NAME_NET_ACTIVE_WINDOW, X_ATOM_NAME_NET_SUPPORTED,
+    X_ATOM_NAME_NET_SUPPORTING_WM_CHECK, X_ATOM_NAME_NET_WM_NAME, X_ATOM_NAME_NET_WM_STATE,
+    X_ATOM_NAME_NET_WM_STATE_FULLSCREEN, X_ATOM_NAME_NET_WM_STATE_HIDDEN,
+    X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_HORZ, X_ATOM_NAME_NET_WM_STATE_MAXIMIZED_VERT,
+    X_ATOM_NAME_NET_WM_STRUT, X_ATOM_NAME_NET_WM_STRUT_PARTIAL, X_ATOM_NAME_NET_WM_WINDOW_TYPE,
+    X_ATOM_NAME_UTF8_STRING, X_ATOM_NAME_WM_STATE, X_ATOM_WINDOW, XAtom, XAtomError, XAtomTable,
+    XByteOrder, XResourceId, is_metadata_candidate_name,
 };
 
 pub const X_PROPERTY_MAX_VALUE_BYTES: usize = 256 * 1024;
@@ -927,12 +927,14 @@ pub fn apply_engine_presentation_state(
 /// is worse off than one told plainly that it does not. Each entry here has
 /// behaviour behind it: the states and window types are read back into layout
 /// facts, the struts become output reservations, and the name reaches metadata
-/// disclosure. Hints Sophia merely knows the name of are deliberately absent --
-/// `_NET_ACTIVE_WINDOW`, `_NET_CLIENT_LIST`, `_NET_CURRENT_DESKTOP`,
-/// `_NET_FRAME_EXTENTS`, `_NET_WM_SYNC_REQUEST` and `_NET_WM_MOVERESIZE` among
-/// them, several of which clients do ask about.
+/// disclosure, and `_NET_ACTIVE_WINDOW` is written from the authority's own
+/// input focus every time it changes (`publish_active_window`). Hints Sophia
+/// merely knows the name of are deliberately absent -- `_NET_CLIENT_LIST`,
+/// `_NET_CURRENT_DESKTOP`, `_NET_FRAME_EXTENTS`, `_NET_WM_SYNC_REQUEST` and
+/// `_NET_WM_MOVERESIZE` among them, several of which clients do ask about.
 pub const X_EWMH_SUPPORTED_ATOM_NAMES: &[&str] = &[
     X_ATOM_NAME_NET_SUPPORTING_WM_CHECK,
+    X_ATOM_NAME_NET_ACTIVE_WINDOW,
     X_ATOM_NAME_NET_WM_NAME,
     X_ATOM_NAME_NET_WM_STATE,
     X_ATOM_NAME_NET_WM_STATE_FULLSCREEN,
@@ -990,7 +992,7 @@ pub fn seed_wm_advertisement(
     let root = XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1);
     let check = XResourceId::new(u64::from(crate::X_SETUP_WM_CHECK_WINDOW), 1);
     let check_bytes = encode_property_u32(byte_order, crate::X_SETUP_WM_CHECK_WINDOW).to_vec();
-    let changes = [
+    let mut changes = vec![
         (root, supporting, X_ATOM_WINDOW, 32u8, check_bytes.clone()),
         (root, supported, X_ATOM_ATOM, 32, supported_bytes),
         (check, supporting, X_ATOM_WINDOW, 32, check_bytes),
@@ -1002,6 +1004,16 @@ pub fn seed_wm_advertisement(
             X_EWMH_WM_NAME.as_bytes().to_vec(),
         ),
     ];
+    // SEEDED AS NONE, ONLY WHILE ABSENT. The advertisement is re-seeded by
+    // every connection, and this one entry is state rather than a claim: a
+    // later client's seeding must not put the focus back to nothing. What
+    // matters at seeding is that the property exists with the right type --
+    // a toolkit that finds it absent reports the missing type by name, and
+    // asking for the name of None is answered by exiting the client.
+    let active = atom(X_ATOM_NAME_NET_ACTIVE_WINDOW)?;
+    if !properties.records.contains_key(&(namespace, root, active)) {
+        changes.push((root, active, X_ATOM_WINDOW, 32, vec![0; 4]));
+    }
 
     let added = changes
         .iter()
@@ -1021,32 +1033,88 @@ pub fn seed_wm_advertisement(
     }
 
     for (window, property, property_type, format, bytes) in changes {
-        let key = (namespace, window, property);
-        let previous = properties.records.get(&key);
-        // Authority-owned: a client may read these and must not replace them.
-        properties.engine_owned.insert(key);
-        if previous.is_some_and(|record| {
-            record.property_type == property_type
-                && record.format == format
-                && record.bytes == bytes
-        }) {
-            continue;
-        }
-        let generation = previous.map_or(1, |record| record.generation.saturating_add(1));
-        properties.records.insert(
-            key,
-            XPropertyRecord {
-                namespace,
-                window,
-                property,
-                property_type,
-                format,
-                bytes,
-                generation,
-            },
+        write_engine_owned(
+            properties,
+            namespace,
+            window,
+            property,
+            property_type,
+            format,
+            bytes,
         );
     }
     Ok(())
+}
+
+/// Publishes which window holds the input focus, as `_NET_ACTIVE_WINDOW` on
+/// the root.
+///
+/// Behaviour behind the advertisement rather than a name: written from the
+/// authority's own input focus every time it changes, by whichever layer
+/// holds the property table -- request dispatch after each request, the
+/// control writer after each session focus command. `None`, `PointerRoot`
+/// and the root itself are published as 0, which is EWMH for no active
+/// window. Owned by the authority like the rest of the advertisement, so a
+/// client may read it and may not replace it, and written under `Replace`,
+/// so publishing the same focus twice changes nothing.
+pub fn publish_active_window(
+    properties: &mut XPropertyTable,
+    atoms: &mut XAtomTable,
+    namespace: NamespaceId,
+    byte_order: XByteOrder,
+    window: u32,
+) -> Result<(), XPresentationPropertyError> {
+    if !namespace.is_valid() {
+        return Err(XPropertyError::InvalidNamespace.into());
+    }
+    let active = atoms.intern(X_ATOM_NAME_NET_ACTIVE_WINDOW, false)?.ok_or(
+        XPresentationPropertyError::Atom(XAtomError::AtomSpaceExhausted),
+    )?;
+    let root = XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1);
+    write_engine_owned(
+        properties,
+        namespace,
+        root,
+        active,
+        X_ATOM_WINDOW,
+        32,
+        encode_property_u32(byte_order, window).to_vec(),
+    );
+    Ok(())
+}
+
+/// One authority-owned property, replaced only when its value changed.
+fn write_engine_owned(
+    properties: &mut XPropertyTable,
+    namespace: NamespaceId,
+    window: XResourceId,
+    property: XAtom,
+    property_type: XAtom,
+    format: u8,
+    bytes: Vec<u8>,
+) {
+    let key = (namespace, window, property);
+    let previous = properties.records.get(&key);
+    // Authority-owned: a client may read these and must not replace them.
+    properties.engine_owned.insert(key);
+    if previous.is_some_and(|record| {
+        record.property_type == property_type && record.format == format && record.bytes == bytes
+    }) {
+        return;
+    }
+    let generation = previous.map_or(1, |record| record.generation.saturating_add(1));
+    properties.records.insert(
+        key,
+        XPropertyRecord {
+            namespace,
+            window,
+            property,
+            property_type,
+            format,
+            bytes,
+            generation,
+        },
+    );
 }
 
 fn encode_property_u32(byte_order: XByteOrder, value: u32) -> [u8; 4] {

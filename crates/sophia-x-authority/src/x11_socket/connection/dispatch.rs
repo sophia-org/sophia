@@ -1585,6 +1585,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             let (output, pending) = x11_dispatch_private_focus(&mut runtime, dispatch_context, client,
                                 &focused_surface_window, private_focus_routing.expect("private owner"), focus, revert_to,
                                 state.runtime.clone(), state.control_runtime_pending.clone(), output_stream.clone(), output_control_pending.clone(), output_wire.clone())?;
+                            // Behaviour behind `_NET_ACTIVE_WINDOW`, on the path a client's own
+                            // SetInputFocus takes when a private focus claim is in play.
+                            crate::dispatch::publish_noted_focus(&mut runtime, &mut properties, &mut atoms, dispatch_context.byte_order);
                             pending_focus_publication = pending;
                             output
                         }
