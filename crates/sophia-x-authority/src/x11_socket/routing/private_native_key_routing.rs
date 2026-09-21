@@ -115,6 +115,11 @@ fn selected_key_at(view: &PrivateAppliedRoutingView<'_>, window: XResourceId) ->
 /// and tries XI2 before core on each window. Core DNP stops both streams.
 /// Ungrabbed delivery then tries focus directly; owner-events grab delivery
 /// instead falls back to the grab window in the caller.
+///
+/// The rule itself is [`crate::x_key_delivery_target`], shared so that the
+/// other delivery path cannot implement a different one. What stays here is
+/// what is genuinely private: the applied-publication focus witness, the
+/// client entitlement check, the traversal budget and this path's refusals.
 fn normal_key_target(
     view: &PrivateAppliedRoutingView<'_>,
     pointer_path: &PrivateOrderedAncestry,
@@ -124,39 +129,34 @@ fn normal_key_target(
     if focus.client != view.client {
         return Err(PrivateAppliedRefusal::ForeignOrigin);
     }
-    let mut path = if let Some(depth) = pointer_path.depth(focus.window) {
+    let path = if let Some(depth) = pointer_path.depth(focus.window) {
         let mut path = *pointer_path;
         path.len = depth + 1;
         path
     } else {
-        view.selections.ordered_ancestry(focus.window)?
-    };
-    // A known disjoint pointer branch means delivery starts at focus itself.
-    if pointer_path.depth(focus.window).is_none() {
+        // A known disjoint pointer branch means delivery starts at focus
+        // itself, so only the first entry of this survives the truncation.
+        let mut path = view.selections.ordered_ancestry(focus.window)?;
         path.len = 1;
-    }
-    for window in path.as_slice().iter().copied() {
-        view.budget.charge(1)?;
-        if let Some(core) = selected_key_at(view, window) {
-            return Ok((window, core, path));
-        }
-        if window == focus.window
-            || view
-                .selections
+        path
+    };
+    let selected = crate::key_routing::x_key_delivery_target(
+        focus.window,
+        path.as_slice(),
+        &mut |window| {
+            view.budget.charge(1)?;
+            Ok(selected_key_at(view, window))
+        },
+        &|window| {
+            view.selections
                 .windows
                 .get(&window)
                 .is_some_and(|selection| selection.do_not_propagate_mask & 1 != 0)
-        {
-            break;
-        }
-    }
-    if retry_focus && path.as_slice()[0] != focus.window {
-        view.budget.charge(1)?;
-        if let Some(core) = selected_key_at(view, focus.window) {
-            return Ok((focus.window, core, path));
-        }
-    }
-    Err(PrivateAppliedRefusal::NotSelected)
+        },
+        retry_focus,
+    )?;
+    let (window, core) = selected.ok_or(PrivateAppliedRefusal::NotSelected)?;
+    Ok((window, core, path))
 }
 
 fn resolve_key_plan(
