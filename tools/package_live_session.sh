@@ -100,6 +100,8 @@ if [[ -n "$hagia_bin" ]]; then
     install -m 755 "$hagia_shell_bin" "$artifact/target/release/narthex"
     install -m 755 tools/installed/sophia-hagia-session \
         "$artifact/bin/sophia-hagia-session"
+    install -m 755 tools/installed/sophia-hagia-xtest-session \
+        "$artifact/bin/sophia-hagia-xtest-session"
     install -m 755 tools/installed/sophia-hagia-promotion-session \
         "$artifact/bin/sophia-hagia-promotion-session"
     install -m 644 "$hagia_default_profile" \
@@ -240,6 +242,14 @@ if [[ -n "$hagia_bin" ]]; then
         'Type=Application' \
         'DesktopNames=Sophia' \
         >"$artifact/share/wayland-sessions/sophia-hagia-promotion.desktop"
+    printf '%s\n' \
+        '[Desktop Entry]' \
+        'Name=Sophia Hagia (XTEST automation)' \
+        'Comment=Hagia with synthetic input admitted; drives scenarios, accepts none' \
+        'Exec=@SOPHIA_INSTALL_PREFIX@/current/bin/sophia-hagia-xtest-session' \
+        'Type=Application' \
+        'DesktopNames=Sophia' \
+        >"$artifact/share/wayland-sessions/sophia-hagia-xtest.desktop"
 fi
 printf '%s\n' \
     '[Desktop Entry]' \

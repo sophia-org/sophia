@@ -22,6 +22,7 @@ sophia_surface_select_entries() {
         sophia-xterm-proof
         sophia-truecolor-proof
         sophia-recovery-proof
+        sophia-hagia-xtest-session
         sophia-record-hagia-run
         sophia-record-watchdog-run
         sophia-record-firefox-run
@@ -98,7 +99,13 @@ sophia_surface_select_entries() {
     )
     if [[ "$hagia_included" == true ]]; then
         SOPHIA_SURFACE_COMMANDS+=("${SOPHIA_SURFACE_HAGIA_COMMANDS[@]}")
-        SOPHIA_SURFACE_DESKTOPS+=(sophia-hagia)
+        # Listed, not held behind the proof request. The rule above exists
+        # because four occasional gates crowded out the entries someone logs
+        # in with, and the request that lists them is all of them or none --
+        # asking for this one would list five. This is a session to work in
+        # rather than a gate to run, its name is nothing like the ordinary
+        # one, and what it admits it declares in its own evidence.
+        SOPHIA_SURFACE_DESKTOPS+=(sophia-hagia sophia-hagia-xtest)
         SOPHIA_SURFACE_PROOF_DESKTOPS+=(
             sophia-hagia-promotion
             sophia-firefox-proof

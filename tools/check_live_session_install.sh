@@ -83,6 +83,7 @@ make_artifact() {
         case "$desktop" in
             sophia-hagia) command=sophia-hagia-session ;;
             sophia-hagia-promotion) command=sophia-hagia-promotion-session ;;
+            sophia-hagia-xtest) command=sophia-hagia-xtest-session ;;
             sophia-kitty) command=sophia-kitty-session ;;
             sophia-firefox-proof) command=sophia-firefox-proof ;;
             sophia-recovery-proof) command=sophia-recovery-proof ;;

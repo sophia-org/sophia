@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The ordinary Hagia session, with XTEST admitted so a client on the display
+# can drive it. A diagnostic workflow rather than a session to live in: any
+# admitted client can synthesise input to any other, which is what XTEST has
+# always meant on one X display and is wider than the daily driver.
+#
+# It cannot forge physical evidence, and not by policy. Synthetic input enters
+# at the broker, downstream of the session's physical input phase, so a run
+# from here cannot raise physical_events, physical_keys_routed or
+# physical_pointer_routed however much it injects. It also says what it is:
+# sophia_live_session_xtest status=admitted at startup, with the counts at
+# completion. A run from here drives a scenario; it never accepts one.
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+export SOPHIA_ADMIT_XTEST=1
+export SOPHIA_INSTALLED_ATTEMPT_MODE=xtest
+exec "$RELEASE_DIR/bin/sophia-hagia-session" "$@"
