@@ -714,6 +714,8 @@ pub enum XClientReply {
         max_keycode: u8,
         component_atoms: Vec<u32>,
         type_atoms: Vec<u32>,
+        /// Two per key type, in type order, and never atom None.
+        level_atoms: Vec<u32>,
         key_names: Vec<[u8; 4]>,
     },
     XkbGetDeviceInfo {

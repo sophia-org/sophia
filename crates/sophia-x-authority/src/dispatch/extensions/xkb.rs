@@ -102,9 +102,38 @@ fn dispatch_xkb_request(
                         .filter(|(mask, _)| present & mask != 0)
                         .filter_map(|(_, name)| atoms.intern(name, false).ok().flatten())
                         .collect();
-                    let type_atoms = ["ONE_LEVEL", "TWO_LEVEL", "ALPHABETIC", "KEYPAD"]
+                    let type_atoms: Vec<u32> = ["ONE_LEVEL", "TWO_LEVEL", "ALPHABETIC", "KEYPAD"]
                         .iter()
                         .filter_map(|name| atoms.intern(name, false).ok().flatten())
+                        .collect();
+                    // NAMED, NOT None. Two levels per type, matching the
+                    // numLevels XkbGetMap advertises. The spec permits atom
+                    // None for an unnamed level and we used to send it, which
+                    // is why a client that walks these names and asks the
+                    // server for each one -- xdotool does, through libxdo --
+                    // handed us None, got BadAtom, and was killed by libX11
+                    // for asking. A real server names them, so the case never
+                    // arose there. Falling back to the type's own atom keeps
+                    // one name per level even if interning is exhausted, so
+                    // the count can never disagree with the type count.
+                    const LEVEL_NAMES: [[&str; 2]; 4] = [
+                        ["Any", "Any"],
+                        ["Base", "Shift"],
+                        ["Base", "Caps"],
+                        ["Base", "Number"],
+                    ];
+                    let level_atoms: Vec<u32> = LEVEL_NAMES
+                        .iter()
+                        .zip(&type_atoms)
+                        .flat_map(|(names, type_atom)| {
+                            names.map(|name| {
+                                atoms
+                                    .intern(name, false)
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or(*type_atom)
+                            })
+                        })
                         .collect();
                     let key_names = (runtime.xkb_keymap().min_keycode()
                         ..=runtime.xkb_keymap().max_keycode())
@@ -124,6 +153,7 @@ fn dispatch_xkb_request(
                             max_keycode: runtime.xkb_keymap().max_keycode(),
                             component_atoms,
                             type_atoms,
+                            level_atoms,
                             key_names,
                         })],
                         metadata_candidates: Vec::new(),
