@@ -257,6 +257,54 @@ pub(super) fn fill_rect(
     }
 }
 
+/// Fills a whole buffer with one pixel value.
+///
+/// Background painting has no graphics context, so this is not `fill_rect`
+/// with a default one: there is no clip to test, no raster function to apply
+/// and no plane mask. The window is simply that colour.
+pub(super) fn fill_solid(buffer: &mut XAuthorityCpuBufferSnapshot, pixel: u32) {
+    let value = pixel.to_le_bytes();
+    for chunk in bytes_mut(buffer).chunks_exact_mut(4) {
+        chunk.copy_from_slice(&value);
+    }
+}
+
+/// Repeats `tile` across a whole buffer from its origin, as a background
+/// pixmap is repeated across the window it backs.
+pub(super) fn tile_solid(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    tile: &[u8],
+    tile_size: Size,
+    tile_stride: usize,
+) {
+    let Ok(tile_width) = usize::try_from(tile_size.width) else {
+        return;
+    };
+    let Ok(tile_height) = usize::try_from(tile_size.height) else {
+        return;
+    };
+    if tile_width == 0 || tile_height == 0 {
+        return;
+    }
+    let width = usize::try_from(buffer.size.width).unwrap_or(0);
+    let height = usize::try_from(buffer.size.height).unwrap_or(0);
+    let stride = usize::try_from(buffer.stride).unwrap_or(0);
+    let bytes = bytes_mut(buffer);
+    for y in 0..height {
+        let source_row = (y % tile_height).saturating_mul(tile_stride);
+        for x in 0..width {
+            let source = source_row.saturating_add((x % tile_width).saturating_mul(4));
+            let Some(pixel) = tile.get(source..source.saturating_add(4)) else {
+                continue;
+            };
+            let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
+            if let Some(target) = bytes.get_mut(offset..offset.saturating_add(4)) {
+                target.copy_from_slice(pixel);
+            }
+        }
+    }
+}
+
 pub(super) fn set_pixel(
     buffer: &mut XAuthorityCpuBufferSnapshot,
     x: i32,

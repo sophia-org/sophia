@@ -268,11 +268,10 @@ impl XAuthorityRuntime {
         window: crate::XResourceId,
     ) -> Result<u32, XAuthorityRuntimeError> {
         self.validate_window_access(namespace, window)?;
-        Ok(self
-            .window_background_pixels
-            .get(&window)
-            .copied()
-            .unwrap_or(0))
+        Ok(match self.window_backgrounds.get(&window) {
+            Some(crate::XWindowBackground::Pixel(pixel)) => *pixel,
+            _ => 0,
+        })
     }
 
     pub fn set_window_background_pixel(
@@ -282,7 +281,8 @@ impl XAuthorityRuntime {
         pixel: u32,
     ) -> Result<(), XAuthorityRuntimeError> {
         self.validate_window_access(namespace, window)?;
-        self.window_background_pixels.insert(window, pixel);
+        self.window_backgrounds
+            .insert(window, crate::XWindowBackground::Pixel(pixel));
         Ok(())
     }
 

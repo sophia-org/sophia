@@ -40,6 +40,22 @@ pub enum XResourceKind {
     GlyphSet,
 }
 
+/// What a window is painted with when it becomes viewable.
+///
+/// X11 makes this four-valued and the difference matters: an undefined
+/// background is not black, it is "do not paint", and whatever was already on
+/// the screen stays. A window whose background is undefined but painted
+/// anyway erases what it was placed over.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XWindowBackground {
+    /// `BackPixmap` None: nothing is painted.
+    Undefined,
+    /// `BackPixmap` ParentRelative: whatever the parent's background is.
+    ParentRelative,
+    Pixel(u32),
+    Pixmap(crate::XResourceId),
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XMapState {
     Unmapped,

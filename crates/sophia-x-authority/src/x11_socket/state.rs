@@ -379,12 +379,31 @@ fn release_x11_client_lease_with_control(
     if let Some(source) = control {
         source.record_removal(state, &lease, &release)?;
     }
+    // Atoms before properties, matching the order request dispatch takes
+    // them in. The last client leaving is the one moment the protocol says
+    // client-interned atoms become undefined, and the authority outlives its
+    // connections, so nothing else would ever say so.
+    let forgotten = if state.active_client_count() == 0 {
+        state
+            .atoms
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?
+            .forget_client_interned()
+    } else {
+        Vec::new()
+    };
     let mut properties = state
         .properties
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 property table lock poisoned"))?;
     for window in &release.destroyed_windows {
         properties.remove_window(namespace, *window);
+    }
+    // The records keyed by those atoms go with them. A row under a name
+    // nothing can intern again is unreachable, and the authority's own
+    // advertisement is rewritten from scratch by the next connection.
+    if !forgotten.is_empty() {
+        properties.remove_atoms(&forgotten);
     }
     if let Some(source) = control {
         source.teardown.lock().map_err(|_| X11SetupSocketError::new("control teardown unavailable"))?.properties_removed = true;

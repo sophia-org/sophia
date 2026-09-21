@@ -120,6 +120,7 @@ pub enum XWireRequest {
         depth: u8,
         visual: u32,
         colormap: Option<XResourceId>,
+        background_pixmap: Option<crate::XWindowBackground>,
         background_pixel: Option<u32>,
         override_redirect: bool,
         event_mask: Option<u32>,
@@ -132,6 +133,9 @@ pub enum XWireRequest {
     },
     ChangeWindowAttributes {
         window: XResourceId,
+        /// None means the request did not mention the attribute at all.
+        background_pixmap: Option<crate::XWindowBackground>,
+        background_pixel: Option<u32>,
         override_redirect: Option<bool>,
         event_mask: Option<u32>,
         do_not_propagate_mask: Option<u32>,

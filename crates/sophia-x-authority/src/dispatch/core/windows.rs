@@ -27,6 +27,7 @@ fn dispatch_core_window_request(
                 XWireRequest::CreateWindow {
                     packet,
                     parent,
+                    background_pixmap,
                     background_pixel,
                     override_redirect,
                     depth,
@@ -96,11 +97,17 @@ fn dispatch_core_window_request(
                             response.surfaces.clear();
                             response.surfaces.push(surface);
                         }
-                        let _ = runtime.set_window_background_pixel(
-                            namespace,
-                            *window,
-                            background_pixel.unwrap_or(0),
-                        );
+                        // Pixmap first, then pixel: the protocol orders the
+                        // value list by bit and BackPixel is the later bit, so
+                        // a request naming both means the pixel. A request
+                        // naming neither leaves the background undefined,
+                        // which is the default and is not black.
+                        if let Some(background) = background_pixmap {
+                            let _ = runtime.set_window_background(namespace, *window, background);
+                        }
+                        if let Some(pixel) = background_pixel {
+                            let _ = runtime.set_window_background_pixel(namespace, *window, pixel);
+                        }
                         runtime.set_window_visual(
                             *window,
                             resolved_depth,
@@ -144,6 +151,17 @@ fn dispatch_core_window_request(
                         *target_name = name.to_owned();
                     }
                     let kind = packet.kind.clone();
+                    // Whether the window was already mapped has to be read
+                    // before the effect, because afterwards a redundant map
+                    // and a real one look exactly alike.
+                    let already_mapped =
+                        if let XAuthorityRequestKind::MapWindow { window, .. } = kind {
+                            runtime
+                                .window_map_state(context.namespace, window)
+                                .is_ok_and(|state| state != crate::XMapState::Unmapped)
+                        } else {
+                            false
+                        };
                     let response = runtime.apply(packet);
                     if let XAuthorityRequestKind::RequestSelection { transfer, .. } = &kind {
                         runtime.set_pending_clipboard_byte_order(*transfer, context.byte_order);
@@ -152,6 +170,7 @@ fn dispatch_core_window_request(
                         outputs_from_map_response(
                             context,
                             window,
+                            already_mapped,
                             runtime.window_map_state(context.namespace, window).ok(),
                             runtime
                                 .window_override_redirect(context.namespace, window)
@@ -169,6 +188,8 @@ fn dispatch_core_window_request(
                 }
                 XWireRequest::ChangeWindowAttributes {
                     window,
+                    background_pixmap,
+                    background_pixel,
                     override_redirect,
                     cursor,
                     ..
@@ -208,6 +229,28 @@ fn dispatch_core_window_request(
                                 context.major_opcode,
                                 0,
                                 u32::try_from(window.local.raw()).unwrap_or(0)))]
+                    } else {
+                        // The background attributes take effect the next time
+                        // the window is painted with its background, which is
+                        // the next time it becomes viewable. Changing them on
+                        // a window already on screen repaints nothing, which
+                        // is what the protocol says: the background is used
+                        // when the contents are lost, not when it is set.
+                        if let Some(background) = background_pixmap {
+                            let _ = runtime.set_window_background(
+                                context.namespace,
+                                window,
+                                background,
+                            );
+                        }
+                        if let Some(pixel) = background_pixel {
+                            let _ =
+                                runtime.set_window_background_pixel(context.namespace, window, pixel);
+                        }
+                        Vec::new()
+                    };
+                    let outputs = if !outputs.is_empty() {
+                        outputs
                     } else if let Some(override_redirect) = override_redirect {
                         match runtime.set_window_override_redirect(
                             context.namespace,
@@ -818,6 +861,7 @@ fn resolve_window_visual(
 fn outputs_from_map_response(
     context: XDispatchContext,
     window: XResourceId,
+    already_mapped: bool,
     map_state: Option<crate::XMapState>,
     override_redirect: bool,
     response: &XAuthorityResponsePacket,
@@ -829,6 +873,12 @@ fn outputs_from_map_response(
             context.major_opcode,
             0,
             u32::try_from(window.local.raw()).unwrap_or(0)))];
+    }
+    // "When the window is already mapped, then a call to XMapWindow has no
+    // effect." No effect includes no events: a client that maps twice was
+    // being told twice that the window appeared.
+    if already_mapped {
+        return Vec::new();
     }
     let Some(crate::XMapState::Unviewable | crate::XMapState::Viewable) = map_state else {
         return Vec::new();

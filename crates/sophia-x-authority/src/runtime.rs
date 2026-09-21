@@ -30,6 +30,7 @@ include!("runtime/drawing.rs");
 include!("runtime/graphics_contexts.rs");
 include!("runtime/drawing/copy_plane.rs");
 include!("runtime/drawing/image_ops.rs");
+include!("runtime/drawing/window_background.rs");
 include!("runtime/render_resources.rs");
 include!("runtime/dmabuf_capabilities.rs");
 include!("runtime/device_connections.rs");
@@ -227,7 +228,10 @@ pub struct XAuthorityRuntime {
     next_glyph_store: u64,
     next_fence_handle: u64,
     graphics_contexts: XGraphicsContextTable,
-    window_background_pixels: BTreeMap<crate::XResourceId, u32>,
+    /// What each window is painted with when it becomes viewable. A window
+    /// with no entry has an undefined background, which is the protocol's
+    /// default and means it is not painted at all.
+    window_backgrounds: BTreeMap<crate::XResourceId, crate::XWindowBackground>,
     window_visuals: BTreeMap<crate::XResourceId, (u8, u32, crate::XResourceId)>,
     /// The cursor each window asks for, absent when it shows its parent's.
     window_cursors: BTreeMap<crate::XResourceId, crate::XResourceId>,
@@ -320,7 +324,7 @@ impl Default for XAuthorityRuntime {
             next_glyph_store: 1,
             next_fence_handle: 1,
             graphics_contexts: Default::default(),
-            window_background_pixels: Default::default(),
+            window_backgrounds: Default::default(),
             window_visuals: Default::default(),
             window_cursors: Default::default(),
             input_only_windows: Default::default(),
@@ -797,6 +801,17 @@ impl XAuthorityRuntime {
                 };
                 if let Some(surface) = self.windows.apply(event)? {
                     response.surfaces.push(surface);
+                    // Becoming viewable with no remembered contents means the
+                    // window is painted with its background, and its viewable
+                    // inferiors with theirs: mapping a parent can make a whole
+                    // subtree visible at once.
+                    if self.window_map_state(request.namespace, *window)
+                        == Ok(crate::XMapState::Viewable)
+                    {
+                        for target in self.viewable_subtree(*window) {
+                            self.paint_window_background(target);
+                        }
+                    }
                 }
             }
             XAuthorityRequestKind::PresentPixmap {

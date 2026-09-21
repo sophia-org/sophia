@@ -16,6 +16,7 @@ mod render_gradient;
 mod render_ops;
 mod render_traps;
 mod update;
+mod window_background;
 use pixmap_exports::XPixmapExportDamage;
 
 use raster_ops::{

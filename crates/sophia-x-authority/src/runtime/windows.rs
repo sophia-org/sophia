@@ -606,7 +606,7 @@ impl XAuthorityRuntime {
          self.raster_store.remove(window);
          self.render_drop_pictures_of_drawable(window);
          self.forget_window_shapes(window);
-         self.window_background_pixels.remove(&window);
+         self.window_backgrounds.remove(&window);
          self.window_visuals.remove(&window);
          self.release_window_cursor(window);
          self.input_only_windows.remove(&window);

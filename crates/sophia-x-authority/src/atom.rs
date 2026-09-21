@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::XAtom;
 
@@ -76,6 +76,9 @@ pub struct XAtomTable {
     names_by_atom: BTreeMap<XAtom, String>,
     atoms_by_name: BTreeMap<String, XAtom>,
     next_dynamic: XAtom,
+    /// The atoms this server defines itself, which no client created and
+    /// which therefore survive every client leaving.
+    fixed: BTreeSet<XAtom>,
 }
 
 impl Default for XAtomTable {
@@ -90,6 +93,7 @@ impl XAtomTable {
             names_by_atom: BTreeMap::new(),
             atoms_by_name: BTreeMap::new(),
             next_dynamic: X_ATOM_LAST_PREDEFINED + 1,
+            fixed: BTreeSet::new(),
         };
         for (atom, name) in X_PREDEFINED_ATOMS {
             table.insert_predefined(*atom, name);
@@ -100,6 +104,7 @@ impl XAtomTable {
                 .expect("fixed RandR output property atom is valid")
                 .expect("interning a fixed RandR output property returns an atom");
         }
+        table.fixed = table.names_by_atom.keys().copied().collect();
         table
     }
 
@@ -124,6 +129,34 @@ impl XAtomTable {
         self.names_by_atom.insert(atom, name.to_owned());
         self.atoms_by_name.insert(name.to_owned(), atom);
         Ok(Some(atom))
+    }
+
+    /// Forgets every atom a client interned, and reports which they were.
+    ///
+    /// The protocol scopes an atom to the server's lifetime: "when the last
+    /// connection closes, atoms created by a call to XInternAtom become
+    /// undefined". Our authority outlives its connections, so the moment the
+    /// last one goes is the moment that has to be honoured explicitly.
+    ///
+    /// Predefined atoms and the fixed RandR property names are not client
+    /// creations and stay. `next_dynamic` deliberately does not rewind: a
+    /// freed atom id is never reissued, because a later client interning an
+    /// unrelated name would otherwise inherit whatever the old id still owns.
+    /// The returned list is what the caller must clear alongside.
+    pub fn forget_client_interned(&mut self) -> Vec<XAtom> {
+        let fixed: BTreeSet<XAtom> = self.fixed.iter().copied().collect();
+        let removed: Vec<XAtom> = self
+            .names_by_atom
+            .keys()
+            .copied()
+            .filter(|atom| !fixed.contains(atom))
+            .collect();
+        for atom in &removed {
+            if let Some(name) = self.names_by_atom.remove(atom) {
+                self.atoms_by_name.remove(&name);
+            }
+        }
+        removed
     }
 
     pub fn name(&self, atom: XAtom) -> Option<&str> {
