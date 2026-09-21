@@ -202,10 +202,22 @@ No results from an older directory can supply a pass.
 | after the window repairs | **48** | 0 | 1 | backgrounds painted, inferiors composited, redundant maps silent, redirect honoured, atoms scoped to the server |
 
 **No purpose fails any more.** The ten that do not pass are the suite's own
-verdicts rather than defects here: six UNTESTED because the suite is not
-configured to drive XTEST against this host, two UNSUPPORTED (backing store,
-which it says has no reliable test), one NOTINUSE, and one UNRESOLVED on a
-path check the suite itself reports as a bug in the test.
+verdicts rather than defects here, and only three of them are ours to move:
+
+| purposes | verdict | why, and whether we can change it |
+| --- | --- | --- |
+| `XSetInputFocus` 2, 3, 4 | UNTESTED | the suite is not configured to drive XTEST against this host. **Ours to move**, by wiring XTEST into the conformance host; they are the only purposes in the selection that check where a keyboard event actually lands |
+| `XMapWindow` 12, 13 | UNSUPPORTED | backing store, which this server does not offer. A legal answer, and implementable in principle, but see below |
+| `XMapWindow` 11, `XInternAtom` 7, `XChangeProperty` 9 | UNTESTED | the suite omits them itself: "no known reliable test method", and for the latter two no portable way to force a `BadAlloc`. **No change here can make them run** |
+| `XMapWindow` 14 | UNRESOLVED | a path check the suite reports as "usually caused by a programming error in the test-suite" |
+| `XMapWindow` 2 | NOTINUSE | a retired assertion |
+
+So the ceiling for this selection is 51 of 58 with the XTEST wiring, and 53
+if backing store were added. **58 is not reachable**, and five of the ten are
+beyond any change to this server. Backing store is a real optional feature
+rather than a defect: a server may legitimately never offer it, and retaining
+window contents while they are obscured duplicates what the compositor
+already does. Growing the selection is worth more than the last two here.
 
 The window repairs, and what each was:
 
