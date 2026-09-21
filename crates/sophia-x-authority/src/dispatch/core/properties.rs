@@ -75,6 +75,28 @@ fn dispatch_core_property_request(
                         && runtime.window_policy_map_pending(context.namespace, change.window)
                             == Ok(false);
                     let window_access = if change.window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) { Ok(()) } else { runtime.validate_window_access(context.namespace, change.window) };
+                    // Both atoms must name something, and the window is
+                    // checked before either: the protocol fixes that order,
+                    // and a request with two things wrong must report the
+                    // same one every server would.
+                    let invalid_atom = window_access.is_ok().then(|| {
+                        [change.property, change.property_type]
+                            .into_iter()
+                            .find(|atom| atoms.name(*atom).is_none())
+                    }).flatten();
+                    if let Some(atom) = invalid_atom {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadAtom,
+                                sequence: context.sequence,
+                                resource_id: atom,
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
                     let (output, metadata_candidates, response) = match window_access {
                         Err(error) => (
                             XClientOutput::Error(x_error_from_runtime(
@@ -167,10 +189,19 @@ fn dispatch_core_property_request(
                             }
                             Err(error) => (
                                 XClientOutput::Error(crate::XClientError {
-                                    code: if error == crate::XPropertyError::AuthorityOwned {
-                                        crate::XErrorCode::BadAccess
-                                    } else {
-                                        crate::XErrorCode::BadValue
+                                    // Appending or prepending to a property
+                                    // whose type or format differs is the
+                                    // protocol's Match error, not a Value
+                                    // error: both arguments were in range and
+                                    // it is the pair that does not agree.
+                                    code: match error {
+                                        crate::XPropertyError::AuthorityOwned => {
+                                            crate::XErrorCode::BadAccess
+                                        }
+                                        crate::XPropertyError::TypeMismatch => {
+                                            crate::XErrorCode::BadMatch
+                                        }
+                                        _ => crate::XErrorCode::BadValue,
                                     },
                                     sequence: context.sequence,
                                     resource_id: u32::try_from(change.window.local.raw()).unwrap_or(0),
@@ -349,10 +380,24 @@ fn dispatch_core_property_request(
                 }
                 XWireRequest::GetSelectionOwner { selection } => XDispatchResult {
                     response: None,
-                    outputs: vec![XClientOutput::Reply(XClientReply::GetSelectionOwner {
-                        sequence: context.sequence,
-                        owner: runtime.selection_owner(context.namespace, selection),
-                    })],
+                    // The selection is the request's only argument and its
+                    // only error: an atom that names nothing is refused
+                    // rather than answered with "nobody owns it", which is a
+                    // different and reachable fact.
+                    outputs: vec![if atoms.name(selection).is_none() {
+                        XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadAtom,
+                            sequence: context.sequence,
+                            resource_id: selection,
+                            minor_code: 0,
+                            major_code: context.major_opcode,
+                        })
+                    } else {
+                        XClientOutput::Reply(XClientReply::GetSelectionOwner {
+                            sequence: context.sequence,
+                            owner: runtime.selection_owner(context.namespace, selection),
+                        })
+                    }],
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::SendSelectionNotify {
