@@ -185,7 +185,7 @@ printf '%s\n' "$output" | grep -Fq "missing layer_not_dma_buf" || {
 standalone="$ROOT_DIR/tools/verify_direct_scanout_standalone.sh"
 probe="$temp_dir/probe.log"
 {
-    printf 'sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0\n'
+    printf 'sophia_live_session schema=18 status=bounded_complete display=:77 runtime_surfaces=0 runtime_max_surfaces=2 wm_policy=disabled wm_restarts=0\n'
     printf 'sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true\n'
     cat "$pass"
 } >"$probe"
@@ -218,7 +218,7 @@ probe_reject "a probe whose client never presented" "$silent" \
     "never presented a frame"
 
 unfinished="$temp_dir/unfinished.log"
-grep -v '^sophia_live_session schema=16 ' "$probe" >"$unfinished"
+grep -v '^sophia_live_session schema=18 ' "$probe" >"$unfinished"
 probe_reject "a probe whose session never completed" "$unfinished" \
     "did not reach a bounded completion"
 

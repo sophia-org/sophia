@@ -1100,6 +1100,7 @@ fn a_ledger_poisoned_after_a_healthy_disconnect_still_keeps_the_number() {
             route_lease: None,
             delivery: Some(XAuthorityInputDeliveryId::from_raw(92040)),
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .expect("the broker accepts a routed input");
     assert_eq!(broker.route_pending(), Ok(1));

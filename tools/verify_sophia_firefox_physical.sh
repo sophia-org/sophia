@@ -510,7 +510,7 @@ for assignment in pending=0 release_barrier_pending=0 repeat_active_seats=0 repe
     require_eq "$keys" "${assignment%%=*}" "${assignment#*=}"
 done
 
-mapfile -t completions < <(grep -E '^sophia_live_session schema=(14|15|16) status=bounded_complete ' "$SESSION_LOG")
+mapfile -t completions < <(grep -E '^sophia_live_session schema=(14|15|16|18) status=bounded_complete ' "$SESSION_LOG")
 (( ${#completions[@]} == 1 )) || fail "expected exactly one bounded session completion"
 completion="${completions[0]}"
 require_at_least "$completion" startup_ready_msec 0

@@ -111,7 +111,7 @@ grep -Eq "^sophia_live_session_input schema=1 status=ready source=physical text=
     || fail "physical input readiness for $proof_text is missing"
 grep -Eq "^sophia_live_session_input schema=2 status=complete source=physical text=$proof_text expected_events=[1-9][0-9]* matched_events=[1-9][0-9]* pixel_change=true$" "$session" \
     || fail "exact physical text completion for $proof_text is missing"
-grep -Eq '^sophia_live_session schema=16 status=bounded_complete .* physical_input=enabled( |$)' "$session" \
+grep -Eq '^sophia_live_session schema=(16|18) status=bounded_complete .* physical_input=enabled( |$)' "$session" \
     || fail "bounded session completion with physical input enabled is missing"
 grep -Eq '^sophia_live_session_health schema=1 status=clean protocol_errors=0 ' "$session" \
     || fail "clean session health is missing"

@@ -77,7 +77,7 @@ output_count="$(grep -Ec '^sophia_live_output schema=1 status=complete output=[0
 (( output_count == 2 )) || fail "expected two visible output summaries; found $output_count"
 
 mapfile -t completions < <(
-    grep -E '^sophia_live_session schema=(15|16) status=bounded_complete ' \
+    grep -E '^sophia_live_session schema=(15|16|18) status=bounded_complete ' \
         "$session_log" || true
 )
 (( ${#completions[@]} == 1 )) ||

@@ -215,6 +215,7 @@ fn real_qt_receives_scroll_and_single_click_through_the_frontend_writer() {
                     route_lease: None,
                     delivery: Some(XAuthorityInputDeliveryId::from_raw(sent as u64 + 1)),
                     mode: XAuthorityRoutedInputMode::Deliver,
+                    origin: XAuthorityRoutedInputOrigin::Physical,
                 })
                 .unwrap();
             sent += 1;

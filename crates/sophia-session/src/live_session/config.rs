@@ -72,6 +72,10 @@ struct PersistentXtermSessionConfig {
     expect_physical_text: Option<String>,
     physical_sequence_timeout_msec: u64,
     expect_physical_pointer: bool,
+    /// Admit XTEST for clients in the session's namespace. A dev flag, off
+    /// by default, and never beside a physical proof: a synthetic source
+    /// could satisfy one, and rehearsal is not acceptance.
+    admit_xtest: bool,
     exit_after_input_proof: bool,
     input_devices: Vec<std::path::PathBuf>,
     input_seat: Option<String>,
@@ -498,6 +502,7 @@ impl PersistentXtermSessionConfig {
             return Err("--terminal-exec accepts at most 32 bounded arguments".into());
         }
         let expect_physical_pointer = args.iter().any(|arg| arg == "--expect-physical-pointer");
+        let admit_xtest = args.iter().any(|arg| arg == "--admit-xtest");
         let secondary_terminal = args.iter().any(|arg| arg == "--secondary-terminal");
         let exit_after_input_proof = args.iter().any(|arg| arg == "--exit-after-input-proof");
         let native_scanout = args.iter().any(|arg| arg == "--native-scanout");
@@ -1053,6 +1058,14 @@ impl PersistentXtermSessionConfig {
                 "M4 Present proof controls require --native-scanout and --terminal-exec".into(),
             );
         }
+        if admit_xtest
+            && (inject_text.is_some() || expect_physical_text.is_some() || expect_physical_pointer)
+        {
+            return Err(
+                "--admit-xtest cannot be combined with an input proof: a synthetic source could satisfy it"
+                    .into(),
+            );
+        }
         if (inject_text.is_some() || expect_physical_text.is_some())
             && max_runtime.is_none()
             && max_ticks.is_none()
@@ -1111,6 +1124,7 @@ impl PersistentXtermSessionConfig {
             physical_sequence_timeout_msec: physical_sequence_timeout
                 .unwrap_or(SESSION_PHYSICAL_SEQUENCE_TIMEOUT_MSEC),
             expect_physical_pointer,
+            admit_xtest,
             exit_after_input_proof,
             input_devices,
             input_seat,

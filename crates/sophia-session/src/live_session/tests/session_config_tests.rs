@@ -1780,3 +1780,32 @@ fn the_font_path_defaults_to_the_host_directories_and_can_be_emptied() {
         "an empty path leaves only the built-in face, which is deterministic"
     );
 }
+
+#[test]
+fn admit_xtest_is_a_dev_flag_that_never_stands_beside_a_proof() {
+    let config = isolated_session_config(&["--admit-xtest".to_owned()]).unwrap();
+    assert!(config.admit_xtest);
+    assert!(
+        !isolated_session_config(&[]).unwrap().admit_xtest,
+        "off by default"
+    );
+
+    // A synthetic source could satisfy any of these. Rehearsal is not
+    // acceptance, and the flag says so by refusing to stand beside them.
+    for proof in [
+        vec!["--expect-physical-pointer".to_owned()],
+        vec![
+            "--inject-text=sophia".to_owned(),
+            "--max-ticks=10".to_owned(),
+        ],
+        vec![
+            "--expect-physical-text=sophia".to_owned(),
+            "--max-ticks=10".to_owned(),
+        ],
+    ] {
+        let mut args = vec!["--admit-xtest".to_owned()];
+        args.extend(proof.iter().cloned());
+        let error = isolated_session_config(&args).unwrap_err().to_string();
+        assert!(error.contains("--admit-xtest"), "{proof:?}: {error}");
+    }
+}

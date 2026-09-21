@@ -372,6 +372,7 @@ pub(super) fn flush_held_lease_input<S: RoutedInputIngress>(
                 route_lease,
                 delivery: Some(delivery),
                 mode: XAuthorityRoutedInputMode::Deliver,
+                origin: sophia_x_authority::XAuthorityRoutedInputOrigin::Physical,
             },
             sophia_protocol::CapacityClass::Ordered,
             &mut report.ingress_saturation,

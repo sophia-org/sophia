@@ -150,7 +150,7 @@ for output in 1 2; do
     require_line "^sophia_live_output schema=1 status=complete output=${output} .*nonzero_exports=[1-9][0-9]*$" \
         "$SESSION_LOG" "output $output did not finish with visible exports"
 done
-completion="$(grep -E '^sophia_live_session schema=(14|15|16) status=bounded_complete ' "$SESSION_LOG" | tail -n 1 || true)"
+completion="$(grep -E '^sophia_live_session schema=(14|15|16|18) status=bounded_complete ' "$SESSION_LOG" | tail -n 1 || true)"
 [[ -n "$completion" ]] || fail "bounded session completion is missing"
 for assignment in \
     native_presentation=enabled physical_input=enabled wm_policy=external \

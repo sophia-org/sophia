@@ -32,7 +32,7 @@ impl Drop for TempDir {
 
 fn passing_log() -> String {
     [
-        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0",
+        "sophia_live_session schema=18 status=bounded_complete display=:77 runtime_surfaces=0 runtime_max_surfaces=2 wm_policy=disabled wm_restarts=0",
         "sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
         "sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=1 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0",
         "sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=0 composed_cursor=0",
@@ -154,7 +154,7 @@ fn identity_binding_preserves_the_archive_schema() {
 /// resumed flipping only after a fresh validating commit.
 fn overlay_log() -> String {
     [
-        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0",
+        "sophia_live_session schema=18 status=bounded_complete display=:77 runtime_surfaces=0 runtime_max_surfaces=2 wm_policy=disabled wm_restarts=0",
         "sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0",
         "sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=12 composed_cursor=0",
         "sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
@@ -357,7 +357,7 @@ fn decorated(record: &str) -> String {
 #[test]
 fn decorated_episode_records_are_read_like_bare_ones() {
     let text = [
-        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0",
+        "sophia_live_session schema=18 status=bounded_complete display=:77 runtime_surfaces=0 runtime_max_surfaces=2 wm_policy=disabled wm_restarts=0",
         "sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=2 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0",
         "sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=2 composed_cursor=0",
         "sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
@@ -638,7 +638,7 @@ fn cursor_record_schema_seven(path: &str, plane: &str, updates: usize, failures:
 /// A session that moved a cursor over direct frames and kept flipping after.
 fn cursor_log() -> String {
     [
-        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 wm_policy=disabled wm_restarts=0",
+        "sophia_live_session schema=18 status=bounded_complete display=:77 runtime_surfaces=0 runtime_max_surfaces=2 wm_policy=disabled wm_restarts=0",
         "sophia_live_native_resources schema=12 status=complete direct_scanout_attempts=30 direct_scanout_flips=30 direct_scanout_tests=1 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0",
         "sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=32 layer_count=26 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=0 composed_cursor=0",
         "sophia_live_session_present schema=2 status=retired transaction=242 surface=2097166 source=2560x1440 target=2560x1440_0_0 clip=2560x1440_0_0 unit_scale=true",
@@ -842,4 +842,29 @@ fn the_previous_cursor_schema_still_verifies() {
             .any(|line| line.contains("path=legacy_ioctl") && line.contains("plane=unprobed")),
         "{report:?}"
     );
+}
+
+#[test]
+fn an_archived_schema_16_session_is_still_read() {
+    // A promoted archive is a recorded session and keeps the schema it had.
+    // Refusing it by schema would silence every archive the moment the
+    // emitter moved on; the field check is where old evidence is refused.
+    let log = passing_log().replace(
+        "sophia_live_session schema=18 status=bounded_complete display=:77 runtime_surfaces=0 runtime_max_surfaces=2 ",
+        "sophia_live_session schema=16 status=bounded_complete display=:77 runtime_surfaces=0 ",
+    );
+    assert!(
+        log.contains("schema=16 status=bounded_complete"),
+        "the fixture must be the archive shape"
+    );
+    let dir = std::env::temp_dir().join(format!(
+        "sophia-direct-scanout-archive-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("session.log");
+    std::fs::write(&path, log).unwrap();
+    let verdict = direct_scanout::verify_logs(&[path.to_string_lossy().to_string()]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(verdict.is_ok(), "{verdict:?}");
 }

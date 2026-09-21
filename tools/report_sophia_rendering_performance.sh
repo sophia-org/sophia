@@ -20,7 +20,7 @@ fail() {
 [[ -s "$SESSION_LOG" ]] || fail "missing session log: $SESSION_LOG"
 
 completion="$(
-    grep -E '^sophia_live_session schema=(15|16) status=bounded_complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session schema=(15|16|18) status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1
 )"
 [[ -n "$completion" ]] || fail "missing bounded session completion"

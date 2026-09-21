@@ -76,6 +76,22 @@ pub struct XAuthorityClientInputEvent {
     pub delivery: Option<XAuthorityInputDeliveryId>,
 }
 
+/// Where a routed event came from, kept beside it to the point of delivery.
+///
+/// Routing never consults this to choose a recipient: a synthetic event lands
+/// exactly where a physical one would, on the focused surface of the
+/// namespace it was raised in. What it decides is what may NOT be done with
+/// the event. The reserved emergency chord is refused to a synthetic source
+/// on the shared path, as the private executor already refuses it on its own,
+/// and evidence can say which events a hand produced and which a client did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XAuthorityRoutedInputOrigin {
+    /// A seat device, through the session's own input phase.
+    Physical,
+    /// An admitted client, through XTEST.
+    Synthetic,
+}
+
 /// Protocol-neutral physical input after Engine hit-testing and focus policy.
 #[derive(Clone, Debug, PartialEq)]
 pub struct XAuthorityRoutedInput {
@@ -83,6 +99,7 @@ pub struct XAuthorityRoutedInput {
     pub route_lease: Option<ApplicationRouteLeaseIdentity>,
     pub delivery: Option<XAuthorityInputDeliveryId>,
     pub mode: XAuthorityRoutedInputMode,
+    pub origin: XAuthorityRoutedInputOrigin,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -358,6 +375,13 @@ pub enum XServerFrontendServiceCommand {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XServerFrontendRouteError {
+    /// A synthetic press would have completed the reserved emergency chord
+    /// while both of its modifiers were held. Refused on the shared path for
+    /// the reason the private executor refuses it on its own: the chord is
+    /// recognised from physical devices in the guard's process and nothing
+    /// here can trigger it, so what this stops is handing it to a client as
+    /// ordinary keys. No physical route is ever refused by this.
+    SyntheticChordRefused,
     /// Private focus provenance could not be reserved before routing effects.
     FocusClaimRefused {
         client: XServerFrontendClientId,
@@ -522,6 +546,10 @@ impl XPresentFeedbackPhases {
 impl core::fmt::Display for XServerFrontendRouteError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::SyntheticChordRefused => write!(
+                formatter,
+                "synthetic press of the reserved emergency chord refused"
+            ),
             Self::LifecycleUnavailable => {
                 write!(formatter, "private connection lifecycle unavailable")
             }

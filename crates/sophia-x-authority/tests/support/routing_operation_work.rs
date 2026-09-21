@@ -260,6 +260,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
         route_lease: None,
         delivery: Some(delivery),
         mode: XAuthorityRoutedInputMode::Deliver,
+        origin: XAuthorityRoutedInputOrigin::Physical,
     };
     recovery.admit(&request, 1, std::time::Instant::now());
     recovery

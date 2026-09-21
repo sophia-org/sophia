@@ -174,7 +174,11 @@ impl std::error::Error for XServerFrontendInjectionError {}
 /// finished is the completion that arrives at the barrier.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XTestAccepted {
-    pub sequence: crate::ReadySequence,
+    /// Where the work sits in a private instance's single order. `None` for
+    /// an injector that submits to the shared routed ingress, which has no
+    /// such order to name -- the completion the barrier carries is what says
+    /// the work finished, and it needs no sequence to do so.
+    pub sequence: Option<crate::ReadySequence>,
 }
 
 /// Why injected work was not accepted.

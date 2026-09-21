@@ -113,7 +113,7 @@ require_line \
     "$SESSION_LOG" "fallback application cleanup did not drain"
 
 completion="$({
-    grep -E '^sophia_live_session schema=(14|15|16) status=bounded_complete ' \
+    grep -E '^sophia_live_session schema=(14|15|16|18) status=bounded_complete ' \
         "$SESSION_LOG" || true
 } | tail -n 1)"
 [[ -n "$completion" ]] || fail "fallback completion record is missing"

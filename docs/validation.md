@@ -790,8 +790,11 @@ Sophia policy path.
 `tools/check_live_record_schema_readers.sh` checks current emitters against
 reviewed readers during `cargo xtask check`. Message identity includes the record
 name and status: WM readiness uses schema 4, while other WM records retain their
-own schemas. Session completion uses schema 16 when startup proof was requested
-and schema 17 when it was not. A normal completion is not startup-proof evidence.
+own schemas. Session completion uses schema 18 when startup proof was requested
+and schema 19 when it was not; 16 and 17 were the same pair before the
+high-water fields were added, and 17 is not reused. A live session admits XTEST only under `--admit-xtest`,
+which is refused beside any input-proof flag, and reports what it injected in
+`sophia_live_session_xtest schema=1`. A normal completion is not startup-proof evidence.
 The guard checks literal selectors and the registered parsed schema conditions;
 verifier fixtures retain authority over required fields and lifecycle assertions.
 Run its mutation checks with `--self-test`. New reader purposes or emitter forms

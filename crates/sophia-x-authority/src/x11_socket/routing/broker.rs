@@ -104,6 +104,7 @@ impl XAuthorityRoutedInputSender {
             publication: stamp.publication,
             route,
             reservation: None,
+            completion: None,
         };
         if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
             return Err(std::sync::mpsc::SendError(envelope.route));
@@ -134,6 +135,7 @@ impl XAuthorityRoutedInputSender {
             publication: stamp.publication,
             route,
             reservation: None,
+            completion: None,
         };
         match self
             .recovery
@@ -173,6 +175,7 @@ impl XAuthorityRoutedInputSender {
             publication: stamp.publication,
             route,
             reservation: None,
+            completion: None,
         };
         if !self.recovery.admit(&envelope.route, envelope.control_epoch, Instant::now()) {
             return Err(TrySendError::Full(envelope.route));
@@ -815,7 +818,12 @@ impl XServerFrontendRouteBroker {
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
             }
             match self.routed_input_receiver.try_recv() {
-                Ok(route) => {
+                Ok(mut route) => {
+                    // Taken before the route is moved into the registry. Answered
+                    // below after the effect, for every way the call can end, so
+                    // the submitter that armed it is never left waiting on work
+                    // that was refused or swallowed.
+                    let completion = route.completion.take();
                     let admitted = match self.control_gate.get() {
                         Some(gate) => gate
                             .admits(crate::ControlStamp {
@@ -836,14 +844,30 @@ impl XServerFrontendRouteBroker {
                         },
                         admitted,
                     ) {
-                        Ok(()) => routed = routed.saturating_add(1),
+                        Ok(()) => {
+                            routed = routed.saturating_add(1);
+                            report_completion(completion, sophia_input_authority::RequestCompletion::Processed);
+                        }
+                        Err(XServerFrontendRouteError::SyntheticChordRefused) => {
+                            report_completion(
+                                completion,
+                                sophia_input_authority::RequestCompletion::Refused(
+                                    sophia_input_authority::RegistrationError::ConsumerRefused,
+                                ),
+                            );
+                        }
                         Err(
                             XServerFrontendRouteError::UnknownSurface { .. }
                             | XServerFrontendRouteError::ClientQueueDisconnected { .. }
                             | XServerFrontendRouteError::UnknownClient { .. }
                             | XServerFrontendRouteError::ClientQueueFull { .. },
-                        ) => {}
-                        Err(error) => return Err(error),
+                        ) => {
+                            report_completion(completion, sophia_input_authority::RequestCompletion::Cancelled);
+                        }
+                        Err(error) => {
+                            report_completion(completion, sophia_input_authority::RequestCompletion::Cancelled);
+                            return Err(error);
+                        }
                     }
                     progressed = true;
                 }

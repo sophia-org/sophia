@@ -21,6 +21,7 @@ fn announcement_to(
         route_lease: None,
         delivery: Some(delivery),
         mode: XAuthorityRoutedInputMode::Deliver,
+        origin: XAuthorityRoutedInputOrigin::Physical,
     }
 }
 

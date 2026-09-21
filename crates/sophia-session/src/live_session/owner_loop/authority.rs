@@ -949,8 +949,7 @@
                     metrics.backend_ticks = metrics
                         .backend_ticks
                         .saturating_add(service.ticks.len());
-                    metrics.runtime_surfaces =
-                        u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
+                    metrics.record_runtime_surfaces(runtime.committed_surfaces().len());
                     reconcile_initial_session_focus(InitialSessionFocusContext {
                         runtime,
                         focus: &mut focus,

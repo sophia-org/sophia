@@ -407,7 +407,7 @@ done
 
 grep -Fxq 'sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced' \
     "$evidence" || fail "both heads did not complete without pacing rejection"
-session="$(grep -E '^sophia_live_session schema=16 status=bounded_complete ' "$evidence")"
+session="$(grep -E '^sophia_live_session schema=(16|18) status=bounded_complete ' "$evidence")"
 [[ "$(printf '%s\n' "$session" | wc -l)" == 1 ]] || fail "expected one bounded session completion"
 for pair in \
     native_presentation=enabled \
@@ -506,7 +506,7 @@ keys="$(grep -E '^sophia_live_session_keys schema=2 status=complete ' "$evidence
 require_field "$keys" pending 0
 require_field "$keys" release_barrier_pending 0
 require_field "$keys" repeat_active_seats 0
-session_line="$(grep -nEm1 '^sophia_live_session schema=16 status=bounded_complete ' "$evidence" | cut -d: -f1)"
+session_line="$(grep -nEm1 '^sophia_live_session schema=(16|18) status=bounded_complete ' "$evidence" | cut -d: -f1)"
 last_retire_line="$(grep -nE '^sophia_live_native_head_page_flip schema=2 status=retired ' "$evidence" | tail -n1 | cut -d: -f1)"
 (( last_retire_line < session_line )) || fail "bounded completion preceded physical retirement"
 grep -Eq '^sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false$' \

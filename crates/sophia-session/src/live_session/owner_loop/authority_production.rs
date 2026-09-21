@@ -257,8 +257,7 @@
                 // whole merged run rather than one batch's share.
                 metrics.runtime_committed =
                     record_runtime_commits(metrics.runtime_committed, committed_transactions);
-                metrics.runtime_surfaces =
-                    u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
+                metrics.record_runtime_surfaces(runtime.committed_surfaces().len());
                 if let Some(native_scanout) = native_scanout.as_ref() {
                     for requirements in
                         runtime.reconcile_surface_raster_requirements(native_scanout)?

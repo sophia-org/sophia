@@ -43,9 +43,9 @@ use crate::{
     XAuthorityObservedTransactionBatch, XAuthorityOrderedDelivery, XAuthorityPointerEvent,
     XAuthorityPointerEventKind, XAuthorityPresentSubmission, XAuthorityResponsePacket,
     XAuthorityRouteLeaseRelease, XAuthorityRouteLeaseUpdate, XAuthorityRouteLeaseUpdateKind,
-    XAuthorityRoutedInput, XAuthorityRoutedInputMode, XAuthorityRuntime,
-    XAuthorityServedConnection, XAuthoritySurfaceRouteObservation, XByteOrder, XClientEvent,
-    XDispatchContext, XDispatchResult, XPresentCompletionMode, XPropertyTable,
+    XAuthorityRoutedInput, XAuthorityRoutedInputMode, XAuthorityRoutedInputOrigin,
+    XAuthorityRuntime, XAuthorityServedConnection, XAuthoritySurfaceRouteObservation, XByteOrder,
+    XClientEvent, XDispatchContext, XDispatchResult, XPresentCompletionMode, XPropertyTable,
     XRasterFallbackCause, XResourceId, XServerFrontendAdmissionError,
     XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest, XServerFrontendClientId,
     XServerFrontendConfig, XServerFrontendPeerCredentials, XServerFrontendPixmapAllocator,
@@ -85,6 +85,8 @@ include!("x11_socket/routing/private_runner_accounting.rs");
 include!("x11_socket/routing/private_execution_lifetime.rs");
 include!("x11_socket/routing/private_custody_snapshot.rs");
 include!("x11_socket/routing/private_request_barrier.rs");
+include!("x11_socket/routing/routed_xtest_injector.rs");
+include!("x11_socket/routing/routed_completion.rs");
 include!("x11_socket/routing/private_terminal_departed.rs");
 include!("x11_socket/routing/private_delivery_observer.rs");
 include!("x11_socket/routing/private_native_cleanup_receipt.rs");

@@ -817,6 +817,7 @@ fn route_input_events_with_launcher(
                         route_lease,
                         delivery: Some(delivery),
                         mode: XAuthorityRoutedInputMode::Deliver,
+                        origin: sophia_x_authority::XAuthorityRoutedInputOrigin::Physical,
                     },
                     sophia_protocol::CapacityClass::Ordered,
                     &mut report.ingress_saturation,
@@ -922,6 +923,7 @@ fn route_input_events_with_launcher(
                                     route_lease: None,
                                     delivery: Some(delivery),
                                     mode: XAuthorityRoutedInputMode::Deliver,
+                                    origin: sophia_x_authority::XAuthorityRoutedInputOrigin::Physical,
                                 },
                                 sophia_protocol::CapacityClass::TerminatingBoundary,
                                 &mut report.ingress_saturation,
@@ -1113,6 +1115,7 @@ fn route_input_events_with_launcher(
                         route_lease: None,
                         delivery: Some(delivery),
                         mode: XAuthorityRoutedInputMode::Deliver,
+                        origin: sophia_x_authority::XAuthorityRoutedInputOrigin::Physical,
                     },
                     if pressed {
                         sophia_protocol::CapacityClass::Ordered
@@ -1845,6 +1848,7 @@ fn deliver_coalesced_inputs(
                 route_lease,
                 delivery: Some(delivery),
                 mode: XAuthorityRoutedInputMode::Deliver,
+                origin: sophia_x_authority::XAuthorityRoutedInputOrigin::Physical,
             },
             sophia_protocol::CapacityClass::Ordered,
             &mut report.ingress_saturation,

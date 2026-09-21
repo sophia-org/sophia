@@ -26,7 +26,7 @@ field() {
 
 deadline=$((SECONDS + WAIT_SECONDS))
 while ! grep -Eq '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
-    ! grep -Eq '^sophia_live_session schema=(15|16) status=bounded_complete ' "$SESSION_LOG"; do
+    ! grep -Eq '^sophia_live_session schema=(15|16|18) status=bounded_complete ' "$SESSION_LOG"; do
     ((SECONDS < deadline)) || fail "session log is incomplete"
     sleep 0.1
 done
@@ -67,7 +67,7 @@ height="$(field "$candidate" height)" || fail "visual candidate lacks height"
 ((width > 0 && height > 0)) || fail "visual candidate extent is empty"
 
 completion="$(
-    grep -E '^sophia_live_session schema=(15|16) status=bounded_complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session schema=(15|16|18) status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1
 )"
 mapfile -t armed < <(

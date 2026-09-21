@@ -196,6 +196,30 @@ impl XServerFrontendRouteRegistry {
             }
             return Ok(());
         }
+        // THE RESERVED CHORD IS NOT SUPPLIED SYNTHETICALLY, on this path as on
+        // the private executor's. A synthetic press of the key that completes
+        // Ctrl-Alt-Backspace, while both modifiers are held on the seat, is
+        // refused before it can reach a client as ordinary keys. Only the
+        // completing press, and only with both held: either modifier may be
+        // pressed synthetically on its own, and Ctrl-Backspace is a key. A
+        // physical route never carries this origin and is never delayed by it.
+        if route.origin == XAuthorityRoutedInputOrigin::Synthetic
+            && let InputEventKind::Key { keycode, pressed: true } = route.request.kind
+            && keycode == crate::X_AUTHORITY_RESERVED_CHORD_KEY
+        {
+            let held = self
+                .xkb_worker
+                .request(XkbWorkerCommand::Modifiers { seat: route.request.seat })?
+                .map_or(0, |(_, state, _)| state);
+            if held & crate::X_AUTHORITY_RESERVED_CHORD_MODIFIERS
+                == crate::X_AUTHORITY_RESERVED_CHORD_MODIFIERS
+            {
+                tracing::warn!(
+                    "sophia_x11_input_route status=refused reason=reserved_chord origin=synthetic"
+                );
+                return Err(XServerFrontendRouteError::SyntheticChordRefused);
+            }
+        }
         let surface_route = self
             .surfaces
             .lock()

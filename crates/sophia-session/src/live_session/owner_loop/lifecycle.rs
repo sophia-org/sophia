@@ -773,8 +773,7 @@
                     head.presented_page_flip_ust_usec,
                 );
             }
-            metrics.runtime_surfaces =
-                u64::try_from(runtime.committed_surfaces().len()).unwrap_or(u64::MAX);
+            metrics.record_runtime_surfaces(runtime.committed_surfaces().len());
             reconcile_initial_session_focus(InitialSessionFocusContext {
                 runtime,
                 focus: &mut focus,

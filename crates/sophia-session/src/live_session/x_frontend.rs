@@ -1,6 +1,7 @@
 use super::*;
 
 mod render_device;
+pub(super) mod xtest;
 
 pub(super) struct LiveXAdmissionPolicy {
     pub(super) launch_origins: Arc<Mutex<crate::launch_origin::LaunchOriginRegistry>>,

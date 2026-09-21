@@ -142,6 +142,13 @@ struct XAuthorityEpochRoutedInput {
     /// request be executed twice, or disposed while the other still expects to
     /// publish for it.
     reservation: Option<PrivateReservation>,
+    /// Where this route's internal-processing outcome is reported, when a
+    /// submitter asked to be told. Armed by the submitter, carried with the
+    /// work, answered by the receiver once the registry has taken the effect
+    /// -- after, never on acceptance, which is the ordering FakeInput owes its
+    /// next request. `None` for every route the session's own input phase
+    /// sends, which is answered to nobody.
+    completion: Option<PrivateBarrierTicket>,
 }
 
 

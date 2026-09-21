@@ -15,11 +15,12 @@ can it close any of them, and if not, what can?
 
 ## XTEST cannot, for two independent reasons
 
-**It is not in a live session.** `crates/sophia-session/src/live_session.rs`
-installs no injector; a grep for `xtest` in it returns nothing. The adapter
-exists only inside a private input instance, which requires the instance
-cookie, and t093 closed with discovery deliberately left disabled. Nothing on a
-real Hagia desktop can reach it.
+**It is not in a live session -- by default.** `live_session.rs` attaches no
+injection policy, so every live client sees XTEST as absent and t093 closed
+with discovery deliberately left disabled. That is a default, not a wall: the
+adapter is complete, admission is decided per connection, and `--admit-xtest`
+attaches a namespace-keyed policy that issues injectors to the session's
+clients. (Corrected 2026-09-20; the original read this as unreachable.)
 
 **It is the wrong layer by design.** t139 established that emergency recovery
 is the input guard's, a separate process polling libinput directly, so a

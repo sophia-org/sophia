@@ -24,6 +24,7 @@ struct SessionLoopMetrics {
     backend_ticks: usize,
     runtime_committed: u64,
     runtime_surfaces: u64,
+    runtime_max_surfaces: u64,
     physical_events: usize,
     physical_keys_routed: usize,
     key_repeats_routed: usize,
@@ -46,6 +47,19 @@ impl SessionLoopMetrics {
             cpu_compositions: usize::from(initialize_empty_runtime),
             ..Self::default()
         }
+    }
+
+    /// Records how many surfaces are committed now, and the most there have
+    /// ever been at once.
+    ///
+    /// The live figure is sampled, and a session that has drained its clients
+    /// correctly reports none -- so it cannot distinguish a session that ran
+    /// two terminals from one that never admitted a client. The peak is the
+    /// figure that says surfaces existed, and how many stood together, which
+    /// is the question a two-terminal scenario is actually asking.
+    fn record_runtime_surfaces(&mut self, committed: usize) {
+        self.runtime_surfaces = u64::try_from(committed).unwrap_or(u64::MAX);
+        self.runtime_max_surfaces = self.runtime_max_surfaces.max(self.runtime_surfaces);
     }
 }
 
