@@ -278,6 +278,53 @@ impl XAuthorityRuntime {
         Ok(query)
     }
 
+    /// The deepest window the pointer is inside, when one has been observed.
+    ///
+    /// Focus event generation needs it because a transition that crosses on
+    /// or off the pointer's chain owes that chain its own events, and because
+    /// a `PointerRoot` focus resolves through it. `None` means no pointer
+    /// position has been observed at all, which the caller reads as the root.
+    pub(crate) fn pointer_window(&self, namespace: NamespaceId) -> Option<crate::XResourceId> {
+        let pointer = self
+            .input_authority_mut()
+            .pointer_query_state(namespace)
+            .position?;
+        let logical = self
+            .window_root_position(pointer.surface_window)
+            .map_or(
+                (i32::from(pointer.root_x), i32::from(pointer.root_y)),
+                |(x, y)| {
+                    (
+                        x.saturating_add(pointer.local_x),
+                        y.saturating_add(pointer.local_y),
+                    )
+                },
+            );
+        if !self.pointer_window_contains(namespace, pointer.surface_window, logical) {
+            return None;
+        }
+        // Engine chose the surface; only its own descendants are refined, for
+        // the same reason `query_pointer` gives.
+        let mut deepest = pointer.surface_window;
+        for _ in 0..64 {
+            let child = self
+                .windows
+                .direct_children(namespace, deepest)
+                .into_iter()
+                .filter(|child| self.pointer_window_contains(namespace, *child, logical))
+                .max_by_key(|child| {
+                    self.windows
+                        .get(*child)
+                        .map(|record| (record.stack_rank, record.id))
+                });
+            let Some(child) = child else {
+                break;
+            };
+            deepest = child;
+        }
+        Some(deepest)
+    }
+
     fn pointer_window_contains(
         &self,
         namespace: NamespaceId,

@@ -709,14 +709,13 @@ fn x11_dispatch_private_focus(
     // Refusals and the clock are decided before anything is reserved. A
     // request the protocol discards must leave no claim behind and publish
     // no focus, or the ordering layer would wait on a change that never came.
-    let standing = runtime.input_focus(context.namespace).0;
     if let Err(error) = runtime.validate_input_focus(context.namespace, window, revert_to) {
         return Ok((
             crate::dispatch::input_focus_dispatch_result(
                 context,
                 window,
-                standing,
                 crate::dispatch::XFocusRequestOutcome::Refused(error),
+                Vec::new(),
             ),
             None,
         ));
@@ -728,8 +727,8 @@ fn x11_dispatch_private_focus(
             crate::dispatch::input_focus_dispatch_result(
                 context,
                 window,
-                standing,
                 crate::dispatch::XFocusRequestOutcome::Ignored,
+                Vec::new(),
             ),
             None,
         ));
@@ -805,7 +804,24 @@ fn x11_dispatch_private_focus(
         }
     };
     Ok((
-        crate::dispatch::input_focus_dispatch_result(context, window, previous, result),
+        // The requesting client's own copy, over the same chain the writer
+        // resolves for everyone else. It is computed here rather than reused
+        // from the writer because the writer runs after this returns.
+        crate::dispatch::input_focus_dispatch_result(
+            context,
+            window,
+            result,
+            if matches!(result, crate::dispatch::XFocusRequestOutcome::Applied) {
+                crate::dispatch::core_focus_transition_events(
+                    runtime,
+                    context.namespace,
+                    previous,
+                    window,
+                )
+            } else {
+                Vec::new()
+            },
+        ),
         pending,
     ))
 }

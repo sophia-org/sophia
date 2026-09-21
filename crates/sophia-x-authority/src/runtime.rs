@@ -578,7 +578,10 @@ impl XAuthorityRuntime {
     }
 
     /// The chain from the root down to `window`, root first.
-    fn window_ancestry_chain(&self, window: crate::XResourceId) -> Vec<crate::XResourceId> {
+    pub(crate) fn window_ancestry_chain(
+        &self,
+        window: crate::XResourceId,
+    ) -> Vec<crate::XResourceId> {
         let mut chain = vec![window];
         let mut candidate = window;
         // The store's parent links are bounded and this walk is cycle-guarded,
