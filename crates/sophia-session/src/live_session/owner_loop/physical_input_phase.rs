@@ -876,6 +876,29 @@ macro_rules! drain_physical_input {
                     report.pointer_buttons_suppressed_by_policy,
                 );
             }
+            // WHICH SURFACE A BUTTON ACTUALLY REACHED.
+            //
+            // The batch above counts, and counts cannot separate a click that
+            // hit what the user aimed at from one that missed a popup and
+            // landed on the window beneath: both are routed and unsuppressed.
+            // The role is named beside the surface because it is the question
+            // rather than a detail -- a menu is client_positioned and the
+            // window under it is policy_managed. The targets were already
+            // resolved and carried here; only the printing was missing.
+            for surface in &report.pointer_button_targets {
+                crate::session_println!(
+                    "sophia_live_session_pointer_target schema=1 status=button_routed surface={} generation={} role={}",
+                    surface.index(),
+                    surface.generation(),
+                    match layout.presentation_roles.get(surface) {
+                        Some(sophia_protocol::SurfacePresentationRole::ClientPositioned) =>
+                            "client_positioned",
+                        Some(sophia_protocol::SurfacePresentationRole::PolicyManaged) =>
+                            "policy_managed",
+                        None => "unknown",
+                    },
+                );
+            }
             if !input_observations.pointer_button_observed
                 && report.pointer_buttons_observed > 0
             {
