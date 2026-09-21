@@ -52,7 +52,9 @@ Every release installs this base entry:
 A release built with explicit `SOPHIA_HAGIA_BIN` and
 `SOPHIA_HAGIA_SHELL_BIN` paths also installs:
 
-- `Sophia Hagia (Native Policy)` — the ordinary user-profile session.
+- `Sophia Hagia (Native Policy)` — the ordinary user-profile session;
+- `Sophia Hagia (XTEST automation)` — the same session with synthetic input
+  admitted, so a client on the display can drive it.
 
 Every release also carries the proof and evidence profiles below, and installs
 their operator commands, but leaves them out of the login menu unless
@@ -64,6 +66,21 @@ two entries someone logs in with:
 - `Sophia Hagia Promotion (Packaged Default)` — immutable release evidence;
 - `Sophia Firefox Proof` — the integrated browser workflow;
 - `Sophia Recovery Proof` — a bounded watchdog/recovery gate.
+
+The XTEST entry above is listed with the ordinary sessions rather than held
+here, because the request that lists these is all of them or none and asking
+for that one would put five entries in front of the two someone logs in with
+— the crowding this rule exists to prevent. It is a session to work in, not a
+gate to run occasionally. What it admits it declares. On it, any admitted client can synthesise input to any
+other: that is what XTEST has always meant on one X display, it is same-uid
+as every other client, and it is wider than the session to browse the web in.
+It cannot forge physical evidence, and not by policy — synthetic input enters
+at the broker, downstream of the session's physical input phase, so no amount
+of injection raises `physical_events`, `physical_keys_routed` or
+`physical_pointer_routed`. It also says what it is: `sophia_live_session_xtest
+schema=1 status=admitted` at startup and the injected counts at completion.
+So a run from it drives a scenario and never accepts one; an `@physical` row
+still wants a hand on the keyboard.
 
 Activating without the request retires proof entries a previous install
 listed, matching only entries whose `Exec` line points into the install prefix,

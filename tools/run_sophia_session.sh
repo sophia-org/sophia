@@ -924,6 +924,9 @@ else
         --exit-when-startup-exits
     )
 fi
+if [[ "${SOPHIA_ADMIT_XTEST:-0}" == 1 ]]; then
+    session_args+=(--admit-xtest)
+fi
 session_args+=("$@")
 
 # Every requested flag reached the vector.
@@ -936,6 +939,7 @@ session_args+=("$@")
 # reporting success. This refuses instead.
 requested_flags=()
 [[ "${SOPHIA_ATOMIC_CURSOR:-0}" == 1 ]] && requested_flags+=(--atomic-cursor)
+[[ "${SOPHIA_ADMIT_XTEST:-0}" == 1 ]] && requested_flags+=(--admit-xtest)
 [[ "${SOPHIA_LEGACY_CURSOR:-0}" == 1 ]] && requested_flags+=(--legacy-cursor)
 [[ "${SOPHIA_DIRECT_CURSOR_PROOF:-0}" == 1 ]] && requested_flags+=(--direct-cursor-proof)
 [[ "${SOPHIA_DIRECT_OVERLAY_PROOF:-0}" == 1 ]] && requested_flags+=(--direct-overlay-proof)
