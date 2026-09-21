@@ -1205,6 +1205,20 @@ pub enum XWireRequest {
         device_spec: u16,
     },
     XkbGetState,
+    /// Asked to latch or lock modifiers and the keyboard group.
+    ///
+    /// Carried whole rather than reduced, because what this instance can
+    /// honour is decided where the keyboard state lives, not here.
+    XkbLatchLockState {
+        affect_mod_locks: u8,
+        mod_locks: u8,
+        lock_group: bool,
+        group_lock: u8,
+        affect_mod_latches: u8,
+        mod_latches: u8,
+        latch_group: bool,
+        group_latch: u16,
+    },
     XkbGetControls,
     XkbGetNames {
         which: u32,

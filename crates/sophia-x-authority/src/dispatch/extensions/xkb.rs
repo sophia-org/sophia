@@ -11,6 +11,7 @@ fn dispatch_xkb_request(
             | XWireRequest::XkbGetCompatMap { .. }
             | XWireRequest::XkbGetIndicatorMap { .. }
             | XWireRequest::XkbGetState
+            | XWireRequest::XkbLatchLockState { .. }
             | XWireRequest::XkbGetControls
             | XWireRequest::XkbGetNames { .. }
             | XWireRequest::XkbGetDeviceInfo { .. }
@@ -183,6 +184,55 @@ fn dispatch_xkb_request(
                     XDispatchResult {
                         response: None,
                         outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::XkbLatchLockState {
+                    affect_mod_locks,
+                    mod_locks,
+                    lock_group,
+                    group_lock,
+                    affect_mod_latches,
+                    mod_latches,
+                    latch_group,
+                    group_latch,
+                } => {
+                    // SATISFIED WHEN THE STATE ASKED FOR ALREADY HOLDS, and
+                    // refused when it does not, rather than accepted and
+                    // dropped. This keymap has one group and XkbGetState
+                    // reports no modifier latched or locked, so a request to
+                    // be on group zero with nothing latched or locked -- what
+                    // a client sends to put the keyboard in a known state
+                    // before synthesising keys, which is how xdotool begins
+                    // every type -- is already true and is answered by doing
+                    // nothing. Naming another group is out of range for a
+                    // one-group keymap. Asking to hold a modifier down is a
+                    // legal request this instance has no state to honour, and
+                    // BadImplementation says that rather than pretending.
+                    let names_absent_group =
+                        (lock_group && group_lock != 0) || (latch_group && group_latch != 0);
+                    let sets_modifier = affect_mod_locks & mod_locks != 0
+                        || affect_mod_latches & mod_latches != 0;
+                    let refusal = if names_absent_group {
+                        Some((XErrorCode::BadValue, u32::from(group_lock.max(
+                            u8::try_from(group_latch).unwrap_or(u8::MAX),
+                        ))))
+                    } else if sets_modifier {
+                        Some((XErrorCode::BadImplementation, 0))
+                    } else {
+                        None
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: refusal.map_or_else(Vec::new, |(code, resource_id)| {
+                            vec![XClientOutput::Error(crate::XClientError {
+                                code,
+                                sequence: context.sequence,
+                                resource_id,
+                                minor_code: crate::X_KEYBOARD_LATCH_LOCK_STATE_MINOR_OPCODE.into(),
+                                major_code: context.major_opcode,
+                            })]
+                        }),
                         metadata_candidates: Vec::new(),
                     }
                 }

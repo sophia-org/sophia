@@ -5588,3 +5588,116 @@ fn xkb_level_names_are_real_atoms_because_a_client_may_ask_what_they_are_called(
         assert_ne!(*atom, 0, "name {index} is None and a client may ask for it");
     }
 }
+
+#[test]
+fn xkb_latch_lock_state_is_answered_when_the_state_it_asks_for_already_holds() {
+    let namespace = NamespaceId::from_raw(72);
+    let order = XByteOrder::LittleEndian;
+    // The request xdotool sends before every type: be on group zero, touch no
+    // modifier. Byte for byte as libX11 puts it on the wire.
+    let request = decode_x11_core_request(
+        context(namespace, 4, order),
+        &[
+            X_KEYBOARD_MAJOR_OPCODE,
+            X_KEYBOARD_LATCH_LOCK_STATE_MINOR_OPCODE,
+            4,
+            0,
+            0,
+            1, // deviceSpec: XkbUseCoreKbd
+            0,
+            0, // affectModLocks, modLocks
+            1,
+            0, // lockGroup, groupLock = 0
+            0,
+            0, // affectModLatches, modLatches
+            0,
+            0, // pad, latchGroup
+            0,
+            0, // groupLatch
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        request,
+        XWireRequest::XkbLatchLockState {
+            affect_mod_locks: 0,
+            mod_locks: 0,
+            lock_group: true,
+            group_lock: 0,
+            affect_mod_latches: 0,
+            mod_latches: 0,
+            latch_group: false,
+            group_latch: 0,
+        }
+    );
+
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let result = dispatch_x11_wire_request(
+        dispatch_context(namespace, 4, order, X_KEYBOARD_MAJOR_OPCODE),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    );
+    // Nothing owed and nothing refused: one group means group zero is where
+    // the keyboard already is. Answering BadRequest here, which is what an
+    // undecoded minor does, is fatal to the client -- libX11 exits a client
+    // whose request the server refuses, so xdotool died before typing a key.
+    assert!(result.outputs.is_empty(), "{:?}", result.outputs);
+    assert!(result.response.is_none());
+}
+
+#[test]
+fn xkb_latch_lock_state_refuses_a_group_and_a_modifier_this_keymap_has_not_got() {
+    let namespace = NamespaceId::from_raw(73);
+    let order = XByteOrder::LittleEndian;
+    let dispatch = |request| {
+        let mut runtime = XAuthorityRuntime::new();
+        let mut atoms = XAtomTable::new();
+        let mut properties = XPropertyTable::new();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, 5, order, X_KEYBOARD_MAJOR_OPCODE),
+            request,
+            &mut runtime,
+            &mut atoms,
+            &mut properties,
+        )
+    };
+    let state = |lock_group, group_lock, affect_mod_locks, mod_locks| {
+        XWireRequest::XkbLatchLockState {
+            affect_mod_locks,
+            mod_locks,
+            lock_group,
+            group_lock,
+            affect_mod_latches: 0,
+            mod_latches: 0,
+            latch_group: false,
+            group_latch: 0,
+        }
+    };
+
+    // A second group is out of range for a keymap that advertises one.
+    let other_group = dispatch(state(true, 1, 0, 0));
+    let [XClientOutput::Error(error)] = other_group.outputs.as_slice() else {
+        panic!("naming a group this keymap has not got must be refused");
+    };
+    assert_eq!(error.code, XErrorCode::BadValue);
+    assert_eq!(
+        error.minor_code,
+        u16::from(X_KEYBOARD_LATCH_LOCK_STATE_MINOR_OPCODE)
+    );
+
+    // Holding a modifier down is legal and this instance has no state for it.
+    // BadImplementation says so; accepting and dropping it would leave a
+    // client believing a modifier is held while every key arrives without it.
+    let hold_control = dispatch(state(false, 0, 0x04, 0x04));
+    let [XClientOutput::Error(error)] = hold_control.outputs.as_slice() else {
+        panic!("a modifier lock this instance cannot hold must be refused");
+    };
+    assert_eq!(error.code, XErrorCode::BadImplementation);
+
+    // Clearing what is already clear is satisfied, not refused.
+    assert!(dispatch(state(true, 0, 0xff, 0)).outputs.is_empty());
+}

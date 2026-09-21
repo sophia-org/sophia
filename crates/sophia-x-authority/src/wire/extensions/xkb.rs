@@ -14,6 +14,23 @@ fn decode_x_keyboard(
                 wanted_minor: context.byte_order.u16(&bytes[6..8]),
             })
         }
+        X_KEYBOARD_LATCH_LOCK_STATE_MINOR_OPCODE => {
+            require_exact_len(
+                X_KEYBOARD_MAJOR_OPCODE,
+                X_KEYBOARD_LATCH_LOCK_STATE_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::XkbLatchLockState {
+                affect_mod_locks: bytes[6],
+                mod_locks: bytes[7],
+                lock_group: bytes[8] != 0,
+                group_lock: bytes[9],
+                affect_mod_latches: bytes[10],
+                mod_latches: bytes[11],
+                latch_group: bytes[13] != 0,
+                group_latch: context.byte_order.u16(&bytes[14..16]),
+            })
+        }
         X_KEYBOARD_GET_MAP_MINOR_OPCODE => {
             require_exact_len(
                 X_KEYBOARD_MAJOR_OPCODE,

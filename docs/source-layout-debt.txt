@@ -43,13 +43,13 @@ large crates/sophia-session/src/live_session/wm/public_policy.rs 3053
 large crates/sophia-session/tests/support/private_input_session.rs 2808
 large crates/sophia-x-authority/src/dispatch.rs 1129
 large crates/sophia-x-authority/src/property.rs 1204
-large crates/sophia-x-authority/src/wire.rs 1675
+large crates/sophia-x-authority/src/wire.rs 1689
 large crates/sophia-x-authority/src/x11_socket/connection/server.rs 1301
 large crates/sophia-x-authority/src/x11_socket/tests.rs 1452
 large crates/sophia-x-authority/tests/authority/resources.rs 1614
 large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs 5144
 large crates/sophia-x-authority/tests/x11_wire/core_dispatch.rs 1627
-large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5590
+large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5703
 large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1775
 large crates/sophia-x-authority/tests/x11_wire/resources_frontend.rs 2114
 large crates/sophia-x-authority/tests/x11_wire/support_extensions.rs 1502
