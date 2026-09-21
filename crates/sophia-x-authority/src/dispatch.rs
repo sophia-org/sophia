@@ -16,6 +16,7 @@ use crate::{
 };
 use sophia_protocol::{NamespaceId, OutputTopologySnapshot, Rect, Region, TransactionId};
 
+include!("dispatch/active_window.rs");
 include!("dispatch/core/drawing.rs");
 include!("dispatch/core/grabs.rs");
 include!("dispatch/core/input_discovery.rs");
@@ -304,6 +305,20 @@ fn xkb_empty_device_reply(
 }
 
 pub fn dispatch_x11_wire_request(
+    context: XDispatchContext,
+    request: XWireRequest,
+    runtime: &mut XAuthorityRuntime,
+    atoms: &mut XAtomTable,
+    properties: &mut XPropertyTable,
+) -> XDispatchResult {
+    let result = dispatch_x11_wire_request_inner(context, request, runtime, atoms, properties);
+    // Behaviour behind `_NET_ACTIVE_WINDOW`: whatever this request did to the
+    // input focus is on the root before the client hears the result.
+    publish_noted_focus(runtime, properties, atoms, context.byte_order);
+    result
+}
+
+fn dispatch_x11_wire_request_inner(
     context: XDispatchContext,
     request: XWireRequest,
     runtime: &mut XAuthorityRuntime,

@@ -247,6 +247,10 @@ pub struct XAuthorityRuntime {
     /// one focus per namespace, and a single shared time would let a change
     /// in one namespace make an honest request in another look stale.
     last_focus_change: BTreeMap<NamespaceId, crate::XTimestamp>,
+    /// Focus changes not yet published as `_NET_ACTIVE_WINDOW`, oldest first.
+    /// Left here because the runtime does not hold the property table; the
+    /// layer that does drains this after each request or focus command.
+    active_window_changes: Vec<(NamespaceId, u32)>,
     #[cfg(unix)]
     private_focus_source: Option<crate::x11_socket::XPrivateFocusRuntimeSource>,
     defer_policy_maps: bool,
@@ -319,6 +323,7 @@ impl Default for XAuthorityRuntime {
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
             last_focus_change: Default::default(),
+            active_window_changes: Vec::new(),
             #[cfg(unix)]
             private_focus_source: None,
             defer_policy_maps: false,
@@ -566,7 +571,26 @@ impl XAuthorityRuntime {
     ) -> Result<(), XAuthorityRuntimeError> {
         self.validate_input_focus(namespace, focus, revert_to)?;
         self.input_focus.insert(namespace, (focus, revert_to));
+        self.note_active_window(namespace, focus);
         Ok(())
+    }
+
+    /// What `_NET_ACTIVE_WINDOW` should now say for this focus: the window,
+    /// or 0 for `None`, `PointerRoot` and the root, which is EWMH for none.
+    fn note_active_window(&mut self, namespace: NamespaceId, focus: crate::XResourceId) {
+        let raw = focus.local.raw();
+        let window = if raw <= 1 || raw == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+            0
+        } else {
+            u32::try_from(raw).unwrap_or(0)
+        };
+        self.active_window_changes.push((namespace, window));
+    }
+
+    /// The focus changes since the last drain, for whoever holds the
+    /// property table to publish. Empty on the ordinary request.
+    pub fn take_active_window_changes(&mut self) -> Vec<(NamespaceId, u32)> {
+        core::mem::take(&mut self.active_window_changes)
     }
 
     pub fn begin_dispatch(&mut self) {

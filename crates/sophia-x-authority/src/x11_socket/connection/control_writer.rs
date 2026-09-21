@@ -51,6 +51,37 @@ impl Drop for X11ControlWriterSeal<'_> {
     }
 }
 
+/// The focus changes a control command noted, put on the root with the
+/// tables locked for exactly that and never under the runtime guard.
+#[cfg(unix)]
+fn publish_active_windows(
+    atoms: &Arc<Mutex<XAtomTable>>,
+    properties: &Arc<Mutex<XPropertyTable>>,
+    byte_order: XByteOrder,
+    changes: Vec<(NamespaceId, u32)>,
+) -> Result<(), X11SetupSocketError> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+    let mut atoms = atoms
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 atom table lock poisoned"))?;
+    let mut properties = properties
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 property table lock poisoned"))?;
+    for (namespace, window) in changes {
+        if let Err(error) =
+            crate::publish_active_window(&mut properties, &mut atoms, namespace, byte_order, window)
+        {
+            tracing::warn!(
+                "sophia_x11_active_window status=unpublished namespace={} error={error:?}",
+                namespace.raw()
+            );
+        }
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
 fn spawn_x11_control_writer(
@@ -610,11 +641,15 @@ fn spawn_x11_control_writer(
                     )]
                 }
                 XAuthorityControlCommand::FocusSurface { .. } => {
-                    let applied = {
+                    let (applied, active_windows) = {
                         let mut runtime = lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
-                        x11_apply_focus_change(&mut runtime, namespace, client, &focused_surface_window,
-                            protocol_routing.as_ref(), focus_claim.as_ref(), X11FocusChange::Surface { window })
+                        let applied = x11_apply_focus_change(&mut runtime, namespace, client, &focused_surface_window,
+                            protocol_routing.as_ref(), focus_claim.as_ref(), X11FocusChange::Surface { window });
+                        (applied, runtime.take_active_window_changes())
                     };
+                    // Published after the runtime guard is gone: the tables
+                    // are locked in their own order, never under it.
+                    publish_active_windows(&atoms, &properties, byte_order, active_windows)?;
                     let applied = match applied {
                         Ok(applied) => applied,
                         Err(X11FocusApplyError::Runtime(_) | X11FocusApplyError::Superseded
@@ -650,11 +685,15 @@ fn spawn_x11_control_writer(
                 }
                 XAuthorityControlCommand::ClearFocus { .. } => {
                     let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-                    let applied = {
+                    let (applied, active_windows) = {
                         let mut runtime = lock_x11_control_runtime(&runtime, &control_runtime_pending)?;
-                        x11_apply_focus_change(&mut runtime, namespace, client, &focused_surface_window,
-                            protocol_routing.as_ref(), focus_claim.as_ref(), X11FocusChange::Clear)
+                        let applied = x11_apply_focus_change(&mut runtime, namespace, client, &focused_surface_window,
+                            protocol_routing.as_ref(), focus_claim.as_ref(), X11FocusChange::Clear);
+                        (applied, runtime.take_active_window_changes())
                     };
+                    // Published after the runtime guard is gone: the tables
+                    // are locked in their own order, never under it.
+                    publish_active_windows(&atoms, &properties, byte_order, active_windows)?;
                     let applied = match applied {
                         Ok(applied) => applied,
                         Err(X11FocusApplyError::Runtime(_) | X11FocusApplyError::Superseded
