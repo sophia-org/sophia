@@ -11,6 +11,7 @@ use sophia_protocol::{
 };
 use sophia_x_authority::*;
 include!("x11_wire/transport_events.rs");
+include!("x11_wire/setup_and_glx.rs");
 include!("x11_wire/core_decode.rs");
 include!("x11_wire/graphics_decode.rs");
 include!("x11_wire/core_dispatch.rs");

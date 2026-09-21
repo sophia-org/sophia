@@ -43,6 +43,7 @@ fn legacy_pixmap_export_encodes_the_drm_implicit_modifier() {
                 major_opcode: X_DRI3_MAJOR_OPCODE,
                 client_id: 1,
                 injection: XTestAdmission::Absent,
+                server_time: 4_242,
             },
             XWireRequest::Dri3BuffersFromPixmap { pixmap },
             &mut runtime,
@@ -79,6 +80,7 @@ fn query(runtime: &mut XAuthorityRuntime, depth: u8) -> Vec<u64> {
             major_opcode: X_DRI3_MAJOR_OPCODE,
             client_id: 1,
             injection: XTestAdmission::Absent,
+            server_time: 4_242,
         },
         XWireRequest::Dri3GetSupportedModifiers {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),

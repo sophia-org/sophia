@@ -74,6 +74,7 @@ fn dispatch(
             transaction: TransactionId::from_raw(10),
             major_opcode: X_DRI3_MAJOR_OPCODE,
             injection: XTestAdmission::Absent,
+            server_time: 4_242,
         },
         request,
         runtime,

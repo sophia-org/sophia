@@ -100,6 +100,7 @@ fn shared_zpixmap_upload_decodes_packed_depths_padding_crop_and_byte_order() {
                 major_opcode: X_MIT_SHM_MAJOR_OPCODE,
                 client_id: 1,
                 injection: XTestAdmission::Absent,
+                server_time: 4_242,
             };
             let mut atoms = XAtomTable::new();
             let mut properties = XPropertyTable::new();

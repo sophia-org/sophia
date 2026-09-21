@@ -92,6 +92,7 @@ fn dispatch_context_with_transaction(
         major_opcode,
         client_id: 1,
         injection: XTestAdmission::Absent,
+        server_time: 4_242,
     }
 }
 

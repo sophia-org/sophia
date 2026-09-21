@@ -180,7 +180,7 @@ fn dispatch_core_property_request(
                                         sequence: context.sequence,
                                         window: record.window,
                                         atom: record.property,
-                                        time: 0,
+                                        time: context.server_time,
                                         new_value: true,
                                     }),
                                     candidate.into_iter().collect(),
@@ -294,7 +294,7 @@ fn dispatch_core_property_request(
                                     sequence: context.sequence,
                                     window,
                                     atom: property,
-                                    time: 0,
+                                    time: context.server_time,
                                     new_value: false,
                                 })
                                 })

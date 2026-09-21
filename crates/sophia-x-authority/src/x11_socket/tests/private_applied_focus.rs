@@ -519,6 +519,7 @@ mod private_applied_focus {
             byte_order: XByteOrder::LittleEndian,
             namespace: namespace(),
             transaction: TransactionId::from_raw(991),
+            server_time: 4_242,
             sequence: 3,
             major_opcode: 42,
             client_id: client().raw(),

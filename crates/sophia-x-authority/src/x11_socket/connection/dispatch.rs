@@ -1053,6 +1053,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 byte_order: setup.byte_order,
                 namespace,
                 transaction,
+                // Stamped once per request so every event it generates
+                // agrees, and never zero, which the wire reserves for
+                // CurrentTime.
+                server_time: x11_server_time_msec(),
                 sequence,
                 major_opcode,
                 client_id: client.raw(),

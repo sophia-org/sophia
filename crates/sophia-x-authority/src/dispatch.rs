@@ -244,6 +244,15 @@ pub struct XDispatchContext {
     pub major_opcode: u8,
     pub client_id: u64,
     pub injection: XTestAdmission,
+    /// The server time this request is being served at, stamped once so
+    /// every event the request generates carries the same value.
+    ///
+    /// Zero is the one timestamp a server may never generate: it is
+    /// `CurrentTime` on the wire, and a client that reads it back cannot
+    /// use it. Events left at zero are why the conformance suite's own
+    /// `gettime` helper, which reads the time out of a PropertyNotify,
+    /// could not establish a server time at all.
+    pub server_time: crate::XTimestamp,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -892,106 +901,6 @@ fn copy_shm_image_region(
         image.extend_from_slice(source.get(start..start.checked_add(row_len)?)?);
     }
     Some(image)
-}
-
-#[derive(Clone, Debug)]
-struct XRandrResources {
-    timestamp: u32,
-    crtcs: Vec<u32>,
-    outputs: Vec<u32>,
-    modes: Vec<XRandrModeInfo>,
-}
-
-fn randr_resources(snapshot: &OutputTopologySnapshot) -> XRandrResources {
-    let timestamp = u32::try_from(snapshot.generation)
-        .unwrap_or(u32::MAX)
-        .max(1);
-    let mut crtcs = Vec::with_capacity(snapshot.outputs.len());
-    let mut outputs = Vec::with_capacity(snapshot.outputs.len());
-    let mut modes = Vec::with_capacity(snapshot.outputs.len());
-    for entry in &snapshot.outputs {
-        // Output identity is Engine-owned and survives topology reordering.
-        // The protocol caps the topology at 16 entries; folding the opaque ID
-        // keeps it outside client resource ranges while remaining stable.
-        let identity = stable_randr_identity(entry.output.raw());
-        let crtc = 0x1000_0000 | identity;
-        let output = 0x2000_0000 | identity;
-        let mode = stable_randr_mode_id(
-            entry.logical.width,
-            entry.logical.height,
-            entry.refresh_millihz,
-        );
-        crtcs.push(crtc);
-        outputs.push(output);
-        modes.push(XRandrModeInfo {
-            id: mode,
-            width: u16::try_from(entry.logical.width).expect("validated output width"),
-            height: u16::try_from(entry.logical.height).expect("validated output height"),
-            refresh_millihz: entry.refresh_millihz,
-            timing: entry.timing,
-            name: format!(
-                "{}x{}@{}",
-                entry.logical.width,
-                entry.logical.height,
-                entry.refresh_millihz / 1_000
-            )
-            .into_bytes(),
-        });
-    }
-    XRandrResources {
-        timestamp,
-        crtcs,
-        outputs,
-        modes,
-    }
-}
-
-pub(crate) fn stable_randr_identity(raw: u64) -> u32 {
-    let folded = raw ^ (raw >> 32);
-    (u32::try_from(folded & 0x0fff_ffff).unwrap_or(0)).max(1)
-}
-
-pub(crate) fn stable_randr_mode_id(width: i32, height: i32, refresh_millihz: u32) -> u32 {
-    let mut hash = 0x811c_9dc5u32;
-    for value in [width as u32, height as u32, refresh_millihz] {
-        hash ^= value;
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
-    0x3000_0000 | (hash & 0x0fff_ffff).max(1)
-}
-
-fn logical_pixels_to_millimeters(pixels: i32) -> u32 {
-    u32::try_from(i64::from(pixels).saturating_mul(254).saturating_add(480) / 960)
-        .unwrap_or(u32::MAX)
-        .max(1)
-}
-
-fn randr_monitors(
-    snapshot: &OutputTopologySnapshot,
-    atoms: &mut XAtomTable,
-) -> Vec<XRandrMonitorInfo> {
-    snapshot
-        .outputs
-        .iter()
-        .map(|entry| {
-            let name = atoms
-                .intern(format!("SOPHIA-{}", entry.output.raw()), false)
-                .ok()
-                .flatten()
-                .unwrap_or(X_ATOM_NONE);
-            XRandrMonitorInfo {
-                name,
-                primary: entry.output == snapshot.primary,
-                x: i16::try_from(entry.logical.x).unwrap_or(i16::MAX),
-                y: i16::try_from(entry.logical.y).unwrap_or(i16::MAX),
-                width: u16::try_from(entry.logical.width).unwrap_or(u16::MAX),
-                height: u16::try_from(entry.logical.height).unwrap_or(u16::MAX),
-                mm_width: logical_pixels_to_millimeters(entry.logical.width),
-                mm_height: logical_pixels_to_millimeters(entry.logical.height),
-                outputs: vec![0x2000_0000 | stable_randr_identity(entry.output.raw())],
-            }
-        })
-        .collect()
 }
 
 pub fn dispatch_x11_parse_error(
