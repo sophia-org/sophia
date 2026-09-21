@@ -471,7 +471,9 @@ The optional runnable XTS adapter uses a private copied suite, fresh configurati
 and journal, isolated socket/network/device namespaces and exact mandatory TET
 purpose accounting. Dependency preflight reports missing separate
 `~/src/xts/check.sh`, built `xts5`, and TET `tcc`; a real selected scenario and
-purpose manifest also require that build. **No actual XTS5 suite ran.**
+purpose manifest also require that build. That was true until 2026-09-20;
+see the section below, which supersedes it. **A real XTS5 scenario has now
+run.**
 
 The adapter was executed with explicitly synthetic fixtures: PASS exits 0;
 PASS-to-NORESULT, a missing selected purpose and timeout after a PASS journal
@@ -479,6 +481,57 @@ each exit 1. Evidence is in `.artifacts/x11-conformance/synthetic-xts-*`;
 the dependency report is in `xts-dependencies`. These prove adapter mechanics,
 not XTS coverage. Missing dependencies remain an explicit t057 integration
 limit rather than a fabricated skipped-suite success.
+
+## XTS5 selected-core, and the repairs it found
+
+The suite was obtained, built and run on 2026-09-20 against the software
+fixture host. `selected-core` is six cases and 58 purposes, enumerated from
+the built suite by `tools/probes/x11_conformance/xts_select.py` rather than
+written by hand. The progression, each step measured:
+
+| run | PASS | FAIL | UNRESOLVED |
+| --- | --- | --- | --- |
+| first | 0 | 0 | 58 |
+| after ForceScreenSaver (115) | 31 | 16 | 5 |
+| after WarpPointer (41) | 31 | 16 | 2 |
+| after five repairs | 36 | 11 | 2 |
+
+Nothing ran at first: every test's startup calls `XResetScreenSaver`, opcode
+115 was undecoded, and the harness's `unexp_err` deletes a purpose on any
+unexpected error. Two opcodes were then decided and decoded under t125, and
+five differences repaired:
+
+| defect | repair |
+| --- | --- |
+| ChangeProperty accepted an atom naming nothing, storing it as a new property | both atoms validated, property before type, both after the window |
+| Append or Prepend with a differing type or format answered `BadValue` | it is a `Match` error; the dispatch no longer collapses every non-`AuthorityOwned` property error into one code |
+| GetSelectionOwner answered "no owner" for an atom naming nothing | an atom that names nothing is refused; unowned and unnamed are different facts |
+| destroying the root answered `BadWindow` | the root is a real window with no parent: the request succeeds and destroys nothing |
+| destroying a window announced an `UnmapNotify` for every mapped inferior | only the named window is unmapped; `XDestroyedWindow::is_subtree_root` gates both destroy arms |
+
+Each has a routed control in `tests/x11_wire/transport_events.rs`. No
+existing test pinned any of the old answers.
+
+**Still open, and the sharpest of them: SetInputFocus accepts a window that
+is not viewable**, where the protocol requires a `Match` error. The check is
+four lines. The difficulty is that every placement reaches Engine's own focus
+application: in `runtime.set_input_focus` it fails two tests, and at the
+socket request path it fails eight. Those fixtures focus a bare window id
+that no window was ever created for, so they are unrealistic rather than
+evidence that Engine legitimately focuses a window before it is viewable.
+The right resolution is therefore to make the Engine focus authority obey the
+X11 rule and correct the fixtures to build real viewable windows, rather than
+to exempt Engine from the protocol this system implements. That is a change
+to the focus contract, not a conformance repair, and is tracked as its own
+row.
+
+Also measured and not repaired here, in the same run: focus does not revert
+when a focus window becomes unviewable and no `FocusIn`/`FocusOut` is
+generated (the largest remaining item); mapping an already-mapped window
+emits a `MapNotify`; `SubstructureRedirectMask` is not honoured, so no
+`MapRequest` is generated and the window is mapped anyway; atoms are not
+cleared when the last connection closes; and three `XMapWindow` purposes fail
+on pixel checks.
 
 ## Validation and remaining work
 
