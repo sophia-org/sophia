@@ -81,6 +81,13 @@ pub const X_SETUP_DEFAULT_RESOURCE_ID_BASE: u32 = 0x0020_0000;
 pub const X_SETUP_DEFAULT_RESOURCE_ID_MASK: u32 = 0x001f_ffff;
 pub const X_SETUP_DEFAULT_MAX_REQUEST_UNITS: u16 = u16::MAX;
 pub const X_SETUP_DEFAULT_ROOT: u32 = 0x20;
+
+/// The two values SetInputFocus accepts in place of a window. `None` discards
+/// keyboard events until a focus is set again; `PointerRoot` follows the
+/// pointer, taking the root of whatever screen it is on at each event. Neither
+/// is a resource, so neither is looked up or checked for viewability.
+pub const X_FOCUS_NONE: u32 = 0;
+pub const X_FOCUS_POINTER_ROOT: u32 = 1;
 pub const X_SETUP_DEFAULT_COLORMAP: u32 = 0x21;
 pub const X_SETUP_DEFAULT_VISUAL: u32 = 0x22;
 pub const X_SETUP_ARGB_VISUAL: u32 = 0x23;

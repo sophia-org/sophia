@@ -67,6 +67,7 @@ mod private_keyboard_preparation {
                 );
                 selections.register(window(raw), parent, geometry);
                 selections.observe_mapped(window(raw));
+                map_test_window_for_focus(&mut runtime, namespace, window(raw));
             }
             let publication = PrivateAppliedRoutingState::new(identity, namespace);
             let mut authority = crate::XInputAuthorityState::default();

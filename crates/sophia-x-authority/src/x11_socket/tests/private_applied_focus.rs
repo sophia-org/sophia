@@ -1,3 +1,37 @@
+/// Maps a window in the runtime so it is genuinely viewable, which X11
+/// requires of any window a client focuses.
+///
+/// Several fixtures announce a window as mapped to the core event selection
+/// state, which is a different store kept for event routing. The focus rules
+/// read the runtime's own map state, and creating a window leaves that
+/// Unmapped, so a fixture that only creates and then focuses is focusing
+/// something the protocol refuses.
+fn map_test_window_for_focus(
+    runtime: &mut XAuthorityRuntime,
+    namespace: NamespaceId,
+    window: XResourceId,
+) {
+    assert_eq!(
+        runtime
+            .apply(crate::XAuthorityRequestPacket {
+                namespace,
+                transaction: TransactionId::from_raw(0x4d41_5000),
+                kind: crate::XAuthorityRequestKind::MapWindow {
+                    window,
+                    generation: 1,
+                },
+            })
+            .outcome,
+        crate::XAuthorityResponseOutcome::Accepted,
+        "a fixture window has to map before anything focuses it"
+    );
+    assert_eq!(
+        Ok(crate::XMapState::Viewable),
+        runtime.window_map_state(namespace, window),
+        "mapped but not viewable means an ancestor is still unmapped"
+    );
+}
+
 /// Effect-producer composition controls using actual runtime, connection
 /// attachment and origin-issued claims. Shared writer/core call sites are in
 /// the integration patch; these do not substitute for its socket controls.
@@ -26,29 +60,10 @@ mod private_applied_focus {
     fn root() -> XResourceId {
         XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1)
     }
-    /// Maps a focus fixture's window so it is genuinely viewable.
-    ///
-    /// X11 refuses to focus a window that is not viewable, which means the
-    /// window and every ancestor mapped. Creating one leaves it `Unmapped`,
-    /// so a fixture that only creates its window is focusing something the
-    /// protocol would refuse, and any rule that reads viewability fails it
-    /// for the fixture's reason rather than the rule's.
+    /// The shared mapping helper, bound to this module's namespace and to
+    /// the runtime handle the fixtures hold.
     fn map_focus_test_window(runtime: &Mutex<XAuthorityRuntime>, target: XResourceId) {
-        let mut runtime = runtime.lock().unwrap();
-        let response = runtime.apply(crate::XAuthorityRequestPacket {
-            transaction: TransactionId::from_raw(812),
-            namespace: namespace(),
-            kind: crate::XAuthorityRequestKind::MapWindow {
-                window: target,
-                generation: 1,
-            },
-        });
-        assert_eq!(response.outcome, crate::XAuthorityResponseOutcome::Accepted);
-        assert_eq!(
-            Ok(crate::XMapState::Viewable),
-            runtime.window_map_state(namespace(), target),
-            "a focus fixture's window has to be viewable or it is testing the wrong refusal"
-        );
+        map_test_window_for_focus(&mut runtime.lock().unwrap(), namespace(), target);
     }
     fn fixture() -> Fixture {
         fixture_with_focus_preparation(true)
@@ -389,8 +404,10 @@ mod private_applied_focus {
                     revert_to: 3
                 }
             ),
+            // A revert_to of 3 is not a choice the protocol defines, which is
+            // BadValue on the wire, not a complaint about the window.
             Err(X11FocusApplyError::Runtime(
-                crate::XAuthorityRuntimeError::InvalidResource
+                crate::XAuthorityRuntimeError::InvalidValue
             ))
         );
         assert_eq!(

@@ -120,6 +120,13 @@ pub enum XAuthorityRuntimeError {
     PortalRejected,
     /// A bound private focus producer could not establish its guarded state.
     FocusAuthorityUnavailable,
+    /// An argument outside the range the protocol defines for it. This is not
+    /// a bad resource: the client named something that is not a choice at all,
+    /// such as a revert_to beyond Parent.
+    InvalidValue,
+    /// A real window that cannot serve the purpose it was named for because
+    /// it is not viewable, meaning it or one of its ancestors is unmapped.
+    WindowNotViewable,
 }
 
 impl From<XAuthorityAccessError> for XAuthorityRuntimeError {

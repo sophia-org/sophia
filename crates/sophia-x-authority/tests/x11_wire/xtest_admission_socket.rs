@@ -153,6 +153,11 @@ mod xtest_admission_socket {
             client.stream
                 .write_all(&change_window_event_mask_request(client.order, window, 3 | (1 << 21)))
                 .unwrap();
+            // A window has to be viewable before anything can focus it, which
+            // is what a real client's MapWindow is for.
+            client.stream
+                .write_all(&map_window_request(client.order, window))
+                .unwrap();
             client.stream
                 .write_all(&sophia_present_pixmap_request(client.order, window, window + 0x1000, (0, 0, 16, 16), 1, 1))
                 .unwrap();

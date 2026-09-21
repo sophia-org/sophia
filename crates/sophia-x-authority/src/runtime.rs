@@ -470,12 +470,7 @@ impl XAuthorityRuntime {
         focus: crate::XResourceId,
         revert_to: u8,
     ) -> Result<(), XAuthorityRuntimeError> {
-        if revert_to > 2 {
-            return Err(XAuthorityRuntimeError::InvalidResource);
-        }
-        if focus.local.raw() != 0 && focus.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
-            self.validate_window_access(namespace, focus)?;
-        }
+        self.validate_input_focus(namespace, focus, revert_to)?;
         let prepared = self
             .input_focus
             .get_mut(&namespace)
@@ -495,11 +490,26 @@ impl XAuthorityRuntime {
         focus: crate::XResourceId,
         revert_to: u8,
     ) -> Result<(), XAuthorityRuntimeError> {
+        // The order is the protocol's and two passing conformance purposes
+        // depend on it: the out-of-range argument first, then the window that
+        // does not exist, then the window that exists but cannot be focused.
         if revert_to > 2 {
-            return Err(XAuthorityRuntimeError::InvalidResource);
+            return Err(XAuthorityRuntimeError::InvalidValue);
         }
-        if focus.local.raw() != 0 && focus.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
-            self.validate_window_access(namespace, focus)?;
+        let raw = focus.local.raw();
+        if raw == u64::from(crate::X_FOCUS_NONE) || raw == u64::from(crate::X_FOCUS_POINTER_ROOT) {
+            return Ok(());
+        }
+        if raw == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+            // The root is always viewable and is not a client resource.
+            return Ok(());
+        }
+        self.validate_window_access(namespace, focus)?;
+        // Focus is where keyboard input goes, and input cannot go to something
+        // nobody can see. A window is viewable only when it and every ancestor
+        // are mapped, which the window store already tracks and propagates.
+        if self.window_map_state(namespace, focus)? != crate::XMapState::Viewable {
+            return Err(XAuthorityRuntimeError::WindowNotViewable);
         }
         Ok(())
     }

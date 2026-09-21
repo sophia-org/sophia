@@ -39,6 +39,7 @@ mod keys {
                     .outcome,
                 crate::XAuthorityResponseOutcome::Accepted
             );
+            map_test_window_for_focus(&mut runtime, namespace(), window());
             registry
                 .private_applied
                 .get()

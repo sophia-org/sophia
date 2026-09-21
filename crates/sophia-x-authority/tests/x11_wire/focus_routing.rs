@@ -54,6 +54,9 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
         ))
         .unwrap();
     first
+        .write_all(&map_window_request(XByteOrder::LittleEndian, first_window))
+        .unwrap();
+    first
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,
             first_window,
@@ -92,6 +95,9 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
             320,
             240,
         ))
+        .unwrap();
+    second
+        .write_all(&map_window_request(XByteOrder::LittleEndian, second_window))
         .unwrap();
     second
         .write_all(&change_window_event_mask_request(
