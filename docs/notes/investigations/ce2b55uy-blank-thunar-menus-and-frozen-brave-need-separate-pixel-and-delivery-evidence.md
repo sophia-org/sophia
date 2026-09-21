@@ -373,3 +373,72 @@ best-supported explanation rather than a measured cause.
 
 t061 owns the pixels and t066 owns the input. If this holds they are one row.
 
+## The live capture refutes the predicate diagnosis — 2026-09-21
+
+The section above is wrong about the cause, and the record added to test it is
+what showed that. `should_render` gating the hit test is real and is still
+worth repairing on its own terms, but it is **not** why a Thunar dropdown
+swallows clicks: the hit test never sees the popup at all.
+
+`sophia_live_session_pointer_target` (d4c4863a) names the surface a routed
+button reached and its presentation role. Captured on the installed session,
+with three menus opened and clicked:
+
+    ...323000  CLICK         surface=4194310   role=policy_managed
+    ...323003  POPUP MAPPED  surface=4194690   ClientPositioned 205x26
+    ...323158  CLICK         surface=4194310   role=policy_managed
+    ...325100  POPUP MAPPED  surface=4194738   ClientPositioned 245x406
+    ...325225  CLICK         surface=4194310   role=policy_managed
+    ...328356  POPUP MAPPED  surface=4194939   ClientPositioned 325x380
+    ...328516  CLICK         surface=4194310   role=policy_managed
+
+Sixteen routed buttons, every one landing on Thunar's main window, each about
+150ms after a menu mapped. So the symptom is confirmed exactly: clicks aimed at
+an open menu reach the window beneath it.
+
+**But the popup is absent from the session, not filtered by it.** Across the
+whole session, surface 4194738 appears in exactly two record kinds:
+`sophia_x_window_lifecycle` and one `sophia_live_metadata_broker`. It has no
+`sophia_live_surface_admission`, no `sophia_live_surface_geometry`, no
+`sophia_catalog_placement`, no compositor chrome — all of which the main window
+has. `sophia_live_surface_admission` admitted exactly two surfaces in the entire
+session: 4194310 and 2097166. Neither is a popup.
+
+Its X lifecycle is complete and correct: CreateWindow with
+`role=ClientPositioned`, three property changes, ConfigureWindow, MapWindow
+(`major=8`) flipping `mapped=true`, then UnmapWindow and destroy. The authority
+saw a real override-redirect window map and unmap. The session never admitted it
+as a surface.
+
+So there is nothing in the layer vector for `should_render` to reject, nothing
+for the hit test to skip, and nothing for `pointer_event_target` to descend
+into. A predicate change in Engine would have repaired a defect that is real and
+changed this symptom not at all — which is what the confirmation step existed to
+find out, and why it ran before the fix rather than after.
+
+### Where that points, without claiming it
+
+Admission runs through the window manager. `next_unmanaged_surface`
+(`wm/layout.rs:678`) only returns a surface the layout `knows_surface`, and both
+of its call sites (`owner_loop/authority.rs:648`, `:814`) additionally require a
+live `wm_session` before requesting admission. This session had one
+(`sophia_live_wm schema=4 status=ready`), so the gate was open and the popup
+still did not arrive.
+
+The open question is therefore why a mapped `ClientPositioned` surface does not
+become known to the layout, and an override-redirect window is exactly the kind
+a window manager must *not* manage — so a path to admission that runs through
+the WM is the first thing to examine. That is a different investigation from
+this note's original pixel/delivery split and from the predicate above.
+
+### What this does and does not establish
+
+Established: the clicks land on the parent; the popups map at the X level; the
+session never admits them; the hit-test predicate is not implicated because the
+hit test is never given the chance.
+
+Not established: why admission does not happen, whether the blank-menu pixel
+symptom shares this cause (it plausibly does — an unadmitted surface is never
+composited either, which would make t061 and t066 one row after all, for a
+different reason than argued above), and whether any of this is recent.
+
