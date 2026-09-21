@@ -358,3 +358,61 @@ remaining work, and weakening the assertion to make the gate green without
 knowing would be the wrong repair -- the gate exists to cover native scanout
 composition, and the composition evidence above is exactly what must keep
 being required.
+
+## t126 closed: the gate runs clean on all four scenarios — 2026-09-21
+
+`tools/qemu_milestone5_acceptance.sh` passes end to end on 90c4673c, HEAD read
+before and after the run and identical, so the result is attributable:
+
+    persistent live-session evidence passed              two-xterm.log
+    QEMU dual-output native presentation/QMP-input       two-xterm.log
+    QEMU Ctrl-Alt-Backspace emergency recovery evidence  emergency-recovery.log
+    Milestone 5 GTK paired evidence passed
+    Sophia Milestone 5 unattended QEMU acceptance passed
+
+**The assertion this row is about fired, and the one it replaced would have
+refused the same healthy run.** The completion line reads
+
+    schema=18 session_ticks=300
+    runtime_surfaces=0     cpu_layers=0
+    runtime_max_surfaces=2 cpu_max_layers=6
+
+with three quiescence records. The gauges are zero because the session drained
+its clients correctly, which is what a healthy run does; `cpu_layers >= 2`
+would therefore have failed here, exactly as this note predicted. The
+high-water `runtime_max_surfaces` is 2, which is the claim the gate was always
+trying to make: two terminals stood together at some point in the run.
+
+### What running it found, beyond the field change
+
+The code side of this row was finished before the gate was ever run. Running it
+found the gate itself had rotted since its last green on 2026-07-18, in four
+places, none of which the field change touched:
+
+- `sophia_session_input_guard status=ready` moved from schema 1 to 2. The
+  harness waited thirty seconds for a line that could no longer appear and then
+  reported an `input_guard_readiness_timeout` that was true of nothing: the
+  guard had announced itself ready on the line above.
+- `sophia_live_session_input_pipeline status=poller_ready` moved from 2 to 4,
+  stale in the same two files.
+- The emergency trigger chord fired before the session had presented a frame.
+  This was unreachable while the readiness waits timed out, and only became a
+  failure once they stopped.
+- A session with no window manager died on its own success, one line after
+  `layout_committed outcome=Committed`, because applying a commit result
+  required a WM session that `wm_policy=disabled` had already made optional.
+
+All three schema misses were **partial cascades**, and that is the part worth
+carrying. The physical-proof readers were already correct --
+`verify_sophia_firefox_physical.sh` read the guard at 2,
+`verify_keyboard_independence_physical.sh` read the poller at 4 -- so each bump
+looked applied from the file a person would open to check it. The readers left
+behind were the QEMU ones, which only run unattended. A stale reader survives
+longest exactly where nobody is watching it fail, and checking the wrong file
+looks like confirmation.
+
+The two remaining scenario failures were focus defects and were repaired in the
+focus lane: a startup barrier conditioned on a proof request rather than on the
+launch shape, which left two clients racing to be focused, and a hidden-surface
+focus candidate that proposed a committed-but-not-viewable surface immediately
+after retiring it.
