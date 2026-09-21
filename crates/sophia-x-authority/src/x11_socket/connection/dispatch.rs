@@ -1580,9 +1580,63 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             expected.0.handle == current.0.handle
                         })
                     });
+                    // A client selecting SubstructureRedirect on the parent has
+                    // asked to decide what happens to its children, so a map of
+                    // one becomes a MapRequest to that client and the window
+                    // stays unmapped. Override-redirect is the window saying it
+                    // is not for a manager to place, and is never redirected.
+                    const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
+                    let redirected_map = match (mapped_window, protocol_routing.as_ref()) {
+                        (Some(window), Some(routing))
+                            if !runtime
+                                .window_override_redirect(namespace, window)
+                                .unwrap_or(false) =>
+                        {
+                            let parent = routing.window_parent(window).map_err(|error| {
+                                X11SetupSocketError::new(format!(
+                                    "failed to resolve X11 map redirect parent: {error}"
+                                ))
+                            })?;
+                            match parent {
+                                Some(parent) => routing
+                                    .core_event_subscribers(parent, SUBSTRUCTURE_REDIRECT_MASK)
+                                    .map_err(|error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to inspect X11 map redirect subscriptions: {error}"
+                                        ))
+                                    })?
+                                    .iter()
+                                    .any(|recipient| *recipient != client)
+                                    .then_some((parent, window)),
+                                None => None,
+                            }
+                        }
+                        _ => None,
+                    };
                     let private_focus_routing = requested_input_focus.and(protocol_routing.as_ref())
                         .filter(|routing| routing.private_applied.get().is_some());
                     let mut output = match explicit_pointer_preparation {
+                        _ if redirected_map.is_some() => {
+                            runtime.begin_dispatch();
+                            let (parent, window) = redirected_map.expect("redirect guard");
+                            // Emitted as an ordinary lifecycle event addressed
+                            // to the parent. The existing routing delivers it
+                            // to whoever selected on that parent and drops it
+                            // from this client's own stream unless it selected
+                            // too, which is the same path every other
+                            // substructure event takes.
+                            XDispatchResult {
+                                response: None,
+                                outputs: vec![crate::XClientOutput::Event(
+                                    crate::XClientEvent::MapRequest {
+                                        sequence,
+                                        parent,
+                                        window,
+                                    },
+                                )],
+                                metadata_candidates: Vec::new(),
+                            }
+                        }
                         _ if private_focus_routing.is_some() => {
                             runtime.begin_dispatch();
                             let (focus, revert_to, focus_time) = requested_input_focus.expect("focus guard");

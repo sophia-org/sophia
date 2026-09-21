@@ -190,6 +190,8 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
         XWireRequest::ChangeWindowAttributes {
             cursor: None,
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            background_pixmap: None,
+            background_pixel: None,
             override_redirect: None,
             event_mask: None,
             do_not_propagate_mask: None,

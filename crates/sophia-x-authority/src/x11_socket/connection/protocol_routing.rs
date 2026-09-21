@@ -36,6 +36,7 @@ fn route_core_lifecycle_events_with_control(
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
+    const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
 
     // A focus transition is reported to whoever asked about the window it
@@ -106,6 +107,11 @@ fn route_core_lifecycle_events_with_control(
                 },
                 *event,
             )),
+            // A redirected map is addressed to the parent and belongs to
+            // whoever asked to manage that parent's children.
+            XClientEvent::MapRequest { parent, .. } => {
+                Some((index, parent, SUBSTRUCTURE_REDIRECT_MASK, *event))
+            }
             XClientEvent::VisibilityNotify { window, .. } => {
                 Some((index, window, VISIBILITY_CHANGE_MASK, *event))
             }
@@ -200,6 +206,7 @@ fn filter_local_core_lifecycle_events(
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
+    const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
 
     let structure_events = output
@@ -236,6 +243,12 @@ fn filter_local_core_lifecycle_events(
                 event: target,
                 ..
             } => selections.selects(target, STRUCTURE_NOTIFY_MASK),
+            // A redirected map reaches this client only if it is the one
+            // managing the parent, which is the usual case for a window
+            // manager mapping through its own connection.
+            XClientEvent::MapRequest { parent, .. } => {
+                selections.selects(parent, SUBSTRUCTURE_REDIRECT_MASK)
+            }
             XClientEvent::VisibilityNotify { window, .. } => {
                 selections.selects(window, VISIBILITY_CHANGE_MASK)
             }

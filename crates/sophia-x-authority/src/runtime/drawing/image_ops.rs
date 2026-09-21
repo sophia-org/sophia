@@ -239,8 +239,115 @@ impl XAuthorityRuntime {
         region: Rect,
     ) -> Result<Vec<u8>, XDrawableImageError> {
         self.validate_drawable_image_region(descriptor, region)?;
-        self.software_buffers
+        let mut image = self
+            .software_buffers
             .image_region(drawable, region)
-            .ok_or(XDrawableImageError::AllocationFailed)
+            .ok_or(XDrawableImageError::AllocationFailed)?;
+        // A window's inferiors are drawn over it, so reading a window back
+        // shows whatever of them covers the area. Without this a parent reads
+        // as its own background everywhere and a mapped child is invisible to
+        // the client that just mapped it.
+        self.composite_inferiors(drawable, region, &mut image);
+        Ok(image)
+    }
+
+    /// Draws every viewable inferior of `drawable` into an image of `region`.
+    ///
+    /// Bottom to top, so a sibling above another covers it, and depth first,
+    /// so a child's own children land on top of the child.
+    fn composite_inferiors(&self, drawable: crate::XResourceId, region: Rect, image: &mut [u8]) {
+        let mut stack: Vec<(crate::XResourceId, i32, i32)> = self
+            .windows
+            .direct_children_bottom_to_top_any_namespace(drawable)
+            .into_iter()
+            .rev()
+            .map(|child| (child, 0, 0))
+            .collect();
+        // Bounded: the store is finite and each window is reached from its
+        // own parent exactly once.
+        let mut visited = 0usize;
+        while let Some((child, parent_x, parent_y)) = stack.pop() {
+            visited += 1;
+            if visited > 4096 {
+                return;
+            }
+            let Some(record) = self.windows.get(child) else {
+                continue;
+            };
+            if record.map_state != crate::XMapState::Viewable {
+                continue;
+            }
+            let x = parent_x.saturating_add(record.geometry.x);
+            let y = parent_y.saturating_add(record.geometry.y);
+            self.blit_child(child, x, y, record.geometry, region, image);
+            for grandchild in self
+                .windows
+                .direct_children_bottom_to_top_any_namespace(child)
+                .into_iter()
+                .rev()
+            {
+                stack.push((grandchild, x, y));
+            }
+        }
+    }
+
+    /// Copies one window's pixels into the part of `region` it covers.
+    fn blit_child(
+        &self,
+        child: crate::XResourceId,
+        x: i32,
+        y: i32,
+        geometry: Rect,
+        region: Rect,
+        image: &mut [u8],
+    ) {
+        let left = x.max(region.x);
+        let top = y.max(region.y);
+        let right = x.saturating_add(geometry.width).min(region.x.saturating_add(region.width));
+        let bottom = y
+            .saturating_add(geometry.height)
+            .min(region.y.saturating_add(region.height));
+        if right <= left || bottom <= top {
+            return;
+        }
+        let source = Rect {
+            x: left.saturating_sub(x),
+            y: top.saturating_sub(y),
+            width: right.saturating_sub(left),
+            height: bottom.saturating_sub(top),
+        };
+        // A window with nothing in it contributes nothing. An undefined
+        // background is never painted, so such a window is a hole its parent
+        // shows through rather than a rectangle of black.
+        if !self.software_buffers.has_backing(child) {
+            return;
+        }
+        let Some(pixels) = self.software_buffers.image_region(child, source) else {
+            return;
+        };
+        let Ok(width) = usize::try_from(source.width) else {
+            return;
+        };
+        let Ok(height) = usize::try_from(source.height) else {
+            return;
+        };
+        let destination_stride = usize::try_from(region.width).unwrap_or(0).saturating_mul(4);
+        let source_stride = width.saturating_mul(4);
+        let offset_x = usize::try_from(left.saturating_sub(region.x)).unwrap_or(0);
+        let offset_y = usize::try_from(top.saturating_sub(region.y)).unwrap_or(0);
+        for row in 0..height {
+            let from = row.saturating_mul(source_stride);
+            let into = offset_y
+                .saturating_add(row)
+                .saturating_mul(destination_stride)
+                .saturating_add(offset_x.saturating_mul(4));
+            let (Some(source_row), Some(destination_row)) = (
+                pixels.get(from..from.saturating_add(source_stride)),
+                image.get_mut(into..into.saturating_add(source_stride)),
+            ) else {
+                continue;
+            };
+            destination_row.copy_from_slice(source_row);
+        }
     }
 }

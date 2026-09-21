@@ -1,3 +1,13 @@
+/// Reads a `BackPixmap` attribute value. Zero is None, one is ParentRelative
+/// and anything else names a pixmap to tile the window with.
+fn background_from_pixmap_value(value: u32) -> crate::XWindowBackground {
+    match value {
+        0 => crate::XWindowBackground::Undefined,
+        1 => crate::XWindowBackground::ParentRelative,
+        _ => crate::XWindowBackground::Pixmap(XResourceId::new(u64::from(value), 1)),
+    }
+}
+
 fn decode_query_tree(
     context: XWireClientContext,
     bytes: &[u8],
@@ -190,6 +200,8 @@ fn decode_change_window_attributes(
     let mut do_not_propagate_mask = None;
     let mut override_redirect = None;
     let mut cursor = None;
+    let mut background_pixmap = None;
+    let mut background_pixel = None;
     let mut value_cursor = X_CHANGE_WINDOW_ATTRIBUTES_REQ_LEN;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
@@ -200,6 +212,8 @@ fn decode_change_window_attributes(
             .u32(&bytes[value_cursor..value_cursor + 4]);
         value_cursor += 4;
         match bit {
+            0 => background_pixmap = Some(background_from_pixmap_value(value)),
+            1 => background_pixel = Some(value),
             9 => override_redirect = Some(value != 0),
             11 => event_mask = Some(value),
             12 => do_not_propagate_mask = Some(value),
@@ -209,6 +223,8 @@ fn decode_change_window_attributes(
     }
     Ok(XWireRequest::ChangeWindowAttributes {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        background_pixmap,
+        background_pixel,
         override_redirect,
         event_mask,
         do_not_propagate_mask,
@@ -232,6 +248,7 @@ fn decode_create_window(
         });
     }
     let mut value_cursor = X_CREATE_WINDOW_REQ_LEN;
+    let mut background_pixmap = None;
     let mut background_pixel = None;
     let mut event_mask = None;
     let mut do_not_propagate_mask = None;
@@ -247,6 +264,7 @@ fn decode_create_window(
             .u32(&bytes[value_cursor..value_cursor + 4]);
         value_cursor += 4;
         match bit {
+            0 => background_pixmap = Some(background_from_pixmap_value(value)),
             1 => background_pixel = Some(value),
             9 => override_redirect = value != 0,
             11 => event_mask = Some(value),
@@ -289,6 +307,7 @@ fn decode_create_window(
         depth: bytes[1],
         visual: context.byte_order.u32(&bytes[24..28]),
         colormap,
+        background_pixmap,
         background_pixel,
         override_redirect,
         event_mask,

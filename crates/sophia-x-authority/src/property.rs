@@ -713,19 +713,6 @@ impl XPropertyTable {
             .collect()
     }
 
-    pub fn remove_window(&mut self, namespace: NamespaceId, window: XResourceId) -> usize {
-        let before = self.records.len();
-        self.records
-            .retain(|(record_namespace, record_window, _), _| {
-                *record_namespace != namespace || *record_window != window
-            });
-        self.engine_owned
-            .retain(|(record_namespace, record_window, _)| {
-                *record_namespace != namespace || *record_window != window
-            });
-        before.saturating_sub(self.records.len())
-    }
-
     pub fn remove(
         &mut self,
         namespace: NamespaceId,
@@ -1202,3 +1189,5 @@ fn joined_bytes(first: &[u8], second: &[u8]) -> Result<Vec<u8>, XPropertyError> 
     bytes.extend_from_slice(second);
     Ok(bytes)
 }
+
+include!("property/atom_sweep.rs");

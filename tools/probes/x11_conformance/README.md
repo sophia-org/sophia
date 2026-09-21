@@ -198,7 +198,30 @@ No results from an older directory can supply a pass.
 | after the server clock | 36 | 11 | 2 | purpose 9 stopped aborting on `Could not get server time` and began testing |
 | after the timestamp rule | 38 | 9 | 2 | SetInputFocus honours its `time`, so a stale request has no effect |
 | after the viewability rule | 39 | 8 | 2 | focusing a window that is not viewable is the Match error |
-| after focus reversion | **42** | 5 | 1 | the focus leaves a window that stops being viewable, with the events that owes |
+| after focus reversion | 42 | 5 | 1 | the focus leaves a window that stops being viewable, with the events that owes |
+| after the window repairs | **48** | 0 | 1 | backgrounds painted, inferiors composited, redundant maps silent, redirect honoured, atoms scoped to the server |
+
+**No purpose fails any more.** The ten that do not pass are the suite's own
+verdicts rather than defects here: six UNTESTED because the suite is not
+configured to drive XTEST against this host, two UNSUPPORTED (backing store,
+which it says has no reliable test), one NOTINUSE, and one UNRESOLVED on a
+path check the suite itself reports as a bug in the test.
+
+The window repairs, and what each was:
+
+| defect | repair |
+| --- | --- |
+| a mapped window was never painted, so it read back black | a window is painted with its background when it becomes viewable, and the background is four-valued: undefined means do not paint, not paint black |
+| reading a window back showed only that window | its inferiors are composited over it, bottom to top; one with no contents of its own is a hole rather than a black rectangle |
+| mapping an already-mapped window announced itself again | the map state is read before the effect, where a redundant map and a real one still differ |
+| `SubstructureRedirectMask` was ignored | a map of a non-override-redirect child becomes a `MapRequest` to whoever manages the parent, and the window stays unmapped |
+| atoms outlived every connection | client-interned atoms are forgotten when the last one closes, along with the property records keyed by them; the atom counter never rewinds |
+
+One adapter change came with them. The suite's reset delay was zero here, on
+the reasoning that the host persists across cases. That is true of the
+process and not of its state: the atom assertion closes its display and
+immediately reopens it, and with no delay it reconnects before the teardown
+has finished. It is one second now, which is the suite's own default.
 
 `Xlib13/XSetInputFocus` has no failing purpose left. Its three remaining
 non-PASS purposes are UNTESTED because the suite is not configured to drive

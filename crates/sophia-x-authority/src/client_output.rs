@@ -38,6 +38,7 @@ const X_VISIBILITY_NOTIFY: u8 = 15;
 const X_DESTROY_NOTIFY: u8 = 17;
 const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
+const X_MAP_REQUEST: u8 = 20;
 const X_CONFIGURE_NOTIFY: u8 = 22;
 const X_PROPERTY_NOTIFY: u8 = 28;
 const X_SELECTION_NOTIFY: u8 = 31;
@@ -159,6 +160,18 @@ pub enum XClientEvent {
         event: XResourceId,
         window: XResourceId,
         override_redirect: bool,
+    },
+    /// A map was redirected to whoever is managing the parent.
+    ///
+    /// A client selecting `SubstructureRedirect` on a window is asking to
+    /// decide what happens to its children, so a map of one is turned into
+    /// this request and the window is not mapped. It is how a window manager
+    /// gets to place a window before it appears, and a server that maps
+    /// anyway leaves the manager describing a layout that already happened.
+    MapRequest {
+        sequence: u16,
+        parent: XResourceId,
+        window: XResourceId,
     },
     /// A window was destroyed.
     ///

@@ -42,16 +42,24 @@ template="$suite/tetexec.cfg.in"
 }
 
 # The template's keys, with what this display can honestly say: its name,
-# no font path (font opcodes are not decoded), no reset delay (the host
-# persists across cases), and the vendor fields left for the suite to read.
+# no font path (font opcodes are not decoded), a one-second reset delay, and
+# the vendor fields left for the suite to read.
 config="$suite/tetexec.cfg"
 {
     grep -v '^DISPLAY=\|^XT_FONTPATH=\|^XT_FONTPATH_GOOD=\|^XT_RESET_DELAY=' "$template"
     # The suite reads DISPLAY (the config var xts-config derives from
     # xdpyinfo); XT_DISPLAY is not a key it knows. Empty font paths because
-    # no font opcode is decoded, no reset delay because the host persists.
+    # no font opcode is decoded.
+    #
+    # The reset delay is what the suite waits after closing its last
+    # connection, and it was zero here because the host persists across
+    # cases. That is true of the process and not of the state: the atom
+    # lifetime assertion closes the display and immediately reopens it to
+    # check that the atoms went, and with no delay it can reconnect before
+    # the server has finished tearing the old connection down. One second is
+    # the suite's own default and costs one second per case that resets.
     printf 'DISPLAY=%s\n' "${DISPLAY:-:99}"
-    printf 'XT_FONTPATH=\nXT_FONTPATH_GOOD=\nXT_RESET_DELAY=0\n'
+    printf 'XT_FONTPATH=\nXT_FONTPATH_GOOD=\nXT_RESET_DELAY=1\n'
 } >"$config"
 
 # tcc writes its journal directly into the directory it is given; the

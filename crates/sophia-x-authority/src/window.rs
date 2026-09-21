@@ -491,7 +491,7 @@ impl XWindowTable {
         }
     }
 
-    fn direct_children_any_namespace(&self, parent: XResourceId) -> Vec<XResourceId> {
+    pub(crate) fn direct_children_any_namespace(&self, parent: XResourceId) -> Vec<XResourceId> {
         self.windows
             .values()
             .filter(|record| record.parent == parent)
@@ -514,6 +514,24 @@ impl XWindowTable {
             .windows
             .values()
             .filter(|record| record.namespace == namespace && record.parent == parent)
+            .map(|record| (record.stack_rank, record.id))
+            .collect::<Vec<_>>();
+        children.sort_unstable();
+        children.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// Stacking order, without asking which namespace the children are in.
+    ///
+    /// A readback of a window shows whatever covers it, and what covers it is
+    /// a fact about the screen rather than about who owns the windows.
+    pub(crate) fn direct_children_bottom_to_top_any_namespace(
+        &self,
+        parent: XResourceId,
+    ) -> Vec<XResourceId> {
+        let mut children = self
+            .windows
+            .values()
+            .filter(|record| record.parent == parent)
             .map(|record| (record.stack_rank, record.id))
             .collect::<Vec<_>>();
         children.sort_unstable();
