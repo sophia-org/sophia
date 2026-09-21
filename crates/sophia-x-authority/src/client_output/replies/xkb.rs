@@ -175,6 +175,7 @@ fn encode_xkb_reply(
                     max_keycode,
                     component_atoms,
                     type_atoms,
+                    level_atoms,
                     key_names,
                 } => {
                     let mut body = Vec::new();
@@ -188,14 +189,15 @@ fn encode_xkb_reply(
                     }
                     if which & 0x80 != 0 {
                         // The count for each type must match the numLevels advertised
-                        // by XkbGetMap. Atom None is a valid unnamed-level fallback,
-                        // but omitting the level slots makes the two replies
+                        // by XkbGetMap; omitting the level slots makes the two replies
                         // structurally inconsistent and strict xkbcommon rejects the
-                        // entire keymap.
+                        // entire keymap. The names themselves are real atoms rather
+                        // than None, because a client is entitled to ask the server
+                        // what each one is called and being handed None is fatal to it.
                         body.extend(std::iter::repeat_n(2, type_atoms.len()));
                         body.resize(padded_len(body.len()), 0);
-                        for _ in 0..type_atoms.len().saturating_mul(2) {
-                            push_u32(byte_order, &mut body, 0);
+                        for atom in &level_atoms {
+                            push_u32(byte_order, &mut body, *atom);
                         }
                     }
                     if which & 0x200 != 0 {

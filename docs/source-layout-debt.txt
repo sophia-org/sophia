@@ -49,7 +49,7 @@ large crates/sophia-x-authority/src/x11_socket/tests.rs 1452
 large crates/sophia-x-authority/tests/authority/resources.rs 1614
 large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs 5144
 large crates/sophia-x-authority/tests/x11_wire/core_dispatch.rs 1627
-large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5543
+large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5590
 large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1775
 large crates/sophia-x-authority/tests/x11_wire/resources_frontend.rs 2114
 large crates/sophia-x-authority/tests/x11_wire/support_extensions.rs 1502

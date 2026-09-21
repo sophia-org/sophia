@@ -5541,3 +5541,50 @@ fn every_wire_error_code_is_distinct_and_inside_its_extension_span() {
         );
     }
 }
+
+#[test]
+fn xkb_level_names_are_real_atoms_because_a_client_may_ask_what_they_are_called() {
+    let namespace = NamespaceId::from_raw(71);
+    let order = XByteOrder::LittleEndian;
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    // Exactly what libxdo asks a display on startup: key type names, key type
+    // level names, virtual modifier names.
+    let reply = dispatch_x11_wire_request(
+        dispatch_context(namespace, 9, order, X_KEYBOARD_MAJOR_OPCODE),
+        XWireRequest::XkbGetNames { which: 0x8c0 },
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(order);
+
+    let body = &reply[0][32..];
+    let types = usize::from(reply[0][14]);
+    assert!(types > 0, "the reply must advertise key types");
+    let type_atoms: Vec<u32> = (0..types)
+        .map(|index| read_u32(order, &body[index * 4..index * 4 + 4]))
+        .collect();
+    // Type names, then one level-count byte per type padded to a word, then
+    // the level names themselves: two per type, in type order.
+    let levels_at = (types * 4 + types).div_ceil(4) * 4;
+    let level_atoms: Vec<u32> = (0..types * 2)
+        .map(|index| read_u32(order, &body[levels_at + index * 4..levels_at + index * 4 + 4]))
+        .collect();
+
+    assert_eq!(
+        level_atoms.len(),
+        type_atoms.len() * 2,
+        "two named levels per type, matching the numLevels XkbGetMap advertises"
+    );
+    // NONE IS FATAL TO A CLIENT THAT ASKS. Every one of these used to be atom
+    // None, which the spec permits for an unnamed level. libxdo walks the list
+    // and asks the server what each name is; the server refuses None with
+    // BadAtom, and libX11 exits a client whose request was refused. No real
+    // server sends None here, so nothing ever met it there.
+    for (index, atom) in type_atoms.iter().chain(&level_atoms).enumerate() {
+        assert_ne!(*atom, 0, "name {index} is None and a client may ask for it");
+    }
+}
