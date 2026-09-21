@@ -303,3 +303,73 @@ the successful Kitty and menu checks do not need to be repeated.
   now return nonzero live state; pixel correctness remains separate.
 - [Compatibility matrix](../../x11-compatibility-matrix.md) distinguishes startup,
   RENDER resource support, alpha limitations, and actual visual acceptance.
+
+## The pixel boundary and the delivery boundary are one predicate — 2026-09-21
+
+Reported again from a live session on release `0.1.0-2e7031d6b9ae`: a Thunar
+dropdown opens, and the mouse does nothing inside it. This is the delivery
+symptom rather than the pixel one, and it is not either defect already
+recorded against menus. The session's own records rule both out --
+nineteen `sophia_live_explicit_pointer_grab` records cycling
+prepared, activated, released with `rejected=0 aborted=0 cancelled=0`, every
+`sophia_live_session_pointer_batch` reading `observed=1 routed=1` with
+`suppressed_no_target_count=0 suppressed_policy_count=0`, and
+`lease_rejected_count=0` throughout. Nothing is being refused, so neither
+[37xvg0y7](37xvg0y7-qt-menus-fail-to-open-while-pointer-leases-are-rejected.md),
+which is about rejected leases, nor
+[744uylx4](744uylx4-explicit-pointer-grabs-must-replace-their-own-click-lease.md),
+whose grab-replacement defect was corrected, accounts for it.
+
+**Traced in code, and it makes this note's question the wrong question.** The
+two boundaries this note set out to separate are decided by the same predicate.
+
+`hit_test_layers` (`sophia-engine/src/input/hit_test.rs:65`) skips any layer
+where `!should_render(layer)`, and `should_render`
+(`sophia-engine/src/render.rs:144`) is
+
+    layer.opacity > 0.0 && !layer.geometry.is_empty() && layer.source != BufferSource::None
+
+So **a surface that has not committed a buffer cannot be hit**. In X11 that is
+a category error: a mapped InputOutput window answers pointer events whether or
+not it has painted anything, and nothing in the protocol makes input
+conditional on content.
+
+The session already holds the correct notion and disagrees with the engine.
+`LiveWmLayout::input_eligible` (`wm/layout_support.rs:32`) decides eligibility
+by *mapping* -- its own comment says "eligibility here is the authority's
+mapping" -- and routes a client-positioned surface through
+`client_positioned_visible`. `ClientPositioned` (`wm/layout.rs:689`) is the
+role a menu carries: it "carries its own coordinates and no policy places it".
+So the session says a mapped popup can answer input and the engine's hit test
+says it cannot until it has pixels.
+
+**Why that produces exactly this symptom.** A GTK menu maps, takes its pointer
+grab, and commits its buffer some time after. In the interval, or permanently
+if the buffer never arrives, the popup is absent from the hit test, so the
+pointer resolves to the window beneath it -- Thunar's own main window. Delivery
+then honours `owner_events` correctly at
+`x11_socket/routing/registry/delivery.rs:303`: the grab owner and the surface
+under the pointer are the same client, so the event goes to
+`surface_route.window`, which is the main window rather than the menu. Every
+layer behaves as written and the click lands one window too low. The grab
+records stay clean because the grab genuinely is held; what fails is which
+surface the pointer resolved to.
+
+This also predicts the original pixel symptom and the delivery symptom
+appearing together on the same popups, which is what has been reported, and it
+explains why chasing them as separate boundaries did not converge: a popup with
+no buffer is both blank and deaf, for one reason.
+
+### Not yet established
+
+This is traced through the code, not observed in a live capture. What would
+settle it is a reproduction showing, while a menu is open, either a layer
+snapshot carrying the popup surface with `source: None`, or a pointer route
+whose target surface is the parent window rather than the menu. The session log
+records pointer batches only as sampled tallies with no per-surface target, so
+neither is visible today; the delivery layer would need a record naming the
+surface a grabbed pointer event resolved to. Until that exists this is the
+best-supported explanation rather than a measured cause.
+
+t061 owns the pixels and t066 owns the input. If this holds they are one row.
+
