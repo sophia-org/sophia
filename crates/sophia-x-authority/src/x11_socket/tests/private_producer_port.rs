@@ -350,7 +350,7 @@ fn two_connections_on_one_service_each_receive_only_their_own_presses() {
         "the second's release on its own wire"
     );
     assert_eq!(focus_1, Some(XAuthorityControlOutcome::Delivered));
-    assert_eq!(focus_in_1, Some(expected_focus_in(sequence_1, window_1)));
+    assert_eq!(focus_in_1, Some(expected_focus_in_from_another_window(sequence_1, window_1)));
     assert_eq!(
         focus_out_2.map(|event| (event[0], u32::from_le_bytes([event[4], event[5], event[6], event[7]]))),
         Some((10, window_2)),

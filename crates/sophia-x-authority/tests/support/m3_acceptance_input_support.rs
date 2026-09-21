@@ -69,7 +69,13 @@ impl BConnection {
             .unwrap()
     }
 
-    fn focus(&mut self, service: &LifecycleService, transaction: u64) {
+    /// Takes the focus and reads the FocusIn it is owed.
+    ///
+    /// `detail` says where the focus came from, which the protocol makes part
+    /// of the event: NotifyAncestor when it came from the root, because this
+    /// window is an inferior of it, and NotifyNonlinear when it came from
+    /// another connection's window, because neither contains the other.
+    fn focus(&mut self, service: &LifecycleService, transaction: u64, detail: u8) {
         service
             .access
             .control_producer(&service.owner.lease())
@@ -92,10 +98,9 @@ impl BConnection {
                 .outcome,
             XAuthorityControlOutcome::Delivered
         );
-        assert_eq!(
-            read_event(&mut self.peer, 3),
-            Some(expected_focus_in(self.sequence, self.window))
-        );
+        let mut expected = expected_focus_in(self.sequence, self.window);
+        expected[1] = detail;
+        assert_eq!(read_event(&mut self.peer, 3), Some(expected));
     }
 
     fn pointer_pair(&mut self, service: &LifecycleService, ingress: &PrivateIngress, id: u64) {

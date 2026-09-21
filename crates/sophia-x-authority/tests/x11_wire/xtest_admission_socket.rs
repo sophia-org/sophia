@@ -179,7 +179,9 @@ mod xtest_admission_socket {
                 .unwrap();
             let ack = self.acks.recv_timeout(Duration::from_secs(1)).unwrap();
             assert_eq!(ack.acknowledgement.outcome, XAuthorityControlOutcome::Delivered);
-            assert_core_focus_event(&mut client.stream, true, window);
+            // The focus was on the root, so descending into this toplevel
+            // is an ancestor move rather than a nonlinear one.
+            assert_core_focus_event(&mut client.stream, true, window, X_FOCUS_DETAIL_ANCESTOR);
             window
         }
 

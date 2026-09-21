@@ -444,7 +444,7 @@ fn service_key_join_survivor_and_focus_move_keep_the_original_history_and_endpoi
         apply_focus(&launched, &control, &mut second, client_2, surface_2, 98520),
         (
             Some(XAuthorityControlOutcome::Delivered),
-            Some(expected_focus_in(sequence_2, window_2))
+            Some(expected_focus_in_from_another_window(sequence_2, window_2))
         )
     );
     assert_eq!(read_event(&mut first, 5).map(|event| event[0]), Some(10));

@@ -474,13 +474,34 @@ fn produced_outcome_keeping_access(
     (launch_outcome(handle, &finished, false, what), access)
 }
 
+/// The FocusIn a window gets when the focus arrives from another client's
+/// window rather than from the root.
+///
+/// Neither window contains the other, so the protocol calls the move
+/// nonlinear and both ends are told so. This is the same event shape as
+/// [`expected_focus_in`] with a different detail, and the two are kept apart
+/// because which one is right depends on where the focus came from, not on
+/// which window receives it.
+fn expected_focus_in_from_another_window(sequence: u16, window: u32) -> [u8; 32] {
+    let mut event = expected_focus_in(sequence, window);
+    event[1] = crate::X_FOCUS_DETAIL_NONLINEAR;
+    event
+}
+
 /// The FocusIn a FocusSurface control's writer sends to a window selecting
-/// FocusChange, hand-encoded: type 9, detail NotifyNonlinear (3), the
-/// connection's sequence, the window, mode NotifyNormal (0).
+/// FocusChange, hand-encoded: type 9, the connection's sequence, the window,
+/// mode NotifyNormal (0).
+///
+/// The detail is NotifyAncestor (0) because these fixtures focus a toplevel
+/// whose parent is the root, and the focus was on the root before it. The
+/// protocol reads that as the focus descending into an inferior, so the
+/// window gaining it is told the focus came from an ancestor. It read
+/// NotifyNonlinear here while the detail was hardcoded, which is the value
+/// for a move between two windows neither of which contains the other.
 fn expected_focus_in(sequence: u16, window: u32) -> [u8; 32] {
     let mut event = [0u8; 32];
     event[0] = 9;
-    event[1] = 3;
+    event[1] = 0;
     event[2..4].copy_from_slice(&sequence.to_le_bytes());
     event[4..8].copy_from_slice(&window.to_le_bytes());
     event[8] = 0;

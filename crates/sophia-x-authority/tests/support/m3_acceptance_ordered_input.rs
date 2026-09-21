@@ -52,7 +52,7 @@ fn b_ordered_input() {
     service.start();
     let mut first = BConnection::open(&service, 0x0d41);
     let mut second = BConnection::open(&service, 0x0d51);
-    first.focus(&service, 112040);
+    first.focus(&service, 112040, crate::X_FOCUS_DETAIL_ANCESTOR);
     let keys = first.ingress(&service, 1);
     let motion_source = first.ingress(&service, 2);
     let axis_source = first.ingress(&service, 3);

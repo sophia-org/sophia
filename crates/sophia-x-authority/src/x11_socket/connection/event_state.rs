@@ -399,6 +399,16 @@ impl XCoreEventSelectionState {
         target
     }
 
+    /// The window the pointer is in, when one has been observed.
+    ///
+    /// The focus algebra needs it because a transition that crosses on or off
+    /// the pointer's chain owes that chain its own events. With no observation
+    /// yet the caller falls back to the root, which is where the pointer is
+    /// when it is in no other window.
+    fn pointer_window(&self) -> Option<XResourceId> {
+        self.pointer.map(|pointer| pointer.pointer_window)
+    }
+
     fn ancestry_including(&self, window: XResourceId) -> Vec<XResourceId> {
         std::iter::once(window)
             .chain(self.ancestors(window))
