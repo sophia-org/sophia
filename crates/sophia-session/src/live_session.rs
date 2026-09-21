@@ -909,22 +909,22 @@ pub(crate) fn run_persistent_xterm_session(
         config.socket_path.clone(),
         config.normal_session,
     );
-    // Admit one primary-client transaction before launching the secondary
-    // proof client. Otherwise optimized startup lets both xterms race for the
-    // first committed surface, making initial focus nondeterministic.
-    let initial_authority_batch = if config.startup_proof_requested()
-        && (config.secondary_terminal || config.applications.startup.len() > 1)
-    {
-        Some(
-            authority_receiver
-                .recv_timeout(Duration::from_secs(5))
-                .map_err(|error| {
-                    format!("primary xterm did not publish a startup frame: {error}")
-                })?,
-        )
-    } else {
-        None
-    };
+    // Admit one primary-client transaction before launching the second, or
+    // both xterms race for the first committed surface and initial focus is
+    // nondeterministic. Two clients starting is the whole hazard; also
+    // requiring a startup proof was narrower, and let the QEMU session race.
+    let initial_authority_batch =
+        if config.secondary_terminal || config.applications.startup.len() > 1 {
+            Some(
+                authority_receiver
+                    .recv_timeout(Duration::from_secs(5))
+                    .map_err(|error| {
+                        format!("primary xterm did not publish a startup frame: {error}")
+                    })?,
+            )
+        } else {
+            None
+        };
     if config.secondary_terminal {
         process.add_secondary_child(
             None,

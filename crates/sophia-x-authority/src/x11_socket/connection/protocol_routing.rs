@@ -46,13 +46,17 @@ fn route_core_lifecycle_events_with_control(
     // neither, and until now it was told anyway, twice, about a window it
     // had said nothing about.
     //
-    // Only this client's own copy is decided here. Routing a transition to
-    // the other windows it concerns is the focus source's, which resolves
-    // the whole hierarchy under the guards that applied the focus; a second
-    // delivery from here would duplicate what that already owes.
+    // Every client that selected on the window is delivered the transition,
+    // not only the one whose request caused it. The chain itself is resolved
+    // before this, by whichever layer applied the focus; what happens here is
+    // fanning each resolved event out to its subscribers, which is the same
+    // treatment the substructure events below get. The focus producer reaches
+    // only the requesting connection's own stream, so without this a second
+    // client watching a window learns nothing when the focus enters it.
     let mut unselected_focus = Vec::new();
     for (index, item) in output.outputs.iter().enumerate() {
-        let crate::XClientOutput::Event(XClientEvent::Focus { event: window, .. }) = item else {
+        let crate::XClientOutput::Event(event @ XClientEvent::Focus { event: window, .. }) = item
+        else {
             continue;
         };
         let selectors = routing
@@ -62,6 +66,18 @@ fn route_core_lifecycle_events_with_control(
                     "failed to inspect X11 focus subscriptions: {error}"
                 ))
             })?;
+        for recipient in selectors
+            .iter()
+            .copied()
+            .filter(|recipient| *recipient != client)
+        {
+            retain_private_control_events(execution, [(Some(recipient), *event)])?;
+            routing
+                .route_control_protocol(recipient, *event, execution)
+                .map_err(|error| {
+                    X11SetupSocketError::new(format!("failed to route X11 focus event: {error}"))
+                })?;
+        }
         if !selectors.contains(&client) {
             unselected_focus.push(index);
         }

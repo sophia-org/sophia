@@ -53,7 +53,12 @@ fn dispatch_core_input_discovery_request(
                     let (previous, _) = runtime.input_focus(context.namespace);
                     let applied =
                         x11_apply_focus_request(runtime, context, focus, revert_to, time);
-                    input_focus_dispatch_result(context, focus, previous, applied)
+                    let events = if matches!(applied, XFocusRequestOutcome::Applied) {
+                        core_focus_transition_events(runtime, context.namespace, previous, focus)
+                    } else {
+                        Vec::new()
+                    };
+                    input_focus_dispatch_result(context, focus, applied, events)
                 }
                 XWireRequest::GetModifierMapping => XDispatchResult {
                     response: None,
@@ -651,11 +656,40 @@ pub(crate) fn x11_apply_focus_request(
 
 /// Shared exact core reply/event construction. The caller supplies the result
 /// of the actual effect producer; this routine changes no focus state.
+/// The focus events a transition owes, over the whole window chain.
+///
+/// The private path resolves this in the record producer, which can see each
+/// window's event selection. This path cannot, so it emits the whole chain
+/// and lets the routing filter drop what the client did not select, which is
+/// the same arrangement every other lifecycle event here uses.
+pub(crate) fn core_focus_transition_events(
+    runtime: &XAuthorityRuntime,
+    namespace: NamespaceId,
+    previous: XResourceId,
+    focus: XResourceId,
+) -> Vec<crate::XFocusTransitionEvent> {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let ancestry = |window: XResourceId| runtime.window_ancestry_chain(window);
+    let chains = crate::XFocusChains {
+        root,
+        // The pointer's window when one has been observed. Without an
+        // observation the pointer is on the root, which is where it is when
+        // it is in no other window.
+        pointer: runtime.pointer_window(namespace).unwrap_or(root),
+        ancestry: &ancestry,
+    };
+    crate::x_focus_transition_events(
+        crate::XFocusTarget::from_resource(previous),
+        crate::XFocusTarget::from_resource(focus),
+        &chains,
+    )
+}
+
 pub(crate) fn input_focus_dispatch_result(
     context: XDispatchContext,
     focus: XResourceId,
-    previous: XResourceId,
     applied: XFocusRequestOutcome,
+    events: Vec<crate::XFocusTransitionEvent>,
 ) -> XDispatchResult {
                     let outputs = match applied {
                         XFocusRequestOutcome::Refused(error) => vec![XClientOutput::Error(x_error_from_runtime(
@@ -665,29 +699,18 @@ pub(crate) fn input_focus_dispatch_result(
                             0,
                             u32::try_from(focus.local.raw()).unwrap_or(0)))],
                         XFocusRequestOutcome::Ignored => Vec::new(),
-                        XFocusRequestOutcome::Applied if previous == focus => Vec::new(),
-                        XFocusRequestOutcome::Applied => {
-                            let mut outputs = Vec::with_capacity(2);
-                            if previous.local.raw() != 0 {
-                                outputs.push(XClientOutput::Event(XClientEvent::Focus {
+                        XFocusRequestOutcome::Applied => events
+                            .into_iter()
+                            .map(|event| {
+                                XClientOutput::Event(XClientEvent::Focus {
                                     sequence: context.sequence,
-                                    focused: false,
-                                    detail: 3,
-                                    event: previous,
-                                    mode: 0,
-                                }));
-                            }
-                            if focus.local.raw() != 0 {
-                                outputs.push(XClientOutput::Event(XClientEvent::Focus {
-                                    sequence: context.sequence,
-                                    focused: true,
-                                    detail: 3,
-                                    event: focus,
-                                    mode: 0,
-                                }));
-                            }
-                            outputs
-                        }
+                                    focused: event.focused,
+                                    detail: event.detail,
+                                    event: event.window,
+                                    mode: crate::X_FOCUS_MODE_NORMAL,
+                                })
+                            })
+                            .collect(),
                     };
                     XDispatchResult {
                         response: None,

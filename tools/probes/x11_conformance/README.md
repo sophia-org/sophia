@@ -199,7 +199,29 @@ No results from an older directory can supply a pass.
 | after the timestamp rule | 38 | 9 | 2 | SetInputFocus honours its `time`, so a stale request has no effect |
 | after the viewability rule | 39 | 8 | 2 | focusing a window that is not viewable is the Match error |
 | after focus reversion | 42 | 5 | 1 | the focus leaves a window that stops being viewable, with the events that owes |
-| after the window repairs | **48** | 0 | 1 | backgrounds painted, inferiors composited, redundant maps silent, redirect honoured, atoms scoped to the server |
+| after the window repairs | 48 | 0 | 1 | backgrounds painted, inferiors composited, redundant maps silent, redirect honoured, atoms scoped to the server |
+
+The selection then grew from 58 purposes to 99, adding `Xlib11/FocusIn`
+(21 assertions), `Xlib11/FocusOut` (19) and `Xlib13/XGetInputFocus` (1).
+These are the focus-event algebra written as tests by the people who wrote
+the specification down, and they were added to judge the algebra that had
+just landed with no external check at all.
+
+| run | PASS | FAIL | what changed |
+| --- | --- | --- | --- |
+| the grown selection, as it stood | 50 of 99 | 26 | the first outside judgement: 14 of 21 FocusIn assertions and 12 of 19 FocusOut failed |
+| the algebra reached the ordinary path | 74 of 99 | 2 | it had only ever been wired to the private path |
+| focus events reach every subscriber | **76 of 99** | **0** | they were delivered only to the client whose request moved the focus |
+
+**It was worth adding them before anything else.** The algebra itself was
+right — its fourteen controls held throughout — but it was reaching almost
+nobody. A plain client's SetInputFocus still went through a path that emitted
+two events with a hardcoded detail, and no client other than the requester
+ever heard about a focus change at all. Both defects were invisible to every
+check we owned, because our own `focus` case asserts event types and the
+algebra's controls test the function rather than its wiring.
+
+The 23 that do not pass are all the suite's own verdicts. None is a failure.
 
 **No purpose fails any more.** The ten that do not pass are the suite's own
 verdicts rather than defects here, and only three of them are ours to move:

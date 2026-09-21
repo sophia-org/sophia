@@ -230,5 +230,169 @@
   {
     "case": "/Xlib13/XSetInputFocus",
     "purpose": 13
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib11/FocusIn",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib11/FocusOut",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib13/XGetInputFocus",
+    "purpose": 1
   }
 ]
