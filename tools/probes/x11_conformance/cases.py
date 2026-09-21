@@ -497,10 +497,9 @@ def xkb_names(context):
     with client(context) as c:
         op = c.query_extension('XKEYBOARD')[9]
         c.reply(op, c.pack('HH', 1, 0))  # UseExtension, major 1 minor 0
-        # Key type names and their level names, two of the three masks libxdo
-        # asks for; the third names virtual modifiers and this reply carries
-        # none, which is consistent and not a name to resolve.
-        reply = c.reply(op, c.pack('HHI', 0x0100, 0, 0x40 | 0x80), detail=17)
+        # All three masks libxdo asks for: key type names, their level names,
+        # and virtual modifier names.
+        reply = c.reply(op, c.pack('HHI', 0x0100, 0, 0x40 | 0x80 | 0x800), detail=17)
         types = reply[14]
         assert types > 0, 'the reply must advertise key types'
         body = reply[32:]
@@ -514,6 +513,19 @@ def xkb_names(context):
             assert atom != 0, f'name {index} is None and a client may ask for it'
             named = c.reply(17, c.pack('I', atom))  # GetAtomName
             assert c.u16(named, 8) > 0, f'name {index} resolves to an empty string'
+        # THE COUNT AND THE ATOMS MUST AGREE. This reply names no virtual
+        # modifier, so there is nothing here to resolve and nothing to assert
+        # about a name; what is asserted is that the virtualMods field and the
+        # atoms following it describe the same reply. A field claiming names
+        # that do not follow is the level-name defect one step earlier -- a
+        # reply describing something the client will then ask about and be
+        # refused for -- and reading past the body is how a client finds out.
+        virtual_mods = c.u16(reply, 16)
+        expected = (types * 4 + -(-types // 4) * 4 + sum(counts) * 4
+                    + bin(virtual_mods).count('1') * 4)
+        assert c.u32(reply, 4) * 4 == expected, (
+            f'reply body is {c.u32(reply, 4) * 4} bytes, but nTypes={types}, '
+            f'levels={counts} and virtualMods=0x{virtual_mods:04x} describe {expected}')
 
 
 def xfixes_selection(context):
