@@ -98,6 +98,10 @@ pub(crate) fn image_client_error(
                 | XAuthorityRuntimeError::SameNamespace
                 | XAuthorityRuntimeError::PortalRejected => XErrorCode::BadAccess,
                 XAuthorityRuntimeError::FocusAuthorityUnavailable => XErrorCode::BadImplementation,
+                XAuthorityRuntimeError::InvalidValue => XErrorCode::BadValue,
+                // A readback names a drawable rather than a focus, so this
+                // cannot arise here; it maps the way the protocol names it.
+                XAuthorityRuntimeError::WindowNotViewable => XErrorCode::BadMatch,
             }
         }
         XImageReadbackError::Drawable(crate::runtime::XDrawableImageError::BadMatch) => {

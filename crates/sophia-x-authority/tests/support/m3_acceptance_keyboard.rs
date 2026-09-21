@@ -168,7 +168,7 @@ fn b_keyboard_history() {
         LifecycleService::launch_with_capacity("b-keyboard-history", 11201, None, false, 2);
     service.start();
     let mut connection = BConnection::open(&service, 0x0d11);
-    connection.focus(&service, 112010);
+    connection.focus(&service, 112010, crate::X_FOCUS_DETAIL_ANCESTOR);
     let ingress = connection.ingress(&service, 1);
     connection.pointer_pair(&service, &ingress, 112011);
     connection.select_xkb();
@@ -244,7 +244,7 @@ fn b_shared_hold() {
     service.start();
     let mut first = BConnection::open(&service, 0x0d21);
     let mut second = BConnection::open(&service, 0x0d31);
-    first.focus(&service, 112020);
+    first.focus(&service, 112020, crate::X_FOCUS_DETAIL_ANCESTOR);
     let ingress = first.ingress(&service, 1);
     let joining = second.ingress(&service, 1);
     first.pointer_pair(&service, &ingress, 112021);
@@ -306,7 +306,7 @@ fn b_shared_hold() {
         );
         b_flushed(&service, id, first.client());
     }
-    second.focus(&service, 112029);
+    second.focus(&service, 112029, crate::X_FOCUS_DETAIL_NONLINEAR);
     assert_eq!(read_event(&mut first.peer, 3).unwrap()[0], 10);
     joining
         .submit(

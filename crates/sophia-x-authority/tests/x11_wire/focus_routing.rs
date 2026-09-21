@@ -54,6 +54,9 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
         ))
         .unwrap();
     first
+        .write_all(&map_window_request(XByteOrder::LittleEndian, first_window))
+        .unwrap();
+    first
         .write_all(&change_window_event_mask_request(
             XByteOrder::LittleEndian,
             first_window,
@@ -92,6 +95,9 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
             320,
             240,
         ))
+        .unwrap();
+    second
+        .write_all(&map_window_request(XByteOrder::LittleEndian, second_window))
         .unwrap();
     second
         .write_all(&change_window_event_mask_request(
@@ -144,8 +150,8 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
     };
 
     focus(0, 100);
-    assert_core_focus_event(&mut first, true, first_window);
-    assert_xi_focus_event(&mut first, true, first_window);
+    assert_core_focus_event(&mut first, true, first_window, X_FOCUS_DETAIL_ANCESTOR);
+    assert_xi_focus_event(&mut first, true, first_window, X_FOCUS_DETAIL_ANCESTOR);
     focus(0, 101);
     first.write_all(&[43, 0, 1, 0]).unwrap();
     assert_eq!(read_x_record(&mut first)[0], 1);
@@ -159,9 +165,9 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
             },
         })
         .unwrap();
-    assert_core_focus_event(&mut first, false, first_window);
-    assert_xi_focus_event(&mut first, false, first_window);
-    assert_core_focus_event(&mut second, true, second_window);
+    assert_core_focus_event(&mut first, false, first_window, X_FOCUS_DETAIL_NONLINEAR);
+    assert_xi_focus_event(&mut first, false, first_window, X_FOCUS_DETAIL_NONLINEAR);
+    assert_core_focus_event(&mut second, true, second_window, X_FOCUS_DETAIL_NONLINEAR);
     assert_eq!(
         acknowledgement_receiver
             .recv_timeout(Duration::from_secs(1))
@@ -189,10 +195,10 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
             },
         })
         .unwrap();
-    assert_core_focus_event(&mut second, false, second_window);
-    assert_xi_focus_event(&mut second, false, second_window);
-    assert_core_focus_event(&mut first, true, first_window);
-    assert_xi_focus_event(&mut first, true, first_window);
+    assert_core_focus_event(&mut second, false, second_window, X_FOCUS_DETAIL_NONLINEAR);
+    assert_xi_focus_event(&mut second, false, second_window, X_FOCUS_DETAIL_NONLINEAR);
+    assert_core_focus_event(&mut first, true, first_window, X_FOCUS_DETAIL_NONLINEAR);
+    assert_xi_focus_event(&mut first, true, first_window, X_FOCUS_DETAIL_NONLINEAR);
     assert_eq!(
         acknowledgement_receiver
             .recv_timeout(Duration::from_secs(1))
@@ -214,14 +220,19 @@ fn routed_focus_notifies_both_clients_across_repeated_transitions() {
 }
 
 #[cfg(unix)]
+/// `detail` says which shape of transition this event belongs to, because
+/// the protocol's detail is not a constant: a move between two toplevels is
+/// NotifyNonlinear, while a move from the root into one of its children is
+/// NotifyAncestor on the way in and NotifyInferior on the way out.
 fn assert_core_focus_event(
     stream: &mut std::os::unix::net::UnixStream,
     focused: bool,
     window: u32,
+    detail: u8,
 ) {
     let event = read_x_record(stream);
     assert_eq!(event[0], if focused { 9 } else { 10 });
-    assert_eq!(event[1], 3);
+    assert_eq!(event[1], detail);
     assert_eq!(
         read_u32(XByteOrder::LittleEndian, &event[4..8]),
         window
@@ -234,6 +245,7 @@ fn assert_xi_focus_event(
     stream: &mut std::os::unix::net::UnixStream,
     focused: bool,
     window: u32,
+    detail: u8,
 ) {
     let mut event = vec![0; 32];
     fill_from_socket(stream, &mut event);
@@ -247,7 +259,7 @@ fn assert_xi_focus_event(
     assert_ne!(read_u32(XByteOrder::LittleEndian, &event[12..16]), 0);
     assert_eq!(read_u16(XByteOrder::LittleEndian, &event[16..18]), 3);
     assert_eq!(event[18], 0);
-    assert_eq!(event[19], 3);
+    assert_eq!(event[19], detail);
     assert_eq!(read_u32(XByteOrder::LittleEndian, &event[24..28]), window);
     assert_eq!(event[48], 1);
     assert_eq!(event[49], 1);

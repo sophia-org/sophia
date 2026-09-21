@@ -153,6 +153,11 @@ mod xtest_admission_socket {
             client.stream
                 .write_all(&change_window_event_mask_request(client.order, window, 3 | (1 << 21)))
                 .unwrap();
+            // A window has to be viewable before anything can focus it, which
+            // is what a real client's MapWindow is for.
+            client.stream
+                .write_all(&map_window_request(client.order, window))
+                .unwrap();
             client.stream
                 .write_all(&sophia_present_pixmap_request(client.order, window, window + 0x1000, (0, 0, 16, 16), 1, 1))
                 .unwrap();
@@ -174,7 +179,9 @@ mod xtest_admission_socket {
                 .unwrap();
             let ack = self.acks.recv_timeout(Duration::from_secs(1)).unwrap();
             assert_eq!(ack.acknowledgement.outcome, XAuthorityControlOutcome::Delivered);
-            assert_core_focus_event(&mut client.stream, true, window);
+            // The focus was on the root, so descending into this toplevel
+            // is an ancestor move rather than a nonlinear one.
+            assert_core_focus_event(&mut client.stream, true, window, X_FOCUS_DETAIL_ANCESTOR);
             window
         }
 

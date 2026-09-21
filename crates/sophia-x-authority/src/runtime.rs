@@ -241,6 +241,12 @@ pub struct XAuthorityRuntime {
     last_cpu_buffer_updates: Vec<XAuthorityCpuBufferUpdate>,
     output_topology: OutputTopologySnapshot,
     input_focus: BTreeMap<NamespaceId, (crate::XResourceId, u8)>,
+    /// The last-focus-change time, kept per namespace beside the focus it
+    /// orders rather than once for the whole server as the protocol
+    /// describes it. The protocol has one focus so it has one time; we have
+    /// one focus per namespace, and a single shared time would let a change
+    /// in one namespace make an honest request in another look stale.
+    last_focus_change: BTreeMap<NamespaceId, crate::XTimestamp>,
     /// Focus changes not yet published as `_NET_ACTIVE_WINDOW`, oldest first.
     /// Left here because the runtime does not hold the property table; the
     /// layer that does drains this after each request or focus command.
@@ -316,6 +322,7 @@ impl Default for XAuthorityRuntime {
             last_cpu_buffer_updates: Vec::new(),
             output_topology: OutputTopologySnapshot::deterministic(),
             input_focus: Default::default(),
+            last_focus_change: Default::default(),
             active_window_changes: Vec::new(),
             #[cfg(unix)]
             private_focus_source: None,
@@ -468,12 +475,7 @@ impl XAuthorityRuntime {
         focus: crate::XResourceId,
         revert_to: u8,
     ) -> Result<(), XAuthorityRuntimeError> {
-        if revert_to > 2 {
-            return Err(XAuthorityRuntimeError::InvalidResource);
-        }
-        if focus.local.raw() != 0 && focus.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
-            self.validate_window_access(namespace, focus)?;
-        }
+        self.validate_input_focus(namespace, focus, revert_to)?;
         let prepared = self
             .input_focus
             .get_mut(&namespace)
@@ -482,18 +484,92 @@ impl XAuthorityRuntime {
         Ok(())
     }
 
+    /// Everything SetInputFocus must refuse, with no state changed either way.
+    ///
+    /// Split out from the effect because X11 orders the two: the errors are
+    /// reported whatever the request's timestamp says, and only a request
+    /// that would otherwise succeed is then measured against the clock.
+    pub fn validate_input_focus(
+        &self,
+        namespace: NamespaceId,
+        focus: crate::XResourceId,
+        revert_to: u8,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        // The order is the protocol's and two passing conformance purposes
+        // depend on it: the out-of-range argument first, then the window that
+        // does not exist, then the window that exists but cannot be focused.
+        if revert_to > 2 {
+            return Err(XAuthorityRuntimeError::InvalidValue);
+        }
+        let raw = focus.local.raw();
+        if raw == u64::from(crate::X_FOCUS_NONE) || raw == u64::from(crate::X_FOCUS_POINTER_ROOT) {
+            return Ok(());
+        }
+        if raw == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+            // The root is always viewable and is not a client resource.
+            return Ok(());
+        }
+        self.validate_window_access(namespace, focus)?;
+        // Focus is where keyboard input goes, and input cannot go to something
+        // nobody can see. A window is viewable only when it and every ancestor
+        // are mapped, which the window store already tracks and propagates.
+        if self.window_map_state(namespace, focus)? != crate::XMapState::Viewable {
+            return Err(XAuthorityRuntimeError::WindowNotViewable);
+        }
+        Ok(())
+    }
+
+    /// The namespace's last-focus-change time, zero before its first change.
+    #[must_use]
+    pub fn last_focus_change(&self, namespace: NamespaceId) -> crate::XTimestamp {
+        self.last_focus_change
+            .get(&namespace)
+            .copied()
+            .unwrap_or(crate::X_CURRENT_TIME)
+    }
+
+    /// Whether a focus request bearing `time` may take effect, and at what
+    /// instant it would be recorded.
+    ///
+    /// X11 orders focus changes by the client's stated time rather than by
+    /// arrival, so a request is discarded outright when it names a moment
+    /// before the last change this namespace already made, or one the server
+    /// has not reached yet. Discarded is not an error: the protocol says such
+    /// a request has no effect, so the client is owed no reply, no error and
+    /// no events. `CurrentTime` is the client declining to name a moment and
+    /// passes both bounds, taking the server's own clock as its instant.
+    #[must_use]
+    pub fn focus_time_admits(
+        &self,
+        namespace: NamespaceId,
+        time: crate::XTimestamp,
+        server_time: crate::XTimestamp,
+    ) -> Option<crate::XTimestamp> {
+        if time == crate::X_CURRENT_TIME {
+            return Some(server_time);
+        }
+        if crate::x_time_is_after(self.last_focus_change(namespace), time)
+            || crate::x_time_is_after(time, server_time)
+        {
+            return None;
+        }
+        Some(time)
+    }
+
+    /// Records the instant a focus change took effect at. Only a request that
+    /// names a time does this: reversion moves the focus without moving the
+    /// clock, so a later request that was honest when it was sent still lands.
+    pub fn note_focus_change(&mut self, namespace: NamespaceId, time: crate::XTimestamp) {
+        self.last_focus_change.insert(namespace, time);
+    }
+
     pub fn set_input_focus(
         &mut self,
         namespace: NamespaceId,
         focus: crate::XResourceId,
         revert_to: u8,
     ) -> Result<(), XAuthorityRuntimeError> {
-        if revert_to > 2 {
-            return Err(XAuthorityRuntimeError::InvalidResource);
-        }
-        if focus.local.raw() != 0 && focus.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
-            self.validate_window_access(namespace, focus)?;
-        }
+        self.validate_input_focus(namespace, focus, revert_to)?;
         self.input_focus.insert(namespace, (focus, revert_to));
         self.note_active_window(namespace, focus);
         Ok(())

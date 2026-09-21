@@ -47,7 +47,14 @@ mod active_window_socket {
         push_u32(&mut request, client.order, window);
         push_u32(&mut request, client.order, 0); // CurrentTime
         client.stream.write_all(&request).unwrap();
-        assert_core_focus_event(&mut client.stream, event.0, event.1);
+        // Both transitions here are between a toplevel and None, which
+        // the protocol reads as nonlinear on the window's own event.
+        assert_core_focus_event(
+            &mut client.stream,
+            event.0,
+            event.1,
+            X_FOCUS_DETAIL_NONLINEAR,
+        );
         client.barrier();
     }
 

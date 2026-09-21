@@ -265,15 +265,17 @@ fn x11_focus_event_record(
     sequence: u16,
     window: XResourceId,
     focused: bool,
+    detail: u8,
+    mode: u8,
 ) -> Vec<u8> {
     encode_x_client_event(
         byte_order,
         XClientEvent::Focus {
             sequence,
             focused,
-            detail: 3,
+            detail,
             event: window,
-            mode: 0,
+            mode,
         },
     )
 }
@@ -315,6 +317,8 @@ fn encode_xi_focus_event(
     sequence: u16,
     window: XResourceId,
     focused: bool,
+    detail: u8,
+    mode: u8,
     state: X11FocusEventState,
 ) -> Vec<u8> {
     let mut out = vec![0; 76];
@@ -326,8 +330,8 @@ fn encode_xi_focus_event(
     write_xi_u16(byte_order, &mut out[10..12], 3);
     write_xi_u32(byte_order, &mut out[12..16], state.time_msec);
     write_xi_u16(byte_order, &mut out[16..18], 3);
-    out[18] = 0;
-    out[19] = 3;
+    out[18] = mode;
+    out[19] = detail;
     write_xi_u32(byte_order, &mut out[20..24], X_SETUP_DEFAULT_ROOT);
     write_xi_u32(
         byte_order,
@@ -453,6 +457,8 @@ fn x11_focus_records(
             },
             window,
             focused,
+            crate::X_FOCUS_DETAIL_NONLINEAR,
+            crate::X_FOCUS_MODE_NORMAL,
         )),
         X11FocusRecordRequest::Surface {
             window,
@@ -475,10 +481,45 @@ fn x11_focus_records(
 }
 
 #[cfg(unix)]
+/// Every record a focus transition owes, over the whole window chain.
+///
+/// The protocol states focus events as a procedure over the chain rather than
+/// as a notification to the two ends, so this asks the algebra who is owed
+/// what and then asks the selection state, per window, whether this client
+/// wants to hear it. The ancestry comes from the core event selection state,
+/// which is the only chain this layer can see; it answers leaf-first, and the
+/// algebra wants root-first.
+fn x11_focus_transition_records(
+    context: &X11FocusRecordContext<'_>,
+    old: crate::XFocusTarget,
+    new: crate::XFocusTarget,
+    mode: u8,
+) -> Vec<Vec<u8>> {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let ancestry = |window: XResourceId| {
+        let mut chain = context.selections.ancestry_including(window);
+        chain.reverse();
+        chain
+    };
+    let chains = crate::XFocusChains {
+        root,
+        pointer: context.selections.pointer_window().unwrap_or(root),
+        ancestry: &ancestry,
+    };
+    crate::x_focus_transition_events(old, new, &chains)
+        .into_iter()
+        .flat_map(|event| {
+            x11_selected_focus_records(context, event.window, event.focused, event.detail, mode)
+        })
+        .collect()
+}
+
 fn x11_selected_focus_records(
     context: &X11FocusRecordContext<'_>,
     window: XResourceId,
     focused: bool,
+    detail: u8,
+    mode: u8,
 ) -> Vec<Vec<u8>> {
     let core_selected = context.selections.focus_selected(window);
     let event_type = if focused { 9 } else { 10 };
@@ -506,6 +547,8 @@ fn x11_selected_focus_records(
             context.sequence,
             window,
             focused,
+            detail,
+            mode,
         ));
     }
     if xi_selected {
@@ -514,6 +557,8 @@ fn x11_selected_focus_records(
             context.sequence,
             window,
             focused,
+            detail,
+            mode,
             x11_focus_event_state(
                 context.selections,
                 window,
@@ -552,12 +597,22 @@ fn x11_focus_surface_records(
             time_msec,
         } => {
             context.time_msec = time_msec;
-            let mut records = Vec::with_capacity(4);
-            if let Some(previous) = previous {
-                records.extend(x11_selected_focus_records(&context, previous, false));
-            }
-            records.extend(x11_selected_focus_records(&context, window, true));
-            Ok(records)
+            // The detail depends on where the focus actually came from, which
+            // is a server-wide fact. A connection's own projection only knows
+            // the focus it held itself, so a client seeing the focus arrive
+            // from another client's window would read it as arriving from the
+            // root and be told the wrong relationship. The connection's view
+            // is used when it has one, because a dependent clear deliberately
+            // names a different predecessor; otherwise the authority's.
+            let old = previous
+                .map(crate::XFocusTarget::Window)
+                .unwrap_or_else(|| crate::XFocusTarget::from_resource(previous_authority));
+            Ok(x11_focus_transition_records(
+                &context,
+                old,
+                crate::XFocusTarget::Window(window),
+                crate::X_FOCUS_MODE_NORMAL,
+            ))
         }
         X11FocusTransition::Clear { .. } => Err(X11SetupSocketError::new(
             "X11 routed focus transition mismatched FocusSurface",
@@ -587,7 +642,14 @@ fn x11_clear_focus_records(
     };
     context.time_msec = time_msec;
     Ok(previous
-        .map(|previous| x11_selected_focus_records(&context, previous, false))
+        .map(|previous| {
+            x11_focus_transition_records(
+                &context,
+                crate::XFocusTarget::Window(previous),
+                crate::XFocusTarget::Window(root),
+                crate::X_FOCUS_MODE_NORMAL,
+            )
+        })
         .unwrap_or_default())
 }
 
@@ -637,12 +699,41 @@ fn x11_dispatch_private_focus(
     routing: &XServerFrontendRouteRegistry,
     window: XResourceId,
     revert_to: u8,
+    time: crate::XTimestamp,
     runtime_owner: Arc<Mutex<XAuthorityRuntime>>,
     control_runtime_pending: Arc<AtomicUsize>,
     output: Arc<Mutex<UnixStream>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
 ) -> Result<(XDispatchResult, Option<X11PendingFocusPublication>), X11SetupSocketError> {
+    // Refusals and the clock are decided before anything is reserved. A
+    // request the protocol discards must leave no claim behind and publish
+    // no focus, or the ordering layer would wait on a change that never came.
+    let standing = runtime.input_focus(context.namespace).0;
+    if let Err(error) = runtime.validate_input_focus(context.namespace, window, revert_to) {
+        return Ok((
+            crate::dispatch::input_focus_dispatch_result(
+                context,
+                window,
+                standing,
+                crate::dispatch::XFocusRequestOutcome::Refused(error),
+            ),
+            None,
+        ));
+    }
+    let Some(effective_time) =
+        runtime.focus_time_admits(context.namespace, time, context.server_time)
+    else {
+        return Ok((
+            crate::dispatch::input_focus_dispatch_result(
+                context,
+                window,
+                standing,
+                crate::dispatch::XFocusRequestOutcome::Ignored,
+            ),
+            None,
+        ));
+    };
     let claim = routing
         .reserve_private_focus(client, window)
         .map_err(|cause| {
@@ -678,9 +769,12 @@ fn x11_dispatch_private_focus(
                 records: None,
                 emission: X11CoreFocusEmission::Waiting,
             });
-            Ok(())
+            runtime.note_focus_change(context.namespace, effective_time);
+            crate::dispatch::XFocusRequestOutcome::Applied
         }
-        Err(X11FocusApplyError::Runtime(cause)) => Err(cause),
+        Err(X11FocusApplyError::Runtime(cause)) => {
+            crate::dispatch::XFocusRequestOutcome::Refused(cause)
+        }
         Err(
             X11FocusApplyError::Superseded
             | X11FocusApplyError::State(

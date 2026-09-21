@@ -42,6 +42,11 @@ fn create_focus_test_window(fixture: &Fixture, target: XResourceId, parent: XRes
     runtime
         .set_window_parent(namespace(), target, parent)
         .unwrap();
+    drop(runtime);
+    // Parented first, then mapped: a window whose parent is not yet viewable
+    // maps to Unviewable, which is a state no focus fixture wants to be in
+    // by accident.
+    map_focus_test_window(&fixture.state.runtime, target);
 }
 
 fn assert_destroyed_focus(fixture: &Fixture, old: &PrivateFocusClaim) {

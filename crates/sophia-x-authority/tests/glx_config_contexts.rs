@@ -35,6 +35,7 @@ impl Client {
                 major_opcode,
                 client_id: 1,
                 injection: XTestAdmission::Absent,
+                server_time: 4_242,
             },
             request,
             &mut self.runtime,

@@ -92,6 +92,7 @@ fn dispatch_context_with_transaction(
         major_opcode,
         client_id: 1,
         injection: XTestAdmission::Absent,
+        server_time: 4_242,
     }
 }
 
@@ -501,6 +502,15 @@ fn set_clip_rectangles_request(
         push_u16(&mut out, byte_order, width);
         push_u16(&mut out, byte_order, height);
     }
+    out
+}
+
+/// MapWindow, which a real client sends before its window can be focused:
+/// X11 refuses to focus a window that is not viewable.
+fn map_window_request(byte_order: XByteOrder, window: u32) -> Vec<u8> {
+    let mut out = vec![8, 0];
+    push_u16(&mut out, byte_order, 2);
+    push_u32(&mut out, byte_order, window);
     out
 }
 

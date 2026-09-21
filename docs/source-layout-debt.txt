@@ -41,7 +41,7 @@ large crates/sophia-session/src/live_session/tests/wm_session_tests.rs 1638
 large crates/sophia-session/src/live_session/wm/layout.rs 1387
 large crates/sophia-session/src/live_session/wm/public_policy.rs 3053
 large crates/sophia-session/tests/support/private_input_session.rs 2808
-large crates/sophia-x-authority/src/dispatch.rs 1237
+large crates/sophia-x-authority/src/dispatch.rs 1146
 large crates/sophia-x-authority/src/property.rs 1204
 large crates/sophia-x-authority/src/wire.rs 1675
 large crates/sophia-x-authority/src/x11_socket/connection/server.rs 1301

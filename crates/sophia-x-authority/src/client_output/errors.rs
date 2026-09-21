@@ -151,6 +151,8 @@ pub fn x_error_from_runtime(
         | XAuthorityRuntimeError::PortalRejected => XErrorCode::BadAccess,
         XAuthorityRuntimeError::UnknownSourceOwner => XErrorCode::BadAtom,
         XAuthorityRuntimeError::FocusAuthorityUnavailable => XErrorCode::BadImplementation,
+        XAuthorityRuntimeError::InvalidValue => XErrorCode::BadValue,
+        XAuthorityRuntimeError::WindowNotViewable => XErrorCode::BadMatch,
     };
 
     XClientError {
