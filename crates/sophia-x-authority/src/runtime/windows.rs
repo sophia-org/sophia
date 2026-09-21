@@ -313,7 +313,11 @@ impl XAuthorityRuntime {
          }
         self.change_pointer_anchor_geometry(namespace, |runtime| {
             runtime.windows.set_parent(window, parent).map_err(Into::into)
-        })
+        })?;
+        // A new parent that is not viewable takes a whole subtree with it,
+        // without anything in it being unmapped.
+        self.revert_focus_if_unviewable(namespace);
+        Ok(())
     }
 
     pub fn restack_window(
@@ -611,12 +615,10 @@ impl XAuthorityRuntime {
              // Neither borrows a window, so neither is disturbed by one going.
              XGlxDrawableBacking::Pbuffer(_) | XGlxDrawableBacking::Pixmap { .. } => true,
          });
-         if let Some(focus) = self.input_focus.get_mut(&namespace)
-             && focus.0 == window
-         {
-             // Preserve the namespace storage reserved during setup. Removing
-             // it would make the next guarded focus application allocate again.
-             *focus = (crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1), 1);
+         // Gone rather than merely unviewable, so the focus cannot stay. It
+         // used to reset to the root here and ignore revert_to entirely.
+         if self.input_focus(namespace).0 == window {
+             self.revert_focus_if_unviewable(namespace);
          }
          Ok(surface)
      }
@@ -900,10 +902,13 @@ impl XAuthorityRuntime {
              .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?;
          let generation = record.generation;
-         self.windows.apply(XWindowLifecycleEvent::Unmapped {
+         let surface = self.windows.apply(XWindowLifecycleEvent::Unmapped {
              id: window,
              generation,
-         }).map_err(Into::into)
+         })?;
+         // The ordinary way a focus window stops being viewable.
+         self.revert_focus_if_unviewable(namespace);
+         Ok(surface)
      }
  
      /// Destroy every child of `parent`, each with its own subtree, bottom to
