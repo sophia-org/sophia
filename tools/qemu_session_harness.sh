@@ -173,7 +173,7 @@ QEMU_PID=$!
 if [[ "$SCENARIO" == emergency-recovery ]]; then
     guard_ready=false
     for _ in $(seq 1 600); do
-        if grep -q '^sophia_session_input_guard schema=1 status=ready ' "$EVIDENCE_FILE"; then
+        if grep -q '^sophia_session_input_guard schema=2 status=ready ' "$EVIDENCE_FILE"; then
             guard_ready=true
             break
         fi
@@ -191,10 +191,18 @@ if [[ "$SCENARIO" == emergency-recovery ]]; then
     fi
     echo "sophia_qemu_recovery_input schema=1 status=sent phase=arm source=qmp device=virtio-keyboard chord=ctrl-alt-backspace events=6" | tee -a "$EVIDENCE_FILE"
 
+    # The trigger must not land on a session that is still coming up. Focus
+    # readiness says a surface can receive keys, not that the session ever put a
+    # frame on screen, and a chord delivered in between ends the run with a
+    # startup-readiness failure instead of the clean emergency exit this
+    # scenario exists to prove -- the session reporting, accurately,
+    # `in_flight_displayed=0`. `startup schema=2 status=ready` is the state that
+    # settles it: surface, visual detail and a presented frame, all true.
     recovery_ready=false
     for _ in $(seq 1 600); do
         if grep -q '^sophia_session_input_guard schema=1 status=armed$' "$EVIDENCE_FILE" \
-            && grep -q '^sophia_live_session_input_pipeline schema=2 status=poller_ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_input_pipeline schema=4 status=poller_ready ' "$EVIDENCE_FILE" \
+            && grep -q '^sophia_live_session_startup schema=2 status=ready ' "$EVIDENCE_FILE" \
             && grep -q '^sophia_live_session_input_pipeline schema=1 status=focus_ready$' "$EVIDENCE_FILE"; then
             recovery_ready=true
             break
