@@ -82,6 +82,17 @@ macro_rules! service_session_controls {
                     );
                     continue;
                 }
+                // Which control was refused, before the failure is returned.
+                // AuthorityRejected on its own does not say, and a reader of
+                // the log then has to infer the kind from the surrounding
+                // sequence, which cost two wrong hypotheses about this exact
+                // failure before anyone read it correctly.
+                crate::session_println!(
+                    "sophia_live_session_control schema=1 status=control_refused kind={:?} transaction={} surface={} failure={failure:?}",
+                    completion.key.kind,
+                    completion.key.transaction.raw(),
+                    completion.key.surface.index(),
+                );
                 return Err(failure.into());
             }
             if completion.key.kind == XAuthorityControlKind::FocusSurface
