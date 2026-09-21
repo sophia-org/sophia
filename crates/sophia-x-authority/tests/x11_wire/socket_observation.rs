@@ -810,6 +810,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
                 route_lease: None,
                 delivery: None,
                 mode: XAuthorityRoutedInputMode::Deliver,
+                origin: XAuthorityRoutedInputOrigin::Physical,
             })
             .unwrap();
     }
@@ -838,6 +839,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Repeat,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     let first_repeat = read_x_record(&mut first);

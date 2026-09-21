@@ -22,7 +22,7 @@ sophia-xshmfence = { path = "../sophia-xshmfence" }
 tracing.workspace = true
 sha2.workspace = true
 rustix = { version = "1.1", default-features = false, features = ["process", "rand", "system", "fs", "time", "pipe"] }
-x11rb = "0.13.1"
+x11rb = { version = "0.13.1", features = ["xtest"] }
 
 [dev-dependencies]
 sophia-conformance = { path = "../sophia-conformance" }

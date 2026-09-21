@@ -167,6 +167,7 @@ fn button_to(
         route_lease: None,
         delivery: Some(delivery),
         mode: XAuthorityRoutedInputMode::Deliver,
+        origin: XAuthorityRoutedInputOrigin::Physical,
     }
 }
 
@@ -185,6 +186,7 @@ fn motion_to(surface: SurfaceId, delivery: XAuthorityInputDeliveryId) -> XAuthor
         route_lease: None,
         delivery: Some(delivery),
         mode: XAuthorityRoutedInputMode::Deliver,
+        origin: XAuthorityRoutedInputOrigin::Physical,
     }
 }
 

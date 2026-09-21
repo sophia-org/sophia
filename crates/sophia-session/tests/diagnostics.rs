@@ -973,3 +973,24 @@ fn the_periodic_cadence_sample_survives_reduction_whole() {
         Some(sample.into())
     );
 }
+
+#[test]
+fn xtest_records_keep_admission_and_what_was_injected() {
+    for record in [
+        "sophia_live_session_xtest schema=1 status=admitted group=3",
+        "sophia_live_session_xtest schema=1 status=absent group=3",
+        "sophia_live_session_xtest schema=1 status=complete admitted=true issued=2 denied=1 injected_keys=14 injected_buttons=2 injected_motions=5 refused=0",
+    ] {
+        assert_eq!(
+            reduced_record(&format!("{record} client=secret path=/tmp/x")),
+            Some(record.into()),
+            "{record}"
+        );
+    }
+    // A word the vocabulary does not know, or a count that is not one, is
+    // reduced to the name rather than carried as it came.
+    assert_eq!(
+        reduced_record("sophia_live_session_xtest status=private_text injected_keys=-1"),
+        Some("sophia_live_session_xtest".into())
+    );
+}

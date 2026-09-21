@@ -167,6 +167,7 @@ mod pointer_queries {
                     route_lease: self.lease,
                     delivery: Some(id),
                     mode: XAuthorityRoutedInputMode::Deliver,
+                    origin: XAuthorityRoutedInputOrigin::Physical,
                 })
                 .unwrap();
             id

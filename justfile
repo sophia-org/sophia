@@ -114,6 +114,19 @@ check:
 install-session:
     @tools/install_session_from_head.sh
 
+# SOPHIA_BIN and SOPHIA_BUILD_SESSION are dropped because a shell that inherited
+# them from an installed session would launch that release's binary instead of
+# this tree's; the desktop profile and Hagia binary are supplied because a fresh
+# TTY login has neither and the desktop preflight refuses without them.
+# Off by default in the session, and refused beside any input proof.
+# Run on tty3: start the daily session from HEAD with XTEST admitted, so a client on :77 can drive it.
+xtest-session profile='hagia':
+    @env -u SOPHIA_BIN -u SOPHIA_BUILD_SESSION \
+        SOPHIA_TTY_PROFILE={{profile}} \
+        SOPHIA_DESKTOP_PROFILE="${SOPHIA_DESKTOP_PROFILE:-$HOME/.config/sophia/desktop.kdl}" \
+        SOPHIA_HAGIA_BIN="${SOPHIA_HAGIA_BIN:-$HOME/.local/state/sophia/bin/hagia}" \
+        tools/start_sophia_tty3.sh --admit-xtest
+
 # Needs no privileges. The policy client is a blind client the Engine
 # validates, so it lives where its owner can replace it rather than inside the
 # checksummed release, and a reload is an ordinary file replacement followed by

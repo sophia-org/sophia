@@ -20,6 +20,7 @@ fn release_route(id: u64) -> XAuthorityRoutedInput {
         route_lease: None,
         delivery: Some(XAuthorityInputDeliveryId::from_raw(id)),
         mode: sophia_x_authority::XAuthorityRoutedInputMode::Deliver,
+        origin: sophia_x_authority::XAuthorityRoutedInputOrigin::Physical,
     }
 }
 

@@ -103,6 +103,7 @@ fn routed_pointer_grab_reports_sanitized_lease_confirmation_and_release() {
             route_lease: Some(identity),
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -215,6 +216,7 @@ fn security_epoch_revokes_queued_input_and_clears_active_grabs() {
             route_lease: None,
             delivery: Some(delivery),
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert!(sender.advance_control_epoch(2));
@@ -346,6 +348,7 @@ fn routed_input_queue_saturation_quarantines_only_the_stalled_client() {
                 route_lease: None,
                 delivery,
                 mode: XAuthorityRoutedInputMode::Deliver,
+                origin: XAuthorityRoutedInputOrigin::Physical,
             })
             .unwrap();
         assert_eq!(broker.route_pending(), Ok(usize::from(serial == 1)));
@@ -377,6 +380,7 @@ fn routed_input_queue_saturation_quarantines_only_the_stalled_client() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -483,6 +487,7 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -521,6 +526,7 @@ fn thawed_route_cannot_cross_a_destroy_recreate_surface_generation() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -684,6 +690,7 @@ fn active_keyboard_grab_redirects_engine_routed_input_and_window() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -744,6 +751,7 @@ fn routed_axis_emits_one_smooth_xi_motion_and_one_legacy_button_pair() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -830,6 +838,7 @@ fn routed_axis_resolves_smooth_and_emulated_button_selections_independently() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));
@@ -894,6 +903,7 @@ fn synchronous_keyboard_grab_queues_until_allow_events() {
             route_lease: None,
             delivery: None,
             mode: XAuthorityRoutedInputMode::Deliver,
+            origin: XAuthorityRoutedInputOrigin::Physical,
         })
         .unwrap();
     assert_eq!(broker.route_pending(), Ok(1));

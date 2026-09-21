@@ -1281,6 +1281,17 @@
             .as_ref()
             .map_or(0, |runtime| runtime.diagnostics().controlled_rejections),
     );
+    if config.admit_xtest {
+        crate::session_println!(
+            "sophia_live_session_xtest schema=1 status=complete admitted=true issued={} denied={} injected_keys={} injected_buttons={} injected_motions={} refused={}",
+            x_frontend::xtest::LiveXTestEvidence::get(&xtest_evidence.issued),
+            x_frontend::xtest::LiveXTestEvidence::get(&xtest_evidence.denied),
+            x_frontend::xtest::LiveXTestEvidence::get(&xtest_evidence.injected_keys),
+            x_frontend::xtest::LiveXTestEvidence::get(&xtest_evidence.injected_buttons),
+            x_frontend::xtest::LiveXTestEvidence::get(&xtest_evidence.injected_motions),
+            x_frontend::xtest::LiveXTestEvidence::get(&xtest_evidence.refused),
+        );
+    }
     *failure_phase = crate::diagnostics::SessionFailurePhase::PresentationValidation;
     if let Some(runtime) = runtime.as_ref()
         && (present_observation.disconnect_failures != 0

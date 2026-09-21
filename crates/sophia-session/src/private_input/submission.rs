@@ -185,6 +185,7 @@ impl PrivateInputSubmission {
             route_lease: None,
             delivery: Some(delivery),
             mode: sophia_x_authority::XAuthorityRoutedInputMode::Deliver,
+            origin: sophia_x_authority::XAuthorityRoutedInputOrigin::Synthetic,
         };
         match self.ingress.submit(&self.runtime.owner.lease(), route) {
             Ok(sequence) => Ok(PrivateInputAccepted {

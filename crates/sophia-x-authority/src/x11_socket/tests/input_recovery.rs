@@ -20,6 +20,7 @@ fn route(id: u64, surface: SurfaceId) -> XAuthorityRoutedInput {
         route_lease: None,
         delivery: Some(XAuthorityInputDeliveryId::from_raw(id)),
         mode: XAuthorityRoutedInputMode::Deliver,
+        origin: XAuthorityRoutedInputOrigin::Physical,
     }
 }
 

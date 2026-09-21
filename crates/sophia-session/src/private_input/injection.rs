@@ -142,7 +142,7 @@ fn accepted(
 ) -> Result<XTestAccepted, XTestInjectionRefusal> {
     match result {
         Ok(accepted) => Ok(XTestAccepted {
-            sequence: accepted.sequence,
+            sequence: Some(accepted.sequence),
         }),
         Err(PrivateInputSubmitError::Refused(error)) => Err(match error {
             PrivateSendError::Saturated(_) => XTestInjectionRefusal::Saturated,

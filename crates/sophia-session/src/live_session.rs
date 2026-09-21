@@ -168,6 +168,9 @@ const SESSION_QUIESCENCE_TIMEOUT_MSEC: u64 = 2_000;
 const SESSION_SEAT_RAW: u64 = 1;
 const SESSION_KEYBOARD_DEVICE_RAW: u64 = 1;
 const SESSION_POINTER_DEVICE_RAW: u64 = 2;
+/// The device synthetic XTEST input is attributed to. Never the keyboard or
+/// pointer above: evidence must be able to say which events a hand produced.
+const SESSION_XTEST_DEVICE_RAW: u64 = 3;
 const PRIMARY_INPUT_PROOF_SCRIPT: &str = r#"printf 'type %s then Return: ' "$1"; IFS= read -r line; umask 077; printf '%s' "$line" > "$2"; printf '\nreceived:%s\n' "$line"; sleep 300"#;
 const SECONDARY_POINTER_WITNESS_SCRIPT: &str = r#"saved=$(stty -g); stty raw -echo; printf '\033[?1000h\033[?1006hPointer witness: click here\r\n'; dd bs=1 count=1 >/dev/null 2>&1; printf '\033[?1000l\033[?1006l'; stty "$saved"; printf 'Pointer input received\n'; sleep 300"#;
 static NEXT_SESSION_GENERATION: AtomicU64 = AtomicU64::new(1);
@@ -625,6 +628,7 @@ pub(crate) fn run_persistent_xterm_session(
         .lock()
         .map_err(|_| "Sophia namespace registry lock was poisoned")?
         .create_namespace(config.namespace_profile, config.namespace_capabilities);
+    let xtest_namespace = x_namespace.id;
     let session_user_id = rustix::process::geteuid().as_raw();
     let launch_origins = wm_session
         .as_ref()
@@ -705,6 +709,21 @@ pub(crate) fn run_persistent_xterm_session(
         SESSION_KEY_CAPACITY,
     );
     let input_sender = broker.routed_input_sender();
+    let xtest_evidence = Arc::new(x_frontend::xtest::LiveXTestEvidence::default());
+    if config.admit_xtest {
+        // Attached here rather than where the config was built, because the
+        // sender an injector needs exists only once the broker does.
+        frontend_config = frontend_config.with_injection_policy(Arc::new(
+            x_frontend::xtest::LiveXTestInjectionPolicy {
+                namespace: xtest_namespace,
+                seat: SeatId::from_raw(SESSION_SEAT_RAW),
+                device: DeviceId::from_raw(SESSION_XTEST_DEVICE_RAW),
+                sender: input_sender.clone(),
+                evidence: Arc::clone(&xtest_evidence),
+            },
+        )
+            as Arc<dyn sophia_x_authority::XServerFrontendInjectionPolicy>);
+    }
     let route_lease_release_sender = broker.route_lease_release_sender();
     let control_sender = broker.control_router();
     let raster_sender = broker.raster_router();
@@ -1066,6 +1085,17 @@ pub(crate) fn run_persistent_xterm_session(
             "disabled"
         },
     );
+    // Said at startup, so a reader of this session's evidence knows whether
+    // any of its input could have come from a client rather than a hand.
+    crate::session_println!(
+        "sophia_live_session_xtest schema=1 status={} group={}",
+        if config.admit_xtest {
+            "admitted"
+        } else {
+            "absent"
+        },
+        xtest_namespace.raw(),
+    );
     if !config.startup_proof_requested() {
         crate::session_println!(
             "sophia_live_session schema=1 status=desktop_ready startup_apps={}",
@@ -1140,6 +1170,7 @@ pub(crate) fn run_persistent_xterm_session(
             require_startup_focus: false,
             initial_authority_batch,
             output_notifications,
+            xtest_evidence: Arc::clone(&xtest_evidence),
         },
     );
     let session_error = result.err();
