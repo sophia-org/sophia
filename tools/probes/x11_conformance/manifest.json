@@ -203,6 +203,10 @@
       "mandatory": true
     },
     {
+      "id": "xkb_names",
+      "mandatory": true
+    },
+    {
       "id": "get_geometry_errors",
       "mandatory": true
     },
@@ -627,6 +631,15 @@
       ]
     },
     {
+      "name": "XkbUseExtension XkbGetNames key type and level names resolvable by GetAtomName",
+      "accepted_core_opcodes": [
+        17
+      ],
+      "cases": [
+        "xkb_names"
+      ]
+    },
+    {
       "name": "GetGeometry rejects absent and destroyed drawables with BadDrawable and preserves continuation",
       "accepted_core_opcodes": [
         14
@@ -885,7 +898,8 @@
         "extensions",
         "extension_discovery",
         "extension_errors",
-        "extension_versions"
+        "extension_versions",
+        "xkb_names"
       ],
       "coverage": "listed mandatory discovery/negotiation/error behaviors and selected stateful cases only; remaining extension requests are explicit coverage debt"
     },

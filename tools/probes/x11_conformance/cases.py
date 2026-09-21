@@ -484,6 +484,38 @@ def sync_counter(context):
         c.sync()
 
 
+def xkb_names(context):
+    """Every keyboard name the server reports can be asked about by name.
+
+    XKB permits atom None for an unnamed key type level, and we sent it for
+    every level. A client is entitled to walk the names a GetNames reply
+    carries and ask the server what each one is called; libxdo does exactly
+    that on startup, was handed None, and libX11 exits a client whose request
+    the server refuses. No real server sends None here, so nothing met it
+    there. This asks the same question the client asks.
+    """
+    with client(context) as c:
+        op = c.query_extension('XKEYBOARD')[9]
+        c.reply(op, c.pack('HH', 1, 0))  # UseExtension, major 1 minor 0
+        # Key type names and their level names, two of the three masks libxdo
+        # asks for; the third names virtual modifiers and this reply carries
+        # none, which is consistent and not a name to resolve.
+        reply = c.reply(op, c.pack('HHI', 0x0100, 0, 0x40 | 0x80), detail=17)
+        types = reply[14]
+        assert types > 0, 'the reply must advertise key types'
+        body = reply[32:]
+        names = [c.u32(body, index * 4) for index in range(types)]
+        # Type names, then one level-count byte per type padded to a word,
+        # then the level names those counts describe.
+        counts = [body[types * 4 + index] for index in range(types)]
+        levels_at = -(-(types * 4 + types) // 4) * 4
+        names += [c.u32(body, levels_at + index * 4) for index in range(sum(counts))]
+        for index, atom in enumerate(names):
+            assert atom != 0, f'name {index} is None and a client may ask for it'
+            named = c.reply(17, c.pack('I', atom))  # GetAtomName
+            assert c.u16(named, 8) > 0, f'name {index} resolves to an empty string'
+
+
 def xfixes_selection(context):
     with client(context) as owner, peer_client(context) as watcher:
         ext = watcher.query_extension('XFIXES')
@@ -845,6 +877,7 @@ CASES = {'setup': setup,
          'destroy_subscribers': destroy_subscribers, 'extension_discovery': extensions,
          'policy_absence': extensions, 'extension_versions': extension_versions,
          'extension_errors': extension_errors, 'shape': shape, 'sync_counter': sync_counter,
+         'xkb_names': xkb_names,
          'xfixes_selection': xfixes_selection,
          'xfixes_selection_changes': xfixes_selection_changes,
          'xfixes_selection_masks': xfixes_selection_masks,
