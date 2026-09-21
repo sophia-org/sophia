@@ -495,6 +495,10 @@ written by hand. The progression, each step measured:
 | after ForceScreenSaver (115) | 31 | 16 | 5 |
 | after WarpPointer (41) | 31 | 16 | 2 |
 | after five repairs | 36 | 11 | 2 |
+| after the server clock | 36 | 11 | 2 |
+| after the timestamp rule | 38 | 9 | 2 |
+| after the viewability rule | 39 | 8 | 2 |
+| after focus reversion | 42 | 5 | 1 |
 
 Nothing ran at first: every test's startup calls `XResetScreenSaver`, opcode
 115 was undecoded, and the harness's `unexp_err` deletes a purpose on any
@@ -512,26 +516,54 @@ five differences repaired:
 Each has a routed control in `tests/x11_wire/transport_events.rs`. No
 existing test pinned any of the old answers.
 
-**Still open, and the sharpest of them: SetInputFocus accepts a window that
-is not viewable**, where the protocol requires a `Match` error. The check is
-four lines. The difficulty is that every placement reaches Engine's own focus
-application: in `runtime.set_input_focus` it fails two tests, and at the
-socket request path it fails eight. Those fixtures focus a bare window id
-that no window was ever created for, so they are unrealistic rather than
-evidence that Engine legitimately focuses a window before it is viewable.
-The right resolution is therefore to make the Engine focus authority obey the
-X11 rule and correct the fixtures to build real viewable windows, rather than
-to exempt Engine from the protocol this system implements. That is a change
-to the focus contract, not a conformance repair, and is tracked as its own
-row.
+### The focus contract, closed 2026-09-20
 
-Also measured and not repaired here, in the same run: focus does not revert
-when a focus window becomes unviewable and no `FocusIn`/`FocusOut` is
-generated (the largest remaining item); mapping an already-mapped window
-emits a `MapNotify`; `SubstructureRedirectMask` is not honoured, so no
-`MapRequest` is generated and the window is mapped anyway; atoms are not
-cleared when the last connection closes; and three `XMapWindow` purposes fail
-on pixel checks.
+The largest remaining cluster was `Xlib13/XSetInputFocus`, and it turned out
+to be five defects rather than the three first counted. Landed as merges
+`7f14442b` and `77cfa0d9`; `Xlib13/XSetInputFocus` now has no failing purpose
+and its three remaining non-PASS purposes are UNTESTED only because the suite
+is not configured to drive XTEST against the fixture host.
+
+| defect | repair | purposes |
+| --- | --- | --- |
+| every server timestamp was zero, which is `CurrentTime` on the wire and unusable by a client | a request stamps its own time once and every event it generates carries it | unblocked 9 |
+| the SetInputFocus `time` argument was parsed and ignored in both directions | honoured, with the wraparound-signed comparison a 32-bit millisecond clock requires; a discarded request has no effect at all | 8, 9 |
+| focusing a window that is not viewable answered Success | it is a `Match` error, on Engine's focus commands as well as on client requests | 11 |
+| the focus never left a window that stopped being viewable | it reverts to the `revert_to` the client supplied, on unmap, destroy and reparent | 5, 6, 7 |
+| `FocusIn`/`FocusOut` were two events with detail and mode hardcoded to 3 and 0 | the protocol's procedure over the window chain, written as a pure function and checked against the specification | — |
+
+Three corrections worth keeping, because each was found only by doing the
+work and none was a focus defect:
+
+- A `revert_to` outside the three defined values answered `BadWindow` where
+  the protocol wants `BadValue`. The client named something that is not a
+  choice at all, which is not a complaint about its window.
+- The detail on a focus event was computed from the connection's own
+  projection, so a client watching the focus arrive from another client's
+  window was told it came from the root. The detail depends on a
+  server-wide fact.
+- The private destroy path required the focus to land on exactly the root
+  afterwards and refused anything else. That requirement is what made
+  destroy ignore `revert_to` in the first place.
+
+The fixture problem this was expected to hit was real but not as described.
+The fixtures were said to focus a bare window id with no window behind it;
+they do not, and the id resolves. What they lacked was mapping, and several
+announced a window as mapped to the core event selection state, which is a
+different store from the one the focus rules read. Nothing needed a window
+to be unreal.
+
+Also measured and not repaired here, in the same run: mapping an
+already-mapped window emits a `MapNotify`; `SubstructureRedirectMask` is not
+honoured, so no `MapRequest` is generated and the window is mapped anyway;
+atoms are not cleared when the last connection closes; and three
+`XMapWindow` purposes fail on pixel checks.
+
+**What XTS does not cover.** The suite predates XKB and tests none of it:
+nothing in the checkout references `XkbGetNames`, `XkbGetMap` or
+`XkbUseExtension`, and the scenario file has no XKB family. A conformance
+number from XTS therefore says nothing about our XKB replies, and the only
+coverage for them is the canonical manifest's own case.
 
 ## Validation and remaining work
 

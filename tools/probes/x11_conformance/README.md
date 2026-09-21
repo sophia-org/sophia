@@ -194,7 +194,31 @@ No results from an older directory can supply a pass.
 | first | 0 | 0 | 58 | nothing ran: opcode 115 was undecoded and every test's startup calls `XResetScreenSaver` |
 | after ForceScreenSaver | 31 | 16 | 5 | the suite reached its own assertions |
 | after WarpPointer | 31 | 16 | 2 | three purposes stopped dying in the harness and began testing focus |
-| after five repairs | **36** | 11 | 2 | atom validation, the Match error, the root destroy, the spurious unmaps |
+| after five repairs | 36 | 11 | 2 | atom validation, the Match error, the root destroy, the spurious unmaps |
+| after the server clock | 36 | 11 | 2 | purpose 9 stopped aborting on `Could not get server time` and began testing |
+| after the timestamp rule | 38 | 9 | 2 | SetInputFocus honours its `time`, so a stale request has no effect |
+| after the viewability rule | 39 | 8 | 2 | focusing a window that is not viewable is the Match error |
+| after focus reversion | **42** | 5 | 1 | the focus leaves a window that stops being viewable, with the events that owes |
+
+`Xlib13/XSetInputFocus` has no failing purpose left. Its three remaining
+non-PASS purposes are UNTESTED because the suite is not configured to drive
+XTEST against the fixture host, which is a property of the run rather than of
+this authority. The five FAILs that remain are all in `Xlib4/XMapWindow`, plus
+one in `Xlib5/XInternAtom`.
+
+XTS predates XKB and covers none of it: nothing in the checkout references
+`XkbGetNames`, `XkbGetMap` or `XkbUseExtension`, and the scenario has no XKB
+family. A conformance number from this suite therefore says nothing about our
+XKB replies, which are covered by the canonical manifest's own case instead.
+
+The focus work is recorded as five defects in
+`docs/notes/investigations/wzxlxbok-independent-x11-socket-conformance-exposes-missing-client-completions.md`.
+Three of them were not focus defects at all: server timestamps were zero,
+which reaches every timestamped event the suite reads; a revert_to outside
+the three defined values reported BadWindow where the protocol wants
+BadValue; and the connection's own projection was being used to decide a
+focus event's detail, so a client saw a focus arriving from another client's
+window as arriving from the root.
 
 The five repairs, each with a routed control in
 `crates/sophia-x-authority/tests/x11_wire/`: ChangeProperty validates both
