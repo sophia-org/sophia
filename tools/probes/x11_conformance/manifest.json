@@ -249,6 +249,10 @@
     {
       "id": "force_screen_saver",
       "mandatory": true
+    },
+    {
+      "id": "warp_pointer",
+      "mandatory": true
     }
   ],
   "features": [
@@ -753,6 +757,15 @@
       ],
       "cases": [
         "force_screen_saver"
+      ]
+    },
+    {
+      "name": "WarpPointer moves the pointer, honours its source rectangle, and refuses an unknown window",
+      "accepted_core_opcodes": [
+        41
+      ],
+      "cases": [
+        "warp_pointer"
       ]
     }
   ],
@@ -1498,6 +1511,13 @@
       "cases": [
         "force_screen_saver"
       ]
+    },
+    "41": {
+      "name": "X_WARP_POINTER",
+      "cases": [
+        "warp_pointer"
+      ],
+      "coverage_debt": "The move and its refusals are covered. The motion and crossing events a warp owes are not generated: this authority has no path from a request to the input fan-out, which only real input drives."
     }
   }
 }

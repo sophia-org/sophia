@@ -497,6 +497,224 @@ fn core_keyboard_control_and_bell_requests_are_bounded() {
     assert_eq!(bell, XWireRequest::Bell);
 }
 
+fn warp_request(
+    source: u32,
+    destination: u32,
+    src: (i16, i16, u16, u16),
+    dst: (i16, i16),
+) -> Vec<u8> {
+    let mut bytes = vec![41u8, 0, 6, 0];
+    bytes.extend_from_slice(&source.to_le_bytes());
+    bytes.extend_from_slice(&destination.to_le_bytes());
+    bytes.extend_from_slice(&src.0.to_le_bytes());
+    bytes.extend_from_slice(&src.1.to_le_bytes());
+    bytes.extend_from_slice(&src.2.to_le_bytes());
+    bytes.extend_from_slice(&src.3.to_le_bytes());
+    bytes.extend_from_slice(&dst.0.to_le_bytes());
+    bytes.extend_from_slice(&dst.1.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn x11_warp_pointer_decodes_every_field_and_refuses_a_request_of_the_wrong_length() {
+    let namespace = NamespaceId::from_raw(48);
+    let decoded = decode_x11_core_request(
+        context(namespace, 1, XByteOrder::LittleEndian),
+        &warp_request(0x200040, 0x200041, (3, 5, 17, 19), (-7, 11)),
+    )
+    .unwrap();
+    assert_eq!(
+        decoded,
+        XWireRequest::WarpPointer {
+            source: XResourceId::new(0x200040, 1),
+            destination: XResourceId::new(0x200041, 1),
+            src_x: 3,
+            src_y: 5,
+            src_width: 17,
+            src_height: 19,
+            dst_x: -7,
+            dst_y: 11,
+        }
+    );
+
+    // Both windows absent is the unconditional warp, and zero must survive
+    // as zero rather than becoming a resource nobody named.
+    let unconditional = decode_x11_core_request(
+        context(namespace, 2, XByteOrder::LittleEndian),
+        &warp_request(0, 0, (0, 0, 0, 0), (1, 2)),
+    )
+    .unwrap();
+    assert_eq!(
+        unconditional,
+        XWireRequest::WarpPointer {
+            source: XResourceId::new(0, 1),
+            destination: XResourceId::new(0, 1),
+            src_x: 0,
+            src_y: 0,
+            src_width: 0,
+            src_height: 0,
+            dst_x: 1,
+            dst_y: 2,
+        }
+    );
+
+    let mut overlong = warp_request(0, 0, (0, 0, 0, 0), (0, 0));
+    overlong.extend_from_slice(&[0, 0, 0, 0]);
+    assert!(
+        decode_x11_core_request(context(namespace, 3, XByteOrder::LittleEndian), &overlong)
+            .is_err(),
+        "a warp longer than its six words is a length failure, not a warp"
+    );
+}
+
+#[test]
+fn x11_warp_pointer_refuses_a_window_nobody_created() {
+    let namespace = NamespaceId::from_raw(49);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let request = decode_x11_core_request(
+        context(namespace, 1, XByteOrder::LittleEndian),
+        &warp_request(0, 0x200099, (0, 0, 0, 0), (4, 4)),
+    )
+    .unwrap();
+    let encoded = dispatch_x11_wire_request(
+        dispatch_context(namespace, 1, XByteOrder::LittleEndian, 41),
+        request,
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian);
+
+    assert_eq!(encoded.len(), 1, "a warp to nowhere is one error");
+    assert_eq!(encoded[0][0], 0, "an error, not a reply");
+    assert_eq!(encoded[0][1], 3, "BadWindow");
+    assert_eq!(encoded[0][10], 41, "major opcode");
+}
+
+#[test]
+fn x11_warp_pointer_moves_the_pointer_and_query_pointer_agrees() {
+    let namespace = NamespaceId::from_raw(50);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let mut topology = sophia_protocol::OutputTopologySnapshot::deterministic();
+    topology.generation = 9;
+    runtime.update_output_topology(topology).unwrap();
+
+    let warp = |runtime: &mut XAuthorityRuntime,
+                atoms: &mut XAtomTable,
+                properties: &mut XPropertyTable,
+                sequence: u16,
+                request: Vec<u8>| {
+        let decoded = decode_x11_core_request(
+            context(namespace, u64::from(sequence), XByteOrder::LittleEndian),
+            &request,
+        )
+        .unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 41),
+            decoded,
+            runtime,
+            atoms,
+            properties,
+        )
+        .encoded_outputs(XByteOrder::LittleEndian)
+    };
+    // Read the position the way a client does, through QueryPointer on the
+    // root, so what is asserted is what a client would actually see.
+    let position = |runtime: &mut XAuthorityRuntime,
+                    atoms: &mut XAtomTable,
+                    properties: &mut XPropertyTable,
+                    sequence: u16| {
+        let mut request = vec![38u8, 0, 2, 0];
+        request.extend_from_slice(&X_SETUP_DEFAULT_ROOT.to_le_bytes());
+        let decoded = decode_x11_core_request(
+            context(namespace, u64::from(sequence), XByteOrder::LittleEndian),
+            &request,
+        )
+        .unwrap();
+        let encoded = dispatch_x11_wire_request(
+            dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 38),
+            decoded,
+            runtime,
+            atoms,
+            properties,
+        )
+        .encoded_outputs(XByteOrder::LittleEndian);
+        assert_eq!(encoded.len(), 1, "QueryPointer answers once");
+        assert_eq!(encoded[0][0], 1, "a reply, not an error");
+        (
+            i16::from_le_bytes([encoded[0][16], encoded[0][17]]),
+            i16::from_le_bytes([encoded[0][18], encoded[0][19]]),
+        )
+    };
+
+    // A warp to the root origin plus an offset is unconditional and silent,
+    // and it is what gives the pointer its first position.
+    let outputs = warp(
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+        1,
+        warp_request(0, X_SETUP_DEFAULT_ROOT, (0, 0, 0, 0), (40, 25)),
+    );
+    assert!(outputs.is_empty(), "an accepted warp says nothing");
+    assert_eq!(position(&mut runtime, &mut atoms, &mut properties, 101), (40, 25));
+
+    // With no destination window the offset is from where the pointer is.
+    let outputs = warp(
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+        2,
+        warp_request(0, 0, (0, 0, 0, 0), (-10, 5)),
+    );
+    assert!(outputs.is_empty());
+    assert_eq!(position(&mut runtime, &mut atoms, &mut properties, 102), (30, 30));
+
+    // The pointer cannot be warped off the screen; it stops at the edge.
+    let outputs = warp(
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+        3,
+        warp_request(0, 0, (0, 0, 0, 0), (i16::MIN, i16::MIN)),
+    );
+    assert!(outputs.is_empty());
+    assert_eq!(position(&mut runtime, &mut atoms, &mut properties, 103), (0, 0));
+
+    // A source window the pointer is not inside makes the warp conditional
+    // and it does not happen. The root holds the pointer, so a rectangle of
+    // the root that excludes it is the honest way to say "not here".
+    let outputs = warp(
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+        4,
+        warp_request(X_SETUP_DEFAULT_ROOT, 0, (500, 500, 10, 10), (17, 19)),
+    );
+    assert!(outputs.is_empty(), "a warp that does not fire is not an error");
+    assert_eq!(
+        position(&mut runtime, &mut atoms, &mut properties, 104),
+        (0, 0),
+        "the pointer stayed where it was"
+    );
+
+    // The same warp with a rectangle that does contain the pointer fires.
+    let outputs = warp(
+        &mut runtime,
+        &mut atoms,
+        &mut properties,
+        5,
+        warp_request(X_SETUP_DEFAULT_ROOT, 0, (0, 0, 10, 10), (17, 19)),
+    );
+    assert!(outputs.is_empty());
+    assert_eq!(position(&mut runtime, &mut atoms, &mut properties, 105), (17, 19));
+}
+
 #[test]
 fn x11_force_screen_saver_accepts_both_modes_and_refuses_any_other() {
     let namespace = NamespaceId::from_raw(47);

@@ -15,6 +15,7 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::GetKeyboardControl
             | XWireRequest::Bell
             | XWireRequest::ForceScreenSaver { .. }
+            | XWireRequest::WarpPointer { .. }
             | XWireRequest::TranslateCoordinates { .. }
             | XWireRequest::QueryPointer { .. }
             | XWireRequest::QueryExtension { .. }
@@ -195,6 +196,48 @@ fn dispatch_core_input_discovery_request(
                     XDispatchResult {
                         response: None,
                         outputs: vec![output],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::WarpPointer {
+                    source,
+                    destination,
+                    src_x,
+                    src_y,
+                    src_width,
+                    src_height,
+                    dst_x,
+                    dst_y,
+                } => {
+                    // Beside QueryPointer, which reads the position this
+                    // writes. A warp that names a window that does not exist
+                    // is a Window error; one whose source rectangle does not
+                    // hold the pointer is a silent no-op, which the protocol
+                    // asks for and is not a refusal.
+                    let outputs = match runtime.warp_pointer(
+                        context.namespace,
+                        source,
+                        destination,
+                        src_x,
+                        src_y,
+                        src_width,
+                        src_height,
+                        dst_x,
+                        dst_y,
+                    ) {
+                        Ok(()) => Vec::new(),
+                        Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            0,
+                            u32::try_from(source.local.raw().max(destination.local.raw()))
+                                .unwrap_or(0),
+                        ))],
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
                         metadata_candidates: Vec::new(),
                     }
                 }

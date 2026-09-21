@@ -785,8 +785,54 @@ def force_screen_saver(context):
         c.sync()
 
 
+def warp_pointer(context):
+    with client(context) as c:
+        root, window = c.root, c.window()
+
+        def warp(source, destination, src=(0, 0, 0, 0), dst=(0, 0)):
+            return c.send(41, c.pack('IIhhHHhh', source, destination,
+                                     src[0], src[1], src[2], src[3], dst[0], dst[1]))
+
+        def position():
+            reply = c.reply(38, c.pack('I', root))
+            return c.unpack('hh', reply, 16)
+
+        # An unconditional warp to a point on the root moves the pointer
+        # there and says nothing, and a client sees the move.
+        warp(0, root, dst=(40, 25))
+        c.sync()
+        assert position() == (40, 25), position()
+
+        # With no destination window the offset is from where it already is.
+        warp(0, 0, dst=(-10, 5))
+        c.sync()
+        assert position() == (30, 30), position()
+
+        # A source rectangle that does not hold the pointer makes the warp
+        # conditional, and it does not happen. That is not a refusal.
+        warp(root, 0, src=(500, 500, 10, 10), dst=(1, 1))
+        c.sync()
+        assert position() == (30, 30), position()
+
+        # The same warp with a rectangle that does hold it fires.
+        warp(root, 0, src=(0, 0, 200, 200), dst=(1, 1))
+        c.sync()
+        assert position() == (31, 31), position()
+
+        # A warp into a window is relative to that window's origin.
+        warp(0, window, dst=(2, 3))
+        c.sync()
+        assert position() != (31, 31), 'a warp into a window moved nothing'
+
+        # A window nobody created is a Window error naming it.
+        c.completion(warp(0, 0x7fff0001), error=3, opcode=41)
+        c.completion(warp(0x7fff0002, 0), error=3, opcode=41)
+        c.sync()
+
+
 CASES = {'setup': setup,
          'force_screen_saver': force_screen_saver,
+         'warp_pointer': warp_pointer,
          **{name: setup_containment for name in ('setup_empty', 'setup_truncated_prefix',
              'setup_truncated_auth', 'setup_invalid_order', 'setup_version_containment')},
          'window_tree': window_tree, 'map': window_transition,

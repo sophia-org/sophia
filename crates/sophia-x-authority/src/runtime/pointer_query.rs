@@ -31,6 +31,159 @@ impl XAuthorityRuntime {
         }
         Ok(result)
     }
+    /// Moves the pointer, as WarpPointer defines the move.
+    ///
+    /// The whole request is served except the events it owes: a warp must
+    /// generate motion and crossing events as if the user had moved the
+    /// pointer, and this authority has no path from a request to the input
+    /// fan-out, which only real input drives. So the position moves and
+    /// QueryPointer agrees with it, and the events are a named gap rather
+    /// than a silent one. Refusing to move at all would be the larger lie,
+    /// since moving the pointer is what the request is for.
+    pub fn warp_pointer(
+        &mut self,
+        namespace: NamespaceId,
+        source: crate::XResourceId,
+        destination: crate::XResourceId,
+        src_x: i16,
+        src_y: i16,
+        src_width: u16,
+        src_height: u16,
+        dst_x: i16,
+        dst_y: i16,
+    ) -> Result<(), XAuthorityRuntimeError> {
+        let root = crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1);
+        // Either window may be absent, and an absent one is not a refusal.
+        // A named one must exist, whichever of the two it is.
+        for window in [source, destination] {
+            if window.local.raw() != 0 && window != root {
+                self.validate_window_access(namespace, window)?;
+            }
+        }
+        let origin_of = |runtime: &Self, window: crate::XResourceId| -> Option<(i32, i32)> {
+            if window == root {
+                Some((0, 0))
+            } else {
+                runtime.window_root_position(window)
+            }
+        };
+        let current = self
+            .input_authority_mut()
+            .pointer_query_state(namespace)
+            .position;
+        let here = current.map_or((0, 0), |pointer| {
+            (i32::from(pointer.root_x), i32::from(pointer.root_y))
+        });
+
+        // A source window makes the warp conditional: it happens only if the
+        // pointer is inside that window and inside the named rectangle. A
+        // zero width or height means the rest of the window from the offset.
+        if source.local.raw() != 0 {
+            let Some((origin_x, origin_y)) = origin_of(self, source) else {
+                return Ok(());
+            };
+            let Ok(geometry) = self.drawable_facts(namespace, source).map(|facts| facts.geometry)
+            else {
+                return Ok(());
+            };
+            let relative = (here.0 - origin_x, here.1 - origin_y);
+            let left = i32::from(src_x);
+            let top = i32::from(src_y);
+            let right = if src_width == 0 {
+                geometry.width
+            } else {
+                left.saturating_add(i32::from(src_width))
+            };
+            let bottom = if src_height == 0 {
+                geometry.height
+            } else {
+                top.saturating_add(i32::from(src_height))
+            };
+            let inside = relative.0 >= left
+                && relative.0 < right
+                && relative.1 >= top
+                && relative.1 < bottom
+                && relative.0 >= 0
+                && relative.1 >= 0
+                && relative.0 < geometry.width
+                && relative.1 < geometry.height;
+            if !inside {
+                return Ok(());
+            }
+        }
+
+        // No destination window means the offset is from where the pointer
+        // already is; a destination window means it is from that window.
+        let target = if destination.local.raw() == 0 {
+            (
+                here.0.saturating_add(i32::from(dst_x)),
+                here.1.saturating_add(i32::from(dst_y)),
+            )
+        } else {
+            let Some((origin_x, origin_y)) = origin_of(self, destination) else {
+                return Ok(());
+            };
+            (
+                origin_x.saturating_add(i32::from(dst_x)),
+                origin_y.saturating_add(i32::from(dst_y)),
+            )
+        };
+        // The pointer cannot leave the screen, and the furthest it reaches is
+        // one short of each dimension.
+        let screen = self
+            .drawable_facts(namespace, root)
+            .map(|facts| facts.geometry)
+            .map_err(|_| XAuthorityRuntimeError::UnknownResource)?;
+        let clamp =
+            |value: i32, limit: i32| value.clamp(0, limit.saturating_sub(1).max(0)) as i16;
+        let placed = (
+            clamp(target.0, screen.width),
+            clamp(target.1, screen.height),
+        );
+
+        // Anchor the new position to the destination window when there is
+        // one, so QueryPointer can still refine a child from it. Otherwise
+        // carry the previous anchor along by the distance the pointer moved,
+        // which is what keeps a relative warp consistent with where it was.
+        let anchor = if destination.local.raw() != 0
+            && destination != root
+            && let Some(record) = self.windows.get(destination)
+            && record.namespace == namespace
+        {
+            Some(crate::input_authority::XPointerObservation {
+                surface_window: destination,
+                surface: record.surface,
+                root_x: placed.0,
+                root_y: placed.1,
+                local_x: i32::from(dst_x),
+                local_y: i32::from(dst_y),
+            })
+        } else {
+            current.map(|pointer| crate::input_authority::XPointerObservation {
+                root_x: placed.0,
+                root_y: placed.1,
+                local_x: pointer
+                    .local_x
+                    .saturating_add(i32::from(placed.0) - here.0),
+                local_y: pointer
+                    .local_y
+                    .saturating_add(i32::from(placed.1) - here.1),
+                ..pointer
+            })
+        };
+        let placed_anchor = anchor.unwrap_or(crate::input_authority::XPointerObservation {
+            surface_window: crate::XResourceId::NONE,
+            surface: sophia_protocol::SurfaceId::INVALID,
+            root_x: placed.0,
+            root_y: placed.1,
+            local_x: 0,
+            local_y: 0,
+        });
+        self.input_authority_mut()
+            .warp_query_pointer(namespace, placed_anchor);
+        Ok(())
+    }
+
     pub(crate) fn query_pointer(
         &self,
         namespace: NamespaceId,
