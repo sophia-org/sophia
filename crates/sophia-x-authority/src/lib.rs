@@ -27,6 +27,7 @@ mod glx;
 mod graphics_context;
 mod image;
 mod input_authority;
+mod key_routing;
 mod keyboard;
 mod metadata;
 mod observation;
