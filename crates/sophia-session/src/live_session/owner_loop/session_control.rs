@@ -550,11 +550,28 @@ macro_rules! reconcile_pending_wm_focus {
 }
 
 macro_rules! apply_wm_commit_result {
-    ($result:expr, $previous_focus:expr) => {{
-        let owner_commit = wm_session
-            .as_mut()
-            .ok_or("WM commit completed without a live WM session")?
-            .apply_commit_result($result, $previous_focus, output.id)?;
+    ($result:expr, $previous_focus:expr) => {'wm_commit: {
+        // A session without a window manager still commits layout. `wm_policy`
+        // is disabled in the GTK scenarios and in any engine-owned layout, and
+        // the resize proof states the same expectation directly, admitting a
+        // run where `wm_session.as_ref().is_none_or(..)` holds. Requiring a WM
+        // here contradicted that: every WM-less session that committed a
+        // transaction died on its own success, immediately after recording
+        // `layout_committed ... outcome=Committed`.
+        //
+        // Nothing is skipped that could have applied. Everything a commit
+        // result carries past its update -- physical actions, pointer
+        // gestures, workspace projections, focus clearing -- is a consequence
+        // for a window manager to enact, and `apply_commit_result` refuses a
+        // result with no policy settlement identity, which is precisely what a
+        // result reaching a WM-less session has none of. The transaction update
+        // is the layout's own and must still be pended, or the coordinator is
+        // left waiting on a transaction nobody will settle.
+        let Some(wm_session_for_commit) = wm_session.as_mut() else {
+            break 'wm_commit $result.update;
+        };
+        let owner_commit =
+            wm_session_for_commit.apply_commit_result($result, $previous_focus, output.id)?;
         if let Some(action) = owner_commit.physical_action {
             crate::session_println!(
                 "sophia_live_wm schema=1 status=physical_action_committed action={}",
