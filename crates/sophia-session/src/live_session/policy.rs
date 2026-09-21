@@ -222,11 +222,24 @@ fn initial_session_focus_candidate(
     wm_session_present: bool,
     focused_surface: Option<SurfaceId>,
     committed_surfaces: &[CommittedSurfaceState],
+    layout: &PersistentLiveLayout,
 ) -> Option<SurfaceId> {
     if wm_session_present || focused_surface.is_some() {
         return None;
     }
-    committed_surfaces.first().map(|surface| surface.surface)
+    // Committed is not visible, in either direction. A surface that has gone
+    // hidden stays in the committed set, so without this the first surface to
+    // be cleared for going hidden is immediately proposed again: the session
+    // has just decided it must not hold the focus, and then asks for it back.
+    // The authority refuses a focus on a window that is not viewable, which
+    // it reports as a rejected control, which is fatal.
+    //
+    // `input_eligible` is the same predicate the hidden path uses to decide a
+    // surface can no longer answer input, so the two agree by construction.
+    committed_surfaces
+        .iter()
+        .map(|committed| committed.surface)
+        .find(|surface| layout.input_eligible(*surface))
 }
 
 fn reconcile_initial_session_focus(
@@ -245,6 +258,7 @@ fn reconcile_initial_session_focus(
         wm_session_present,
         focus.focused_surface(seat),
         runtime.committed_surfaces(),
+        layout,
     ) else {
         return Ok(());
     };
