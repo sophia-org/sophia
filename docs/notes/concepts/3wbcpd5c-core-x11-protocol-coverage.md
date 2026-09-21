@@ -8,7 +8,7 @@ tags: [concept, x11]
 # Core X11 protocol coverage
 
 What the X authority decodes of the core protocol's 127 request opcodes, and
-what it does not. Ninety-seven are decoded. Every request that affects drawing
+what it does not. Ninety-nine are decoded. Every request that affects drawing
 is among them; the thirty that remain are listed below with what each is for
 and who calls it, so the next person deciding whether to implement one is
 deciding rather than discovering.
@@ -38,7 +38,6 @@ are decoded precisely so the answer can be a proper protocol error instead.
 | --- | --- | --- | --- |
 | 30 | ChangeActivePointerGrab | Change the event mask or cursor of a grab in progress | Drag-and-drop implementations mid-drag |
 | 39 | GetMotionEvents | Read the server's motion history buffer | Tablet and gesture code wanting sub-frame motion |
-| 41 | WarpPointer | Move the pointer programmatically | Games, pointer-lock emulation, some installers |
 | 44 | QueryKeymap | The whole keyboard state as a bit vector | Toolkits checking modifiers without an event |
 | 100 | ChangeKeyboardMapping | Rewrite keycode to keysym mappings | `xmodmap`, remapping tools |
 | 102 | ChangeKeyboardControl | Bell, key click, auto-repeat, LEDs | `xset` |
@@ -55,7 +54,6 @@ That is the decision the task below is for.
 | Op | Request | What it is for | Who calls it |
 | --- | --- | --- | --- |
 | 107, 108 | Set/GetScreenSaver | The server's own blanking timer | `xset s`, screensaver daemons |
-| 115 | ForceScreenSaver | Blank or unblank now | Lock screens |
 | 109, 110 | ChangeHosts, ListHosts | The host-based access list | `xhost` |
 | 111 | SetAccessControl | Enable or disable that list | `xhost +` |
 
@@ -91,6 +89,34 @@ inventing a list is worse than not decoding it.
 
 120 through 126 are unassigned in the core protocol and 127 is NoOperation,
 which is decoded.
+
+## Decided and now decoded
+
+Two of the thirty were decided by running XTS5 against the fixture host,
+which is the use that made the question concrete rather than theoretical.
+
+| Op | Request | Decision | Why |
+| --- | --- | --- | --- |
+| 41 | WarpPointer | Serve it | Every XTS test's harness positions the pointer with it, and a client that asks for the pointer to move means it. The move happens and `QueryPointer` agrees. |
+| 115 | ForceScreenSaver | Serve it, as a no-op that validates | Every XTS test's startup calls `XResetScreenSaver`. This authority blanks nothing and keeps no idle timer, so both defined modes are accepted and move no state, and a mode outside the pair is the Value error the protocol names. |
+
+**What WarpPointer does not do**, recorded because the gap is real rather
+than hypothetical: a warp must generate motion and crossing events as if
+the user had moved the pointer, and it does not. There is no path in this
+authority from a request to the input fan-out, which only real input
+drives, and the conformance host opens no session, registers no surface and
+configures no injector. Building one is a new synthetic input origin and
+the same design question XTEST parks behind an injection policy. The
+position moves, the events do not, and the manifest's coverage entry says
+so. Nothing in the selected XTS scenario reads those events; the tests that
+would (`Xlib11` MotionNotify, EnterNotify, LeaveNotify) are not selected and
+could not pass here anyway.
+
+The measurement that drove both: before opcode 115, all 58 purposes of the
+selected scenario were UNRESOLVED and nothing had run. After it, 31 passed.
+After WarpPointer, the three purposes that had died in the harness reached
+their own assertions and now fail on focus reversion, which is a real gap of
+its own rather than a missing request.
 
 ## What this does not cover
 

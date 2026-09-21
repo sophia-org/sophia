@@ -63,6 +63,20 @@ impl XInputAuthorityState {
             pointer.local_y = pointer.local_y.saturating_add(old.1.saturating_sub(new.1));
         }
     }
+    /// Places the pointer where a client asked it to go.
+    ///
+    /// The only writer here that is not an observation of real input:
+    /// WarpPointer moves the pointer by request, and QueryPointer has to
+    /// agree with it afterwards. The button mask and the clock are left
+    /// alone, because a warp presses nothing and is not an event.
+    pub(crate) fn warp_query_pointer(
+        &mut self,
+        namespace: NamespaceId,
+        position: XPointerObservation,
+    ) {
+        self.namespaces.entry(namespace).or_default().query.position = Some(position);
+    }
+
     pub(crate) fn pointer_query_state(&self, namespace: NamespaceId) -> XPointerQueryState {
         self.namespaces
             .get(&namespace)

@@ -1302,6 +1302,21 @@ pub enum XWireRequest {
     ForceScreenSaver {
         mode: u8,
     },
+    /// Move the pointer, optionally only when it is already inside a
+    /// rectangle of the source window. Either window may be `None`, and the
+    /// two cases mean different things: no source window is an
+    /// unconditional warp, and no destination window makes the destination
+    /// an offset from where the pointer already is.
+    WarpPointer {
+        source: XResourceId,
+        destination: XResourceId,
+        src_x: i16,
+        src_y: i16,
+        src_width: u16,
+        src_height: u16,
+        dst_x: i16,
+        dst_y: i16,
+    },
     TranslateCoordinates {
         source: XResourceId,
         destination: XResourceId,
@@ -1431,6 +1446,7 @@ pub fn decode_x11_core_request(
         X_GRAB_SERVER => decode_grab_server(bytes),
         X_UNGRAB_SERVER => decode_ungrab_server(bytes),
         X_TRANSLATE_COORDINATES => decode_translate_coordinates(context, bytes),
+        X_WARP_POINTER => decode_warp_pointer(context, bytes),
         X_QUERY_POINTER => {
             require_exact_len(X_QUERY_POINTER, X_QUERY_POINTER_REQ_LEN, bytes.len())?;
             Ok(XWireRequest::QueryPointer {

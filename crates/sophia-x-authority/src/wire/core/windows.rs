@@ -75,6 +75,26 @@ fn decode_get_window_attributes(
     })
 }
 
+fn decode_warp_pointer(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_exact_len(X_WARP_POINTER, X_WARP_POINTER_REQ_LEN, bytes.len())?;
+    // Zero is `None` for either window and stays zero here: which of the two
+    // is absent changes what the request means, so the decision belongs to
+    // the dispatcher that can act on it, not to a resource id minted early.
+    Ok(XWireRequest::WarpPointer {
+        source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+        src_x: context.byte_order.i16(&bytes[12..14]),
+        src_y: context.byte_order.i16(&bytes[14..16]),
+        src_width: context.byte_order.u16(&bytes[16..18]),
+        src_height: context.byte_order.u16(&bytes[18..20]),
+        dst_x: context.byte_order.i16(&bytes[20..22]),
+        dst_y: context.byte_order.i16(&bytes[22..24]),
+    })
+}
+
 fn decode_translate_coordinates(
     context: XWireClientContext,
     bytes: &[u8],
