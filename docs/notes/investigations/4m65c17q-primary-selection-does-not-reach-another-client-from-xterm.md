@@ -108,8 +108,43 @@ answered.
 - [ ] Drive a real mouse selection into a real xterm with XTEST and establish
       whether SetSelectionOwner is ever sent. This is the question the
       evidence now points at, and the first one to answer.
-- [ ] Add the real-client smoke once that is known. The wire is covered; a
-      client that behaves like xterm is not.
+- [x] Add the real-client smoke. `crates/sophia-session/examples/selection_probe.rs`
+      runs two out-of-process x11rb clients against `x11_conformance_host` --
+      the production frontend, not a test harness -- and carries the round
+      trip: owner None before the claim, the claim returned by
+      GetSelectionOwner, ConvertSelection arriving at the owner as a
+      SelectionRequest, and the payload bytes back at the requestor. This
+      confirms the wire gate from outside the process; it does not speak to
+      xterm, which is still the open question above.
+
+## A 300-tick QEMU session saw no SetSelectionOwner at all, 2026-09-20
+
+The two-xterm QEMU session scenario types `sophia` into the focused terminal
+and then double-clicks (`qemu_qmp_pointer.py`, `dx, dy, clicks = (40, 18, 2)`).
+Across the whole run it recorded `sophia_live_selection schema=1
+status=complete owner_changes=0 conversions=0`.
+
+That counter is worth more than its name suggests. It is not a session-side
+tally of anything interpreted: `transport.rs:303` sets it from
+`trace.major_opcode == 22`, which is SetSelectionOwner on the wire, upstream of
+parsing, acceptance and routing. Zero therefore means no such request ever
+reached the authority -- not that one was refused or lost downstream.
+
+**This is suggestive and not an answer, because the gesture's aim is not
+established.** The QMP pointer moves *relative* by 40,18 from wherever it
+already is and clicks twice there; nothing in the evidence says that landed on
+the typed text, on blank terminal, or on window chrome. Four button events were
+observed and all four routed with `suppressed_no_target_count=0`, so they
+reached *a* target, but which surface is not recorded. A double-click on
+anything but a word selects nothing, and xterm would then be correct to send
+nothing.
+
+Settling it needs the gesture aimed at a known point inside a known xterm,
+which is what XTEST buys. `--admit-xtest` cannot simply be added to this
+scenario: `config.rs:1061` refuses the flag alongside `--expect-physical-text`
+or `--expect-physical-pointer`, because a synthetic source could satisfy an
+input proof. That guard is right, and the scenario exists for those proofs. An
+XTEST run in QEMU wants its own scenario without them.
 
 Open work is tracked as t124 in `todo.md`.
 
