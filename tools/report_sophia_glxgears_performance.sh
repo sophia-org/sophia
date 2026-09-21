@@ -57,7 +57,7 @@ client="$(
 )"
 [[ -n "$client" ]] || fail "missing bounded glxgears client completion"
 completion="$(
-    grep -E '^sophia_live_session schema=16 status=bounded_complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session schema=(16|18) status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$completion" ]] || fail "\

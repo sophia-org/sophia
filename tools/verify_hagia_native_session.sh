@@ -250,7 +250,7 @@ require_line "drained client key state" \
     '^sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 .* removed_surface_keys=0 repeat_active_seats=0 .* repeat_capacity_exhausted=0$'
 
 mapfile -t completions < <(
-    grep -E '^sophia_live_session schema=16 status=bounded_complete ' "$evidence"
+    grep -E '^sophia_live_session schema=(16|18) status=bounded_complete ' "$evidence"
 )
 (( ${#completions[@]} == 1 )) ||
     fail "expected one completed session, found ${#completions[@]}"

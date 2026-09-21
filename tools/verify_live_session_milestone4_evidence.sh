@@ -53,7 +53,7 @@ for key in "${required[@]}"; do
     }
 done
 
-[[ "${observed[schema]}" =~ ^(14|16)$ ]] || {
+[[ "${observed[schema]}" =~ ^(14|16|18)$ ]] || {
     echo "Milestone 4 GPU evidence requires a supported startup-proof schema" >&2
     exit 1
 }

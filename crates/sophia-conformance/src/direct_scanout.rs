@@ -307,7 +307,7 @@ pub fn verify_standalone_logs_proving(
     for log in logs {
         let text = std::fs::read_to_string(log)
             .map_err(|error| format!("could not read {log}: {error}"))?;
-        let session = last_record(&text, "sophia_live_session schema=16 ")
+        let session = last_record_at_any(&text, SESSION_COMPLETION_MARKER)
             .ok_or_else(|| format!("the session did not reach a bounded completion: {log}"))?;
         if field_value(session, "wm_policy") != Some("disabled") {
             return Err(format!(
@@ -351,6 +351,27 @@ pub fn verify_standalone_logs_proving(
 /// emitting them through `tracing` -- but that is a fact about which printer
 /// owns each record, not a property of the evidence, and reading them as
 /// though it were guaranteed is what made the episode rules vacuous.
+/// The completion this reader accepts, as one expression the schema tripwire
+/// can read: the current proof schema and the one before it, because a
+/// promoted archive is a recorded session and stays at the schema it had.
+/// Evidence too old to carry a field is refused by the field check, never by
+/// the schema -- this reader used to name a single schema and refused every
+/// archive the moment the emitter moved on, while the tripwire read the
+/// single number as correct.
+const SESSION_COMPLETION_MARKER: &str = "sophia_live_session schema=(16|18) ";
+
+/// `last_record` over a marker whose one `(a|b|..)` group names the schemas
+/// accepted, expanded into the literal markers a substring match needs.
+fn last_record_at_any<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
+    let (Some(open), Some(close)) = (marker.find('('), marker.find(')')) else {
+        return last_record(text, marker);
+    };
+    let (head, tail) = (&marker[..open], &marker[close + 1..]);
+    marker[open + 1..close]
+        .split('|')
+        .find_map(|schema| last_record(text, &format!("{head}{schema}{tail}")))
+}
+
 fn last_record<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
     text.lines()
         .rev()

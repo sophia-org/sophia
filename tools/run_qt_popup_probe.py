@@ -27,7 +27,7 @@ def verify(records, status):
     grab_passed = ({"first", "reopen", "dismiss"} <= grabbed_stages
                    and all(grab.get("status") == "0" and grab.get("mapped_before") == "1" for grab in grabs))
     completion = next((line for line in records.splitlines()
-                       if re.match(r"sophia_live_session schema=(16|17) status=bounded_complete ", line)), "")
+                       if re.match(r"sophia_live_session schema=(16|17|18|19) status=bounded_complete ", line)), "")
     fields = dict(item.split("=", 1) for item in completion.split() if "=" in item)
     # This legacy field counts exact bytes only during initial proof frames;
     # later frames use bounded composition evidence. Interpret it as a

@@ -314,14 +314,27 @@ the gate moved it onto the critical path. **t126 stays open on it.** Weakening
 the two-terminal check to green the gate would throw away the one assertion
 that the scenario exists to make.
 
-### A note on the fixtures
+### A note on the fixtures, corrected
 
 The four pass-fixtures carry `cpu_layers=1` and `runtime_surfaces=20|41` and
-still pass — but they are recordings from the counter era and now pass for a
-reason that no longer holds. They are left as they are rather than
-re-recorded: a fixture rewritten to match current behaviour stops being
-independent evidence. They should be re-recorded from a real run once the
-high-water fields land.
+still pass — recordings from the counter era, passing for a reason that no
+longer holds. This section previously said they should be re-recorded once the
+high-water fields landed. **That was wrong**, and it contradicted the sentence
+beside it: a fixture rewritten to match current behaviour stops being
+independent evidence.
+
+The settled practice is in
+`docs/notes/sources/2026-08/legacy-active-0569-a-schema-bump-that-silences-its-own-readers.md`:
+evidence too old to carry a field is refused by the *field* check rather than
+by the schema, and fixtures deliberately hold old schemas to prove a verifier
+still accepts an archive. The history agrees without exception — nine bumps
+from schema 9 to 17, not one fixture upgraded. They sit at 6, 7 and 8 on
+purpose.
+
+So they are left exactly as they are, and a fixture at the new schema is
+*added* beside them. That is how schema 7 and 8 coverage arrived, and it
+closes a real gap: there was no fixture at 16 or 17 at all, so the field-count
+arithmetic was proven only by live runs.
 
 ## What was thought to hold t126 open, before the gate was run
 

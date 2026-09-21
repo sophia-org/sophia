@@ -87,7 +87,7 @@ require_line '(^|[[:space:]])sophia_live_native_page_flip schema=1 status=retire
     "$SESSION_LOG" "no native page flip retired"
 
 mapfile -t completions < <(
-    grep -E '^sophia_live_session schema=(14|15|16) status=bounded_complete ' \
+    grep -E '^sophia_live_session schema=(14|15|16|18) status=bounded_complete ' \
         "$SESSION_LOG" || true
 )
 (( ${#completions[@]} == 1 )) ||

@@ -39,7 +39,7 @@ for phase_and_log in "success:$success_log" "rollback:$rollback_log"; do
         || fail "$phase log carries the wrong phase identity"
     grep -Fxq "sophia_frame_fed_output_gate schema=1 status=phase_passed phase=$phase exit=0" "$evidence" \
         || fail "$phase log lacks its passing gate record"
-    grep -Eq '^sophia_live_session schema=16 status=bounded_complete .* native_in_flight=false native_cleanup_pending=false .* wm_degraded=false ' "$evidence" \
+    grep -Eq '^sophia_live_session schema=(16|18) status=bounded_complete .* native_in_flight=false native_cleanup_pending=false .* wm_degraded=false ' "$evidence" \
         || fail "$phase log lacks bounded clean session completion"
     grep -Fxq 'sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false' "$evidence" \
         || fail "$phase log lacks clean session health"

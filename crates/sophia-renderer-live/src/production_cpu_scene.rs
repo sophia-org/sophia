@@ -42,6 +42,7 @@ pub struct LiveProductionCpuScene {
     last_report: Option<LiveCpuCompositionReport>,
     last_output_damage_snapshot: Option<OutputFrameDamageSnapshot>,
     max_nonzero_pixel_bytes: usize,
+    max_layers_composed: usize,
     nonzero_frames: usize,
     exact_pixel_proofs_remaining: usize,
     exact_pixel_metric_frames: usize,
@@ -61,6 +62,7 @@ impl LiveProductionCpuScene {
             last_report: None,
             last_output_damage_snapshot: None,
             max_nonzero_pixel_bytes: 0,
+            max_layers_composed: 0,
             nonzero_frames: 0,
             exact_pixel_proofs_remaining: 3,
             exact_pixel_metric_frames: 0,
@@ -596,12 +598,16 @@ impl LiveProductionCpuScene {
     }
 
     fn record_last_report(&mut self) {
-        let nonzero_pixel_bytes = self
-            .last_report
-            .as_ref()
-            .expect("assigned above")
-            .nonzero_pixel_bytes;
+        let report = self.last_report.as_ref().expect("assigned above");
+        let nonzero_pixel_bytes = report.nonzero_pixel_bytes;
+        // THE MOST THIS SCENE EVER COMPOSED AT ONCE. `last_report` is one
+        // composition and is replaced by the next, so at a quiet end it
+        // describes an empty frame -- which is the correct picture of that
+        // moment and no evidence at all about the session. Read here because
+        // every report the scene produces passes through this function.
+        let layers_composed = report.layers_composed;
         self.max_nonzero_pixel_bytes = self.max_nonzero_pixel_bytes.max(nonzero_pixel_bytes);
+        self.max_layers_composed = self.max_layers_composed.max(layers_composed);
         self.nonzero_frames = self
             .nonzero_frames
             .saturating_add(usize::from(nonzero_pixel_bytes > 0));
@@ -613,6 +619,15 @@ impl LiveProductionCpuScene {
 
     pub fn max_nonzero_pixel_bytes(&self) -> usize {
         self.max_nonzero_pixel_bytes
+    }
+
+    /// The most layers any one composition put on screen. Says composition
+    /// happened; says nothing about how many surfaces were up, because a
+    /// direct-scanout copy reports one layer whatever the scene holds and a
+    /// damage-scoped frame counts only what that frame touched. The surface
+    /// count is `runtime_max_surfaces`.
+    pub fn max_layers_composed(&self) -> usize {
+        self.max_layers_composed
     }
 
     pub fn nonzero_frames(&self) -> usize {

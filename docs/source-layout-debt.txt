@@ -31,7 +31,7 @@ large crates/sophia-renderer-live/src/native_scanout.rs 1570
 large crates/sophia-session/src/live_session.rs 1336
 large crates/sophia-session/src/live_session/config.rs 1452
 large crates/sophia-session/src/live_session/input.rs 1954
-large crates/sophia-session/src/live_session/owner_loop/completion.rs 1523
+large crates/sophia-session/src/live_session/owner_loop/completion.rs 1526
 large crates/sophia-session/src/live_session/owner_loop/lifecycle.rs 1482
 large crates/sophia-session/src/live_session/owner_loop/physical_input_phase.rs 1601
 large crates/sophia-session/src/live_session/tests.rs 1617

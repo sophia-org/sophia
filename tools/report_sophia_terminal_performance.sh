@@ -60,7 +60,7 @@ client="$(
 )"
 [[ -n "$client" ]] || fail "missing bounded xterm client completion"
 completion="$(
-    grep -E '^sophia_live_session schema=(16|17) status=bounded_complete ' "$SESSION_LOG" |
+    grep -E '^sophia_live_session schema=(16|17|18|19) status=bounded_complete ' "$SESSION_LOG" |
         tail -n 1 || true
 )"
 [[ -n "$completion" ]] || fail "missing bounded Sophia session completion"

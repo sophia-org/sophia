@@ -192,7 +192,7 @@ fi
 
 completion_line="$(grep -E '^sophia_live_session .*status=bounded_complete ' "$EVIDENCE_FILE")"
 completion_schema="$(sed -n 's/.* schema=\([0-9][0-9]*\) .*/\1/p' <<< "$completion_line")"
-if [[ ! "$completion_schema" =~ ^(10|11|14|15|16)$ ]]; then
+if [[ ! "$completion_schema" =~ ^(10|11|14|15|16|18)$ ]]; then
     echo "QEMU evidence did not use the latency/resource schema" >&2
     exit 1
 fi
@@ -208,7 +208,31 @@ if [[ ! " $completion_line " =~ " injected_input=false " ]]; then
     echo "QEMU evidence used the internal X11 injection path" >&2
     exit 1
 fi
-if [[ "${SOPHIA_QEMU_REQUIRE_TWO_XTERM:-0}" == "1" ]]; then
+# TWO TERMINALS MEANS TWO SURFACES STANDING TOGETHER, AND THAT IS A PEAK.
+# This asked `cpu_layers >= 2` off the completion line for a long time. That
+# field is one composition's layer count, sampled at the end, and a session
+# that drains its clients correctly ends with nothing composed -- it read 2
+# only because the last passing run (2026-07-18) has no quiescence records at
+# all and ended with its clients still alive. It has read 0 on every healthy
+# run since.
+#
+# `cpu_max_layers` is not the replacement, tempting as the name is: a
+# direct-scanout copy reports one layer however many surfaces exist, and a
+# damage-scoped frame counts only what that frame touched, so its peak says
+# composition happened and nothing about how many windows were up.
+# `runtime_max_surfaces` is the most surfaces ever committed at once, which is
+# exactly the claim. Evidence older than schema 18 does not carry it and keeps
+# the old reading, which is the only thing that field can support there.
+if [[ "${SOPHIA_QEMU_REQUIRE_TWO_XTERM:-0}" == "1" ]] \
+    && [[ "$completion_schema" =~ ^(18|19)$ ]]; then
+    max_surfaces="$(sed -n 's/.* runtime_max_surfaces=\([0-9][0-9]*\) .*/\1/p' <<< "$completion_line")"
+    if [[ ! "$max_surfaces" =~ ^[0-9]+$ ]] || (( max_surfaces < 2 )); then
+        echo "QEMU two-xterm evidence never had two surfaces committed at once" >&2
+        exit 1
+    fi
+fi
+if [[ "${SOPHIA_QEMU_REQUIRE_TWO_XTERM:-0}" == "1" ]] \
+    && [[ ! "$completion_schema" =~ ^(18|19)$ ]]; then
     cpu_layers="$(sed -n 's/.* cpu_layers=\([0-9][0-9]*\) .*/\1/p' <<< "$completion_line")"
     if [[ ! "$cpu_layers" =~ ^[0-9]+$ ]] || (( cpu_layers < 2 )); then
         echo "QEMU two-xterm evidence did not compose two terminal layers" >&2

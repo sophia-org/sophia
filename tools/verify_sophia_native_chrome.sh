@@ -166,7 +166,7 @@ awk '
 
 grep -Eq '^sophia_live_session_health schema=1 status=clean .*pending_input=0 .*wm_degraded=false$' \
     "$SESSION_LOG" || fail "session health did not drain cleanly"
-grep -Eq '^sophia_live_session schema=(15|16) status=bounded_complete .*native_submit_failures=0 .*native_retire_failures=0 .*native_cleanup_pending=false ' \
+grep -Eq '^sophia_live_session schema=(15|16|18) status=bounded_complete .*native_submit_failures=0 .*native_retire_failures=0 .*native_cleanup_pending=false ' \
     "$SESSION_LOG" || fail "bounded native completion is missing or unhealthy"
 grep -q '^sophia_live_session_cleanup schema=1 status=clean ' "$SESSION_LOG" ||
     fail "session cleanup is missing"

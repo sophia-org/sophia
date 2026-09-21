@@ -48,7 +48,7 @@ require '^sophia_live_session_native_suspend schema=2 outcome=drained drained=tr
     "$session_log" "native presentation did not drain"
 require '^sophia_live_session_cleanup schema=1 status=clean app_groups=0([[:space:]]|$)' \
     "$session_log" "application cleanup did not drain"
-completion="$(grep -E '^sophia_live_session schema=(14|15|16|17) status=bounded_complete ' "$session_log" | tail -n 1 || true)"
+completion="$(grep -E '^sophia_live_session schema=(14|15|16|17|18|19) status=bounded_complete ' "$session_log" | tail -n 1 || true)"
 [[ -n "$completion" ]] || fail "supported completion is missing"
 for assignment in 'physical_input=enabled' 'wm_policy=external' 'wm_degraded=false' \
     'native_submit_failures=0' 'native_retire_failures=0' \
