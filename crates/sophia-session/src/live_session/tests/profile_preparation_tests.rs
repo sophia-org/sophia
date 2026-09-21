@@ -1,23 +1,63 @@
 use super::*;
 
-fn public_profile_test_config(prefix: &str) -> PersistentXtermSessionConfig {
+/// A run-unique directory, so concurrent tests cannot share a socket path.
+fn test_config_root(prefix: &str) -> std::path::PathBuf {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let root = std::env::temp_dir().join(format!(
+    std::env::temp_dir().join(format!(
         "{prefix}-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    ));
-    let mut config = super::session_config_tests::isolated_session_config(&[
-        "--wm-process=/usr/bin/true".to_owned(),
-        "--wm-interface=sophia_wm_v1".to_owned(),
-    ])
-    .unwrap();
+    ))
+}
+
+fn public_profile_test_config(prefix: &str) -> PersistentXtermSessionConfig {
+    public_profile_test_config_rooted(
+        test_config_root(prefix),
+        &["--wm-process=/usr/bin/true".to_owned()],
+    )
+}
+
+/// The same configuration over a chosen window manager process.
+///
+/// Which process stands in decides which failure a launch can produce, so a
+/// test that asserts one of them has to choose deliberately rather than take
+/// the default.
+fn public_profile_test_config_rooted(
+    root: std::path::PathBuf,
+    wm_args: &[String],
+) -> PersistentXtermSessionConfig {
+    let mut args = wm_args.to_vec();
+    args.push("--wm-interface=sophia_wm_v1".to_owned());
+    let mut config = super::session_config_tests::isolated_session_config(&args).unwrap();
     config.wm_socket_path = root.with_extension("sock");
     config
+}
+
+/// A window manager that starts, stays up, and never connects.
+///
+/// `/usr/bin/true` cannot stand in for this. It exits at once, which leaves the
+/// supervisor racing its two readings of a failed launch: bubblewrap already
+/// gone (`protection.rs`, `child.try_wait()`), against the child found in
+/// /proc and the launch carrying on to time out at the accept. Both readings
+/// are honest and the faster one wins, so the error a caller sees depends on
+/// how the machine was loaded that second -- which is a spurious red in any
+/// full-suite run, not a defect being caught.
+///
+/// A process that outlives the five second accept window closes the race from
+/// the test's side: the child is there to be found, and the accept timeout is
+/// the only failure still reachable.
+fn nonconnecting_wm_test_config(prefix: &str) -> PersistentXtermSessionConfig {
+    public_profile_test_config_rooted(
+        test_config_root(prefix),
+        &[
+            "--wm-process=/usr/bin/sleep".to_owned(),
+            "--wm-process-arg=10".to_owned(),
+        ],
+    )
 }
 
 #[test]
@@ -269,7 +309,7 @@ fn public_profile_prepare_failure_rolls_every_owner_back_without_activation() {
 
 #[test]
 fn pregraphics_policy_launch_failure_rolls_back_before_returning() {
-    let mut config = public_profile_test_config("sophia-profile-launch-failure-test");
+    let mut config = nonconnecting_wm_test_config("sophia-profile-launch-failure-test");
     let directory_path = config.wm_socket_path.with_extension("policy");
     let prepared = LiveWmSession::prepare_public_launch(&mut config).unwrap();
     let started = Instant::now();
