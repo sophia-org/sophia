@@ -512,6 +512,13 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          window: crate::XResourceId,
      ) -> Result<Vec<XDestroyedWindow>, XAuthorityRuntimeError> {
+         // The root is a valid window with no parent, so destroying it is a
+         // request that succeeds and destroys nothing. Refusing it would be a
+         // Window error for a window that plainly exists, and would tell the
+         // client its own windows had gone down with it.
+         if window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             return Ok(Vec::new());
+         }
          // Resolve the whole subtree before destroying any of it. Walking and
          // destroying together would read a tree the destruction is mutating.
          let mut order = Vec::new();
@@ -535,6 +542,7 @@ impl XAuthorityRuntime {
                  window: id,
                  surface: self.destroy_window(namespace, id)?,
                  was_mapped,
+                 is_subtree_root: id == window,
              });
          }
          Ok(destroyed)
@@ -979,4 +987,8 @@ pub struct XDestroyedWindow {
     /// Whether it was mapped when destroyed. A mapped window is unmapped as
     /// part of being destroyed, and that unmap is reported before the destroy.
     pub was_mapped: bool,
+    /// Whether this is the window the request named rather than one of its
+    /// inferiors. Only the named window is unmapped as part of being
+    /// destroyed; inferiors are destroyed and owe nobody an unmap.
+    pub is_subtree_root: bool,
 }

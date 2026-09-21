@@ -515,6 +515,166 @@ fn warp_request(
     bytes
 }
 
+/// Dispatches one already-built request and returns what the client sees.
+fn xts_repair_outputs(
+    runtime: &mut XAuthorityRuntime,
+    atoms: &mut XAtomTable,
+    properties: &mut XPropertyTable,
+    namespace: NamespaceId,
+    sequence: u16,
+    opcode: u8,
+    request: &[u8],
+) -> Vec<Vec<u8>> {
+    let decoded = decode_x11_core_request(
+        context(namespace, u64::from(sequence), XByteOrder::LittleEndian),
+        request,
+    )
+    .unwrap();
+    dispatch_x11_wire_request(
+        dispatch_context(namespace, sequence, XByteOrder::LittleEndian, opcode),
+        decoded,
+        runtime,
+        atoms,
+        properties,
+    )
+    .encoded_outputs(XByteOrder::LittleEndian)
+}
+
+#[test]
+fn x11_change_property_refuses_an_atom_that_names_nothing() {
+    let namespace = NamespaceId::from_raw(51);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let root = X_SETUP_DEFAULT_ROOT;
+
+    // The property atom names nothing: the error reports that atom.
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 1, 18,
+        &change_property_request(
+            XByteOrder::LittleEndian, XPropertyMode::Replace, root, 0xFFFF_FFFF, 19, 32, &[],
+        ),
+    );
+    assert_eq!(encoded.len(), 1);
+    assert_eq!(encoded[0][0], 0, "an error, not a reply");
+    assert_eq!(encoded[0][1], 5, "BadAtom");
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]),
+        0xFFFF_FFFF,
+        "the error names the atom it refused"
+    );
+
+    // The type atom is checked too, and after the property atom.
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 2, 18,
+        &change_property_request(
+            XByteOrder::LittleEndian, XPropertyMode::Replace, root, 39, 0xFFFF_FFFE, 32, &[],
+        ),
+    );
+    assert_eq!(encoded[0][1], 5, "BadAtom");
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]),
+        0xFFFF_FFFE
+    );
+
+    // Two predefined atoms are accepted, so the guard refuses only the invalid.
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 3, 18,
+        &change_property_request(
+            XByteOrder::LittleEndian, XPropertyMode::Replace, root, 39, 19, 32, &[1, 0, 0, 0],
+        ),
+    );
+    assert!(
+        encoded.iter().all(|output| output[0] != 0),
+        "a property named by valid atoms is stored"
+    );
+}
+
+#[test]
+fn x11_change_property_append_of_another_type_is_a_match_error() {
+    let namespace = NamespaceId::from_raw(52);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let root = X_SETUP_DEFAULT_ROOT;
+
+    // Seed the property as one type and format.
+    xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 1, 18,
+        &change_property_request(
+            XByteOrder::LittleEndian, XPropertyMode::Replace, root, 39, 19, 32, &[1, 0, 0, 0],
+        ),
+    );
+
+    // Appending a different type is the protocol's Match error, not a Value
+    // error: both atoms are valid and the format is in range, and it is the
+    // pair that does not agree.
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 2, 18,
+        &change_property_request(
+            XByteOrder::LittleEndian, XPropertyMode::Append, root, 39, 5, 32, &[2, 0, 0, 0],
+        ),
+    );
+    assert_eq!(encoded.len(), 1);
+    assert_eq!(encoded[0][0], 0, "an error, not a reply");
+    assert_eq!(encoded[0][1], 8, "BadMatch");
+
+    // Prepending a different format is the same error.
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 3, 18,
+        &change_property_request(
+            XByteOrder::LittleEndian, XPropertyMode::Prepend, root, 39, 19, 16, &[2, 0],
+        ),
+    );
+    assert_eq!(encoded[0][1], 8, "BadMatch");
+}
+
+#[test]
+fn x11_get_selection_owner_refuses_an_atom_that_names_nothing() {
+    let namespace = NamespaceId::from_raw(53);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 1, 23,
+        &resource_request(XByteOrder::LittleEndian, 23, 0xFFFF_FFFF),
+    );
+    assert_eq!(encoded.len(), 1);
+    assert_eq!(encoded[0][0], 0, "an error, not a reply");
+    assert_eq!(encoded[0][1], 5, "BadAtom");
+    assert_eq!(
+        read_u32(XByteOrder::LittleEndian, &encoded[0][4..8]),
+        0xFFFF_FFFF
+    );
+
+    // A valid atom nobody owns is still a reply: unowned and unnamed are
+    // different answers and the client can reach both.
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 2, 23,
+        &resource_request(XByteOrder::LittleEndian, 23, 7),
+    );
+    assert_eq!(encoded[0][0], 1, "a reply");
+    assert_eq!(read_u32(XByteOrder::LittleEndian, &encoded[0][8..12]), 0);
+}
+
+#[test]
+fn x11_destroying_the_root_succeeds_and_destroys_nothing() {
+    let namespace = NamespaceId::from_raw(54);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+
+    let encoded = xts_repair_outputs(
+        &mut runtime, &mut atoms, &mut properties, namespace, 1, 4,
+        &resource_request(XByteOrder::LittleEndian, 4, X_SETUP_DEFAULT_ROOT),
+    );
+    assert!(
+        encoded.is_empty(),
+        "the root is a real window with no parent: the request succeeds and does nothing"
+    );
+}
+
 #[test]
 fn x11_warp_pointer_decodes_every_field_and_refuses_a_request_of_the_wrong_length() {
     let namespace = NamespaceId::from_raw(48);

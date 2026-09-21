@@ -297,7 +297,7 @@ fn dispatch_core_window_request(
                                     // reported in its own right, before the
                                     // destroy. `from_configure` is false: an
                                     // explicit request caused it.
-                                    let unmap = destroyed.was_mapped.then_some(
+                                    let unmap = (destroyed.was_mapped && destroyed.is_subtree_root).then_some(
                                         XClientOutput::Event(
                                             crate::XClientEvent::UnmapNotify {
                                                 sequence: context.sequence,
@@ -397,7 +397,7 @@ fn dispatch_core_window_request(
                                 // As for a single destroy: a mapped window is
                                 // unmapped on its way out, and that is reported
                                 // before the destroy.
-                                let unmap = destroyed.was_mapped.then_some(
+                                let unmap = (destroyed.was_mapped && destroyed.is_subtree_root).then_some(
                                     XClientOutput::Event(crate::XClientEvent::UnmapNotify {
                                         sequence: context.sequence,
                                         event: destroyed.window,

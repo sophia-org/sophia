@@ -187,7 +187,23 @@ partial journal contains PASS results. This deliberately rejects the yserver
 comparator's PASS-to-NORESULT and missing-candidate-purpose false positives.
 No results from an older directory can supply a pass.
 
-### First measured run, 2026-09-20
+### Measured runs
+
+| run | PASS | FAIL | UNRESOLVED | what changed |
+| --- | --- | --- | --- | --- |
+| first | 0 | 0 | 58 | nothing ran: opcode 115 was undecoded and every test's startup calls `XResetScreenSaver` |
+| after ForceScreenSaver | 31 | 16 | 5 | the suite reached its own assertions |
+| after WarpPointer | 31 | 16 | 2 | three purposes stopped dying in the harness and began testing focus |
+| after five repairs | **36** | 11 | 2 | atom validation, the Match error, the root destroy, the spurious unmaps |
+
+The five repairs, each with a routed control in
+`crates/sophia-x-authority/tests/x11_wire/`: ChangeProperty validates both
+its atoms; a type-or-format mismatch on Append or Prepend is the Match error
+rather than a Value error; GetSelectionOwner refuses an atom that names
+nothing; destroying the root succeeds and destroys nothing; and destroying a
+window no longer announces an unmap for each of its inferiors.
+
+### What the first run measured, 2026-09-20
 
 `selected-core` executed against the fixture host: 58 purposes across six
 cases, of which **31 PASS**. The rest are recorded rather than dropped, and
