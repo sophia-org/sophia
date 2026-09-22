@@ -266,7 +266,7 @@ mod pointer_queries {
             self.stream.write_all(&request).unwrap();
             assert_eq!(self.reply()[0], 1);
         }
-        fn query(&mut self, window: u32) -> (u32, [i16; 4], u16) {
+        pub(super) fn query(&mut self, window: u32) -> (u32, [i16; 4], u16) {
             self.window_request(38, window);
             let reply = self.reply();
             assert_eq!(reply[0], 1);

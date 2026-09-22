@@ -53,6 +53,7 @@ include!("x11_wire/routed_service.rs");
 include!("x11_wire/focus_routing.rs");
 include!("x11_wire/pointer_queries.rs");
 include!("x11_wire/popup_pointer_target.rs");
+include!("x11_wire/key_focus_subtree.rs");
 include!("x11_wire/xi_list_input_devices.rs");
 include!("x11_wire/xi_virtual_source.rs");
 include!("x11_wire/glx_pbuffer.rs");
