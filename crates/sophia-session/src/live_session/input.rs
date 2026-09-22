@@ -14,6 +14,9 @@ use pointer_focus::*;
 #[path = "input/route_report.rs"]
 mod route_report;
 use route_report::*;
+#[path = "input/grab_routing.rs"]
+mod grab_routing;
+use grab_routing::*;
 #[path = "input/device_lifecycle.rs"]
 mod device_lifecycle;
 use device_lifecycle::*;
@@ -1620,7 +1623,14 @@ fn route_input_events_with_launcher(
                         }
                         continue;
                     }
-                    sophia_engine::route_scene_surface_for_input(&event, input_layers, lease.target_surface)
+                    // Owner_events: the surface under the pointer when it is the
+                    // grabbing client's, the anchor otherwise. input/grab_routing.rs
+                    // carries why naming the anchor alone was wrong.
+                    let hit = sophia_engine::hit_test_scene_surface_for_input(&event, input_layers).target_surface;
+                    let grabbed = grab_routed_surface(hit, lease.target_surface, lease.admission, |surface| {
+                        client_routes.admission_for_surface(surface).map(|admission| admission.client_id)
+                    });
+                    sophia_engine::route_scene_surface_for_input(&event, input_layers, grabbed)
                 } else if let Some(target) = pending_target {
                     sophia_engine::route_scene_surface_for_input(&event, input_layers, target)
                 } else {

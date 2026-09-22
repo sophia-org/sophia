@@ -30,12 +30,12 @@ large crates/sophia-protocol/src/ipc/wm_v1_records.rs 1749
 large crates/sophia-renderer-live/src/native_scanout.rs 1570
 large crates/sophia-session/src/live_session.rs 1367
 large crates/sophia-session/src/live_session/config.rs 1466
-large crates/sophia-session/src/live_session/input.rs 1954
+large crates/sophia-session/src/live_session/input.rs 1960
 large crates/sophia-session/src/live_session/owner_loop/completion.rs 1537
 large crates/sophia-session/src/live_session/owner_loop/lifecycle.rs 1482
 large crates/sophia-session/src/live_session/owner_loop/physical_input_phase.rs 1624
 large crates/sophia-session/src/live_session/tests.rs 1617
-large crates/sophia-session/src/live_session/tests/input_policy_tests.rs 1479
+large crates/sophia-session/src/live_session/tests/input_policy_tests.rs 1527
 large crates/sophia-session/src/live_session/tests/session_config_tests.rs 1811
 large crates/sophia-session/src/live_session/tests/wm_session_tests.rs 1638
 large crates/sophia-session/src/live_session/wm/layout.rs 1387

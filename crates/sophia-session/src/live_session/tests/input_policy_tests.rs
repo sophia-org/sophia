@@ -1477,3 +1477,51 @@ fn pending_delivery_fixture(
         release_barrier: true,
     }
 }
+
+/// A held grab follows the pointer into the grabbing client's own popup.
+///
+/// A toolkit grabs on the window that was clicked and only then creates and
+/// maps its menu, so the lease anchors to a surface the pointer immediately
+/// leaves. Routing to the anchor sent every click inside an open Thunar
+/// dropdown to the window beneath it: the menu never received the press that
+/// dismisses it and stayed mapped over whatever came next, while the popup was
+/// in the projection, under the pointer and ranked above the anchor the whole
+/// time.
+///
+/// The anchor still stands wherever owner_events does not apply -- another
+/// client's surface, or no surface at all, which is the drag that leaves the
+/// grabbing client's geometry and must keep its ordering.
+#[test]
+fn a_held_grab_routes_into_the_grabbing_clients_popup_and_nowhere_else() {
+    let anchor = SurfaceId::new(4_194_310, 1);
+    let popup = SurfaceId::new(4_195_333, 1);
+    let stranger = SurfaceId::new(2_097_166, 1);
+    let grabbing = sophia_protocol::ClientAdmissionId::from_raw(2);
+    let other = sophia_protocol::ClientAdmissionId::from_raw(1);
+    let admission_of = |surface: SurfaceId| match surface {
+        s if s == anchor || s == popup => Some(grabbing),
+        s if s == stranger => Some(other),
+        _ => None,
+    };
+
+    assert_eq!(
+        super::super::grab_routed_surface(Some(popup), anchor, grabbing, admission_of),
+        popup,
+        "a click inside the grabbing client's own popup belongs to the popup"
+    );
+    assert_eq!(
+        super::super::grab_routed_surface(Some(stranger), anchor, grabbing, admission_of),
+        anchor,
+        "another client's surface is not the grab's to route to"
+    );
+    assert_eq!(
+        super::super::grab_routed_surface(None, anchor, grabbing, admission_of),
+        anchor,
+        "a drag outside every surface keeps the anchor, which is grab ordering"
+    );
+    assert_eq!(
+        super::super::grab_routed_surface(Some(anchor), anchor, grabbing, admission_of),
+        anchor,
+        "the anchor under the pointer is still the anchor"
+    );
+}
