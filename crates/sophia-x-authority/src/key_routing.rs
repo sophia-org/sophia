@@ -35,33 +35,62 @@ use crate::XResourceId;
 /// meters its own traversal can stop the walk with its own refusal rather
 /// than having exhaustion read as disinterest.
 ///
-/// `Ok(None)` means nobody on the path wanted it. That is not an error: a key
-/// nobody selected is a key nobody is owed.
+/// [`XKeyTarget::Unselected`] means nobody on the path wanted it. That is not
+/// an error: a key nobody selected is a key nobody is owed.
+/// [`XKeyTarget::Blocked`] means a do-not-propagate mask ended the walk with
+/// nobody found, which is a different instruction to the caller -- the client
+/// asked for the event not to be offered further, so a caller that would
+/// otherwise wait and then fall back must not.
 pub(crate) fn x_key_delivery_target<E>(
     focus: XResourceId,
     delivery_path: &[XResourceId],
     selects: &mut dyn FnMut(XResourceId) -> Result<Option<bool>, E>,
     do_not_propagate: &dyn Fn(XResourceId) -> bool,
     retry_focus: bool,
-) -> Result<Option<(XResourceId, bool)>, E> {
+) -> Result<XKeyTarget, E> {
+    let mut blocked = false;
     for window in delivery_path.iter().copied() {
         if let Some(core) = selects(window)? {
-            return Ok(Some((window, core)));
+            return Ok(XKeyTarget::Found { window, core });
         }
         if do_not_propagate(window) {
+            blocked = true;
             break;
         }
     }
     // Nothing under the focus wanted it, so the focus itself is offered the
     // event it would have had if the pointer had been elsewhere. Skipped when
     // the walk began at the focus, because it was already asked.
+    //
+    // This runs after a block as well, and deliberately: the private path
+    // documents core do-not-propagate as stopping both streams and then
+    // trying the focus directly, and its controls pin that. The mask ends the
+    // walk up the tree; it does not withdraw the focus's own claim.
     if retry_focus
         && delivery_path.first() != Some(&focus)
         && let Some(core) = selects(focus)?
     {
-        return Ok(Some((focus, core)));
+        return Ok(XKeyTarget::Found {
+            window: focus,
+            core,
+        });
     }
-    Ok(None)
+    if blocked {
+        Ok(XKeyTarget::Blocked)
+    } else {
+        Ok(XKeyTarget::Unselected)
+    }
+}
+
+/// What the walk found, or why it found nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XKeyTarget {
+    /// Report the key on this window, by core rather than XI2 when `core`.
+    Found { window: XResourceId, core: bool },
+    /// A do-not-propagate mask ended the walk and nobody wanted the event.
+    Blocked,
+    /// The path ran out and nobody wanted the event.
+    Unselected,
 }
 
 mod tests;

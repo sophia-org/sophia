@@ -63,7 +63,10 @@ fn a_key_lands_on_the_pointers_window_inside_the_focus_subtree_and_on_the_focus_
     ] {
         let path = path_from(pointer);
         assert_eq!(
-            Ok(Some((expected, true))),
+            Ok(XKeyTarget::Found {
+                window: expected,
+                core: true
+            }),
             x_key_delivery_target(
                 child2(),
                 &path,
@@ -84,7 +87,7 @@ fn delivery_stops_at_the_focus_rather_than_climbing_past_it() {
     // than a rule inside the walk, which is how the two callers can differ.
     let selects = |window: XResourceId| Ok::<_, ()>(Some(true).filter(|_| window == parent()));
     assert_eq!(
-        Ok(None),
+        Ok(XKeyTarget::Unselected),
         x_key_delivery_target(
             child2(),
             &[grandchild(), child2()],
@@ -101,7 +104,7 @@ fn a_do_not_propagate_mask_below_the_focus_stops_the_walk() {
     // offered the event even though it would have taken it.
     let selects = |window: XResourceId| Ok::<_, ()>(Some(true).filter(|_| window == child2()));
     assert_eq!(
-        Ok(None),
+        Ok(XKeyTarget::Blocked),
         x_key_delivery_target(
             child2(),
             &[grandchild(), child2()],
@@ -109,7 +112,9 @@ fn a_do_not_propagate_mask_below_the_focus_stops_the_walk() {
             &|window| window == grandchild(),
             false
         ),
-        "with no retry the blocked walk is the whole answer"
+        "with no retry the blocked walk is the whole answer, and it is \
+         reported as Blocked rather than Unselected: the caller must be able \
+         to tell a mask it has to honour from nobody having selected yet"
     );
 }
 
@@ -158,7 +163,10 @@ fn the_focus_is_retried_once_when_nothing_on_the_path_wanted_the_event() {
 fn xi2_selection_is_reported_as_such() {
     let selects = |_: XResourceId| Ok::<_, ()>(Some(false));
     assert_eq!(
-        Ok(Some((grandchild(), false))),
+        Ok(XKeyTarget::Found {
+            window: grandchild(),
+            core: false
+        }),
         x_key_delivery_target(
             child2(),
             &[grandchild(), child2()],
@@ -182,6 +190,58 @@ fn a_refusal_from_the_selection_oracle_stops_the_walk_rather_than_reading_as_dis
             &[grandchild(), child2()],
             &mut { selects },
             &nothing_propagates,
+            true
+        )
+    );
+}
+
+#[test]
+fn a_blocked_walk_and_an_empty_one_are_different_answers() {
+    // The whole point of the third outcome. Both find nobody; only one of
+    // them is a client instruction the caller must honour, and while they
+    // were the same value the ordinary delivery path could not honour it.
+    let nobody = |_: XResourceId| Ok::<_, ()>(None);
+    assert_eq!(
+        Ok(XKeyTarget::Unselected),
+        x_key_delivery_target(
+            child2(),
+            &[grandchild(), child2()],
+            &mut { nobody },
+            &nothing_propagates,
+            false
+        ),
+        "nobody selected it, and nobody forbade anything"
+    );
+    assert_eq!(
+        Ok(XKeyTarget::Blocked),
+        x_key_delivery_target(
+            child2(),
+            &[grandchild(), child2()],
+            &mut { nobody },
+            &|window| window == grandchild(),
+            false
+        ),
+        "the same empty walk, ended by a mask"
+    );
+}
+
+#[test]
+fn a_block_still_lets_the_focus_be_retried_where_a_caller_asks_for_it() {
+    // The private path documents core do-not-propagate as stopping both
+    // streams and then trying the focus directly, and its controls pin that.
+    // The mask ends the walk up the tree; it does not withdraw the focus's
+    // own claim, so Blocked must not short-circuit the retry.
+    let selects = |window: XResourceId| Ok::<_, ()>(Some(true).filter(|_| window == child2()));
+    assert_eq!(
+        Ok(XKeyTarget::Found {
+            window: child2(),
+            core: true
+        }),
+        x_key_delivery_target(
+            child2(),
+            &[grandchild()],
+            &mut { selects },
+            &|window| window == grandchild(),
             true
         )
     );

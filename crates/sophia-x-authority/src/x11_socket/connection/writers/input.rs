@@ -113,15 +113,21 @@ fn spawn_x11_input_event_writer(
                 drop(selections);
                 let selected = |delivery: XKeyDelivery| match delivery {
                     XKeyDelivery::Window(window) => Some(window),
-                    XKeyDelivery::Discard | XKeyDelivery::Unselected => None,
+                    XKeyDelivery::Discard(_) | XKeyDelivery::Unselected => None,
                 };
                 let focused_selected = selected(focused_delivery);
                 let routed_selected = routed_delivery.and_then(selected);
                 // A discard is a decision, not a startup race. Waiting the
                 // readiness deadline out would delay the event five seconds
                 // and then deliver exactly what the client asked us not to.
-                if matches!(focused_delivery, XKeyDelivery::Discard) {
-                    break (focused_fallback, None, false, true, focus_names_a_window);
+                if let XKeyDelivery::Discard(reason) = focused_delivery {
+                    break (
+                        focused_fallback,
+                        None,
+                        false,
+                        Some(reason),
+                        focus_names_a_window,
+                    );
                 }
                 if x11_keyboard_route_ready(
                     matches!(event, XAuthorityInputEvent::Key(_)),
@@ -133,7 +139,7 @@ fn spawn_x11_input_event_writer(
                         focused_selected.unwrap_or(focused_fallback),
                         routed_selected.or(routed_fallback),
                         focused_selected.is_some() || routed_selected.is_some(),
-                        false,
+                        None,
                         focus_names_a_window,
                     );
                 }
@@ -143,10 +149,16 @@ fn spawn_x11_input_event_writer(
             // complete rather than refused: nothing failed, and a refusal
             // record would say a route was rejected when the protocol simply
             // says no event is generated.
-            if keyboard_discarded && matches!(event, XAuthorityInputEvent::Key(_)) {
+            if let Some(reason) = keyboard_discarded
+                && matches!(event, XAuthorityInputEvent::Key(_))
+            {
                 receipt.finish(XAuthorityInputDeliveryOutcome::Flushed)?;
                 tracing::debug!(
-                    "sophia_x11_key_delivery schema=1 status=discarded reason=focus_none client={} input_redacted=true",
+                    "sophia_x11_key_delivery schema=1 status=discarded reason={} client={} input_redacted=true",
+                    match reason {
+                        XKeyDiscard::FocusNone => "focus_none",
+                        XKeyDiscard::DoNotPropagate => "do_not_propagate",
+                    },
                     client.raw(),
                 );
                 continue;
