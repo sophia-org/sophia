@@ -2040,3 +2040,48 @@ mandatory evidence is produced by a gate and composed on one content
 digest. What the close does not do is unchanged from M6: no discovery
 enablement, no installation or default enablement, no physical acceptance,
 which stays with t094, t077, t060 and t062.
+
+## The departure's input consequence, witnessed 2026-09-22
+
+t134's collection half closed earlier, and what it left open was the input
+half: whether a departed client whose row stays open can still be named by
+the applied focus publication, and what a key does if it can. Both halves now
+have a witness,
+`a_key_after_a_departure_reaches_the_live_observer_on_a_shared_instance`,
+which drives a departure on one shared instance rather than avoiding it as
+`groups::fake_input_effects` does.
+
+**The publication can still name a departed row, and the window is real.**
+Measured on `428dfa51`: at 4 microseconds and again at 79 microseconds after
+both clients of a round were dropped, both rows still read `closed` false and
+`lifecycle_open` true. Collection lands in about ten milliseconds, so the
+window is narrow, but it is not theoretical and a witness lands inside it
+without racing anything.
+
+**A key injected in that window reaches the live observer.** The second
+round's press and release arrive at the new observer's own window carrying
+the keycode injected, and the service's receipts account for two deliveries
+flushed to the *new* observer's client id -- so the wire and the service agree
+that the key answered for the live connection and not the departed one. The
+symptom that made `fake_input_effects` take a fresh instance per byte order --
+the key routed to the new injector and refused `RouteRejected` while the new
+observer held a confirmed focus -- does not reproduce, with both rounds in one
+byte order or with Little then Big, which is the configuration originally
+reported. That group's comment is corrected in place rather than left to
+describe a defect that is gone.
+
+The witness was checked against a mutation before it was believed: expecting
+the wrong keycode fails it at the delivery assertion with the rows and the
+elapsed time in the message, so the assertion is reached and the key really
+is the one injected.
+
+**One thing it found that is not t134's**, and is filed as t152. The second
+round on a warm instance takes the focus without admitting its own window as
+a surface, where the first round on a fresh instance cannot: dropping
+`admit_surface` from round one fails in setup, and dropping it from round two
+passes and still delivers. `admit_surface` documents that without it "a key
+is planned against no target and silently goes nowhere", which holds on a
+fresh instance and does not on one that has already served a departed round.
+That is state outliving the connection that created it. It did not affect
+this witness's result -- the round that matters admits its surface -- but what
+a second round inherits from a departed first wants its own answer.

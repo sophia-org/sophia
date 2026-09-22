@@ -104,6 +104,15 @@ fn grab_control() {
 /// then at "no evidence custody"; every round is answered now because a
 /// departed connection's place and custody come back during the run, in the
 /// service frame's idle window, rather than at shutdown.
+/// t134's input half: a key injected after an earlier pair departed must
+/// reach the live observer on the same instance, and must never answer for
+/// the connection that has gone. `groups::fake_input_effects` avoids this by
+/// starting a fresh instance per byte order; this drives it deliberately.
+#[test]
+fn a_key_after_a_departure_reaches_the_live_observer_on_a_shared_instance() {
+    support::departure_witness::a_key_after_a_departure_reaches_the_live_observer();
+}
+
 #[test]
 fn departures_are_reclaimed_during_the_run_and_the_instance_keeps_admitting() {
     use std::time::{Duration, Instant};

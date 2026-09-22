@@ -8,6 +8,7 @@
 
 pub mod adapter;
 pub mod client;
+pub mod departure_witness;
 pub mod groups;
 
 use sophia_input_authority::{InstanceId, SeatBinding};

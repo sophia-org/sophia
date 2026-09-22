@@ -456,7 +456,7 @@ pub fn fake_input_encoding() {
 const OBSERVER_MASK: u32 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 6);
 /// The event codes of the core input family.
 pub(crate) const KEY_PRESS: u8 = 2;
-const KEY_RELEASE: u8 = 3;
+pub(crate) const KEY_RELEASE: u8 = 3;
 const BUTTON_PRESS: u8 = 4;
 const BUTTON_RELEASE: u8 = 5;
 pub(crate) const MOTION_NOTIFY: u8 = 6;
@@ -470,7 +470,7 @@ const BUTTON1_MASK: u16 = 1 << 8;
 /// NOT OVERRIDE-REDIRECT. A map here is policy-pending until the service
 /// admits the window as a surface, and the admission refuses a window that
 /// is already mapped, which an override-redirect map would be.
-fn observer_window(client: &mut Client) -> u32 {
+pub(crate) fn observer_window(client: &mut Client) -> u32 {
     let order = client.order();
     let root = client.root();
     let window = client.resource(1);
@@ -495,7 +495,7 @@ fn observer_window(client: &mut Client) -> u32 {
 }
 
 /// Give `window` the focus, and confirm the server reports it.
-fn focus_window(client: &mut Client, window: u32) {
+pub(crate) fn focus_window(client: &mut Client, window: u32) {
     let order = client.order();
     let mut focus = Vec::new();
     focus.extend(order.u32(window));
@@ -520,7 +520,7 @@ fn focus_window(client: &mut Client, window: u32) {
 /// drains continuously, and because what is drained is the second witness
 /// to the delivery. What a key does depend on is the admission before it:
 /// see `admit_surface`.
-fn input_event(
+pub(crate) fn input_event(
     instance: &Instance,
     client: &mut Client,
     receipts: &mut Vec<XAuthorityClientInputDelivery>,
@@ -623,7 +623,7 @@ pub(crate) fn newest_admission(
 
 /// Wait until the kept receipts report `count` deliveries to `client`
 /// flushed to its socket, draining more as needed.
-fn flushed_deliveries(
+pub(crate) fn flushed_deliveries(
     instance: &Instance,
     receipts: &mut Vec<XAuthorityClientInputDelivery>,
     client: XServerFrontendClientId,
@@ -663,7 +663,7 @@ fn flushed_deliveries(
 /// surface, which only an admission creates. Without this a key is planned
 /// against no target and silently goes nowhere, which is not a delivery
 /// failure the wire can see.
-fn admit_surface(instance: &Instance, observer: &mut Client, window: u32) {
+pub(crate) fn admit_surface(instance: &Instance, observer: &mut Client, window: u32) {
     let order = observer.order();
     let gc = observer.resource(2);
     let mut create_gc = Vec::new();
@@ -722,15 +722,17 @@ fn admit_surface(instance: &Instance, observer: &mut Client, window: u32) {
 
 pub fn fake_input_effects() {
     let mut evidence = Evidence::default();
-    // ONE INSTANCE PER BYTE ORDER. The first order's observer and injector
-    // depart before the second's connect, and a departed connection is not
-    // collected until the service stops (t134). A departed client whose row
-    // stays open can still be named by the applied focus publication, and a
-    // key resolved against that publication answers for a connection that
-    // has gone: on a shared instance the second order's key was routed to
-    // the new injector and refused RouteRejected while the new observer held
-    // a focus GetInputFocus confirmed. A fresh instance per order keeps the
-    // group about the effects and leaves that to t134.
+    // ONE INSTANCE PER BYTE ORDER, NOW BY CHOICE RATHER THAN BY DEFECT. This
+    // was written when the first order's departed pair could still be named
+    // by the applied focus publication on a shared instance, and the second
+    // order's key was routed to the new injector and refused RouteRejected
+    // while the new observer held a focus GetInputFocus had confirmed.
+    // Measured again under t134 on 2026-09-22 and it no longer reproduces,
+    // same order or Little then Big: see
+    // `departure_witness::a_key_after_a_departure_reaches_the_live_observer`,
+    // which drives a departure on one shared instance deliberately. A fresh
+    // instance per order is kept because it keeps this group about the
+    // effects, not because the shared one is known to be broken.
     for (order, name) in [
         (Order::Little, "effects-little"),
         (Order::Big, "effects-big"),
