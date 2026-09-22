@@ -306,6 +306,10 @@ the successful Kitty and menu checks do not need to be repeated.
 
 ## The pixel boundary and the delivery boundary are one predicate — 2026-09-21
 
+> **Superseded.** This diagnosis is wrong; see "The cause, found by the record"
+> below. The predicate divergence it describes is real and still worth
+> repairing on its own terms, but it is not why a dropdown swallows clicks.
+
 Reported again from a live session on release `0.1.0-2e7031d6b9ae`: a Thunar
 dropdown opens, and the mouse does nothing inside it. This is the delivery
 symptom rather than the pixel one, and it is not either defect already
@@ -375,6 +379,11 @@ t061 owns the pixels and t066 owns the input. If this holds they are one row.
 
 ## The live capture refutes the predicate diagnosis — 2026-09-21
 
+> **Half superseded.** Its refutation of the predicate diagnosis stands. Its own
+> conclusion -- that the popup never reaches the session -- does not: the
+> absence of admission records is designed for `ClientPositioned`, not
+> diagnostic, and the popup is in both the scene and the hit-test projection.
+
 The section above is wrong about the cause, and the record added to test it is
 what showed that. `should_render` gating the hit test is real and is still
 worth repairing on its own terms, but it is **not** why a Thunar dropdown
@@ -441,4 +450,71 @@ Not established: why admission does not happen, whether the blank-menu pixel
 symptom shares this cause (it plausibly does — an unadmitted surface is never
 composited either, which would make t061 and t066 one row after all, for a
 different reason than argued above), and whether any of this is recent.
+
+## The cause, found by the record — 2026-09-21
+
+Fixed in `8316414f`. A held pointer grab routed every event to the surface the
+grab anchored to, and a toolkit anchors that grab before its menu exists.
+
+`sophia_live_session_pointer_projection` (`f299bf3e`) prints what the hit test
+was given beside what it chose. For a click inside an open dropdown:
+
+    under=4195333:2,4194310:1   target=4194310
+
+The popup is in the projection, under the pointer, and ranked above the window
+beneath it. The hit test would have chosen it. Nothing consulted the hit test.
+
+The session log orders the cause exactly:
+
+    636789  click on the menubar        surface=4194310
+    636791  grab prepared
+    636792  grab activated
+    636797  popup CreateWindow          surface=4195333
+    636798  popup MapWindow  mapped=true
+
+GTK grabs the pointer on the window that was clicked and only then creates and
+maps its menu, so the lease anchors to a surface the pointer is about to leave.
+`input.rs` then routed every held-lease event to `lease.target_surface`,
+discarding the hit test, so each click inside the menu reached the window
+underneath it. The menu never received the press that dismisses it and stayed
+mapped over whatever came next; Escape dismissed it, because keyboard delivery
+follows focus rather than the pointer.
+
+This is X11's `owner_events` rule decided at the wrong layer. The authority
+already applies it per window -- the window under the pointer for an
+`owner_events` grab, the grab window otherwise -- and can only choose within
+the surface the session names. A wire control in the focus lane pins that half:
+given a correctly named popup surface, delivery reaches the popup; given the
+main surface while the popup is open, it reaches the main window. Both
+directions assert different windows, so the authority was never the defect and
+a repair attempted there now fails a test.
+
+`grab_routed_surface` (`live_session/input/grab_routing.rs`) moves the choice to
+where the surfaces are known: the surface under the pointer when it belongs to
+the grabbing client, the anchor otherwise. Same-client-only is what preserves a
+drag -- once the pointer leaves the client's surfaces there is no eligible hit,
+the anchor stands, and grab ordering survives a drag outside its own geometry.
+
+### What this leaves for t061 and t066
+
+t066 is the input half and this is its repair, pending installed acceptance.
+t061 is blank or black menu *pixels*, and nothing here touches rendering: these
+popups composited correctly and were drawn properly throughout, which is itself
+evidence against the earlier claim that the two rows share a cause. They are
+two rows again, for the opposite reason to the one argued this morning.
+
+### Why it took six mechanisms
+
+Five were proposed and refuted before this one, three of them mine, each traced
+through real code and each plausible: a render predicate gating input, the
+popup never reaching the session, the popup never drawing, stale composited
+pixels, and the input projection lagging behind composition. Two readers agreed
+on the first. The system refuted every one, twice within minutes of it being
+stated.
+
+Reading code is a proxy for observing the system, and agreement between readers
+is agreement about the proxy. What ended it was a record that named the surface
+a click reached and what the hit test had been given -- neither of which
+existed when the investigation started, and both of which had to be argued for
+against the temptation to fix the first plausible cause.
 
