@@ -13,7 +13,8 @@ The final 2026-09-12 gate executed **100 cases: 100 PASS, zero nonpassing**
 on clean source c690b7cd, incorporating runtime 9be53aff. That profile still
 passes on 2026-09-19 (`.artifacts/x11-conformance/baseline-d7aa48d4/`); the
 [drawing family baseline](#drawing-family-baseline) below then added twenty
-executions and is the current result. A fresh host build and
+executions, and the [2026-09-22 baseline](#runnable-again-after-the-checkout-rename)
+is the current result. A fresh host build and
 twenty strict reporting regressions pass. Evidence is
 `.artifacts/x11-conformance/final-100/`, with exact source and host/harness hashes.
 
@@ -192,6 +193,48 @@ and `cargo clippy --all-targets` are clean for the crate, and the gate's own
 unit tests pass. Coverage is unchanged at 51 of 97 decoded core requests; the
 remaining debt is the later slices named below.
 
+## Runnable again after the checkout rename
+
+Between 2026-09-19 and 2026-09-22 the checkout moved from `sophia-stack` to
+`sophia`, and the gate stopped running anywhere in its regression phase. The
+containment case `test_fabricated_outside_socket_and_mount_mutation` wants a
+scratch directory outside `/tmp`, so that a tmpfs `/tmp` cannot by itself
+satisfy the assertion that a fabricated socket stays unreachable, and it named
+an absolute path in the old checkout to get one. `mkdir` is not recursive, so a
+parent that no longer existed raised `FileNotFoundError` before the host was
+built: no mandatory case ran and no report was written. The failure is
+therefore absent evidence, not a protocol result, and the earlier baselines
+remain valid -- the path was introduced in `d0ee0160`, an ancestor of the green
+`1bf9fddf`, and resolved when that evidence was recorded.
+
+The directory is now derived from the checkout, as the gate's other modules
+already do, in `564b56c0` (merge `9f1dcf6d`). Run on clean source **9f1dcf6d**
+with host SHA256
+`7ec9eb06a5ecefa7a73d51abb9ac50c2bc107d9d6e55b335b9b19d11849bdf38`, evidence at
+`.artifacts/x11-conformance/baseline-9f1dcf6d/`: **126 executions, 126 PASS;
+gate exit 0**, both byte orders, `source_dirty` false. The isolation
+regressions pass 15 of 15 when run directly, which is how their module requires
+them to be executed.
+
+The profile grew from the 120 executions of `1bf9fddf` to 126: the opcodes
+decided under t125 brought `force_screen_saver` and `warp_pointer` into the
+mandatory set, and the inventory now counts **99 decoded core requests, 53 with
+named cases and 46 rows of coverage debt**, against 97/51/46 on 2026-09-19.
+Coverage debt is reported, never counted as tested.
+
+The core profile records `xts5` as `NOT_RUN`, with the reason that the adapter
+is a separate explicit invocation; the selected-core suite itself last ran on
+2026-09-20 and is recorded above. That remains the honest integration limit
+t057 was asked to retain, alongside the 46 debt rows. A superseded run of the
+same source with the fix still uncommitted is retained beside it at
+`baseline-e26dcd10-dirty/`; its report carries `source_dirty` true and the same
+host digest, the fix being Python-only.
+
+The rename left comparable absolute paths elsewhere in the tree, including a
+fail-closed sibling-checkout guard in `tools/run_current_lom_panel_gate_tty4.sh`
+that now refuses dock-mode runs. Those are outside this gate and are queued as
+t151.
+
 ## Gate and coverage
 
 On 2026-09-12 the operator assigned Codex the broader independent X11 protocol
@@ -214,7 +257,8 @@ duplicates and deadlines fail. A decoder-declaration inventory prevents new
 requests from disappearing from the coverage ledger. At the integrated baseline it inventories
 77 decoded core requests: 28 have named cases, 49 have explicit coverage debt.
 On 2026-09-19 it inventories 97 decoded core requests: 51 have named cases, 46
-have explicit coverage debt.
+have explicit coverage debt. On 2026-09-22 it inventories 99 decoded core
+requests: 53 have named cases, and the same 46 rows of debt remain.
 DestroySubwindows and NoOperation are both named; both now independently pass. This is a substantial selected behavioral gate, not full X11 certification.
 Query/version coverage does not certify every operation of an extension.
 
