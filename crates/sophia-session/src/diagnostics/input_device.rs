@@ -10,6 +10,7 @@ pub(super) fn record(name: &str) -> bool {
         "sophia_live_session_input_device"
             | "sophia_live_session_keys"
             | "sophia_live_session_pointer_target"
+            | "sophia_live_session_pointer_projection"
     )
 }
 
@@ -18,7 +19,8 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         "schema" => Some(1),
         // Minted identities count up from 256 for the life of the process.
         "device" | "released" | "count" | "fallbacks" => Some(u64::MAX),
-        "surface" | "generation" => Some(u64::from(u32::MAX)),
+        "surface" | "generation" | "target" => Some(u64::from(u32::MAX)),
+        "epoch" | "projections" | "layers" | "contains" => Some(u64::MAX),
         _ => None,
     };
     if let Some(limit) = limit {
@@ -33,6 +35,24 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         // reached a popup from one that fell through to the window beneath, so
         // an unrecognised value is dropped rather than carried.
         ("sophia_live_session_pointer_target", "status") => value == "button_routed",
+        ("sophia_live_session_pointer_projection", "status") => value == "button_routed",
+        // A bounded, rank-descending list of surface:rank pairs, or `-` for
+        // none. Bounded so a record the redactor trusts cannot grow without
+        // limit; validated pairwise so nothing but two numbers rides in each.
+        ("sophia_live_session_pointer_projection", "under" | "all") => {
+            value == "-"
+                || (value.split(',').count() <= 8
+                    && value.split(',').all(|pair| {
+                        pair.split_once(':').is_some_and(|(surface, rank)| {
+                            !surface.is_empty()
+                                && !rank.is_empty()
+                                && surface.bytes().all(|b| b.is_ascii_digit())
+                                && rank.bytes().all(|b| b.is_ascii_digit())
+                                && surface.parse::<u32>().is_ok()
+                                && rank.parse::<u32>().is_ok()
+                        })
+                    }))
+        }
         ("sophia_live_session_pointer_target", "role") => {
             matches!(value, "client_positioned" | "policy_managed" | "unknown")
         }

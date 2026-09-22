@@ -415,6 +415,7 @@ fn interaction_records_distinguish_delivery_rejection_and_chrome_without_payload
         "sophia_live_session_input_routing schema=1 key_observed_count=3 key_routed_count=0 key_no_focus_count=0 key_stale_focus_count=3 wm_action_count=0 pointer_button_count=2 pointer_routed_count=0 chrome_event_count=0 lease_wait_count=0 lease_rejected_count=2",
         "sophia_live_session_pointer_batch schema=1 observed_count=2 routed_count=0 suppressed_no_target_count=2 suppressed_policy_count=0",
         "sophia_live_session_pointer_target schema=1 status=button_routed surface=7 generation=42 role=client_positioned",
+        "sophia_live_session_pointer_projection schema=1 status=button_routed target=7 epoch=9 projections=1 layers=3 contains=2 under=7:2147483650,5:1 all=7:2147483650,5:1,3:0",
         "sophia_live_session_pointer schema=8 status=button_suppressed reason=no_target count=2",
         "sophia_live_session_pointer schema=2 status=button_routed count=2",
         "sophia_live_session_input_pipeline schema=2 status=key_suppressed reason=no_focus",
