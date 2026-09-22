@@ -9,7 +9,7 @@ mod pointer_queries {
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
-    struct Fixture {
+    pub(super) struct Fixture {
         path: std::path::PathBuf,
         input: XAuthorityRoutedInputSender,
         controls: mpsc::SyncSender<XAuthorityClientControlCommand>,
@@ -26,7 +26,7 @@ mod pointer_queries {
     }
 
     impl Fixture {
-        fn new(confined: bool) -> Self {
+        pub(super) fn new(confined: bool) -> Self {
             Self::with_grabs(confined, None)
         }
 
@@ -97,7 +97,7 @@ mod pointer_queries {
             }
         }
 
-        fn connect(&mut self, order: XByteOrder) -> Client {
+        pub(super) fn connect(&mut self, order: XByteOrder) -> Client {
             let mut stream = connect_x_socket(&self.path);
             stream
                 .write_all(&setup_request(order, 11, 0, b"", b""))
@@ -111,7 +111,7 @@ mod pointer_queries {
             }
         }
 
-        fn surface(&mut self, client: &mut Client, window: u32) -> SurfaceId {
+        pub(super) fn surface(&mut self, client: &mut Client, window: u32) -> SurfaceId {
             client
                 .stream
                 .write_all(&sophia_present_pixmap_request(
@@ -173,7 +173,7 @@ mod pointer_queries {
             id
         }
 
-        fn route(&mut self, surface: SurfaceId, kind: InputEventKind) {
+        pub(super) fn route(&mut self, surface: SurfaceId, kind: InputEventKind) {
             let id = self.send(surface, kind, (143.0, 259.0), (43.0, 59.0));
             let delivered = self
                 .deliveries
@@ -217,13 +217,13 @@ mod pointer_queries {
         }
     }
 
-    struct Client {
-        stream: UnixStream,
-        order: XByteOrder,
-        next: u32,
+    pub(super) struct Client {
+        pub(super) stream: UnixStream,
+        pub(super) order: XByteOrder,
+        pub(super) next: u32,
     }
     impl Client {
-        fn window(&mut self, parent: u32, geometry: (i16, i16, u16, u16)) -> u32 {
+        pub(super) fn window(&mut self, parent: u32, geometry: (i16, i16, u16, u16)) -> u32 {
             let window = self.next;
             self.next += 1;
             let (x, y, w, h) = geometry;
@@ -240,13 +240,13 @@ mod pointer_queries {
             self.barrier();
             window
         }
-        fn window_request(&mut self, opcode: u8, window: u32) {
+        pub(super) fn window_request(&mut self, opcode: u8, window: u32) {
             let mut request = vec![opcode, 0];
             push_u16(&mut request, self.order, 2);
             push_u32(&mut request, self.order, window);
             self.stream.write_all(&request).unwrap();
         }
-        fn reply(&mut self) -> Vec<u8> {
+        pub(super) fn reply(&mut self) -> Vec<u8> {
             loop {
                 let mut record = read_x_record(&mut self.stream).to_vec();
                 if record[0] == 1 || record[0] == 35 {
@@ -260,7 +260,7 @@ mod pointer_queries {
                 }
             }
         }
-        fn barrier(&mut self) {
+        pub(super) fn barrier(&mut self) {
             let mut request = vec![43, 0];
             push_u16(&mut request, self.order, 1);
             self.stream.write_all(&request).unwrap();
