@@ -99,6 +99,63 @@ fn no_wm_session_geometry_routes_its_policy_managed_window() {
     );
 }
 
+/// The owner loop's routed set, built from a layout the way
+/// `authority_production.rs` builds it.
+///
+/// The predicate alone was pinned; the filter that turns a layout's layers
+/// into `geometry_routed_surfaces` was not, and that filter is exactly what
+/// `4eb1136a` got wrong -- it kept client-positioned surfaces only, so a no-WM
+/// policy-managed window was absent from the set, routed to no output, and
+/// parked `NoApplicableOutput` until startup timed out.
+fn routed_set(layout: &PersistentLiveLayout) -> Vec<SurfaceId> {
+    let mut layers: Vec<_> = layout.layers.values().collect();
+    layers.sort_by_key(|layer| layer.stack_rank);
+    layers
+        .iter()
+        .filter(|layer| layout.surface_is_geometry_routed(layer.surface))
+        .map(|layer| layer.surface)
+        .collect()
+}
+
+#[test]
+fn a_no_wm_layout_puts_its_policy_managed_window_in_the_routed_set() {
+    let surface = SurfaceId::new(57, 1);
+    let geometry = Rect {
+        x: 20,
+        y: 30,
+        width: 640,
+        height: 480,
+    };
+    let output = Size {
+        width: 2560,
+        height: 1440,
+    };
+    let batch = direct_map_batch(surface, TransactionId::from_raw(115), geometry, 115);
+
+    let mut direct = PersistentLiveLayout::new(LivePolicyMapMode::Direct, output);
+    direct.observe_authority_batch(&batch);
+    assert!(
+        !direct.is_client_positioned(surface),
+        "the fixture window must be policy-managed for this to test anything"
+    );
+    assert_eq!(
+        routed_set(&direct),
+        vec![surface],
+        "a no-WM session routes its policy-managed window by geometry: nothing \
+         there assigns an output owner, so an empty set reaches no output at all"
+    );
+
+    // The external-WM path is unchanged. There a policy owner is assigned, so
+    // the surface must stay out of the geometry set and route by its owner;
+    // putting it in would let geometry override a policy placement.
+    let mut deferred = PersistentLiveLayout::new(LivePolicyMapMode::Deferred, output);
+    deferred.observe_authority_batch(&batch);
+    assert!(
+        routed_set(&deferred).is_empty(),
+        "with a window manager a policy-managed surface routes by its assigned owner"
+    );
+}
+
 #[test]
 fn no_wm_session_keeps_first_toplevel_chrome_inside_the_output() {
     let surface = SurfaceId::new(56, 1);
