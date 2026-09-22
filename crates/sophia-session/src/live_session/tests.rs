@@ -17,6 +17,8 @@ mod live_session_shutdown;
 
 #[path = "../../tests/support/component_execution.rs"]
 mod component_execution;
+#[path = "../../tests/support/component_prepare_refusal.rs"]
+mod component_prepare_refusal;
 #[path = "../../tests/support/shell_component_config.rs"]
 mod shell_component_config;
 

@@ -2,6 +2,53 @@
 use super::*;
 use metadata_shell::component_session::ShellComponentSession;
 
+/// The retained token for a component's role, as reduction admits it.
+fn role_token(role: sophia_config::ShellComponentRole) -> &'static str {
+    match role {
+        sophia_config::ShellComponentRole::Bar => "bar",
+        sophia_config::ShellComponentRole::Dock => "dock",
+        sophia_config::ShellComponentRole::ApplicationLauncher => "application_launcher",
+    }
+}
+
+/// One record per component refused by a direct-grant refusal, in declared
+/// order. A denied component asked for no grant and is never refused here.
+///
+/// SLOT IS THE DECLARED POSITION, NOT A RUNTIME ONE. A refused component never
+/// reaches the process layer and is never assigned a slot there, so this names
+/// the entry in the operator's profile, which is what they can act on. Carrying
+/// it at all is the repair this path existed to make: the 841 records that
+/// opened the investigation could not name the component that failed.
+pub(super) fn refusal_records(
+    selected: &[sophia_config::ShellComponentConfig],
+    error: &str,
+) -> Vec<String> {
+    let cause = crate::component_start_cause::classify(error).as_str();
+    selected
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry.gpu == sophia_config::ShellGpuMode::Direct)
+        .map(|(slot, entry)| {
+            format!(
+                "sophia_shell_component schema=1 status=start_refused cause={cause} slot={slot} role={} gpu_mode=direct",
+                role_token(entry.role),
+            )
+        })
+        .collect()
+}
+
+/// What survives a direct-grant refusal: the components that never asked for
+/// one, which keep the CPU rasterize path that needs no device.
+pub(super) fn admitted_without_direct(
+    selected: &[sophia_config::ShellComponentConfig],
+) -> Vec<sophia_config::ShellComponentConfig> {
+    selected
+        .iter()
+        .filter(|entry| entry.gpu != sophia_config::ShellGpuMode::Direct)
+        .cloned()
+        .collect()
+}
+
 pub(super) fn prepare(
     config: &PersistentXtermSessionConfig,
     client_render_devices: Option<&render_devices::LiveRenderDeviceCoordinator>,
@@ -20,18 +67,45 @@ pub(super) fn prepare(
             if config.shell_process.is_some() {
                 return Err("legacy and independent shell ownership are mutually exclusive".into());
             }
-            let device = if selected
+            // A direct grant needs the implementation, the operator's policy
+            // and the launch resources to agree, and all three are decidable
+            // here -- before any child runs. Refusing now replaces a component
+            // that starts, negotiates and fails in service at every backoff
+            // interval for ever with one record saying why it will not start.
+            //
+            // The device is session-global: there is one active render device,
+            // so every direct component shares its fate. A refusal therefore
+            // refuses all of them and none of the denied ones, which keep the
+            // CPU rasterize path that needs no grant.
+            let refusal = selected
                 .iter()
                 .any(|entry| entry.gpu == sophia_config::ShellGpuMode::Direct)
-            {
-                Some(
+                .then(|| {
                     client_render_devices
-                        .ok_or("component GPU access requires native client rendering")?
-                        .shell_gpu_device()?,
-                )
-            } else {
-                None
+                        .ok_or_else(|| {
+                            "component GPU access requires native client rendering".to_string()
+                        })
+                        .and_then(render_devices::LiveRenderDeviceCoordinator::shell_gpu_device)
+                })
+                .transpose();
+            let (device, admitted) = match refusal {
+                Ok(device) => (device, std::borrow::Cow::Borrowed(selected.as_slice())),
+                Err(error) => {
+                    for record in refusal_records(selected, &error) {
+                        crate::session_println!("{}", record);
+                    }
+                    (
+                        None,
+                        std::borrow::Cow::Owned(admitted_without_direct(selected)),
+                    )
+                }
             };
+            // Every selected component was refused. The session comes up
+            // without a shell component rather than not at all: one that
+            // cannot get a device is not a reason to withhold the desktop.
+            if admitted.is_empty() {
+                return Ok((None, None));
+            }
             let directory = std::env::temp_dir().join(format!(
                 "sophia-live-components-{}-{}",
                 std::process::id(),
@@ -42,7 +116,7 @@ pub(super) fn prepare(
             use std::os::unix::fs::DirBuilderExt as _;
             std::fs::DirBuilder::new().mode(0o700).create(&directory)?;
             let prepared = metadata_shell::component_session::ShellComponentSession::prepare(
-                selected,
+                &admitted,
                 config.shell_panel_thickness.unwrap_or(0),
                 device,
                 &directory,
