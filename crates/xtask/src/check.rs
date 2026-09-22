@@ -456,6 +456,15 @@ fn clippy(repo: &Path) -> Result<(), String> {
             "--workspace",
             "--all-features",
             "--all-targets",
+            // Without a lint level this step exits zero on any number of
+            // lints and can only fail on a compile error, so a green gate
+            // never supported the claim it was read as making. The cargo
+            // flags above already matched the invocation the plan names;
+            // one separator did not, and a lint that the plan's own command
+            // refuses reached master behind a green check.
+            "--",
+            "-D",
+            "warnings",
         ])
         .status()
         .map_err(|error| format!("could not run cargo clippy: {error}"))?;
