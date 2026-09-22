@@ -369,3 +369,36 @@ scheduling gap, and repaired feedback delivery before the owner loop's no-work
 exit. It records the implementation and test limits separately from physical
 acceptance; the earlier scheduling paragraph above describes the pre-repair
 audit, not the current candidate.
+
+## t066 accepted: pointer input reaches an open menu — 2026-09-21
+
+Accepted on the installed session carrying `8316414f`, by hand. Menus open,
+clicks inside them land in the menu, and the menu dismisses.
+
+The repair is not this note's defect. This row was opened against rejected
+pointer leases and grab ordering; the session that accepted it shows
+`lease_rejected_count=0` and explicit grabs cycling prepared, activated,
+released with `rejected=0` throughout, so nothing here was being refused. The
+cause was a held grab routing every event to the surface its lease anchored to,
+and a toolkit anchors that grab before its menu exists. It is recorded in
+[ce2b55uy](ce2b55uy-blank-thunar-menus-and-frozen-brave-need-separate-pixel-and-delivery-evidence.md)
+and fixed by `grab_routed_surface` in `live_session/input/grab_routing.rs`.
+
+The acceptance evidence is a record rather than an impression.
+`sophia_live_session_pointer_projection` prints what the hit test was given
+beside what it chose, and before the fix the two disagreed on exactly the
+popup:
+
+    before   under=4195333:2,4194310:1   target=4194310
+    after    under=4203354:3,4195330:2   target=4203354   role=client_positioned
+
+The routed target is now the top-ranked layer under the pointer. Ordinary
+clicks are unchanged: surfaces that are themselves under the pointer still
+route to themselves, which was the risk in touching grab routing at all.
+Popups also enter and leave the projection across epochs rather than
+accumulating, which is the menus dismissing.
+
+Qt menus are not separately re-accepted here. This row's text is pointer input
+and redraws after popup-menu acceptance, and that is what was accepted; if a Qt
+toolkit still fails to open a menu, it is a live defect against this note
+rather than a reopening of this row.
