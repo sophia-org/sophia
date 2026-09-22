@@ -108,7 +108,22 @@ drawing spends the vblank that client's next frame needed. Tracked as t120.
 
 ## Finding and resolution
 
-Not established. The per-event routing is confirmed and the coalescer exists
+**Established, and repaired.** Coalescing motion to the frame boundary
+recovered 41.7 to 48.1 FPS on the shake rig and drove `max_input_phase_msec`
+to zero, so per-event routing was a real cost; what it was not was the whole
+cost, and the remainder became t120. On the installed desktop at `a58800c3`
+the halving this note opened on -- 118 FPS idle against 60 while the pointer
+moved -- is gone, with `glxgears` holding 117.8 FPS on the 120Hz head under a
+moving pointer. Verified again on `f85aca96`: the coalescer is threaded as
+`&mut` through `live_session/input.rs:371` and `physical_input_phase.rs`, and
+the five live-routing tests in
+`tests/support/application_lease_routing.rs:837-960` pass.
+
+The reading below is the pre-repair state, kept because it is what the repair
+was decided from and because its second paragraph is what pointed at t120.
+
+Not established at the time. The per-event routing is confirmed and the
+coalescer exists
 unused, but that motion volume is *the* cause of the surviving halving is a
 hypothesis the measurements above are consistent with rather than proof. The
 cadence repairs removed a halving whose mechanism was read directly from the
