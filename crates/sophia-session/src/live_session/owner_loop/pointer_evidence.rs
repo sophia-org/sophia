@@ -53,7 +53,7 @@ fn emit_pointer_evidence(
         return;
     }
     let mut ranked: Vec<&sophia_protocol::LayerSnapshot> = projection_layers.iter().collect();
-    ranked.sort_by(|a, b| b.stack_rank.cmp(&a.stack_rank));
+    ranked.sort_by_key(|layer| std::cmp::Reverse(layer.stack_rank));
     let under: Vec<&sophia_protocol::LayerSnapshot> = pointer.map_or_else(Vec::new, |point| {
         ranked
             .iter()
