@@ -79,9 +79,9 @@ fn a_key_lands_on_the_pointers_window_inside_the_focus_subtree_and_on_the_focus_
 
 #[test]
 fn delivery_stops_at_the_focus_rather_than_climbing_past_it() {
-    // Only a window above the focus wants the event. Propagation is capped at
-    // the focus, so nobody gets it: climbing past would deliver a key to a
-    // window the focus is meant to shield.
+    // Only a window above the focus wants the event, and the path ends at the
+    // focus, so nobody gets it. The ceiling is the path's last element rather
+    // than a rule inside the walk, which is how the two callers can differ.
     let selects = |window: XResourceId| Ok::<_, ()>(Some(true).filter(|_| window == parent()));
     assert_eq!(
         Ok(None),

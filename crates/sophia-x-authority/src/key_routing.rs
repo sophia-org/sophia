@@ -16,12 +16,19 @@ use crate::XResourceId;
 
 /// The window a key is delivered to, and whether by core rather than XI2.
 ///
-/// `delivery_path` runs deepest first and ends at the focus window: it is the
-/// pointer's own chain truncated at the focus when the pointer is inside the
-/// focus subtree, and just the focus window when it is not. Deepest first is
-/// delivery order, which is the opposite of the root-first convention
+/// `delivery_path` runs deepest first: it is the pointer's own chain
+/// truncated at the focus when the pointer is inside the focus subtree, and
+/// the focus window when it is not. Deepest first is delivery order, which is
+/// the opposite of the root-first convention
 /// [`crate::x_focus_transition_events`] uses; the two are ordered the way
 /// their own protocol text reads.
+///
+/// **Where the walk stops is the path's business, not this function's.** The
+/// two callers differ there and the difference is real: the private path ends
+/// its path at the focus, so propagation never climbs above it, while the
+/// ordinary path continues to the focus's ancestors as Xorg does. Expressing
+/// that through the path rather than a flag keeps one rule with one meaning,
+/// and makes each caller's ceiling visible where it is chosen.
 ///
 /// `selects` answers whether a window wants the event, `Some(false)` meaning
 /// XI2 selected it and `Some(true)` core. It is fallible so a caller that
@@ -41,9 +48,7 @@ pub(crate) fn x_key_delivery_target<E>(
         if let Some(core) = selects(window)? {
             return Ok(Some((window, core)));
         }
-        // The focus is the ceiling: propagation inside the subtree stops
-        // there rather than continuing to its ancestors.
-        if window == focus || do_not_propagate(window) {
+        if do_not_propagate(window) {
             break;
         }
     }

@@ -334,19 +334,58 @@ impl XCoreEventSelectionState {
             .unwrap_or_else(|| self.keyboard_fallback(focused))
     }
 
+    /// Where a key is reported, by the protocol's rule rather than by the
+    /// focus window alone.
+    ///
+    /// This used to walk up from the focus checking one mask, which got the
+    /// common case right and two things wrong. It never delivered to the
+    /// window the pointer was in when that window was inside the focus
+    /// subtree, and it never honoured a do-not-propagate mask, which
+    /// `selected_pointer_target` directly below has always honoured -- so a
+    /// client setting it was obeyed for buttons and ignored for keys.
+    ///
+    /// The rule is [`crate::key_routing::x_key_delivery_target`], shared with
+    /// the private delivery path so the two cannot drift again. The ceiling
+    /// is this path's own: it continues to the focus's ancestors, as Xorg
+    /// does, where the private path stops at the focus.
     fn selected_keyboard_target(&self, focused: XResourceId) -> Option<XResourceId> {
-        let mut candidate = self.keyboard_fallback(focused);
-        for _ in 0..64 {
-            if self
-                .windows
-                .get(&candidate)
-                .is_some_and(|selection| selection.mask & Self::KEY_MASKS != 0)
-            {
-                return Some(candidate);
+        let focus = self.keyboard_fallback(focused);
+        let above_focus = self.ancestry_including(focus);
+        // The pointer's own chain when it reaches the focus, truncated there
+        // and then continued upward; the focus's chain alone when the pointer
+        // is on a branch the focus does not contain.
+        let delivery_path = match self
+            .pointer_window()
+            .map(|pointer| self.ancestry_including(pointer))
+            .filter(|path| path.contains(&focus))
+        {
+            Some(path) => {
+                let depth = path
+                    .iter()
+                    .position(|window| *window == focus)
+                    .unwrap_or_default();
+                let mut path = path[..depth].to_vec();
+                path.extend(above_focus);
+                path
             }
-            candidate = self.parents.get(&candidate).copied()?;
-        }
-        None
+            None => above_focus,
+        };
+        let found = crate::key_routing::x_key_delivery_target::<()>(
+            focus,
+            &delivery_path,
+            &mut |window| Ok(self.selects(window, Self::KEY_MASKS).then_some(true)),
+            &|window| {
+                self.windows
+                    .get(&window)
+                    .is_some_and(|selection| selection.do_not_propagate_mask & Self::KEY_MASKS != 0)
+            },
+            // No second try at the focus. This path's delivery path already
+            // contains the focus, so a retry can only fire when the walk was
+            // stopped early by a do-not-propagate mask -- and offering the
+            // event to the focus anyway is exactly what that mask forbids.
+            false,
+        );
+        found.ok().flatten().map(|(window, _)| window)
     }
 
     fn selected_pointer_target(
