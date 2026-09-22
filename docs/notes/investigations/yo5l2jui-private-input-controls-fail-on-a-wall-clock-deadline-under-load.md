@@ -181,8 +181,32 @@ will fail at the recorded rate, but in milliseconds and by name.
       failing at the 20-second bound with a message describing success.
       After, the same runs fail at once naming the route-queue death; on the
       quiet machine, 1 of 3 library runs, in 16 ms.
-- [ ] Re-measure over at least 12 runs under the gate's isolation once t130
-      has landed, against the 3-in-12 baseline.
+- [x] Re-measure over at least 12 runs under the gate's isolation once t130
+      has landed, against the 3-in-12 baseline. Done 2026-09-22 on `03fd1437`:
+      **12 runs, 12 green, zero failures**, against 3 in 12 on `92ca9b56`.
+      Each run is `cargo test --offline --workspace --all-features` under the
+      isolation `crates/xtask/src/check.rs:515` sets up -- a fresh mode-0700
+      `XDG_CONFIG_HOME`, `SOPHIA_SHELL_CONFIG` and
+      `SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE` removed -- on the 32-core desktop
+      host with no added load, which is the baseline's own profile. Logs are
+      retained per run in `.artifacts/t115-wait-remeasure/`.
+
+      The three controls the baseline named --
+      `a_control_refused_for_now_keeps_its_place_and_its_transaction`,
+      `an_unreadable_surface_ledger_refuses_rather_than_reporting_an_empty_one`
+      and `a_stop_counts_receipts_nobody_drained` -- each report `ok` in all
+      twelve, so this is twelve executions of the controls and not twelve
+      suites that skipped them. Runs took 88 to 90 seconds, a two-second
+      spread: the old shape spent its whole 20-second budget before failing,
+      so a wall-clock give-up would have stood out in the duration alone.
+      Between runs the executed count varies by one,
+      `gbm_backed_platform::native_gbm_backed_platform_maps_open_failure_to_unavailable`,
+      which depends on the host's GBM device and is unrelated to these
+      controls.
+
+      Twelve of twelve does not prove the rate is zero; it puts it below what
+      twelve runs can resolve, against a baseline that failed three times in
+      the same number.
 - [ ] The same wall-clock shape elsewhere is t131: `x11_socket/tests/routing.rs`
       (12 sites), `tests/support/m3_acceptance_c.rs` (9),
       `tests/connection_wait.rs` (6), the desktop comparison `workload.rs` (6),
