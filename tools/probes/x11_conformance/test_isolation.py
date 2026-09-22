@@ -140,7 +140,10 @@ class RealIsolationTests(unittest.TestCase):
 
     def test_fabricated_outside_socket_and_mount_mutation(self):
         # Deliberately outside /tmp: a tmpfs /tmp alone must not satisfy this.
-        artifacts = Path('/home/niltempus/dev/sophia-stack/.artifacts')
+        # The checkout's own .artifacts is the nearest such directory that
+        # exists wherever the gate runs; an absolute path to one developer's
+        # tree makes the whole gate unrunnable elsewhere.
+        artifacts = HERE.parents[2] / '.artifacts'
         artifacts.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='isolation-', dir=artifacts) as temporary:
             path = str(Path(temporary) / 'endpoint')
