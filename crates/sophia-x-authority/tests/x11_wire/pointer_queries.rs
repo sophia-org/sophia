@@ -173,6 +173,25 @@ mod pointer_queries {
             id
         }
 
+        /// The same as [`Self::route`], naming the position instead of taking
+        /// the fixture's default one, so a control can move the pointer from
+        /// one window to another between events.
+        pub(super) fn route_at(
+            &mut self,
+            surface: SurfaceId,
+            kind: InputEventKind,
+            global: (f64, f64),
+            local: (f64, f64),
+        ) {
+            let id = self.send(surface, kind, global, local);
+            let delivered = self
+                .deliveries
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap();
+            assert_eq!(delivered.delivery, id);
+            assert_eq!(delivered.outcome, XAuthorityInputDeliveryOutcome::Flushed);
+        }
+
         pub(super) fn route(&mut self, surface: SurfaceId, kind: InputEventKind) {
             let id = self.send(surface, kind, (143.0, 259.0), (43.0, 59.0));
             let delivered = self
