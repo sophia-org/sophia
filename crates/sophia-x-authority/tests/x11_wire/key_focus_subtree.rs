@@ -99,11 +99,10 @@ mod key_focus_subtree {
         );
     }
 
-    // A companion test for the do-not-propagate mask is deliberately absent.
-    // The rule honours it -- see key_routing's own controls -- but this path
-    // cannot yet act on it: when the walk finds nobody, writers/input.rs waits
-    // out a readiness deadline and then delivers to the focus anyway, so a
-    // blocked walk and an unselected one are indistinguishable by the time the
-    // event is written. Making a block discard needs a third outcome there and
-    // is raised as t150 rather than asserted here as though it worked.
+    // The do-not-propagate companion lives in key_focus_sentinels.rs. It was
+    // absent when this file landed, because the writer could not act on a
+    // block: it waited out a readiness deadline whenever nothing selected and
+    // then delivered to the focus anyway, so a blocked walk and an unselected
+    // one were the same answer by the time the event was written. That was
+    // t150, and the third outcome it needed is now there.
 }

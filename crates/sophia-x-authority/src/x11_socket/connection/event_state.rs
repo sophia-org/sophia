@@ -28,6 +28,16 @@ fn x11_core_event_selection_update(
 /// yet" and "this must not be delivered" are different instructions and used
 /// to be the same `None`. The writer waits out a startup race for the first
 /// and must not wait at all for the second.
+/// Why a key is delivered nowhere. Both are the client's own decision; they
+/// are told apart only so the trace says which one happened.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XKeyDiscard {
+    /// The focus is `None`.
+    FocusNone,
+    /// A do-not-propagate mask ended the walk with nobody selecting.
+    DoNotPropagate,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum XKeyDelivery {
     /// Report the key with respect to this window.
@@ -35,7 +45,7 @@ pub(crate) enum XKeyDelivery {
     /// Deliver nothing, and do not wait: a focus of `None` discards keyboard
     /// events until a focus is set again, and no amount of waiting changes
     /// what a client has decided.
-    Discard,
+    Discard(XKeyDiscard),
     /// No window has selected the event yet, which may still be a client
     /// that has not finished starting up.
     Unselected,
@@ -359,7 +369,7 @@ impl XCoreEventSelectionState {
     fn selected_keyboard_target(&self, focused: XResourceId) -> Option<XResourceId> {
         match self.keyboard_delivery(focused) {
             XKeyDelivery::Window(window) => Some(window),
-            XKeyDelivery::Discard | XKeyDelivery::Unselected => None,
+            XKeyDelivery::Discard(_) | XKeyDelivery::Unselected => None,
         }
     }
 
@@ -383,7 +393,7 @@ impl XCoreEventSelectionState {
             // A focus of None discards keyboard events until a focus is set
             // again. It is a decision, not an absence, so it must not be
             // confused with nobody having selected the event yet.
-            Ok(crate::X_FOCUS_NONE) => return XKeyDelivery::Discard,
+            Ok(crate::X_FOCUS_NONE) => return XKeyDelivery::Discard(XKeyDiscard::FocusNone),
             // PointerRoot is the root of the screen the pointer is on,
             // resolved at each event rather than stored. Taking the root as
             // the focus is the whole implementation: every window is in the
@@ -432,9 +442,16 @@ impl XCoreEventSelectionState {
             // event to the focus anyway is exactly what that mask forbids.
             false,
         );
-        match found.ok().flatten() {
-            Some((window, _)) => XKeyDelivery::Window(window),
-            None => XKeyDelivery::Unselected,
+        match found {
+            Ok(crate::key_routing::XKeyTarget::Found { window, .. }) => {
+                XKeyDelivery::Window(window)
+            }
+            Ok(crate::key_routing::XKeyTarget::Blocked) => {
+                XKeyDelivery::Discard(XKeyDiscard::DoNotPropagate)
+            }
+            Ok(crate::key_routing::XKeyTarget::Unselected) | Err(()) => {
+                XKeyDelivery::Unselected
+            }
         }
     }
 

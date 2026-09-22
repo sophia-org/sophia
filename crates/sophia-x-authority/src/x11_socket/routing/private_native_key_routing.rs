@@ -155,7 +155,12 @@ fn normal_key_target(
         },
         retry_focus,
     )?;
-    let (window, core) = selected.ok_or(PrivateAppliedRefusal::NotSelected)?;
+    // Blocked and Unselected are the same refusal on this path: it has no
+    // readiness wait to suppress, so the distinction the ordinary path needs
+    // would be a difference without a consequence here.
+    let crate::key_routing::XKeyTarget::Found { window, core } = selected else {
+        return Err(PrivateAppliedRefusal::NotSelected);
+    };
     Ok((window, core, path))
 }
 

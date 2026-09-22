@@ -11,6 +11,7 @@ mod key_focus_sentinels {
     use super::key_focus_subtree::{next_key_window, press, set_input_focus};
     use super::pointer_queries::{Client, Fixture};
     use super::*;
+    use std::io::Write;
 
     const X_FOCUS_NONE: u32 = 0;
     const X_FOCUS_POINTER_ROOT: u32 = 1;
@@ -137,6 +138,63 @@ mod key_focus_sentinels {
             next_key_window(&mut client),
             "the pointer's window is not inside the focus subtree, so the key \
              is reported on the focus rather than on the pointer's window"
+        );
+    }
+
+    /// Sets both masks in one ChangeWindowAttributes: CWEventMask (bit 11)
+    /// then CWDontPropagate (bit 12), values in bit order as the protocol
+    /// requires.
+    fn set_masks(client: &mut Client, window: u32, event_mask: u32, do_not_propagate: u32) {
+        let mut request = vec![2u8, 0];
+        push_u16(&mut request, client.order, 5);
+        push_u32(&mut request, client.order, window);
+        push_u32(&mut request, client.order, (1 << 11) | (1 << 12));
+        push_u32(&mut request, client.order, event_mask);
+        push_u32(&mut request, client.order, do_not_propagate);
+        client.stream.write_all(&request).unwrap();
+        client.barrier();
+    }
+
+    /// A do-not-propagate mask discards the key rather than letting it fall
+    /// through to the focus.
+    ///
+    /// This control could not be written until the lookup could say *why* it
+    /// found nobody. The writer waits out a five-second readiness deadline
+    /// whenever nothing selects -- a deliberate allowance for a client that
+    /// presents before it selects -- and then delivers to the focus anyway,
+    /// so a blocked walk and an empty one were the same answer by the time
+    /// the event was written, and the mask was unenforceable here whatever
+    /// the rule returned. Raised as t150 and closed by this.
+    #[test]
+    fn a_do_not_propagate_mask_discards_the_key_rather_than_reaching_the_focus() {
+        let order = XByteOrder::LittleEndian;
+        let mut f = Fixture::new(false);
+        let mut client = f.connect(order);
+        let main = client.window(X_SETUP_DEFAULT_ROOT, (100, 200, 320, 240));
+        let child = client.window(main, (0, 0, 200, 200));
+        let surface = f.surface(&mut client, main);
+        // The child wants no keys and forbids passing them upward; the focus
+        // above it does want them, and must not receive this one.
+        set_masks(&mut client, child, 0, 3);
+        set_input_focus(&mut client, main);
+        move_pointer(&mut f, surface, IN_LEFT);
+
+        let started = std::time::Instant::now();
+        press(&mut f, surface);
+        assert_eq!(
+            None,
+            next_key_window(&mut client),
+            "the pointer is in a window whose do-not-propagate mask covers \
+             keys, so the event is not offered to the focus above it"
+        );
+        // The discard must also be immediate. Falling through after the
+        // readiness deadline would be wrong in the same way even if the
+        // event were eventually dropped, and would be invisible to the
+        // assertion above.
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "a block is a decision, not a startup race: {:?}",
+            started.elapsed()
         );
     }
 }
