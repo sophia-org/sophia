@@ -148,6 +148,28 @@ XTEST run in QEMU wants its own scenario without them.
 
 Open work is tracked as t124 in `todo.md`.
 
+## A headless attempt, and what stopped it, 2026-09-22
+
+The open row can be driven without a TTY or a guest: `x11_conformance_host
+--admit-xtest` is the production frontend on a private display, a real `xterm`
+starts against it (fonts and RENDER suffice), `xdotool` issues the XTEST drag,
+and `selection_probe PRIMARY` reads the owner from outside the process. That is
+the whole apparatus the row asks for, and it was assembled and run here.
+
+It did not reach the answer. The first `xdotool` XTEST request ended the host:
+`X11 dispatch ended before its effects were published`, every classification
+flag false. Isolated to the trigger, it is not xterm and not an ordinary
+disconnect -- a lone `xdotool mousedown 1` on the bare root does it. That is
+its own defect, recorded as
+[t154](945mtp8i-a-real-xtest-client-that-closes-right-after-a-zero-delay-fakeinput-ends-the-frontend-service.md),
+and it blocks this row: the client behaviour that would answer the question is
+the one the frontend cannot survive.
+
+So the row above stays open, and its status is unchanged from the QEMU run: no
+`SetSelectionOwner` was observed, and that is because the gesture never landed,
+not because xterm declined to send one. The scripts are retained under
+`.artifacts/t124-xtest-service-exit/` and run as written once t154 lands.
+
 ## Connections
 
 - [A kitty window waits out a four-second layout budget before it opens](cnbxdj48-a-kitty-window-waits-out-a-four-second-layout-budget-before-it-opens.md) --
