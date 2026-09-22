@@ -131,6 +131,93 @@ fn an_unbounded_vocabulary_cannot_grow_the_budget() {
     assert_eq!(budget.total_suppressed(), 1);
 }
 
+/// What the reference host actually writes, measured from the post-repair
+/// session `00000001789950095665-f150c787` on 2026-09-20.
+///
+/// A `sophia_x_present_delivery` entry is 239 bytes with its sequence,
+/// timestamp and monotonic columns: that session wrote 3,932,186 bytes of
+/// them in 16,443 records before its share was spent. Eight are emitted per
+/// presented frame -- four statuses for each of two kinds -- so an onscreen
+/// client at 118 frames a second offers 944 of them a second.
+const DELIVERY_ENTRY: u64 = 239;
+const DELIVERY_PER_FRAME: u64 = 8;
+const REFERENCE_FPS: u64 = 118;
+
+#[test]
+fn the_share_buys_the_routing_records_a_whole_segment_at_the_reference_rate() {
+    // t118's judgement, at the operating point the shake produces rather than
+    // the one an ordinary desktop does. The real post-repair session settles
+    // that routing records survive at all -- 411 and 1,434 of them per
+    // segment, against 203,263 and 177,412 delivery records refused -- but it
+    // ran at about 157 delivery records a second. The shake's client offers
+    // six times that, and the question is whether the share still leaves the
+    // sparse kinds a segment to land in when it does.
+    let mut budget = SegmentBudget::default();
+    let per_second = DELIVERY_PER_FRAME * REFERENCE_FPS;
+
+    let mut admitted = 0u64;
+    while budget.admit("sophia_x_present_delivery", DELIVERY_ENTRY) == Admission::Written {
+        admitted += 1;
+        assert!(
+            admitted < 1_000_000,
+            "the share must be spent, not unbounded"
+        );
+    }
+
+    // Spent in seconds, not minutes: the flood is cut early in the segment and
+    // everything that follows it in that segment is somebody else's.
+    let seconds_to_spend = admitted / per_second;
+    assert_eq!(
+        (admitted, seconds_to_spend),
+        (16_453, 17),
+        "the reference client spends the share in seventeen seconds"
+    );
+
+    // The segment is ~23 minutes at the rate that session rotated at, so the
+    // routing records the check exists to read arrive long after the flood was
+    // cut. They must still be written -- this is the whole repair.
+    for _ in 0..4_096 {
+        assert_eq!(
+            budget.admit("sophia_live_session_input_routing", 512),
+            Admission::Written,
+            "a routing record must outlive the flood that used to evict it"
+        );
+    }
+    assert_eq!(
+        budget.admit("sophia_live_session_pointer", 512),
+        Admission::Written
+    );
+
+    // And the flood is still being refused while they land, which is what the
+    // health total reported as 457,843 for that session.
+    assert_eq!(
+        budget.admit("sophia_x_present_delivery", DELIVERY_ENTRY),
+        Admission::Suppressed
+    );
+}
+
+#[test]
+fn a_second_flooding_kind_does_not_take_the_routing_records_room() {
+    // Both Present kinds hit their share in that session -- delivery in every
+    // segment, submission in two of three. Two shares is half the segment, so
+    // the sparse kinds still have the other half; this is that bound driven
+    // through the accounting rather than asserted of the constant.
+    let mut budget = SegmentBudget::default();
+    for name in ["sophia_x_present_delivery", "sophia_x_present_submission"] {
+        while budget.admit(name, DELIVERY_ENTRY) == Admission::Written {}
+    }
+
+    let mut room = 0u64;
+    while budget.admit("sophia_live_session_input_routing", 512) == Admission::Written {
+        room += 512;
+        assert!(room <= SEGMENT_LIMIT, "a third name is bounded too");
+    }
+    assert_eq!(
+        room, NAME_SEGMENT_SHARE,
+        "a third kind gets a full share of its own after two floods"
+    );
+}
+
 #[test]
 fn a_record_is_charged_to_its_own_name() {
     // The same first token the reduction validated and the tracing layer

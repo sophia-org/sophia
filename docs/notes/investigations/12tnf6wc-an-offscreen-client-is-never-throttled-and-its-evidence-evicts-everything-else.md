@@ -160,10 +160,81 @@ ever wanted.
       rather than ~9,000 FPS, `sophia_live_present_scheduler schema=2` shows
       `paced_skips` in the thousands with `frame_tick_overflows=0`, and the
       window resumes its onscreen rate when dragged back.
-- [ ] Re-run the evidence-volume check onscreen under the synthetic shake once
-      the records can survive long enough to read.
+- [x] Re-run the evidence-volume check onscreen under the synthetic shake once
+      the records can survive long enough to read. Answered 2026-09-22 from
+      retained post-repair sessions and a measurement at the shake's own rate;
+      see the section below. The share stands unchanged.
+- [ ] Still unwitnessed from the row above: that a window **resumes its
+      onscreen rate when dragged back**. The scheduler counters and the
+      offscreen rate are evidenced; the drag itself needs a hand.
 
 Open work is tracked as t118 in `todo.md`.
+
+## The share judged, 2026-09-22
+
+The question this left open was whether a quarter of the segment is the right
+size for one record name, once a shake's routing records could be read beside
+the flood. Two independent answers, and they agree.
+
+**What the repair actually did, from retained evidence.** Session
+`00000001789950095665-f150c787` (2026-09-20) rotated three full 15 MiB
+segments. In every one, `sophia_x_present_delivery` stops at its share almost
+exactly -- 3,932,186, 3,932,192 and 3,932,350 bytes against a
+`NAME_SEGMENT_SHARE` of 3,932,160, the excess being the single record that
+crosses the line and is admitted in full because charging happens on admission.
+`sophia_x_present_submission` reached its share in two of the three. Two
+flooding kinds therefore took 7.5 MiB, exactly half the segment, and the other
+half went to `sophia_live_session_present` (3.4 MB),
+`sophia_live_session_scanout` (2.2 MB), `sophia_live_shell_content` (1.27 MB),
+`sophia_shell_native_binding` (0.67 MB) and the sparse kinds.
+
+Among those sparse kinds: **`sophia_live_session_input_routing`, 411 records in
+one segment and 1,434 in the next.** That is the kind this investigation opened
+on, when every one of them had been evicted before the check they were produced
+for could read them. They now survive in the same segments in which 203,263 and
+177,412 delivery records were refused. The cut announced itself where it
+happened -- three `status=share_spent` records for delivery, two for submission
+-- the counts followed at each rotation, and the health record closed the
+session with `suppressed=457843`. A bounded log is not being mistaken for a
+quiet one.
+
+**At the shake's rate rather than a desktop's.** That session is ordinary
+desktop use: delivery arrived at about 157 records a second, counting the
+refused ones. The shake's client offers six times that -- eight records per
+presented frame at 118 frames a second, 944 a second -- so the segment-level
+result above does not settle the rate question on its own. Driven through the
+real accounting at that rate, with the 239-byte entry measured from the same
+session, the share is spent after 16,453 records, **about seventeen seconds**,
+and routing records keep being written for the remainder of the segment, which
+that session's own rotation puts at roughly twenty-three minutes. Pinned by
+`the_share_buys_the_routing_records_a_whole_segment_at_the_reference_rate` and
+`a_second_flooding_kind_does_not_take_the_routing_records_room` in
+`diagnostics/capture/budget/tests.rs`.
+
+**Judgement: the share stands, and nothing is changed.** Seventeen seconds of
+the busiest kind is the price of a segment that still explains the session, and
+the alternative is what this investigation opened on. Both tests were
+mutation-checked before being believed: halving `NAME_SEGMENT_SHARE` moves the
+measurement to 8,227 records and eight seconds, and pooling the per-name
+accounting fails both. A measurement that cannot fail is not evidence.
+
+**Row one's counters, found while doing this.** Session
+`00000001790040308694-2854a567` (2026-09-21) records
+`sophia_live_present_scheduler schema=2 ... paced_skips=8625
+max_frame_tick_parked=1 frame_tick_overflows=0` -- paced skips in the
+thousands, no overflow, and a parked depth of one against the bound of eight.
+With the offscreen rate this task's row already records (113.3-113.9 FPS
+against 117.99 onscreen on release `0.1.0-69ffd0900000`), the only part of that
+row still unwitnessed is the window resuming its rate when dragged back.
+
+**Not claimed.** No FPS or cadence measurement was taken here, no shake was
+run, and no physical acceptance is offered: the shake is an operator gate
+needing a tty3 login, `/dev/uinput`, display-manager takedown and DRM master.
+To run it: `just glxgears-shake 1000 8` from a tty3 login with hands off the
+mouse, then read `paced_skips` and `frame_tick_overflows` from
+`sophia_live_present_scheduler schema=2`, and
+`sophia_session_record_budget status=share_spent` with the health record's
+`suppressed=` total beside them.
 
 ## Connections
 
