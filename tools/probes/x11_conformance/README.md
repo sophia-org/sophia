@@ -221,25 +221,28 @@ ever heard about a focus change at all. Both defects were invisible to every
 check we owned, because our own `focus` case asserts event types and the
 algebra's controls test the function rather than its wiring.
 
-The 23 that do not pass are all the suite's own verdicts. None is a failure.
-
-**No purpose fails any more.** The ten that do not pass are the suite's own
-verdicts rather than defects here, and only three of them are ours to move:
+**No purpose fails.** The selection reads **76 of 99**, and all 23 that do
+not pass are the suite's own verdicts rather than wrong answers from this
+server. They divide by reason, each read from the journal rather than inferred:
 
 | purposes | verdict | why, and whether we can change it |
 | --- | --- | --- |
-| `XSetInputFocus` 2, 3, 4 | UNTESTED | the suite is not configured to drive XTEST against this host. **Ours to move**, by wiring XTEST into the conformance host; they are the only purposes in the selection that check where a keyboard event actually lands |
-| `XMapWindow` 12, 13 | UNSUPPORTED | backing store, which this server does not offer. A legal answer, and implementable in principle, but see below |
+| `XSetInputFocus` 2, 3, 4 | UNTESTED | the suite is not configured to drive XTEST against this host. **Ours to move**, and the only purposes in the selection that check where a keyboard event actually lands |
+| `FocusIn` 9-12, `FocusOut` 10-12 | UNSUPPORTED | the journal's reason is "Multiple screens not supported". A property of the fixture host, which advertises one screen, not of the protocol implementation |
+| `XMapWindow` 12, 13 | UNSUPPORTED | backing store, which this server does not offer. A legal answer: a server may decline it, and retaining obscured window contents duplicates what the compositor already does |
+| `FocusIn` 2, 3, 13, `FocusOut` 3, 4, 16, `XMapWindow` 2 | NOTINUSE | retired assertions. **Nothing can make these run** |
 | `XMapWindow` 11, `XInternAtom` 7, `XChangeProperty` 9 | UNTESTED | the suite omits them itself: "no known reliable test method", and for the latter two no portable way to force a `BadAlloc`. **No change here can make them run** |
 | `XMapWindow` 14 | UNRESOLVED | a path check the suite reports as "usually caused by a programming error in the test-suite" |
-| `XMapWindow` 2 | NOTINUSE | a retired assertion |
 
-So the ceiling for this selection is 51 of 58 with the XTEST wiring, and 53
-if backing store were added. **58 is not reachable**, and five of the ten are
-beyond any change to this server. Backing store is a real optional feature
-rather than a defect: a server may legitimately never offer it, and retaining
-window contents while they are obscured duplicates what the compositor
-already does. Growing the selection is worth more than the last two here.
+**So the ceiling for this selection is 79 of 99, not 99.** Read "76 of 99" as
+76 correct answers out of 79 obtainable, not as a pass rate with a deficit of
+23 to plan work against. Eleven of the remaining twenty-three are beyond any
+change at all (the seven NOTINUSE, the three the suite omits, the one it calls
+its own error). Nine more are fixture shape rather than protocol behaviour:
+seven would need the host to advertise multiple screens and two a backing-store
+offer, and both are choices about the fixture worth less than growing the
+selection. Only the three XSetInputFocus purposes are ours, and they need
+XTEST driven against the host.
 
 The window repairs, and what each was:
 
@@ -260,8 +263,9 @@ has finished. It is one second now, which is the suite's own default.
 `Xlib13/XSetInputFocus` has no failing purpose left. Its three remaining
 non-PASS purposes are UNTESTED because the suite is not configured to drive
 XTEST against the fixture host, which is a property of the run rather than of
-this authority. The five FAILs that remain are all in `Xlib4/XMapWindow`, plus
-one in `Xlib5/XInternAtom`.
+this authority. No FAIL remains anywhere in the selection: the five that were
+in `Xlib4/XMapWindow` and the one in `Xlib5/XInternAtom` were the window and
+atom repairs above.
 
 XTS predates XKB and covers none of it: nothing in the checkout references
 `XkbGetNames`, `XkbGetMap` or `XkbUseExtension`, and the scenario has no XKB
