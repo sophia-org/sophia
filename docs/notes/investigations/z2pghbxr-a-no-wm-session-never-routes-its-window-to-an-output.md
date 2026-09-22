@@ -115,12 +115,65 @@ silently; the fix must add it.
 - [ ] Route a `PolicyManaged` surface to geometry in a no-WM session and prove
       the standalone glxgears session reaches `bounded_complete` again, with
       `stage=not_committed` gone.
-- [ ] Add a test that a Direct-placement session commits and presents a single
+- [x] Add a test that a Direct-placement session commits and presents a single
       `PolicyManaged` surface -- the coverage whose absence hid this.
+      `a_no_wm_layout_puts_its_policy_managed_window_in_the_routed_set` covers
+      the filter that actually regressed; see below for what it does and does
+      not reach.
 - [ ] Gate the standalone glxgears benchmark, or its session preflight, so a
-      no-WM regression fails a run rather than a hand at a TTY.
+      no-WM regression fails a run rather than a hand at a TTY. **Still open,
+      and now known to be harder than it looked**: the QEMU session scenario
+      was measured against this defect and does not catch it. See below.
 - [ ] Re-run the shake harness, which this blocks, and finally read the
       surviving halving under a scripted shake.
+
+## What the coverage now reaches, 2026-09-22
+
+The repair landed in `2954b8e0` (`Refs t119`), which left the gating open on
+purpose. This is the gating half, and one of its two answers is negative.
+
+**The filter is covered now.** A sweep of the workspace found that exactly one
+assertion anywhere would have failed if `surface_is_geometry_routed` regressed
+to `is_client_positioned` alone -- the predicate test in `direct_map.rs` -- and
+that nothing in the tree ever causes `NoApplicableOutput` to be *produced* by
+routing: the one test naming it hands the reason in by construction. The gap
+was the filter between them, `presentation_layout.filter(surface_is_geometry_routed)`
+at `authority_production.rs:103`, which is the line `4eb1136a` got wrong.
+`a_no_wm_layout_puts_its_policy_managed_window_in_the_routed_set` builds that
+set from a Direct layout and from a Deferred one and requires the policy-managed
+window in the first and absent from the second. Reverting the predicate fails
+it, and fails the older predicate test with it.
+
+**The QEMU session scenario does not gate this, measured rather than assumed.**
+It looked like it should: `qemu_guest_init.sh` passes no `--wm-process`, so
+`from_external_wm(false)` puts it in Direct mode, its xterm toplevels are
+policy-managed, and `verify_qemu_session_evidence.sh` asserts
+`runtime_max_surfaces >= 2`, which is surfaces actually committed. So the
+repair was reverted and the gate re-run headless:
+
+| run | `runtime_max_surfaces` | `NoApplicableOutput` records | verifier |
+| --- | ---: | ---: | --- |
+| unmutated | 2 | 0 | pass |
+| predicate reverted | 2 | 0 | pass |
+
+The mutated run is indistinguishable from the healthy one: no candidate was
+parked, nothing timed out, and the verifier passed. Whatever the two-xterm
+scenario exercises, it is not the arm that strands a no-WM window, so it cannot
+be claimed as this defect's gate. Evidence for both runs is retained in
+`.artifacts/t119-qemu-gate/`.
+
+That leaves the row above genuinely open, and worth more than the glxgears
+benchmark it names: the no-WM path is not one profile but three --
+`native`, `standalone` and `kitty` all run with `window_manager: false`
+(`crates/sophia-conformance/src/profile.rs:31-55`, which refuses
+`--wm-process` for them). A gate that reproduces the defect needs a scenario
+whose window actually reaches the first-present routing arm; establishing why
+the two-xterm one does not is the first step, and is not yet done.
+
+Not claimed: no glxgears run, no shake, no cadence figure. Rows one and four
+still need a tty3 login, `/dev/uinput` and DRM master; for row one,
+`just glxgears` and read `sophia_live_session_startup` for
+`status=bounded_complete` with `stage=not_committed` absent.
 
 ## Connections
 
