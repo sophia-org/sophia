@@ -84,7 +84,13 @@ fn spawn_x11_input_event_writer(
             if !receiver.delivery_active(client, delivery) { continue; }
             let keyboard_wait_started = std::time::Instant::now();
             let keyboard_deadline = keyboard_wait_started + Duration::from_secs(5);
-            let (focused_window, routed_keyboard_window, keyboard_selected) = loop {
+            let (
+                focused_window,
+                routed_keyboard_window,
+                keyboard_selected,
+                keyboard_discarded,
+                focus_names_a_window,
+            ) = loop {
                 if writer_stop.load(Ordering::Acquire) || !receiver.delivery_active(client, delivery) {
                     return Ok(());
                 }
@@ -92,13 +98,31 @@ fn spawn_x11_input_event_writer(
                     X11SetupSocketError::new("X11 core event selection lock poisoned")
                 })?;
                 let focused = XResourceId::new(focused_surface_window.load(Ordering::Acquire), 1);
-                let focused_selected = selections.selected_keyboard_target(focused);
-                let routed_selected =
-                    target_window.and_then(|window| selections.selected_keyboard_target(window));
+                // The focus projection sits at the root until a client sets a
+                // focus, and a client that never sets one is the ordinary
+                // case, not a broken one. Only the route knows which surface
+                // such a key belongs to, so the route still decides there.
+                let focus_names_a_window =
+                    focused != XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+                let focused_delivery = selections.keyboard_delivery(focused);
+                let routed_delivery =
+                    target_window.map(|window| selections.keyboard_delivery(window));
                 let focused_fallback = selections.keyboard_target(focused);
                 let routed_fallback =
                     target_window.map(|window| selections.keyboard_target(window));
                 drop(selections);
+                let selected = |delivery: XKeyDelivery| match delivery {
+                    XKeyDelivery::Window(window) => Some(window),
+                    XKeyDelivery::Discard | XKeyDelivery::Unselected => None,
+                };
+                let focused_selected = selected(focused_delivery);
+                let routed_selected = routed_delivery.and_then(selected);
+                // A discard is a decision, not a startup race. Waiting the
+                // readiness deadline out would delay the event five seconds
+                // and then deliver exactly what the client asked us not to.
+                if matches!(focused_delivery, XKeyDelivery::Discard) {
+                    break (focused_fallback, None, false, true, focus_names_a_window);
+                }
                 if x11_keyboard_route_ready(
                     matches!(event, XAuthorityInputEvent::Key(_)),
                     xi_event_type.is_some(),
@@ -109,10 +133,24 @@ fn spawn_x11_input_event_writer(
                         focused_selected.unwrap_or(focused_fallback),
                         routed_selected.or(routed_fallback),
                         focused_selected.is_some() || routed_selected.is_some(),
+                        false,
+                        focus_names_a_window,
                     );
                 }
                 std::thread::sleep(Duration::from_millis(5));
             };
+            // The focus decided that this key goes nowhere. The delivery is
+            // complete rather than refused: nothing failed, and a refusal
+            // record would say a route was rejected when the protocol simply
+            // says no event is generated.
+            if keyboard_discarded && matches!(event, XAuthorityInputEvent::Key(_)) {
+                receipt.finish(XAuthorityInputDeliveryOutcome::Flushed)?;
+                tracing::debug!(
+                    "sophia_x11_key_delivery schema=1 status=discarded reason=focus_none client={} input_redacted=true",
+                    client.raw(),
+                );
+                continue;
+            }
             if std::env::var_os("SOPHIA_X11_AUTHORITY_TRACE").is_some()
                 && matches!(event, XAuthorityInputEvent::Key(_))
             {
@@ -134,8 +172,23 @@ fn spawn_x11_input_event_writer(
             }
             let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
             let (delivered_window, pointer_surface_window, pointer_event_ancestry) = match event {
+                // The route says which surface a key belongs to; which window
+                // inside it hears the key is the protocol's question, and the
+                // focus is the only one of the two that was asked it. Taking
+                // the routed window whenever it existed meant a focus on one
+                // child with the pointer in its sibling reported the key on
+                // the sibling, because the routed window is the surface's own
+                // top-level and the rule then ran from there instead of from
+                // the focus. When no focus has been set the projection is
+                // still the root and the route is all there is, which is the
+                // ordinary case for a client that never calls SetInputFocus.
                 XAuthorityInputEvent::Key(_) => {
-                    (routed_keyboard_window.unwrap_or(focused_window), None, None)
+                    let window = if focus_names_a_window {
+                        focused_window
+                    } else {
+                        routed_keyboard_window.unwrap_or(focused_window)
+                    };
+                    (window, None, None)
                 }
                 XAuthorityInputEvent::Pointer(pointer) => {
                     let Some(surface_window) = x11_pointer_surface_window(

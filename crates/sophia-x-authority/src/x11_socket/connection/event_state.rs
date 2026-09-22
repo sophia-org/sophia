@@ -22,6 +22,25 @@ fn x11_core_event_selection_update(
         _ => None,
     }
 }
+/// What the keyboard rule decided for one event.
+///
+/// Three outcomes rather than an `Option`, because "nobody has selected this
+/// yet" and "this must not be delivered" are different instructions and used
+/// to be the same `None`. The writer waits out a startup race for the first
+/// and must not wait at all for the second.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XKeyDelivery {
+    /// Report the key with respect to this window.
+    Window(XResourceId),
+    /// Deliver nothing, and do not wait: a focus of `None` discards keyboard
+    /// events until a focus is set again, and no amount of waiting changes
+    /// what a client has decided.
+    Discard,
+    /// No window has selected the event yet, which may still be a client
+    /// that has not finished starting up.
+    Unselected,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct XCoreWindowEventSelection {
     mask: u32,
@@ -334,6 +353,16 @@ impl XCoreEventSelectionState {
             .unwrap_or_else(|| self.keyboard_fallback(focused))
     }
 
+    /// The rule's answer as an `Option`, for callers that have no way to act
+    /// on a discard. Prefer [`Self::keyboard_delivery`], which distinguishes
+    /// "must not be delivered" from "nobody has selected it yet".
+    fn selected_keyboard_target(&self, focused: XResourceId) -> Option<XResourceId> {
+        match self.keyboard_delivery(focused) {
+            XKeyDelivery::Window(window) => Some(window),
+            XKeyDelivery::Discard | XKeyDelivery::Unselected => None,
+        }
+    }
+
     /// Where a key is reported, by the protocol's rule rather than by the
     /// focus window alone.
     ///
@@ -348,8 +377,26 @@ impl XCoreEventSelectionState {
     /// the private delivery path so the two cannot drift again. The ceiling
     /// is this path's own: it continues to the focus's ancestors, as Xorg
     /// does, where the private path stops at the focus.
-    fn selected_keyboard_target(&self, focused: XResourceId) -> Option<XResourceId> {
-        let focus = self.keyboard_fallback(focused);
+    pub(crate) fn keyboard_delivery(&self, focused: XResourceId) -> XKeyDelivery {
+        let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+        let focus = match u32::try_from(focused.local.raw()) {
+            // A focus of None discards keyboard events until a focus is set
+            // again. It is a decision, not an absence, so it must not be
+            // confused with nobody having selected the event yet.
+            Ok(crate::X_FOCUS_NONE) => return XKeyDelivery::Discard,
+            // PointerRoot is the root of the screen the pointer is on,
+            // resolved at each event rather than stored. Taking the root as
+            // the focus is the whole implementation: every window is in the
+            // root's subtree, so the subtree rule below then reports the key
+            // on the pointer's own window, which is what PointerRoot means.
+            //
+            // keyboard_fallback is deliberately not consulted here. Its
+            // topmost-mapped-window substitution is for a focus that really
+            // is the root, and applying it to PointerRoot would pin the
+            // answer to one window and stop it following the pointer.
+            Ok(crate::X_FOCUS_POINTER_ROOT) => root,
+            _ => self.keyboard_fallback(focused),
+        };
         let above_focus = self.ancestry_including(focus);
         // The pointer's own chain when it reaches the focus, truncated there
         // and then continued upward; the focus's chain alone when the pointer
@@ -385,7 +432,10 @@ impl XCoreEventSelectionState {
             // event to the focus anyway is exactly what that mask forbids.
             false,
         );
-        found.ok().flatten().map(|(window, _)| window)
+        match found.ok().flatten() {
+            Some((window, _)) => XKeyDelivery::Window(window),
+            None => XKeyDelivery::Unselected,
+        }
     }
 
     fn selected_pointer_target(

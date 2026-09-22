@@ -12,7 +12,7 @@ mod key_focus_subtree {
     use super::*;
     use std::io::Write;
 
-    fn set_input_focus(client: &mut Client, window: u32) {
+    pub(super) fn set_input_focus(client: &mut Client, window: u32) {
         let mut request = vec![42u8, 2, 3, 0];
         push_u32(&mut request, client.order, window);
         push_u32(&mut request, client.order, 0);
@@ -20,7 +20,7 @@ mod key_focus_subtree {
         client.barrier();
     }
 
-    fn select_keys(client: &mut Client, window: u32) {
+    pub(super) fn select_keys(client: &mut Client, window: u32) {
         client
             .stream
             .write_all(&change_window_event_mask_request(client.order, window, 3))
@@ -28,23 +28,33 @@ mod key_focus_subtree {
         client.barrier();
     }
 
-    /// The window the next KeyPress is reported with respect to, or `None` if
-    /// the barrier's reply arrives first, meaning no key was delivered.
-    fn next_key_window(client: &mut Client) -> Option<u32> {
+    /// The window the next KeyPress is reported with respect to, or `None`
+    /// when no key was delivered at all.
+    ///
+    /// A GetInputFocus after the key is the barrier: X11 writes a connection's
+    /// records in order, so anything the key produced is already on the wire
+    /// ahead of that request's reply. **The reply is always consumed**, even
+    /// when a key arrives first -- leaving it queued makes the next call read
+    /// a stale reply and report a delivered key as discarded, which is a
+    /// false green for exactly the assertions this file exists to make.
+    pub(super) fn next_key_window(client: &mut Client) -> Option<u32> {
         let mut request = vec![43u8, 0];
         push_u16(&mut request, client.order, 1);
         client.stream.write_all(&request).unwrap();
+        let mut reported = None;
         loop {
             let record = read_x_record(&mut client.stream);
             match record[0] {
-                2 => return Some(read_u32(client.order, &record[12..16])),
-                1 => return None,
+                2 if reported.is_none() => {
+                    reported = Some(read_u32(client.order, &record[12..16]));
+                }
+                1 => return reported,
                 _ => continue,
             }
         }
     }
 
-    fn press(f: &mut Fixture, surface: SurfaceId) {
+    pub(super) fn press(f: &mut Fixture, surface: SurfaceId) {
         f.route(
             surface,
             InputEventKind::Key {
