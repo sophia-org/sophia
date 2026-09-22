@@ -128,7 +128,8 @@ cadence rule's judgement, which measures it directly.
       often. These are the commits that move the pointer on an idle desktop,
       which is the reason the commit exists and what TLC refuses the model
       without.
-- [ ] Whether that 3.3% is worth removing. It is not obviously harmful: the
+- [x] Whether that 3.3% is worth removing. Judged 2026-09-22 from retained
+      evidence: **no**; see the section below. It is not obviously harmful: the
       gate closes the moment a client draws, so at most one commit can straddle
       the resumption of drawing, and the same session held 117.8 FPS under
       continuous pointer motion with ordinary pointer feel. The non-blocking
@@ -139,6 +140,64 @@ cadence rule's judgement, which measures it directly.
       share, shows it costing something.
 
 Open work is tracked as t120 in `todo.md`.
+
+## The residual, judged 2026-09-22
+
+The row above set its own bar: remove the blocking cursor-only commit only if
+a latency measurement, not a wall-clock share, shows it costing something. The
+retained evidence carries that measurement, and it does not.
+
+**The desktop session that produced the 3.3%.** Session
+`00000001789848454366-427b9c68` (2026-09-19, release `a58800c3`, of which
+`68921576` is an ancestor), 283,221 ms of an installed Hagia desktop:
+
+| field | value | what it says |
+| --- | ---: | --- |
+| `cursor_only_max_msec` | 8 | each blocking commit is at most one 120 Hz vblank, as designed |
+| `cursor_only_total_msec` | 9,416 | 3.3% of wall time, spent while the desktop idled |
+| `max_motion_to_submit_msec` | 31 | the worst motion-to-submit of the session, about four vblanks |
+| `cpu_max_compose_msec` | 15 | one compose alone can take two |
+| `cadence_deferred_batches` | 149 | at `frame_interval_usec=8333` |
+| `max_input_phase_msec` | 0 | the input phase costs nothing |
+
+**What the residual can cost, bounded.** A cursor-only commit is taken only
+after two refreshes without a retirement, and drawing closes the gate on the
+first retirement, so at most one commit can straddle a client that resumes.
+Its cost is therefore one vblank, once, on resume from idle -- and the
+per-commit figure above measures that bound at 8 ms. Both premises are pinned
+already: `quiet_means_two_refreshes_without_a_frame` holds that a frame just
+retired is not quiet at either 60 or 120 Hz, and `a_drawing_client_keeps_its_vblank`
+holds that `quiet=false` answers `Wait`; the TLA conjunct on `CommitCursorOnly`
+says the same. No new test is added here, because it would repeat those two.
+
+**The 31 ms is not the hold.** An 8 ms bounded hold cannot produce a 31 ms
+motion-to-submit. The same record shows what can: a 15 ms compose and 149
+deferred cadence batches. That worst case is recorded here as an observation
+and left undiagnosed -- one worst sample from a live desktop running Hagia and
+Kitty is not a reproduction, and a row without a driver would be a candidate in
+name only.
+
+**The rig, six minutes after the repair.** The standalone session at
+`~/.local/state/sophia/standalone-session/session.log` (2026-09-19 15:48;
+`68921576` landed 15:42) records `path=atomic_plane plane=accepted
+max_motion_to_submit_msec=4 cursor_only=0 cursor_only_total_msec=0`, against
+18 ms and 234 commits before. That is the run the rig row above already cites
+from `shake.log` beside it: `present_fps=59.892 p95_frame_msec=16.686`. A client
+that never stops drawing never opens the gate, which is the intended shape.
+
+**QEMU cannot inform this.** Every retained QEMU cursor record reads
+`path=legacy_ioctl plane=refused`; the guest never takes the atomic plane the
+blocking commit lives on, so no headless measurement of it exists or can be
+made there.
+
+**Judgement: keep it, and change nothing.** The redesign that would remove the
+3.3% -- a `NONBLOCK` cursor commit carrying its own event, a page-flip reader
+taught to ignore cursor completions, the owner tracking a second outstanding
+commit kind, and `CursorPlaneTransactionOwner.tla` reworked -- is motivated by
+a wall-clock share alone, which the row itself ruled out. The commit exists to
+move the pointer on an idle desktop, TLC refuses the model without it, and the
+only measured latency it can add is one vblank once. No production change, no
+schema change, no new row.
 
 ## Connections
 
