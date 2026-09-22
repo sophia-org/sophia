@@ -109,6 +109,13 @@ pub(crate) fn classify(message: &str) -> StartCause {
         || message.contains("GPU grant epoch")
         || message.contains("denied shell GPU policy carried a device")
         || message.contains("requires native client rendering")
+        // The three the coordinator itself raises when it cannot name one
+        // device for a direct grant. These reach the record now that a
+        // component declaring direct access is refused at prepare rather
+        // than failing session start.
+        || message.contains("active render device is unavailable")
+        || message.contains("absent from the admitted inventory")
+        || message.contains("ambiguous active render device")
     {
         return StartCause::GpuGrant;
     }

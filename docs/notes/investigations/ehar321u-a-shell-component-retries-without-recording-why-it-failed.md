@@ -226,8 +226,77 @@ Three more things settled the same evening:
 - [x] Separately assess whether `WouldBlock` on the panel socket should stop
       the component: it never reaches the service, and queue saturation is
       endpoint failure by contract. No change.
+- [x] **Refuse an unsatisfiable direct grant at prepare** rather than starting
+      and failing in service for ever (t117). See the section below.
 
 t114 was closed on 2026-09-19 with the watch item above; a recurrence reopens it from the retained cause.
+
+## Refused at prepare, 2026-09-22
+
+t114 closed with the retry spaced and the cause vocabulary in place. t117's own
+clause was the one thing neither covered: a component whose declared GPU mode
+cannot be satisfied should be refused **once**, not started and failed in
+service at every backoff interval. Spacing that loop to a sixty-second ceiling
+made it cheap; it did not make it finite.
+
+**The wording had to be corrected against the architecture.** t117 asks to
+refuse a mode that "cannot produce a matching content grant", but ADR
+[mn4mzcnf](../decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
+holds presentation and GPU execution as separate contracts -- "GPU permission
+grants no content capability, and content permission grants no GPU" -- so no
+mode produces a content grant at all. The code agrees: the content admission
+policy is session-wide, built in `component_lifecycle.rs` from
+`shell_content_enabled`, and never reads `entry.gpu`. The predicate implemented
+is the ADR's own admission rule instead: implementation, operator policy and
+launch resources must all agree, and *"the required launch resources must also
+be established before client code runs"* -- which is exactly prepare.
+
+**What the old prepare did.** It resolved one device for the whole selection
+with `any()`, then propagated both failures with `?`. That is simultaneously
+all-or-nothing and session-fatal, while the observed defect is the opposite:
+prepare succeeds and every start fails afterwards. A refusal is now captured
+rather than propagated, and the selection is split -- every `direct` entry is
+refused with a cause, every `denied` entry is admitted and keeps the CPU
+rasterize path the ADR permits, which needs no device. When nothing survives,
+prepare yields no component session rather than an error: a component that
+cannot get a device is not a reason to withhold the desktop. The session
+shell's own path at `live_session.rs` is deliberately unchanged and stays
+session-fatal, being a different contract.
+
+Each refusal emits one `status=start_refused cause=gpu_grant slot={} role={}
+gpu_mode=direct`. `start_refused` is new and was added to the reduction
+allowlist; without that the record is dropped silently, which is the original
+defect in miniature and is what the reduction test asserts against. The cause
+reuses `GpuGrant`, whose definition already covers it. `slot` is the declared
+position rather than a runtime one -- a refused component never reaches the
+process layer to be assigned one -- and carrying it at all is the repair this
+investigation existed to make.
+
+**A gap found while doing it.** `shell_gpu_device`'s three refusals -- the
+device unavailable, absent from the admitted inventory, or **ambiguous** in it
+-- were absent from the cause table, so each would have reported `cause=other`,
+the "gap in this table" the module's own doc warns about. They never reached it
+before because they failed session start instead. All three are classified as
+`gpu_grant` now and pinned in `component_start_cause/tests.rs`. The ambiguous
+one is the dual-GPU condition this investigation opened on, and nothing had
+exercised that branch.
+
+Validation on `a506cfbf`: the whole `sophia-session` crate passes under the
+isolation `crates/xtask/src/check.rs` sets up -- 44 suites, zero failures --
+with `cargo fmt --check`, `git diff --check` and clippy over all targets clean.
+Five new tests in `tests/support/component_prepare_refusal.rs`. Both halves
+were mutation-checked rather than trusted: removing `start_refused` from the
+allowlist strips the status and fails the reduction test, and dropping the
+ambiguous-device arm from `classify` fails both the new test and the existing
+`every_refusal_the_start_path_raises_carries_a_code`.
+
+The run that first reported a failure here was *not* run under that isolation
+and failed an unrelated WM test, `hagia_pregraphics_profile_admission_rejects_
+invalid_policy_values`, by reading the developer's live desktop configuration --
+the exact thing `check.rs` clears and says it clears. It passes in all twelve
+retained runs of `.artifacts/t115-wait-remeasure/` and under the isolation here.
+No physical acceptance is claimed, and the morning's original refusal remains
+t114's watch item, reopened from a retained `cause=`.
 
 ## Connections
 

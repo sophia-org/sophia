@@ -85,6 +85,21 @@ const REFUSALS: &[(&str, StartCause)] = &[
         "component GPU access requires native client rendering",
         StartCause::GpuGrant,
     ),
+    // render_devices.rs -- shell_gpu_device's three refusals. A component
+    // declaring direct access is refused at prepare on any of them, so all
+    // three are start-path messages now.
+    (
+        "the active render device is unavailable",
+        StartCause::GpuGrant,
+    ),
+    (
+        "the active render device is absent from the admitted inventory",
+        StartCause::GpuGrant,
+    ),
+    (
+        "the admitted inventory contains an ambiguous active render device",
+        StartCause::GpuGrant,
+    ),
     // shell_component_processes.rs -- the layer that owns the child. These
     // were absent from this table, and the first live run reported
     // cause=other from one of them.
