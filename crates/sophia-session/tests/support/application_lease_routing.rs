@@ -1050,3 +1050,52 @@ fn a_synthetic_pointer_resolves_to_the_surface_under_it_not_the_focus() {
     );
     assert_eq!(target, first, "an unpublished scene leaves the plan alone");
 }
+
+/// A synthetic drag keeps its window until the last button comes up, as the
+/// core protocol's implicit grab does. Under Hagia a drag across xterm A ran
+/// on into B, B received the release, and A never claimed PRIMARY (t124).
+#[test]
+fn a_synthetic_drag_stays_on_the_pressed_surface_until_release() {
+    let mut layout = PersistentLiveLayout::default();
+    let first = SurfaceId::new(201, 1);
+    let second = SurfaceId::new(202, 1);
+    let layers = vec![
+        add_surface(&mut layout, first, admission(1, 4), 0),
+        add_surface(&mut layout, second, admission(2, 4), 100),
+    ];
+    let seat = sophia_protocol::SeatId::from_raw(1);
+    let device = sophia_protocol::DeviceId::from_raw(9);
+    let scene = crate::live_session::x_frontend::xtest::LiveXTestPointerScene::default();
+    scene.publish(1, &layers);
+    let at = |x| Point { x, y: 10.0 };
+
+    assert_eq!(
+        scene.route_button(seat, device, second, 1, true, at(50.0), at(50.0)),
+        (first, at(50.0)),
+        "the press lands on the surface under it"
+    );
+    assert_eq!(
+        scene.route_motion(seat, device, second, at(150.0), at(50.0)),
+        (first, at(150.0)),
+        "motion over another surface stays with the press, in its coordinates"
+    );
+    // A second button during the grab neither moves it nor ends it.
+    assert_eq!(
+        scene.route_button(seat, device, second, 2, true, at(160.0), at(60.0)),
+        (first, at(160.0))
+    );
+    assert_eq!(
+        scene.route_button(seat, device, second, 2, false, at(160.0), at(60.0)),
+        (first, at(160.0))
+    );
+    assert_eq!(
+        scene.route_button(seat, device, second, 1, false, at(170.0), at(70.0)),
+        (first, at(170.0)),
+        "the release goes where the press went"
+    );
+    assert_eq!(
+        scene.route_motion(seat, device, first, at(150.0), at(150.0)),
+        (second, at(50.0)),
+        "after the last release the surface under the pointer takes it again"
+    );
+}
