@@ -268,3 +268,23 @@ driver ran -- a Super+button on a freshly tiled column hit a session-fatal
 lookup in the WM gesture path, unrelated to XTEST
 ([qvj77ywn](qvj77ywn-a-super-button-on-a-window-between-two-committed-layouts-ends-the-session.md),
 fixed). The hardware half waits for the next release.
+
+Third attempt, same day, on release `30acf6af` (session
+`00000001790161968450-f5eb05ba-…`, Hagia, the operator's own configuration,
+two physical outputs): **pass**.
+
+```
+xtest_selection_driver: drag row=0 cell=23 top=2 y=46 x=17..1259 settled_a=647,33 1266x1398 a=9,33 1266x1398 b=1285,33 1266x1398
+xtest_selection_driver: owner=0x600016 bytes=26 row=0
+sophia_xtest_selection schema=1 status=pass owner_in_a=true matched=true pointer_in_a=true pointer_in_b=true
+```
+
+Hagia tiled A and B as two 1266-wide columns and slid A left when B mapped;
+the driver re-read A, aimed by xterm's 23 px cell, dragged the marker row,
+xterm A took PRIMARY, the 26 bytes came back, and the pointer reached B for
+the middle-click. The session's `sophia_live_session_xtest status=admitted`
+is in its events log now; the completion record with `injected_buttons=4`
+(or more, for repeated runs) is written at logout and can be read from the
+retained events log then. With Phases 2 and 4 green and the driver passing
+on the installed desktop, t147 is closed; the paste half's `conversions`
+count belongs to the same completion record.

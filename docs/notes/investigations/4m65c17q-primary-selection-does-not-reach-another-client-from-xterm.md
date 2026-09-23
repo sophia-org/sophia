@@ -298,6 +298,19 @@ the middle-click (`owner_changes=1 conversions=2`, `injected_buttons=4`).
 Sophia's selection path and the WM session are cleared for this row. What
 remains is the physical path, with t158 as the named suspect.
 
+## On the installed desktop, 2026-09-23
+
+The same driver on the operator's live session (release `30acf6af`, Hagia,
+two outputs) passes: XTEST drag in xterm A, PRIMARY taken, text read back,
+middle-click in xterm B. The first attempt on the 2026-09-18 release failed
+the aim check as the pre-fix headless runs did, and the second ended the
+session on an unrelated WM gesture defect
+([qvj77ywn](qvj77ywn-a-super-button-on-a-window-between-two-committed-layouts-ends-the-session.md),
+fixed in `30acf6af`). So on hardware, under the WM the report was made
+against, a synthetic drag and paste work. Only the physical drag itself is
+left, and it is the operator's to try: a text drag that ends inside xterm's
+text area, and one that runs off the window's edge.
+
 ## Connections
 
 - [A kitty window waits out a four-second layout budget before it opens](cnbxdj48-a-kitty-window-waits-out-a-four-second-layout-budget-before-it-opens.md) --
