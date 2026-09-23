@@ -28,6 +28,14 @@ case " $cmdline " in
     *" sophia.scenario=emergency-recovery "*) scenario="emergency-recovery" ;;
     *" sophia.scenario=gtk-classic "*) scenario="gtk-classic" ;;
     *" sophia.scenario=gtk-confined "*) scenario="gtk-confined" ;;
+    *" sophia.scenario=xtest-selection "*) scenario="xtest-selection" ;;
+esac
+xtest_row=""
+case " $cmdline " in
+    *" sophia.xtest_row="*)
+        xtest_row="${cmdline##* sophia.xtest_row=}"
+        xtest_row="${xtest_row%% *}"
+        ;;
 esac
 case " $cmdline " in
     *" sophia.two_xterm=1 "*) two_xterm=true ;;
@@ -45,7 +53,8 @@ esac
 
 if [ "$scenario" = "emergency-recovery" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery"
-elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
+elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ] \
+    || [ "$scenario" = "xtest-selection" ]; then
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=$scenario"
 else
     echo "sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu ticks=300"
@@ -151,6 +160,21 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
         --expect-physical-text=sophia --expect-physical-pointer \
         --inject-surface-resize=640x360 --exit-after-input-proof
     echo "sophia_qemu_gtk schema=1 status=running profile=$profile"
+elif [ "$scenario" = "xtest-selection" ]; then
+    # The headless gate's session, on a scanned-out head: XTEST admitted,
+    # the driver as the only client, its exact pass line required. Physical
+    # input stays enabled, as on an installed desktop, but nothing is typed:
+    # --admit-xtest cannot be combined with a physical proof, since a
+    # synthetic source could satisfy it. sophia.xtest_row=N drags a blank
+    # row instead of the marker and must fail; that is the red half.
+    set -- session run --display=:181 --native-scanout --max-runtime-ms=120000 \
+        --admit-xtest --client=/usr/bin/xtest_selection_driver \
+        --expect-client-stdout='sophia_xtest_selection schema=1 status=pass owner_in_a=true matched=true pointer_in_a=true pointer_in_b=true' \
+        --require-client-normal-exit
+    if [ -n "$xtest_row" ]; then
+        set -- "$@" "--client-arg=--row=$xtest_row"
+    fi
+    echo "sophia_qemu_xtest_selection schema=1 status=running row=${xtest_row:-0}"
 else
     set -- session run --display=:181 --native-scanout --max-ticks=300 \
         --expect-physical-text=sophia --expect-physical-pointer
@@ -210,6 +234,12 @@ elif [ "$scenario" = "gtk-classic" ] || [ "$scenario" = "gtk-confined" ]; then
         echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
     else
         echo "sophia_qemu_guest schema=1 status=failed reason=gtk_session_exit scenario=$scenario exit_status=$status"
+    fi
+elif [ "$scenario" = "xtest-selection" ]; then
+    if [ "$status" -eq 0 ]; then
+        echo "sophia_qemu_guest schema=1 status=complete scenario=$scenario"
+    else
+        echo "sophia_qemu_guest schema=1 status=failed reason=xtest_selection_exit scenario=$scenario exit_status=$status"
     fi
 elif [ "$status" -eq 0 ]; then
     echo "sophia_qemu_guest schema=1 status=complete ticks=300"

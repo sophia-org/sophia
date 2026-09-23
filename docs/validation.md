@@ -369,6 +369,7 @@ tools/run_sophia_input_latency_qemu.sh
 SOPHIA_QEMU_SCENARIO=emergency-recovery tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-classic tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-confined tools/qemu_session_harness.sh
+SOPHIA_QEMU_SCENARIO=xtest-selection tools/qemu_session_harness.sh
 tools/audit_no_xlibre_runtime.sh
 tools/audit_xcentric_runtime.sh
 ```
@@ -816,9 +817,10 @@ emergency recovery, and classic/confined GTK scenarios:
 
 ```sh
 SOPHIA_QEMU_SCENARIO=session tools/qemu_session_harness.sh
-SOPHIA_QEMU_SCENARIO=emergency tools/qemu_session_harness.sh
+SOPHIA_QEMU_SCENARIO=emergency-recovery tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-classic tools/qemu_session_harness.sh
 SOPHIA_QEMU_SCENARIO=gtk-confined tools/qemu_session_harness.sh
+SOPHIA_QEMU_SCENARIO=xtest-selection tools/qemu_session_harness.sh
 ```
 
 These scenarios validate Sophia session ownership and X Authority application
@@ -968,7 +970,31 @@ B's paste asking for it), and a completed `sophia_live_session_xtest` with
 `--self-test` must fail three mutations: a drag on a blank row, a session
 without `--admit-xtest`, and no middle-click. This covers the headless, no-WM
 path only. A physical drag, a window manager's session and scanout are
-separate evidence.
+separate evidence. The driver's `--overshoot` argument releases past xterm's
+right edge and is red until t158 lands: the frontend delivers an implicitly
+grabbed release by position, so it reaches xterm's shell window rather than
+its text widget.
+
+The same drag and paste under Hagia, with an operator's own configuration
+copied into the isolated directory, is a normal session with the driver as
+its only startup application; the exact command is in the t124 investigation
+note.
+
+The QEMU guest runs it on a scanned-out head with physical input devices
+present and nothing typed:
+
+```sh
+tools/build_qemu_session_initramfs.sh   # the image carries the driver and DejaVu Sans Mono
+SOPHIA_QEMU_SCENARIO=xtest-selection tools/qemu_session_harness.sh
+SOPHIA_QEMU_XTEST_ROW=5 SOPHIA_QEMU_SCENARIO=xtest-selection tools/qemu_session_harness.sh  # must fail
+```
+
+`tools/verify_qemu_xtest_selection_evidence.sh` reads the same counters from
+the guest's serial log, plus the session's application record with the
+driver's stdout matched and one bounded completion. The guest runs xterm in
+the C locale, so the driver asks for UTF8_STRING and falls back to STRING as
+a pasting client does. Rebuild the image after any change to the session or the driver;
+the harness runs whatever image is there.
 
 ## Atomic Scanout Evidence
 

@@ -37,9 +37,20 @@ mkdir -p "$OUT_DIR" "$OUT_DIR/dracut-tmp"
 (
     cd "$ROOT_DIR"
     cargo build --release --offline -p sophia-cli --features native-session
+    # The xtest-selection scenario's client: two real xterms driven by XTEST.
+    cargo build --release --offline -p sophia-session --all-features \
+        --example xtest_selection_driver
 )
 
 SOPHIA_BIN="$ROOT_DIR/target/release/sophia"
+XTEST_SELECTION_DRIVER="$ROOT_DIR/target/release/examples/xtest_selection_driver"
+# The driver asks xterm for DejaVu Sans Mono; a proportional fallback would
+# move the text row it aims at.
+DEJAVU_MONO="$(fc-match -f '%{file}' 'DejaVu Sans Mono' 2>/dev/null || true)"
+if [[ -z "$DEJAVU_MONO" || "$(basename "$DEJAVU_MONO")" != DejaVuSansMono.ttf ]]; then
+    echo "DejaVu Sans Mono is not installed; the xtest-selection guest scenario needs it" >&2
+    exit 1
+fi
 runtime_files=(
     "$(command -v dbus-daemon)"
     "$(command -v dbus-run-session)"
@@ -54,11 +65,17 @@ runtime_files=(
     /usr/lib/libudev.so.1
     /usr/bin/zenity
 )
-extra_includes=()
+extra_includes=(
+    --include "$XTEST_SELECTION_DRIVER" /usr/bin/xtest_selection_driver
+    --include "$DEJAVU_MONO" /usr/share/fonts/TTF/DejaVuSansMono.ttf
+)
 required_guest_paths=(
     /usr/bin/dbus-daemon
     /usr/bin/dbus-run-session
     /usr/share/dbus-1/session.conf
+    /usr/bin/xtest_selection_driver
+    /usr/bin/xterm
+    /usr/share/fonts/TTF/DejaVuSansMono.ttf
 )
 install_files=()
 runtime_files+=("$(command -v xterm)")
