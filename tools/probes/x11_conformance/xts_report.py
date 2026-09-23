@@ -42,24 +42,61 @@ def parse_journal(text):
     return started, results
 
 
+DECLARABLE = {'FAIL', 'UNRESOLVED', 'NOTINUSE', 'UNSUPPORTED', 'UNTESTED'}
+
+
+def declared_expectation(row):
+    """What a manifest row expects of its purpose: PASS unless it declares
+    another disposition, with a reason. A declaration names a purpose the
+    suite or the authority cannot pass today and says why; a row that
+    declares without saying why is refused, and NORESULT and UNINITIATED
+    cannot be declared at all, because they describe a run, not a purpose."""
+    expected = row.get('expected', 'PASS')
+    if expected == 'PASS':
+        return 'PASS'
+    if expected not in DECLARABLE:
+        raise ValueError(f'{row["case"]} purpose {row["purpose"]}: undeclarable expectation {expected!r}')
+    if not str(row.get('reason', '')).strip():
+        raise ValueError(f'{row["case"]} purpose {row["purpose"]}: a declared {expected} needs a reason')
+    return expected
+
+
 def evaluate_journal(expected, journal, process_status=0):
     keys = [(row['case'], str(row['purpose'])) for row in expected]
     if not keys or len(keys) != len(set(keys)):
         raise ValueError('expected purposes must be nonempty and unique')
+    expectations = {(row['case'], str(row['purpose'])): declared_expectation(row) for row in expected}
     required = set(keys)
     failures = []
     if process_status != 0:
         failures.append(f'XTS process exit {process_status} (124 means TIMEOUT)')
     started, results = parse_journal(journal)
+    passed, declared = 0, {}
     for key in sorted(required | started):
         if key not in required:
             failures.append(f'{key}: unmanifested purpose')
-        elif key not in started:
+            continue
+        if key not in started:
             failures.append(f'{key}: MISSING purpose')
-        elif results.get(key) != 'PASS':
-            failures.append(f'{key}: {results.get(key, "NORESULT")}')
+            continue
+        observed = results.get(key, 'NORESULT')
+        wanted = expectations[key]
+        if observed == wanted == 'PASS':
+            passed += 1
+        elif observed == wanted:
+            # A declared disposition, met: the suite said what the manifest
+            # said it would say. Counted so a report never hides how much of
+            # a PASS is declaration.
+            declared[wanted] = declared.get(wanted, 0) + 1
+        elif observed == 'PASS':
+            failures.append(f'{key}: PASS but declared {wanted}; the manifest is stale')
+        elif wanted == 'PASS':
+            failures.append(f'{key}: {observed}')
+        else:
+            failures.append(f'{key}: {observed} (declared {wanted})')
     return {'status': 'FAIL' if failures else 'PASS', 'failures': failures,
-            'required': len(required), 'started': len(started), 'completed': len(results)}
+            'required': len(required), 'started': len(started), 'completed': len(results),
+            'passed': passed, 'declared': declared}
 
 
 def main():

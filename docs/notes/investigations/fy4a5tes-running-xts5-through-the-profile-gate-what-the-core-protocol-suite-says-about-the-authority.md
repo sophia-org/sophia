@@ -62,18 +62,45 @@ t167 and t168. The fourth is a decision about what a TrueColor-only
 authority owes the colormap requests, filed as t169. The last two are what
 the suite is, not what the authority lacks.
 
-**`selected-core` through the gate.** See the section below, written from
-the run on the committed candidate: the gate refuses a dirty tree.
+**`selected-core` through the gate**, on candidate `0b4b7415`
+(`.artifacts/x11-profile-0b4b7415-selected-core/`): the first run in which
+`XTS5` read anything but BLOCKED. 99 purposes started and completed, 76
+PASS, 0 FAIL, and 23 dispositions the suite itself reports: `Multiple
+screens not supported` for the focus purposes that need two screens
+(UNSUPPORTED), assertions the suite has retired (NOTINUSE), and its own
+`no known reliable test method` omissions (UNTESTED, and around backing
+store one UNRESOLVED). The focus contract's seven repairs of 2026-09-20 all
+hold.
+
+**Declared dispositions.** The evaluator required every manifested purpose
+to PASS, so a suite with retired assertions and single-screen omissions
+could never read PASS through it, and a manifest could only "pass" by
+leaving purposes out -- which is the baseline-by-omission the adapter was
+built to refuse. A manifest row may now declare an expected disposition
+(`FAIL`, `UNRESOLVED`, `NOTINUSE`, `UNSUPPORTED`, `UNTESTED`) with a
+mandatory reason; `NORESULT` and `MISSING` describe a run and cannot be
+declared. The evaluator requires the observed disposition to equal the
+declared one: a declared purpose that starts passing fails the gate as a
+stale manifest, so an improvement is recorded rather than silently
+absorbed. `xts_declare.py` writes declarations from a real journal and a
+reviewed reasons file keyed by case or `case#purpose`, and refuses any
+disposition without a reason. The gate's verdict line carries the
+accounting: `XTS5 PASS (76 passed, 23 declared)`. The reasons files are
+committed beside the manifests (`xts_reasons_selected_core.json`,
+`xts_reasons_xproto.json`); for Xproto every declared failure names its
+row.
 
 ## Finding and resolution
 
 The gate runs XTS now, and `XTS5 BLOCKED` means what it says: the checkout
-or the manifest was not named. Two scenarios are enumerated and committed;
-`xproto` reads FAIL with every one of its 92 non-PASS purposes named, which
-is the honest state of the core protocol against this suite, and the
-manifest is the suite's account of itself, not a list of what passes.
-`~/src/xts` is the operator's checkout; the invocation is in
-`docs/validation.md`.
+or the manifest was not named. Two scenarios are enumerated and committed
+with their declarations: `selected-core` reads PASS with 76 passed and 23
+declared, all the suite's own; `xproto` reads PASS with 177 passed and 92
+declared, 55 of them FAIL and 24 UNRESOLVED that are the authority's and
+carry their row (t166 to t169) in the reason. A PASS here means the suite
+said exactly what the manifest says it would, no more; the declared count
+is the debt, in the verdict line where it cannot be missed. `~/src/xts` is
+the operator's checkout; the invocation is in `docs/validation.md`.
 
 What the suite does not cover is unchanged: nothing of XKB, and the input
 purposes it marks UNTESTED because it is not configured to drive XTEST
@@ -84,8 +111,13 @@ against the fixture host.
 - [x] The gate builds the fixture host and runs XTS; `xts_select.py` excludes
       by test type, with a test; `xts_check.sh` bounds each case.
 - [x] Xproto enumerated, run, and its non-PASS purposes named and filed.
-- [ ] `selected-core` through the gate on the committed candidate: below.
+- [x] `selected-core` through the gate on the committed candidate: 76
+      passed, 23 declared, 0 FAIL.
+- [x] Declared dispositions with reasons, `xts_declare.py`, tests in
+      `test_gate.py` and `test_xts_select.py`.
 - [ ] Rejoin the 120 `TOO_LONG` purposes once t165 lands.
+- [ ] As t166 to t169 land, their declarations turn stale and the gate says
+      so; remove each with its repair.
 
 ## Connections
 

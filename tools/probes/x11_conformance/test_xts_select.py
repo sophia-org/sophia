@@ -129,5 +129,56 @@ class SelectionTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
 
 
+class DeclarationTests(unittest.TestCase):
+    """xts_declare.py writes what a journal observed, with a reason for each,
+    or nothing."""
+
+    journal = ('10|0 /Xproto/pBell 00:00|TC Start\n'
+               '200|0 1 00:00|TP Start\n220|0 1 0 00:00|PASS\n'
+               '200|0 2 00:00|TP Start\n220|0 2 5 00:00|UNTESTED\n'
+               '10|1 /Xproto/pKillClient 00:00|TC Start\n'
+               '200|1 1 00:00|TP Start\n220|1 1 1 00:00|FAIL\n')
+    manifest = [{'case': '/Xproto/pBell', 'purpose': 1}, {'case': '/Xproto/pBell', 'purpose': 2},
+                {'case': '/Xproto/pKillClient', 'purpose': 1}]
+
+    def declare(self, reasons, journal=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'manifest.json').write_text(json.dumps(self.manifest))
+            (root / 'journal').write_text(journal or self.journal)
+            (root / 'reasons.json').write_text(json.dumps(reasons))
+            result = subprocess.run([sys.executable, '-B', str(HERE / 'xts_declare.py'),
+                                     '--manifest', str(root / 'manifest.json'), '--journal', str(root / 'journal'),
+                                     '--reasons', str(root / 'reasons.json'), '--output', str(root / 'out.json')],
+                                    capture_output=True, text=True)
+            rows = json.loads((root / 'out.json').read_text()) if (root / 'out.json').exists() else None
+            return result, rows
+
+    def test_observed_dispositions_are_declared_with_their_reasons(self):
+        result, rows = self.declare({'/Xproto/pBell#2': 'cannot be shortened', '/Xproto/pKillClient': 't166'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(rows, [
+            {'case': '/Xproto/pBell', 'purpose': 1},
+            {'case': '/Xproto/pBell', 'purpose': 2, 'expected': 'UNTESTED', 'reason': 'cannot be shortened'},
+            {'case': '/Xproto/pKillClient', 'purpose': 1, 'expected': 'FAIL', 'reason': 't166'},
+        ])
+        self.assertEqual(json.loads(result.stdout), {'purposes': 3, 'declared': 2})
+
+    def test_a_disposition_without_a_reviewed_reason_is_refused(self):
+        result, rows = self.declare({'/Xproto/pBell#2': 'cannot be shortened'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('/Xproto/pKillClient#1: FAIL', result.stderr)
+        self.assertIsNone(rows)
+
+    def test_a_run_level_disposition_cannot_be_declared(self):
+        # A purpose that never started describes the run; the answer is to
+        # rerun, not to write MISSING into the manifest.
+        journal = self.journal.replace('10|1 /Xproto/pKillClient 00:00|TC Start\n'
+                                       '200|1 1 00:00|TP Start\n220|1 1 1 00:00|FAIL\n', '')
+        result, rows = self.declare({'/Xproto/pBell#2': 'x', '/Xproto/pKillClient': 'x'}, journal)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('describes the run', result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

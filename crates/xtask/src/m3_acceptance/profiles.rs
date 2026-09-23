@@ -479,8 +479,9 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
         .collect::<Vec<_>>()
         .join(", ");
     let line = format!(
-        "xtask: X11 profiles: {overall}; {summary}; XTS5 {}; {}",
+        "xtask: X11 profiles: {overall}; {summary}; XTS5 {} ({}); {}",
         report.xts5.status,
+        report.xts5.reason,
         path.display()
     );
     if overall == "PASS" {
@@ -583,10 +584,23 @@ fn xts(
         Duration::from_secs(opts.xts_timeout + XTS_GATE_MARGIN_SECS),
     )?;
     let report_path = output.join("report.json");
-    let status = std::fs::read_to_string(&report_path)
+    let report = std::fs::read_to_string(&report_path)
         .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    let status = report
+        .as_ref()
         .and_then(|report| report["status"].as_str().map(str::to_owned));
+    // How much of a PASS is declaration, in the verdict itself: a manifest
+    // may declare dispositions the suite or the authority cannot pass today,
+    // each with a reason, and a PASS that met them must say so.
+    let accounting = report.as_ref().map(|report| {
+        let passed = report["passed"].as_u64().unwrap_or(0);
+        let declared: u64 = report["declared"]
+            .as_object()
+            .map(|d| d.values().filter_map(serde_json::Value::as_u64).sum())
+            .unwrap_or(0);
+        format!("{passed} passed, {declared} declared")
+    });
     Ok(
         match (execution.timed_out, execution.returncode, status.as_deref()) {
             (true, _, _) => XtsVerdict {
@@ -597,7 +611,10 @@ fn xts(
             },
             (false, Some(0), Some("PASS")) => XtsVerdict {
                 status: "PASS".into(),
-                reason: "every declared purpose started and finished PASS".into(),
+                reason: format!(
+                    "every manifested purpose started and met its expectation ({})",
+                    accounting.as_deref().unwrap_or("unaccounted")
+                ),
                 exit: Some(0),
                 report: Some(report_path),
             },

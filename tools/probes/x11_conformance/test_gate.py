@@ -152,6 +152,28 @@ class JournalTests(unittest.TestCase):
         for code, status in [(3, 'NOTINUSE'), (4, 'UNSUPPORTED'), (5, 'UNTESTED')]:
             self.assertEqual(evaluate_journal(self.expected, self.journal(status, code))['status'], 'FAIL')
 
+    def test_a_declared_disposition_is_met_or_the_manifest_is_stale(self):
+        # A purpose the suite itself calls UNTESTED, declared with a reason,
+        # does not fail the gate; the same purpose passing does, because the
+        # manifest then says something untrue and must be updated. Declaring
+        # without a reason is refused, and a run-level disposition cannot be
+        # declared as a purpose's.
+        declared = [dict(self.expected[0], expected='UNTESTED', reason='no known reliable test method'),
+                    self.expected[1]]
+        report = evaluate_journal(declared, self.journal('UNTESTED', 5))
+        self.assertEqual(report['status'], 'PASS')
+        self.assertEqual((report['passed'], report['declared']), (1, {'UNTESTED': 1}))
+        stale = evaluate_journal(declared, self.journal())
+        self.assertEqual(stale['status'], 'FAIL')
+        self.assertIn('the manifest is stale', stale['failures'][0])
+        other = evaluate_journal(declared, self.journal('UNSUPPORTED', 4))
+        self.assertEqual(other['status'], 'FAIL')
+        self.assertIn('UNSUPPORTED (declared UNTESTED)', other['failures'][0])
+        for bad in ({'expected': 'FAIL'}, {'expected': 'NORESULT', 'reason': 'x'},
+                    {'expected': 'UNINITIATED', 'reason': 'x'}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                evaluate_journal([dict(self.expected[0], **bad), self.expected[1]], self.journal())
+
     def test_empty_duplicate_forged_and_unstarted_results_rejected(self):
         for text in ['', self.journal() + '220|0 1 0 00:00|PASS\n',
                      self.journal('PASS', 7), '220|0 1 0 00:00|PASS\n']:
