@@ -113,12 +113,12 @@ answered.
       with Hagia running. The headless, no-WM, XTEST path is healthy, and a
       physical button does not pass through the injector t155 repaired, so the
       answer lies in the physical input path or in the WM session.
-- [ ] The paste half -- middle-click in a second xterm -- is blocked by t156:
-      XTEST pointer events target the focused window rather than the window
-      under the pointer, and a no-WM session focuses only its first window.
-      (Keyboard focus in a no-WM session never moves past that first window
-      either -- no WM focus, no click focus. That is recorded here as an
-      observation about keys; it is not this row's scope.)
+- [x] The paste half -- middle-click in a second xterm. Blocked until t156
+      resolved XTEST pointer events against the Engine's scene; now three of
+      three pass with `conversions=2`, xterm B asking for PRIMARY and receiving
+      it. (Keyboard focus in a no-WM session never moves past the first window
+      -- no WM focus, no click focus. Recorded as an observation about keys;
+      not this row's scope.)
 - [x] Add the real-client smoke. `crates/sophia-session/examples/selection_probe.rs`
       runs two out-of-process x11rb clients against `x11_conformance_host` --
       the production frontend, not a test harness -- and carries the round

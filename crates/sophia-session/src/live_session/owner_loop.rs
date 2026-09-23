@@ -57,6 +57,7 @@ struct SessionLoopStartup<'a> {
     initial_authority_batch: Option<XAuthorityObservedTransactionBatch>,
     output_notifications: usize,
     xtest_evidence: Arc<x_frontend::xtest::LiveXTestEvidence>,
+    xtest_scene: Arc<x_frontend::xtest::LiveXTestPointerScene>,
 }
 
 fn authority_wait_timeout(
@@ -387,6 +388,7 @@ fn run_session_loop_inner(
         mut initial_authority_batch,
         output_notifications,
         xtest_evidence,
+        xtest_scene,
     } = startup;
     let started = Instant::now();
     let mut render_inventory_service_at = started;

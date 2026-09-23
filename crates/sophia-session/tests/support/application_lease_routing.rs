@@ -991,3 +991,62 @@ fn motion_is_released_on_the_clock_when_no_repaint_is_requested() {
         "releasing the motion must clear the wait it was holding"
     );
 }
+
+/// An XTEST pointer event resolves to the surface under it, not to the focus.
+/// The authority's plan targets the focused window; left there, a synthetic
+/// pointer could only ever land in that window -- with no window manager, the
+/// first window and no other (t156). A physical pointer is hit-tested against
+/// the Engine's layers, and the session now resolves a synthetic one the same
+/// way, against the owner loop's last publication.
+#[test]
+fn a_synthetic_pointer_resolves_to_the_surface_under_it_not_the_focus() {
+    let mut layout = PersistentLiveLayout::default();
+    let first = SurfaceId::new(201, 1);
+    let second = SurfaceId::new(202, 1);
+    let layers = vec![
+        add_surface(&mut layout, first, admission(1, 4), 0),
+        add_surface(&mut layout, second, admission(2, 4), 100),
+    ];
+    let seat = sophia_protocol::SeatId::from_raw(1);
+    let device = sophia_protocol::DeviceId::from_raw(9);
+    // The plan names the focused surface, `first`, with a position relative to
+    // it. The point is over `second`.
+    let planned_local = Point { x: 150.0, y: 10.0 };
+    let (target, local) = crate::live_session::x_frontend::xtest::resolve_pointer_target(
+        &layers,
+        seat,
+        device,
+        first,
+        Point { x: 150.0, y: 10.0 },
+        planned_local,
+    );
+    assert_eq!(
+        target, second,
+        "the surface under the pointer, not the focus"
+    );
+    assert_eq!(
+        local,
+        Point { x: 50.0, y: 10.0 },
+        "relative to that surface"
+    );
+
+    // Over nothing the plan stands: the bare root, or a scene not yet published.
+    let (target, local) = crate::live_session::x_frontend::xtest::resolve_pointer_target(
+        &layers,
+        seat,
+        device,
+        first,
+        Point { x: 250.0, y: 10.0 },
+        planned_local,
+    );
+    assert_eq!((target, local), (first, planned_local));
+    let (target, _) = crate::live_session::x_frontend::xtest::resolve_pointer_target(
+        &[],
+        seat,
+        device,
+        first,
+        Point { x: 150.0, y: 10.0 },
+        planned_local,
+    );
+    assert_eq!(target, first, "an unpublished scene leaves the plan alone");
+}
