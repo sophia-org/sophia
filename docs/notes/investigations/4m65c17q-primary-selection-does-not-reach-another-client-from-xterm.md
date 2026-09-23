@@ -119,6 +119,12 @@ answered.
       it. (Keyboard focus in a no-WM session never moves past the first window
       -- no WM focus, no click focus. Recorded as an observation about keys;
       not this row's scope.)
+- [x] Make drag and paste repeatable: `cargo xtask check xtest-selection`
+      (t147) runs both halves against two real xterms and reads the verdict
+      from the session's own counters; `--self-test` fails a blank-row drag,
+      a session without `--admit-xtest`, and no middle-click. The retained
+      evidence reducer used to strip `owner_changes` and `conversions`; it now
+      keeps them, so an installed session's events log carries the answer.
 - [x] Add the real-client smoke. `crates/sophia-session/examples/selection_probe.rs`
       runs two out-of-process x11rb clients against `x11_conformance_host` --
       the production frontend, not a test harness -- and carries the round

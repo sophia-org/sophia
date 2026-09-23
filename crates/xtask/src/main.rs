@@ -15,6 +15,7 @@ use std::process::Command;
 mod check;
 mod m3_acceptance;
 mod panel;
+mod xtest_selection;
 
 use sophia_conformance::{
     desktop_comparison, direct_scanout, direct_scanout_archive, direct_scanout_gate, profile,

@@ -996,3 +996,16 @@ fn xtest_records_keep_admission_and_what_was_injected() {
         Some("sophia_live_session_xtest".into())
     );
 }
+
+/// The selection counts survive reduction: they are wire-opcode tallies, not
+/// contents. Before this the retained record kept only its schema and status,
+/// so an installed session could not say whether a selection was ever taken.
+#[test]
+fn the_selection_record_keeps_its_counts_and_nothing_else() {
+    let record = "sophia_live_selection schema=1 status=complete owner_changes=1 conversions=2 content=redacted";
+    assert_eq!(reduced_record(record).unwrap(), record);
+    assert_eq!(
+        reduced_record("sophia_live_selection schema=1 status=complete owner_changes=1 bytes=SECRET conversions=x").unwrap(),
+        "sophia_live_selection schema=1 status=complete owner_changes=1"
+    );
+}
