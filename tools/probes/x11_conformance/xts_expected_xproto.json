@@ -1,0 +1,1078 @@
+[
+  {
+    "case": "/Xproto/pAllocColor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pAllocColor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pAllocColorCells",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pAllocColorCells",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pAllocColorPlanes",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pAllocColorPlanes",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pAllocNamedColor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pAllocNamedColor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pAllowEvents",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pAllowEvents",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pBadRequest",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pBell",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pBell",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeActivePointerGrab",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeActivePointerGrab",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeGC",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeGC",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeGC",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pChangeHosts",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeHosts",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeKeyboardControl",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeKeyboardControl",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeKeyboardControl",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pChangeKeyboardMapping",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeKeyboardMapping",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangePointerControl",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangePointerControl",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeProperty",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeProperty",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeSaveSet",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeSaveSet",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeWindowAttributes",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pChangeWindowAttributes",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeWindowAttributes",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCirculateWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCirculateWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pClearArea",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pClearArea",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCloseFont",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCloseFont",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pConfigureWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pConfigureWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pConfigureWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pConvertSelection",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pConvertSelection",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCopyArea",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCopyArea",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCopyColormapAndFree",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCopyColormapAndFree",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCopyColormapAndFree",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCopyColormapAndFree",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pCopyGC",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCopyGC",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCopyGC",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCopyPlane",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCopyPlane",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateColormap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCreateColormap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateColormap",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCreateColormap",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pCreateCursor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCreateCursor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateCursor",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCreateCursor",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pCreateGC",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCreateGC",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateGC",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCreateGC",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pCreateGC",
+    "purpose": 6
+  },
+  {
+    "case": "/Xproto/pCreateGlyphCursor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCreateGlyphCursor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateGlyphCursor",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCreateGlyphCursor",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pCreatePixmap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCreatePixmap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreatePixmap",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCreatePixmap",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pCreateWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pCreateWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pCreateWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pCreateWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xproto/pDeleteProperty",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pDeleteProperty",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pDestroySubwindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pDestroySubwindows",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pDestroyWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pDestroyWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFillPoly",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pFillPoly",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pForceScreenSaver",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pForceScreenSaver",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFreeColormap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pFreeColormap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFreeColors",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pFreeColors",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFreeCursor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pFreeCursor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFreeGC",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pFreeGC",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFreePixmap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pFreePixmap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetAtomName",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetAtomName",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetFontPath",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetFontPath",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetGeometry",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetGeometry",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetImage",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetImage",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetInputFocus",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetInputFocus",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetKeyboardControl",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetKeyboardControl",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetKeyboardMapping",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetKeyboardMapping",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetModifierMapping",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetModifierMapping",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetMotionEvents",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetMotionEvents",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetPointerControl",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetPointerControl",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetPointerMapping",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetPointerMapping",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetProperty",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetProperty",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetScreenSaver",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetScreenSaver",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetSelectionOwner",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetSelectionOwner",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetWindowAttributes",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGetWindowAttributes",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGrabButton",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGrabButton",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGrabKey",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGrabKey",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGrabKeyboard",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGrabKeyboard",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGrabPointer",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGrabPointer",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGrabServer",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pGrabServer",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pImageText16",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pImageText16",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pImageText8",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pImageText8",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pInstallColormap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pInstallColormap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pInternAtom",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pInternAtom",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pKillClient",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pKillClient",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListExtensions",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pListExtensions",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListFonts",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pListFonts",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListFontsWithInfo",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pListFontsWithInfo",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListHosts",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pListHosts",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListInstalledColormaps",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pListInstalledColormaps",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListProperties",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pListProperties",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pLookupColor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pLookupColor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pMapSubwindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pMapSubwindows",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pMapWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pMapWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pNoOperation",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pNoOperation",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pNoOperation",
+    "purpose": 3
+  },
+  {
+    "case": "/Xproto/pOpenDisplay",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pOpenDisplay",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pOpenFont",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pOpenFont",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pOpenFont",
+    "purpose": 4
+  },
+  {
+    "case": "/Xproto/pOpenFont",
+    "purpose": 5
+  },
+  {
+    "case": "/Xproto/pPolyArc",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyArc",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyFillArc",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyFillArc",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyFillRectangle",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyFillRectangle",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyLine",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyLine",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyPoint",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyPoint",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyRectangle",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyRectangle",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolySegment",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolySegment",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyText16",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyText16",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyText8",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPolyText8",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPutImage",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pPutImage",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryBestSize",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryBestSize",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryColors",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryColors",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryExtension",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryExtension",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryFont",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryFont",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryKeymap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryKeymap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryPointer",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryPointer",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryTextExtents",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryTextExtents",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryTree",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pQueryTree",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pRecolorCursor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pRecolorCursor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pReparentWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pReparentWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pRotateProperties",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pRotateProperties",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSendEvent",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSendEvent",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetAccessControl",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetAccessControl",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetClipRectangles",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetClipRectangles",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetCloseDownMode",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetCloseDownMode",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetDashes",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetDashes",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetFontPath",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetFontPath",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetInputFocus",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetInputFocus",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetModifierMapping",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetModifierMapping",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetPointerMapping",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetPointerMapping",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetScreenSaver",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetScreenSaver",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetSelectionOwner",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pSetSelectionOwner",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pStoreColors",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pStoreColors",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pStoreColors",
+    "purpose": 3
+  },
+  {
+    "case": "/Xproto/pStoreNamedColor",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pStoreNamedColor",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pStoreNamedColor",
+    "purpose": 3
+  },
+  {
+    "case": "/Xproto/pTranslateCoords",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pTranslateCoords",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUngrabButton",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUngrabButton",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUngrabKey",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUngrabKey",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUngrabKeyboard",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUngrabKeyboard",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUngrabPointer",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUngrabPointer",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUngrabServer",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUngrabServer",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUninstallColormap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUninstallColormap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUnmapSubwindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUnmapSubwindows",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUnmapWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pUnmapWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xproto/pWarpPointer",
+    "purpose": 1
+  },
+  {
+    "case": "/Xproto/pWarpPointer",
+    "purpose": 2
+  }
+]

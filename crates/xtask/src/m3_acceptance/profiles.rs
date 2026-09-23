@@ -428,7 +428,14 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
         profiles.insert(profile.clone(), verdict);
     }
     let xts5 = match (&opts.xts_root, &opts.xts_expected) {
-        (Some(root), Some(expected)) => xts(repo, opts, &probe, &build_target, root, expected)?,
+        (Some(root), Some(expected)) => {
+            // XTS runs against the core fixture host, which none of this
+            // gate's profiles builds; without this the verdict was BLOCKED
+            // on every run that asked for XTS, for want of a binary the
+            // gate could have built itself.
+            build_xts_host(repo, opts, &build_target)?;
+            xts(repo, opts, &probe, &build_target, root, expected)?
+        }
         _ => xts_blocked(
             "XTS is a separate checkout and a selected-purpose manifest; neither was supplied, so nothing was run",
         ),
@@ -503,6 +510,41 @@ fn probe_command(repo: &Path, script: &Path) -> std::process::Command {
         }
     }
     command
+}
+
+/// Build `x11_conformance_host` into the gate's own target namespace, from
+/// the repository the profiles run from, with the same environment hygiene.
+fn build_xts_host(repo: &Path, opts: &ProfileOptions, build_target: &Path) -> Result<(), String> {
+    let mut command = std::process::Command::new("cargo");
+    command
+        .current_dir(repo)
+        .args([
+            "build",
+            "--offline",
+            "-p",
+            "sophia-x-authority",
+            "--example",
+            "x11_conformance_host",
+        ])
+        .env("CARGO_TARGET_DIR", build_target);
+    for (name, _) in std::env::vars_os() {
+        let name = name.to_string_lossy().into_owned();
+        if name.starts_with("SOPHIA_") || name.starts_with("HAGIA_") {
+            command.env_remove(&name);
+        }
+    }
+    let execution = process::run(
+        &mut command,
+        &opts.output.join("xts5-host-build.log"),
+        Duration::from_secs(opts.timeout.min(1800)),
+    )?;
+    if execution.timed_out || execution.returncode != Some(0) {
+        return Err(format!(
+            "building x11_conformance_host for XTS failed: exit {:?}, timed_out={}",
+            execution.returncode, execution.timed_out
+        ));
+    }
+    Ok(())
 }
 
 fn xts(

@@ -76,8 +76,12 @@ export TET_EXECUTE="$suite"
 libdirs="$(find "$root" -type d -name .libs 2>/dev/null | tr '\n' ':')"
 export LD_LIBRARY_PATH="${libdirs}${LD_LIBRARY_PATH:-}"
 # The same invocation the checkout's xts-run makes: execute, journal under
-# results, this configuration, the xts5 suite, the named scenario.
-"$tcc" -e -i "$results" -x "$config" xts5 "$scenario"
+# results, this configuration, the xts5 suite, the named scenario -- with
+# one addition, a per-test-case timeout. A purpose that deadlocks its
+# connection (t165) used to hold the whole run to the adapter's deadline and
+# report nothing for the cases behind it; now it costs its case two minutes
+# and the journal records the rest.
+"$tcc" -e -t 120 -i "$results" -x "$config" xts5 "$scenario"
 status=$?
 [ -s "$results/journal" ] || {
     echo "tcc wrote no journal at $results/journal" >&2
