@@ -193,3 +193,23 @@ What survives:
   recovery. t145 still owns the decision.
 
 The tables above are kept as written, with this section as their correction.
+
+## The headless half of t147, 2026-09-23
+
+`cargo xtask check xtest-selection` is the scenario t147 asked for, headless:
+a production session with `--no-input --admit-xtest` runs the XTEST driver,
+which drag-selects in one real xterm and middle-click pastes into another. It
+passes on `owner_changes=1 conversions=2 injected_buttons=4`. `--self-test`
+fails a blank-row drag (`selection_text_mismatch`), a session without
+`--admit-xtest` (XTEST absent), and no middle-click (stdout mismatch). The
+gate's judge also has unit tests, so each counter obligation fails on its own
+even when the session exits cleanly.
+
+It took two XTEST repairs to get here, t155 (buttons at the origin) and t156
+(pointer events at the focus instead of under the pointer), and one reducer
+gap: retained evidence dropped `sophia_live_selection`'s counts, which is why
+the installed session of 2026-09-21 could not say whether PRIMARY moved.
+
+Still open for t147: the QEMU scenario, and one XTEST injection on the
+installed desktop so `sophia_live_session_xtest` shows a nonzero count. The
+2026-09-21 session admitted XTEST (`issued=23`) but injected nothing.

@@ -946,6 +946,30 @@ This needs GL/EGL/Xlib development files and uses only a render node. It does
 not acquire DRM master, drive KMS, or connect to the live desktop. Normal-login
 and physical scanout acceptance remain separate gates.
 
+## XTEST selection between real clients
+
+```sh
+cargo xtask check xtest-selection
+cargo xtask check xtest-selection --self-test
+```
+
+A headless production session (`--no-input --admit-xtest`, a private display
+in `:90`–`:99`, isolated configuration) runs
+`crates/sophia-session/examples/xtest_selection_driver.rs` as its client. The
+driver starts two real xterms, aims XTEST motion at a marker row in the first
+and reads the pointer back before any button, drags across it, then
+middle-clicks the second. The gate passes only on the driver's exact pass
+line, `bounded_complete`, `sophia_live_selection owner_changes>=1
+conversions>=2` (xterm A taking PRIMARY, then the driver's read-back and xterm
+B's paste asking for it), and a completed `sophia_live_session_xtest` with
+`admitted=true refused=0 injected_buttons>=4`. Logs are kept under
+`.artifacts/xtest-selection/`.
+
+`--self-test` must fail three mutations: a drag on a blank row, a session
+without `--admit-xtest`, and no middle-click. This covers the headless, no-WM
+path only. A physical drag, a window manager's session and scanout are
+separate evidence.
+
 ## Atomic Scanout Evidence
 
 The production-shaped scanout preflight and evidence verifiers require atomic

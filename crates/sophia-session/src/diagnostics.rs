@@ -5,6 +5,7 @@ mod commands;
 mod failure;
 mod input_device;
 mod recovery;
+mod selection;
 mod shell_action;
 mod shell_component;
 mod xtest;
