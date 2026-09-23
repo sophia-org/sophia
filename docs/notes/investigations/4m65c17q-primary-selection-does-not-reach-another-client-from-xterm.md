@@ -191,6 +191,25 @@ needs XTEST motion from `wire.py`, not `xdotool`. The scripts under
 `.artifacts/t124-xtest-service-exit/` are the wrong host and are kept as the
 record of that.
 
+## Reproduced headless on the production session, 2026-09-22
+
+The gate's vehicle is the production session itself: its display speaks
+MIT-MAGIC-COOKIE-1, so a real xterm connects (the m4 host admits only
+SOPHIA-PRIVATE-INPUT-1, which libxcb cannot send). A driver,
+`crates/sophia-session/examples/xtest_selection_driver.rs`, is launched as the
+session's `--client`, spawns xterm A, waits until `QueryPointer` resolves to it,
+and drives an XTEST drag across the text row.
+
+With the aim confirmed, xterm sends no `SetSelectionOwner`:
+`sophia_live_selection owner_changes=0`. A protocol trace of xterm shows why,
+and it is not xterm: every XTEST button is delivered at the screen origin, so
+the drag is a zero-length selection. That is
+[t155](csiz9c9x-an-xtest-button-is-delivered-at-the-screen-origin-not-where-the-pointer-is.md),
+which blocks this row. It does not explain the original report, which was a
+physical drag; once t155 lands the gate can say whether a correctly placed
+drag makes xterm take PRIMARY, and if it does, the physical path is where this
+row's answer lies.
+
 ## Connections
 
 - [A kitty window waits out a four-second layout budget before it opens](cnbxdj48-a-kitty-window-waits-out-a-four-second-layout-budget-before-it-opens.md) --
