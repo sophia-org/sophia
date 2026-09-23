@@ -14,14 +14,19 @@ SINGLE_CARD="${SOPHIA_QEMU_SINGLE_CARD:-0}"
 EXPECT_RENDERER_WORKERS="${SOPHIA_QEMU_EXPECT_RENDERER_WORKERS:-}"
 GPU_MODE="${SOPHIA_QEMU_GPU_MODE:-software}"
 RENDER_NODE="${SOPHIA_QEMU_RENDER_NODE:-/dev/dri/renderD128}"
+XTEST_ROW="${SOPHIA_QEMU_XTEST_ROW:-}"
 
 case "$SCENARIO" in
-    session|emergency-recovery|gtk-classic|gtk-confined) ;;
+    session|emergency-recovery|gtk-classic|gtk-confined|xtest-selection) ;;
     *)
-        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, or gtk-confined" >&2
+        echo "SOPHIA_QEMU_SCENARIO must be session, emergency-recovery, gtk-classic, gtk-confined, or xtest-selection" >&2
         exit 1
         ;;
 esac
+if [[ -n "$XTEST_ROW" && ( "$SCENARIO" != xtest-selection || ! "$XTEST_ROW" =~ ^[0-7]$ ) ]]; then
+    echo "SOPHIA_QEMU_XTEST_ROW is a row 0-7 and only the xtest-selection scenario takes it" >&2
+    exit 1
+fi
 if [[ "$TWO_XTERM" != 0 && "$TWO_XTERM" != 1 ]]; then
     echo "SOPHIA_QEMU_TWO_XTERM must be 0 or 1" >&2
     exit 1
@@ -49,7 +54,7 @@ fi
 
 case "$SCENARIO" in
     emergency-recovery) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-emergency-recovery.log ;;
-    gtk-*) DEFAULT_EVIDENCE_FILE="/tmp/sophia-qemu-$SCENARIO.log" ;;
+    gtk-*|xtest-selection) DEFAULT_EVIDENCE_FILE="/tmp/sophia-qemu-$SCENARIO.log" ;;
     *) DEFAULT_EVIDENCE_FILE=/tmp/sophia-qemu-session.log ;;
 esac
 
@@ -141,6 +146,9 @@ case "$SCENARIO" in
     gtk-*)
         echo "sophia_qemu_gtk schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio mouse=virtio scenario=$SCENARIO" | tee -a "$EVIDENCE_FILE"
         ;;
+    xtest-selection)
+        echo "sophia_qemu_xtest_selection schema=1 status=starting isolation=headless control=none host_drm=none host_vt=none gpu=virtio-gpu input=xtest row=${XTEST_ROW:-0}" | tee -a "$EVIDENCE_FILE"
+        ;;
     *)
         echo "sophia_qemu_session schema=3 status=starting isolation=headless display_sink=vnc-unix control=qmp-unix host_drm=none host_vt=none guest_network=none storage=none gpu=virtio-gpu gpu_devices=2 gpu_heads=2 keyboard=virtio mouse=virtio ticks=300" | tee -a "$EVIDENCE_FILE"
         ;;
@@ -166,7 +174,7 @@ LOGGER_PID=$!
     -device virtio-mouse-pci \
     -kernel "$KERNEL_IMAGE" \
     -initrd "$INITRAMFS" \
-    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER sophia.direct_scanout=$DIRECT_SCANOUT$forced_connector" \
+    -append "console=ttyS0 quiet loglevel=3 rdinit=/sbin/sophia-qemu-init rd.driver.pre=virtio_pci rd.driver.pre=virtio_gpu rd.driver.pre=virtio_input panic=-1 sophia.scenario=$SCENARIO sophia.two_xterm=$TWO_XTERM sophia.shared_renderer_worker=$SHARED_RENDERER_WORKER sophia.direct_scanout=$DIRECT_SCANOUT$forced_connector${XTEST_ROW:+ sophia.xtest_row=$XTEST_ROW}" \
     > "$SERIAL_FIFO" 2>&1 &
 QEMU_PID=$!
 
@@ -300,6 +308,28 @@ if [[ "$SCENARIO" == gtk-* ]]; then
     fi
     echo "sophia_qemu_gtk schema=1 status=complete scenario=$SCENARIO qemu_exit=0" | tee -a "$EVIDENCE_FILE"
     exit 0
+fi
+
+if [[ "$SCENARIO" == xtest-selection ]]; then
+    # Nothing is sent from the host: the drag and the paste are XTEST inside
+    # the guest, and the session bounds its own runtime. The host waits for
+    # the guest to power off and judges the evidence it left.
+    set +e
+    wait "$QEMU_PID"
+    qemu_status=$?
+    QEMU_PID=""
+    wait "$LOGGER_PID"
+    logger_status=$?
+    LOGGER_PID=""
+    set -e
+    cleanup
+
+    if [[ "$qemu_status" -ne 0 || "$logger_status" -ne 0 ]]; then
+        echo "sophia_qemu_xtest_selection schema=1 status=failed reason=guest_exit qemu_exit=$qemu_status logger_exit=$logger_status" | tee -a "$EVIDENCE_FILE"
+        exit 1
+    fi
+    echo "sophia_qemu_xtest_selection schema=1 status=complete qemu_exit=0" | tee -a "$EVIDENCE_FILE"
+    exec "$ROOT_DIR/tools/verify_qemu_xtest_selection_evidence.sh" "$EVIDENCE_FILE"
 fi
 
 input_ready=false

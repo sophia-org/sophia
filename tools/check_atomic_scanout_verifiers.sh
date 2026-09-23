@@ -161,6 +161,33 @@ expect_fail_reason tools/verify_qemu_session_evidence.sh \
 expect_pass tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_pass.log
 expect_fail tools/verify_qemu_emergency_recovery_evidence.sh qemu_emergency_recovery_missing_guard_trigger.log
 
+# Both taken from real guest runs on 2026-09-23: the pass, and the blank-row
+# drag the scenario's red half makes (SOPHIA_QEMU_XTEST_ROW=5), which xterm
+# trims to nothing so the driver's text check fails and the session with it.
+expect_pass tools/verify_qemu_xtest_selection_evidence.sh qemu_xtest_selection_evidence_pass.log
+expect_fail_reason tools/verify_qemu_xtest_selection_evidence.sh \
+    qemu_xtest_selection_evidence_blank_row.log \
+    "missing clean guest completion"
+# The counters are the verdict; a matched driver line must not pass without them.
+sed 's/owner_changes=1 conversions=3/owner_changes=0 conversions=3/' \
+    "$FIXTURE_DIR/qemu_xtest_selection_evidence_pass.log" > "$TEMP_DIR/xtest-no-owner.log"
+if "$ROOT_DIR/tools/verify_qemu_xtest_selection_evidence.sh" "$TEMP_DIR/xtest-no-owner.log" >/dev/null 2>&1; then
+    echo "xtest-selection verifier accepted a run in which nothing took PRIMARY" >&2
+    exit 1
+fi
+sed 's/owner_changes=1 conversions=3/owner_changes=1 conversions=1/' \
+    "$FIXTURE_DIR/qemu_xtest_selection_evidence_pass.log" > "$TEMP_DIR/xtest-no-paste.log"
+if "$ROOT_DIR/tools/verify_qemu_xtest_selection_evidence.sh" "$TEMP_DIR/xtest-no-paste.log" >/dev/null 2>&1; then
+    echo "xtest-selection verifier accepted a run in which nothing asked for PRIMARY" >&2
+    exit 1
+fi
+sed 's/stdout_match=true/stdout_match=false/' \
+    "$FIXTURE_DIR/qemu_xtest_selection_evidence_pass.log" > "$TEMP_DIR/xtest-stdout-mismatch.log"
+if "$ROOT_DIR/tools/verify_qemu_xtest_selection_evidence.sh" "$TEMP_DIR/xtest-stdout-mismatch.log" >/dev/null 2>&1; then
+    echo "xtest-selection verifier accepted a run whose driver verdict did not match" >&2
+    exit 1
+fi
+
 expect_pass tools/verify_vrr_hardware_evidence.sh vrr_hardware_evidence_pass.log
 expect_fail tools/verify_vrr_hardware_evidence.sh vrr_hardware_evidence_missing_fallback.log
 

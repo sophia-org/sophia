@@ -449,29 +449,45 @@ fn run(row: u16, paste: bool, overshoot: bool) -> Result<String, Failure> {
         .intern_atom(false, b"SOPHIA_T124_SELECTION")?
         .reply()?
         .atom;
-    conn.convert_selection(
-        requestor,
-        u32::from(AtomEnum::PRIMARY),
-        utf8,
-        property,
-        x11rb::CURRENT_TIME,
-    )?;
-    conn.flush()?;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let bytes = loop {
-        match conn.poll_for_event()? {
-            Some(Event::SelectionNotify(notify)) if notify.requestor == requestor => {
-                if notify.property == 0 {
-                    return Err(Failure("convert_refused"));
+    // UTF8_STRING first, STRING when the owner refuses it, as a pasting
+    // client does: an xterm in the C locale -- the QEMU guest's -- offers
+    // only STRING. The marker is ASCII, so either target carries it whole.
+    let mut bytes = None;
+    for target in [utf8, u32::from(AtomEnum::STRING)] {
+        conn.convert_selection(
+            requestor,
+            u32::from(AtomEnum::PRIMARY),
+            target,
+            property,
+            x11rb::CURRENT_TIME,
+        )?;
+        conn.flush()?;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let converted = loop {
+            match conn.poll_for_event()? {
+                Some(Event::SelectionNotify(notify)) if notify.requestor == requestor => {
+                    if notify.property == 0 {
+                        break None;
+                    }
+                    break Some(
+                        conn.get_property(true, requestor, notify.property, target, 0, 4096)?
+                            .reply()?
+                            .value,
+                    );
                 }
-                break conn
-                    .get_property(true, requestor, notify.property, utf8, 0, 4096)?
-                    .reply()?
-                    .value;
+                _ if Instant::now() >= deadline => {
+                    return Err(Failure("selection_notify_timeout"));
+                }
+                _ => std::thread::sleep(Duration::from_millis(20)),
             }
-            _ if Instant::now() >= deadline => return Err(Failure("selection_notify_timeout")),
-            _ => std::thread::sleep(Duration::from_millis(20)),
+        };
+        if converted.is_some() {
+            bytes = converted;
+            break;
         }
+    }
+    let Some(bytes) = bytes else {
+        return Err(Failure("convert_refused"));
     };
     let matched = bytes
         .windows(MARKER.len())

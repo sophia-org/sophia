@@ -210,6 +210,49 @@ It took two XTEST repairs to get here, t155 (buttons at the origin) and t156
 gap: retained evidence dropped `sophia_live_selection`'s counts, which is why
 the installed session of 2026-09-21 could not say whether PRIMARY moved.
 
-Still open for t147: the QEMU scenario, and one XTEST injection on the
-installed desktop so `sophia_live_session_xtest` shows a nonzero count. The
-2026-09-21 session admitted XTEST (`issued=23`) but injected nothing.
+Still open for t147 after this: one XTEST injection on the installed desktop
+so `sophia_live_session_xtest` shows a nonzero count. The 2026-09-21 session
+admitted XTEST (`issued=23`) but injected nothing.
+
+## The QEMU half, 2026-09-23
+
+`SOPHIA_QEMU_SCENARIO=xtest-selection tools/qemu_session_harness.sh` boots the
+guest with the driver in the image (`/usr/bin/xtest_selection_driver`, built in
+release alongside `sophia`, with DejaVu Sans Mono so xterm's cell size is the
+one the driver aims by) and runs the headless gate's session on a scanned-out
+virtio head, physical input devices present and nothing typed. Nothing is sent
+from the host; the guest bounds itself and powers off, and
+`tools/verify_qemu_xtest_selection_evidence.sh` reads the serial log: the
+markers, the session's application record with the driver's stdout matched
+(the driver's own line never reaches the console in `--client` mode), one
+bounded completion, `owner_changes>=1 conversions>=2`, and a completed XTEST
+record with four buttons and no refusals. `SOPHIA_QEMU_XTEST_ROW=5` drags a
+blank row and must fail.
+
+Results (`.artifacts/t147-qemu-xtest-selection/`): the first guest run failed
+at `convert_refused` -- the guest's xterm runs in the C locale and offers
+STRING, not UTF8_STRING, so the driver now falls back to STRING as a pasting
+client does. With that, `green.log` passes with `owner_changes=1
+conversions=3 injected_buttons=4` (three conversions: the refused UTF8_STRING,
+the STRING read-back, xterm B's paste) and `stdout_match=true`;
+`red-blank-row.log` fails with the driver's `selection_text_mismatch` and the
+guest's `status=failed reason=xtest_selection_exit`. The QEMU half of t147 is
+done.
+
+## Operator step: the hardware half
+
+On the installed desktop, in a terminal on the live display:
+
+```sh
+cd ~/dev/sophia && cargo build --offline -p sophia-session --all-features \
+    --example xtest_selection_driver
+target/debug/examples/xtest_selection_driver; echo
+```
+
+The driver opens two xterms, drags the marker row in the first, middle-clicks
+the second and prints one line: `status=pass ...` or `status=fail reason=...`.
+It needs the session started with `--admit-xtest`, which the installed session
+already is (`issued=23`). At the next logout the retained events log carries
+`sophia_live_session_xtest ... injected_buttons=4` (or more, if run more than
+once); that record with a nonzero count is the hardware half of t147. A
+`status=fail` is a finding for t124, and the reason token says which half.

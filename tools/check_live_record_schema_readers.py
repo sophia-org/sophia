@@ -41,6 +41,7 @@ NORMAL_READERS = (
     'report_sophia_terminal_performance.sh',
     'verify_installed_hagia_session.sh',
     'verify_qemu_emergency_recovery_evidence.sh',
+    'verify_qemu_xtest_selection_evidence.sh',
 )
 ARCHIVE_READERS = {
     'verify_live_session_two_xterm_evidence.sh': 'historical two-xterm startup/CPU budgets',
@@ -55,6 +56,7 @@ PARSED_READERS = {
 }
 FIELD_ONLY_READERS = {
     'verify_qemu_emergency_recovery_evidence.sh': 'cleanup fields, no startup-proof claim',
+    'verify_qemu_xtest_selection_evidence.sh': 'one bounded completion, no startup-proof claim',
 }
 WM_READERS = ('verify_hagia_native_session.sh', 'verify_sophia_firefox_physical.sh')
 RUST_PROOF_READER = 'crates/sophia-conformance/src/direct_scanout.rs'
