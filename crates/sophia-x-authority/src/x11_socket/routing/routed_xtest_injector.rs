@@ -123,11 +123,15 @@ impl crate::XTestInjector for RoutedXTestInjector {
         target: sophia_protocol::SurfaceId,
         button: u32,
         pressed: bool,
+        global: sophia_protocol::Point,
+        local: sophia_protocol::Point,
     ) -> Result<crate::XTestAccepted, crate::XTestInjectionRefusal> {
+        // The routed event is delivered at the position it carries, so a
+        // button must carry the pointer's; the origin put every press there.
         self.submit(
             target,
-            sophia_protocol::Point::default(),
-            sophia_protocol::Point::default(),
+            global,
+            local,
             sophia_protocol::InputEventKind::PointerButton { button, pressed },
         )
     }

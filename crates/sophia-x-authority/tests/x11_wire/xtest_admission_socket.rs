@@ -60,6 +60,34 @@ mod xtest_admission_socket {
             assert_eq!(read_x_record(&mut self.stream)[0], 1, "the barrier must answer with a reply");
         }
 
+        /// A FakeInput carrying root coordinates, which only motion reads.
+        fn fake_input_at(&mut self, event_type: u8, detail: u8, x: i16, y: i16) {
+            let mut body = [0u8; 32];
+            body[0] = event_type;
+            body[1] = detail;
+            let (x, y) = match self.order {
+                XByteOrder::LittleEndian => (x.to_le_bytes(), y.to_le_bytes()),
+                XByteOrder::BigEndian => (x.to_be_bytes(), y.to_be_bytes()),
+            };
+            body[20..22].copy_from_slice(&x);
+            body[22..24].copy_from_slice(&y);
+            self.stream
+                .write_all(&xtest_request(self.order, X_TEST_FAKE_INPUT_MINOR_OPCODE, &body))
+                .unwrap();
+        }
+
+        /// The next event of `code`, passing over pointer motion on the way.
+        fn next_event(&mut self, code: u8) -> [u8; 32] {
+            loop {
+                let record = read_x_record(&mut self.stream);
+                match record[0] & 0x7f {
+                    c if c == code => return record,
+                    6 => continue,
+                    other => panic!("expected event {code}, got record {other}: {record:?}"),
+                }
+            }
+        }
+
         fn fake_input(&mut self, event_type: u8, detail: u8) {
             let mut body = [0u8; 32];
             body[0] = event_type;
@@ -271,6 +299,48 @@ mod xtest_admission_socket {
         // THE BARRIER SETTLED. FakeInput waits until the registry has taken the
         // effect; a connection parked on a completion nobody reports would never
         // read this request, and the test would hang here rather than fail.
+        client.barrier();
+    }
+
+    /// A button happens where the pointer is. XTEST's contract ignores a
+    /// button request's own root and coordinates, so the press and release
+    /// must carry the position the last motion left the pointer at. They were
+    /// submitted at `Point::default()`, which delivered every XTEST button at
+    /// the screen origin with a crossing around it -- a drag into xterm became
+    /// a press and release at one point, a zero-length selection (t155). The
+    /// window sits at the origin, so the aim is (5, 7), which only a correct
+    /// delivery reports.
+    #[test]
+    fn an_injected_button_is_delivered_where_the_pointer_is() {
+        let mut fixture = XtestFixture::new();
+        let mut client = fixture.connect();
+        let window = fixture.focused_window(&mut client);
+        // ButtonPress, ButtonRelease and PointerMotion beside the fixture's own.
+        client.stream
+            .write_all(&change_window_event_mask_request(
+                client.order,
+                window,
+                3 | (1 << 21) | (1 << 2) | (1 << 3) | (1 << 6),
+            ))
+            .unwrap();
+        client.barrier();
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 5, 7);
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        client.fake_input(5, 1);
+        let release = client.next_event(5);
+        for (name, event) in [("ButtonPress", &press), ("ButtonRelease", &release)] {
+            let at = |offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+            assert_eq!(event[1], 1, "{name} names button 1");
+            assert_eq!(
+                u32::from_le_bytes([event[12], event[13], event[14], event[15]]),
+                window,
+                "{name} is on the window under the pointer"
+            );
+            assert_eq!((at(20), at(22)), (5, 7), "{name} root position is the pointer's");
+            assert_eq!((at(24), at(26)), (5, 7), "{name} window position is the pointer's");
+        }
         client.barrier();
     }
 

@@ -231,11 +231,16 @@ pub trait XTestInjector: Send + 'static {
         pressed: bool,
     ) -> Result<XTestAccepted, XTestInjectionRefusal>;
 
+    /// `global` and `local` are where the pointer is: an XTEST button carries
+    /// no position of its own. An injector whose executor keeps its own
+    /// pointer state may ignore them.
     fn submit_button(
         &self,
         target: SurfaceId,
         button: u32,
         pressed: bool,
+        global: Point,
+        local: Point,
     ) -> Result<XTestAccepted, XTestInjectionRefusal>;
 
     fn submit_motion(

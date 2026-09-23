@@ -55,6 +55,9 @@ enum XTestPlan {
         target: SurfaceId,
         button: u32,
         pressed: bool,
+        /// Where the pointer is. A button carries no position of its own.
+        global: sophia_protocol::Point,
+        local: sophia_protocol::Point,
     },
     Motion {
         target: SurfaceId,
@@ -94,6 +97,31 @@ enum XTestWaitEnd {
     /// The peer is gone. Its remaining requests are moot, and dispatch ends
     /// the same way an ordinary EOF ends it.
     Departed,
+}
+
+/// A root position and the same position relative to the focused window,
+/// which is the surface a motion or button is submitted against. Motion and
+/// buttons share this so a button can never again be placed somewhere motion
+/// would not have put it.
+fn pointer_points(
+    runtime: &XAuthorityRuntime,
+    focused_window: crate::XResourceId,
+    x: i32,
+    y: i32,
+) -> (sophia_protocol::Point, sophia_protocol::Point) {
+    let (origin_x, origin_y) = runtime
+        .window_root_position(focused_window)
+        .unwrap_or((0, 0));
+    (
+        sophia_protocol::Point {
+            x: f64::from(x),
+            y: f64::from(y),
+        },
+        sophia_protocol::Point {
+            x: f64::from(x.saturating_sub(origin_x)),
+            y: f64::from(y.saturating_sub(origin_y)),
+        },
+    )
 }
 
 /// The evdev button an X button number names, where one exists.
@@ -298,10 +326,25 @@ impl XTestConnection {
             4 | 5 => {
                 let pressed = request.event_type == 4;
                 if let Some(button) = xtest_evdev_button(request.detail) {
+                    // The request's own root and coordinates are ignored for a
+                    // button, as the reference ignores them: it happens where
+                    // the pointer already is. Submitting no position put
+                    // every XTEST press and release at the screen origin, and
+                    // a drag into xterm became a zero-length selection (t155).
+                    let (x, y) = runtime
+                        .input_authority_mut()
+                        .pointer_query_state(namespace)
+                        .position
+                        .map_or((0, 0), |pointer| {
+                            (i32::from(pointer.root_x), i32::from(pointer.root_y))
+                        });
+                    let (global, local) = pointer_points(runtime, focused_window, x, y);
                     return Ok(XTestPlan::Button {
                         target,
                         button,
                         pressed,
+                        global,
+                        local,
                     });
                 }
                 // A wheel button: an axis step on press, nothing on release.
@@ -341,19 +384,11 @@ impl XTestConnection {
                 // this instance has is zero.
                 let x = x.clamp(0, root.width.saturating_sub(1).max(0));
                 let y = y.clamp(0, root.height.saturating_sub(1).max(0));
-                let (origin_x, origin_y) = runtime
-                    .window_root_position(focused_window)
-                    .unwrap_or((0, 0));
+                let (global, local) = pointer_points(runtime, focused_window, x, y);
                 Ok(XTestPlan::Motion {
                     target,
-                    global: sophia_protocol::Point {
-                        x: f64::from(x),
-                        y: f64::from(y),
-                    },
-                    local: sophia_protocol::Point {
-                        x: f64::from(x.saturating_sub(origin_x)),
-                        y: f64::from(y.saturating_sub(origin_y)),
-                    },
+                    global,
+                    local,
                 })
             }
         }
@@ -370,7 +405,9 @@ impl XTestConnection {
                 target,
                 button,
                 pressed,
-            } => self.injector.submit_button(target, button, pressed),
+                global,
+                local,
+            } => self.injector.submit_button(target, button, pressed, global, local),
             XTestPlan::Motion {
                 target,
                 global,

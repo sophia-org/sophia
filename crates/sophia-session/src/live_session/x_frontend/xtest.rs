@@ -112,10 +112,13 @@ impl XTestInjector for LiveXTestInjector {
         target: SurfaceId,
         button: u32,
         pressed: bool,
+        global: Point,
+        local: Point,
     ) -> Result<XTestAccepted, XTestInjectionRefusal> {
         self.counted(
             &self.evidence.injected_buttons,
-            self.inner.submit_button(target, button, pressed),
+            self.inner
+                .submit_button(target, button, pressed, global, local),
         )
     }
 
