@@ -484,27 +484,39 @@ impl LiveWmSession {
         let Some(public) = self.public.as_mut() else {
             return Ok(LiveWmRequestAdmission::Duplicate);
         };
-        let outline = clamp_floating_pointer_outline(
+        // Neither miss below is the session's failure. Both used to be raised
+        // with `?`, which the owner loop treats as fatal, and a Super+button
+        // on a window whose placement was between two committed layouts took
+        // the whole desktop down with it (2026-09-23, release bf43425d). A
+        // gesture with nowhere to go is dropped and recorded, like one on a
+        // surface policy does not manage.
+        let Some(outline) = clamp_floating_pointer_outline(
             FloatingPointerOutline {
                 surface: interaction.surface,
                 start: interaction.start,
                 geometry: interaction.geometry,
             },
             &wm_output_bounds(&public.outputs),
-        )
-        .ok_or("pointer interaction started outside every public-policy output")?;
-        let output = public
-            .reducer
-            .committed()
-            .into_iter()
-            .find(|projection| {
-                projection
-                    .placements
-                    .iter()
-                    .any(|placement| placement.surface == interaction.surface)
-            })
-            .map(|projection| projection.output)
-            .ok_or("pointer interaction target is absent from public-policy state")?;
+        ) else {
+            crate::session_eprintln!(
+                "sophia_live_wm_pointer schema=2 status=interaction_dropped reason=outside_outputs phase={:?} mode={:?} surface={}",
+                interaction.phase,
+                interaction.mode,
+                interaction.surface.index(),
+            );
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        };
+        let Some(output) =
+            committed_output_placing(&public.reducer.committed(), interaction.surface)
+        else {
+            crate::session_eprintln!(
+                "sophia_live_wm_pointer schema=2 status=interaction_dropped reason=target_unplaced phase={:?} mode={:?} surface={}",
+                interaction.phase,
+                interaction.mode,
+                interaction.surface.index(),
+            );
+            return Ok(LiveWmRequestAdmission::Duplicate);
+        };
         let affected_outputs = if output == public.active_output {
             vec![output]
         } else {

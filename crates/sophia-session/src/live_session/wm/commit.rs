@@ -268,6 +268,29 @@ impl Drop for LiveWmSession {
     }
 }
 
+/// The output whose committed projection places the surface, if any does.
+///
+/// None is an ordinary state, not a broken one: a policy-managed surface has
+/// no placement between mapping and its first committed layout, while a
+/// scrolling layout holds it out of view, or between the transaction that
+/// removed it and the one that brings it back. A pointer gesture that arrives
+/// in that gap has nowhere to go and is dropped; it is never a reason to end
+/// the session, which is what a Super+button on a freshly tiled column did.
+fn committed_output_placing(
+    projections: &[sophia_protocol::PolicyOutputProjection],
+    surface: SurfaceId,
+) -> Option<sophia_protocol::OutputId> {
+    projections
+        .iter()
+        .find(|projection| {
+            projection
+                .placements
+                .iter()
+                .any(|placement| placement.surface == surface)
+        })
+        .map(|projection| projection.output)
+}
+
 /// Whether any of these outputs places the surface in its committed projection.
 fn policy_projections_place_surface(
     projections: &[sophia_protocol::PolicyOutputProjection],

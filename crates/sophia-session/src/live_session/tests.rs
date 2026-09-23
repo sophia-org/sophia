@@ -47,7 +47,7 @@ use super::{
     SessionProcessGuard, SessionProtocolErrorTally, Size, Transform, XPresentCadence,
     authority_batch_has_engine_work, authority_batch_is_pure_content, authority_merge_run_len,
     authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
-    clamp_floating_pointer_outline, clear_client_pressed_keys_state_only,
+    clamp_floating_pointer_outline, clear_client_pressed_keys_state_only, committed_output_placing,
     completed_pointer_gesture_geometry, control_is_pending, control_priority_should_reset,
     current_cpu_frame_is_presented, flush_all_client_pressed_keys,
     global_runtime_deadline_ends_session, independent_native_output_presented,

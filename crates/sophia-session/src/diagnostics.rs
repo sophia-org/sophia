@@ -8,6 +8,7 @@ mod recovery;
 mod selection;
 mod shell_action;
 mod shell_component;
+mod wm_pointer;
 mod xtest;
 pub use recovery::SessionCompletionFailure;
 mod layout_epoch;
