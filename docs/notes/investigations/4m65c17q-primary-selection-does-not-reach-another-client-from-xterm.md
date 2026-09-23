@@ -105,9 +105,16 @@ answered.
 - [x] Check CUT_BUFFER0 independently: it works, and is now covered.
 - [x] Establish that the same-namespace selection round trip works: it does,
       and a socket-level gate already proved it.
-- [ ] Drive a real mouse selection into a real xterm with XTEST and establish
-      whether SetSelectionOwner is ever sent. This is the question the
-      evidence now points at, and the first one to answer.
+- [x] Drive a real mouse selection into a real xterm with XTEST and establish
+      whether SetSelectionOwner is ever sent. **It is**, once t155 put XTEST
+      buttons where the pointer is: `owner_changes=1`, three runs of three.
+      See the section of 2026-09-22 below.
+- [ ] Explain the original report, a physical drag on the installed desktop
+      with Hagia running. The headless, no-WM, XTEST path is healthy, and a
+      physical button does not pass through the injector t155 repaired, so the
+      answer lies in the physical input path or in the WM session.
+- [ ] The paste half -- middle-click in a second xterm -- is blocked by t156:
+      in a no-WM session the second window to map is never routable.
 - [x] Add the real-client smoke. `crates/sophia-session/examples/selection_probe.rs`
       runs two out-of-process x11rb clients against `x11_conformance_host` --
       the production frontend, not a test harness -- and carries the round
@@ -209,6 +216,20 @@ which blocks this row. It does not explain the original report, which was a
 physical drag; once t155 lands the gate can say whether a correctly placed
 drag makes xterm take PRIMARY, and if it does, the physical path is where this
 row's answer lies.
+
+## xterm takes PRIMARY when the drag is placed, 2026-09-22
+
+With t155 repaired, the driver's drag -- aim confirmed over xterm A, press, six
+motions carrying Button1, release, now all at the pointer's position -- makes
+xterm send SetSelectionOwner. The session's wire counter reads
+`owner_changes=1`; `GetSelectionOwner` names xterm's VT100 widget `0x400016`;
+`ConvertSelection` returns the 26 bytes of the marker row. Three runs of three,
+each `bounded_complete`. Before t155 the same run read `owner_changes=0`, so
+the gate shows red and green on that repair as well.
+
+That answers this row's question for the headless path and leaves the original
+report unexplained: a physical drag does not use the XTEST injector. The
+remaining row is the physical path, and the paste half waits on t156.
 
 ## Connections
 

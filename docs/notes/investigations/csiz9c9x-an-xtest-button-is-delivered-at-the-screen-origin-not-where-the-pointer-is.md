@@ -2,7 +2,7 @@
 id: csiz9c9x
 date: 2026-09-22
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, x11, xtest, input]
 ---
 # An XTEST button is delivered at the screen origin, not where the pointer is
@@ -60,15 +60,35 @@ origin -- xdotool clicks, XTS purposes that press, any automation.
 This does **not** explain t124's original report, which was a physical mouse
 drag; physical buttons do not pass through this injector.
 
+## Repaired, 2026-09-22
+
+`plan()` (`x11_socket/connection/xtest.rs`) now gives a button the pointer's
+current position, global and relative to the focused window, through one
+helper, `pointer_points`, that the motion arm shares -- so a button can no
+longer be placed somewhere motion would not have put it. `XTestPlan::Button`
+carries the two points, `XTestInjector::submit_button` takes them, and
+`RoutedXTestInjector` submits them instead of `Point::default()`. The private
+input injector accepts and ignores them: its native executor keeps its own
+pointer state and places the button there already, which is why the XTEST
+conformance profile never saw this.
+
+**Proof.** `an_injected_button_is_delivered_where_the_pointer_is`
+(`tests/x11_wire/xtest_admission_socket.rs`) moves the pointer to (5,7) with an
+absolute XTEST motion over a window at the origin, then presses and releases.
+On the unfixed tree it failed with `ButtonPress root position … left: (0, 0),
+right: (5, 7)`; on the fix it passes. The real-client gate shows the same:
+t124's driver against the production session read `owner_changes=0` before and
+`owner_changes=1` after, three runs of three, with xterm's VT100 widget owning
+PRIMARY and serving the dragged text.
+
+Also verified on the fix: `sophia-x-authority` (30 suites, 1,923 tests) and
+`sophia-session` (44 suites, 904 tests) under the gate's isolation, the XTEST
+conformance profile 44/44, workspace check, clippy and fmt.
+
 ## Validation and remaining work
 
-Open as t155 in [todo.md](../../../todo.md). A red/green test must pin the
-delivered button's position to the pointer's; then t124's gate is re-run with
-the corrected injector.
-
-Also observed, not this task's: in a no-WM session only the first window to
-map was reliably routable by the pointer; the driver now spawns one xterm and
-waits for it to be routable before the next.
+- [x] Button delivered at the pointer's position; red on the unfixed tree.
+- [x] t124's gate re-run: xterm takes PRIMARY.
 
 ## Connections
 

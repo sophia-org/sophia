@@ -109,6 +109,10 @@ impl XTestInjector for PrivateInputInjector {
         target: SurfaceId,
         button: u32,
         pressed: bool,
+        // The native executor keeps the pointer's position itself and places
+        // the button there, so the adapter's copy is not needed.
+        _global: Point,
+        _local: Point,
     ) -> Result<XTestAccepted, XTestInjectionRefusal> {
         accepted(
             self.submission
