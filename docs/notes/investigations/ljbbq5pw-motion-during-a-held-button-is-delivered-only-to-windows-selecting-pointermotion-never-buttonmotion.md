@@ -84,8 +84,8 @@ protocol worth its own look, but not this row's.
 - [x] `cargo xtask check xtest-selection` stays green; the driver's own
       verdict does not depend on incremental highlighting, so the traces
       are the evidence for that.
-- [ ] Operator: on the next installed release, the selection highlights as
-      the pointer moves.
+- [x] Operator, 2026-09-23, on the release carrying `4eacfcfb`: "copy/paste
+      in xterm works as expected."
 
 ## Connections
 
