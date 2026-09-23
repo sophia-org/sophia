@@ -256,3 +256,10 @@ already is (`issued=23`). At the next logout the retained events log carries
 `sophia_live_session_xtest ... injected_buttons=4` (or more, if run more than
 once); that record with a nonzero count is the hardware half of t147. A
 `status=fail` is a finding for t124, and the reason token says which half.
+
+First attempt, 2026-09-23, on the installed release `20260918-d444eba2`:
+`status=fail reason=pointer_not_over_target`, the aim landing at (17,46)
+inside xterm A's frame with QueryPointer naming no child. That release
+predates t155 and t156, so it is the pre-fix behaviour seen on hardware, not
+a new finding; the driver needs a release built from `bf43425d` or later. The
+operator is installing one.
