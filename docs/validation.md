@@ -996,6 +996,47 @@ the C locale, so the driver asks for UTF8_STRING and falls back to STRING as
 a pasting client does. Rebuild the image after any change to the session or the driver;
 the harness runs whatever image is there.
 
+## X11 conformance profiles and XTS5
+
+```sh
+cargo xtask check x11-profile --profile=all \
+    --output=.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-all \
+    --target-dir=.artifacts/x11-profile-target --timeout=1800
+```
+
+The two independent conformance profiles, `xtest` and `native-input`, run
+from a snapshot of the committed source against real private sockets and
+must both read PASS. XTS5, the X.Org X Test Suite, runs through the same
+gate against `x11_conformance_host` when a built checkout and a purpose
+manifest are named; without them the report says `XTS5 BLOCKED`, which is a
+statement about the run, never a pass:
+
+```sh
+cargo xtask check x11-profile --profile=all \
+    --output=.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-xts \
+    --target-dir=.artifacts/x11-profile-target --timeout=1800 \
+    --xts-root=$HOME/src/xts \
+    --xts-expected=tools/probes/x11_conformance/xts_expected_selected_core.json \
+    --xts-scenario=selected-core --xts-timeout=900
+```
+
+`~/src/xts` is a checkout of `gitlab.freedesktop.org/xorg/test/xts`, built
+with `./autogen.sh && make`, with `tools/probes/x11_conformance/xts_check.sh`
+copied over its `check.sh`. Scenarios and their manifests are enumerated
+from the built suite by `xts_select.py`, never typed:
+`xts_expected_selected_core.json` is nine cases around windows, properties,
+atoms, selections and focus; `xts_expected_xproto.json` is every core
+request's wire test, 122 cases, with the `TOO_LONG` purposes excluded by
+name (`xts_expected_xproto.excluded.json`) until t165 lets a flooding client
+be served. A manifest is the suite's account of itself: every purpose is
+listed, and one the suite or the authority cannot pass today is declared
+with its disposition and a reason (`xts_declare.py`, from a real journal and
+the reviewed `xts_reasons_*.json`), never removed. The gate reads PASS only
+when every manifested purpose starts and meets its declaration, a declared
+purpose that starts passing fails it as a stale manifest, and the verdict
+line carries the count: `XTS5 PASS (177 passed, 92 declared)` is 92
+purposes of debt, each naming its row.
+
 ## xterm as a pointer oracle
 
 ```sh

@@ -428,7 +428,14 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
         profiles.insert(profile.clone(), verdict);
     }
     let xts5 = match (&opts.xts_root, &opts.xts_expected) {
-        (Some(root), Some(expected)) => xts(repo, opts, &probe, &build_target, root, expected)?,
+        (Some(root), Some(expected)) => {
+            // XTS runs against the core fixture host, which none of this
+            // gate's profiles builds; without this the verdict was BLOCKED
+            // on every run that asked for XTS, for want of a binary the
+            // gate could have built itself.
+            build_xts_host(repo, opts, &build_target)?;
+            xts(repo, opts, &probe, &build_target, root, expected)?
+        }
         _ => xts_blocked(
             "XTS is a separate checkout and a selected-purpose manifest; neither was supplied, so nothing was run",
         ),
@@ -472,8 +479,9 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
         .collect::<Vec<_>>()
         .join(", ");
     let line = format!(
-        "xtask: X11 profiles: {overall}; {summary}; XTS5 {}; {}",
+        "xtask: X11 profiles: {overall}; {summary}; XTS5 {} ({}); {}",
         report.xts5.status,
+        report.xts5.reason,
         path.display()
     );
     if overall == "PASS" {
@@ -503,6 +511,41 @@ fn probe_command(repo: &Path, script: &Path) -> std::process::Command {
         }
     }
     command
+}
+
+/// Build `x11_conformance_host` into the gate's own target namespace, from
+/// the repository the profiles run from, with the same environment hygiene.
+fn build_xts_host(repo: &Path, opts: &ProfileOptions, build_target: &Path) -> Result<(), String> {
+    let mut command = std::process::Command::new("cargo");
+    command
+        .current_dir(repo)
+        .args([
+            "build",
+            "--offline",
+            "-p",
+            "sophia-x-authority",
+            "--example",
+            "x11_conformance_host",
+        ])
+        .env("CARGO_TARGET_DIR", build_target);
+    for (name, _) in std::env::vars_os() {
+        let name = name.to_string_lossy().into_owned();
+        if name.starts_with("SOPHIA_") || name.starts_with("HAGIA_") {
+            command.env_remove(&name);
+        }
+    }
+    let execution = process::run(
+        &mut command,
+        &opts.output.join("xts5-host-build.log"),
+        Duration::from_secs(opts.timeout.min(1800)),
+    )?;
+    if execution.timed_out || execution.returncode != Some(0) {
+        return Err(format!(
+            "building x11_conformance_host for XTS failed: exit {:?}, timed_out={}",
+            execution.returncode, execution.timed_out
+        ));
+    }
+    Ok(())
 }
 
 fn xts(
@@ -541,10 +584,23 @@ fn xts(
         Duration::from_secs(opts.xts_timeout + XTS_GATE_MARGIN_SECS),
     )?;
     let report_path = output.join("report.json");
-    let status = std::fs::read_to_string(&report_path)
+    let report = std::fs::read_to_string(&report_path)
         .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+    let status = report
+        .as_ref()
         .and_then(|report| report["status"].as_str().map(str::to_owned));
+    // How much of a PASS is declaration, in the verdict itself: a manifest
+    // may declare dispositions the suite or the authority cannot pass today,
+    // each with a reason, and a PASS that met them must say so.
+    let accounting = report.as_ref().map(|report| {
+        let passed = report["passed"].as_u64().unwrap_or(0);
+        let declared: u64 = report["declared"]
+            .as_object()
+            .map(|d| d.values().filter_map(serde_json::Value::as_u64).sum())
+            .unwrap_or(0);
+        format!("{passed} passed, {declared} declared")
+    });
     Ok(
         match (execution.timed_out, execution.returncode, status.as_deref()) {
             (true, _, _) => XtsVerdict {
@@ -555,7 +611,10 @@ fn xts(
             },
             (false, Some(0), Some("PASS")) => XtsVerdict {
                 status: "PASS".into(),
-                reason: "every declared purpose started and finished PASS".into(),
+                reason: format!(
+                    "every manifested purpose started and met its expectation ({})",
+                    accounting.as_deref().unwrap_or("unaccounted")
+                ),
                 exit: Some(0),
                 report: Some(report_path),
             },

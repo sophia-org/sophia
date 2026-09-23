@@ -29,7 +29,9 @@
   },
   {
     "case": "/Xlib4/XMapWindow/XMapWindow",
-    "purpose": 2
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
   },
   {
     "case": "/Xlib4/XMapWindow/XMapWindow",
@@ -65,19 +67,27 @@
   },
   {
     "case": "/Xlib4/XMapWindow/XMapWindow",
-    "purpose": 11
+    "purpose": 11,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission around backing store: 'no known reliable test method for this assertion'"
   },
   {
     "case": "/Xlib4/XMapWindow/XMapWindow",
-    "purpose": 12
+    "purpose": 12,
+    "expected": "UNSUPPORTED",
+    "reason": "the suite's own omission around backing store: 'no known reliable test method for this assertion'"
   },
   {
     "case": "/Xlib4/XMapWindow/XMapWindow",
-    "purpose": 13
+    "purpose": 13,
+    "expected": "UNSUPPORTED",
+    "reason": "the suite's own omission around backing store: 'no known reliable test method for this assertion'"
   },
   {
     "case": "/Xlib4/XMapWindow/XMapWindow",
-    "purpose": 14
+    "purpose": 14,
+    "expected": "UNRESOLVED",
+    "reason": "the suite's own omission around backing store: 'no known reliable test method for this assertion'"
   },
   {
     "case": "/Xlib4/XMapWindow/XMapWindow",
@@ -109,7 +119,9 @@
   },
   {
     "case": "/Xlib5/XInternAtom",
-    "purpose": 7
+    "purpose": 7,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'no reliable method of testing that a BadAlloc error is generated'"
   },
   {
     "case": "/Xlib5/XInternAtom",
@@ -149,7 +161,9 @@
   },
   {
     "case": "/Xlib5/XChangeProperty",
-    "purpose": 9
+    "purpose": 9,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'no reliable method of testing that a BadAlloc error is generated'"
   },
   {
     "case": "/Xlib5/XChangeProperty",
@@ -185,15 +199,21 @@
   },
   {
     "case": "/Xlib13/XSetInputFocus",
-    "purpose": 2
+    "purpose": 2,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'no known reliable test method for this assertion'; it would drive XTEST, which the fixture host does not admit"
   },
   {
     "case": "/Xlib13/XSetInputFocus",
-    "purpose": 3
+    "purpose": 3,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'no known reliable test method for this assertion'; it would drive XTEST, which the fixture host does not admit"
   },
   {
     "case": "/Xlib13/XSetInputFocus",
-    "purpose": 4
+    "purpose": 4,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'no known reliable test method for this assertion'; it would drive XTEST, which the fixture host does not admit"
   },
   {
     "case": "/Xlib13/XSetInputFocus",
@@ -237,11 +257,15 @@
   },
   {
     "case": "/Xlib11/FocusIn",
-    "purpose": 2
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
   },
   {
     "case": "/Xlib11/FocusIn",
-    "purpose": 3
+    "purpose": 3,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
   },
   {
     "case": "/Xlib11/FocusIn",
@@ -265,23 +289,33 @@
   },
   {
     "case": "/Xlib11/FocusIn",
-    "purpose": 9
+    "purpose": 9,
+    "expected": "UNSUPPORTED",
+    "reason": "needs windows on two screens; this authority serves one screen, and the suite reports 'Multiple screens not supported'"
   },
   {
     "case": "/Xlib11/FocusIn",
-    "purpose": 10
+    "purpose": 10,
+    "expected": "UNSUPPORTED",
+    "reason": "needs windows on two screens; this authority serves one screen, and the suite reports 'Multiple screens not supported'"
   },
   {
     "case": "/Xlib11/FocusIn",
-    "purpose": 11
+    "purpose": 11,
+    "expected": "UNSUPPORTED",
+    "reason": "needs windows on two screens; this authority serves one screen, and the suite reports 'Multiple screens not supported'"
   },
   {
     "case": "/Xlib11/FocusIn",
-    "purpose": 12
+    "purpose": 12,
+    "expected": "UNSUPPORTED",
+    "reason": "needs windows on two screens; this authority serves one screen, and the suite reports 'Multiple screens not supported'"
   },
   {
     "case": "/Xlib11/FocusIn",
-    "purpose": 13
+    "purpose": 13,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
   },
   {
     "case": "/Xlib11/FocusIn",
@@ -325,11 +359,15 @@
   },
   {
     "case": "/Xlib11/FocusOut",
-    "purpose": 3
+    "purpose": 3,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
   },
   {
     "case": "/Xlib11/FocusOut",
-    "purpose": 4
+    "purpose": 4,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
   },
   {
     "case": "/Xlib11/FocusOut",
@@ -353,15 +391,21 @@
   },
   {
     "case": "/Xlib11/FocusOut",
-    "purpose": 10
+    "purpose": 10,
+    "expected": "UNSUPPORTED",
+    "reason": "needs windows on two screens; this authority serves one screen, and the suite reports 'Multiple screens not supported'"
   },
   {
     "case": "/Xlib11/FocusOut",
-    "purpose": 11
+    "purpose": 11,
+    "expected": "UNSUPPORTED",
+    "reason": "needs windows on two screens; this authority serves one screen, and the suite reports 'Multiple screens not supported'"
   },
   {
     "case": "/Xlib11/FocusOut",
-    "purpose": 12
+    "purpose": 12,
+    "expected": "UNSUPPORTED",
+    "reason": "needs windows on two screens; this authority serves one screen, and the suite reports 'Multiple screens not supported'"
   },
   {
     "case": "/Xlib11/FocusOut",
@@ -377,7 +421,9 @@
   },
   {
     "case": "/Xlib11/FocusOut",
-    "purpose": 16
+    "purpose": 16,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
   },
   {
     "case": "/Xlib11/FocusOut",
