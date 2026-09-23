@@ -68,8 +68,6 @@ def evaluate_journal(expected, journal, process_status=0):
     expectations = {(row['case'], str(row['purpose'])): declared_expectation(row) for row in expected}
     required = set(keys)
     failures = []
-    if process_status != 0:
-        failures.append(f'XTS process exit {process_status} (124 means TIMEOUT)')
     started, results = parse_journal(journal)
     passed, declared = 0, {}
     for key in sorted(required | started):
@@ -94,9 +92,19 @@ def evaluate_journal(expected, journal, process_status=0):
             failures.append(f'{key}: {observed}')
         else:
             failures.append(f'{key}: {observed} (declared {wanted})')
+    # tcc exits non-zero when a test program did, and a test program does
+    # when a purpose did not PASS. A run whose only non-PASS purposes were
+    # declared, all started and all completed, has an exit the manifest
+    # already explains; anything else about the exit -- a timeout, a purpose
+    # nobody declared, a journal short of the manifest -- stands as it did.
+    exit_explained = (process_status not in (0, 124) and not failures and bool(declared)
+                      and started == required and len(results) == len(required))
+    if process_status != 0 and not exit_explained:
+        failures.insert(0, f'XTS process exit {process_status} (124 means TIMEOUT)')
     return {'status': 'FAIL' if failures else 'PASS', 'failures': failures,
             'required': len(required), 'started': len(started), 'completed': len(results),
-            'passed': passed, 'declared': declared}
+            'passed': passed, 'declared': declared, 'process_status': process_status,
+            'exit_explained_by_declarations': exit_explained}
 
 
 def main():

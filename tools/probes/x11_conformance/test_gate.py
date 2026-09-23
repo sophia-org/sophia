@@ -174,6 +174,22 @@ class JournalTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 evaluate_journal([dict(self.expected[0], **bad), self.expected[1]], self.journal())
 
+    def test_a_nonzero_exit_is_explained_only_by_met_declarations(self):
+        # tcc exits 1 when a test program did, which one does for any purpose
+        # that did not PASS. When every such purpose was declared and met, the
+        # exit says nothing the manifest did not; with an undeclared non-PASS,
+        # a purpose short of the manifest, or a timeout, it stands.
+        declared = [dict(self.expected[0], expected='UNTESTED', reason='no known reliable test method'),
+                    self.expected[1]]
+        met = evaluate_journal(declared, self.journal('UNTESTED', 5), 1)
+        self.assertEqual(met['status'], 'PASS', met)
+        self.assertTrue(met['exit_explained_by_declarations'])
+        self.assertEqual(evaluate_journal(declared, self.journal('UNTESTED', 5), 124)['status'], 'FAIL')
+        self.assertEqual(evaluate_journal(declared, self.journal('UNTESTED', 5, second=False), 1)['status'], 'FAIL')
+        self.assertEqual(evaluate_journal(declared, self.journal('FAIL', 1), 1)['status'], 'FAIL')
+        # All PASS and yet exit 1: nothing declared explains it.
+        self.assertEqual(evaluate_journal(self.expected, self.journal(), 1)['status'], 'FAIL')
+
     def test_empty_duplicate_forged_and_unstarted_results_rejected(self):
         for text in ['', self.journal() + '220|0 1 0 00:00|PASS\n',
                      self.journal('PASS', 7), '220|0 1 0 00:00|PASS\n']:
