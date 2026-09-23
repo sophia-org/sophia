@@ -57,9 +57,41 @@ impl LiveXTestEvidence {
 /// publication. It can therefore be at most one owner pass behind what the
 /// pointer is over; a surface that has just appeared becomes reachable on
 /// the next pass.
+///
+/// IMPLICIT GRAB. While any XTEST button is down, motion and buttons stay on
+/// the surface the first press landed on, positioned against that surface's
+/// origin at the press, until the last button is released -- the core
+/// protocol's implicit pointer grab, which physical input gets from its route
+/// leases. Without it a drag that left the pressed window delivered its
+/// release to whatever lay under it, and xterm, which claims PRIMARY on the
+/// release, never did (t124, under Hagia). The state is here rather than in
+/// an injector because there is one XTEST device per session, whichever
+/// client drives it.
 #[derive(Debug, Default)]
 pub(crate) struct LiveXTestPointerScene {
     published: Mutex<(u64, Arc<[LayerSnapshot]>)>,
+    held: Mutex<Option<HeldPointer>>,
+}
+
+/// The surface an XTEST press landed on, where its origin was, and which
+/// buttons are still down.
+#[derive(Debug)]
+struct HeldPointer {
+    surface: SurfaceId,
+    origin: Point,
+    buttons: std::collections::BTreeSet<u32>,
+}
+
+impl HeldPointer {
+    fn place(&self, global: Point) -> (SurfaceId, Point) {
+        (
+            self.surface,
+            Point {
+                x: global.x - self.origin.x,
+                y: global.y - self.origin.y,
+            },
+        )
+    }
 }
 
 impl LiveXTestPointerScene {
@@ -72,6 +104,67 @@ impl LiveXTestPointerScene {
         if published.0 != epoch || published.1.len() != layers.len() {
             *published = (epoch, Arc::from(layers));
         }
+    }
+
+    /// Where a synthetic motion goes: the held surface during a grab, the
+    /// surface under it otherwise.
+    pub(crate) fn route_motion(
+        &self,
+        seat: SeatId,
+        device: DeviceId,
+        planned: SurfaceId,
+        global: Point,
+        local: Point,
+    ) -> (SurfaceId, Point) {
+        if let Ok(held) = self.held.lock()
+            && let Some(held) = held.as_ref()
+        {
+            return held.place(global);
+        }
+        resolve_pointer_target(&self.layers(), seat, device, planned, global, local)
+    }
+
+    /// Where a synthetic button goes, opening the grab on the first press and
+    /// closing it on the last release.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn route_button(
+        &self,
+        seat: SeatId,
+        device: DeviceId,
+        planned: SurfaceId,
+        button: u32,
+        pressed: bool,
+        global: Point,
+        local: Point,
+    ) -> (SurfaceId, Point) {
+        let Ok(mut held) = self.held.lock() else {
+            return resolve_pointer_target(&self.layers(), seat, device, planned, global, local);
+        };
+        if let Some(grab) = held.as_mut() {
+            let placed = grab.place(global);
+            if pressed {
+                grab.buttons.insert(button);
+            } else {
+                grab.buttons.remove(&button);
+                if grab.buttons.is_empty() {
+                    *held = None;
+                }
+            }
+            return placed;
+        }
+        let (surface, position) =
+            resolve_pointer_target(&self.layers(), seat, device, planned, global, local);
+        if pressed {
+            *held = Some(HeldPointer {
+                surface,
+                origin: Point {
+                    x: global.x - position.x,
+                    y: global.y - position.y,
+                },
+                buttons: std::collections::BTreeSet::from([button]),
+            });
+        }
+        (surface, position)
     }
 
     fn layers(&self) -> Arc<[LayerSnapshot]> {
@@ -194,11 +287,12 @@ impl XTestInjector for LiveXTestInjector {
         global: Point,
         local: Point,
     ) -> Result<XTestAccepted, XTestInjectionRefusal> {
-        let (target, local) = resolve_pointer_target(
-            &self.scene.layers(),
+        let (target, local) = self.scene.route_button(
             self.seat,
             self.device,
             target,
+            button,
+            pressed,
             global,
             local,
         );
@@ -215,14 +309,9 @@ impl XTestInjector for LiveXTestInjector {
         global: Point,
         local: Point,
     ) -> Result<XTestAccepted, XTestInjectionRefusal> {
-        let (target, local) = resolve_pointer_target(
-            &self.scene.layers(),
-            self.seat,
-            self.device,
-            target,
-            global,
-            local,
-        );
+        let (target, local) =
+            self.scene
+                .route_motion(self.seat, self.device, target, global, local);
         self.counted(
             &self.evidence.injected_motions,
             self.inner.submit_motion(target, global, local),

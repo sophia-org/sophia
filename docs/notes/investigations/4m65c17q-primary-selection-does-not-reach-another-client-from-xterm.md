@@ -109,10 +109,17 @@ answered.
       whether SetSelectionOwner is ever sent. **It is**, once t155 put XTEST
       buttons where the pointer is: `owner_changes=1`, three runs of three.
       See the section of 2026-09-22 below.
+- [x] The WM session: drag and paste pass headless under Hagia with the
+      operator's own desktop and Hagia configuration, three of three
+      (`owner_changes=1 conversions=2`). See the section of 2026-09-23 below.
 - [ ] Explain the original report, a physical drag on the installed desktop
-      with Hagia running. The headless, no-WM, XTEST path is healthy, and a
-      physical button does not pass through the injector t155 repaired, so the
-      answer lies in the physical input path or in the WM session.
+      with Hagia running. The headless XTEST path is healthy with and without
+      the WM, so what is left is the physical path -- and one shared defect
+      found on the way, the frontend's implicit grab
+      ([t158](urxcuj5s-an-implicit-pointer-grab-delivers-by-position-not-to-the-window-that-took-the-press.md)),
+      which loses a release made past the text widget's edge. That is a
+      candidate the operator can confirm or rule out: does a drag that ends
+      inside the text work, and one that runs off the edge fail?
 - [x] The paste half -- middle-click in a second xterm. Blocked until t156
       resolved XTEST pointer events against the Engine's scene; now three of
       three pass with `conversions=2`, xterm B asking for PRIMARY and receiving
@@ -240,6 +247,56 @@ the gate shows red and green on that repair as well.
 That answers this row's question for the headless path and leaves the original
 report unexplained: a physical drag does not use the XTEST injector. The
 remaining row is the physical path, and the paste half waits on t156.
+
+## Under Hagia, headless, with the operator's configuration, 2026-09-23
+
+The same driver under the WM the report was made against. The session is a
+normal one -- the daily profile declares applications, and a normal session
+refuses `--client` -- so the driver runs as the only startup application:
+
+```sh
+# $CFG: a fresh 0700 directory holding copies of ~/.config/{sophia,hagia,lom},
+# with the six `workspace N output-key=K` lines removed from desktop.kdl.
+# The headless output matches no configured connector, so its policy key is 0
+# and Hagia refuses assigned workspaces on it; that is the profile on the
+# wrong head, not a defect. The WM is the release the profile names.
+env -u DISPLAY -u XAUTHORITY -u WAYLAND_DISPLAY -u SOPHIA_SHELL_CONFIG \
+    XDG_CONFIG_HOME=$CFG target/debug/sophia session run --display=:91 \
+    --no-input --admit-xtest \
+    --wm-process=$HOME/.local/state/sophia/desktop-releases/20260918-d444eba2/hagia \
+    --wm-interface=sophia_wm_v1 \
+    --session-app=t124driver=$PWD/target/debug/examples/xtest_selection_driver \
+    --session-start=t124driver --exit-when-startup-exits --max-runtime-ms=120000
+```
+
+Getting there found four things, in order (`.artifacts/t124-hagia-headless/`):
+
+1. A debug build with `--wm-process` panicked at startup: component prepare
+   read the session profile through an accessor that asserted it was still
+   Prepared, and WM startup had already activated it. Fixed; release builds
+   never saw it.
+2. With no configuration at all, Hagia's default bindings name session
+   slots Sophia's default profile does not admit, and Hagia restart-loops
+   (t159). The operator's pair does not have this problem.
+3. Hagia tiled B beside A and slid A left. The driver's drag, aimed with A's
+   geometry from before B mapped, ran off A into B -- and the session's XTEST
+   seam re-hit-tested every event, so B got the release and A never claimed
+   PRIMARY. The seam now holds the pressed surface until the last release,
+   as the implicit grab requires; the driver re-reads A after B settles and
+   takes the text row from xterm's size hints rather than height / 8, since
+   Hagia had made A 702 px tall.
+4. With the release kept on A's surface but past its edge, xterm still
+   claimed nothing: the frontend delivers by position inside the surface, so
+   the release reached the shell window, not the text widget. That is
+   [t158](urxcuj5s-an-implicit-pointer-grab-delivers-by-position-not-to-the-window-that-took-the-press.md),
+   shared with physical input and left open; the driver's default drag ends
+   inside A and `--overshoot` is its red probe.
+
+With those, three runs of three pass under Hagia: xterm A claims PRIMARY on
+the drag, the driver reads the marker back, and xterm B asks for PRIMARY on
+the middle-click (`owner_changes=1 conversions=2`, `injected_buttons=4`).
+Sophia's selection path and the WM session are cleared for this row. What
+remains is the physical path, with t158 as the named suspect.
 
 ## Connections
 

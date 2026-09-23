@@ -25,7 +25,8 @@
 //! Arguments: `--row=N` drags row N of xterm A instead of the text row, which
 //! selects blank cells xterm trims to nothing and must fail; `--no-paste` skips
 //! the middle-click so the session's `conversions` must stay zero. Both exist
-//! so the gate can be shown to go red.
+//! so the gate can be shown to go red. `--overshoot` releases past A's right
+//! edge: a probe for the frontend's implicit grab (t158), red until it lands.
 
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -326,7 +327,7 @@ fn report_watched(conn: &RustConnection, watched: Window) -> Result<(), Failure>
     Ok(())
 }
 
-fn run(row: u16, paste: bool) -> Result<String, Failure> {
+fn run(row: u16, paste: bool, overshoot: bool) -> Result<String, Failure> {
     let (conn, screen_index) = x11rb::connect(None).map_err(|_| Failure("connect"))?;
     let root = conn.setup().roots[screen_index].root;
 
@@ -348,17 +349,62 @@ fn run(row: u16, paste: bool) -> Result<String, Failure> {
     // is reported there rather than failing the drag here.
     std::thread::sleep(Duration::from_millis(800));
     let fb = frame(&conn, root, b)?;
+    // A window manager may have moved and resized A to make room for B, so
+    // its frame is read again now rather than trusted from before B mapped.
+    let settled_a = fa;
+    let fa = frame(&conn, root, a)?;
     if fa.height < ROWS || fa.width < 40 || fb.height < ROWS {
         return Err(Failure("xterm_too_small"));
     }
 
     // Row centre: the requested row of an 8-row terminal. Row 0 holds the
     // marker; any other row holds nothing xterm will keep.
-    let cell = fa.height / ROWS;
-    let y = fa.y.saturating_add((cell * row + cell / 2) as i16);
+    // Row centre from xterm's own cell height, which it publishes as the
+    // resize increment in WM_NORMAL_HINTS; the base size is its borders. A
+    // window manager may have made A far taller than the eight rows asked
+    // for, in which case height / ROWS lands on a blank row well below the
+    // marker. Without hints the eight-row assumption stands.
+    let (cell, top) = x11rb::properties::WmSizeHints::get_normal_hints(&conn, a)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok().flatten())
+        .and_then(|hints| {
+            let (_, increment) = hints.size_increment?;
+            let base = hints.base_size.map_or(0, |(_, height)| height);
+            u16::try_from(increment)
+                .ok()
+                .filter(|increment| *increment > 0)
+                .map(|increment| (increment, u16::try_from(base / 2).unwrap_or(0)))
+        })
+        .unwrap_or((fa.height / ROWS, 0));
+    let y = fa.y.saturating_add((top + cell * row + cell / 2) as i16);
     let start = fa.x.saturating_add(8);
-    let end = fa.x.saturating_add((fa.width - 16) as i16);
+    // With --overshoot the release is past A's right edge, which only the
+    // implicit grab keeps with A. The session holds the pressed surface; the
+    // frontend still picks the window inside it by position, so the release
+    // reaches xterm's shell rather than its text widget and xterm claims
+    // nothing (t158). Until that lands the probe is red and the default drag
+    // ends inside A.
+    let end = if overshoot {
+        fa.x.saturating_add(fa.width as i16).saturating_add(24)
+    } else {
+        fa.x.saturating_add((fa.width - 16) as i16)
+    };
 
+    eprintln!(
+        "xtest_selection_driver: drag row={row} cell={cell} top={top} y={y} x={start}..{end} settled_a={},{} {}x{} a={},{} {}x{} b={},{} {}x{}",
+        settled_a.x,
+        settled_a.y,
+        settled_a.width,
+        settled_a.height,
+        fa.x,
+        fa.y,
+        fa.width,
+        fa.height,
+        fb.x,
+        fb.y,
+        fb.width,
+        fb.height
+    );
     aim(&conn, root, a, start, y)?;
     let watched = watch_deepest(&conn, a)?;
     fake(&conn, root, PRESS, 1, start, y)?;
@@ -464,14 +510,17 @@ fn run(row: u16, paste: bool) -> Result<String, Failure> {
 fn main() {
     let mut row = 0u16;
     let mut paste = true;
+    let mut overshoot = false;
     for argument in std::env::args().skip(1) {
         if let Some(value) = argument.strip_prefix("--row=") {
             row = value.parse().unwrap_or(0).min(ROWS - 1);
         } else if argument == "--no-paste" {
             paste = false;
+        } else if argument == "--overshoot" {
+            overshoot = true;
         }
     }
-    match run(row, paste) {
+    match run(row, paste, overshoot) {
         Ok(record) => print!("{record}"),
         Err(Failure(reason)) => {
             // Stdout is captured and compared by the session; stderr reaches

@@ -422,3 +422,28 @@ fn profile_restart_reattaches_the_exact_key_under_a_fresh_epoch() {
 
 #[path = "../../../tests/support/delegated_policy.rs"]
 mod delegated_policy;
+
+#[test]
+fn component_prepare_reads_a_session_profile_the_window_manager_already_activated() {
+    // WM startup activates every participant, the session profile included,
+    // before components are prepared. Prepare must read the profile it is
+    // running, not assert that activation has not happened yet: a debug
+    // build with --wm-process panicked here on every start.
+    let mut config = public_profile_test_config("sophia-profile-activated-prepare-test");
+    let key = sophia_config::DesktopProfileActivationKey::from(&config.desktop_profile);
+    let prepared = LiveWmSession::prepare_public_launch(&mut config)
+        .unwrap()
+        .unwrap();
+    let activated =
+        sophia_config::activate_desktop_profile_candidate_slot(config.session_profile.slot(), key)
+            .unwrap();
+    *config.session_profile.slot_mut() = activated;
+    assert_eq!(
+        config.session_profile.slot().participant().phase(),
+        sophia_config::DesktopProfileParticipantPhase::Activated
+    );
+
+    let (components, _) = super::super::component_lifecycle::prepare(&config, None).unwrap();
+    assert!(components.is_none());
+    drop(prepared);
+}
