@@ -114,7 +114,11 @@ answered.
       physical button does not pass through the injector t155 repaired, so the
       answer lies in the physical input path or in the WM session.
 - [ ] The paste half -- middle-click in a second xterm -- is blocked by t156:
-      in a no-WM session the second window to map is never routable.
+      XTEST pointer events target the focused window rather than the window
+      under the pointer, and a no-WM session focuses only its first window.
+      (Keyboard focus in a no-WM session never moves past that first window
+      either -- no WM focus, no click focus. That is recorded here as an
+      observation about keys; it is not this row's scope.)
 - [x] Add the real-client smoke. `crates/sophia-session/examples/selection_probe.rs`
       runs two out-of-process x11rb clients against `x11_conformance_host` --
       the production frontend, not a test harness -- and carries the round
