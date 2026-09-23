@@ -2,7 +2,7 @@
 id: 5pmnf6ie
 date: 2026-09-22
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, input, session, placement]
 ---
 # XTEST pointer events target the focused window, not the window under the pointer
@@ -65,19 +65,51 @@ right for keys and wrong for pointer events.
 
 ## Finding and resolution
 
-**Established, not yet repaired.** The repair routes XTEST pointer events
-through the same Engine hit-test as physical input, as a second, synthetic
-source into the owner loop's routing, so "what is under the pointer" keeps one
-owner and matches what is rendered. An X-tree walk in the frontend was
-rejected because it would be a second notion of "under the pointer" that can
-diverge from the Engine's committed geometry, which is the gap t127 records.
+**Repaired 2026-09-23, on the narrow seam.** A first design fed XTEST pointer
+events into the owner loop's physical routing so the Engine's hit-test would
+pick their target. A read-only check before any code found that unsound as a
+drop-in: `--no-input` skips the physical phase entirely; the FakeInput
+completion ticket has only a blocking send and would have to be answered on
+about ten routing paths or the client hangs; physical placement treats
+positions as relative device motion; and the physical path would hand an XTEST
+client shell chrome, launcher, WM-gesture and click-focus activation.
+
+The seam taken keeps the Engine's hit-test as the one owner of "what is under
+the pointer" and touches none of that. The owner loop publishes its input
+layers into `LiveXTestPointerScene` (`live_session/x_frontend/xtest.rs`)
+whenever `input_presentation_epoch()` moves, every pass, physical input or
+not. `LiveXTestInjector` resolves each motion and button against the last
+publication with the same `sophia_engine::hit_test_scene_surface_for_input`
+the physical path uses, through `resolve_pointer_target`, and hands the event
+on to `RoutedXTestInjector` unchanged -- so the completion barrier, the
+registry, implicit grabs and delivery are exactly as they were. Over nothing,
+or before a first publication, the plan's target stands. Keys never come here:
+they belong to the focus.
+
+The cost is staleness of at most one owner pass: a surface that has just
+appeared is reachable on the next. A surface under the pointer with no client
+route (shell chrome) is refused by the registry as today, which releases the
+client's barrier rather than hanging it; XTEST gains no compositor privilege.
 
 ## Validation and remaining work
 
-Open as t156, critical, in [todo.md](../../../todo.md). It blocks the paste half
-of t124's and t147's selection smoke. Red/green: an owner-loop test in which a
-synthetic pointer over surface B, with focus on surface A, routes to B; and the
-real-client gate's paste half.
+- [x] `a_synthetic_pointer_resolves_to_the_surface_under_it_not_the_focus`
+      (`tests/support/application_lease_routing.rs`): with the plan naming
+      surface 201, a point over 202 resolves to 202 at the position relative to
+      it; over nothing, or with no published scene, the plan stands. Reverting
+      the resolver to the focus target fails it (201 against 202).
+- [x] End to end, t124's driver against the production session: drag in xterm
+      A, middle-click in xterm B. Before, the paste half failed with
+      `pointer_not_over_target` in every run; after, three of three pass with
+      `owner_changes=1 conversions=2` -- the second conversion is xterm B's own
+      ConvertSelection -- and `bounded_complete`. Logs in
+      `.artifacts/t156-xtest-pointer-scene/`.
+- [x] `sophia-x-authority` (1,923) and `sophia-session` (905) under the gate's
+      isolation, the XTEST profile 44/44, clippy and fmt clean.
+
+Not claimed: the X-root and Engine logical spaces are assumed to coincide,
+which holds for the headless deterministic head here and in the QEMU guest; a
+multi-head installed session is exercised by t147's hardware half.
 
 ## Connections
 

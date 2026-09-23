@@ -861,6 +861,11 @@
             runtime.as_ref().map_or(&[][..], |runtime| runtime.input_projections()),
             u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         )?;
+        // Every pass, whether or not physical input runs: an XTEST session
+        // is often `--no-input`, and its pointer is hit-tested against this.
+        if let Some(runtime) = runtime.as_ref() {
+            xtest_scene.publish(runtime.input_presentation_epoch(), runtime.input_layers());
+        }
         let input_phase_started = Instant::now();
         let input_requested_exit = input_routing_mode != PhysicalInputRoutingMode::Suppressed
             && drain_physical_input!(

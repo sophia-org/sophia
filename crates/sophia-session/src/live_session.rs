@@ -711,6 +711,7 @@ pub(crate) fn run_persistent_xterm_session(
     );
     let input_sender = broker.routed_input_sender();
     let xtest_evidence = Arc::new(x_frontend::xtest::LiveXTestEvidence::default());
+    let xtest_scene = Arc::new(x_frontend::xtest::LiveXTestPointerScene::default());
     if config.admit_xtest {
         // Attached here rather than where the config was built, because the
         // sender an injector needs exists only once the broker does.
@@ -721,6 +722,7 @@ pub(crate) fn run_persistent_xterm_session(
                 device: DeviceId::from_raw(SESSION_XTEST_DEVICE_RAW),
                 sender: input_sender.clone(),
                 evidence: Arc::clone(&xtest_evidence),
+                scene: Arc::clone(&xtest_scene),
             },
         )
             as Arc<dyn sophia_x_authority::XServerFrontendInjectionPolicy>);
@@ -1158,6 +1160,7 @@ pub(crate) fn run_persistent_xterm_session(
             initial_authority_batch,
             output_notifications,
             xtest_evidence: Arc::clone(&xtest_evidence),
+            xtest_scene: Arc::clone(&xtest_scene),
         },
     );
     let session_error = result.err();
