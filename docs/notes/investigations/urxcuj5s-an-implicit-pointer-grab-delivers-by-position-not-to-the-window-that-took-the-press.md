@@ -83,6 +83,10 @@ release outside it, the release arrives at the child with its coordinates.
       frontend must keep it on the child.
 - [ ] `xtest_selection_driver --overshoot` goes green through the headless
       gate; consider making it the gate's default drag once it does.
+- [ ] `xterm_pointer_oracle --overshoot` goes green: today xterm reports the
+      drag to its last cell and never the release (`release_lost`), which is
+      this defect seen from the client
+      ([vm14kz5r](vm14kz5r-xterm-as-an-oracle-for-what-the-frontend-delivers-to-a-widget.md)).
 - [ ] Re-read t124: if the operator's failing drags released past the edge,
       this is the physical answer.
 

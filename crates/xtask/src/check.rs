@@ -31,6 +31,9 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
         [subject, rest @ ..] if subject == "xtest-selection" => {
             crate::xtest_selection::run(repo, rest)
         }
+        [subject, rest @ ..] if subject == "xterm-pointer-oracle" => {
+            crate::xterm_pointer_oracle::run(repo, rest)
+        }
         [subject] if subject == "layout" => layout(repo).map(|()| Vec::new()),
         [subject] => Err(format!("unknown check subject {subject:?}")),
         _ => Err("check accepts at most one subject".to_owned()),

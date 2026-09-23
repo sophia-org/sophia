@@ -13,8 +13,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod check;
+mod headless_client_gate;
 mod m3_acceptance;
 mod panel;
+mod xterm_pointer_oracle;
 mod xtest_selection;
 
 use sophia_conformance::{
