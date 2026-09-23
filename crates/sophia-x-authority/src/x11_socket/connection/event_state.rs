@@ -130,6 +130,23 @@ impl XCoreEventSelectionState {
     const KEY_MASKS: u32 = (1 << 0) | (1 << 1);
     const BUTTON_MASKS: u32 = (1 << 2) | (1 << 3);
     const POINTER_MOTION_MASK: u32 = 1 << 6;
+    /// ButtonMotion: motion while any button is down.
+    const BUTTON_MOTION_MASK: u32 = 1 << 13;
+    /// Button1Mask..Button5Mask in an event's state field, which occupy the
+    /// same bits as Button1Motion..Button5Motion in an event mask.
+    const HELD_BUTTON_STATE: u32 = 0x1F00;
+
+    /// The masks a MotionNotify answers to. PointerMotion always; with buttons
+    /// down, ButtonMotion and each held button's own ButtonNMotion, which is
+    /// how a text widget follows a drag without asking for every motion --
+    /// xterm's `<Btn1Motion>: select-extend()` selects Button1Motion alone.
+    /// Delivering motion only to PointerMotion selectors left such a widget
+    /// blind until the release, so xterm highlighted a selection only once
+    /// the button came up.
+    pub(in crate::x11_socket) fn motion_selection_mask(state: u16) -> u32 {
+        let held = u32::from(state) & Self::HELD_BUTTON_STATE;
+        Self::POINTER_MOTION_MASK | held | if held != 0 { Self::BUTTON_MOTION_MASK } else { 0 }
+    }
     const ENTER_WINDOW_MASK: u32 = 1 << 4;
     const LEAVE_WINDOW_MASK: u32 = 1 << 5;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
@@ -455,15 +472,20 @@ impl XCoreEventSelectionState {
         }
     }
 
+    /// The window that hears this pointer event, or None when nothing on the
+    /// path from the window under the pointer up to the surface selected it.
+    /// `state` is the event's core state field, whose held-button bits decide
+    /// which motion masks apply; buttons ignore it.
     fn selected_pointer_target(
         &self,
         surface_window: XResourceId,
         motion: bool,
+        state: u16,
         event_x: i16,
         event_y: i16,
     ) -> Option<XResourceId> {
         let selected_mask = if motion {
-            Self::POINTER_MOTION_MASK
+            Self::motion_selection_mask(state)
         } else {
             Self::BUTTON_MASKS
         };

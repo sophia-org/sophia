@@ -60,6 +60,20 @@ mod xtest_admission_socket {
             assert_eq!(read_x_record(&mut self.stream)[0], 1, "the barrier must answer with a reply");
         }
 
+        /// The barrier for a connection that may also have events queued:
+        /// GetInputFocus, then read past events to its reply.
+        pub(super) fn settle(&mut self) {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, self.order, 1);
+            self.stream.write_all(&request).unwrap();
+            for _ in 0..32 {
+                if read_x_record(&mut self.stream)[0] == 1 {
+                    return;
+                }
+            }
+            panic!("the settle barrier never answered with a reply");
+        }
+
         /// A FakeInput carrying root coordinates, which only motion reads.
         fn fake_input_at(&mut self, event_type: u8, detail: u8, x: i16, y: i16) {
             let mut body = [0u8; 32];
@@ -342,6 +356,87 @@ mod xtest_admission_socket {
             assert_eq!((at(24), at(26)), (5, 7), "{name} window position is the pointer's");
         }
         client.barrier();
+    }
+
+    /// A drag is motion with a button down, and the core protocol reports it
+    /// on the window that selected Button1Motion whether or not it asked for
+    /// PointerMotion. That is xterm: a shell whose text-widget child selects
+    /// `<Btn1Motion>: select-extend()` and nothing for plain motion. Motion was
+    /// chosen by PointerMotion alone, so during a drag the child never matched
+    /// and the record fell back to the shell, which does nothing with it; the
+    /// operator saw the selection highlighted only when the button came up
+    /// (t162). Red on the tree before the fix: the motion names the shell.
+    #[test]
+    fn motion_while_button_one_is_held_is_reported_on_the_child_selecting_button_one_motion() {
+        let mut fixture = XtestFixture::new();
+        let mut client = fixture.connect();
+        let shell = fixture.focused_window(&mut client);
+        // The text widget: the shell's child across its top half, asking for
+        // Button1Motion (1 << 8) and ButtonRelease, and no PointerMotion.
+        let text = client.next;
+        client.next += 2;
+        client.stream
+            .write_all(&create_window_request_with_parent(
+                client.order,
+                text,
+                shell,
+                0,
+                0,
+                16,
+                8,
+            ))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(
+                client.order,
+                text,
+                (1 << 8) | (1 << 3),
+            ))
+            .unwrap();
+        client.stream
+            .write_all(&map_window_request(client.order, text))
+            .unwrap();
+        client.settle();
+
+        // Core motion reaches the surface's client whatever its windows
+        // selected; which window it is reported on is the question here, so
+        // records are read past until the drag's own motion arrives.
+        let motion_at = |client: &mut XtestClient, x: i16| -> [u8; 32] {
+            for _ in 0..16 {
+                let record = read_x_record(&mut client.stream);
+                if record[0] & 0x7f == 6
+                    && i16::from_le_bytes([record[24], record[25]]) == x
+                {
+                    return record;
+                }
+            }
+            panic!("no MotionNotify at x={x} arrived");
+        };
+        let event_window =
+            |record: &[u8; 32]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 4, 4);
+        client.settle();
+        client.fake_input(4, 1);
+        client.settle();
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 9, 4);
+        let drag = motion_at(&mut client, 9);
+        assert_eq!(
+            event_window(&drag),
+            text,
+            "a drag's motion is reported on the child that selected Button1Motion, not the shell"
+        );
+        let state = u16::from_le_bytes([drag[28], drag[29]]);
+        assert_eq!(state & 0x100, 0x100, "carrying Button1Mask: state={state:#x}");
+
+        client.fake_input(5, 1);
+        let release = client.next_event(5);
+        assert_eq!(release[1], 1);
+        // With the button up the child asked for no motion, so plain motion
+        // falls back to the shell.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 12, 4);
+        let plain = motion_at(&mut client, 12);
+        assert_eq!(event_window(&plain), shell, "plain motion is not the child's");
     }
 
     #[test]

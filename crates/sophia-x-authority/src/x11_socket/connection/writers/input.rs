@@ -230,6 +230,7 @@ fn spawn_x11_input_event_writer(
                         .selected_pointer_target(
                             surface_window,
                             matches!(pointer.kind, XAuthorityPointerEventKind::Motion),
+                            pointer.state,
                             pointer.event_x,
                             pointer.event_y,
                         )
@@ -465,8 +466,13 @@ fn spawn_x11_input_event_writer(
             );
             let mut write_core_record = match (event, input_authority.as_ref()) {
                 (XAuthorityInputEvent::Pointer(pointer), Some(authority)) => {
+                    // An explicit grab's mask follows the same rule as a
+                    // window's: motion with a button down answers to
+                    // ButtonMotion and the held button's own mask too.
                     let selected_mask = match pointer.kind {
-                        XAuthorityPointerEventKind::Motion => 1_u16 << 6,
+                        XAuthorityPointerEventKind::Motion => {
+                            XCoreEventSelectionState::motion_selection_mask(pointer.state) as u16
+                        }
                         XAuthorityPointerEventKind::Button { pressed: true, .. }
                         | XAuthorityPointerEventKind::Axis { pressed: true, .. } => 1_u16 << 2,
                         XAuthorityPointerEventKind::Button { pressed: false, .. }
@@ -491,6 +497,7 @@ fn spawn_x11_input_event_writer(
                 })?.selected_pointer_target(
                     surface_window,
                     matches!(pointer.kind, XAuthorityPointerEventKind::Motion),
+                    pointer.state,
                     pointer.event_x,
                     pointer.event_y,
                 );

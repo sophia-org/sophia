@@ -139,11 +139,11 @@ fn pointer_target_prefers_mapped_button_selecting_content_child() {
     selections.observe_mapped(content_child);
 
     assert_eq!(
-        selections.selected_pointer_target(top_level, false, 100, 200),
+        selections.selected_pointer_target(top_level, false, 0, 100, 200),
         Some(content_child)
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, 100, 200),
+        selections.selected_pointer_target(top_level, true, 0, 100, 200),
         None
     );
     assert_eq!(
@@ -157,6 +157,71 @@ fn pointer_target_prefers_mapped_button_selecting_content_child() {
     assert_eq!(
         selections.ancestry_including(content_child),
         vec![content_child, top_level, root]
+    );
+}
+
+/// A drag is motion with a button down, and the core protocol reports it to a
+/// window that selected ButtonMotion or the held button's own ButtonNMotion,
+/// whether or not it asked for PointerMotion. xterm's text widget asks for
+/// Button1Motion alone; delivering motion only to PointerMotion selectors
+/// left it blind until the release, so a selection was highlighted only once
+/// the button came up (t162).
+#[test]
+fn motion_with_a_button_down_reaches_a_window_selecting_only_button_motion() {
+    let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+    let top_level = XResourceId::new(0x200001, 1);
+    let button1_child = XResourceId::new(0x200002, 1);
+    let any_button_child = XResourceId::new(0x200003, 1);
+    let mut selections = XCoreEventSelectionState::default();
+    let column = |y: i32| Rect {
+        x: 0,
+        y,
+        width: 800,
+        height: 300,
+    };
+    selections.register(top_level, root, column(0));
+    selections.register(button1_child, top_level, column(0));
+    selections.register(any_button_child, top_level, column(300));
+    // Button1Motion only; ButtonMotion only. Neither selects PointerMotion.
+    selections.update(button1_child, Some(1 << 8), None);
+    selections.update(any_button_child, Some(1 << 13), None);
+    for window in [top_level, button1_child, any_button_child] {
+        selections.observe_mapped(window);
+    }
+    const BUTTON1_STATE: u16 = 0x100;
+    const BUTTON2_STATE: u16 = 0x200;
+
+    // No button down: neither window asked for plain motion.
+    assert_eq!(
+        selections.selected_pointer_target(top_level, true, 0, 100, 100),
+        None
+    );
+    assert_eq!(
+        selections.selected_pointer_target(top_level, true, 0, 100, 400),
+        None
+    );
+    // Button 1 down: the drag reaches both.
+    assert_eq!(
+        selections.selected_pointer_target(top_level, true, BUTTON1_STATE, 100, 100),
+        Some(button1_child)
+    );
+    assert_eq!(
+        selections.selected_pointer_target(top_level, true, BUTTON1_STATE, 100, 400),
+        Some(any_button_child)
+    );
+    // Button 2 down: only the window that asked for any button's motion.
+    assert_eq!(
+        selections.selected_pointer_target(top_level, true, BUTTON2_STATE, 100, 100),
+        None
+    );
+    assert_eq!(
+        selections.selected_pointer_target(top_level, true, BUTTON2_STATE, 100, 400),
+        Some(any_button_child)
+    );
+    // Buttons themselves never consult the motion masks.
+    assert_eq!(
+        selections.selected_pointer_target(top_level, false, BUTTON1_STATE, 100, 100),
+        None
     );
 }
 
@@ -194,7 +259,7 @@ fn pointer_event_target_does_not_depend_on_core_event_selection() {
         content_child
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, false, 100, 200),
+        selections.selected_pointer_target(top_level, false, 0, 100, 200),
         None
     );
 
@@ -314,7 +379,7 @@ fn core_pointer_selection_propagates_only_through_hit_target_ancestors() {
         content_child
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, false, 100, 200),
+        selections.selected_pointer_target(top_level, false, 0, 100, 200),
         Some(top_level)
     );
 }
