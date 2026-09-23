@@ -248,11 +248,14 @@ impl XAuthorityObservedTransactionBatch {
     }
 
     pub fn from_dispatch_observation(trace: &X11DispatchObservation) -> Option<Self> {
+        // A departed client's request resolves its ticket with no facts, like an
+        // aborted one: nothing was assembled and nobody is owed it.
         if matches!(
             trace.failure,
             Some(
                 crate::X11ObservedDispatchFailure::DispatchAborted
                     | crate::X11ObservedDispatchFailure::UnpublishedEffects
+                    | crate::X11ObservedDispatchFailure::ClientDeparted
             )
         ) {
             return None;

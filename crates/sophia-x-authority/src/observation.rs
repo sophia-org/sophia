@@ -67,6 +67,15 @@ pub enum X11ObservedDispatchFailure {
     /// Dispatch mutated authority state but could not assemble complete effects.
     /// Ordered publishers must stop rather than certify an incomplete prefix.
     UnpublishedEffects,
+    /// The client departed while its request was in flight. Its effects were
+    /// never assembled and nobody is owed them, so the ticket resolves with no
+    /// facts, as `DispatchAborted` does -- not as an incomplete prefix the
+    /// publishers must stop for. The one place a departure is noticed
+    /// mid-dispatch is the XTEST barrier, after a routed input has already
+    /// been handed to the broker and with nothing left to publish; a client
+    /// that sends a zero-delay FakeInput and exits, as every xdotool call
+    /// does, lands exactly there.
+    ClientDeparted,
 }
 
 /// Owned, bounded facts emitted after one X request dispatch.

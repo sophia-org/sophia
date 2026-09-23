@@ -427,6 +427,35 @@ def disconnect_release(context):
         no_input_yet(observer, window, .04)
 
 
+def zero_delay_departure(context):
+    """A client sends one zero-delay FakeInput and closes at once, as every
+    xdotool invocation does. The frontend must survive it and keep serving.
+
+    The gate's other disconnect cases close during a delay or after a round
+    trip, which are the two edges; this is the middle, and it is the ordinary
+    case. The departure lands while the request's dispatch has started and
+    before it completes, and a service that treats that as its own failure
+    rather than the client's exits -- which is what a lone `xdotool mousedown`
+    did to the fixture host under t154."""
+    with client(context) as observer:
+        target(observer)
+        before = query_pointer(observer)
+        injector = client(context)
+        opcode = major(injector)
+        fake(injector, opcode, 6, x=41, y=43)
+        injector.close()
+        # The observer's round trips prove the service is still answering; the
+        # pointer may or may not have moved before the departure was noticed,
+        # and neither answer is a fault here. What would be is a dead host.
+        for _ in range(3):
+            observer.sync()
+        assert query_pointer(observer) in (before, (41, 43)), 'zero-delay departure left the pointer somewhere else'
+        with client(context) as replacement:
+            replacement_opcode = major(replacement)
+            fake(replacement, replacement_opcode, 6, x=29, y=30)
+            assert query_pointer(replacement) == (29, 30), 'a departed zero-delay client blocked its replacement'
+
+
 def two_injectors(context):
     with client(context) as observer, client(context) as first, client(context) as second:
         window, first_opcode, second_opcode = target(observer), major(first), major(second)
@@ -538,6 +567,7 @@ CASES = {
     'xtest_request_errors': request_errors,
     'xtest_compare_cursor': compare_cursor,
     'xtest_grab_control': grab_control,
+    'xtest_zero_delay_departure': zero_delay_departure,
     'xtest_delay_order': delayed,
     'xtest_half_close': half_close,
     'xtest_full_delay_disconnect': full_delay_disconnect,

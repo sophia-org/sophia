@@ -110,6 +110,11 @@
       "id": "xtest_reserved_chord",
       "mandatory": true,
       "fixture": "enabled"
+    },
+    {
+      "id": "xtest_zero_delay_departure",
+      "mandatory": true,
+      "fixture": "enabled"
     }
   ],
   "features": [
