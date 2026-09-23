@@ -996,6 +996,30 @@ the C locale, so the driver asks for UTF8_STRING and falls back to STRING as
 a pasting client does. Rebuild the image after any change to the session or the driver;
 the harness runs whatever image is there.
 
+## xterm as a pointer oracle
+
+```sh
+cargo xtask check xterm-pointer-oracle
+cargo xtask check xterm-pointer-oracle --self-test
+```
+
+The same headless session and isolation as the selection gate, with
+`crates/sophia-session/examples/xterm_pointer_oracle.rs` as the client. It
+starts a real xterm whose command turns on SGR button-event mouse tracking
+and copies the pty's input to a file, injects XTEST motion, press, drag and
+release at chosen cells, and reads xterm's own reports back: `CSI < 0;col;row
+M` for the press, `32;col;row M` for each drag cell, `0;col;row m` for the
+release, `1` and `2` for buttons 2 and 3. What is in the file is what the
+frontend delivered to the text widget, on which window, at which cell, with
+which button state. Button-event tracking is the mode that matters: xterm
+then relies on its `<Btn1Motion>` translation for drag motion, as an
+ordinary xterm does when selecting, so a frontend that delivers motion only
+to PointerMotion selectors (t162) fails it on `no_drag_report`; any-event
+tracking (`--any-event`) makes xterm select all motion itself and cannot see
+that defect. `--self-test` must fail a session without `--admit-xtest` and an
+xterm with tracking off. The driver's `--overshoot` releases past the widget's
+right edge and is red until t158 lands.
+
 ## Atomic Scanout Evidence
 
 The production-shaped scanout preflight and evidence verifiers require atomic
