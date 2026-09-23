@@ -112,14 +112,16 @@ answered.
 - [x] The WM session: drag and paste pass headless under Hagia with the
       operator's own desktop and Hagia configuration, three of three
       (`owner_changes=1 conversions=2`). See the section of 2026-09-23 below.
-- [ ] Explain the original report, a physical drag on the installed desktop
-      with Hagia running. The headless XTEST path is healthy with and without
-      the WM, so what is left is the physical path -- and one shared defect
-      found on the way, the frontend's implicit grab
-      ([t158](urxcuj5s-an-implicit-pointer-grab-delivers-by-position-not-to-the-window-that-took-the-press.md)),
-      which loses a release made past the text widget's edge. That is a
-      candidate the operator can confirm or rule out: does a drag that ends
-      inside the text work, and one that runs off the edge fail?
+- [x] The original report. On release `30acf6af` the operator drags in one
+      xterm and middle-clicks in another, and the text arrives: "copying and
+      pasting seems to work." Closed on daily use. What the operator noticed
+      while doing it -- the selection highlighted only on release -- was a
+      separate defect on the same delivery path, fixed as
+      [t162](ljbbq5pw-motion-during-a-held-button-is-delivered-only-to-windows-selecting-pointermotion-never-buttonmotion.md).
+      The implicit-grab defect
+      ([t158](urxcuj5s-an-implicit-pointer-grab-delivers-by-position-not-to-the-window-that-took-the-press.md))
+      stays open as its own row: it loses a release made past the widget's
+      edge, which is not the everyday drag.
 - [x] The paste half -- middle-click in a second xterm. Blocked until t156
       resolved XTEST pointer events against the Engine's scene; now three of
       three pass with `conversions=2`, xterm B asking for PRIMARY and receiving
@@ -297,6 +299,13 @@ the drag, the driver reads the marker back, and xterm B asks for PRIMARY on
 the middle-click (`owner_changes=1 conversions=2`, `injected_buttons=4`).
 Sophia's selection path and the WM session are cleared for this row. What
 remains is the physical path, with t158 as the named suspect.
+
+## Closed on daily use, 2026-09-23
+
+The operator, on the same release: "in xterm copying and pasting. seems to
+work." Every synthetic path was already clean; this was the last row. The
+highlight-only-on-release they saw while doing it is t162, found and fixed
+the same day. t158 remains as its own row.
 
 ## On the installed desktop, 2026-09-23
 
