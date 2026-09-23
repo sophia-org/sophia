@@ -1598,6 +1598,44 @@ fn committed_projections_place_a_surface_on_any_of_its_outputs() {
     ));
 }
 
+/// A pointer gesture asks which output's committed projection places its
+/// surface. When none does -- the surface mapped and is not yet laid out, or a
+/// scrolling layout holds it out of view, or it sits between the transaction
+/// that removed it and the one that returns it -- the answer is "nowhere", and
+/// the gesture is dropped. It used to be an error, and the owner loop treats
+/// an error as fatal: a Super+button on a freshly tiled column ended the
+/// operator's whole desktop (2026-09-23, release bf43425d).
+#[test]
+fn a_pointer_gesture_on_an_unplaced_surface_goes_nowhere_rather_than_failing() {
+    let primary = OutputId::from_raw(1);
+    let extended = OutputId::from_raw(2);
+    let placed = SurfaceId::new(12, 1);
+    let unplaced = SurfaceId::new(13, 1);
+    let projections = vec![
+        policy_projection(primary, SurfaceId::new(11, 1)),
+        policy_projection(extended, placed),
+    ];
+
+    assert_eq!(
+        committed_output_placing(&projections, placed),
+        Some(extended)
+    );
+    assert_eq!(committed_output_placing(&projections, unplaced), None);
+    assert_eq!(committed_output_placing(&[], placed), None);
+
+    // The dropped gesture leaves a retained trace that names why.
+    let record = "sophia_live_wm_pointer schema=2 status=interaction_dropped reason=target_unplaced phase=Begin mode=Move surface=13";
+    let reduced = crate::diagnostics::reduced_record(record).unwrap();
+    assert!(
+        reduced.contains("status=interaction_dropped"),
+        "reduction lost the drop: {reduced}"
+    );
+    assert!(
+        reduced.contains("surface=13"),
+        "reduction lost the surface: {reduced}"
+    );
+}
+
 fn policy_projection(
     output: OutputId,
     surface: SurfaceId,

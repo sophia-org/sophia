@@ -261,5 +261,10 @@ First attempt, 2026-09-23, on the installed release `20260918-d444eba2`:
 `status=fail reason=pointer_not_over_target`, the aim landing at (17,46)
 inside xterm A's frame with QueryPointer naming no child. That release
 predates t155 and t156, so it is the pre-fix behaviour seen on hardware, not
-a new finding; the driver needs a release built from `bf43425d` or later. The
-operator is installing one.
+a new finding; the driver needs a release built from `bf43425d` or later.
+
+Second attempt, same day, on release `bf43425d`: the session ended before the
+driver ran -- a Super+button on a freshly tiled column hit a session-fatal
+lookup in the WM gesture path, unrelated to XTEST
+([qvj77ywn](qvj77ywn-a-super-button-on-a-window-between-two-committed-layouts-ends-the-session.md),
+fixed). The hardware half waits for the next release.
