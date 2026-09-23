@@ -167,8 +167,29 @@ the one the frontend cannot survive.
 
 So the row above stays open, and its status is unchanged from the QEMU run: no
 `SetSelectionOwner` was observed, and that is because the gesture never landed,
-not because xterm declined to send one. The scripts are retained under
-`.artifacts/t124-xtest-service-exit/` and run as written once t154 lands.
+not because xterm declined to send one.
+
+**Why it never landed, established once t154 was repaired the same day.** With
+the host surviving, the drag was re-run aimed at the text row and the pointer
+read back: `QueryPointer` still answered `0,0` over the root. Two things were
+wrong with the apparatus, neither of them xterm. `xdotool mousemove` is
+`WarpPointer`, not XTEST, and on this host it did not move the pointer, so
+every XTEST button fell on the root. And the `x11_conformance_host` example has
+no routed-input consumer at all: a `FakeInput` against it hands the input to
+the broker and then blocks that connection in the barrier until the client
+leaves, so an XTEST motion sent through `wire.py` hung on its own `sync`. The
+example host cannot make a gesture land; it was never a viable vehicle for
+this row, which the QEMU run's unaimed double-click had in common with it.
+
+The vehicle is the host the XTEST profile already uses:
+`native_input_conformance_host --socket … --cookie-file …`, auth
+`SOPHIA-PRIVATE-INPUT-1` (`tools/probes/x11_conformance/run.py:80-113`), which
+drains and settles routed input and whose `xtest_button_pair` and
+`xtest_motion` cases prove delivery to a client window. Attaching a real
+`xterm` to it needs an `XAUTHORITY` carrying that cookie; driving the drag
+needs XTEST motion from `wire.py`, not `xdotool`. The scripts under
+`.artifacts/t124-xtest-service-exit/` are the wrong host and are kept as the
+record of that.
 
 ## Connections
 

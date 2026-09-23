@@ -270,6 +270,28 @@ fn x11_finish_explicit_pointer_release(
     }
 }
 
+/// What a dispatch that started and did not complete means for the service.
+///
+/// The observation has already been published as failed by the time this is
+/// asked, so nothing here certifies a partial dispatch as success; what is
+/// decided is whose fault it was. The dispatch closure returns `Ok(())` only
+/// on a departure -- the peer went away while its request was in flight, the
+/// XTEST barrier being the ordinary place -- and that is the client's
+/// disconnect, which the worker reaper contains. Any other way of ending
+/// mid-dispatch is the service's own failure and stays fatal. Until this was
+/// separated a departed client and a broken service raised the same
+/// unclassified error, and one `xdotool` click ended the frontend.
+#[cfg(unix)]
+pub(crate) fn partial_dispatch_error(departed: bool) -> X11SetupSocketError {
+    if departed {
+        X11SetupSocketError::client_disconnect(
+            "X11 client departed before its dispatch published its effects",
+        )
+    } else {
+        X11SetupSocketError::new("X11 dispatch ended before its effects were published")
+    }
+}
+
 /// A failed post-dispatch delivery still owes the complete authority effects.
 /// Only a request that never dispatched may retire an empty ordering ticket.
 #[cfg(unix)]
@@ -277,13 +299,16 @@ fn failed_x11_dispatch_observation(
     pending: Option<X11DispatchObservation>,
     started: bool,
     complete: bool,
+    departed: bool,
 ) -> Option<X11DispatchObservation> {
     pending.map(|mut observation| {
         if !complete {
-            observation.failure = Some(if started {
-                X11ObservedDispatchFailure::UnpublishedEffects
-            } else {
+            observation.failure = Some(if !started {
                 X11ObservedDispatchFailure::DispatchAborted
+            } else if departed {
+                X11ObservedDispatchFailure::ClientDeparted
+            } else {
+                X11ObservedDispatchFailure::UnpublishedEffects
             });
         }
         observation
@@ -2930,12 +2955,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         pending_observation.take(),
         dispatch_started,
         dispatch_complete,
+        result.is_ok(),
     ) {
         let published = observer(observation).map(|_| ());
         if dispatch_started && !dispatch_complete {
-            published.and(Err(X11SetupSocketError::new(
-                "X11 dispatch ended before its effects were published",
-            )))
+            published.and(Err(partial_dispatch_error(result.is_ok())))
         } else {
             published
         }

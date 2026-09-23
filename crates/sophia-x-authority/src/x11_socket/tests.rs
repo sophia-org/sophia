@@ -1147,6 +1147,10 @@ include!(concat!(
 ));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
+    "/tests/x11_wire/partial_dispatch_departure.rs"
+));
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
     "/tests/support/routing_device_announcements.rs"
 ));
 include!(concat!(

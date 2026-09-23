@@ -2,7 +2,7 @@
 id: 945mtp8i
 date: 2026-09-22
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, x11, xtest, containment]
 ---
 # A real XTEST client that closes right after a zero-delay FakeInput ends the frontend service
@@ -92,14 +92,85 @@ new mandatory XTEST wire case -- zero-delay `FakeInput`, immediate close, then a
 fresh client must still be admitted and answered -- which goes red on the
 current tree and green on the repair.
 
+## Repaired, 2026-09-22
+
+**The mechanism is one layer deeper than a fast exit.** A `FakeInput` is
+dispatched behind a barrier: `submit_and_await` hands the routed input to the
+broker and then `await_processing` (`x11_socket/connection/xtest.rs:246-256`)
+loops on `wait_once` with no timeout until the outcome arrives, the admission is
+revoked, or the peer departs. On a host where nothing drains routed input --
+the `x11_conformance_host` example admits XTEST but has no consumer -- the
+outcome never arrives, so the connection blocks on its first `FakeInput` until
+the client gives up. xdotool gives up in a second and exits; that departure is
+noticed mid-dispatch at `dispatch.rs:2551`. The private service drains its
+input, so there the same path is reached only by a client that genuinely
+leaves mid-barrier -- which is what the new wire case does.
+
+**The repair has two layers, because the error leaves the worker two ways.**
+
+1. *What the worker returns.* The tail decides the class by how the dispatch
+   closure ended: it returns `Ok(())` only on a departure, so
+   `partial_dispatch_error(result.is_ok())` (`dispatch.rs`) builds a
+   `client_disconnect` for a departed peer and keeps the unclassified fatal
+   for anything else. `poll_client_workers` contains the first and returns
+   the second, as before.
+2. *What the observation says.* The tail publishes the failed observation
+   through the trace observer, and the private service's observer
+   (`private_service.rs:803`) and the routed server's (`server.rs:684`)
+   cancel the whole egress on `UnpublishedEffects`. The observation now
+   carries `X11ObservedDispatchFailure::ClientDeparted`
+   (`observation.rs`), set when the closure departed
+   (`failed_x11_dispatch_observation(..., departed)`), and
+   `XAuthorityObservedTransactionBatch::from_dispatch_observation`
+   (`transport.rs`) publishes no batch for it, as for `DispatchAborted`: the
+   ticket resolves with no facts, nothing is certified, and the publishers
+   are not stopped. Only the XTEST barrier can produce a mid-dispatch
+   departure, after the routed input is already with the broker and with
+   nothing left to publish, so "no facts" is what actually happened.
+
+The first layer alone was measured and was not enough: with it the fixture
+host survived xdotool, and the private service still exited on the observer's
+path (host `cca2278a`, both orders red). That run's report was overwritten by
+the green one and is recorded here rather than retained.
+
+**Proof, on one variable.**
+
+| run | tree | cases | result |
+| --- | --- | --- | --- |
+| `t154-xtest-baseline` | unfixed, without the case | 42 | PASS |
+| `t154-xtest-red` | unfixed, with the case | 44 | **FAIL**: only `xtest_zero_delay_departure`, both orders, `private host collection failed 1` |
+| `t154-xtest-green` | fixed | 44 | PASS, host `4ee193a19bbd` |
+
+The wire case is `xtest_zero_delay_departure` in
+`tools/probes/x11_conformance/xtest_cases.py`, mandatory in
+`xtest_manifest.json`: an observer takes focus, an injector sends one
+zero-delay motion and closes with no round trip, the observer must still be
+answered, and a fresh injector's motion must land. Three controls pin the
+classification in `tests/x11_wire/partial_dispatch_departure.rs` and
+`tests/support/dispatch_ticket_failure.rs`: a departure mid-dispatch is the
+client's disconnect; a service failure mid-dispatch stays fatal with the
+message unchanged; the departed observation is `ClientDeparted`, publishes no
+batch, and a departure before dispatch began is still `DispatchAborted`.
+
+**Not claimed.** The live session's main display loop was not located, so its
+propagation is not shown either way; it installs the same injection policy
+under `--admit-xtest` and is protected by the same worker and observer
+changes if it uses them. No live session was run. The example host still has
+no routed-input consumer: it survives a departing XTEST client now, but a
+`FakeInput` against it still blocks that client's connection until it leaves,
+which is a fixture limit worth knowing before anyone drives a real client
+through it again.
+
 ## Validation and remaining work
 
-Open as t154 in [todo.md](../../../todo.md). Not yet repaired. This blocks
-[t124](4m65c17q-primary-selection-does-not-reach-another-client-from-xterm.md):
-its remaining question needs exactly the client behaviour that kills the host.
-Also worth noting, and not this task's: `xdotool type --window` uses
-`SendEvent` (opcode 25), which the frontend decodes (`wire.rs:1454`) and
-refused here with `BadValue 0x2`; without `--window` it uses XTEST.
+- [x] Attribute the exit: XTEST `FakeInput` then departure, not xterm and not
+      an ordinary disconnect (runs A, B, C under `.artifacts/t124-xtest-service-exit/`).
+- [x] Classify a mid-dispatch departure as the client's, in the worker's
+      return and in the published observation, and keep partial dispatch
+      uncertified.
+- [x] Wire case red on the unfixed tree and green on the fix; three
+      controls; the profile's manifest test still pins case parity.
+- [x] Workspace check, crate suite under the gate's isolation, clippy, fmt.
 
 ## Connections
 
