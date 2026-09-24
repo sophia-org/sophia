@@ -553,9 +553,7 @@
   },
   {
     "case": "/Xlib11/KeyPress",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/KeyPress",
@@ -603,9 +601,7 @@
   },
   {
     "case": "/Xlib11/KeyRelease",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/KeyRelease",
@@ -655,7 +651,7 @@
     "case": "/Xlib11/KeymapNotify",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got MotionNotify, expected KeymapNotify'"
+    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'No events received.'"
   },
   {
     "case": "/Xlib11/KeymapNotify",
@@ -667,7 +663,7 @@
     "case": "/Xlib11/KeymapNotify",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0x494d69f0, client2: 0x494e7c60, client2: 0x494f5c30'"
+    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0xe38b99f0, client2: 0xe38cac60, client2: 0xe38cbee0'"
   },
   {
     "case": "/Xlib11/KeymapNotify",
