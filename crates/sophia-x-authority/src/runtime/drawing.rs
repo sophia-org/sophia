@@ -776,12 +776,10 @@ impl XAuthorityRuntime {
 
     /// What covers `source` inside the toplevel `presentation`.
     ///
-    /// Walks the toplevel's subtree in painting order, depth first and bottom
-    /// to top, as `composite_inferiors` does. Every mapped window painted
-    /// after the source is either its inferior or stacked over it, so those
-    /// are the layers. A window counts once it is mapped, not only once it is
-    /// viewable, so a draw before the toplevel maps still leaves the mapped
-    /// children on top for when it does. A source the walk never reaches
+    /// Every mapped window painted after the source is either its inferior
+    /// or stacked over it, so those are the layers -- except the source's
+    /// own inferiors while a draw goes through them, since the source's
+    /// buffer then already holds them. A source the walk never reaches
     /// (unmapped, or hidden under an unmapped ancestor) keeps the old
     /// behaviour of composing alone.
     fn present_stacking(
@@ -792,66 +790,38 @@ impl XAuthorityRuntime {
         let Some(root) = self.windows.get(presentation) else {
             return crate::XPresentStacking::default();
         };
-        let namespace = root.namespace;
         let whole = Rect {
             x: 0,
             y: 0,
             width: root.geometry.width,
             height: root.geometry.height,
         };
-        let children = |parent, x, y, clip| {
-            self.windows
-                .direct_children_bottom_to_top(namespace, parent)
-                .into_iter()
-                .rev()
-                .map(move |child| (child, x, y, clip))
-        };
-        let mut stack: Vec<(crate::XResourceId, i32, i32, Rect)> =
-            children(presentation, 0, 0, whole).collect();
-        let mut stacking = crate::XPresentStacking::default();
-        let mut found = source == presentation;
-        // Bounded: the store is finite and each window is reached from its
-        // own parent exactly once.
-        let mut visited = 0usize;
-        while let Some((window, parent_x, parent_y, parent_clip)) = stack.pop() {
-            visited += 1;
-            if visited > 4096 {
-                break;
-            }
-            let Some(record) = self.windows.get(window) else {
-                continue;
+        let painted = self.painted_subtree(root.namespace, presentation, whole);
+        if source == presentation {
+            let above = if self.drawing_through == Some(source) {
+                Vec::new()
+            } else {
+                painted.into_iter().map(|window| window.layer).collect()
             };
-            if record.map_state == crate::XMapState::Unmapped {
-                continue;
-            }
-            let x = parent_x.saturating_add(record.geometry.x);
-            let y = parent_y.saturating_add(record.geometry.y);
-            let bounds = Rect {
-                x,
-                y,
-                width: record.geometry.width,
-                height: record.geometry.height,
+            return crate::XPresentStacking {
+                source_clip: None,
+                above,
             };
-            let Some(clip) = crate::software::intersect_rects(bounds, parent_clip) else {
-                continue;
-            };
-            if found {
-                stacking.above.push(crate::XPresentLayer {
-                    window,
-                    x,
-                    y,
-                    clip,
-                });
-            } else if window == source {
-                found = true;
-                stacking.source_clip = Some(clip);
-            }
-            stack.extend(children(window, x, y, clip));
         }
-        if found {
-            stacking
+        let Some(index) = painted.iter().position(|window| window.layer.window == source) else {
+            return crate::XPresentStacking::default();
+        };
+        let depth = painted[index].depth;
+        let after = &painted[index + 1..];
+        // A window's inferiors follow it directly in painting order, deeper.
+        let inferiors = if self.drawing_through == Some(source) {
+            after.iter().take_while(|window| window.depth > depth).count()
         } else {
-            crate::XPresentStacking::default()
+            0
+        };
+        crate::XPresentStacking {
+            source_clip: Some(painted[index].layer.clip),
+            above: after[inferiors..].iter().map(|window| window.layer).collect(),
         }
     }
 

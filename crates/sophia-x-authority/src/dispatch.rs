@@ -472,12 +472,20 @@ fn dispatch_text_draw(
         );
     }
     draw.font = font;
-    let response = runtime.apply_text_draw(
+    let response = runtime.draw_through_inferiors(
         transaction,
         context.namespace,
         drawable,
-        &[draw],
-        &gc_values,
+        gc_values.subwindow_mode,
+        |runtime| {
+            runtime.apply_text_draw(
+                transaction,
+                context.namespace,
+                drawable,
+                &[draw],
+                &gc_values,
+            )
+        },
     );
     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
         vec![XClientOutput::Error(x_error_from_runtime(
@@ -583,8 +591,15 @@ fn dispatch_poly_text(
         }
     }
 
-    let response =
-        runtime.apply_text_draw(transaction, context.namespace, drawable, &draws, &gc_values);
+    let response = runtime.draw_through_inferiors(
+        transaction,
+        context.namespace,
+        drawable,
+        gc_values.subwindow_mode,
+        |runtime| {
+            runtime.apply_text_draw(transaction, context.namespace, drawable, &draws, &gc_values)
+        },
+    );
     let outputs = if let Some(error) = font_error {
         vec![error]
     } else if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {

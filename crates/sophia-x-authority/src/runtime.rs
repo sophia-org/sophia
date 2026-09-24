@@ -31,6 +31,7 @@ include!("runtime/graphics_contexts.rs");
 include!("runtime/drawing/copy_plane.rs");
 include!("runtime/drawing/image_ops.rs");
 include!("runtime/drawing/window_background.rs");
+include!("runtime/drawing/include_inferiors.rs");
 include!("runtime/render_resources.rs");
 include!("runtime/dmabuf_capabilities.rs");
 include!("runtime/device_connections.rs");
@@ -187,6 +188,10 @@ pub struct XAuthorityRuntime {
     software_buffers: XSoftwareBufferStore,
     raster_store: XAuthorityRasterStore,
     pending_raster_command: Option<XAuthorityRasterCommand>,
+    /// The window a draw is going through the inferiors of, while it runs.
+    /// Its buffer then holds what is on screen over its inferiors too, so
+    /// presenting it must not lay their stale pixels back over the draw.
+    drawing_through: Option<crate::XResourceId>,
     pixmaps: BTreeMap<crate::XResourceId, XPixmapRecord>,
     fonts: BTreeMap<crate::XResourceId, XFontRecord>,
     /// The font path and the faces loaded from it. Indexed once at startup
@@ -318,6 +323,7 @@ impl Default for XAuthorityRuntime {
             software_buffers: Default::default(),
             raster_store: Default::default(),
             pending_raster_command: None,
+            drawing_through: None,
             pixmaps: Default::default(),
             fonts: Default::default(),
             font_catalog: crate::XFontCatalog::builtin_only(),

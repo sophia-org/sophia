@@ -44,13 +44,13 @@ fn dispatch_core_drawing_request(
             for rectangle in rectangles {
                 damage.push(rectangle);
             }
-            let response = runtime.apply_core_draw_with_gc(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, drawable, values.subwindow_mode, |runtime| runtime.apply_core_draw_with_gc(
                 transaction,
                 context.namespace,
                 drawable,
                 damage,
                 &values,
-            );
+            ));
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
                     error,
@@ -81,13 +81,13 @@ fn dispatch_core_drawing_request(
                     ));
                 }
             };
-            let response = runtime.apply_rectangle_draw(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, drawable, values.subwindow_mode, |runtime| runtime.apply_rectangle_draw(
                 transaction,
                 context.namespace,
                 drawable,
                 &rectangles,
                 &values,
-            );
+            ));
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
                     error,
@@ -158,7 +158,7 @@ fn dispatch_core_drawing_request(
                     destination,
                 ));
             }
-            let response = runtime.apply_copy_area_with_gc(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, destination, values.subwindow_mode, |runtime| runtime.apply_copy_area_with_gc(
                 transaction,
                 context.namespace,
                 source,
@@ -170,7 +170,7 @@ fn dispatch_core_drawing_request(
                 width,
                 height,
                 &values,
-            );
+            ));
             let outputs = match response.outcome {
                 XAuthorityResponseOutcome::Accepted if values.graphics_exposures => {
                     copy_exposure_events(
@@ -218,13 +218,13 @@ fn dispatch_core_drawing_request(
                     ));
                 }
             };
-            let response = runtime.apply_line_draw(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, drawable, values.subwindow_mode, |runtime| runtime.apply_line_draw(
                 transaction,
                 context.namespace,
                 drawable,
                 &points,
                 &values,
-            );
+            ));
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
                     error,
@@ -260,13 +260,13 @@ fn dispatch_core_drawing_request(
                     ));
                 }
             };
-            let response = runtime.apply_segment_draw(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, drawable, values.subwindow_mode, |runtime| runtime.apply_segment_draw(
                 transaction,
                 context.namespace,
                 drawable,
                 &segments,
                 &values,
-            );
+            ));
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
                     error,
@@ -312,13 +312,13 @@ fn dispatch_core_drawing_request(
                 }
             };
             // `miPolyArc`, at every width and line style.
-            let response = runtime.apply_arc_draw(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, drawable, values.subwindow_mode, |runtime| runtime.apply_arc_draw(
                 transaction,
                 context.namespace,
                 drawable,
                 &arcs,
                 &values,
-            );
+            ));
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
                     error,
@@ -385,7 +385,7 @@ fn dispatch_core_drawing_request(
                     metadata_candidates: Vec::new(),
                 });
             }
-            let response = runtime.apply_copy_plane(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, destination, values.subwindow_mode, |runtime| runtime.apply_copy_plane(
                 transaction,
                 context.namespace,
                 source,
@@ -395,7 +395,7 @@ fn dispatch_core_drawing_request(
                 (i32::from(width), i32::from(height)),
                 bit_plane,
                 &values,
-            );
+            ));
             let outputs = match response.outcome {
                 XAuthorityResponseOutcome::Accepted if values.graphics_exposures => {
                     copy_exposure_events(
@@ -626,7 +626,7 @@ fn dispatch_core_drawing_request(
                     metadata_candidates: Vec::new(),
                 });
             }
-            let response = runtime.apply_put_image(
+            let response = runtime.draw_through_inferiors(transaction, context.namespace, drawable, gc_values.subwindow_mode, |runtime| runtime.apply_put_image(
                 transaction,
                 context.namespace,
                 drawable,
@@ -639,7 +639,7 @@ fn dispatch_core_drawing_request(
                     byte_order: XByteOrder::LittleEndian,
                     gc: gc_values,
                 }),
-            );
+            ));
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
                     error,
@@ -919,13 +919,13 @@ fn core_rectangle_fill(
     rectangles: &[Rect],
     values: &crate::XGraphicsContextValues,
 ) -> XDispatchResult {
-    let response = runtime.apply_span_fill(
+    let response = runtime.draw_through_inferiors(context.transaction, context.namespace, drawable, values.subwindow_mode, |runtime| runtime.apply_span_fill(
         context.transaction,
         context.namespace,
         drawable,
         rectangles,
         values,
-    );
+    ));
     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
         vec![XClientOutput::Error(x_error_from_runtime(
             error,
