@@ -1034,7 +1034,19 @@ framed the BIG-REQUESTS encoding they use; and `xts_expected_arcs.json`
 is XDrawArc, XDrawArcs, XFillArc and XFillArcs, 304 purposes across every
 GC component, which the mi arc ports (t176, t178, t179) and IncludeInferiors
 (t181) pass wherever Xorg's own mi does -- its eight declared WARNINGs are
-pixel checks Xvnc fails identically. A
+pixel checks Xvnc fails identically. The other Xlib drawing scenarios
+follow it, each run on the host and on Xvnc through the same adapter:
+`xts_expected_lines.json` (XDrawLine, XDrawLines, XDrawSegments),
+`xts_expected_points.json` (XDrawPoint, XDrawPoints),
+`xts_expected_fills.json` (XFillPolygon, XFillRectangle, XFillRectangles),
+`xts_expected_rectangles.json` (XDrawRectangle, XDrawRectangles) and
+`xts_expected_images.json` (XPutImage, XGetImage, XGetSubImage). On all
+five the host passes exactly the purposes Xvnc passes, except two
+XGetImage and XGetSubImage purposes that read a window's border: Sophia
+draws no window borders, so they are declared by that decision. A text
+scenario (the XDrawString and XDrawText cases) does not run yet: its
+purposes need the suite's own test fonts on a font path, and every one is
+UNINITIATED on Xvnc as on the host. A
 manifest is the suite's account of itself: every purpose is
 listed, and one the suite or the authority cannot pass today is declared
 with its disposition and a reason (`xts_declare.py`, from a real journal and

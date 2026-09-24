@@ -1,0 +1,760 @@
+[
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 3,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 24,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 26,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 28,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 29,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 30,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 32,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 33,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 34,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 35,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 36,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 37,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 44
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 45,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 46,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 47,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 48,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 49
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 50
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 51
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 52
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 53
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 56,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 57
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 58
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 59
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 60
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 61
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 62
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 63
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 64
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 65
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 66
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 67
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 68
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 69
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 70
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 71
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 72
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 73
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 74
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 75
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 76
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 77,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 78,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 79
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 80
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 81
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 82
+  },
+  {
+    "case": "/Xlib9/XDrawRectangle/XDrawRectangle",
+    "purpose": 83,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 3,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 4,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 26,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 28,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 30,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 31,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 32,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 34,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 35,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 36,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 37,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 38,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 39,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 44
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 45
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 46
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 47,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 48,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 49,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 50,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 51
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 52
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 53
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 56
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 57
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 58,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 59
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 60
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 61
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 62
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 63
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 64
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 65
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 66
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 67
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 68
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 69
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 70
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 71
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 72
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 73
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 74
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 75
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 76
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 77
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 78
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 79,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 80,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 81
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 82
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 83
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 84
+  },
+  {
+    "case": "/Xlib9/XDrawRectangles/XDrawRectangles",
+    "purpose": 85,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  }
+]

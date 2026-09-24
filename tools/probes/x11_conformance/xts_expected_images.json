@@ -1,0 +1,324 @@
+[
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 35
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 37
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XPutImage/XPutImage",
+    "purpose": 40,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 3,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 5,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 6,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 7,
+    "expected": "FAIL",
+    "reason": "by decision: Sophia composes whole client buffers and draws no window borders (docs/x11-compatibility-matrix.md, SHAPE row), so every window's border width is 0 and a rectangle reaching into the border lies outside the window, which the protocol makes a Match error"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 8,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 9,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 10,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XGetImage",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 5,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 7,
+    "expected": "FAIL",
+    "reason": "by decision: Sophia composes whole client buffers and draws no window borders (docs/x11-compatibility-matrix.md, SHAPE row), so every window's border width is 0 and a rectangle reaching into the border lies outside the window, which the protocol makes a Match error"
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 8,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 9,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 10,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XGetSubImage",
+    "purpose": 17
+  }
+]

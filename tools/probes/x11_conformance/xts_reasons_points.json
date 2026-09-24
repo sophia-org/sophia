@@ -1,0 +1,6 @@
+{
+  "/Xlib9/XDrawPoint/XDrawPoint#34": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XDrawPoints/XDrawPoints": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawPoints/XDrawPoints#37": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XDrawPoints/XDrawPoints#4": "the suite's own omission: 'There is no known portable test method for this assertion'"
+}

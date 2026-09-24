@@ -1,0 +1,9 @@
+{
+  "/Xlib9/XDrawRectangle/XDrawRectangle": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawRectangle/XDrawRectangle#26": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'",
+  "/Xlib9/XDrawRectangle/XDrawRectangle#83": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XDrawRectangles/XDrawRectangles": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawRectangles/XDrawRectangles#28": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'",
+  "/Xlib9/XDrawRectangles/XDrawRectangles#4": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XDrawRectangles/XDrawRectangles#85": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+}
