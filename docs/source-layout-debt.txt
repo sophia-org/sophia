@@ -33,7 +33,6 @@ large crates/sophia-session/src/live_session/wm/public_policy.rs 3053
 large crates/sophia-session/tests/support/private_input_session.rs 2808
 large crates/sophia-x-authority/src/dispatch.rs 1143
 large crates/sophia-x-authority/src/property.rs 1255
-large crates/sophia-x-authority/src/wire.rs 2001
 large crates/sophia-x-authority/src/x11_socket/connection/server.rs 1301
 large crates/sophia-x-authority/src/x11_socket/tests.rs 1523
 large crates/sophia-x-authority/tests/authority/resources.rs 1614
@@ -51,3 +50,4 @@ large crates/sophia-x-authority/src/runtime/windows.rs 1265
 large crates/sophia-x-authority/src/software/geometry/wide_arc/spans.rs 1571
 large crates/sophia-x-authority/src/software/geometry/wide_line.rs 2158
 large crates/sophia-x-authority/src/x11_socket/routing/registry.rs 1041
+large crates/sophia-x-authority/src/wire/request.rs 1317
