@@ -13,6 +13,10 @@ pub enum XWireRequest {
         colormap: Option<XResourceId>,
         background_pixmap: Option<crate::XWindowBackground>,
         background_pixel: Option<u32>,
+        /// Raw: zero is CopyFromParent. Sophia draws no borders, so these
+        /// are validated and kept nowhere (t216).
+        border_pixmap: Option<u32>,
+        border_pixel: Option<u32>,
         override_redirect: bool,
         event_mask: Option<u32>,
         do_not_propagate_mask: Option<u32>,
@@ -36,6 +40,10 @@ pub enum XWireRequest {
         /// None means the request did not mention the attribute at all.
         background_pixmap: Option<crate::XWindowBackground>,
         background_pixel: Option<u32>,
+        /// Raw: zero is CopyFromParent. Sophia draws no borders, so these
+        /// are validated and kept nowhere (t216).
+        border_pixmap: Option<u32>,
+        border_pixel: Option<u32>,
         override_redirect: Option<bool>,
         event_mask: Option<u32>,
         do_not_propagate_mask: Option<u32>,
