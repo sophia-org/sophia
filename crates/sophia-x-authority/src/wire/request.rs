@@ -36,6 +36,8 @@ pub enum XWireRequest {
         /// Raw, because zero is None in the attribute: the window stops
         /// having a cursor of its own rather than naming resource zero.
         cursor: Option<u32>,
+        /// Raw, because zero is CopyFromParent: the parent's colormap.
+        colormap: Option<u32>,
     },
     GetWindowAttributes {
         window: XResourceId,

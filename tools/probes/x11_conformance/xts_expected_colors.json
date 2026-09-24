@@ -219,9 +219,7 @@
   },
   {
     "case": "/Xlib7/XFreeColormap",
-    "purpose": 4,
-    "expected": "UNRESOLVED",
-    "reason": "XSetWindowColormap is decoded without its colormap and stores nothing; t210"
+    "purpose": 4
   },
   {
     "case": "/Xlib7/XFreeColormap",

@@ -147,9 +147,7 @@
   },
   {
     "case": "/Xlib11/ColormapNotify",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t210: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event for client2'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/ColormapNotify",

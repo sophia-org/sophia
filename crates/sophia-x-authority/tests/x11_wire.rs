@@ -67,6 +67,7 @@ include!("x11_wire/hierarchy_requests.rs");
 include!("x11_wire/client_lifetime.rs");
 include!("x11_wire/input_maps.rs");
 include!("x11_wire/reparent_notify.rs");
+include!("x11_wire/colormap_notify.rs");
 include!("x11_wire/send_event_routing.rs");
 include!("x11_wire/toplevel_placement.rs");
 include!("x11_wire/focus_routing.rs");

@@ -209,6 +209,7 @@ fn decode_change_window_attributes(
     let mut do_not_propagate_mask = None;
     let mut override_redirect = None;
     let mut cursor = None;
+    let mut colormap = None;
     let mut background_pixmap = None;
     let mut background_pixel = None;
     let mut value_cursor = X_CHANGE_WINDOW_ATTRIBUTES_REQ_LEN;
@@ -226,6 +227,7 @@ fn decode_change_window_attributes(
             9 => override_redirect = Some(value != 0),
             11 => event_mask = Some(value),
             12 => do_not_propagate_mask = Some(value),
+            13 => colormap = Some(value),
             14 => cursor = Some(value),
             _ => {}
         }
@@ -238,6 +240,7 @@ fn decode_change_window_attributes(
         event_mask,
         do_not_propagate_mask,
         cursor,
+        colormap,
     })
 }
 
