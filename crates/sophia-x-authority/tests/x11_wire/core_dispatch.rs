@@ -309,6 +309,7 @@ fn mapped_policy_toplevel_cannot_overwrite_engine_geometry() {
             y: Some(10),
             width: Some(1280),
             height: Some(1040),
+            border_width: None,
             sibling: None,
             stack_mode: None,
         },
