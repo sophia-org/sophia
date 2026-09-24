@@ -403,6 +403,10 @@ exact identity ledger.
 
 ## t064
 
+Resolved 2026-09-24: the region now rides with the surface's projection
+metadata into both constructors, proven headless
+([note](../investigations/0kkfrvlt-a-shape-input-region-never-reached-the-live-pointer-projections.md)).
+
 The t061 popup audit found that both live pointer-projection constructors in
 `production_visual_runtime/projection.rs` set `input_region` to `None`. The
 authority transport and direct-layer hit test support SHAPE input regions, but

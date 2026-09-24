@@ -66,6 +66,7 @@ fn layer_templates_cover_every_committed_surface() {
         with_metadata,
         LiveSurfaceProjectionMetadata {
             namespace: Some(NamespaceId::from_raw(3)),
+            input_region: None,
         },
     )]);
 
@@ -117,12 +118,14 @@ fn presented_projection_keeps_retired_geometry_and_excludes_unpresented_surface(
             retired,
             LiveSurfaceProjectionMetadata {
                 namespace: Some(NamespaceId::from_raw(8)),
+                input_region: None,
             },
         ),
         (
             committed_only,
             LiveSurfaceProjectionMetadata {
                 namespace: Some(NamespaceId::from_raw(9)),
+                input_region: None,
             },
         ),
     ]);
@@ -442,4 +445,138 @@ fn committed_authority_state_does_not_publish_before_output_run() {
 
     assert_eq!(runtime.committed_surfaces().len(), 1);
     assert!(runtime.input_layers().is_empty());
+}
+
+#[test]
+fn a_shaped_input_region_reaches_both_input_projections_and_punches_through() {
+    // t064: the SHAPE input region an authority commits with its surface
+    // travels with the surface's metadata into both input projections, and
+    // the hit test the session uses skips the layer outside it, so a shaped
+    // panel is click-through exactly where it says it is.
+    let panel = surface(41, 1);
+    let below = surface(42, 1);
+    let panel_geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 40,
+    };
+    let below_geometry = Rect {
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 300,
+    };
+    // The panel takes input on its left half only.
+    let region = Region::single(Rect {
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 40,
+    });
+    let metadata = BTreeMap::from([
+        (
+            panel,
+            LiveSurfaceProjectionMetadata {
+                namespace: Some(NamespaceId::from_raw(8)),
+                input_region: Some(region.clone()),
+            },
+        ),
+        (
+            below,
+            LiveSurfaceProjectionMetadata {
+                namespace: Some(NamespaceId::from_raw(8)),
+                input_region: None,
+            },
+        ),
+    ]);
+    let content = |width, height| {
+        sophia_protocol::SurfaceContentSet::singleton(
+            BufferSource::CpuBuffer { handle: 5 },
+            sophia_protocol::Size { width, height },
+        )
+    };
+
+    // The committed path, bottom to top.
+    let committed = [
+        CommittedSurfaceState {
+            surface: below,
+            committed_generation: 1,
+            geometry: below_geometry,
+            content: content(400, 300),
+            damage: Region::empty(),
+        },
+        CommittedSurfaceState {
+            surface: panel,
+            committed_generation: 1,
+            geometry: panel_geometry,
+            content: content(400, 40),
+            damage: Region::empty(),
+        },
+    ];
+    let committed_layers = committed
+        .iter()
+        .enumerate()
+        .map(|(index, state)| layer_snapshot(index, state, metadata.get(&state.surface)))
+        .collect::<Vec<_>>();
+    assert_eq!(committed_layers[1].input_region, Some(region.clone()));
+    assert_eq!(committed_layers[0].input_region, None);
+
+    // The presented path.
+    let presented_state = |surface, geometry: Rect| OutputFrameSurfaceState {
+        surface,
+        committed_generation: 1,
+        logical_geometry: geometry,
+        geometry,
+        buffer: BufferSource::CpuBuffer { handle: 5 },
+        source_size: sophia_protocol::Size {
+            width: geometry.width,
+            height: geometry.height,
+        },
+    };
+    let presented = OutputFrameDamageSnapshot {
+        output: HeadlessOutput::deterministic(),
+        surfaces: vec![
+            presented_state(below, below_geometry),
+            presented_state(panel, panel_geometry),
+        ],
+        compositor_display_list: CompositorDisplayList {
+            output: OutputId::from_raw(1),
+            commands: vec![
+                CompositorDisplayCommand::Surface { surface: below },
+                CompositorDisplayCommand::Surface { surface: panel },
+            ],
+        },
+        software_cursor: None,
+    };
+    let presented_layers = presented_input_layer_snapshots(&presented, &metadata, &[below, panel]);
+    assert_eq!(presented_layers[1].input_region, Some(region));
+    assert_eq!(presented_layers[0].input_region, None);
+
+    // Through the hit test the session routes with: inside the region the
+    // panel answers, outside it the window beneath does.
+    let pointer = |x: f64, y: f64| sophia_protocol::InputEventPacket {
+        serial: 1,
+        seat: sophia_protocol::SeatId::from_raw(1),
+        device: sophia_protocol::DeviceId::from_raw(1),
+        time_msec: 1,
+        kind: sophia_protocol::InputEventKind::PointerMotion,
+        global_position: Some(sophia_protocol::Point { x, y }),
+        target_surface: None,
+        local_position: None,
+    };
+    for layers in [&committed_layers, &presented_layers] {
+        assert_eq!(
+            sophia_engine::hit_test_scene_surface_for_input(&pointer(100.0, 20.0), layers)
+                .target_surface,
+            Some(panel),
+            "inside the region the panel answers"
+        );
+        assert_eq!(
+            sophia_engine::hit_test_scene_surface_for_input(&pointer(300.0, 20.0), layers)
+                .target_surface,
+            Some(below),
+            "outside the region the click falls through the panel"
+        );
+    }
 }
