@@ -18,7 +18,6 @@
   "/Xlib11/CirculateNotify#3": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/CirculateRequest#2": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/ClientMessage#1": "the suite retired this assertion (NOTINUSE in the source)",
-  "/Xlib11/ColormapNotify#1": "t210: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event for client2'",
   "/Xlib11/ColormapNotify#2": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/ConfigureNotify#1": "t197: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'",
   "/Xlib11/ConfigureNotify#3": "the suite retired this assertion (NOTINUSE in the source)",

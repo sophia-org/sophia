@@ -21,6 +21,15 @@ pub struct XTrueColorVisual {
     pub alpha_mask: u32,
 }
 
+/// Why a window's colormap attribute could not be set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XWindowColormapError {
+    /// The colormap does not exist.
+    Color,
+    /// The colormap's visual is not the window's.
+    Match,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XColormapError {
     DuplicateId,

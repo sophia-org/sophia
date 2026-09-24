@@ -217,6 +217,19 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[4..8], window);
             out[8] = state;
         }
+        XClientEvent::ColormapNotify {
+            sequence,
+            window,
+            colormap,
+            new,
+            state,
+        } => {
+            write_event_header(byte_order, &mut out, X_COLORMAP_NOTIFY, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], window);
+            put_u32(byte_order, &mut out[8..12], colormap);
+            out[12] = u8::from(new);
+            out[13] = state;
+        }
         XClientEvent::CreateNotify {
             sequence,
             parent,
