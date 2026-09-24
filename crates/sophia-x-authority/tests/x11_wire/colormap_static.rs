@@ -109,7 +109,9 @@ mod colormap_static {
             // Framed right, the static answers stand: cells and planes
             // cannot be allocated, read-only cells cannot be stored into,
             // and freeing what was never allocated is not an error.
-            client.write_all(&request(byte_order, 86, 0, &[default, 1])).unwrap();
+            // One colour and one plane: both halves of the word are one, so
+            // the count is not zero in either byte order.
+            client.write_all(&request(byte_order, 86, 0, &[default, 0x0001_0001])).unwrap();
             expect_error(byte_order, &read_x_record(&mut client), BAD_ALLOC, 86, "AllocColorCells");
             client.write_all(&request(byte_order, 89, 0, &[default, 0, 0, 0])).unwrap();
             expect_error(byte_order, &read_x_record(&mut client), BAD_ACCESS, 89, "StoreColors");
