@@ -330,6 +330,10 @@
     {
       "id": "cursors",
       "mandatory": true
+    },
+    {
+      "id": "fonts",
+      "mandatory": true
     }
   ],
   "features": [
@@ -1409,33 +1413,39 @@
     },
     "45": {
       "name": "X_OPEN_FONT",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fonts"
+      ]
     },
     "46": {
       "name": "X_CLOSE_FONT",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fonts"
+      ]
     },
     "47": {
       "name": "X_QUERY_FONT",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fonts"
+      ]
     },
     "48": {
       "name": "X_QUERY_TEXT_EXTENTS",
-      "cases": [],
-      "coverage_debt": "Measured by unit and wire tests: odd-length recovery in both byte orders, and the reply checked against what the raster draws. No independent case yet."
+      "cases": [
+        "fonts"
+      ]
     },
     "49": {
       "name": "X_LIST_FONTS",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fonts"
+      ]
     },
     "50": {
       "name": "X_LIST_FONTS_WITH_INFO",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "fonts"
+      ]
     },
     "51": {
       "name": "X_SET_FONT_PATH",

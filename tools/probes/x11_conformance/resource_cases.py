@@ -13,7 +13,8 @@ anything.
 from drawing_cases import (BAD_DRAWABLE, BAD_GC, BAD_FONT, BAD_MATCH, BAD_VALUE, GC_FONT,
                            client, fill, gc, pixels, pixmap)
 
-OPEN_FONT, CLOSE_FONT, QUERY_FONT = 45, 46, 47
+OPEN_FONT, CLOSE_FONT, QUERY_FONT, QUERY_TEXT_EXTENTS = 45, 46, 47, 48
+LIST_FONTS, LIST_FONTS_WITH_INFO = 49, 50
 CHANGE_WINDOW_ATTRIBUTES, CHANGE_GC = 2, 56
 POLY_TEXT8, POLY_TEXT16, IMAGE_TEXT8, IMAGE_TEXT16 = 74, 75, 76, 77
 CREATE_COLORMAP, FREE_COLORMAP, ALLOC_COLOR, ALLOC_NAMED_COLOR = 78, 79, 84, 85
@@ -261,4 +262,84 @@ def cursors(context):
         c.sync()
 
 
-CASES = {'text_primitives': text_primitives, 'colormaps': colormaps, 'cursors': cursors}
+def font_names(c, opcode, pattern, maximum):
+    """ListFonts's names, or ListFontsWithInfo's, with the info replies."""
+    value = pattern.encode('ascii')
+    sequence = c.send(opcode, c.pack('HH', maximum, len(value)) + value)
+    if opcode == LIST_FONTS:
+        reply = c.completion(sequence)
+        count, names, offset = c.u16(reply, 8), [], 32
+        for _ in range(count):
+            size = reply[offset]
+            names.append(reply[offset + 1:offset + 1 + size].decode('latin-1'))
+            offset += 1 + size
+        return names, []
+    names, infos = [], []
+    while True:
+        reply = c.completion(sequence)
+        size = reply[1]
+        if size == 0:
+            return names, infos
+        properties = c.u16(reply, 46)
+        start = 60 + properties * 8
+        names.append(reply[start:start + size].decode('latin-1'))
+        infos.append(reply)
+
+
+def fonts(context):
+    with client(context) as c:
+        fid = open_font(c, 'fixed')
+        query = c.reply(QUERY_FONT, c.pack('I', fid))
+        ascent, descent, widths = font_metrics(c, fid)
+        first, last = c.unpack('HH', query, 40)
+        assert first <= ord('A') <= last and ascent > 0, ('fixed covers ASCII', first, last)
+        assert all(widths[code] <= c.unpack('h', query, 24 + 4)[0] for code in widths), \
+            'no advance exceeds the max bounds'
+
+        # QueryTextExtents agrees with QueryFont's advances and with the box
+        # ImageText fills, through the font and through a GC naming it.
+        text = b'Hello'
+        advance = sum(widths[byte] for byte in text)
+        for fontable in (fid, text_gc(c, c.root, fid, 1, 0)):
+            reply = c.reply(QUERY_TEXT_EXTENTS, c.pack('I', fontable) + wide(text) + bytes(2),
+                            detail=1)
+            assert c.unpack('hh', reply, 8) == (ascent, descent), ('font extents', reply.hex())
+            assert c.unpack('i', reply, 16)[0] == advance, ('overall width', reply.hex())
+        width, height = advance + 4, ascent + descent + 4
+        image = pixmap(c, width, height)
+        paint = text_gc(c, image, fid, 0xffffff, 0x0000ff)
+        fill(c, image, gc(c, image, 0), (0, 0, width, height))
+        c.send(IMAGE_TEXT8, c.pack('IIhh', image, paint, 2, 2 + ascent) + text, detail=len(text))
+        covered = {(i, j) for j, row in enumerate(pixels(c, image, width, height)[0])
+                   for i, value in enumerate(row) if value}
+        assert covered == {(i, j) for i in range(2, 2 + advance) for j in range(2, 2 + ascent + descent)}, \
+            'ImageText fills the box QueryTextExtents measures'
+
+        # The lists name what OpenFont opens, honour the limit, and describe
+        # each face as QueryFont does.
+        # A name may be listed once per path element that provides it.
+        names, _ = font_names(c, LIST_FONTS, 'fixed', 100)
+        assert names and {name.lower() for name in names} == {'fixed'}, ('ListFonts fixed', names)
+        names, _ = font_names(c, LIST_FONTS, '*', 1)
+        assert len(names) == 1, ('ListFonts honours its limit', names)
+        assert font_names(c, LIST_FONTS, 'no-such-font-*', 100) == ([], [])
+        names, infos = font_names(c, LIST_FONTS_WITH_INFO, 'fixed', 100)
+        # An alias may be answered with the names it resolves to; the first
+        # face is the one OpenFont chose.
+        assert names and len(infos) == len(names), ('ListFontsWithInfo fixed', names)
+        assert c.unpack('hh', infos[0], 52) == (ascent, descent), 'the info is the face QueryFont reads'
+        assert font_names(c, LIST_FONTS_WITH_INFO, 'no-such-font-*', 100) == ([], [])
+
+        # An unknown name is a Name error; a closed font names nothing.
+        missing = b'no-such-font-name'
+        c.completion(c.send(OPEN_FONT, c.pack('IHH', c.xid(), len(missing), 0) + missing),
+                     error=BAD_NAME, opcode=OPEN_FONT)
+        c.send(CLOSE_FONT, c.pack('I', fid))
+        c.sync()
+        for opcode, body in ((QUERY_FONT, c.pack('I', fid)), (CLOSE_FONT, c.pack('I', fid)),
+                             (QUERY_TEXT_EXTENTS, c.pack('I', fid) + wide(text) + bytes(2))):
+            c.completion(c.send(opcode, body, detail=1 if opcode == QUERY_TEXT_EXTENTS else 0),
+                         error=BAD_FONT, opcode=opcode, resource=fid)
+
+
+CASES = {'fonts': fonts, 'text_primitives': text_primitives, 'colormaps': colormaps, 'cursors': cursors}
