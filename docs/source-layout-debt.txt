@@ -49,7 +49,6 @@ large crates/sophia-x-authority/src/dispatch/core/input_discovery.rs 1056
 large crates/sophia-x-authority/src/dispatch/core/windows.rs 1066
 large crates/sophia-x-authority/src/runtime/drawing.rs 1160
 large crates/sophia-x-authority/src/runtime/windows.rs 1265
-large crates/sophia-x-authority/src/software.rs 1185
 large crates/sophia-x-authority/src/software/geometry/wide_arc/spans.rs 1571
 large crates/sophia-x-authority/src/software/geometry/wide_line.rs 2158
 large crates/sophia-x-authority/src/x11_socket/routing/registry.rs 1041

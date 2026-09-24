@@ -144,3 +144,26 @@ fn a_copy_out_of_a_hidden_source_is_not_replayed() {
         XRasterFallbackCause::UnsupportedCrossDrawableCopy
     );
 }
+
+/// A double-buffered client draws into a pixmap and copies it to its
+/// window. The copy is replayed from the pixels it carried, so the window's
+/// density variants stay exact instead of falling back (t050).
+#[test]
+fn a_copy_from_a_pixmap_replays_the_pixels_it_carried() {
+    let mut fixture = InferiorsFixture::new();
+    let ns = NamespaceId::from_raw(0x5205);
+    let order = fixture.order;
+    fixture.send(ns, 1, create_window_request(order, 0x790001, 0, 0, 40, 40));
+    fixture.send(ns, 8, map_window_request(order, 0x790001));
+    fixture.send(ns, 53, create_pixmap_request(order, 24, 0x790002, 0x790001, 30, 30));
+    fixture.gc(ns, 0x790003, 0x790001, 0x00ff_0000, false);
+    fixture.gc(ns, 0x790004, 0x790001, 0x0000_00ff, false);
+    fixture.fill(ns, 0x790001, 0x790003, (0, 0, 40, 40));
+    fixture.fill(ns, 0x790002, 0x790004, (0, 0, 30, 30));
+    // The source runs past the pixmap's right edge, where nothing is copied.
+    fixture.send(ns, 62, copy_area_request(order, 0x790002, 0x790001, 0x790003, 10, 0, 0, 0, 30, 20));
+    let pixels = replayed_variant(&mut fixture, 0x790001, 9_954);
+    assert_eq!(pixels[7 * 30 + 7], 0x0000_00ff, "the copied pixels");
+    assert_eq!(pixels[7 * 30 + 22], 0x00ff_0000, "nothing past the source's edge");
+    assert_eq!(pixels[22 * 30 + 7], 0x00ff_0000, "nor below the copy");
+}

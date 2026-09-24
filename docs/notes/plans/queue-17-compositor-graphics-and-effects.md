@@ -52,3 +52,12 @@ presented-extent raster demand, CPU GBM pooling, configurable semantic cursor
 themes (theme, nominal size, named shapes, hotspots, and deterministic
 fallback), concurrent producers, and equal-mode scanout cloning. Comparison
 profiles must pin one cursor theme and size across Sophia and references.
+
+Cross-drawable `CopyArea` (done 2026-09-24): a copy from a pixmap into a
+window, which is how every double-buffered client presents, poisoned the
+window's density journal as `UnsupportedCrossDrawableCopy`. It is now
+journaled as the source pixels it wrote, inside the source's bounds, under
+PutImage's retention rule, so an unconditional copy replays exactly and
+anything else is still refused. Red first:
+`a_copy_from_a_pixmap_replays_the_pixels_it_carried` in
+`x11_wire/replay_stacking.rs` fell back before and replays exactly after.

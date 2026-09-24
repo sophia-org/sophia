@@ -53,6 +53,7 @@ impl XAuthorityRuntime {
         if width == 0 || height == 0 {
             return XAuthorityResponsePacket::accepted(transaction);
         }
+        let depth = self.drawable_depth(namespace, destination).unwrap_or(24);
         let source = self.draw_key(namespace, source);
         let (destination, destination_size, window_generation) =
             match self.draw_target(namespace, destination) {
@@ -94,9 +95,18 @@ impl XAuthorityRuntime {
                 gc: gc.clone(),
             }
         } else {
-            // Cross-drawable replay needs an explicit source-generation
-            // dependency, which the journal does not yet carry.
-            XAuthorityRasterCommand::Unsupported(XRasterUnsupportedKind::CrossDrawableCopy)
+            self.copied_pixels(
+                source,
+                Rect {
+                    x: i32::from(src_x),
+                    y: i32::from(src_y),
+                    width: i32::from(width),
+                    height: i32::from(height),
+                },
+                (i32::from(dst_x), i32::from(dst_y)),
+                depth,
+                gc,
+            )
         });
         self.finish_drawing_update(XDrawingUpdate::core_draw(
             transaction,
@@ -107,6 +117,62 @@ impl XAuthorityRuntime {
             generation,
             250,
         ))
+    }
+
+    /// A copy from another drawable, journaled as the pixels it carried.
+    ///
+    /// The destination's journal cannot replay a read of another drawable,
+    /// whose pixels have their own history, but the copy wrote exactly
+    /// these bytes: the source's pixels at the time of the copy, inside the
+    /// source's bounds. Retained as an image, it replays under the same rule
+    /// as a PutImage -- an unconditional copy is exact, and anything else is
+    /// still refused as a cross-drawable copy (t050).
+    fn copied_pixels(
+        &self,
+        source: crate::XResourceId,
+        rect: Rect,
+        (destination_x, destination_y): (i32, i32),
+        depth: u8,
+        gc: &XGraphicsContextValues,
+    ) -> XAuthorityRasterCommand {
+        let refused =
+            XAuthorityRasterCommand::Unsupported(XRasterUnsupportedKind::CrossDrawableCopy);
+        let Some(size) = self.software_buffers.buffer_size(source) else {
+            return refused;
+        };
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+        };
+        let Some(copied) = crate::software::intersect_rects(rect, bounds) else {
+            return refused;
+        };
+        let Some(bytes) = self.software_buffers.image_region(source, copied) else {
+            return refused;
+        };
+        let placed = Rect {
+            x: destination_x.saturating_add(copied.x - rect.x),
+            y: destination_y.saturating_add(copied.y - rect.y),
+            ..copied
+        };
+        let command = XAuthorityRasterCommand::from_put_image(
+            &XPutImageSemantics {
+                format: crate::image::X_IMAGE_FORMAT_Z_PIXMAP,
+                depth,
+                left_pad: 0,
+                byte_order: XByteOrder::LittleEndian,
+                gc: gc.clone(),
+            },
+            placed,
+            &bytes,
+        );
+        if matches!(command, XAuthorityRasterCommand::Unsupported(_)) {
+            refused
+        } else {
+            command
+        }
     }
 
     /// Applies one validated image in tight, little-endian 32-bit pixels.
