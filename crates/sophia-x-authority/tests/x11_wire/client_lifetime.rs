@@ -252,10 +252,14 @@ mod client_lifetime {
                     break;
                 }
             }
-            // The peer saw its window mapped inside the frame; drain that.
-            peer.write_all(&get_input_focus(byte_order)).unwrap();
+            // The peer is owed the MapNotify of its window inside the frame.
+            // A routed event is queued behind the peer's own writer, so a
+            // round trip does not drain it: wait for the notice itself, or
+            // it lands among the save-set events below.
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
             loop {
-                if read_x_record(&mut peer)[0] == 1 {
+                assert!(std::time::Instant::now() < deadline, "{byte_order:?}: the map inside the frame was never reported");
+                if read_x_record(&mut peer)[0] & 0x7f == MAP_NOTIFY {
                     break;
                 }
             }
