@@ -36,6 +36,9 @@ pub enum XRasterFallbackCause {
     /// A core drawing request drew through a clip pixmap. The mask is 1x
     /// content the journal does not project, so replay could not reproduce it.
     UnsupportedClipMask,
+    /// A core drawing request drew through a tile or stipple. The pattern is
+    /// 1x content the journal does not project, so replay would paint solid.
+    UnsupportedFillPattern,
     /// A RENDER operation wrote the drawable; compositing results have no
     /// journal representation yet, so density variants scale the 1x raster.
     UnsupportedRenderOperation,
@@ -66,6 +69,7 @@ impl XRasterFallbackCause {
             Self::UnsupportedPutImage => "unsupported_put_image",
             Self::UnsupportedCrossDrawableCopy => "unsupported_cross_drawable_copy",
             Self::UnsupportedClipMask => "unsupported_clip_mask",
+            Self::UnsupportedFillPattern => "unsupported_fill_pattern",
             Self::UnsupportedRenderOperation => "unsupported_render_operation",
             Self::UnsupportedCommand => "unsupported_command",
             Self::StaleContentGeneration => "stale_content_generation",
@@ -86,6 +90,7 @@ pub(crate) enum XRasterUnsupportedKind {
     PutImage,
     CrossDrawableCopy,
     ClipMask,
+    FillPattern,
     RenderOperation,
 }
 
@@ -95,6 +100,7 @@ impl XRasterUnsupportedKind {
             Self::PutImage => XRasterFallbackCause::UnsupportedPutImage,
             Self::CrossDrawableCopy => XRasterFallbackCause::UnsupportedCrossDrawableCopy,
             Self::ClipMask => XRasterFallbackCause::UnsupportedClipMask,
+            Self::FillPattern => XRasterFallbackCause::UnsupportedFillPattern,
             Self::RenderOperation => XRasterFallbackCause::UnsupportedRenderOperation,
         }
     }
@@ -232,7 +238,8 @@ impl XAuthorityRasterCommand {
     /// The command, or its refusal when it drew through a clip pixmap.
     ///
     /// Replay applies the clip list but has no projection of a mask, so a
-    /// masked command poisons the journal rather than replaying unmasked.
+    /// masked command poisons the journal rather than replaying unmasked;
+    /// the same holds for a tile or stipple.
     pub(crate) fn unless_clip_masked(self) -> Self {
         let gc = match &self {
             Self::Paint { gc, .. }
@@ -245,7 +252,20 @@ impl XAuthorityRasterCommand {
             Self::Clear { .. } | Self::Unsupported(_) => None,
         };
         if gc.is_some_and(|gc| gc.clip_mask.is_some()) {
-            Self::Unsupported(XRasterUnsupportedKind::ClipMask)
+            return Self::Unsupported(XRasterUnsupportedKind::ClipMask);
+        }
+        // Nor does it hold a tile's or a stipple's pixels. A copy and an
+        // image do not read the fill style, and ImageText is always solid.
+        let patterned = match &self {
+            Self::Paint { gc, .. }
+            | Self::Lines { gc, .. }
+            | Self::Segments { gc, .. }
+            | Self::Rectangles { gc, .. } => gc.fill_style != 0,
+            Self::Text { draws, gc } => gc.fill_style != 0 && draws.iter().any(|draw| !draw.image),
+            _ => false,
+        };
+        if patterned {
+            Self::Unsupported(XRasterUnsupportedKind::FillPattern)
         } else {
             self
         }
