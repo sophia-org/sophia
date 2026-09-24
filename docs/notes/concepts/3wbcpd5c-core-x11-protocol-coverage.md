@@ -77,13 +77,8 @@ it lets one client destroy another's resources.
 
 ### Colormaps
 
-| Op | Request | What it is for | Who calls it |
-| --- | --- | --- | --- |
-| 83 | ListInstalledColormaps | Which colormaps are installed on a screen | Colormap-aware toolkits on pseudo-colour displays |
-
-The rest of the colormap family is decoded and answered as a TrueColor visual
-must. This one is left because it owes a *reply* rather than an answer, and
-inventing a list is worse than not decoding it.
+The whole colormap family is decoded and answered as a TrueColor visual
+must; ListInstalledColormaps, the last of it, is in the decided table below.
 
 ### Unassigned
 
@@ -99,6 +94,7 @@ which is the use that made the question concrete rather than theoretical.
 | --- | --- | --- | --- |
 | 41 | WarpPointer | Serve it | Every XTS test's harness positions the pointer with it, and a client that asks for the pointer to move means it. The move happens and `QueryPointer` agrees. |
 | 115 | ForceScreenSaver | Serve it, as a no-op that validates | Every XTS test's startup calls `XResetScreenSaver`. This authority blanks nothing and keeps no idle timer, so both defined modes are accepted and move no state, and a mode outside the pair is the Value error the protocol names. |
+| 83 | ListInstalledColormaps | Serve it | The reply is the one installed colormap, the default, which is not an invented list: the setup advertises one installed map at most and at least, and GetWindowAttributes already reports every window's colormap installed. With it (t169) the rest of the family got the protocol's own framing, so a request one unit off is BadLength before it is anything else, and CopyColormapAndFree became a new colormap on the source's visual, a static visual having no allocations to move. |
 
 **What WarpPointer does not do**, recorded because the gap is real rather
 than hypothetical: a warp must generate motion and crossing events as if

@@ -256,6 +256,10 @@
       "mandatory": true
     },
     {
+      "id": "colormap_static_answers",
+      "mandatory": true
+    },
+    {
       "id": "warp_pointer",
       "mandatory": true
     }
@@ -771,6 +775,23 @@
       ],
       "cases": [
         "force_screen_saver"
+      ]
+    },
+    {
+      "name": "Colormap requests on a static visual are framed exactly, copied onto the source visual, and list the default as installed",
+      "accepted_core_opcodes": [
+        80,
+        81,
+        82,
+        83,
+        86,
+        87,
+        88,
+        89,
+        90
+      ],
+      "cases": [
+        "colormap_static_answers"
       ]
     },
     {
@@ -1386,18 +1407,21 @@
     },
     "80": {
       "name": "X_COPY_COLORMAP_AND_FREE",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "81": {
       "name": "X_INSTALL_COLORMAP",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "82": {
       "name": "X_UNINSTALL_COLORMAP",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "84": {
       "name": "X_ALLOC_COLOR",
@@ -1411,28 +1435,33 @@
     },
     "86": {
       "name": "X_ALLOC_COLOR_CELLS",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "87": {
       "name": "X_ALLOC_COLOR_PLANES",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "88": {
       "name": "X_FREE_COLORS",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "89": {
       "name": "X_STORE_COLORS",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "90": {
       "name": "X_STORE_NAMED_COLOR",
-      "cases": [],
-      "coverage_debt": "Answered as a TrueColor visual must: no allocable cells, a read-only colormap, installation a no-op. Decoded so the answer is the protocol error rather than BadRequest. Covered by a wire test; no independent case yet."
+      "cases": [
+        "colormap_static_answers"
+      ]
     },
     "91": {
       "name": "X_QUERY_COLORS",
@@ -1533,6 +1562,12 @@
         "warp_pointer"
       ],
       "coverage_debt": "The move and its refusals are covered. The motion and crossing events a warp owes are not generated: this authority has no path from a request to the input fan-out, which only real input drives."
+    },
+    "83": {
+      "name": "X_LIST_INSTALLED_COLORMAPS",
+      "cases": [
+        "colormap_static_answers"
+      ]
     }
   }
 }

@@ -866,6 +866,39 @@ def force_screen_saver(context):
         c.sync()
 
 
+def colormap_static_answers(context):
+    with client(context) as c:
+        default, copy = c.default_colormap, c.xid()
+        # A request one unit long is BadLength before it is anything else:
+        # the protocol frames each colormap request exactly.
+        for opcode, body in ((81, c.pack('II', default, 0)), (82, c.pack('II', default, 0)),
+                             (83, c.pack('II', c.root, 0)), (86, c.pack('III', default, 0, 0)),
+                             (87, c.pack('IIII', default, 0, 0, 0)), (80, c.pack('III', copy, default, 0)),
+                             (89, c.pack('II', default, 0)), (90, c.pack('IIII', default, 0, 0, 0))):
+            c.completion(c.send(opcode, body), error=16, opcode=opcode)
+        c.completion(c.send(88, c.pack('I', default)), error=16, opcode=88)
+        # Framed right, a static visual answers: no cells or planes to
+        # allocate, no writable cells to store into, nothing to free.
+        c.completion(c.send(86, c.pack('IHBB', default, 1, 0, 0)), error=11, opcode=86)
+        c.completion(c.send(87, c.pack('IHBBB', default, 1, 0, 0, 0)), error=11, opcode=87)
+        c.completion(c.send(89, c.pack('IIHHHBx', default, 0, 0, 0, 0, 7)), error=10, opcode=89)
+        c.completion(c.send(90, c.pack('IIHxx', default, 0, 3) + b'red\x00', detail=7), error=10, opcode=90)
+        c.send(88, c.pack('III', default, 0, 1))
+        c.send(81, c.pack('I', default))
+        c.send(82, c.pack('I', default))
+        c.sync()
+        # CopyColormapAndFree is a new colormap on the source's visual, usable
+        # and the client's to name once; ListInstalledColormaps is the default.
+        c.send(80, c.pack('II', copy, default))
+        assert c.reply(84, c.pack('IHHHxx', copy, 0x8000, 0x4000, 0x2000))[0] == 1
+        c.completion(c.send(80, c.pack('II', copy, default)), error=14, opcode=80, resource=copy)
+        c.completion(c.send(80, c.pack('II', 0x7ff00001, default)), error=14, opcode=80)
+        reply = c.reply(83, c.pack('I', c.root))
+        assert c.u16(reply, 8) == 1 and c.u32(reply, 32) == default, reply.hex()
+        c.completion(c.send(83, c.pack('I', 0x7ff00001)), error=3, opcode=83)
+        c.sync()
+
+
 def warp_pointer(context):
     with client(context) as c:
         root, window = c.root, c.window()
@@ -913,6 +946,7 @@ def warp_pointer(context):
 
 CASES = {'setup': setup,
          'force_screen_saver': force_screen_saver,
+         'colormap_static_answers': colormap_static_answers,
          'warp_pointer': warp_pointer,
          **{name: setup_containment for name in ('setup_empty', 'setup_truncated_prefix',
              'setup_truncated_auth', 'setup_invalid_order', 'setup_version_containment')},

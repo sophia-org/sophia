@@ -2052,23 +2052,42 @@ fn a_true_color_server_answers_the_colormap_family_rather_than_refusing_it() {
     );
     assert!(created.outputs.is_empty(), "the colormap is created");
 
-    // Read-write allocation has no cells to give; storing into a read-only
-    // colormap is denied; installing and freeing are accepted no-ops.
-    let cases: [(u8, Option<XErrorCode>); 8] = [
-        (80, Some(XErrorCode::BadAlloc)),
-        (86, Some(XErrorCode::BadAlloc)),
-        (87, Some(XErrorCode::BadAlloc)),
-        (89, Some(XErrorCode::BadAccess)),
-        (90, Some(XErrorCode::BadAccess)),
-        (81, None),
-        (82, None),
-        (88, None),
+    // Each request framed as the protocol frames it (t169). Read-write
+    // allocation has no cells to give; storing into a read-only colormap is
+    // denied; installing and freeing are accepted no-ops; a copy is a new
+    // colormap on the source's visual, since a static visual has no
+    // allocations to move.
+    let order = XByteOrder::LittleEndian;
+    let body = |words: &[u32]| {
+        let mut out = Vec::new();
+        push_u32(&mut out, order, colormap);
+        for word in words {
+            push_u32(&mut out, order, *word);
+        }
+        out
+    };
+    let mut copy = Vec::new();
+    push_u32(&mut copy, order, 0x2201e3);
+    push_u32(&mut copy, order, colormap);
+    let mut named = body(&[0]);
+    push_u16(&mut named, order, 3);
+    push_u16(&mut named, order, 0);
+    named.extend_from_slice(b"red\0");
+    let cases: [(u8, Vec<u8>, Option<XErrorCode>); 8] = [
+        (80, copy, None),
+        (86, body(&[1]), Some(XErrorCode::BadAlloc)),
+        (87, body(&[1, 0]), Some(XErrorCode::BadAlloc)),
+        (89, body(&[0, 0, 0]), Some(XErrorCode::BadAccess)),
+        (90, named, Some(XErrorCode::BadAccess)),
+        (81, body(&[]), None),
+        (82, body(&[]), None),
+        (88, body(&[0, 1]), None),
     ];
-    for (index, (opcode, expected)) in cases.into_iter().enumerate() {
+    for (index, (opcode, request_body, expected)) in cases.into_iter().enumerate() {
         let sequence = u16::try_from(index).unwrap() + 3;
         let mut bytes = vec![opcode, 0];
-        push_u16(&mut bytes, XByteOrder::LittleEndian, 2);
-        push_u32(&mut bytes, XByteOrder::LittleEndian, colormap);
+        push_u16(&mut bytes, XByteOrder::LittleEndian, 1 + u16::try_from(request_body.len() / 4).unwrap());
+        bytes.extend_from_slice(&request_body);
         let request = decode_x11_core_request(
             context(namespace, u64::from(sequence) + 1600, XByteOrder::LittleEndian),
             &bytes,
@@ -2096,8 +2115,9 @@ fn a_true_color_server_answers_the_colormap_family_rather_than_refusing_it() {
 
     // An unknown colormap is named as such, ahead of the family's own answer.
     let mut bytes = vec![86u8, 0];
-    push_u16(&mut bytes, XByteOrder::LittleEndian, 2);
+    push_u16(&mut bytes, XByteOrder::LittleEndian, 3);
     push_u32(&mut bytes, XByteOrder::LittleEndian, 0x2201ff);
+    push_u32(&mut bytes, XByteOrder::LittleEndian, 1);
     let request =
         decode_x11_core_request(context(namespace, 1700, XByteOrder::LittleEndian), &bytes).unwrap();
     let refused = dispatch_x11_wire_request(
