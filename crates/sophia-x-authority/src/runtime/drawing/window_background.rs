@@ -10,32 +10,45 @@ impl XAuthorityRuntime {
         background: crate::XWindowBackground,
     ) -> Result<(), XAuthorityRuntimeError> {
         self.validate_window_access(namespace, window)?;
+        match background {
+            crate::XWindowBackground::Pixmap(pixmap) => {
+                let size = self.pixmap_size(namespace, pixmap)?;
+                self.software_buffers.capture_window_tile(window, pixmap, size);
+            }
+            _ => self.software_buffers.forget_window_tile(window),
+        }
         self.window_backgrounds.insert(window, background);
         Ok(())
     }
 
     /// The background actually used for a window, following ParentRelative up
-    /// the tree. A chain that never resolves is undefined, which is what an
-    /// unrooted ParentRelative means.
-    fn resolved_background(&self, window: crate::XResourceId) -> crate::XWindowBackground {
+    /// the tree, with the window it was taken from and that window's origin
+    /// in this one's coordinates, which is where a tile is aligned. A chain
+    /// that never resolves is undefined, which is what an unrooted
+    /// ParentRelative means.
+    fn resolved_background(
+        &self,
+        window: crate::XResourceId,
+    ) -> (crate::XWindowBackground, crate::XResourceId, (i32, i32)) {
         let mut candidate = window;
+        let mut origin = (0, 0);
         for _ in 0..64 {
             match self.window_backgrounds.get(&candidate) {
-                None => return crate::XWindowBackground::Undefined,
+                None => return (crate::XWindowBackground::Undefined, candidate, origin),
                 Some(crate::XWindowBackground::ParentRelative) => {
-                    let Some(parent) = self.windows.get(candidate).map(|record| record.parent)
-                    else {
-                        return crate::XWindowBackground::Undefined;
+                    let Some(record) = self.windows.get(candidate) else {
+                        return (crate::XWindowBackground::Undefined, candidate, origin);
                     };
-                    if parent == candidate {
-                        return crate::XWindowBackground::Undefined;
+                    if record.parent == candidate {
+                        return (crate::XWindowBackground::Undefined, candidate, origin);
                     }
-                    candidate = parent;
+                    origin = (origin.0 - record.geometry.x, origin.1 - record.geometry.y);
+                    candidate = record.parent;
                 }
-                Some(background) => return *background,
+                Some(background) => return (*background, candidate, origin),
             }
         }
-        crate::XWindowBackground::Undefined
+        (crate::XWindowBackground::Undefined, candidate, origin)
     }
 
     /// The window and every descendant of it that is viewable, parents first.
@@ -75,14 +88,15 @@ impl XAuthorityRuntime {
             width: record.geometry.width,
             height: record.geometry.height,
         };
-        let (pixel, tile) = match self.resolved_background(window) {
+        let (background, owner, origin) = self.resolved_background(window);
+        let (pixel, tile) = match background {
             // Undefined is not black: the window is not painted, and whatever
             // was on the screen underneath it shows through.
             crate::XWindowBackground::Undefined | crate::XWindowBackground::ParentRelative => {
                 return;
             }
             crate::XWindowBackground::Pixel(pixel) => (pixel, None),
-            crate::XWindowBackground::Pixmap(pixmap) => (0, Some(pixmap)),
+            crate::XWindowBackground::Pixmap(_) => (0, Some((owner, origin))),
         };
         self.software_buffers
             .paint_window_background(window, size, pixel, tile);

@@ -15,25 +15,26 @@ impl XSoftwareBufferStore {
         drawable: XResourceId,
         size: Size,
         pixel: u32,
-        tile: Option<XResourceId>,
+        tile: Option<(XResourceId, (i32, i32))>,
     ) -> Option<()> {
-        // The tile is copied out first: painting borrows the destination
-        // mutably, and a window may legitimately be backed by a pixmap this
-        // same store holds.
-        let tile = tile.and_then(|tile| {
-            self.buffers.get(&tile).map(|buffer| {
+        // The tile is the one captured for the window the background comes
+        // from, which the pixmap may have outlived. It is copied out first:
+        // painting borrows the destination mutably.
+        let tile = tile.and_then(|(owner, origin)| {
+            self.window_tiles.get(&owner).map(|buffer| {
                 (
                     buffer.bytes.as_ref().clone(),
                     buffer.size,
                     usize::try_from(buffer.stride).unwrap_or(0),
+                    origin,
                 )
             })
         });
         let handle = self.allocate_handle();
         let (buffer, _) = self.ensure(drawable, size, handle)?;
         match tile.as_ref() {
-            Some((bytes, tile_size, tile_stride)) => {
-                raster_ops::tile_solid(buffer, bytes, *tile_size, *tile_stride);
+            Some((bytes, tile_size, tile_stride, origin)) => {
+                raster_ops::tile_solid(buffer, bytes, *tile_size, *tile_stride, *origin);
             }
             None => raster_ops::fill_solid(buffer, pixel),
         }
@@ -60,5 +61,30 @@ impl XSoftwareBufferStore {
     /// reading that window and wrong for compositing it over its parent.
     pub fn has_backing(&self, drawable: XResourceId) -> bool {
         self.buffers.contains_key(&drawable)
+    }
+
+    /// Keep a window's background tile as the pixmap is now. The protocol
+    /// lets the pixmap be freed at once, and later drawing into it leaves
+    /// the background undefined, so a copy is what the window keeps. The
+    /// copy shares the pixmap's bytes until either is written.
+    pub(crate) fn capture_window_tile(
+        &mut self,
+        window: XResourceId,
+        pixmap: XResourceId,
+        size: Size,
+    ) {
+        let handle = self.allocate_handle();
+        let snapshot = match self.buffers.get(&pixmap) {
+            Some(buffer) => buffer.clone(),
+            None => match self.ensure(pixmap, size, handle) {
+                Some((buffer, _)) => buffer.clone(),
+                None => return,
+            },
+        };
+        self.window_tiles.insert(window, snapshot);
+    }
+
+    pub(crate) fn forget_window_tile(&mut self, window: XResourceId) {
+        self.window_tiles.remove(&window);
     }
 }
