@@ -471,10 +471,13 @@ usage: cargo xtask <command>
       Run only the device-hidden M3 acceptance harness; missing cases fail the gate.
 
   check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET
-        [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json [--xts-scenario=NAME]]
+        [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json [--xts-scenario=NAME]
+        [--xts-timeout=SECONDS] [--xts-admit-xtest=yes|no]]
         [--x11bench-bin=/X11BENCH --x11bench-expected=/TESTS.json [--x11bench-timeout=SECONDS]]
       Run the X11 conformance profiles through the probe's own entry on the committed
       source; XTS5 and x11bench are each BLOCKED unless their checkout and manifest are supplied.
+      --xts-admit-xtest=yes starts the XTS host with XTEST admitted, for a scenario whose
+      purposes inject input (the event section).
 
   check m6-evidence --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS]
         [--core-report=/PATH/report.json] [--canonical-report=/PATH/report.json]
