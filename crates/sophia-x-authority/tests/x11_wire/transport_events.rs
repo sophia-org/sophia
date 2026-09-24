@@ -342,6 +342,9 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
             event: XClientEvent::ClientMessage {
                 sequence: 0,
                 bytes: unmap,
+                destination: XResourceId::new(0x200001, 1),
+                event_mask: 0x0018_0000,
+                propagate: false,
             },
         }
     );
@@ -357,6 +360,9 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
             event: XClientEvent::ClientMessage {
                 sequence: 0,
                 bytes: extension_event,
+                destination: XResourceId::new(0x200001, 1),
+                event_mask: 0x0018_0000,
+                propagate: false,
             },
         }
     );

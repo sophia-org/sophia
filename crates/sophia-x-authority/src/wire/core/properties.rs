@@ -223,12 +223,16 @@ fn decode_send_event(
         // event from one the server generated, and what toolkits read as
         // send_event. The SelectionNotify form below marks itself.
         event[0] |= 0x80;
+        let event_mask = context.byte_order.u32(&bytes[8..12]);
         return Ok(XWireRequest::SendSelectionNotify {
             destination,
-            event_mask: context.byte_order.u32(&bytes[8..12]),
+            event_mask,
             event: XClientEvent::ClientMessage {
                 sequence: 0,
                 bytes: event,
+                destination,
+                event_mask,
+                propagate: bytes[1] != 0,
             },
         });
     }
