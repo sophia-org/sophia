@@ -1,0 +1,8 @@
+{
+  "/Xlib9/XFillPolygon/XFillPolygon": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XFillPolygon/XFillPolygon#53": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XFillRectangle/XFillRectangle": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XFillRectangle/XFillRectangle#43": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XFillRectangles/XFillRectangles": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XFillRectangles/XFillRectangles#44": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+}

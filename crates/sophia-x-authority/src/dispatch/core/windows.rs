@@ -209,15 +209,26 @@ fn dispatch_core_window_request(
                         && let Err(error) =
                             runtime.set_window_cursor(context.namespace, window, cursor)
                     {
+                        let mut refusal = x_error_from_runtime(
+                            error,
+                            context.sequence,
+                            context.major_opcode,
+                            0,
+                            cursor,
+                        );
+                        // A name that is no cursor is a Cursor error, which
+                        // the generic mapping would call a Window.
+                        if matches!(
+                            error,
+                            XAuthorityRuntimeError::UnknownResource
+                                | XAuthorityRuntimeError::InvalidResource
+                                | XAuthorityRuntimeError::WrongResourceKind
+                        ) {
+                            refusal.code = XErrorCode::BadCursor;
+                        }
                         return Handled(XDispatchResult {
                             response: None,
-                            outputs: vec![XClientOutput::Error(x_error_from_runtime(
-                                error,
-                                context.sequence,
-                                context.major_opcode,
-                                0,
-                                cursor,
-                            ))],
+                            outputs: vec![XClientOutput::Error(refusal)],
                             metadata_candidates: Vec::new(),
                         });
                     }

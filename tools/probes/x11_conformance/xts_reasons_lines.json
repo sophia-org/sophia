@@ -1,0 +1,13 @@
+{
+  "/Xlib9/XDrawLine/XDrawLine": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawLine/XDrawLine#26": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'",
+  "/Xlib9/XDrawLine/XDrawLine#91": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XDrawLines/XDrawLines": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawLines/XDrawLines#103": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XDrawLines/XDrawLines#2": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XDrawLines/XDrawLines#31": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'",
+  "/Xlib9/XDrawSegments/XDrawSegments": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawSegments/XDrawSegments#2": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XDrawSegments/XDrawSegments#27": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'",
+  "/Xlib9/XDrawSegments/XDrawSegments#92": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+}

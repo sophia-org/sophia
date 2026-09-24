@@ -1,0 +1,588 @@
+[
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 6,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 7,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 35
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 37
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 44
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 45
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 46
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 47,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 48,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 49
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 50
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 51
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 52
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 53,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XFillPolygon/XFillPolygon",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 35
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 37
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XFillRectangle/XFillRectangle",
+    "purpose": 43,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 35
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 37
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XFillRectangles/XFillRectangles",
+    "purpose": 44,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  }
+]

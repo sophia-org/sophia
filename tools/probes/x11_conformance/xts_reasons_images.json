@@ -1,0 +1,13 @@
+{
+  "/Xlib9/XGetImage": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XGetImage#10": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XGetImage#7": "by decision: Sophia composes whole client buffers and draws no window borders (docs/x11-compatibility-matrix.md, SHAPE row), so every window's border width is 0 and a rectangle reaching into the border lies outside the window, which the protocol makes a Match error",
+  "/Xlib9/XGetImage#8": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XGetImage#9": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XGetSubImage": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XGetSubImage#10": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XGetSubImage#7": "by decision: Sophia composes whole client buffers and draws no window borders (docs/x11-compatibility-matrix.md, SHAPE row), so every window's border width is 0 and a rectangle reaching into the border lies outside the window, which the protocol makes a Match error",
+  "/Xlib9/XGetSubImage#8": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XGetSubImage#9": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XPutImage/XPutImage#40": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+}

@@ -137,6 +137,8 @@ fn decode_create_cursor(
         cursor: XResourceId::new(u64::from(cursor), 1),
         source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         mask: (mask != 0).then(|| XResourceId::new(u64::from(mask), 1)),
+        hotspot_x: context.byte_order.u16(&bytes[28..30]),
+        hotspot_y: context.byte_order.u16(&bytes[30..32]),
     })
 }
 
@@ -156,6 +158,8 @@ fn decode_create_glyph_cursor(
         cursor: XResourceId::new(u64::from(cursor), 1),
         source_font: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         mask_font: (mask_font != 0).then(|| XResourceId::new(u64::from(mask_font), 1)),
+        source_char: context.byte_order.u16(&bytes[16..18]),
+        mask_char: context.byte_order.u16(&bytes[18..20]),
     })
 }
 

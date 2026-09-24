@@ -1,0 +1,1266 @@
+[
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 26,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 28,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 29,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 30,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 32,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 33,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 34,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 35,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 36,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 37,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 44
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 45,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 46,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 47,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 48,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 49
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 50
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 51
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 52
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 53
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 56
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 57
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 58
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 59
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 60
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 61
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 62
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 63
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 64,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 65
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 66
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 67
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 68
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 69
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 70
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 71
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 72
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 73
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 74
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 75
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 76
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 77
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 78
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 79
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 80
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 81
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 82
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 83
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 84
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 85,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 86,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 87
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 88
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 89
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 90
+  },
+  {
+    "case": "/Xlib9/XDrawLine/XDrawLine",
+    "purpose": 91,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 2,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 8,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 31,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 33,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 34,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 35,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 37,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 38,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 39,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 40,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 41,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 42,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 44
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 45
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 46
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 47
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 48
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 49
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 50,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 51,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 52,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 53,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 56
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 57
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 58
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 59
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 60
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 61
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 62
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 63
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 64
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 65
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 66
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 67
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 68
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 69,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 70
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 71
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 72
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 73
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 74
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 75
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 76
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 77
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 78
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 79
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 80
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 81
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 82
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 83
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 84,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 85
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 86
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 87
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 88
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 89
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 90
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 91
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 92
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 93
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 94
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 95
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 96
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 97,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 98,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 99
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 100
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 101
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 102
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 103,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XDrawLines/XDrawLines",
+    "purpose": 104
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 2,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 27,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test'"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 29,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 30,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 31,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 33,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 34,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 35,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 36,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 37,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 38,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 44
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 45
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 46,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 47,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 48,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 49,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 50
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 51
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 52
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 53
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 56
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 57
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 58
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 59
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 60
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 61
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 62
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 63
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 64
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 65,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 66
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 67
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 68
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 69
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 70
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 71
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 72
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 73
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 74
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 75
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 76
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 77
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 78
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 79
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 80
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 81
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 82
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 83
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 84
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 85
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 86,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 87,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 88
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 89
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 90
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 91
+  },
+  {
+    "case": "/Xlib9/XDrawSegments/XDrawSegments",
+    "purpose": 92,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  }
+]

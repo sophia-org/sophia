@@ -574,6 +574,8 @@ fn x11_core_decoder_captures_font_requests() {
             cursor: XResourceId::new(0x220050, 1),
             source_font: XResourceId::new(0x220040, 1),
             mask_font: Some(XResourceId::new(0x220041, 1)),
+            source_char: 1,
+            mask_char: 2,
         }
     );
 
