@@ -1455,3 +1455,53 @@ fn x11_put_image_preserves_a_non_gray_xrgb_palette_without_channel_swaps() {
     assert_eq!(snapshot.stride, 24);
     assert_eq!(snapshot.bytes.as_slice(), palette);
 }
+
+/// A root readback shows what covers the root for the reader's namespace:
+/// its own windows, never another namespace's. Before t185 the readback
+/// composited every namespace's windows, so a confined client could read
+/// another's pixels off the root.
+#[test]
+fn a_root_readback_shows_only_the_readers_namespace() {
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let reader = NamespaceId::from_raw(0x5001);
+    let owner = NamespaceId::from_raw(0x5002);
+    let order = XByteOrder::LittleEndian;
+    let mut send = |ns: NamespaceId, seq: u16, op: u8, bytes: Vec<u8>, runtime: &mut XAuthorityRuntime| {
+        let request = decode_x11_core_request(context(ns, u64::from(seq), order), &bytes).unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(ns, seq, order, op),
+            request,
+            runtime,
+            &mut atoms,
+            &mut properties,
+        )
+    };
+    send(owner, 1, 1, create_window_request(order, 0x400001, 10, 10, 20, 20), &mut runtime);
+    send(owner, 2, 8, map_window_request(order, 0x400001), &mut runtime);
+    send(
+        owner,
+        3,
+        55,
+        create_gc_values_request(order, 0x400002, 0x400001, 3, u32::MAX, 0x00c0_ffee, 0, 0, 0),
+        &mut runtime,
+    );
+    send(
+        owner,
+        4,
+        70,
+        poly_fill_rectangle_request(order, 0x400001, 0x400002, &[(0, 0, 20, 20)]),
+        &mut runtime,
+    );
+    let pixel = |result: XDispatchResult| match result.outputs.as_slice() {
+        [XClientOutput::Reply(XClientReply::GetImage { data, .. })] => {
+            u32::from_le_bytes(data[..4].try_into().unwrap())
+        }
+        other => panic!("unexpected GetImage result: {other:?}"),
+    };
+    let own = send(owner, 5, 73, get_image_request(order, 2, 0x20, 15, 15, 1, 1, u32::MAX), &mut runtime);
+    assert_eq!(pixel(own), 0x00c0_ffee, "a namespace reads its own window off the root");
+    let other = send(reader, 6, 73, get_image_request(order, 2, 0x20, 15, 15, 1, 1, u32::MAX), &mut runtime);
+    assert_eq!(pixel(other), 0, "and another namespace's window is not there to read");
+}
