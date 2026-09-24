@@ -620,7 +620,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             }
             let admission = admission_lease.as_ref().map(|lease| lease.context());
             let (registration, channels) = match routing
-                .register_client_with_admission(client, admission)
+                .register_client_in_namespace(client, admission, Some(namespace))
             {
                 Ok(registration) => registration,
                 Err(error) => {

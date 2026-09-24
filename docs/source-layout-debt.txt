@@ -33,7 +33,7 @@ large crates/sophia-session/src/live_session/wm/public_policy.rs 3053
 large crates/sophia-session/tests/support/private_input_session.rs 2808
 large crates/sophia-x-authority/src/dispatch.rs 1143
 large crates/sophia-x-authority/tests/authority/resources.rs 1614
-large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs 5144
+large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs 5146
 large crates/sophia-x-authority/tests/x11_wire/core_dispatch.rs 1670
 large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5703
 large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1775
