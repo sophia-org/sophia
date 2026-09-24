@@ -272,6 +272,11 @@ fn x11_dispatch_poly_fill_rectangle_emits_core_draw_transaction() {
         &mut properties,
     );
 
+    // A background of None leaves a cleared area alone, so the window is
+    // given a pixel to clear to.
+    runtime
+        .set_window_background_pixel(namespace, XResourceId::new(0x220101, 1), 0)
+        .unwrap();
     let clear = decode_x11_core_request(
         context(namespace, 601, XByteOrder::LittleEndian),
         &clear_area_request(XByteOrder::LittleEndian, false, 0x220101, 4, 5, 33, 22),

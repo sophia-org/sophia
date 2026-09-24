@@ -10,32 +10,51 @@ impl XAuthorityRuntime {
         background: crate::XWindowBackground,
     ) -> Result<(), XAuthorityRuntimeError> {
         self.validate_window_access(namespace, window)?;
+        match background {
+            crate::XWindowBackground::Pixmap(pixmap) => {
+                let size = self.pixmap_size(namespace, pixmap)?;
+                self.software_buffers.capture_window_tile(window, pixmap, size);
+            }
+            _ => self.software_buffers.forget_window_tile(window),
+        }
         self.window_backgrounds.insert(window, background);
         Ok(())
     }
 
     /// The background actually used for a window, following ParentRelative up
-    /// the tree. A chain that never resolves is undefined, which is what an
-    /// unrooted ParentRelative means.
-    fn resolved_background(&self, window: crate::XResourceId) -> crate::XWindowBackground {
+    /// the tree, with the window it was taken from and that window's origin
+    /// in this one's coordinates, which is where a tile is aligned. A chain
+    /// that never resolves is undefined, which is what an unrooted
+    /// ParentRelative means.
+    fn resolved_background(
+        &self,
+        window: crate::XResourceId,
+    ) -> (crate::XWindowBackground, crate::XResourceId, (i32, i32)) {
         let mut candidate = window;
+        let mut origin = (0, 0);
         for _ in 0..64 {
             match self.window_backgrounds.get(&candidate) {
-                None => return crate::XWindowBackground::Undefined,
+                None => return (crate::XWindowBackground::Undefined, candidate, origin),
                 Some(crate::XWindowBackground::ParentRelative) => {
-                    let Some(parent) = self.windows.get(candidate).map(|record| record.parent)
-                    else {
-                        return crate::XWindowBackground::Undefined;
+                    let Some(record) = self.windows.get(candidate) else {
+                        return (crate::XWindowBackground::Undefined, candidate, origin);
                     };
-                    if parent == candidate {
-                        return crate::XWindowBackground::Undefined;
+                    if record.parent == candidate {
+                        return (crate::XWindowBackground::Undefined, candidate, origin);
                     }
-                    candidate = parent;
+                    // A window's inside begins past its border, so the
+                    // parent's origin is its position and border width back.
+                    let border = i32::from(self.window_border_width(candidate));
+                    origin = (
+                        origin.0 - record.geometry.x - border,
+                        origin.1 - record.geometry.y - border,
+                    );
+                    candidate = record.parent;
                 }
-                Some(background) => return *background,
+                Some(background) => return (*background, candidate, origin),
             }
         }
-        crate::XWindowBackground::Undefined
+        (crate::XWindowBackground::Undefined, candidate, origin)
     }
 
     /// The window and every descendant of it that is viewable, parents first.
@@ -75,16 +94,74 @@ impl XAuthorityRuntime {
             width: record.geometry.width,
             height: record.geometry.height,
         };
-        let (pixel, tile) = match self.resolved_background(window) {
+        let (background, owner, origin) = self.resolved_background(window);
+        let (pixel, tile) = match background {
             // Undefined is not black: the window is not painted, and whatever
             // was on the screen underneath it shows through.
             crate::XWindowBackground::Undefined | crate::XWindowBackground::ParentRelative => {
                 return;
             }
             crate::XWindowBackground::Pixel(pixel) => (pixel, None),
-            crate::XWindowBackground::Pixmap(pixmap) => (0, Some(pixmap)),
+            crate::XWindowBackground::Pixmap(_) => (0, Some((owner, origin))),
         };
         self.software_buffers
             .paint_window_background(window, size, pixel, tile);
+    }
+
+    /// ClearArea: the area restored to the background the window has now --
+    /// its pixel, or its tile from the origin it is aligned with -- and left
+    /// alone where the background is None, as the protocol says.
+    pub fn apply_clear_background(
+        &mut self,
+        transaction: TransactionId,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        area: Rect,
+    ) -> XAuthorityResponsePacket {
+        if let Err(error) = self.validate_window_access(namespace, window) {
+            return XAuthorityResponsePacket::rejected(transaction, error);
+        }
+        let (background, owner, origin) = self.resolved_background(window);
+        match background {
+            crate::XWindowBackground::Pixel(pixel) => {
+                self.apply_clear_with_pixel(transaction, namespace, window, Region::single(area), pixel)
+            }
+            crate::XWindowBackground::Pixmap(_) => {
+                let Some(record) = self.windows.get(window) else {
+                    return XAuthorityResponsePacket::rejected(
+                        transaction,
+                        XAuthorityRuntimeError::UnknownResource,
+                    );
+                };
+                let size = Size {
+                    width: record.geometry.width,
+                    height: record.geometry.height,
+                };
+                let generation = record.generation;
+                let Some(buffer) =
+                    self.software_buffers
+                        .clear_tiled(window, size, area, (owner, origin))
+                else {
+                    return XAuthorityResponsePacket::accepted(transaction);
+                };
+                let handle = buffer.handle();
+                // The journal holds no pattern pixels.
+                self.pending_raster_command = Some(XAuthorityRasterCommand::Unsupported(
+                    XRasterUnsupportedKind::FillPattern,
+                ));
+                self.finish_drawing_update(XDrawingUpdate::core_draw(
+                    transaction,
+                    namespace,
+                    window,
+                    handle,
+                    Region::single(area),
+                    generation,
+                    250,
+                ))
+            }
+            crate::XWindowBackground::Undefined | crate::XWindowBackground::ParentRelative => {
+                XAuthorityResponsePacket::accepted(transaction)
+            }
+        }
     }
 }

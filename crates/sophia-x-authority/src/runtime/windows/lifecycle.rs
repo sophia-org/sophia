@@ -304,6 +304,14 @@ impl XAuthorityRuntime {
              };
              if let Some(surface) = self.windows.apply(event)? {
                  surfaces.push(surface);
+                 // As MapWindow: a subwindow made viewable with no remembered
+                 // contents is painted with its background, and its viewable
+                 // inferiors with theirs.
+                 if self.window_map_state(namespace, window) == Ok(crate::XMapState::Viewable) {
+                     for target in self.viewable_subtree(window) {
+                         self.paint_window_background(target);
+                     }
+                 }
              }
          }
          Ok(surfaces)

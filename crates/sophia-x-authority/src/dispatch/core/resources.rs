@@ -243,16 +243,7 @@ fn dispatch_core_resource_request(
                 width: clear_width,
                 height: clear_height,
             };
-            let response = match runtime.window_background_pixel(context.namespace, window) {
-                Ok(pixel) => runtime.apply_clear_with_pixel(
-                    transaction,
-                    context.namespace,
-                    window,
-                    Region::single(area),
-                    pixel,
-                ),
-                Err(error) => XAuthorityResponsePacket::rejected(transaction, error),
-            };
+            let response = runtime.apply_clear_background(transaction, context.namespace, window, area);
             let outputs = match response.outcome {
                 XAuthorityResponseOutcome::Rejected(error) => {
                     vec![XClientOutput::Error(x_error_from_runtime(

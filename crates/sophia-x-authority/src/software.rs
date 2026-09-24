@@ -62,6 +62,8 @@ pub(crate) struct XSoftwareBufferStore {
     buffers: BTreeMap<XResourceId, XAuthorityCpuBufferSnapshot>,
     presentations: BTreeMap<XResourceId, XAuthorityCpuBufferSnapshot>,
     export_damage: BTreeMap<XResourceId, XPixmapExportDamage>,
+    /// Each window's background tile, as the pixmap was when it was set.
+    window_tiles: BTreeMap<XResourceId, XAuthorityCpuBufferSnapshot>,
 }
 
 impl XSoftwareBufferStore {
@@ -82,6 +84,7 @@ impl XSoftwareBufferStore {
     pub fn remove(&mut self, drawable: XResourceId) -> Option<XAuthorityCpuBufferSnapshot> {
         self.presentations.remove(&drawable);
         self.export_damage.remove(&drawable);
+        self.window_tiles.remove(&drawable);
         self.buffers.remove(&drawable)
     }
 
