@@ -51,6 +51,7 @@ include!("x11_wire/map_hierarchy.rs");
 include!("x11_wire/output_reservation_socket.rs");
 include!("x11_wire/routed_service.rs");
 include!("x11_wire/flooding_client.rs");
+include!("x11_wire/big_requests.rs");
 include!("x11_wire/focus_routing.rs");
 include!("x11_wire/pointer_queries.rs");
 include!("x11_wire/popup_pointer_target.rs");

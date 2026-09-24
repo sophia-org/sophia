@@ -107,7 +107,8 @@ pub fn x_error_from_wire_parse(
     let (code, resource_id) = match error {
         XWireParseError::Truncated { .. }
         | XWireParseError::InvalidLength { .. }
-        | XWireParseError::TrailingBytes(_) => (XErrorCode::BadLength, 0),
+        | XWireParseError::TrailingBytes(_)
+        | XWireParseError::BeyondMaximumLength { .. } => (XErrorCode::BadLength, 0),
         XWireParseError::UnknownOpcode(_) => (XErrorCode::BadRequest, 0),
         XWireParseError::InvalidPropertyMode(value)
         | XWireParseError::InvalidPropertyFormat(value)

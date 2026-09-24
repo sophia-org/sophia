@@ -101,7 +101,8 @@ stop rather than at its next fifty-millisecond slice.
       committed candidate. The rejoined purposes do not pass, for a reason
       this task never owned: the suite frames `TOO_LONG` as a BIG-REQUESTS
       request because the authority advertises the extension, and the
-      reader does not frame the extended length. That is t174.
+      reader did not frame the extended length. That was t174, resolved in
+      [3lf04ev3](3lf04ev3-big-requests-is-advertised-but-never-framed-an-extended-length-request-is-read-as-thousands-of-small-ones.md).
 
 ## Connections
 
