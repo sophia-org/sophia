@@ -71,7 +71,9 @@ shorter under BIG-REQUESTS, now that their too-long halves pass.
 - [x] `sophia-x-authority` suite and clippy under the gate's isolation.
 - [x] The core profile reads PASS, 130 of 130, the new case in both orders.
 - [x] XTS: seventeen rows retire, five stay by decision.
-- [ ] The gate on the committed candidate.
+- [x] The gate on the committed candidate
+      (`.artifacts/x11-profile-595ac2b0-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 322 passed and 67 declared.
 - [ ] The rest of t166: the window hierarchy and active grab, connection
       lifetime, and the input maps, each its own seam.
 
