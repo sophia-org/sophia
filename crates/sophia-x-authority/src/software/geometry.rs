@@ -19,3 +19,4 @@ pub(crate) mod dash;
 pub(crate) mod fill_arc;
 pub(crate) mod polygon;
 pub(crate) mod wide_line;
+pub(crate) mod zero_line;

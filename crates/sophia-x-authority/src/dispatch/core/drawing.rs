@@ -312,8 +312,41 @@ fn dispatch_core_drawing_request(
                     ));
                 }
             };
-            // Stroked as the polyline the curve traces, so a stroked arc and a
-            // filled one are built from the same points and cannot disagree.
+            // A solid thin arc is `miZeroPolyArc`'s; an arc too large for its
+            // walker, which `mi` hands to `miarc.c`, is the thin polyline of
+            // its chords until that is ported.
+            if values.line_width == 0 && values.line_style == crate::X_LINE_SOLID {
+                let mut spans: Vec<Rect> = crate::software::geometry::zero_line::arcs(&arcs)
+                    .into_iter()
+                    .map(|(x, y)| Rect {
+                        x,
+                        y,
+                        width: 1,
+                        height: 1,
+                    })
+                    .collect();
+                for arc in arcs
+                    .iter()
+                    .filter(|arc| !crate::software::geometry::zero_line::can_zero_arc(arc))
+                {
+                    let points = crate::software::geometry::arc::polyline(*arc);
+                    spans.extend(
+                        crate::software::geometry::zero_line::polyline(&points, false)
+                            .into_iter()
+                            .map(|(x, y)| Rect {
+                                x,
+                                y,
+                                width: 1,
+                                height: 1,
+                            }),
+                    );
+                }
+                return Handled(core_rectangle_fill(
+                    context, runtime, drawable, &spans, &values,
+                ));
+            }
+            // Otherwise stroked as the polyline the curve traces: a dashed thin
+            // arc or a wide one, until `miarc.c` is ported (t179).
             let segments: Vec<(crate::XPoint, crate::XPoint)> = arcs
                 .iter()
                 .flat_map(|arc| {

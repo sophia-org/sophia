@@ -51,7 +51,7 @@ the X.Org font packages. See that directory's README for provenance.
 
 ## X.Org X server `mi` — The Open Group and Digital Equipment Corporation
 
-Three files are ports of the X server's machine-independent drawing code,
+Four files are ports of the X server's machine-independent drawing code,
 from `gitlab.freedesktop.org/xorg/xserver`; each names the routines it ports:
 
 - `crates/sophia-x-authority/src/software/geometry/wide_line.rs`:
@@ -68,6 +68,13 @@ from `gitlab.freedesktop.org/xorg/xserver`; each names the routines it ports:
   `mi/mifillarc.c` and `mi/mifillarc.h` (author Bob Scheifler, MIT X
   Consortium). Copyright 1989, 1998 The Open Group, under the first notice
   below alone.
+- `crates/sophia-x-authority/src/software/geometry/zero_line.rs`:
+  `miZeroLine` from `mi/mizerline.c` (Ken Whaley; copyright 1987, 1998 The
+  Open Group and 1987 Digital Equipment Corporation), the octant and bias
+  macros of `include/miline.h` (copyright 1994, 1998 The Open Group) with
+  `DEFAULTZEROLINEBIAS` from `mi/miscrinit.c`, and `miZeroArcSetup` and
+  `miZeroArcPts` from `mi/mizerarc.c` and `include/mizerarc.h` (Bob
+  Scheifler; copyright 1989, 1998 The Open Group).
 
 The notices are reproduced here with the wide-line files' copyright lines;
 the other files' differ only in their years.
