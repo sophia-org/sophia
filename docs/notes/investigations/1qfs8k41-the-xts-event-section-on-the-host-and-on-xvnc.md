@@ -76,6 +76,34 @@ these:
    1-3). Which of the crossing purposes stay red after the warp repair is
    read from the rerun below.
 
+## The rerun hung, and why
+
+With XTEST admitted and the warp repaired, every case that moved the
+pointer read NORESULT: TET killed the client after its two-minute
+allowance, each time right after "Generate ... event". A raw wire
+client against the host reproduced it in one request: after a WarpPointer
+(or a plain XTEST motion) the next QueryPointer never answered. The
+conformance host's main loop accepted connections and reaped workers but
+never called the broker's `route_pending`, nor shared the broker's input
+authority with the runtime, which the production service and the routed
+test fixture both do. An injection armed a completion nobody could
+produce, and the injecting client waited on it for ever. The private
+session host, which the XTEST probe profile exercises, drives routing;
+the conformance host never had an injection completed until now. Fixed by
+running the host on `run_x_server_frontend_routed_until_stopped`.
+
+Unhung, the same client saw its pointer move (QueryPointer agreed) and
+nothing delivered: an XTEST button or motion was planned against the
+*focused* surface, and with none it was dropped, because which toplevel a
+point falls in is the Engine's answer and the authority does not invent
+one. On a host where clients place their own toplevels
+(`with_client_toplevel_placement`, t189) the authority is the one that
+placed them, so it now resolves the topmost viewable toplevel containing
+the point (`client_placed_toplevel_at`) and plans pointer events against
+it; a suite's plain, unfocused window is told of a press over it. In a
+session nothing changes: there the Engine puts the focused surface under
+the pointer.
+
 ## Status
 
 The three repairs are on `xts-events/t196` with wire tests that were red
