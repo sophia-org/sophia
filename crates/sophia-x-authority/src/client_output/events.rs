@@ -450,7 +450,7 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_u32(byte_order, &mut out[16..20], time);
             put_u32(byte_order, &mut out[20..24], selection_time);
         }
-        XClientEvent::ClientMessage { sequence, bytes } => {
+        XClientEvent::ClientMessage { sequence, bytes, .. } => {
             out = bytes.to_vec();
             put_u16(byte_order, &mut out[2..4], sequence);
         }

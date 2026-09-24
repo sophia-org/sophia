@@ -637,6 +637,9 @@ fn spawn_x11_control_writer(
                         XClientEvent::ClientMessage {
                             sequence: event_sequence,
                             bytes,
+                            destination: window,
+                            event_mask: 0,
+                            propagate: false,
                         },
                     )]
                 }

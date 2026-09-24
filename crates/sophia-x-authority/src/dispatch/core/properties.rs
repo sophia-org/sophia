@@ -464,6 +464,33 @@ fn dispatch_core_property_request(
                     event_mask,
                     mut event,
                 } => {
+                    // The ClientMessage form's two special destinations
+                    // (t182): PointerWindow (0) is the window the pointer is
+                    // in, the root when this authority knows of none;
+                    // InputFocus (1) is the focus window, or the pointer's
+                    // when the focus is PointerRoot or None. The resolved
+                    // window rides in the record for the router.
+                    let destination = match (&mut event, destination.local.raw()) {
+                        (
+                            XClientEvent::ClientMessage {
+                                destination: resolved,
+                                ..
+                            },
+                            special @ (0 | 1),
+                        ) => {
+                            let root = crate::XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
+                            let pointer = runtime.pointer_window(context.namespace).unwrap_or(root);
+                            let target = if special == 1 {
+                                let (focus, _) = runtime.input_focus(context.namespace);
+                                if focus.local.raw() > 1 { focus } else { pointer }
+                            } else {
+                                pointer
+                            };
+                            *resolved = target;
+                            target
+                        }
+                        _ => destination,
+                    };
                     let requestor = match &event {
                         XClientEvent::SelectionNotify { requestor, .. } => Some(*requestor),
                         XClientEvent::ClientMessage { .. } => None,

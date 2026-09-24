@@ -7,6 +7,7 @@ fn route_x11_dispatch_protocol_outputs(
     output: &mut XDispatchResult,
 ) -> Result<(), X11SetupSocketError> {
     capture_clipboard_proxy_payload(state, routing, namespace, output)?;
+    route_sent_events(state, routing, client, output)?;
     route_selection_event(state, routing, client, output)?;
     route_property_events(routing, client, output)?;
     route_mapping_notify_events(routing, namespace, client, output)?;
@@ -623,6 +624,71 @@ fn capture_clipboard_proxy_payload(
         })?;
     trace_selection_transfer("portal_source_captured", true);
     output.outputs.remove(index);
+    Ok(())
+}
+
+/// A SendEvent's ClientMessage goes to whoever it is for (t182): with no
+/// mask, the destination's owner; with one, every client selecting any of
+/// those events on the destination, climbing the ancestors when the request
+/// propagates and nobody on the window selected. The sender keeps its copy
+/// only when it is among them; before this, the copy was all anyone got.
+#[cfg(unix)]
+fn route_sent_events(
+    state: &X11CoreSocketServerState,
+    routing: &XServerFrontendRouteRegistry,
+    client: XServerFrontendClientId,
+    output: &mut XDispatchResult,
+) -> Result<(), X11SetupSocketError> {
+    let sent = output
+        .outputs
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| match item {
+            crate::XClientOutput::Event(
+                event @ XClientEvent::ClientMessage {
+                    destination,
+                    event_mask,
+                    propagate,
+                    ..
+                },
+            ) => Some((index, *destination, *event_mask, *propagate, *event)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut remove = Vec::new();
+    for (index, destination, event_mask, propagate, event) in sent {
+        let recipients = if event_mask == 0 {
+            state.client_for_resource(destination)?.into_iter().collect::<Vec<_>>()
+        } else {
+            let mut window = Some(destination);
+            let mut found = Vec::new();
+            while let Some(candidate) = window {
+                found = routing.core_event_subscribers(candidate, event_mask).map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to inspect X11 send-event subscriptions: {error}"
+                    ))
+                })?;
+                if !found.is_empty() || !propagate {
+                    break;
+                }
+                window = routing.window_parent(candidate).map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to resolve an X11 send-event parent: {error}"
+                    ))
+                })?;
+            }
+            found
+        };
+        for recipient in recipients.iter().copied().filter(|recipient| *recipient != client) {
+            route_x11_peer_event(routing, recipient, event, "a sent X11 event")?;
+        }
+        if !recipients.contains(&client) {
+            remove.push(index);
+        }
+    }
+    for index in remove.into_iter().rev() {
+        output.outputs.remove(index);
+    }
     Ok(())
 }
 

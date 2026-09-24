@@ -276,6 +276,14 @@ pub enum XClientEvent {
     ClientMessage {
         sequence: u16,
         bytes: [u8; X_CLIENT_OUTPUT_RECORD_LEN],
+        /// Where the SendEvent aimed it, resolved from PointerWindow or
+        /// InputFocus, and how (t182): with no mask the destination's owner
+        /// is owed it, with one every client selecting those events there,
+        /// climbing the ancestors when `propagate` is set and nobody on the
+        /// window selected. None of this reaches the wire; the record does.
+        destination: XResourceId,
+        event_mask: u32,
+        propagate: bool,
     },
     /// `XFixesSelectionNotify`: a selection's ownership changed.
     ///

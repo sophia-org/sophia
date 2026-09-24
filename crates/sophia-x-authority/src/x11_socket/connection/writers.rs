@@ -494,6 +494,7 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         | XClientEvent::ConfigureNotify { sequence, .. }
         | XClientEvent::MappingNotify { sequence, .. }
         | XClientEvent::ReparentNotify { sequence, .. }
+        | XClientEvent::ClientMessage { sequence, .. }
         | XClientEvent::CirculateNotify { sequence, .. }
         | XClientEvent::CirculateRequest { sequence, .. }
         | XClientEvent::VisibilityNotify { sequence, .. }
