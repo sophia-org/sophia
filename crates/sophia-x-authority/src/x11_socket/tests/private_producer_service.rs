@@ -415,6 +415,10 @@ fn delivery_cell(
 }
 
 /// One 32-byte core event, read whole within the bound.
+/// A bounded wait for one event. An event that is owed is waited for up to
+/// fifteen seconds (t190): the private producer's turn runs on threads a
+/// loaded machine schedules late, and two seconds was once not enough under
+/// a parallel suite. A wait that expects nothing stays short.
 fn read_event(client: &mut UnixStream, seconds: u64) -> Option<[u8; 32]> {
     read_within(client, 32, seconds).map(|bytes| {
         let mut event = [0u8; 32];
@@ -574,12 +578,12 @@ fn focus_then_a_press_and_release_submitted_through_the_services_own_producers_r
         )
         .expect("the order accepts the control");
     let focus_ack = ack_for(&launched.acks, 96001);
-    let focus_in = read_event(&mut client, 5);
+    let focus_in = read_event(&mut client, 15);
     // THE PRESS, THROUGH THE REAL PRODUCER, SERVED BY A LATER TURN.
     let press_position = ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96010), 272, true))
         .expect("the order accepts the press");
-    let press = read_event(&mut client, 5);
+    let press = read_event(&mut client, 15);
     let press_cell = delivery_cell(&launched.registry, 96010);
     let press_diagnostic = (
         press_cell.as_ref().and_then(|cell| cell.answer()),
@@ -591,7 +595,7 @@ fn focus_then_a_press_and_release_submitted_through_the_services_own_producers_r
     let release_submitted = ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96011), 272, false))
         .map_err(|refusal| format!("{refusal:?}"));
-    let release = read_event(&mut client, 5);
+    let release = read_event(&mut client, 15);
     let release_cell = delivery_cell(&launched.registry, 96011);
     // THE HISTORY ACROSS TURNS, AGAIN WITH ANOTHER BUTTON: button 2
     // (BTN_MIDDLE, evdev 274) goes down in one turn and comes up in a later
@@ -604,7 +608,7 @@ fn focus_then_a_press_and_release_submitted_through_the_services_own_producers_r
         let submitted = ingress
             .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(delivery), button, pressed))
             .map_err(|refusal| format!("{refusal:?}"));
-        let event = read_event(&mut client, 5);
+        let event = read_event(&mut client, 15);
         chord.push((submitted.map(|_| ()), event));
     }
     let press_answer = press_cell.as_ref().and_then(|cell| {
@@ -753,7 +757,7 @@ fn a_press_before_any_focus_change_goes_by_the_pointer_and_focus_replays_nothing
     ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96110), 272, true))
         .expect("the order accepts the press");
-    let first_press = read_event(&mut client, 3);
+    let first_press = read_event(&mut client, 15);
     let cell = delivery_cell(&launched.registry, 96110);
     // The applied state arrives afterwards; the delivered press is not
     // replayed and its answer does not change.
@@ -770,13 +774,13 @@ fn a_press_before_any_focus_change_goes_by_the_pointer_and_focus_replays_nothing
         )
         .expect("the order accepts the control");
     let focus_ack = ack_for(&launched.acks, 96101);
-    let focus_in = read_event(&mut client, 5);
+    let focus_in = read_event(&mut client, 15);
     let still_nothing = read_event(&mut client, 2);
     let answered_after_focus = cell.as_ref().and_then(|cell| cell.answer());
     let fresh = ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96111), 272, false))
         .map_err(|refusal| format!("{refusal:?}"));
-    let release = read_event(&mut client, 3);
+    let release = read_event(&mut client, 15);
     let fresh_answer = delivery_cell(&launched.registry, 96111).and_then(|cell| {
         waited_for(|| cell.answer().is_some());
         cell.answer()

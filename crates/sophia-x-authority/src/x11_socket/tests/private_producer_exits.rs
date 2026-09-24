@@ -146,7 +146,7 @@ fn held_press(
     ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(delivery), 272, true))
         .expect("accepted");
-    let press = read_event(&mut client, 5);
+    let press = read_event(&mut client, 15);
     assert_eq!(press, Some(expected_button_event(true, sequence, window, 1)), "the press was delivered");
     let cell = delivery_cell(&launched.registry, delivery);
     assert!(cell.is_some_and(|cell| waited_for(|| cell.answer().is_some())), "and answered");
@@ -473,7 +473,7 @@ fn a_submission_is_refused_the_moment_the_exit_closes_admission_before_anything_
     ingress
         .submit(&lease, button_to(surface, XAuthorityInputDeliveryId::from_raw(96150), 272, true))
         .expect("accepted while open");
-    assert_eq!(read_event(&mut client, 5), Some(expected_button_event(true, sequence, window, 1)));
+    assert_eq!(read_event(&mut client, 15), Some(expected_button_event(true, sequence, window, 1)));
     let release = pause_after_admission_closed(&launched.registry);
     let (acknowledgement, acknowledged) = sync_channel(1);
     drop(acknowledged);

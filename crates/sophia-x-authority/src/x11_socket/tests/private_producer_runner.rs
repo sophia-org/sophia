@@ -51,7 +51,7 @@ fn a_key_through_the_service_before_any_pointer_observation_carries_the_prepared
     };
     ingress.submit(&lease, key).expect("the order accepts the key");
     let original = delivery_cell(&launched.registry, 97010).expect("the original admitted cell");
-    let on_wire = read_event(&mut client, 2);
+    let on_wire = read_event(&mut client, 15);
     let cell = delivery_cell(&launched.registry, 97010);
     let answer = cell.as_ref().and_then(|cell| cell.answer());
     let registry = launched.registry.clone();

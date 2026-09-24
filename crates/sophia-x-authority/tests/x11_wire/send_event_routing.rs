@@ -91,6 +91,29 @@ mod send_event_routing {
         out
     }
 
+    /// Routed events are queued behind a peer's writer, so a round trip does
+    /// not drain them: read until the message carrying `data` arrives, and
+    /// return every sent message seen on the way, which is how a message
+    /// nobody was owed is shown to have not arrived (it would have come
+    /// before the one that was).
+    fn messages_until(byte_order: XByteOrder, client: &mut std::os::unix::net::UnixStream, data: u32) -> Vec<[u8; 32]> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut seen = Vec::new();
+        loop {
+            assert!(std::time::Instant::now() < deadline, "{byte_order:?}: the message {data} never came: {seen:?}");
+            let record = read_x_record(client);
+            assert!(record[0] >= 2, "{byte_order:?}: not an event: {record:?}");
+            if record[0] & 0x7f != CLIENT_MESSAGE {
+                continue;
+            }
+            let datum = read_u32(byte_order, &record[12..16]);
+            seen.push(record);
+            if datum == data {
+                return seen;
+            }
+        }
+    }
+
     fn assert_message(byte_order: XByteOrder, record: &[u8; 32], window: u32, data: u32, what: &str) {
         assert_eq!(record[0], CLIENT_MESSAGE | 0x80, "{byte_order:?}: {what}: marked as sent: {record:?}");
         assert_eq!(record[1], 32, "{byte_order:?}: {what}: format");
@@ -111,20 +134,25 @@ mod send_event_routing {
             sender.write_all(&create_window_request(byte_order, own, 0, 0, 40, 40)).unwrap();
             sync(byte_order, &mut sender);
 
-            // To a peer's window: the peer reads it, the sender does not.
+            // To a peer's window: the peer reads it, the sender does not (its
+            // own copy is local to the request, so its round trip is exact).
             sender.write_all(&send_event(byte_order, false, window, 0, window, 7)).unwrap();
             assert!(sync(byte_order, &mut sender).is_empty(), "{byte_order:?}: the sender keeps no copy");
-            let owed = sync(byte_order, &mut owner);
+            let owed = messages_until(byte_order, &mut owner, 7);
             assert_eq!(owed.len(), 1, "{byte_order:?}: {owed:?}");
             assert_message(byte_order, &owed[0], window, 7, "to a peer");
-            // To its own window: the sender is the owner and reads it.
+            // To its own window: the sender is the owner and reads it, and the
+            // peer is not told; a second message to the peer proves the
+            // first was never owed, since it would have arrived before it.
             sender.write_all(&send_event(byte_order, false, own, 0, own, 8)).unwrap();
             let owed = sync(byte_order, &mut sender);
             assert_eq!(owed.len(), 1, "{byte_order:?}: {owed:?}");
             assert_message(byte_order, &owed[0], own, 8, "to itself");
-            assert!(sync(byte_order, &mut owner).is_empty(), "{byte_order:?}: not the peer's");
+            sender.write_all(&send_event(byte_order, false, window, 0, window, 9)).unwrap();
+            let owed = messages_until(byte_order, &mut owner, 9);
+            assert_eq!(owed.len(), 1, "{byte_order:?}: not the peer's: {owed:?}");
             // To an unknown window: BadWindow, as before.
-            sender.write_all(&send_event(byte_order, false, 0x7ff0_0001, 0, window, 9)).unwrap();
+            sender.write_all(&send_event(byte_order, false, 0x7ff0_0001, 0, window, 10)).unwrap();
             let record = read_x_record(&mut sender);
             assert_eq!((record[0], record[1], record[10]), (0, 3, 25), "{byte_order:?}: {record:?}");
             drop(sender);
@@ -146,19 +174,21 @@ mod send_event_routing {
             watcher.write_all(&change_window_event_mask_request(byte_order, ROOT, SUBSTRUCTURE_NOTIFY)).unwrap();
             sync(byte_order, &mut watcher);
 
-            // Selected on the window: delivered. Not selected: nobody, no error.
-            sender.write_all(&send_event(byte_order, false, window, STRUCTURE_NOTIFY, window, 1)).unwrap();
+            // Not selected: nobody, no error. Then selected on the window:
+            // delivered, and first of the two to arrive, so the first never
+            // did.
             sender.write_all(&send_event(byte_order, false, window, EXPOSURE, window, 2)).unwrap();
+            sender.write_all(&send_event(byte_order, false, window, STRUCTURE_NOTIFY, window, 1)).unwrap();
             assert!(sync(byte_order, &mut sender).is_empty(), "{byte_order:?}: the sender selected nothing");
-            let owed = sync(byte_order, &mut watcher);
+            let owed = messages_until(byte_order, &mut watcher, 1);
             assert_eq!(owed.len(), 1, "{byte_order:?}: {owed:?}");
             assert_message(byte_order, &owed[0], window, 1, "selected on the window");
-            // Nobody on the window, propagate: the root's selector reads it.
-            // Without propagate: nobody.
-            sender.write_all(&send_event(byte_order, true, window, SUBSTRUCTURE_NOTIFY, window, 3)).unwrap();
+            // Nobody on the window and no propagate: nobody. With propagate:
+            // the root's selector reads it, and only it.
             sender.write_all(&send_event(byte_order, false, window, SUBSTRUCTURE_NOTIFY, window, 4)).unwrap();
+            sender.write_all(&send_event(byte_order, true, window, SUBSTRUCTURE_NOTIFY, window, 3)).unwrap();
             assert!(sync(byte_order, &mut sender).is_empty(), "{byte_order:?}");
-            let owed = sync(byte_order, &mut watcher);
+            let owed = messages_until(byte_order, &mut watcher, 3);
             assert_eq!(owed.len(), 1, "{byte_order:?}: {owed:?}");
             assert_message(byte_order, &owed[0], window, 3, "propagated to the root");
             drop(sender);
