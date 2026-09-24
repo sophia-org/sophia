@@ -37,8 +37,9 @@ Engine, WM or shell policy.
 
 ## Validation and remaining work
 
-Candidate branch: `colormaps/t212`, based on `d8eb04f6`. Main-tree gates and
-the committed candidate identity remain to be recorded before completion.
+Candidate branch: `colormaps/t212`, signed implementation commit `f4d51797`,
+based on `d8eb04f6`. Main-tree gates on the combined t217/t212 candidate remain
+to be recorded before completion.
 
 The new socket regression passes in both byte orders. It covers client
 separation, repeated allocations, recombined channel values, partial frees,
@@ -63,12 +64,19 @@ retained suite/reference differences, not remaining untracked allocations.
 The first full test run hit sandbox socket denials. The unrestricted rerun
 exposed one old test asserting FreeColors was a no-op; that expectation and
 the independent core probe were corrected. Final authority tests pass,
-including all 509 wire tests. Initial native-input and XTEST profiles passed
+2030 tests in total, including all 509 wire tests. Initial native-input and XTEST profiles passed
 40/40 and 44/44; the core profile failed only its two old no-op expectations.
-The final core rerun and main-tree XTS gates remain required. Clippy passes
-with warnings denied. The source-layout audit still fails on pre-existing
-unreviewed files, including `tests/x11_wire/support_extensions.rs` at 1502
-lines; this repair does not change that file or its exception policy.
+The final core rerun on `f4d51797` passes all 162 executions; evidence is in
+the main checkout at `.artifacts/conformance-core-f4d51797/report.json`.
+Authority, negative-control, clippy and raw layout logs are retained under
+`.artifacts/t212-f4d51797/`. Main-tree XTS gates remain required. Clippy passes
+with warnings denied. The raw source-layout script reports standing debt;
+`cargo xtask check layout` reconciles those reports against the debt ledger.
+This change raises the input-discovery dispatch allowance from 1077 to 1089
+lines and the wire-request allowance from 1347 to 1351 for the new request
+variant and dispatch arm. Allocation accounting remains in `runtime/color.rs`;
+the existing public dispatch facade is preserved.
+The reconciled layout gate passes with those two ledger updates.
 
 These checks use private sockets and software rendering. They make no physical
 session acceptance claim.
