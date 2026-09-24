@@ -32,6 +32,7 @@ include!("runtime/drawing/copy_plane.rs");
 include!("runtime/drawing/image_ops.rs");
 include!("runtime/drawing/window_background.rs");
 include!("runtime/drawing/include_inferiors.rs");
+include!("runtime/drawing/presentation.rs");
 include!("runtime/render_resources.rs");
 include!("runtime/dmabuf_capabilities.rs");
 include!("runtime/device_connections.rs");
