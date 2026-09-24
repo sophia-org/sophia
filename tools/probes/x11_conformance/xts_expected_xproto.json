@@ -1433,9 +1433,7 @@
   },
   {
     "case": "/Xproto/pSendEvent",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t168: an event delivered by SendEvent must carry bit 7 of its type set"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pSendEvent",
