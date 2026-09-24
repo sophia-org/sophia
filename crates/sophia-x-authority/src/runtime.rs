@@ -925,6 +925,14 @@ impl XAuthorityRuntime {
                     self.resources
                         .lookup(request.namespace, *owner, XResourceKind::Window)?;
                 }
+                // "If the specified time is earlier than the current
+                // last-change time of the specified selection ... the request
+                // has no effect on the selection."
+                if let Some(previous) = self.selections.current_owner_for_selection(*selection)
+                    && *timestamp < previous.timestamp
+                {
+                    return Ok(response);
+                }
                 let update = self.selections.apply_event_in_namespace(
                     XSelectionEvent {
                         selection: *selection,

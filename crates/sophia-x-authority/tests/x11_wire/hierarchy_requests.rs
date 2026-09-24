@@ -21,6 +21,7 @@ mod hierarchy_requests {
 
     const BAD_VALUE: u8 = 2;
     const BAD_WINDOW: u8 = 3;
+    const BAD_ATOM: u8 = 5;
     const BAD_MATCH: u8 = 8;
     const UNMAP_NOTIFY: u8 = 18;
     const CREATE_NOTIFY: u8 = 16;
@@ -364,6 +365,138 @@ mod hierarchy_requests {
         }
     }
 
+    /// The rest of the window refusals and answers the windows scenario
+    /// wanted (t224): configuring the root is a silent no-op, an unknown
+    /// window is BadWindow before a zero size is BadValue, an InputOutput
+    /// child of an InputOnly parent is BadMatch while CopyFromParent under
+    /// one is InputOnly and reports depth 0, and the attribute reply's
+    /// backing-planes default to all ones (XTS Xlib4 XMoveWindow 5,
+    /// XResizeWindow 5 and 13, XCreateSimpleWindow 7 and 10, Xlib5
+    /// XGetGeometry 2).
+    #[test]
+    fn the_root_is_configured_by_nobody_and_input_only_parents_have_input_only_children() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (mut client, socket_path, server) = served("root-and-input-only", byte_order);
+            let expect = |client: &mut std::os::unix::net::UnixStream, code: u8, opcode: u8, what: &str| {
+                let record = read_x_record(client);
+                assert_eq!((record[0], record[1], record[10]), (0, code, opcode), "{byte_order:?}: {what}: {record:?}");
+            };
+            // Move and resize the root: nothing happens, nothing is said.
+            client.write_all(&configure_stack_mode_request(byte_order, X_SETUP_DEFAULT_ROOT, 0)).unwrap();
+            let mut resize_root = vec![12, 0];
+            push_u16(&mut resize_root, byte_order, 5);
+            push_u32(&mut resize_root, byte_order, X_SETUP_DEFAULT_ROOT);
+            push_u16(&mut resize_root, byte_order, 0xC);
+            push_u16(&mut resize_root, byte_order, 0);
+            push_u32(&mut resize_root, byte_order, 10);
+            push_u32(&mut resize_root, byte_order, 10);
+            client.write_all(&resize_root).unwrap();
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            assert!(events_until_reply(byte_order, &mut client).is_empty(), "{byte_order:?}: the root answers nothing");
+            // An unknown window with a zero size: the window first.
+            let mut zero_unknown = vec![12, 0];
+            push_u16(&mut zero_unknown, byte_order, 4);
+            push_u32(&mut zero_unknown, byte_order, X_SETUP_DEFAULT_RESOURCE_ID_BASE + 0x7f0);
+            push_u16(&mut zero_unknown, byte_order, 1 << 2);
+            push_u16(&mut zero_unknown, byte_order, 0);
+            push_u32(&mut zero_unknown, byte_order, 0);
+            client.write_all(&zero_unknown).unwrap();
+            expect(&mut client, BAD_WINDOW, 12, "BadWindow before BadValue");
+
+            // An InputOnly parent: class 2 at 22..24, depth 0.
+            let parent = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 1;
+            let mut input_only_parent = create_window_request(byte_order, parent, 0, 0, 100, 100);
+            input_only_parent[1] = 0;
+            input_only_parent[22..24].copy_from_slice(&match byte_order {
+                XByteOrder::LittleEndian => 2u16.to_le_bytes(),
+                XByteOrder::BigEndian => 2u16.to_be_bytes(),
+            });
+            client.write_all(&input_only_parent).unwrap();
+            // An explicit InputOutput child (class 1) is BadMatch.
+            let child = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 2;
+            let mut output_child = create_window_request_with_parent(byte_order, child, parent, 0, 0, 10, 10);
+            output_child[1] = 0;
+            client.write_all(&output_child).unwrap();
+            expect(&mut client, BAD_MATCH, 1, "InputOutput under InputOnly");
+            // CopyFromParent (class 0) is InputOnly: depth 0 in GetGeometry,
+            // and drawing into it is refused as for any InputOnly window.
+            let mut copied_child = create_window_request_with_parent(byte_order, child, parent, 0, 0, 10, 10);
+            copied_child[1] = 0;
+            copied_child[22..24].copy_from_slice(&[0, 0]);
+            client.write_all(&copied_child).unwrap();
+            client.write_all(&resource_request(byte_order, 14, child)).unwrap();
+            let reply = read_x_reply(&mut client, byte_order);
+            assert_eq!(reply[1], 0, "{byte_order:?}: an InputOnly window has depth 0");
+            client.write_all(&resource_request(byte_order, 14, parent)).unwrap();
+            let reply = read_x_reply(&mut client, byte_order);
+            assert_eq!(reply[1], 0, "{byte_order:?}: the parent too");
+            // backing-planes all ones in the attributes.
+            client.write_all(&resource_request(byte_order, 3, parent)).unwrap();
+            let reply = read_x_reply(&mut client, byte_order);
+            assert_eq!(read_u32(byte_order, &reply[16..20]), 0xffff_ffff, "{byte_order:?}: backing-planes default");
+            drop(client);
+            server.join().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
+    /// The property and selection refusals the windows scenario wanted
+    /// (t225): an atom the table does not know is BadAtom to DeleteProperty,
+    /// SetSelectionOwner and ConvertSelection, a requestor that names no
+    /// window is BadWindow, and a SetSelectionOwner with a time earlier than
+    /// the selection's last change has no effect (XTS Xlib5 XDeleteProperty
+    /// 3, XSetSelectionOwner 2 and 8, XConvertSelection 4-5).
+    #[test]
+    fn unknown_atoms_are_bad_atom_and_an_earlier_time_does_not_take_a_selection() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (mut client, socket_path, server) = served("atoms", byte_order);
+            let window = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 1;
+            let other = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 2;
+            client.write_all(&create_window_request(byte_order, window, 0, 0, 100, 100)).unwrap();
+            client.write_all(&create_window_request(byte_order, other, 0, 0, 100, 100)).unwrap();
+            let expect = |client: &mut std::os::unix::net::UnixStream, code: u8, opcode: u8, what: &str| {
+                let record = read_x_record(client);
+                assert_eq!((record[0], record[1], record[10]), (0, code, opcode), "{byte_order:?}: {what}: {record:?}");
+            };
+            let unknown_atom = 0x00ff_ffff;
+            // DeleteProperty.
+            let mut delete = vec![19, 0];
+            push_u16(&mut delete, byte_order, 3);
+            push_u32(&mut delete, byte_order, window);
+            push_u32(&mut delete, byte_order, unknown_atom);
+            client.write_all(&delete).unwrap();
+            expect(&mut client, BAD_ATOM, 19, "DeleteProperty unknown atom");
+            // SetSelectionOwner.
+            client.write_all(&set_selection_owner_request(byte_order, window, unknown_atom, 5)).unwrap();
+            expect(&mut client, BAD_ATOM, 22, "SetSelectionOwner unknown atom");
+            // ConvertSelection: the requestor, then the atoms.
+            client.write_all(&convert_selection_request(byte_order, X_SETUP_DEFAULT_RESOURCE_ID_BASE + 0x7f0, X_ATOM_PRIMARY, X_ATOM_STRING, X_ATOM_WM_NAME, 5)).unwrap();
+            expect(&mut client, BAD_WINDOW, 24, "ConvertSelection unknown requestor");
+            client.write_all(&convert_selection_request(byte_order, window, unknown_atom, X_ATOM_STRING, X_ATOM_WM_NAME, 5)).unwrap();
+            expect(&mut client, BAD_ATOM, 24, "ConvertSelection unknown selection");
+            client.write_all(&convert_selection_request(byte_order, window, X_ATOM_PRIMARY, X_ATOM_STRING, unknown_atom, 5)).unwrap();
+            expect(&mut client, BAD_ATOM, 24, "ConvertSelection unknown property");
+            // Ownership at time 100, then an attempt at time 50: no effect.
+            client.write_all(&set_selection_owner_request(byte_order, window, X_ATOM_PRIMARY, 100)).unwrap();
+            client.write_all(&set_selection_owner_request(byte_order, other, X_ATOM_PRIMARY, 50)).unwrap();
+            client.write_all(&resource_request(byte_order, 23, X_ATOM_PRIMARY)).unwrap();
+            let reply = read_x_reply(&mut client, byte_order);
+            assert_eq!(read_u32(byte_order, &reply[8..12]), window, "{byte_order:?}: an earlier time does not take the selection");
+            // A later time takes it, and the previous owner hears SelectionClear.
+            client.write_all(&set_selection_owner_request(byte_order, other, X_ATOM_PRIMARY, 150)).unwrap();
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            let records = events_until_reply(byte_order, &mut client);
+            assert_eq!(records.len(), 1, "{byte_order:?}: one SelectionClear: {records:?}");
+            assert_eq!((records[0][0] & 0x7f, read_u32(byte_order, &records[0][8..12])), (29, window), "{byte_order:?}: {records:?}");
+            client.write_all(&resource_request(byte_order, 23, X_ATOM_PRIMARY)).unwrap();
+            let reply = read_x_reply(&mut client, byte_order);
+            assert_eq!(read_u32(byte_order, &reply[8..12]), other, "{byte_order:?}: a later one does");
+            drop(client);
+            server.join().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
     #[test]
     fn rotate_properties_moves_values_along_the_list_and_a_grab_change_without_a_grab_is_nothing() {
         for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
@@ -382,7 +515,7 @@ mod hierarchy_requests {
             client.write_all(&get_input_focus(byte_order)).unwrap();
             let _ = events_until_reply(byte_order, &mut client);
 
-            // Delta 1: A takes B's value, B takes C's, C takes A's; three
+            // Delta 1: A's value moves to B, B's to C, C's to A; three
             // PropertyNotify, one per property.
             let mut rotate = vec![114, 0];
             push_u16(&mut rotate, byte_order, 3 + 3);
@@ -399,7 +532,7 @@ mod hierarchy_requests {
             assert_eq!(notified, atoms, "{byte_order:?}: one notice per property: {events:?}");
             client.write_all(&get_property_request(byte_order, false, window, atoms[0], 6, 0, 1)).unwrap();
             let reply = read_x_reply(&mut client, byte_order);
-            assert_eq!(u32::from_ne_bytes(reply[32..36].try_into().unwrap()), 2, "{byte_order:?}: A holds what B held");
+            assert_eq!(u32::from_ne_bytes(reply[32..36].try_into().unwrap()), 3, "{byte_order:?}: A holds what C held");
             // A property the window does not have: BadMatch, nothing moved.
             let mut missing = rotate.clone();
             let foreign = atoms[2] + 1000;

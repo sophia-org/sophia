@@ -21,6 +21,8 @@ pub enum XWireRequest {
         /// The border width asked for. Sophia draws no border; the value is a
         /// fact clients read back (GetGeometry, CreateNotify, ConfigureNotify).
         border_width: u16,
+        /// Class CopyFromParent: InputOnly under an InputOnly parent.
+        copy_class_from_parent: bool,
         /// The window was created InputOnly: it can be the target of input
         /// and geometry requests but never of a drawing request.
         input_only: bool,

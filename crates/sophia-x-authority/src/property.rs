@@ -337,10 +337,12 @@ impl XPropertyTable {
                 (record.property_type, record.format, record.bytes.clone())
             })
             .collect::<Vec<_>>();
-        // The protocol: the value of properties[i] becomes that of
-        // properties[(i + delta) mod count].
+        // As the reference rotates: the value of properties[i] moves to
+        // properties[(i + delta) mod count], so properties[i] takes the value
+        // that was at properties[(i - delta) mod count] (XTS Xlib5
+        // XRotateWindowProperties 2 reads it back this way, on Xvnc too).
         for (index, property) in properties.iter().enumerate() {
-            let (property_type, format, bytes) = values[(index + shift) % count].clone();
+            let (property_type, format, bytes) = values[(index + count - shift) % count].clone();
             let record = self
                 .records
                 .get_mut(&(namespace, window, *property))

@@ -56,10 +56,6 @@ fn decode_configure_window(
     let y = (value_mask & 0x0002 != 0).then(|| next_value() as i16);
     let width = (value_mask & 0x0004 != 0).then(|| next_value() as u16);
     let height = (value_mask & 0x0008 != 0).then(|| next_value() as u16);
-    // "The width and height must be nonzero, or a Value error results."
-    if width == Some(0) || height == Some(0) {
-        return Err(XWireParseError::InvalidValue(0));
-    }
     let border_width = (value_mask & 0x0010 != 0).then(|| next_value() as u16);
     let sibling = (value_mask & 0x0020 != 0).then(|| XResourceId::new(u64::from(next_value()), 1));
     let stack_mode = (value_mask & 0x0040 != 0).then(|| next_value() as u8);
@@ -297,10 +293,6 @@ fn decode_create_window(
     let window = XResourceId::new(u64::from(window_raw), 1);
     // Class is {CopyFromParent, InputOutput, InputOnly}. An InputOnly window
     // is recorded so that the drawing family can refuse it: it has no pixels.
-    let (width, height) = (context.byte_order.u16(&bytes[16..18]), context.byte_order.u16(&bytes[18..20]));
-    if width == 0 || height == 0 {
-        return Err(XWireParseError::InvalidValue(0));
-    }
     let border_width = context.byte_order.u16(&bytes[20..22]);
     let class = context.byte_order.u16(&bytes[22..24]);
     if class > 2 {
@@ -337,6 +329,7 @@ fn decode_create_window(
         do_not_propagate_mask,
         cursor,
         border_width,
+        copy_class_from_parent: class == 0,
         input_only: class == 2,
     })
 }
