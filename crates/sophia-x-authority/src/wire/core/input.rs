@@ -214,6 +214,31 @@ fn decode_change_hosts(
     Ok(XWireRequest::ChangeHosts)
 }
 
+/// ChangeActivePointerGrab: a cursor, a time and the pointer event mask;
+/// a bit outside the pointer events is the Value error the protocol names.
+fn decode_change_active_pointer_grab(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_exact_len(
+        X_CHANGE_ACTIVE_POINTER_GRAB,
+        X_CHANGE_ACTIVE_POINTER_GRAB_REQ_LEN,
+        bytes.len(),
+    )?;
+    let event_mask = context.byte_order.u16(&bytes[12..14]);
+    // The pointer event mask: ButtonPress through ButtonMotion, KeymapState
+    // is not a pointer event, PointerMotionHint through Button5Motion are.
+    const POINTER_EVENT_MASK: u16 = 0x7ffc;
+    if event_mask & !POINTER_EVENT_MASK != 0 {
+        return Err(XWireParseError::InvalidValue(u32::from(event_mask)));
+    }
+    Ok(XWireRequest::ChangeActivePointerGrab {
+        cursor: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        time: context.byte_order.u32(&bytes[8..12]),
+        event_mask,
+    })
+}
+
 fn decode_grab_button(
     context: XWireClientContext,
     bytes: &[u8],

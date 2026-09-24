@@ -113,6 +113,27 @@ impl XInputAuthorityState {
         Ok(())
     }
 
+    /// ChangeActivePointerGrab: the event mask of an active grab the owner
+    /// holds. Without such a grab the request has no effect, which is what
+    /// the protocol says of it.
+    pub fn change_active_pointer_grab(
+        &mut self,
+        namespace: NamespaceId,
+        owner: u64,
+        event_mask: u16,
+    ) -> bool {
+        let Some(state) = self.namespaces.get_mut(&namespace) else {
+            return false;
+        };
+        match state.pointer.as_mut() {
+            Some(grab) if grab.owner == owner => {
+                grab.event_mask = event_mask;
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn ungrab_pointer(&mut self, namespace: NamespaceId, owner: u64) {
         if let Some(state) = self.namespaces.get_mut(&namespace)
             && state.pointer.is_some_and(|grab| grab.owner == owner)

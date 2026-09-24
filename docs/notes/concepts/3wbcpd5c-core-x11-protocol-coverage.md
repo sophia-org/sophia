@@ -28,15 +28,14 @@ are decoded precisely so the answer can be a proper protocol error instead.
 | Op | Request | What it is for | Who calls it |
 | --- | --- | --- | --- |
 | 6 | ChangeSaveSet | Reparenting window managers preserve a client's windows if the manager dies | Only a reparenting WM. Sophia's WM does not reparent. |
-| 11 | UnmapSubwindows | Unmap every child at once | Rare; toolkits unmap individually |
-| 13 | CirculateWindow | Raise the bottom child or lower the top | Legacy stacking idiom, largely unused |
-| 114 | RotateProperties | Rotate a window's property values in place | Almost nothing; an ICCCM curiosity |
+
+UnmapSubwindows, CirculateWindow and RotateProperties are decided (t166):
+see the table below.
 
 ### Pointer and keyboard
 
 | Op | Request | What it is for | Who calls it |
 | --- | --- | --- | --- |
-| 30 | ChangeActivePointerGrab | Change the event mask or cursor of a grab in progress | Drag-and-drop implementations mid-drag |
 | 44 | QueryKeymap | The whole keyboard state as a bit vector | Toolkits checking modifiers without an event |
 | 100 | ChangeKeyboardMapping | Rewrite keycode to keysym mappings | `xmodmap`, remapping tools |
 | 116 | SetPointerMapping | Reorder or disable buttons | Left-handed mouse configuration |
@@ -83,6 +82,10 @@ which is the use that made the question concrete rather than theoretical.
 | --- | --- | --- | --- |
 | 41 | WarpPointer | Serve it | Every XTS test's harness positions the pointer with it, and a client that asks for the pointer to move means it. The move happens and `QueryPointer` agrees. |
 | 115 | ForceScreenSaver | Serve it, as a no-op that validates | Every XTS test's startup calls `XResetScreenSaver`. This authority blanks nothing and keeps no idle timer, so both defined modes are accepted and move no state, and a mode outside the pair is the Value error the protocol names. |
+| 11 | UnmapSubwindows | Serve it | Every mapped child, top to bottom in stacking order as the protocol orders it, each through the path UnmapWindow takes with its UnmapNotify; children already unmapped are skipped, since an event for them would report a transition that never happened. |
+| 13 | CirculateWindow | Serve it, without Expose | The lowest child occluded by a sibling above it goes to the top (RaiseLowest), the highest occluding one to the bottom (LowerHighest), occlusion being the siblings' rectangles meeting; a CirculateNotify to the child and its parent's SubstructureNotify selectors. A client selecting SubstructureRedirect on the parent is asked instead, with a CirculateRequest naming the child, as a map becomes a MapRequest. No Expose: windows are retained surfaces here, and raising one uncovers nothing that was lost; XTS5's CirculateWindow purposes pass without it. |
+| 30 | ChangeActivePointerGrab | Serve the mask, validate the cursor | The event mask of an active grab the requester holds is rewritten; without such a grab the request has no effect, as the protocol says. The cursor is validated (BadCursor) and not applied: cursor display is config-driven here, the same debt WarpPointer carries. A bit outside the pointer events is BadValue carrying the mask. |
+| 114 | RotateProperties | Serve it | The named properties' values move delta places along the list, a PropertyNotify per moved value; a property missing or named twice moves nothing (BadMatch), an atom nobody interned is BadAtom, an Engine-owned property refuses (BadAccess) as ChangeProperty does. |
 | 39 | GetMotionEvents | Serve it, with no events | This authority keeps no motion history, which the protocol allows: a valid window gets an empty reply, an unknown one BadWindow. |
 | 102, 103 | Change/GetKeyboardControl | Serve them as advisory state | What a client sets it reads back -- bell, click, LEDs, repeat flags -- validated as the protocol validates it (an unused mask bit and an out-of-range value are BadValue, a led without a mode BadMatch), and acted on by nothing here: the session owns key repeat and no bell rings. `xset` sees a server that keeps its word. |
 | 105, 106 | Change/GetPointerControl | Serve them as advisory state | Acceleration and threshold, stored and read back, a zero denominator BadValue; the Engine owns the pointer's acceleration, so nothing moves differently. |

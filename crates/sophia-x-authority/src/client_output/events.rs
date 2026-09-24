@@ -278,6 +278,28 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[8..12], window);
             out[12] = u8::from(from_configure);
         }
+        XClientEvent::CirculateNotify {
+            sequence,
+            event,
+            window,
+            place,
+        } => {
+            write_event_header(byte_order, &mut out, X_CIRCULATE_NOTIFY, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], event);
+            put_resource(byte_order, &mut out[8..12], window);
+            out[16] = place;
+        }
+        XClientEvent::CirculateRequest {
+            sequence,
+            parent,
+            window,
+            place,
+        } => {
+            write_event_header(byte_order, &mut out, X_CIRCULATE_REQUEST, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], parent);
+            put_resource(byte_order, &mut out[8..12], window);
+            out[16] = place;
+        }
         XClientEvent::ConfigureNotify {
             sequence,
             synthetic,

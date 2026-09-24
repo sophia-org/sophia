@@ -97,12 +97,16 @@ fn route_core_lifecycle_events_with_control(
             }
             XClientEvent::MapNotify { event: target, .. }
             | XClientEvent::UnmapNotify { event: target, .. }
+            | XClientEvent::CirculateNotify { event: target, .. }
             | XClientEvent::ConfigureNotify {
                 synthetic: false,
                 event: target,
                 ..
             } => {
                 Some((index, target, STRUCTURE_NOTIFY_MASK, *event))
+            }
+            XClientEvent::CirculateRequest { parent, .. } => {
+                Some((index, parent, SUBSTRUCTURE_REDIRECT_MASK, *event))
             }
             // A destroy addressed to its own window is a StructureNotify
             // record; one addressed elsewhere is the parent-addressed form the
@@ -146,6 +150,7 @@ fn route_core_lifecycle_events_with_control(
         .filter_map(|(_, _, _, event)| match event {
             event @ (XClientEvent::MapNotify { window, .. }
             | XClientEvent::UnmapNotify { window, .. }
+            | XClientEvent::CirculateNotify { window, .. }
             | XClientEvent::DestroyNotify { window, .. }) => Some((*window, *event)),
             event @ XClientEvent::ConfigureNotify {
                 synthetic: false,
@@ -231,7 +236,8 @@ fn filter_local_core_lifecycle_events(
         .filter_map(|output| match output {
             crate::XClientOutput::Event(
                 event @ (XClientEvent::MapNotify { window, .. }
-                | XClientEvent::UnmapNotify { window, .. }),
+                | XClientEvent::UnmapNotify { window, .. }
+                | XClientEvent::CirculateNotify { window, .. }),
             ) => Some((*window, *event)),
             crate::XClientOutput::Event(
                 event @ XClientEvent::ConfigureNotify {
@@ -254,15 +260,17 @@ fn filter_local_core_lifecycle_events(
             }
             XClientEvent::MapNotify { event: target, .. }
             | XClientEvent::UnmapNotify { event: target, .. }
+            | XClientEvent::CirculateNotify { event: target, .. }
             | XClientEvent::ConfigureNotify {
                 synthetic: false,
                 event: target,
                 ..
             } => selections.selects(target, STRUCTURE_NOTIFY_MASK),
-            // A redirected map reaches this client only if it is the one
-            // managing the parent, which is the usual case for a window
-            // manager mapping through its own connection.
-            XClientEvent::MapRequest { parent, .. } => {
+            // A redirected map or circulate reaches this client only if it
+            // is the one managing the parent, which is the usual case for a
+            // window manager acting through its own connection.
+            XClientEvent::MapRequest { parent, .. }
+            | XClientEvent::CirculateRequest { parent, .. } => {
                 selections.selects(parent, SUBSTRUCTURE_REDIRECT_MASK)
             }
             XClientEvent::VisibilityNotify { window, .. } => {
@@ -318,6 +326,17 @@ fn lifecycle_event_for_parent(event: XClientEvent, parent: XResourceId) -> XClie
             sequence,
             event: parent,
             window,
+        },
+        XClientEvent::CirculateNotify {
+            sequence,
+            window,
+            place,
+            ..
+        } => XClientEvent::CirculateNotify {
+            sequence,
+            event: parent,
+            window,
+            place,
         },
         XClientEvent::UnmapNotify {
             sequence,

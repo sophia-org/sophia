@@ -1037,7 +1037,7 @@ with its disposition and a reason (`xts_declare.py`, from a real journal and
 the reviewed `xts_reasons_*.json`), never removed. The gate reads PASS only
 when every manifested purpose starts and meets its declaration, a declared
 purpose that starts passing fails it as a stale manifest, and the verdict
-line carries the count: `XTS5 PASS (322 passed, 67 declared)` is 67
+line carries the count: `XTS5 PASS (330 passed, 59 declared)` is 59
 purposes of debt, each naming its row.
 
 x11bench, an independent Xlib/XRender/Xft drawing suite, runs through the

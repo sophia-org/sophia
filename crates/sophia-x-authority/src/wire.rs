@@ -1322,6 +1322,24 @@ pub enum XWireRequest {
         count: u8,
     },
     GetKeyboardControl,
+    UnmapSubwindows {
+        window: XResourceId,
+    },
+    CirculateWindow {
+        window: XResourceId,
+        /// 0 RaiseLowest, 1 LowerHighest.
+        direction: u8,
+    },
+    ChangeActivePointerGrab {
+        cursor: XResourceId,
+        time: u32,
+        event_mask: u16,
+    },
+    RotateProperties {
+        window: XResourceId,
+        delta: i16,
+        properties: Vec<u32>,
+    },
     ChangeKeyboardControl(crate::XKeyboardControlChange),
     ChangePointerControl {
         acceleration_numerator: i16,
@@ -1551,6 +1569,24 @@ pub fn decode_x11_core_request(
         }
         X_SET_INPUT_FOCUS => decode_set_input_focus(context, bytes),
         X_GET_INPUT_FOCUS => decode_get_input_focus(bytes),
+        X_UNMAP_SUBWINDOWS => {
+            require_exact_len(X_UNMAP_SUBWINDOWS, X_UNMAP_SUBWINDOWS_REQ_LEN, bytes.len())?;
+            Ok(XWireRequest::UnmapSubwindows {
+                window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+            })
+        }
+        X_CIRCULATE_WINDOW => {
+            require_exact_len(X_CIRCULATE_WINDOW, X_CIRCULATE_WINDOW_REQ_LEN, bytes.len())?;
+            if bytes[1] > 1 {
+                return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
+            }
+            Ok(XWireRequest::CirculateWindow {
+                window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                direction: bytes[1],
+            })
+        }
+        X_CHANGE_ACTIVE_POINTER_GRAB => decode_change_active_pointer_grab(context, bytes),
+        X_ROTATE_PROPERTIES => decode_rotate_properties(context, bytes),
         X_CHANGE_KEYBOARD_CONTROL => decode_change_keyboard_control(context, bytes),
         X_CHANGE_POINTER_CONTROL => decode_change_pointer_control(context, bytes),
         X_GET_POINTER_CONTROL => {

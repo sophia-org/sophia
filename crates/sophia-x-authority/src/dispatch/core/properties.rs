@@ -11,6 +11,7 @@ fn dispatch_core_property_request(
             | XWireRequest::GetAtomName { .. }
             | XWireRequest::ChangeProperty(..)
             | XWireRequest::DeleteProperty { .. }
+            | XWireRequest::RotateProperties { .. }
             | XWireRequest::GetProperty(..)
             | XWireRequest::ListProperties { .. }
             | XWireRequest::GetSelectionOwner { .. }
@@ -19,6 +20,64 @@ fn dispatch_core_property_request(
         return Unhandled(request);
     }
     Handled(match request {
+                // The named properties' values move delta places along the
+                // list, each moved value a PropertyNotify. A property missing
+                // or named twice moves nothing (BadMatch); an Engine-owned one
+                // refuses (BadAccess), as ChangeProperty does.
+                XWireRequest::RotateProperties {
+                    window,
+                    delta,
+                    properties: ref rotated,
+                } => {
+                    let error = |code: XErrorCode, resource_id: u32| {
+                        XClientOutput::Error(crate::XClientError {
+                            code,
+                            sequence: context.sequence,
+                            resource_id,
+                            minor_code: 0,
+                            major_code: context.major_opcode,
+                        })
+                    };
+                    let outputs = if window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
+                        && runtime
+                            .validate_window_access(context.namespace, window)
+                            .is_err()
+                    {
+                        vec![error(
+                            XErrorCode::BadWindow,
+                            u32::try_from(window.local.raw()).unwrap_or(0),
+                        )]
+                    } else if let Some(atom) = rotated
+                        .iter()
+                        .find(|atom| atoms.name(**atom).is_none())
+                    {
+                        vec![error(XErrorCode::BadAtom, *atom)]
+                    } else {
+                        match properties.rotate(context.namespace, window, rotated, delta) {
+                            Ok(moved) => moved
+                                .into_iter()
+                                .map(|atom| {
+                                    XClientOutput::Event(XClientEvent::PropertyNotify {
+                                        sequence: context.sequence,
+                                        window,
+                                        atom,
+                                        time: context.server_time,
+                                        new_value: true,
+                                    })
+                                })
+                                .collect(),
+                            Err(crate::XPropertyError::AuthorityOwned) => {
+                                vec![error(XErrorCode::BadAccess, 0)]
+                            }
+                            Err(_) => vec![error(XErrorCode::BadMatch, 0)],
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
                 XWireRequest::InternAtom {
                     only_if_exists,
                     name,

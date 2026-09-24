@@ -15,6 +15,8 @@ fn dispatch_core_window_request(
             | XWireRequest::ReparentWindow { .. }
             | XWireRequest::DestroySubwindows { .. }
             | XWireRequest::MapSubwindows { .. }
+            | XWireRequest::UnmapSubwindows { .. }
+            | XWireRequest::CirculateWindow { .. }
             | XWireRequest::UnmapWindow { .. }
             | XWireRequest::ConfigureWindow { .. }
             | XWireRequest::GetGeometry { .. }
@@ -533,6 +535,84 @@ fn dispatch_core_window_request(
                                 })
                                 .collect()
                         }
+                        Err(error) => {
+                            response = XAuthorityResponsePacket::rejected(transaction, error);
+                            vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))]
+                        }
+                    };
+                    XDispatchResult {
+                        response: Some(response),
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // Every mapped child, top to bottom, each with the UnmapNotify
+                // UnmapWindow would give it; the router adds the parent's copy.
+                XWireRequest::UnmapSubwindows { window } => {
+                    let transaction = context.transaction;
+                    let mut response = XAuthorityResponsePacket::accepted(transaction);
+                    let outputs = match runtime.unmap_direct_subwindows(context.namespace, window) {
+                        Ok(unmapped) => unmapped
+                            .into_iter()
+                            .map(|(child, surface)| {
+                                response.surfaces.push(surface);
+                                XClientOutput::Event(crate::XClientEvent::UnmapNotify {
+                                    sequence: context.sequence,
+                                    event: child,
+                                    window: child,
+                                    from_configure: false,
+                                })
+                            })
+                            .collect(),
+                        Err(error) => {
+                            response = XAuthorityResponsePacket::rejected(transaction, error);
+                            vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0)))]
+                        }
+                    };
+                    XDispatchResult {
+                        response: Some(response),
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // The lowest occluded child to the top, or the highest
+                // occluding one to the bottom, with a CirculateNotify to it
+                // (the router adds the parent's copy). No Expose: windows are
+                // retained surfaces here, and raising one uncovers nothing
+                // that was lost. A redirected circulate never reaches this
+                // arm; the socket layer turns it into a CirculateRequest.
+                XWireRequest::CirculateWindow { window, direction } => {
+                    let transaction = context.transaction;
+                    let mut response = XAuthorityResponsePacket::accepted(transaction);
+                    let moved = runtime
+                        .circulate_candidate(context.namespace, window, direction)
+                        .and_then(|candidate| match candidate {
+                            Some(child) => runtime
+                                .circulate_window(context.namespace, child, direction)
+                                .map(|surface| Some((child, surface))),
+                            None => Ok(None),
+                        });
+                    let outputs = match moved {
+                        Ok(Some((child, surface))) => {
+                            response.surfaces.push(surface);
+                            vec![XClientOutput::Event(crate::XClientEvent::CirculateNotify {
+                                sequence: context.sequence,
+                                event: child,
+                                window: child,
+                                place: direction,
+                            })]
+                        }
+                        Ok(None) => Vec::new(),
                         Err(error) => {
                             response = XAuthorityResponsePacket::rejected(transaction, error);
                             vec![XClientOutput::Error(x_error_from_runtime(

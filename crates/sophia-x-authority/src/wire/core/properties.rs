@@ -178,6 +178,32 @@ fn decode_convert_selection(
     }))
 }
 
+/// RotateProperties: a window, a count of properties, a delta, then the
+/// atoms; the count frames the request exactly.
+fn decode_rotate_properties(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_ROTATE_PROPERTIES, X_ROTATE_PROPERTIES_REQ_LEN, bytes.len())?;
+    let count = usize::from(context.byte_order.u16(&bytes[8..10]));
+    require_exact_len(
+        X_ROTATE_PROPERTIES,
+        X_ROTATE_PROPERTIES_REQ_LEN + count * 4,
+        bytes.len(),
+    )?;
+    let properties = (0..count)
+        .map(|index| {
+            let at = X_ROTATE_PROPERTIES_REQ_LEN + index * 4;
+            context.byte_order.u32(&bytes[at..at + 4])
+        })
+        .collect();
+    Ok(XWireRequest::RotateProperties {
+        window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        delta: context.byte_order.i16(&bytes[10..12]),
+        properties,
+    })
+}
+
 fn decode_send_event(
     context: XWireClientContext,
     bytes: &[u8],
