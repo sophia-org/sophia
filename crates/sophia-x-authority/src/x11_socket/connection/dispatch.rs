@@ -1834,7 +1834,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             runtime.begin_dispatch();
                             let parent = redirected_configure.expect("redirect guard");
                             let Some(crate::XWireRequest::ConfigureWindow {
-                                window, value_mask, x, y, width, height, sibling, stack_mode,
+                                window, value_mask, x, y, width, height, border_width, sibling, stack_mode,
                             }) = configured
                             else {
                                 unreachable!("a configure redirect names a ConfigureWindow")
@@ -1855,7 +1855,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                         y: y.unwrap_or(clamp_i(current.y)),
                                         width: width.unwrap_or(clamp_u(current.width)),
                                         height: height.unwrap_or(clamp_u(current.height)),
-                                        border_width: 0,
+                                        border_width: border_width.unwrap_or_else(|| runtime.window_border_width(window)),
                                         value_mask,
                                     },
                                 )],
