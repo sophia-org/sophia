@@ -500,6 +500,7 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         | XClientEvent::ConfigureRequest { sequence, .. }
         | XClientEvent::ResizeRequest { sequence, .. }
         | XClientEvent::VisibilityNotify { sequence, .. }
+        | XClientEvent::GravityNotify { sequence, .. }
         | XClientEvent::ColormapNotify { sequence, .. }
         | XClientEvent::Expose { sequence, .. }
         | XClientEvent::RandrScreenChange { sequence, .. }

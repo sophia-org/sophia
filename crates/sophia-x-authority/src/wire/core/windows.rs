@@ -209,6 +209,8 @@ fn decode_change_window_attributes(
     let mut background_pixmap = None;
     let mut background_pixel = None;
     let mut value_cursor = X_CHANGE_WINDOW_ATTRIBUTES_REQ_LEN;
+    let mut bit_gravity = None;
+    let mut win_gravity = None;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
             continue;
@@ -222,6 +224,8 @@ fn decode_change_window_attributes(
             1 => background_pixel = Some(value),
             9 => override_redirect = Some(value != 0),
             11 => event_mask = Some(value),
+            4 => bit_gravity = Some(gravity_value(value)?),
+            5 => win_gravity = Some(gravity_value(value)?),
             12 => do_not_propagate_mask = Some(value),
             13 => colormap = Some(value),
             14 => cursor = Some(value),
@@ -237,6 +241,8 @@ fn decode_change_window_attributes(
         do_not_propagate_mask,
         cursor,
         colormap,
+        bit_gravity,
+        win_gravity,
     })
 }
 
@@ -269,6 +275,8 @@ fn decode_create_window(
     let mut colormap = None;
     let mut cursor = None;
     let mut override_redirect = false;
+    let mut bit_gravity = None;
+    let mut win_gravity = None;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
             continue;
@@ -282,6 +290,8 @@ fn decode_create_window(
             1 => background_pixel = Some(value),
             9 => override_redirect = value != 0,
             11 => event_mask = Some(value),
+            4 => bit_gravity = Some(gravity_value(value)?),
+            5 => win_gravity = Some(gravity_value(value)?),
             12 => do_not_propagate_mask = Some(value),
             13 => colormap = Some(XResourceId::new(u64::from(value), 1)),
             14 => cursor = Some(value),
@@ -331,6 +341,8 @@ fn decode_create_window(
         border_width,
         copy_class_from_parent: class == 0,
         input_only: class == 2,
+        bit_gravity,
+        win_gravity,
     })
 }
 
@@ -370,4 +382,13 @@ fn decode_map_subwindows(
     Ok(XWireRequest::MapSubwindows {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
     })
+}
+
+/// A gravity value: Forget or Unmap (0) through Static (10); anything past
+/// Static is a Value error.
+fn gravity_value(value: u32) -> Result<u8, XWireParseError> {
+    u8::try_from(value)
+        .ok()
+        .filter(|gravity| *gravity <= 10)
+        .ok_or(XWireParseError::InvalidValue(value))
 }

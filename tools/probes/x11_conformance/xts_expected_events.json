@@ -535,15 +535,11 @@
   },
   {
     "case": "/Xlib11/GravityNotify",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t199: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/GravityNotify",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t199: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "purpose": 2
   },
   {
     "case": "/Xlib11/GravityNotify",

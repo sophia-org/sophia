@@ -197,6 +197,8 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
             event_mask: None,
             do_not_propagate_mask: None,
             colormap: None,
+            bit_gravity: None,
+            win_gravity: None,
         }
     );
     let modifier_mapping = decode_x11_core_request(

@@ -1077,8 +1077,12 @@ def rotate_properties(context):
         c.sync()
         notified = [c.u32(e, 8) for e in c.events if e[0] & 127 == 28]
         assert notified == atoms, notified
-        assert c.unpack('I', c.reply(20, c.pack('IIIII', window, atoms[0], 6, 0, 1)), 32) == (2,), 'A holds what B held'
-        assert c.unpack('I', c.reply(20, c.pack('IIIII', window, atoms[2], 6, 0, 1)), 32) == (1,), 'C holds what A held'
+        # "The value associated with property name I becomes the value
+        # associated with property name (I + delta) mod N": A's value moves
+        # to B, B's to C, and C's to A, as Xorg does it.
+        assert c.unpack('I', c.reply(20, c.pack('IIIII', window, atoms[0], 6, 0, 1)), 32) == (3,), 'A holds what C held'
+        assert c.unpack('I', c.reply(20, c.pack('IIIII', window, atoms[1], 6, 0, 1)), 32) == (1,), 'B holds what A held'
+        assert c.unpack('I', c.reply(20, c.pack('IIIII', window, atoms[2], 6, 0, 1)), 32) == (2,), 'C holds what B held'
         d = c.atom('SOPHIA_ROTATE_D')
         c.completion(c.send(114, c.pack('IHh', window, 3, 1) + c.pack('3I', atoms[0], atoms[1], d)), error=8, opcode=114)
         c.completion(c.send(114, c.pack('IHh', window, 2, 1) + c.pack('2I', atoms[0], atoms[0])), error=8, opcode=114)

@@ -56,8 +56,6 @@
   "/Xlib11/FocusOut#16": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/FocusOut#3": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/FocusOut#4": "the suite retired this assertion (NOTINUSE in the source)",
-  "/Xlib11/GravityNotify#1": "t199: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'",
-  "/Xlib11/GravityNotify#2": "t199: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'",
   "/Xlib11/GravityNotify#3": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/KeyPress#2": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Expected KeyPress event, got none'",
   "/Xlib11/KeyPress#3": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got 1 unexpected events.'",

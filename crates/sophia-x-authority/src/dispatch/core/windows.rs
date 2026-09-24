@@ -38,6 +38,7 @@ fn dispatch_core_window_request(
                     input_only,
                     copy_class_from_parent,
                     border_width,
+                    win_gravity,
                     ..
                 } => {
                     let kind = packet.kind.clone();
@@ -155,6 +156,9 @@ fn dispatch_core_window_request(
                         );
                         runtime.set_window_input_only(*window, input_only);
                         runtime.set_window_border_width(*window, border_width);
+                        if let Some(gravity) = win_gravity {
+                            runtime.set_window_gravity(*window, gravity);
+                        }
                     }
                     let mut outputs = outputs_from_authority_response(context, &kind, &response);
                     if response.outcome == XAuthorityResponseOutcome::Accepted
@@ -278,6 +282,7 @@ fn dispatch_core_window_request(
                     background_pixel,
                     override_redirect,
                     cursor,
+                    win_gravity,
                     colormap,
                     ..
                 } => {
@@ -379,6 +384,9 @@ fn dispatch_core_window_request(
                                 window,
                                 background,
                             );
+                        }
+                        if let Some(gravity) = win_gravity {
+                            runtime.set_window_gravity(window, gravity);
                         }
                         if let Some(pixel) = background_pixel {
                             let _ =
@@ -951,6 +959,7 @@ fn dispatch_core_window_request(
                             .unwrap_or_default()
                     };
                     let siblings_before = siblings_of(runtime);
+                    let mut gravity_surfaces = Vec::new();
                     let client_controls = runtime
                         .client_controls_window_geometry(context.namespace, window)
                         .unwrap_or(false);
@@ -1010,7 +1019,7 @@ fn dispatch_core_window_request(
                                 let override_redirect = runtime
                                     .window_override_redirect(context.namespace, window)
                                     .unwrap_or(false);
-                                vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
+                                let mut outputs = vec![XClientOutput::Event(XClientEvent::ConfigureNotify {
                                     sequence: context.sequence,
                                     synthetic: !client_controls,
                                     event: window,
@@ -1022,7 +1031,14 @@ fn dispatch_core_window_request(
                                     height: clamp_u16(geometry.height),
                                     border_width: runtime.window_border_width(window),
                                     override_redirect,
-                                })]
+                                })];
+                                // A resize moves the children by their
+                                // win-gravity after the ConfigureNotify, as
+                                // dix's ResizeChildrenWinSize does (t199).
+                                if client_controls && let Some(before) = before {
+                                    gravity_outputs(context, runtime, window, before, geometry, &mut outputs, &mut gravity_surfaces);
+                                }
+                                outputs
                             }
                             Ok(_) => Vec::new(),
                             Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
@@ -1033,14 +1049,17 @@ fn dispatch_core_window_request(
                                 u32::try_from(window.local.raw()).unwrap_or(0)))],
                         }
                     };
+                    // A child unmapped by its gravity is a surface change too.
+                    let response = if restacked.is_some() || !gravity_surfaces.is_empty() {
+                        let mut response = XAuthorityResponsePacket::accepted(context.transaction);
+                        response.surfaces.extend(restacked);
+                        response.surfaces.extend(gravity_surfaces);
+                        Some(response)
+                    } else {
+                        None
+                    };
                     XDispatchResult {
-                        response: restacked.map(|surface| {
-                            let mut response = XAuthorityResponsePacket::accepted(
-                                context.transaction,
-                            );
-                            response.surfaces.push(surface);
-                            response
-                        }),
+                        response,
                         outputs,
                         metadata_candidates: Vec::new(),
                     }
@@ -1316,4 +1335,45 @@ fn validate_window_or_root_access(
 /// the only one ListInstalledColormaps names.
 pub(crate) fn colormap_state(colormap: u32) -> u8 {
     u8::from(colormap == crate::X_SETUP_DEFAULT_COLORMAP)
+}
+
+/// The GravityNotify and UnmapNotify a resize owes its children: each child
+/// moved by its win-gravity is told where it is now, and each with
+/// UnmapGravity is unmapped, as dix does it (t199). The parent's copy of
+/// each is derived by the routing, as for the other structure events.
+fn gravity_outputs(
+    context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
+    parent: XResourceId,
+    before: Rect,
+    after: Rect,
+    outputs: &mut Vec<XClientOutput>,
+    surfaces: &mut Vec<sophia_protocol::AuthoritySurface>,
+) {
+    for (child, outcome) in
+        runtime.apply_win_gravity(context.namespace, parent, before, after, u64::from(context.sequence))
+    {
+        match outcome {
+            crate::XGravityOutcome::Moved { x, y } => {
+                outputs.push(XClientOutput::Event(XClientEvent::GravityNotify {
+                    sequence: context.sequence,
+                    event: child,
+                    window: child,
+                    x: clamp_i16(x),
+                    y: clamp_i16(y),
+                }));
+            }
+            crate::XGravityOutcome::Unmap => {
+                if let Ok(surface) = runtime.unmap_window(context.namespace, child) {
+                    surfaces.extend(surface);
+                    outputs.push(XClientOutput::Event(XClientEvent::UnmapNotify {
+                        sequence: context.sequence,
+                        event: child,
+                        window: child,
+                        from_configure: true,
+                    }));
+                }
+            }
+        }
+    }
 }

@@ -715,6 +715,7 @@ impl XAuthorityRuntime {
          self.forget_window_shapes(window);
          self.window_backgrounds.remove(&window);
          self.window_visuals.remove(&window);
+         self.window_gravities.remove(&window);
          self.release_window_cursor(window);
          self.input_only_windows.remove(&window);
          self.window_border_widths.remove(&window);

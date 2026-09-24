@@ -35,6 +35,7 @@ const X_EXPOSE: u8 = 12;
 const X_GRAPHICS_EXPOSE: u8 = 13;
 const X_NO_EXPOSE: u8 = 14;
 const X_VISIBILITY_NOTIFY: u8 = 15;
+const X_GRAVITY_NOTIFY: u8 = 24;
 const X_COLORMAP_NOTIFY: u8 = 32;
 const X_DESTROY_NOTIFY: u8 = 17;
 const X_UNMAP_NOTIFY: u8 = 18;
@@ -211,6 +212,15 @@ pub enum XClientEvent {
         event: XResourceId,
         window: XResourceId,
         from_configure: bool,
+    },
+    /// A child moved by its win-gravity when its parent was resized (t199):
+    /// to the child (StructureNotify) and its parent (SubstructureNotify).
+    GravityNotify {
+        sequence: u16,
+        event: XResourceId,
+        window: XResourceId,
+        x: i16,
+        y: i16,
     },
     /// A window moved to the top or bottom of its siblings by CirculateWindow:
     /// to the window (StructureNotify) and its parent (SubstructureNotify).

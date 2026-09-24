@@ -23,6 +23,10 @@ pub enum XWireRequest {
         border_width: u16,
         /// Class CopyFromParent: InputOnly under an InputOnly parent.
         copy_class_from_parent: bool,
+        /// The bit-gravity and win-gravity attributes, when the request set
+        /// them (t199).
+        bit_gravity: Option<u8>,
+        win_gravity: Option<u8>,
         /// The window was created InputOnly: it can be the target of input
         /// and geometry requests but never of a drawing request.
         input_only: bool,
@@ -38,6 +42,8 @@ pub enum XWireRequest {
         /// Raw, because zero is None in the attribute: the window stops
         /// having a cursor of its own rather than naming resource zero.
         cursor: Option<u32>,
+        bit_gravity: Option<u8>,
+        win_gravity: Option<u8>,
         /// Raw, because zero is CopyFromParent: the parent's colormap.
         colormap: Option<u32>,
     },

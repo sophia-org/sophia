@@ -155,7 +155,8 @@ fn route_core_lifecycle_events_with_control(
             // SubstructureNotify selectors, as a destroy's parent copy does.
             XClientEvent::MapNotify { event: target, window, .. }
             | XClientEvent::UnmapNotify { event: target, window, .. }
-            | XClientEvent::ReparentNotify { event: target, window, .. } => Some((
+            | XClientEvent::ReparentNotify { event: target, window, .. }
+            | XClientEvent::GravityNotify { event: target, window, .. } => Some((
                 index,
                 target,
                 if target == window {
@@ -236,32 +237,49 @@ fn route_core_lifecycle_events_with_control(
             _ => None,
         })
         .collect::<Vec<_>>();
+    // The structure events that also go to SubstructureNotify selectors on
+    // the window's parent, by the candidate's index.
     let structure_events = candidates
         .iter()
-        .filter_map(|(_, _, _, event)| match event {
+        .filter_map(|(index, _, _, event)| {
+            let (window, event) = match event {
             event @ (XClientEvent::MapNotify {
-                event: target,
-                window,
-                ..
-            }
-            | XClientEvent::UnmapNotify {
-                event: target,
-                window,
-                ..
-            }) if target == window && !reparented.iter().any(|(reparented, _)| reparented == window) => {
-                Some((*window, *event))
-            }
-            event @ (XClientEvent::CirculateNotify { window, .. }
-            | XClientEvent::DestroyNotify { window, .. }) => Some((*window, *event)),
-            event @ XClientEvent::ConfigureNotify {
-                synthetic: false,
-                window,
-                ..
-            } => Some((*window, *event)),
-            _ => None,
+                    event: target,
+                    window,
+                    ..
+                }
+                | XClientEvent::UnmapNotify {
+                    event: target,
+                    window,
+                    ..
+                }) if target == window && !reparented.iter().any(|(reparented, _)| reparented == window) => {
+                    (*window, *event)
+                }
+                event @ (XClientEvent::CirculateNotify { window, .. }
+                | XClientEvent::DestroyNotify { window, .. }) => (*window, *event),
+                event @ XClientEvent::GravityNotify {
+                    event: target,
+                    window,
+                    ..
+                } if target == window => (*window, *event),
+                event @ XClientEvent::ConfigureNotify {
+                    synthetic: false,
+                    window,
+                    ..
+                } => (*window, *event),
+                _ => return None,
+            };
+            Some((*index, (window, event)))
         })
-        .collect::<Vec<_>>();
-    let mut remove = Vec::new();
+        .collect::<std::collections::BTreeMap<_, _>>();
+    // Each event goes out in order, and a structure event's parent copy
+    // follows it directly, before the next event: a resize's ConfigureNotify
+    // reaches the grandparent's SubstructureNotify selectors before any
+    // child's GravityNotify, as dix delivers them (t199). The requester's own
+    // outputs are rebuilt in that order: its copy of an event it did not
+    // select dropped, a parent copy it did select placed right after.
+    let mut local: std::collections::BTreeMap<usize, (bool, Vec<XClientEvent>)> =
+        std::collections::BTreeMap::new();
     for (index, target, required_mask, event) in candidates {
         let subscribers = routing
             .core_event_subscribers(target, required_mask)
@@ -274,38 +292,43 @@ fn route_core_lifecycle_events_with_control(
             retain_private_control_events(execution, [(Some(recipient), event)])?;
             deliver(recipient, event, "X11 lifecycle event")?;
         }
-        if !subscribers.contains(&client) {
-            remove.push(index);
-        }
-    }
-    for index in remove.into_iter().rev() {
-        output.outputs.remove(index);
-    }
-
-    // Core structure events are also delivered to SubstructureNotify
-    // selectors on the immediate parent. The direct event above remains
-    // addressed to the window itself.
-    for (window, event) in structure_events {
-        let Some(parent) = routing.window_parent(window).map_err(|error| {
-            X11SetupSocketError::new(format!("failed to resolve X11 lifecycle parent: {error}"))
-        })? else {
-            continue;
-        };
-        let subscribers = routing
-            .core_event_subscribers(parent, SUBSTRUCTURE_NOTIFY_MASK)
-            .map_err(|error| {
-                X11SetupSocketError::new(format!(
-                    "failed to inspect X11 parent lifecycle subscriptions: {error}"
-                ))
-            })?;
-        for recipient in subscribers {
-            let parent_event = lifecycle_event_for_parent(event, parent);
-            retain_private_control_events(execution, [(Some(recipient), parent_event)])?;
-            if recipient == client {
-                output.outputs.push(crate::XClientOutput::Event(parent_event));
-            } else {
-                deliver(recipient, parent_event, "X11 parent lifecycle event")?;
+        let mut parent_copies = Vec::new();
+        if let Some((window, event)) = structure_events.get(&index).copied()
+            && let Some(parent) = routing.window_parent(window).map_err(|error| {
+                X11SetupSocketError::new(format!("failed to resolve X11 lifecycle parent: {error}"))
+            })?
+        {
+            let parent_subscribers = routing
+                .core_event_subscribers(parent, SUBSTRUCTURE_NOTIFY_MASK)
+                .map_err(|error| {
+                    X11SetupSocketError::new(format!(
+                        "failed to inspect X11 parent lifecycle subscriptions: {error}"
+                    ))
+                })?;
+            for recipient in parent_subscribers {
+                let parent_event = lifecycle_event_for_parent(event, parent);
+                retain_private_control_events(execution, [(Some(recipient), parent_event)])?;
+                if recipient == client {
+                    parent_copies.push(parent_event);
+                } else {
+                    deliver(recipient, parent_event, "X11 parent lifecycle event")?;
+                }
             }
+        }
+        local.insert(index, (subscribers.contains(&client), parent_copies));
+    }
+    let outputs = std::mem::take(&mut output.outputs);
+    for (index, item) in outputs.into_iter().enumerate() {
+        match local.remove(&index) {
+            Some((keep, parent_copies)) => {
+                if keep {
+                    output.outputs.push(item);
+                }
+                output
+                    .outputs
+                    .extend(parent_copies.into_iter().map(crate::XClientOutput::Event));
+            }
+            None => output.outputs.push(item),
         }
     }
     // The routing's parent map follows a reparent once its notices are out,
@@ -386,7 +409,8 @@ fn filter_local_core_lifecycle_events(
             }
             XClientEvent::MapNotify { event: target, window, .. }
             | XClientEvent::UnmapNotify { event: target, window, .. }
-            | XClientEvent::ReparentNotify { event: target, window, .. } => selections.selects(
+            | XClientEvent::ReparentNotify { event: target, window, .. }
+            | XClientEvent::GravityNotify { event: target, window, .. } => selections.selects(
                 target,
                 if target == window {
                     STRUCTURE_NOTIFY_MASK
@@ -467,6 +491,15 @@ fn lifecycle_event_for_parent(event: XClientEvent, parent: XResourceId) -> XClie
             sequence,
             event: parent,
             window,
+        },
+        XClientEvent::GravityNotify {
+            sequence, window, x, y, ..
+        } => XClientEvent::GravityNotify {
+            sequence,
+            event: parent,
+            window,
+            x,
+            y,
         },
         XClientEvent::CirculateNotify {
             sequence,

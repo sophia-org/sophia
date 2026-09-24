@@ -1053,11 +1053,18 @@ declarations are the suite's omissions, the colour classes a TrueColor-only
 screen cannot offer, purposes Xvnc fails identically, and t210 and t212.
 Some cases are left out: XAllocNamedColor and XLookupColor stop before
 their last purposes on Xvnc as on the host, XInstallColormap's fourth purpose is unstable until t210 gives it the ColormapNotify it waits for, and XChangeGC, XCreateGC,
-XGetGCValues and XSetFont wait on t201's font path. The event section (`Xlib11`, every
+XGetGCValues and XSetFont wait on t201's font path.
+`xts_expected_windows.json` is the Xlib4 and Xlib5 window cases (304
+purposes, run without XTEST): the host passes 215 where Xvnc passes 277
+on the same cases, and the declarations are the suite's omissions,
+backing store (not offered), one screen, the no-borders decision for
+border pixels, purposes Xvnc answers the same, and t214 to t218 and t227
+for the rest; XChangeWindowAttributes, XCreateWindow, XDefineCursor and
+XUndefineCursor wait on t201's font path. The event section (`Xlib11`, every
 event type, 195 purposes) is `xts_expected_events.json`: it runs with
 `--xts-admit-xtest=yes` (the adapter's `--admit-xtest`), which starts the
 host with XTEST admitted so the suite's extended purposes inject their
-input; the host passes 68 where Xvnc passes 121, and every declared row
+input; the host passes 70 where Xvnc passes 121, and every declared row
 that is the authority's names its task (t199, t211, t220). A
 manifest is the suite's account of itself: every purpose is
 listed, and one the suite or the authority cannot pass today is declared
