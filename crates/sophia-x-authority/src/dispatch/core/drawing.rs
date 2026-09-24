@@ -286,9 +286,9 @@ fn dispatch_core_drawing_request(
             }
         }
         XWireRequest::PolyFillArc { drawable, gc, arcs } => {
-            // A filled arc is the polygon its curve encloses, closed through
-            // the centre or straight across as the graphics context's arc mode
-            // says. Until now this recorded damage and painted nothing.
+            // `miPolyFillArc`: the pixels whose centres lie inside the
+            // ellipse, clipped to a pie slice or a chord as the graphics
+            // context's arc mode says.
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
                 Ok(values) => values,
@@ -299,11 +299,8 @@ fn dispatch_core_drawing_request(
                 }
             };
             let pie_slice = values.arc_mode == crate::X_ARC_PIE_SLICE;
-            let polygons: Vec<Vec<crate::XPoint>> = arcs
-                .iter()
-                .map(|arc| crate::software::geometry::arc::fill_polygon(*arc, pie_slice))
-                .collect();
-            core_polygon_draw(context, runtime, drawable, &polygons, &values, true)
+            let spans = crate::software::geometry::fill_arc::fill(&arcs, pie_slice);
+            core_rectangle_fill(context, runtime, drawable, &spans, &values)
         }
         XWireRequest::PolyArc { drawable, gc, arcs } => {
             let transaction = context.transaction;
@@ -902,22 +899,6 @@ fn core_draw_gc(
         ));
     }
     Ok(values)
-}
-
-/// Fill polygons by scanline and paint the spans through the ordinary fill.
-fn core_polygon_draw(
-    context: XDispatchContext,
-    runtime: &mut XAuthorityRuntime,
-    drawable: XResourceId,
-    polygons: &[Vec<crate::XPoint>],
-    values: &crate::XGraphicsContextValues,
-    winding: bool,
-) -> XDispatchResult {
-    let spans: Vec<Rect> = polygons
-        .iter()
-        .flat_map(|points| crate::software::geometry::polygon::general(points, winding))
-        .collect();
-    core_rectangle_fill(context, runtime, drawable, &spans, values)
 }
 
 /// Paint a list of rectangles, reporting the drawable's own errors.
