@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{XArc, fill_polygon, polyline};
+use super::{XArc, polyline};
 
 fn circle(angle1: i16, angle2: i16) -> XArc {
     XArc {
@@ -81,21 +81,4 @@ fn an_empty_arc_produces_no_points() {
         })
         .is_empty()
     );
-}
-
-#[test]
-fn a_pie_slice_closes_through_the_centre_and_a_full_circle_does_not() {
-    let slice = fill_polygon(circle(0, 90 * 64), true);
-    assert_eq!(
-        slice.last().copied(),
-        Some(crate::XPoint { x: 50, y: 50 }),
-        "the centre closes the wedge"
-    );
-    let chord = fill_polygon(circle(0, 90 * 64), false);
-    assert_ne!(chord.last().copied(), Some(crate::XPoint { x: 50, y: 50 }));
-
-    // A full revolution already closes itself; a centre vertex would cut a
-    // seam from the rim to the middle.
-    let full = fill_polygon(circle(0, 360 * 64), true);
-    assert_ne!(full.last().copied(), Some(crate::XPoint { x: 50, y: 50 }));
 }

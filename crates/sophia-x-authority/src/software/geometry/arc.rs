@@ -79,26 +79,6 @@ pub fn polyline(arc: XArc) -> Vec<XPoint> {
         .collect()
 }
 
-/// The polygon a filled arc encloses.
-///
-/// `PieSlice` closes through the centre, `Chord` straight across. A full
-/// revolution needs no centre vertex: the curve already closes itself, and
-/// adding one would cut a seam to the middle.
-pub fn fill_polygon(arc: XArc, pie_slice: bool) -> Vec<XPoint> {
-    let mut points = polyline(arc);
-    if points.is_empty() {
-        return points;
-    }
-    let full_revolution = arc.angle2.unsigned_abs() >= 360 * 64;
-    if pie_slice && !full_revolution {
-        points.push(XPoint {
-            x: clamp_i16(f64::from(arc.x) + f64::from(arc.width) / 2.0),
-            y: clamp_i16(f64::from(arc.y) + f64::from(arc.height) / 2.0),
-        });
-    }
-    points
-}
-
 fn clamp_i16(value: f64) -> i16 {
     if value.is_nan() {
         return 0;

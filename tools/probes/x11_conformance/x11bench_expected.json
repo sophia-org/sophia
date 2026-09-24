@@ -11,7 +11,7 @@
   {
     "test": "arc_styles",
     "expected": "FAIL",
-    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve; the filled arc in the same test matches mi exactly since t176"
   },
   {
     "test": "basic_text"
@@ -27,7 +27,7 @@
   {
     "test": "clip_mask",
     "expected": "FAIL",
-    "reason": "rim only since t170: the mask confines, and the 342 differing pixels lie on the disc's edge -- the zero-width arc drawn over it (device-dependent) and the mask's PolyFillArc, which the host approximates with a polygon rather than drawing as miPolyFillArc does"
+    "reason": "device-dependent since t170 and t176: the mask confines and its filled disc matches mi, and all 342 differing pixels lie on the zero-width arc outline drawn over it, whose pixelization the protocol leaves to the server"
   },
   {
     "test": "clip_rectangles"
