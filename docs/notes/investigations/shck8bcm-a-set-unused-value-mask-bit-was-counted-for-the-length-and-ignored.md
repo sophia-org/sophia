@@ -46,7 +46,9 @@ alone, which still decodes. Red on master, green after.
       CreateGC 6 retire from the declared rows: the Xproto rerun
       (`.artifacts/xts-xproto/run-t167/`) moves those four and no other,
       292 passed and 97 declared. The core profile reads PASS, 126 of 126.
-- [ ] The gate on the committed candidate.
+- [x] The gate on the committed candidate, rebased onto t179
+      (`.artifacts/x11-profile-946ae6d6-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 292 passed and 97 declared.
 
 ## Connections
 
