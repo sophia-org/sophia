@@ -59,6 +59,7 @@ include!("x11_wire/server_controls.rs");
 include!("x11_wire/hierarchy_requests.rs");
 include!("x11_wire/client_lifetime.rs");
 include!("x11_wire/input_maps.rs");
+include!("x11_wire/reparent_notify.rs");
 include!("x11_wire/focus_routing.rs");
 include!("x11_wire/pointer_queries.rs");
 include!("x11_wire/popup_pointer_target.rs");

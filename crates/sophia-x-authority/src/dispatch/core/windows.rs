@@ -392,25 +392,66 @@ fn dispatch_core_window_request(
                     y,
                 } => {
                     let transaction = context.transaction;
-                    let result = runtime
-                        .set_window_parent(context.namespace, window, parent)
-                        .and_then(|()| {
-                            runtime.configure_window_geometry_observed(
-                                context.namespace,
-                                window,
-                                XWindowGeometryUpdate {
-                                    x: Some(x),
-                                    y: Some(y),
-                                    generation: u64::from(context.sequence),
-                                    ..XWindowGeometryUpdate::default()
-                                },
-                            )
-                        });
-                    let (response, outputs) = match result {
-                        Ok(surface) => {
+                    let (response, outputs) = match runtime.reparent_window(
+                        context.namespace,
+                        window,
+                        parent,
+                        x,
+                        y,
+                        u64::from(context.sequence),
+                    ) {
+                        Ok(reparent) => {
                             let mut response = XAuthorityResponsePacket::accepted(transaction);
-                            response.surfaces.push(surface);
-                            (response, Vec::new())
+                            response.surfaces.extend(reparent.surfaces);
+                            // Reported as the protocol orders it (t184): a
+                            // mapped window is unmapped, reparented and
+                            // mapped again. Each notice is addressed to the
+                            // window for its StructureNotify selectors and to
+                            // a parent for that parent's SubstructureNotify
+                            // selectors -- the old parent for the unmap and
+                            // the reparent, the new one for the reparent and
+                            // the remap -- as a destroy's parent copy is; the
+                            // router delivers each by the window it names.
+                            let sequence = context.sequence;
+                            let override_redirect = reparent.override_redirect;
+                            let notice = |event| {
+                                XClientOutput::Event(crate::XClientEvent::ReparentNotify {
+                                    sequence,
+                                    event,
+                                    window,
+                                    parent,
+                                    x,
+                                    y,
+                                    override_redirect,
+                                })
+                            };
+                            let mut outputs = Vec::new();
+                            if reparent.was_mapped {
+                                for event in [window, reparent.old_parent] {
+                                    outputs.push(XClientOutput::Event(crate::XClientEvent::UnmapNotify {
+                                        sequence,
+                                        event,
+                                        window,
+                                        from_configure: false,
+                                    }));
+                                }
+                            }
+                            outputs.push(notice(window));
+                            outputs.push(notice(reparent.old_parent));
+                            if parent != reparent.old_parent {
+                                outputs.push(notice(parent));
+                            }
+                            if reparent.was_mapped {
+                                for event in [window, parent] {
+                                    outputs.push(XClientOutput::Event(crate::XClientEvent::MapNotify {
+                                        sequence,
+                                        event,
+                                        window,
+                                        override_redirect,
+                                    }));
+                                }
+                            }
+                            (response, outputs)
                         }
                         Err(error) => (
                             XAuthorityResponsePacket::rejected(transaction, error),
@@ -419,7 +460,8 @@ fn dispatch_core_window_request(
                                 context.sequence,
                                 context.major_opcode,
                                 0,
-                                u32::try_from(window.local.raw()).unwrap_or(0)))],
+                                u32::try_from(window.local.raw()).unwrap_or(0),
+                            ))],
                         ),
                     };
                     XDispatchResult {
