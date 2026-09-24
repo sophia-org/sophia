@@ -51,12 +51,23 @@ the X.Org font packages. See that directory's README for provenance.
 
 ## X.Org X server `mi` — The Open Group and Digital Equipment Corporation
 
-`crates/sophia-x-authority/src/software/geometry/wide_line.rs` is a port of
-the X server's wide-line code: `mi/miwideline.c` and `mi/miwideline.h`
-(author Keith Packard, MIT X Consortium), `miStepDash` from `mi/midash.c`,
-`ICEIL` from `mi/mifpoly.h`, and the wide branches of `mi/mipolyseg.c` and
-`mi/mipolyrect.c`, from `gitlab.freedesktop.org/xorg/xserver`. The file names
-each routine it ports.
+Two files are ports of the X server's machine-independent drawing code, from
+`gitlab.freedesktop.org/xorg/xserver`; each names the routines it ports:
+
+- `crates/sophia-x-authority/src/software/geometry/wide_line.rs`:
+  `mi/miwideline.c` and `mi/miwideline.h` (author Keith Packard, MIT X
+  Consortium), `miStepDash` from `mi/midash.c`, `ICEIL` from `mi/mifpoly.h`,
+  and the wide branches of `mi/mipolyseg.c` and `mi/mipolyrect.c`.
+  Copyright 1988, 1998 The Open Group; copyright 1989 Digital Equipment
+  Corporation.
+- `crates/sophia-x-authority/src/software/geometry/polygon.rs`:
+  `mi/mipoly.c` and `mi/mipoly.h` (author Brian Kelleher) with the edge
+  macros of `mi/miscanfill.h`. Copyright 1987, 1998 The Open Group;
+  copyright 1987 Digital Equipment Corporation.
+
+Both carry the same two permission notices, reproduced here with the
+wide-line files' copyright lines; the polygon files' differ only in their
+years.
 
     Copyright 1988, 1998  The Open Group
 

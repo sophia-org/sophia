@@ -514,9 +514,9 @@ fn dispatch_core_drawing_request(
         XWireRequest::FillPoly {
             drawable,
             gc,
+            shape,
             coordinate_mode,
             points,
-            ..
         } => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
@@ -528,8 +528,15 @@ fn dispatch_core_drawing_request(
                 }
             };
             let points = crate::wire::absolute_points(&points, coordinate_mode);
-            let winding = values.fill_rule == crate::X_FILL_WINDING;
-            core_polygon_draw(context, runtime, drawable, &[points], &values, winding)
+            // `miFillPolygon`: the convex filler when the client declares
+            // the polygon Convex, the general one for Complex or Nonconvex.
+            let spans = if shape == X_SHAPE_CONVEX {
+                crate::software::geometry::polygon::convex(&points)
+            } else {
+                let winding = values.fill_rule == crate::X_FILL_WINDING;
+                crate::software::geometry::polygon::general(&points, winding)
+            };
+            core_rectangle_fill(context, runtime, drawable, &spans, &values)
         }
         XWireRequest::PutImage {
             format,
@@ -908,7 +915,7 @@ fn core_polygon_draw(
 ) -> XDispatchResult {
     let spans: Vec<Rect> = polygons
         .iter()
-        .flat_map(|points| crate::software::geometry::polygon::fill(points, winding))
+        .flat_map(|points| crate::software::geometry::polygon::general(points, winding))
         .collect();
     core_rectangle_fill(context, runtime, drawable, &spans, values)
 }
@@ -979,3 +986,6 @@ fn core_segment_draw(
         metadata_candidates: Vec::new(),
     }
 }
+
+/// FillPoly's shape hint for a polygon the client says is convex.
+const X_SHAPE_CONVEX: u8 = 2;
