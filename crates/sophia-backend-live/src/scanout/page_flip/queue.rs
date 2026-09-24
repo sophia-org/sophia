@@ -16,6 +16,14 @@ pub struct LivePageFlipCallbackQueueReport {
 }
 
 impl LivePageFlipCallbackQueueReport {
+    // Its callers live in the native scanout, which is compiled only with
+    // the libdrm-events and gbm-probe features; without them the
+    // constructor has no caller, and a workspace clippy without features
+    // read that as dead code.
+    #[cfg_attr(
+        not(all(feature = "libdrm-events", feature = "gbm-probe")),
+        allow(dead_code)
+    )]
     pub(crate) fn with_accepted_capacity(capacity: usize) -> Self {
         Self {
             accepted_callbacks: Vec::with_capacity(capacity),
