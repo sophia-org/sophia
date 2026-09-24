@@ -2,7 +2,7 @@
 id: q53mtoq1
 date: 2026-09-24
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, x11, colormap]
 ---
 # TrueColor allocations belong to clients and RGB channels
@@ -80,6 +80,25 @@ The reconciled layout gate passes with those two ledger updates.
 
 These checks use private sockets and software rendering. They make no physical
 session acceptance claim.
+
+## Combined-candidate acceptance, 2026-09-24
+
+The other Sophia agent ran the canonical main-tree gates on `ded7d3a5`,
+combining branch tip `a9c59668` with t217's merged master `79c7476c`:
+selected-core PASS (76 passed, 23 declared), xproto PASS (339 passed,
+50 declared), and colors PASS (41 passed, 61 declared). The XTEST probe
+passed 44/44 in each run. The independent core result remains 162/162.
+Retained gate directories in the main checkout are
+`.artifacts/x11-profile-ded7d3a5-xts-selected-core`,
+`.artifacts/x11-profile-ded7d3a5-xts-xproto`, and
+`.artifacts/x11-profile-ded7d3a5-xts-colors`.
+
+The signed rebase onto `79c7476c` produced implementation `1e2a26ff` and
+evidence tip `aaa0e07c`. Its complete tree is identical to gated `ded7d3a5`
+(`git diff ded7d3a5 aaa0e07c` is empty), so no product change separates
+the gated candidate from this branch. The only subsequent change closes
+this task and records the verdict. t212's allocation-accounting exit is
+satisfied; the remaining XTS declarations retain their stated limits.
 
 ## Connections
 
