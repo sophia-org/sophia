@@ -9,7 +9,7 @@
 #[test]
 fn pending_control_gets_the_next_output_lock() {
     let (socket, _peer) = UnixStream::pair().expect("socket pair");
-    let stream = Arc::new(Mutex::new(socket));
+    let stream = X11ClientOutput::shared(socket, 0);
     let held = stream.lock().expect("initial output lock");
     let control_pending = Arc::new(AtomicUsize::new(0));
     let (normal_started_sender, normal_started_receiver) = sync_channel(1);

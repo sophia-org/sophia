@@ -30,7 +30,7 @@ fn a_retained_continuation_outlives_its_instance_and_goes_with_its_store() {
             .register_client_with_admission(client, Some(admitted(client)))
             .expect("a place and a row");
         let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-        let output = Arc::new(Mutex::new(stream));
+        let output = X11ClientOutput::shared(stream, 0);
         let wire = Arc::new(X11WirePermission::open());
         let pending = Arc::new(AtomicUsize::new(0));
         assert_eq!(
@@ -137,7 +137,7 @@ fn a_registration_that_ends_refuses_handovers_before_it_takes_its_queue_away() {
         "before the registration ends, this captured sender admits"
     );
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert_eq!(
@@ -186,7 +186,7 @@ fn a_connection_whose_binding_refused_retains_its_queue_without_a_socket() {
         .register_client_with_admission(other, Some(admitted(other)))
         .expect("a second place and row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert_eq!(
@@ -234,7 +234,7 @@ fn a_second_binding_is_refused_rather_than_replacing_the_first() {
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -296,7 +296,7 @@ fn a_receiver_only_connection_never_reports_an_ended_wire() {
 
     // A real refusal: a receiver another registration minted.
     let (stream, peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert_eq!(
@@ -366,7 +366,7 @@ fn a_second_binding_hands_back_the_receiver_it_was_offered() {
         .register_client_with_admission(other, Some(admitted(other)))
         .expect("a second place and row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
 
@@ -421,7 +421,7 @@ fn a_bound_connection_keeps_its_queue_through_a_later_setup_refusal() {
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -493,7 +493,7 @@ fn a_retained_connection_carries_what_closing_it_established() {
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -535,7 +535,7 @@ fn a_connection_closed_over_a_panicking_handover_never_reads_as_settled() {
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -599,7 +599,7 @@ fn a_connection_closed_cleanly_settles_once_its_work_is_gone() {
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -696,7 +696,7 @@ fn a_closure_someone_else_made_is_carried_as_already_established() {
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -752,11 +752,11 @@ fn serving_custody_for(
     XServerFrontendClientRouteRegistration,
     PrivatePreparedRunner,
     PrivateSettlementOwner,
-    Arc<Mutex<UnixStream>>,
+    Arc<Mutex<X11ClientOutput>>,
     crate::PrivateServiceOwner,
 ) {
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let PreparedOrderedFixture {
@@ -975,7 +975,7 @@ fn a_connections_place_coming_back_answers_nothing_for_an_interrupted_handover()
     // Now the connection ends and finishes: bound, torn down, closed,
     // producers gone, wire ended.
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let PreparedOrderedFixture {
@@ -1073,7 +1073,7 @@ fn a_handover_that_unwound_inside_the_gate_keeps_its_place() {
     assert!(holder.join().is_err(), "the holder unwound");
 
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let PreparedOrderedFixture {

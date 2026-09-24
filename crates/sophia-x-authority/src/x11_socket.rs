@@ -430,6 +430,7 @@ fn x11_peer_write_error(context: &str, error: std::io::Error) -> X11SetupSocketE
 mod routing_tests;
 include!("x11_socket/connection/observations.rs");
 include!("x11_socket/connection/io.rs");
+include!("x11_socket/connection/output_spill.rs");
 #[path = "../tests/support/present_layout_comparison.rs"]
 mod present_layout_comparison_tests;
 

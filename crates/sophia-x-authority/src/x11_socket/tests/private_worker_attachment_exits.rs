@@ -371,7 +371,7 @@ fn visitable(f: &PrivateWorkerFixture) {
         ._output
         .lock()
         .expect("the fixture's output")
-        .try_clone()
+        .try_clone_stream()
         .expect("an independent handle");
     assert!(f.fixture.registration.publish_worker_readiness(PrivateWorkerReadiness {
         byte_order: XByteOrder::LittleEndian,
@@ -815,7 +815,7 @@ fn a_visit_refuses_a_readiness_whose_stop_is_not_the_homes() {
         ._output
         .lock()
         .expect("the fixture's output")
-        .try_clone()
+        .try_clone_stream()
         .expect("an independent handle");
     assert!(f.fixture.registration.publish_worker_readiness(PrivateWorkerReadiness {
         byte_order: XByteOrder::LittleEndian,

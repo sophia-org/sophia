@@ -85,7 +85,7 @@ fn publish_active_windows(
 #[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
 fn spawn_x11_control_writer(
-    stream: Arc<Mutex<UnixStream>>,
+    stream: Arc<Mutex<X11ClientOutput>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
     byte_order: XByteOrder,
@@ -124,7 +124,7 @@ fn spawn_x11_control_writer(
     }
     macro_rules! terminate_client {
         ($kind:expr, $transaction:expr, $surface:expr, $completion:expr, $execution:expr) => {{
-            let stream = stream
+            let mut stream = stream
                 .lock()
                 .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
             stream.shutdown(Shutdown::Both).map_err(|error| {

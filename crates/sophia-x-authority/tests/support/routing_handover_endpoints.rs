@@ -932,7 +932,7 @@ fn transport_continuation(
     ordered: XAuthorityOrderedReceiver,
 ) -> PrivateOrderedContinuation {
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let transport = XAuthorityOrderedTransport::bind(
@@ -1008,7 +1008,7 @@ fn a_connections_ordered_output_is_retained_whole_when_its_registration_ends() {
 
     // Bound where both halves are owned, exactly as connection setup does it.
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert_eq!(
@@ -1104,7 +1104,7 @@ fn a_connections_own_reservation_keeps_the_store_it_must_dispose_into() {
             .register_client_with_admission(client, Some(admitted(client)))
             .expect("a place and a row");
         let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-        let output = Arc::new(Mutex::new(stream));
+        let output = X11ClientOutput::shared(stream, 0);
         let wire = Arc::new(X11WirePermission::open());
         let pending = Arc::new(AtomicUsize::new(0));
         assert_eq!(

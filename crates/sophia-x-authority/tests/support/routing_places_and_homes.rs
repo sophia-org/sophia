@@ -37,7 +37,7 @@ fn converted_fixture(
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert_eq!(
@@ -428,7 +428,7 @@ fn a_retained_home_refuses_a_binding_that_arrives_after_its_connection_ended() {
     assert_eq!(home.standing(), PrivateHomeStanding::Retained);
 
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let late = PrivateOrderedContinuation::Setup {

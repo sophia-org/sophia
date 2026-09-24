@@ -13,7 +13,7 @@
 /// This connection's output lock, the one every writer of its socket takes,
 /// reached through the home the registry keeps for it.
 #[cfg(unix)]
-fn output_lock_of(custody: &PrivateEvidenceCustody) -> Arc<Mutex<UnixStream>> {
+fn output_lock_of(custody: &PrivateEvidenceCustody) -> Arc<Mutex<X11ClientOutput>> {
     let home = Arc::clone(&custody.cleanup_record().ordered_home);
     let held = home
         .state

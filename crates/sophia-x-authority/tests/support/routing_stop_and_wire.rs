@@ -29,7 +29,7 @@ fn a_stop_mid_frame_leaves_the_wire_unusable_rather_than_yielding() {
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
@@ -209,7 +209,7 @@ fn a_stop_arriving_after_admission_also_ends_a_wire_mid_frame() {
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
@@ -349,7 +349,7 @@ fn a_stop_that_cannot_take_the_output_claims_nothing_and_says_why() {
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
@@ -605,7 +605,7 @@ fn a_whole_serving_owner_moves_into_its_place_with_everything_it_held() {
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
@@ -887,7 +887,7 @@ fn a_bound_transport_that_could_not_be_served_keeps_its_ending_handle() {
     let private = runner.frontend.as_mut().unwrap();
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let transport = XAuthorityOrderedTransport::bind(

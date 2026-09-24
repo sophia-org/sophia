@@ -776,7 +776,7 @@ struct PrivateWorkerFixture {
     sequence: Arc<AtomicU16>,
     sender: PrivateGatedOrderedSender,
     peer: UnixStream,
-    _output: Arc<Mutex<UnixStream>>,
+    _output: Arc<Mutex<X11ClientOutput>>,
 }
 
 fn worker_fixture(client: XServerFrontendClientId) -> PrivateWorkerFixture {
@@ -813,7 +813,7 @@ fn worker_fixture_bound(
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_read_timeout(Some(Duration::from_secs(3)))
         .expect("a bounded read");
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));

@@ -843,6 +843,7 @@ fn stopping_one_writer_does_not_leave_the_others_running() {
         input: Some(failing),
         control: Some(control_writer),
         protocol: None,
+        drain: None,
         transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     };
 
@@ -1017,6 +1018,7 @@ fn dropping_the_writers_stops_them_even_if_nobody_shut_them_down() {
         input: None,
         control: Some(control_writer),
         protocol: None,
+        drain: None,
         transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     });
     assert!(

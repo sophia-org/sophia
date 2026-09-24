@@ -123,7 +123,7 @@ fn real_destroyed_focus_suppresses_pending_core_focusin_and_republication() {
     let (stream, mut peer) = UnixStream::pair().unwrap();
     peer.set_read_timeout(Some(Duration::from_millis(60)))
         .unwrap();
-    let stream = Arc::new(Mutex::new(stream));
+    let stream = X11ClientOutput::shared(stream, 0);
     let (output, mut pending) =
         core_change(&fixture, window(), &stream, &Arc::new(AtomicUsize::new(0)));
     assert!(!fixture.published());

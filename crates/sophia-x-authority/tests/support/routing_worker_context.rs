@@ -194,7 +194,7 @@ fn bound_on(
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place, a keeper and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert_eq!(

@@ -35,7 +35,7 @@ fn peer_failure_writer(
     let (deliveries, receipts) = channel();
     let writer = spawn_x11_input_event_writer(
         X11InputWriterState {
-            stream: Arc::new(Mutex::new(socket)),
+            stream: X11ClientOutput::shared(socket, 0),
             output_control_pending: Arc::new(AtomicUsize::new(0)),
             output_wire: Arc::new(X11WirePermission::open()),
             byte_order: XByteOrder::LittleEndian,
@@ -195,7 +195,7 @@ fn peer_write_failure_control_is_not_reported_as_delivered() {
     let (socket, peer) = UnixStream::pair().unwrap();
     drop(peer);
     let error = write_x11_control_records(
-        &Arc::new(Mutex::new(socket)),
+        &X11ClientOutput::shared(socket, 0),
         &X11WirePermission::open(),
         XByteOrder::LittleEndian,
         &AtomicU16::new(1),
@@ -211,7 +211,7 @@ fn peer_write_failure_protocol_writer_exits_cleanly() {
     drop(peer);
     let (sender, receiver) = channel();
     let writer = spawn_x11_protocol_event_writer(
-        Arc::new(Mutex::new(socket)),
+        X11ClientOutput::shared(socket, 0),
         Arc::new(AtomicUsize::new(0)),
         Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
@@ -247,7 +247,7 @@ fn peer_write_failure_does_not_downgrade_other_io_or_poisoned_locks() {
     let error = x11_peer_write_error("test", std::io::Error::from(ErrorKind::PermissionDenied));
     assert!(!error.client_disconnect && !error.client_failure && !error.service_shutdown);
     let (socket, _peer) = UnixStream::pair().unwrap();
-    let socket = Arc::new(Mutex::new(socket));
+    let socket = X11ClientOutput::shared(socket, 0);
     let poison = socket.clone();
     let _ = std::thread::spawn(move || {
         let _guard = poison.lock().unwrap();

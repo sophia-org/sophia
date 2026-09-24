@@ -3,7 +3,7 @@
 // Split from the fixture module purely for size; same module scope.
     fn spawn_real_writer(
         fixture: &mut Fixture,
-        stream: Arc<Mutex<UnixStream>>,
+        stream: Arc<Mutex<X11ClientOutput>>,
         priority: Arc<AtomicUsize>,
     ) -> X11ControlWriter {
         let channels = fixture.channels.take().unwrap();
@@ -45,7 +45,7 @@
             .unwrap();
         let writer = spawn_real_writer(
             fixture,
-            Arc::new(Mutex::new(stream)),
+            X11ClientOutput::shared(stream, 0),
             Arc::new(AtomicUsize::new(0)),
         );
         (writer, peer)
@@ -53,7 +53,7 @@
     fn core_change(
         fixture: &Fixture,
         target: XResourceId,
-        stream: &Arc<Mutex<UnixStream>>,
+        stream: &Arc<Mutex<X11ClientOutput>>,
         priority: &Arc<AtomicUsize>,
     ) -> (XDispatchResult, X11PendingFocusPublication) {
         let context = crate::XDispatchContext {
@@ -112,7 +112,7 @@
         let (stream, mut peer) = UnixStream::pair().unwrap();
         peer.set_read_timeout(Some(Duration::from_millis(150)))
             .unwrap();
-        let stream = Arc::new(Mutex::new(stream));
+        let stream = X11ClientOutput::shared(stream, 0);
         let priority = Arc::new(AtomicUsize::new(0));
         let sequence = AtomicU16::new(2);
         for target in [root(), window()] {
@@ -255,7 +255,7 @@
             .unwrap();
         let (stream, mut peer) = UnixStream::pair().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
-        let stream = Arc::new(Mutex::new(stream));
+        let stream = X11ClientOutput::shared(stream, 0);
         let priority = Arc::new(AtomicUsize::new(0));
         // Only transport is held: runtime/common/X remain free for producers.
         let transport_gate = stream.lock().unwrap();
@@ -318,7 +318,7 @@
         let (output, pending) = core_change(
             &fixture,
             window(),
-            &Arc::new(Mutex::new(stream)),
+            &X11ClientOutput::shared(stream, 0),
             &Arc::new(AtomicUsize::new(0)),
         );
         assert!(!output.outputs.is_empty());
@@ -339,7 +339,7 @@
         let (output, mut pending) = core_change(
             &fixture,
             window(),
-            &Arc::new(Mutex::new(stream)),
+            &X11ClientOutput::shared(stream, 0),
             &Arc::new(AtomicUsize::new(0)),
         );
         pending.records = Some(output.encoded_outputs(XByteOrder::LittleEndian));
@@ -368,7 +368,7 @@
         let (output, mut pending) = core_change(
             &fixture,
             window(),
-            &Arc::new(Mutex::new(stream)),
+            &X11ClientOutput::shared(stream, 0),
             &Arc::new(AtomicUsize::new(0)),
         );
         pending.records = Some(output.encoded_outputs(XByteOrder::LittleEndian));
@@ -395,7 +395,7 @@
         let (output, mut pending) = core_change(
             &fixture,
             root(),
-            &Arc::new(Mutex::new(stream)),
+            &X11ClientOutput::shared(stream, 0),
             &Arc::new(AtomicUsize::new(0)),
         );
         pending.records = Some(output.encoded_outputs(XByteOrder::LittleEndian));

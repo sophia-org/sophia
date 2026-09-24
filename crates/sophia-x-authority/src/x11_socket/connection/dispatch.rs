@@ -599,9 +599,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let surface_windows = Arc::new(Mutex::new(BTreeMap::new()));
     let metadata_rules = Arc::new(Mutex::new(BTreeMap::new()));
     let metadata_generations = Arc::new(Mutex::new(BTreeMap::new()));
-    let output_stream = Arc::new(Mutex::new(stream.try_clone().map_err(|error| {
-        X11SetupSocketError::new(format!("failed to clone X11 output socket: {error}"))
-    })?));
+    let output_stream = X11ClientOutput::shared(
+        stream.try_clone().map_err(|error| {
+            X11SetupSocketError::new(format!("failed to clone X11 output socket: {error}"))
+        })?,
+        client.raw(),
+    );
     let output_control_pending = Arc::new(AtomicUsize::new(0));
     // One per connection, beside the output it governs. Every post-exposure
     // writer of this socket is given it, so a wire left holding the beginning
@@ -795,6 +798,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // so the writers are stopped and joined before the registration they were
     // serving goes.
     let writer_transport = X11ClientWriters::take_transport(&output_stream)?;
+    // Started with the transport handle, before anything is registered, so a
+    // refusal after this owns its stop through the cohort's drop.
+    let output_drain = spawn_x11_output_drain(output_stream.clone(), client.raw())?;
     let private_query = if let (Some(routing), Some(registration)) = (protocol_routing.as_ref(), route_registration.as_ref()) {
         let lease = registration.lifecycle.lock().map_err(|_| X11SetupSocketError::new("private lease unavailable"))?;
         match lease.as_ref() {
@@ -820,7 +826,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         // Registered only once the handle that can end a stalled write is in
         // hand, so a refusal registers nothing that would need taking back.
         query_owner: X11QueryOwner::register(&state.runtime, namespace, client, private_query)?,
-        writers: X11ClientWriters::owning(writer_transport),
+        writers: X11ClientWriters::owning(writer_transport, output_drain),
         watchdog_transport,
     };
     let writers = &mut owned.writers;
@@ -1070,7 +1076,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 // Publication emits no bytes and must not wait for control
                 // priority: this request may supersede that queued control.
                 // The eventual reply still takes the ordinary output turn.
-                let _output = enter_x11_wire(&output_stream, &output_wire)?;
+                let mut output = enter_x11_wire(&output_stream, &output_wire)?;
+                // A request read is the client's activity, which the silence
+                // allowance measures the absence of.
+                output.note_activity();
                 event_sequence.store(sequence, Ordering::Release);
             }
             let transaction = state.allocate_transaction()?;

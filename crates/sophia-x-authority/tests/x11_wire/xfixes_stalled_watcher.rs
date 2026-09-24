@@ -90,12 +90,18 @@ fn a_watcher_that_stops_draining_is_disconnected_and_the_rest_continue() {
     sync_x_connection(&mut stalled, XByteOrder::LittleEndian, watched);
 
     // From here the watcher never reads again. Bounded: enough owner changes
-    // to fill any reasonable queue, and a stop if the writes start failing.
+    // that their notifications pass what the kernel will hold for a client
+    // that is not reading -- half a mebibyte against a send buffer of a few
+    // hundred kibibytes -- so the rest is owed by the server, and a stop if
+    // the writes start failing. What ends the watcher is then the silence
+    // allowance (t165): output owed, and neither drained nor any request
+    // read, for six seconds. A watcher merely a buffer's worth behind is not
+    // yet a failed endpoint, and the reference server keeps it too.
     //
     // Synchronised every batch, so the assertions below cannot run against
     // requests the server has not reached yet. Without the barrier the reader
     // races the owner and can observe a queue that never had time to fill.
-    for round in 0..4096u32 {
+    for round in 0..16384u32 {
         if owner
             .write_all(&set_selection_owner_request(
                 XByteOrder::LittleEndian,
@@ -112,6 +118,11 @@ fn a_watcher_that_stops_draining_is_disconnected_and_the_rest_continue() {
         }
     }
     sync_x_connection(&mut owner, XByteOrder::LittleEndian, owner_window);
+
+    // Silent past the allowance: it reads nothing and asks nothing while
+    // output is owed to it. A watcher that resumed reading now would be
+    // keeping up, and would be kept.
+    std::thread::sleep(X_AUTHORITY_CLIENT_OUTPUT_SILENCE_LIMIT + Duration::from_secs(1));
 
     // Its connection is ended rather than left believing it is subscribed.
     // An absolute deadline, not a per-read timeout: a per-read timeout starts

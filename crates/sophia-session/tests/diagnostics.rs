@@ -1009,3 +1009,24 @@ fn the_selection_record_keeps_its_counts_and_nothing_else() {
         "sophia_live_selection schema=1 status=complete owner_changes=1"
     );
 }
+
+#[test]
+fn the_client_output_ending_keeps_its_cause_and_its_numbers() {
+    // The two bounds of t165 end a connection with one record each; a
+    // retained log has to say which bound, for which client, and by how
+    // much, or the next flooding client is invisible again.
+    for record in [
+        "sophia_x11_client_output schema=1 status=ended cause=saturated client=7 outstanding_bytes=16777248 limit_bytes=16777216",
+        "sophia_x11_client_output schema=1 status=ended cause=silent client=7 outstanding_bytes=4096 silence_msec=6012 allowance_msec=6000",
+    ] {
+        assert_eq!(reduced_record(record).as_deref(), Some(record), "{record}");
+    }
+    let reduced = reduced_record(
+        "sophia_x11_client_output schema=1 status=ended cause=whim client=7 payload=secret",
+    )
+    .unwrap();
+    assert_eq!(
+        reduced,
+        "sophia_x11_client_output schema=1 status=ended client=7"
+    );
+}

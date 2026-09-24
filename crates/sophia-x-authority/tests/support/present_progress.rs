@@ -25,7 +25,7 @@ fn three_windows_reuse_buffers_while_one_exact_present_remains_held() {
         let (stream, mut peer) = UnixStream::pair().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         let writer = spawn_x11_protocol_event_writer(
-            Arc::new(Mutex::new(stream)),
+            X11ClientOutput::shared(stream, 0),
             Arc::new(AtomicUsize::new(0)),
             Arc::new(X11WirePermission::open()),
             order,
