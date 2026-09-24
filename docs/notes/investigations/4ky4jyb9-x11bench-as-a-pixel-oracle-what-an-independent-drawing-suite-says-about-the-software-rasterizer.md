@@ -306,14 +306,14 @@ created on the first draw and kept for the namespace's life, as a root's
 contents outlive any one client; GetImage on the root reads it with that
 namespace's own windows over it (t185 made the readback namespace-scoped);
 it is never presented, because the Engine and the shell own the desktop.
-Every core draw now resolves its target through \`draw_target\` and
-\`draw_key\`, which map the root to that key. A wire test pins that the drawer
+Every core draw now resolves its target through `draw_target` and
+`draw_key`, which map the root to that key. A wire test pins that the drawer
 reads its root back, another namespace reads zero, and the draw presents
 nothing. Still open under t181: IncludeInferiors, which draws through a
 window's viewable descendants. It needs t188 first.
 
-**t188, found on the way.** \`present_window_damage\` copies only the drawing
-window's own pixels into its toplevel's presentation. A probe on \`55e50b1e\`: a
+**t188, found on the way.** `present_window_damage` copies only the drawing
+window's own pixels into its toplevel's presentation. A probe on `55e50b1e`: a
 child filled green, then its parent filled blue across it, presents blue
 where the child is. GetImage composites inferiors and reads green, so the
 default ClipByChildren holds for a readback and not for the screen. Any
