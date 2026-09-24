@@ -277,6 +277,28 @@ quarter arc's quadrant, double-dash phase order, once-per-pixel groups, and
 the on/off phase read. Dashed thin arcs are drawn as `miWideArc` draws the
 ones its thin walker refuses, since `miZeroArcDashPts` is not ported.
 
+**t180, pixmaps a GC holds (2026-09-24).** The store looked a GC's clip
+mask, tile and stipple up by pixmap XID at draw time, so after
+`XSetClipMask` then `XFreePixmap` -- legal, and what XTS's clip-origin,
+clip-mask and tile/stipple-origin purposes all do -- a draw found nothing
+and went unclipped or solid. The runtime already kept one freed pixmap alive
+for its referents: a RENDER picture or GLX pixmap moves it to a private key
+above the 32-bit XID range (`render_picture_lifetime.rs`, from the kitty
+cursor fix). Graphics contexts are now a third kind of referent: on
+FreePixmap a context holding the pixmap as mask, tile or stipple is
+repointed at the private key, and the backing is dropped once nothing holds
+it -- re-checked after ChangeGC, CopyGC, SetClipRectangles and FreeGC,
+which is every way a context lets go, client teardown included. The GC's
+count is read from the contexts rather than kept, so it cannot drift. A
+reused XID names the new pixmap and leaves the context's mask alone, as the
+protocol has it.
+
+Evidence: `pixmap_core_drawing.rs` checks a freed clip mask under a reused
+XID, a freed tile, and release when the last of two contexts lets go (red
+before the change); XTS's arcs scenario on `ef25a282` passes 234 purposes
+(222 before) and fails only the four IncludeInferiors purposes of t181; the
+core profile passes 152 of 152 and x11bench 57 of 60.
+
 ## Connections
 
 - [Running XTS5 through the profile gate](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):
