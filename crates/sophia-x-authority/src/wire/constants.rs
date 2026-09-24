@@ -93,6 +93,15 @@ const X_GET_KEYBOARD_MAPPING: u8 = 101;
 const X_GET_KEYBOARD_CONTROL: u8 = 103;
 const X_BELL: u8 = 104;
 const X_FORCE_SCREEN_SAVER: u8 = 115;
+const X_GET_MOTION_EVENTS: u8 = 39;
+const X_CHANGE_KEYBOARD_CONTROL: u8 = 102;
+const X_CHANGE_POINTER_CONTROL: u8 = 105;
+const X_GET_POINTER_CONTROL: u8 = 106;
+const X_SET_SCREEN_SAVER: u8 = 107;
+const X_GET_SCREEN_SAVER: u8 = 108;
+const X_CHANGE_HOSTS: u8 = 109;
+const X_LIST_HOSTS: u8 = 110;
+const X_SET_ACCESS_CONTROL: u8 = 111;
 const X_WARP_POINTER: u8 = 41;
 const X_GET_POINTER_MAPPING: u8 = 117;
 const X_QUERY_BEST_SIZE: u8 = 97;
@@ -645,6 +654,19 @@ const X_IMAGE_TEXT16_REQ_LEN: usize = 16;
 const X_CREATE_COLORMAP_REQ_LEN: usize = 16;
 const X_FREE_COLORMAP_REQ_LEN: usize = 8;
 const X_ALLOC_COLOR_REQ_LEN: usize = 16;
+const X_GET_MOTION_EVENTS_REQ_LEN: usize = 16;
+const X_CHANGE_KEYBOARD_CONTROL_REQ_LEN: usize = 8;
+const X_CHANGE_POINTER_CONTROL_REQ_LEN: usize = 12;
+const X_GET_POINTER_CONTROL_REQ_LEN: usize = 4;
+const X_SET_SCREEN_SAVER_REQ_LEN: usize = 12;
+const X_GET_SCREEN_SAVER_REQ_LEN: usize = 4;
+const X_CHANGE_HOSTS_REQ_LEN: usize = 8;
+const X_LIST_HOSTS_REQ_LEN: usize = 4;
+const X_SET_ACCESS_CONTROL_REQ_LEN: usize = 4;
+/// The eight keyboard-control values the protocol defines, in mask order:
+/// key-click-percent, bell-percent, bell-pitch, bell-duration, led,
+/// led-mode, key, auto-repeat-mode.
+const X_KEYBOARD_CONTROL_VALUE_MASK: u32 = 0xff;
 const X_COPY_COLORMAP_AND_FREE_REQ_LEN: usize = 12;
 const X_INSTALL_COLORMAP_REQ_LEN: usize = 8;
 const X_LIST_INSTALLED_COLORMAPS_REQ_LEN: usize = 8;

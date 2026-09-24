@@ -112,32 +112,24 @@
   {
     "case": "/Xproto/pChangeHosts",
     "purpose": 1,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "FAIL",
+    "reason": "by decision: host-based access control is not a mechanism this authority has, admission being by namespace and peer credentials, so no client may change the list and the answer is BadAccess"
   },
   {
     "case": "/Xproto/pChangeHosts",
-    "purpose": 2,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pChangeHosts",
-    "purpose": 3,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 3
   },
   {
     "case": "/Xproto/pChangeKeyboardControl",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pChangeKeyboardControl",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pChangeKeyboardControl",
@@ -145,9 +137,7 @@
   },
   {
     "case": "/Xproto/pChangeKeyboardControl",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 4
   },
   {
     "case": "/Xproto/pChangeKeyboardMapping",
@@ -167,21 +157,15 @@
   },
   {
     "case": "/Xproto/pChangePointerControl",
-    "purpose": 1,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pChangePointerControl",
-    "purpose": 2,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pChangePointerControl",
-    "purpose": 3,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 3
   },
   {
     "case": "/Xproto/pChangeProperty",
@@ -727,15 +711,11 @@
   },
   {
     "case": "/Xproto/pGetMotionEvents",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pGetMotionEvents",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pGetMotionEvents",
@@ -743,15 +723,13 @@
   },
   {
     "case": "/Xproto/pGetPointerControl",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pGetPointerControl",
     "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "UNTESTED",
+    "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
     "case": "/Xproto/pGetPointerControl",
@@ -785,15 +763,13 @@
   },
   {
     "case": "/Xproto/pGetScreenSaver",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pGetScreenSaver",
     "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "UNTESTED",
+    "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
     "case": "/Xproto/pGetScreenSaver",
@@ -995,15 +971,13 @@
   },
   {
     "case": "/Xproto/pListHosts",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pListHosts",
     "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "UNTESTED",
+    "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
     "case": "/Xproto/pListHosts",
@@ -1419,13 +1393,13 @@
     "case": "/Xproto/pSetAccessControl",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "reason": "by decision: host-based access control is not a mechanism this authority has, admission being by namespace and peer credentials, so no client may change the list and the answer is BadAccess"
   },
   {
     "case": "/Xproto/pSetAccessControl",
     "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "UNTESTED",
+    "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
     "case": "/Xproto/pSetAccessControl",
@@ -1475,13 +1449,11 @@
     "case": "/Xproto/pSetFontPath",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "reason": "by decision (ADR n520o0bl): the font path is session configuration, so SetFontPath is BadAccess"
   },
   {
     "case": "/Xproto/pSetFontPath",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pSetFontPath",
@@ -1533,21 +1505,15 @@
   },
   {
     "case": "/Xproto/pSetScreenSaver",
-    "purpose": 1,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pSetScreenSaver",
-    "purpose": 2,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pSetScreenSaver",
-    "purpose": 3,
-    "expected": "UNRESOLVED",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 3
   },
   {
     "case": "/Xproto/pSetSelectionOwner",

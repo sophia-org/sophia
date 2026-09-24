@@ -260,6 +260,10 @@
       "mandatory": true
     },
     {
+      "id": "server_controls_round_trip",
+      "mandatory": true
+    },
+    {
       "id": "warp_pointer",
       "mandatory": true
     }
@@ -792,6 +796,24 @@
       ],
       "cases": [
         "colormap_static_answers"
+      ]
+    },
+    {
+      "name": "Advisory server controls are set and read back with the protocol's validation; motion history is empty; the host list is empty, enabled and unchangeable",
+      "accepted_core_opcodes": [
+        39,
+        102,
+        103,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111
+      ],
+      "cases": [
+        "server_controls_round_trip"
       ]
     },
     {
@@ -1525,8 +1547,9 @@
     },
     "103": {
       "name": "X_GET_KEYBOARD_CONTROL",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "server_controls_round_trip"
+      ]
     },
     "104": {
       "name": "X_BELL",
@@ -1567,6 +1590,60 @@
       "name": "X_LIST_INSTALLED_COLORMAPS",
       "cases": [
         "colormap_static_answers"
+      ]
+    },
+    "39": {
+      "name": "X_GET_MOTION_EVENTS",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "102": {
+      "name": "X_CHANGE_KEYBOARD_CONTROL",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "105": {
+      "name": "X_CHANGE_POINTER_CONTROL",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "106": {
+      "name": "X_GET_POINTER_CONTROL",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "107": {
+      "name": "X_SET_SCREEN_SAVER",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "108": {
+      "name": "X_GET_SCREEN_SAVER",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "109": {
+      "name": "X_CHANGE_HOSTS",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "110": {
+      "name": "X_LIST_HOSTS",
+      "cases": [
+        "server_controls_round_trip"
+      ]
+    },
+    "111": {
+      "name": "X_SET_ACCESS_CONTROL",
+      "cases": [
+        "server_controls_round_trip"
       ]
     }
   }

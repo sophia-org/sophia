@@ -277,6 +277,8 @@ pub struct XAuthorityRuntime {
     device_connections: BTreeMap<u64, Option<std::sync::Arc<crate::XServerFrontendDeviceBundle>>>,
     xkb_keymap: crate::XkbKeymapSnapshot,
     input_authority: Arc<Mutex<crate::XInputAuthorityState>>,
+    /// Advisory: what a client set and reads back, acted on by nothing here.
+    controls: crate::XServerControls,
 }
 
 impl Default for XAuthorityRuntime {
@@ -347,6 +349,7 @@ impl Default for XAuthorityRuntime {
             xkb_keymap: crate::XkbKeymapSnapshot::new(&crate::XkbRmlvoConfig::default())
                 .expect("the deterministic default XKB keymap must compile"),
             input_authority: Arc::new(Mutex::new(crate::XInputAuthorityState::default())),
+            controls: crate::XServerControls::default(),
         }
     }
 }
@@ -367,6 +370,14 @@ impl XAuthorityRuntime {
 
     pub const fn xkb_keymap(&self) -> &crate::XkbKeymapSnapshot {
         &self.xkb_keymap
+    }
+
+    pub const fn controls(&self) -> &crate::XServerControls {
+        &self.controls
+    }
+
+    pub const fn controls_mut(&mut self) -> &mut crate::XServerControls {
+        &mut self.controls
     }
 
     pub fn set_policy_map_deferred(&mut self, deferred: bool) {

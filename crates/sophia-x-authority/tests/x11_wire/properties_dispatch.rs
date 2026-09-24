@@ -1129,16 +1129,16 @@ fn x11_core_decoder_rejects_bad_lengths_and_unknown_opcodes() {
         })
     );
 
-    // 110 is ListHosts, which this server does not implement. 127 used to
-    // stand in here, but it is NoOperation and is now recognised.
-    let mut unknown = vec![110, 0];
+    // 120 is unassigned in the core protocol. 127 and then 110 used to
+    // stand in here; NoOperation and ListHosts are both recognised now.
+    let mut unknown = vec![120, 0];
     push_u16(&mut unknown, XByteOrder::LittleEndian, 1);
     assert_eq!(
         decode_x11_core_request(
             context(NamespaceId::from_raw(45), 507, XByteOrder::LittleEndian),
             &unknown
         ),
-        Err(XWireParseError::UnknownOpcode(110))
+        Err(XWireParseError::UnknownOpcode(120))
     );
 
     // NoOperation carries whatever padding the client chose to align what

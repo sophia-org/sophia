@@ -11,6 +11,10 @@ fn encode_core_late_reply(
             | XClientReply::GetPointerMapping { .. }
             | XClientReply::GetKeyboardMapping { .. }
             | XClientReply::GetKeyboardControl { .. }
+            | XClientReply::GetPointerControl { .. }
+            | XClientReply::GetScreenSaver { .. }
+            | XClientReply::GetMotionEvents { .. }
+            | XClientReply::ListHosts { .. }
             | XClientReply::TranslateCoordinates { .. }
             | XClientReply::QueryFont { .. }
             | XClientReply::QueryTextExtents { .. }
@@ -121,14 +125,48 @@ fn encode_core_late_reply(
                     }
                     out
                 }
-                XClientReply::GetKeyboardControl { sequence } => {
+                XClientReply::GetKeyboardControl { sequence, keyboard } => {
                     let mut out = vec![0; 52];
                     write_reply_header(byte_order, &mut out, sequence, 5);
+                    out[1] = keyboard.global_auto_repeat;
+                    put_u32(byte_order, &mut out[8..12], keyboard.led_mask);
+                    out[12] = keyboard.key_click_percent;
+                    out[13] = keyboard.bell_percent;
+                    put_u16(byte_order, &mut out[14..16], keyboard.bell_pitch);
+                    put_u16(byte_order, &mut out[16..18], keyboard.bell_duration);
+                    out[20..52].copy_from_slice(&keyboard.auto_repeats);
+                    out
+                }
+                XClientReply::GetPointerControl { sequence, pointer } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_i16(byte_order, &mut out[8..10], pointer.acceleration_numerator);
+                    put_i16(byte_order, &mut out[10..12], pointer.acceleration_denominator);
+                    put_i16(byte_order, &mut out[12..14], pointer.threshold);
+                    out
+                }
+                XClientReply::GetScreenSaver {
+                    sequence,
+                    screen_saver,
+                } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    put_i16(byte_order, &mut out[8..10], screen_saver.timeout);
+                    put_i16(byte_order, &mut out[10..12], screen_saver.interval);
+                    out[12] = screen_saver.prefer_blanking;
+                    out[13] = screen_saver.allow_exposures;
+                    out
+                }
+                XClientReply::GetMotionEvents { sequence } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    out
+                }
+                XClientReply::ListHosts { sequence } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    // Mode: access control enabled. No hosts follow.
                     out[1] = 1;
-                    out[13] = 50;
-                    put_u16(byte_order, &mut out[14..16], 400);
-                    put_u16(byte_order, &mut out[16..18], 100);
-                    out[20..52].fill(0xff);
                     out
                 }
                 XClientReply::TranslateCoordinates {
