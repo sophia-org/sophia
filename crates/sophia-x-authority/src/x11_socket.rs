@@ -168,6 +168,7 @@ include!("x11_socket/connection/server.rs");
 include!("x11_socket/connection/private_service_order.rs");
 include!("x11_socket/connection/private_service.rs");
 include!("x11_socket/connection/protocol_routing.rs");
+include!("x11_socket/connection/lifetime.rs");
 include!("x11_socket/connection/pixmap_publication.rs");
 include!("x11_socket/connection/xtest.rs");
 include!("x11_socket/connection/dispatch.rs");
@@ -305,6 +306,22 @@ impl std::error::Error for X11SetupSocketError {}
 struct XServerFrontendClientLease {
     client: XServerFrontendClientId,
     resource_id_range: crate::XWireClientResourceRange,
+    /// What becomes of the range when the connection ends: destroyed, or
+    /// retained until a KillClient names it (SetCloseDownMode).
+    close_down_mode: crate::XCloseDownMode,
+}
+
+/// A departed client's resource range kept alive by its close-down mode,
+/// freed by a KillClient naming one of its resources, or, when temporary,
+/// by KillClient AllTemporary. Ranges are never reused, so a retained one is
+/// unambiguous.
+#[cfg(unix)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct XRetainedClientRange {
+    client: XServerFrontendClientId,
+    namespace: NamespaceId,
+    range: crate::XWireClientResourceRange,
+    temporary: bool,
 }
 
 #[cfg(all(unix, target_os = "linux"))]

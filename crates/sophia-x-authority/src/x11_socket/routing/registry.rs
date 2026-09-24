@@ -813,6 +813,26 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
+    /// A window given a new parent by a departing client's save-set: every
+    /// creator's entry for it follows, since the keys name the creator and
+    /// the window outlived the client that reparented it.
+    fn update_window_parent(
+        &self,
+        window: XResourceId,
+        parent: XResourceId,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let mut parents = self
+            .window_parents
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        for (key, value) in parents.iter_mut() {
+            if key.1 == window {
+                *value = parent;
+            }
+        }
+        Ok(())
+    }
+
     fn remove_window_parent(
         &self,
         client: XServerFrontendClientId,

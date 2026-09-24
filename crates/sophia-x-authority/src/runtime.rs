@@ -50,10 +50,27 @@ include!("runtime/pointer_query.rs");
 
 /// Effects of releasing every currently supported resource allocated from one
 /// X11 client connection's setup range.
+/// One window a departing client's save-set carried to a survivor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XSaveSetReparent {
+    pub window: crate::XResourceId,
+    pub old_parent: crate::XResourceId,
+    pub new_parent: crate::XResourceId,
+    pub was_mapped: bool,
+    pub x: i16,
+    pub y: i16,
+    pub override_redirect: bool,
+    pub surface: Option<AuthoritySurface>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct XAuthorityClientResourceRelease {
     /// X11 windows whose properties must be removed from the frontend table.
     pub destroyed_windows: Vec<crate::XResourceId>,
+    /// Windows the departing client had saved (ChangeSaveSet), given to the
+    /// nearest ancestor outside its range and re-mapped if they were mapped,
+    /// each owed UnmapNotify, ReparentNotify and MapNotify as applicable.
+    pub save_set_reparents: Vec<crate::XSaveSetReparent>,
     /// Selection ownerships this client's departure ended.
     ///
     /// Carried out with the release rather than left on the runtime's shared

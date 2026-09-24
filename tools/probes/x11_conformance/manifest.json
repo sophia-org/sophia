@@ -280,6 +280,18 @@
       "mandatory": true
     },
     {
+      "id": "kill_client",
+      "mandatory": true
+    },
+    {
+      "id": "set_close_down_mode",
+      "mandatory": true
+    },
+    {
+      "id": "change_save_set",
+      "mandatory": true
+    },
+    {
       "id": "warp_pointer",
       "mandatory": true
     }
@@ -866,6 +878,35 @@
       ],
       "cases": [
         "change_active_pointer_grab"
+      ]
+    },
+    {
+      "name": "KillClient ends the owner of a resource, frees a retained range, and names an id nobody holds",
+      "accepted_core_opcodes": [
+        113
+      ],
+      "cases": [
+        "kill_client"
+      ]
+    },
+    {
+      "name": "SetCloseDownMode retains a departed client's range until a KillClient frees it",
+      "accepted_core_opcodes": [
+        112,
+        113
+      ],
+      "cases": [
+        "set_close_down_mode"
+      ]
+    },
+    {
+      "name": "ChangeSaveSet returns a departed manager's saved windows to the nearest survivor, mapped",
+      "accepted_core_opcodes": [
+        6,
+        7
+      ],
+      "cases": [
+        "change_save_set"
       ]
     },
     {
@@ -1720,6 +1761,24 @@
       "name": "X_CHANGE_ACTIVE_POINTER_GRAB",
       "cases": [
         "change_active_pointer_grab"
+      ]
+    },
+    "113": {
+      "name": "X_KILL_CLIENT",
+      "cases": [
+        "kill_client"
+      ]
+    },
+    "112": {
+      "name": "X_SET_CLOSE_DOWN_MODE",
+      "cases": [
+        "set_close_down_mode"
+      ]
+    },
+    "6": {
+      "name": "X_CHANGE_SAVE_SET",
+      "cases": [
+        "change_save_set"
       ]
     }
   }

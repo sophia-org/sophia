@@ -23,6 +23,9 @@ fn dispatch_core_resource_request(
             | XWireRequest::ListFontsWithInfo { .. }
             | XWireRequest::QueryTextExtents { .. }
             | XWireRequest::SetFontPath
+            | XWireRequest::ChangeSaveSet { .. }
+            | XWireRequest::SetCloseDownMode { .. }
+            | XWireRequest::KillClient { .. }
             | XWireRequest::GetFontPath
             | XWireRequest::CopyGraphicsContext { .. }
             | XWireRequest::SetDashes { .. }
@@ -626,6 +629,42 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
+        // Validated here, acted on by the socket layer, which owns the
+        // leases: a window in the requester's own range is refused
+        // (BadMatch: a client saves another's windows, not its own), an
+        // unknown one BadWindow.
+        XWireRequest::ChangeSaveSet { window, own_window, .. } => {
+            let error = |code: XErrorCode| {
+                XClientOutput::Error(crate::XClientError {
+                    code,
+                    sequence: context.sequence,
+                    resource_id: u32::try_from(window.local.raw()).unwrap_or(0),
+                    minor_code: 0,
+                    major_code: context.major_opcode,
+                })
+            };
+            let outputs = if window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT)
+                || runtime
+                    .validate_window_access(context.namespace, window)
+                    .is_err()
+            {
+                vec![error(XErrorCode::BadWindow)]
+            } else if own_window {
+                vec![error(XErrorCode::BadMatch)]
+            } else {
+                Vec::new()
+            };
+            XDispatchResult {
+                response: None,
+                outputs,
+                metadata_candidates: Vec::new(),
+            }
+        }
+        XWireRequest::SetCloseDownMode { .. } | XWireRequest::KillClient { .. } => XDispatchResult {
+            response: None,
+            outputs: Vec::new(),
+            metadata_candidates: Vec::new(),
+        },
         XWireRequest::SetFontPath => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Error(crate::XClientError {

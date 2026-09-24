@@ -25,12 +25,8 @@ are decoded precisely so the answer can be a proper protocol error instead.
 
 ### Window and hierarchy
 
-| Op | Request | What it is for | Who calls it |
-| --- | --- | --- | --- |
-| 6 | ChangeSaveSet | Reparenting window managers preserve a client's windows if the manager dies | Only a reparenting WM. Sophia's WM does not reparent. |
-
-UnmapSubwindows, CirculateWindow and RotateProperties are decided (t166):
-see the table below.
+All decided (t166): ChangeSaveSet, UnmapSubwindows, CirculateWindow and
+RotateProperties are in the table below.
 
 ### Pointer and keyboard
 
@@ -53,15 +49,10 @@ See the decided table below.
 
 ### Connection lifetime
 
-| Op | Request | What it is for | Who calls it |
-| --- | --- | --- | --- |
-| 112 | SetCloseDownMode | Whether a client's resources outlive it | Session managers, `xsm` |
-| 113 | KillClient | Destroy another client's resources | `xkill`, window managers closing an unresponsive window |
-
-`KillClient` is the one with real teeth: a window manager uses it when a
-client ignores `WM_DELETE_WINDOW`, so a desktop without it cannot force a
-window closed. It is also the one whose authority question is sharpest, since
-it lets one client destroy another's resources.
+Both decided (t166): SetCloseDownMode and KillClient are in the table
+below. `KillClient` is the one with real teeth: a window manager uses it
+when a client ignores `WM_DELETE_WINDOW`, so a desktop without it cannot
+force a window closed.
 
 ### Colormaps
 
@@ -82,6 +73,9 @@ which is the use that made the question concrete rather than theoretical.
 | --- | --- | --- | --- |
 | 41 | WarpPointer | Serve it | Every XTS test's harness positions the pointer with it, and a client that asks for the pointer to move means it. The move happens and `QueryPointer` agrees. |
 | 115 | ForceScreenSaver | Serve it, as a no-op that validates | Every XTS test's startup calls `XResetScreenSaver`. This authority blanks nothing and keeps no idle timer, so both defined modes are accepted and move no state, and a mode outside the pair is the Value error the protocol names. |
+| 6 | ChangeSaveSet | Serve it | A client saves another's windows, never its own (BadMatch); when it departs, each saved window still alive is given to its nearest ancestor outside the departed range (the root when none) and re-mapped if it was mapped, with UnmapNotify, ReparentNotify (21, new) and MapNotify to whoever selected on it, rather than destroyed with the departed client's subtree. |
+| 112 | SetCloseDownMode | Serve it | Destroy is the teardown as it was. RetainPermanent and RetainTemporary keep the departed client's resource range alive -- windows mapped, properties in place -- until a KillClient names one of its resources, or AllTemporary for a temporary one; selections end with the connection either way, as the reference ends them. Ranges are never reused, so a retained one is unambiguous. |
+| 113 | KillClient | Serve it | The owner of the named resource is disconnected, and its own teardown frees its resources under its own close-down mode; a resource in a retained range frees that range now; AllTemporary frees every retained temporary range; a resource nobody holds is BadValue carrying it. |
 | 11 | UnmapSubwindows | Serve it | Every mapped child, top to bottom in stacking order as the protocol orders it, each through the path UnmapWindow takes with its UnmapNotify; children already unmapped are skipped, since an event for them would report a transition that never happened. |
 | 13 | CirculateWindow | Serve it, without Expose | The lowest child occluded by a sibling above it goes to the top (RaiseLowest), the highest occluding one to the bottom (LowerHighest), occlusion being the siblings' rectangles meeting; a CirculateNotify to the child and its parent's SubstructureNotify selectors. A client selecting SubstructureRedirect on the parent is asked instead, with a CirculateRequest naming the child, as a map becomes a MapRequest. No Expose: windows are retained surfaces here, and raising one uncovers nothing that was lost; XTS5's CirculateWindow purposes pass without it. |
 | 30 | ChangeActivePointerGrab | Serve the mask, validate the cursor | The event mask of an active grab the requester holds is rewritten; without such a grab the request has no effect, as the protocol says. The cursor is validated (BadCursor) and not applied: cursor display is config-driven here, the same debt WarpPointer carries. A bit outside the pointer events is BadValue carrying the mask. |
