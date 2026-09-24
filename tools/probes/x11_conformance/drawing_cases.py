@@ -436,6 +436,14 @@ def fill_primitives(context):
         fresh()
         c.send(FILL_POLY, c.pack('II', pid, paint) + c.pack('BBH', 0, 1, 0) + c.pack('hhhhhhhh', 1, 1, 3, 0, 0, 2, -3, 0))
         assert painted(c, pid, 9, 9) == rectangle, 'Previous coordinates close the same path'
+        # Pixel centres are integral and a pixel is inside when its centre
+        # is. The slanted edge from (9, 0) to (0, 3) passes through centres
+        # (6, 1) and (3, 2) with the interior to their left, so neither is
+        # drawn; every centre left of them is.
+        fresh()
+        c.send(FILL_POLY, c.pack('II', pid, paint) + c.pack('BBH', 0, 0, 0) + c.pack('hhhhhh', 0, 0, 9, 0, 0, 3))
+        assert painted(c, pid, 9, 9) == ({(x, 0) for x in range(9)} | {(x, 1) for x in range(6)}
+                                         | {(x, 2) for x in range(3)}), sorted(painted(c, pid, 9, 9))
         c.completion(c.send(FILL_POLY, c.pack('II', pid, paint) + c.pack('BBH', 3, 0, 0) + c.pack('hh', 0, 0)),
                      error=BAD_VALUE, opcode=FILL_POLY, resource=3)
         c.completion(c.send(FILL_POLY, c.pack('II', pid, paint) + c.pack('BBH', 0, 2, 0) + c.pack('hh', 0, 0)),

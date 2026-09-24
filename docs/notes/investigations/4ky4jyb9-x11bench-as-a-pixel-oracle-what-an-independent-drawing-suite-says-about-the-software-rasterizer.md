@@ -2,7 +2,7 @@
 id: 4ky4jyb9
 date: 2026-09-23
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, x11, conformance, validation, drawing]
 ---
 # x11bench as a pixel oracle: what an independent drawing suite says about the software rasterizer
@@ -168,6 +168,35 @@ dash and a GXxor polyline whose spans must not overlap. The same core run
 showed `xfixes_selection_stalled` TIMEOUT on master and here alike -- a
 stalled subscriber no longer disconnected since t165's output spill --
 reported to that task's owner, not a drawing matter.
+
+**t172, polygon edges (2026-09-23).** The cause: the filler (derived from
+yserver) sampled each row at `y + 0.5` in floating point and rounded x up,
+while the protocol puts pixel centres on integral coordinates -- a pixel is
+inside when its centre is, and a centre on an edge only with the interior to
+its right. `mi` meets that with integer Bresenham walkers sampled at each
+integral y and spans half open on the right. `software/geometry/polygon.rs`
+is now a port of `mi/mipoly.c` with the macros of `mi/miscanfill.h`:
+`miFillGeneralPoly` for Complex and Nonconvex polygons under both rules, its
+winding chain kept as a per-edge flag recomputed exactly when `mi`
+recomputes the chain, and `miFillConvexPoly` when the client declares its
+polygon Convex, bounded so a false claim cannot spin. PolyFillArc still
+fills the polygon `arc.rs` approximates; `miPolyFillArc` is not ported, and
+that, not this rule, is what remains of `clip_mask`'s 342-pixel rim -- an
+earlier line here and the manifest's first reason said otherwise, and the
+reason now reads correctly.
+
+Evidence: x11bench `fill_rule_evenodd` and `fill_rule_winding` match Xvnc
+exactly; the gate reads `x11bench PASS (52 passed, 8 declared)` on
+`100cfc9f`. `drawing_cases.py` `fill_primitives` gained a triangle (0, 0),
+(9, 0), (0, 3) whose slanted edge passes through centres (6, 1) and (3, 2):
+on master's host it filled rows 0-7, 0-4 and 0-2; the rule and this host
+give 0-8, 0-5 and 0-2. `polygon/tests.rs` works two edge cases of the rule
+by hand and checks the convex filler against the general one. The core run
+is otherwise PASS but for t165's `xfixes_selection_stalled`, as before.
+
+What x11bench still declares: four zero-width arcs and `clip_mask`'s rim
+(the arc code: zero-width arcs are the server's choice, filled arcs are
+`miPolyFillArc`'s to match), and three client restacks (authority policy).
 
 ## Connections
 

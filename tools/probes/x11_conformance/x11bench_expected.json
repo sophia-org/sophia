@@ -27,7 +27,7 @@
   {
     "test": "clip_mask",
     "expected": "FAIL",
-    "reason": "rim only since t170: the mask confines, and the 342 differing pixels are the zero-width arc drawn over the disc (device-dependent) and the FillArc edge in the mask, which follows the polygon edge rule of t172"
+    "reason": "rim only since t170: the mask confines, and the 342 differing pixels lie on the disc's edge -- the zero-width arc drawn over it (device-dependent) and the mask's PolyFillArc, which the host approximates with a polygon rather than drawing as miPolyFillArc does"
   },
   {
     "test": "clip_rectangles"
@@ -64,14 +64,10 @@
     "test": "draw_points"
   },
   {
-    "test": "fill_rule_evenodd",
-    "expected": "FAIL",
-    "reason": "t172: FillPolygon differs from the protocol rule on single pixels along slanted edges"
+    "test": "fill_rule_evenodd"
   },
   {
-    "test": "fill_rule_winding",
-    "expected": "FAIL",
-    "reason": "t172: FillPolygon differs from the protocol rule on single pixels along slanted edges"
+    "test": "fill_rule_winding"
   },
   {
     "test": "filled_rectangle"
