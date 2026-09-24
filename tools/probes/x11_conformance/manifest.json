@@ -298,15 +298,18 @@
     },
     {
       "id": "set_pointer_mapping",
-      "mandatory": true
+      "mandatory": true,
+      "timeout": 15
     },
     {
       "id": "change_keyboard_mapping",
-      "mandatory": true
+      "mandatory": true,
+      "timeout": 15
     },
     {
       "id": "set_modifier_mapping",
-      "mandatory": true
+      "mandatory": true,
+      "timeout": 15
     },
     {
       "id": "query_keymap",
