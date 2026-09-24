@@ -39,7 +39,7 @@ fi
 
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition ShellPresentedContentAction ShellContentOutbox ShellGpuLaunchAdmission InputDeliveryRecovery XAuthorityShutdown; do
+for model in RetainedCompositionAdmission NativeSessionLifecycle TabDescriptorPresentation VisualRetirement VisualRetirementSlots VisualDamageHistory StableBackingLease AdmissionRecovery PresentFrameOwnership PresentCopyOwnership PresentFlipOwnership PresentMixedOwnership SurfaceContentStream GeometryFeedback PolicyConnection PolicyProjection PolicyLifecycle PolicySettlementRecovery PolicyOutputSettlement PolicyRefreshLifecycle OutputTopologyLifecycle ShellObservation ShellDescriptorLifecycle ShellWorkAreaCoordination IndicatorTransfer IndicatorAction TargetResolvedInput TargetInputPacing InputAuthorityArbitration PointerGrabAdmission FrameServiceArbitration PageFlipCompletionPump PageFlipPresentationTracker SharedWorkerService CursorPlaneTransactionOwner MirrorHeadPacing PixelSilentAdmission ContinuousContentPresentation ShellContentLifecycle ShellContentBundleComposition ShellPresentedContentAction ShellContentOutbox ShellGpuLaunchAdmission InputDeliveryRecovery XAuthorityShutdown X11ClientOutputSpill; do
     cp "$MODEL_DIR/$model.tla" "$TEMP_DIR/"
     cp "$MODEL_DIR/$model.cfg" "$TEMP_DIR/"
     (
@@ -464,6 +464,28 @@ for control in InputDeliveryRecoveryNoDeadline InputDeliveryRecoveryEarlyBarrier
         InputDeliveryRecoveryEarlyBarrier) expected='Invariant BarrierSound is violated.' ;;
     esac
     grep -Fq "$expected" "$log" || { cat "$log"; exit 1; }
+done
+
+for control in X11ClientOutputSpillBlockingWriter X11ClientOutputSpillUnbounded X11ClientOutputSpillNoSilence; do
+    control_dir="$TEMP_DIR/$control"
+    mkdir "$control_dir"
+    cp "$MODEL_DIR/X11ClientOutputSpill.tla" "$MODEL_DIR/$control.cfg" "$control_dir/"
+    log="$control_dir/control.log"
+    if (cd "$control_dir" && timeout 10m java -XX:+UseParallelGC -jar "$JAR_PATH" \
+        -deadlock -workers 1 -fp 0 -config "$control.cfg" X11ClientOutputSpill.tla) >"$log" 2>&1; then
+        echo "TLA+ client output spill negative control unexpectedly passed: $control" >&2
+        exit 1
+    fi
+    case "$control" in
+        X11ClientOutputSpillBlockingWriter) expected='Invariant ReaderNeverWaitsOnRecipient is violated.' ;;
+        X11ClientOutputSpillUnbounded) expected='Invariant OutstandingBounded is violated.' ;;
+        X11ClientOutputSpillNoSilence) expected='Temporal properties were violated.' ;;
+    esac
+    grep -Fq "$expected" "$log" || {
+        echo "TLA+ client output spill control failed for the wrong reason: $control" >&2
+        cat "$log" >&2
+        exit 1
+    }
 done
 
 # Ownership controls must fail their named invariant, never just parse or exit.
