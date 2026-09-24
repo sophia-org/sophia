@@ -30,6 +30,61 @@ transport, library requirement, or alternate Engine entry point.
 
 ## The Decision
 
+### Role lifecycle specialization
+
+Shell hello/welcome use transaction zero and the common 24-byte envelope.
+`required_capabilities` is a requirement, unlike WM/output's intersected
+requests: unknown, unavailable or dependency-incomplete requirements refuse
+admission. The descriptor profile selects the highest revision in 1–6 within
+the client's ordered nonzero range. It requires `descriptor_switcher` and
+also grants `work_area_reservation`; later bits require their schema revision
+and prerequisites. Thus welcome may include baseline bits the client did not
+explicitly request. The current transport announces 16 descriptors, 128 label
+bytes and 16 pending activations. Other schema ceilings, including 256 shortcuts,
+remain fixed rather than being implied by those three welcome fields.
+
+The supervisor selects component profiles before negotiation; the client cannot
+change its role with a bitmask. Native launcher selects revision 7 and exactly
+bits 5, 7, 8 and 11. Persistent catalog selects revision 8 and exactly bits
+1, 5, 7, 8 and 12. Both require a pre-reserved protected content grant and
+explicit discrete-input permission. Neither permits extra descriptor/indicator
+authority. The legacy descriptor entry point denies content; a protected
+component host may grant it. A content refusal can send the schema-defined
+admission-refused record before closing. Welcome alone grants no GPU execution;
+content uses a following `ContentLimits` packet and exact grant identity.
+
+Descriptor snapshots and candidates are complete single-frame values. Content
+and allocation transfers instead use the declared begin/chunk/end counts and
+ordinals, with one exact grant and transaction throughout. Native launcher and
+persistent catalog reuse content's chunk/end machinery under their explicitly
+versioned begin/record vocabularies. No partial transfer changes presented state.
+The common payload bound excludes the header; transfer-specific and aggregate
+resource limits in `ContentLimits` may be tighter than a single frame.
+
+Every post-handshake operation carries its schema-required nonzero transaction
+and applicable connection/grant, snapshot, candidate, broker, allocation or
+presentation generations. These namespaces are distinct; equal numbers do not
+authorize substitution. Descriptor candidates name exact snapshot/output
+identities. Action tokens also bind issuer/revocation/recipient and target
+generation. Content candidates consume the exact admitted allocation and
+permit; a structurally valid foreign or expired grant is still unauthorized.
+
+Descriptor candidate outcomes distinguish Prepared, Presented, Rejected and
+Superseded. Prepared does not mean pixels or actions became live. Content has
+its own schema-defined resource replies, candidate settlement and retirement;
+it does not borrow the descriptor enum or output's reason codes. Only complete
+Engine presentation publishes matching pixels, work area and activation targets.
+Discrete activations are bounded ordered work, not coalescible scene refreshes.
+
+Disconnect, revocation, output replacement and response saturation revoke
+interaction immediately. Incomplete and queued work is discarded; referenced
+backing may remain until Engine's exact presentation leases retire. Retaining
+pixels is not retaining input authority. Replacement creates a fresh connection
+and grant and starts from current complete facts. Stale grants and old events
+cannot cross that boundary. Unknown record kinds, enum values, reserved bits,
+trailing bytes and unnegotiated vocabulary fail closed; shell has no WM-style
+uncounted extension-record area. New shapes require their own negotiated revision.
+
 ### Descriptor And Content Shells
 
 Maintain both architectural models. Narthex remains the independent descriptor

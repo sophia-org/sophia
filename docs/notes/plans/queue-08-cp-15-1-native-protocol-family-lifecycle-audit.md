@@ -38,3 +38,8 @@ Required exit:
   and
 - remove or explicitly version accidental transport forks without weakening
   the frozen WM revision.
+
+The [2026-09-24 family audit](../investigations/v2yrv8je-native-family-audit-makes-output-layouts-explicit-without-changing-frozen-wm-bytes.md)
+records the extracted output schema, codec equivalence tests, role lifecycle
+differences and validation. It preserves experimental shell/output status;
+the family conformance entry and independent lifecycle proof belong to t023.
