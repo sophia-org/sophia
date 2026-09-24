@@ -1055,7 +1055,7 @@ Some cases are left out: XAllocNamedColor and XLookupColor stop before
 their last purposes on Xvnc as on the host, XInstallColormap's fourth purpose is unstable until t210 gives it the ColormapNotify it waits for, and XChangeGC, XCreateGC,
 XGetGCValues and XSetFont wait on t201's font path.
 `xts_expected_windows.json` is the Xlib4 and Xlib5 window cases (304
-purposes, run without XTEST): the host passes 228 where Xvnc passes 277
+purposes, run without XTEST): the host passes 240 where Xvnc passes 277
 on the same cases, and the declarations are the suite's omissions,
 backing store (not offered), one screen, the no-borders decision for
 border pixels, purposes Xvnc answers the same, and t214 to t218 and t227

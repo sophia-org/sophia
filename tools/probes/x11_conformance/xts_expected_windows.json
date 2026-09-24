@@ -73,45 +73,39 @@
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 2
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 4
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
-    "purpose": 5,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 5
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 6,
     "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so the border the pixel check looks for is not painted; t214 counts it as space"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 7,
     "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 8,
     "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
@@ -207,9 +201,7 @@
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
-    "purpose": 26,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 26
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
@@ -571,27 +563,21 @@
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 1
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
     "purpose": 2,
     "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 3
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 4
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
@@ -615,9 +601,7 @@
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
-    "purpose": 10,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 10
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
@@ -693,27 +677,21 @@
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 1
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
     "purpose": 2,
     "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 3
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 4
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
@@ -737,9 +715,7 @@
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
-    "purpose": 10,
-    "expected": "FAIL",
-    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+    "purpose": 10
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
@@ -1139,7 +1115,7 @@
     "case": "/Xlib5/XGetWindowAttributes",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "the bit-gravity attribute is not reported; t215"
+    "reason": "the authority does not offer backing store, so the backing-store and backing-planes attributes a client sets are not kept and reported"
   },
   {
     "case": "/Xlib5/XGetWindowAttributes",
