@@ -57,6 +57,13 @@ session's acceptance rows.
 
 - [x] Red then green in the projection tests.
 - [x] `sophia-backend-live` suite and clippy.
+- [x] The transport gates: `xterm-pointer-oracle` pass (injected_motions=7,
+      injected_buttons=8); `xtest-selection` pass on the rerun
+      (owner_changes=1, conversions=2, injected_buttons=4). Its first run
+      ended with the session declaring `session control failure: TimedOut`
+      after the driver had already finished, a teardown race unrelated to
+      the region (`.artifacts/xtest-selection/f499cbe2-1790247697/pass.log`),
+      filed as t187.
 - [ ] Physical click-through on the installed session (operator; rows t060
       and t061 cover the installed popup and menu acceptance).
 
