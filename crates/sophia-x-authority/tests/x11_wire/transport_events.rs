@@ -332,6 +332,8 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
     request[12] = 18;
     let mut unmap = [0; 32];
     unmap.copy_from_slice(&request[12..44]);
+    // Delivered as sent: bit 7 of the type is set whatever the template had.
+    unmap[0] |= 0x80;
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
         XWireRequest::SendSelectionNotify {

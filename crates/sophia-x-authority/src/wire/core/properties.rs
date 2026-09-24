@@ -191,6 +191,12 @@ fn decode_send_event(
     if event_type != 31 {
         let mut event = [0; 32];
         event.copy_from_slice(&bytes[12..44]);
+        // Delivered as sent: the protocol sets the most significant bit of
+        // the type on every event SendEvent delivers, whatever the client
+        // put in its template. That bit is how a recipient tells a sent
+        // event from one the server generated, and what toolkits read as
+        // send_event. The SelectionNotify form below marks itself.
+        event[0] |= 0x80;
         return Ok(XWireRequest::SendSelectionNotify {
             destination,
             event_mask: context.byte_order.u32(&bytes[8..12]),
