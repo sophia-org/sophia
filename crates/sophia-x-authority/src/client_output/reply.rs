@@ -41,6 +41,8 @@ pub enum XClientReply {
         colormap: XResourceId,
         map_state: u8,
         override_redirect: bool,
+        bit_gravity: u8,
+        win_gravity: u8,
     },
     QueryExtension {
         sequence: u16,

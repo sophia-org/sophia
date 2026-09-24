@@ -114,4 +114,68 @@ impl XSoftwareBufferStore {
         self.note_export_damage(drawable, replaced, published_damage);
         result
     }
+
+    /// A resized window's buffer under its bit-gravity: a new buffer of
+    /// `size`, with the old contents at `offset` when they are kept and
+    /// nothing when they are discarded (t215). What the old contents do not
+    /// cover is returned, for the caller to repaint and expose.
+    pub(crate) fn relocate_window_contents(
+        &mut self,
+        window: XResourceId,
+        size: Size,
+        offset: Option<(i32, i32)>,
+    ) -> Option<Vec<Rect>> {
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+        };
+        let previous = self.buffers.remove(&window);
+        let handle = self.allocate_handle();
+        let (buffer, _) = self.ensure(window, size, handle)?;
+        let kept = match (previous, offset) {
+            (Some(previous), Some((x, y))) => raster_ops::copy_buffer_region(
+                &previous,
+                buffer,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: previous.size.width,
+                    height: previous.size.height,
+                },
+                x,
+                y,
+            ),
+            _ => None,
+        };
+        buffer.generation = buffer.generation.checked_add(1)?;
+        self.note_export_damage(window, true, Some(whole));
+        Some(match kept {
+            Some(kept) => sophia_protocol::geometry::region_algebra::subtract(&[whole], &[kept]),
+            None => vec![whole],
+        })
+    }
+
+    /// Paint parts of a window with its background, as a repaint after a
+    /// resize does: a pixel, or a tile from `origin` taken from `owner`.
+    pub(crate) fn paint_background_rects(
+        &mut self,
+        window: XResourceId,
+        size: Size,
+        rects: &[Rect],
+        pixel: u32,
+        tile: Option<(XResourceId, (i32, i32))>,
+    ) {
+        for rect in rects {
+            match tile {
+                Some(tile) => {
+                    self.clear_tiled(window, size, *rect, tile);
+                }
+                None => {
+                    self.clear(window, size, *rect, pixel);
+                }
+            }
+        }
+    }
 }

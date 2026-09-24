@@ -9,6 +9,9 @@ pub const X_NORTH_WEST_GRAVITY: u8 = 1;
 /// `StaticGravity`: the child keeps its place on the screen.
 pub const X_STATIC_GRAVITY: u8 = 10;
 
+/// `ForgetGravity`: a resized window's contents are discarded.
+pub const X_FORGET_GRAVITY: u8 = 0;
+
 /// What a parent's resize did to one of its children.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XGravityOutcome {
@@ -105,5 +108,101 @@ impl XAuthorityRuntime {
             }
         }
         outcomes
+    }
+
+    /// Record a window's bit-gravity.
+    pub fn set_window_bit_gravity(&mut self, window: crate::XResourceId, gravity: u8) {
+        if gravity == X_FORGET_GRAVITY {
+            self.window_bit_gravities.remove(&window);
+        } else {
+            self.window_bit_gravities.insert(window, gravity);
+        }
+    }
+
+    pub fn window_bit_gravity(&self, window: crate::XResourceId) -> u8 {
+        self.window_bit_gravities
+            .get(&window)
+            .copied()
+            .unwrap_or(X_FORGET_GRAVITY)
+    }
+
+    /// A resized window's contents under its bit-gravity (t215): kept where
+    /// the gravity places them, or discarded under ForgetGravity, and what is
+    /// newly uncovered painted with the window's background. The uncovered
+    /// rectangles are returned for the caller to expose and present; nothing
+    /// for a window that did not change size, is InputOnly, or has never
+    /// been drawn.
+    pub(crate) fn apply_bit_gravity(&mut self, window: crate::XResourceId, before: Rect, after: Rect) -> Vec<Rect> {
+        let grown = (after.width - before.width, after.height - before.height);
+        if grown == (0, 0) || self.window_is_input_only(window) || !self.software_buffers.has_backing(window) {
+            return Vec::new();
+        }
+        let gravity = self.window_bit_gravity(window);
+        let offset = (gravity != X_FORGET_GRAVITY).then(|| {
+            win_gravity_translate(gravity, (0, 0), grown, (after.x - before.x, after.y - before.y))
+        });
+        let size = Size {
+            width: after.width,
+            height: after.height,
+        };
+        let Some(uncovered) = self.software_buffers.relocate_window_contents(window, size, offset) else {
+            return Vec::new();
+        };
+        let (background, owner, origin) = self.resolved_background(window);
+        match background {
+            crate::XWindowBackground::Pixel(pixel) => {
+                self.software_buffers.paint_background_rects(window, size, &uncovered, pixel, None);
+            }
+            crate::XWindowBackground::Pixmap(_) => {
+                self.software_buffers
+                    .paint_background_rects(window, size, &uncovered, 0, Some((owner, origin)));
+            }
+            crate::XWindowBackground::Undefined | crate::XWindowBackground::ParentRelative => {}
+        }
+        uncovered
+    }
+
+    /// A resize's effect on the window's own contents, presented: the
+    /// uncovered rectangles to expose, and the presentation of the whole
+    /// window when anything was redrawn.
+    pub(crate) fn resize_window_contents(
+        &mut self,
+        transaction: TransactionId,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        before: Rect,
+        after: Rect,
+    ) -> (Vec<Rect>, Option<XAuthorityResponsePacket>) {
+        let uncovered = self.apply_bit_gravity(window, before, after);
+        if uncovered.is_empty() {
+            return (uncovered, None);
+        }
+        let Some(record) = self.windows.get(window) else {
+            return (uncovered, None);
+        };
+        let generation = record.generation;
+        let Some(handle) = self.software_buffers.buffer_handle(window) else {
+            return (uncovered, None);
+        };
+        // Moved and repainted pixels have no journal representation.
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Unsupported(
+            XRasterUnsupportedKind::RenderOperation,
+        ));
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            width: after.width,
+            height: after.height,
+        };
+        let packet = self.finish_drawing_update(XDrawingUpdate::core_draw(
+            transaction,
+            namespace,
+            window,
+            handle,
+            Region::single(whole),
+            generation,
+            250,
+        ));
+        (uncovered, Some(packet))
     }
 }

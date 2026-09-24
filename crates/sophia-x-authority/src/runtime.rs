@@ -263,6 +263,7 @@ pub struct XAuthorityRuntime {
     window_visuals: BTreeMap<crate::XResourceId, (u8, u32, crate::XResourceId)>,
     /// A window's win-gravity where it is not NorthWest, the default (t199).
     window_gravities: BTreeMap<crate::XResourceId, u8>,
+    window_bit_gravities: BTreeMap<crate::XResourceId, u8>,
     /// The cursor each window asks for, absent when it shows its parent's.
     window_cursors: BTreeMap<crate::XResourceId, crate::XResourceId>,
     /// Windows created InputOnly. They take input and geometry requests but
@@ -372,6 +373,7 @@ impl Default for XAuthorityRuntime {
             window_backgrounds: Default::default(),
             window_visuals: Default::default(),
             window_gravities: Default::default(),
+            window_bit_gravities: Default::default(),
             window_cursors: Default::default(),
             input_only_windows: Default::default(),
             window_border_widths: Default::default(),

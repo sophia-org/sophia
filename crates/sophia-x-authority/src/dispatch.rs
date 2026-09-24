@@ -24,6 +24,7 @@ include!("dispatch/core/properties.rs");
 include!("dispatch/core/resources.rs");
 include!("dispatch/core/windows.rs");
 include!("dispatch/core/window_attributes.rs");
+include!("dispatch/core/window_resize.rs");
 include!("dispatch/extensions/dri3.rs");
 include!("dispatch/extensions/glx.rs");
 include!("dispatch/extensions/present.rs");
