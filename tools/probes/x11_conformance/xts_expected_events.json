@@ -177,7 +177,7 @@
     "case": "/Xlib11/ConfigureRequest",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "reason": "t221: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
   },
   {
     "case": "/Xlib11/ConfigureRequest",
@@ -189,7 +189,7 @@
     "case": "/Xlib11/ConfigureRequest",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "reason": "t221: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
   },
   {
     "case": "/Xlib11/ConfigureRequest",
@@ -207,7 +207,7 @@
     "case": "/Xlib11/ConfigureRequest",
     "purpose": 6,
     "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "reason": "t221: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
   },
   {
     "case": "/Xlib11/ConfigureRequest",
@@ -665,7 +665,7 @@
     "case": "/Xlib11/KeymapNotify",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got MotionNotify, expected KeymapNotify'"
+    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'No events received.'"
   },
   {
     "case": "/Xlib11/KeymapNotify",
@@ -677,7 +677,7 @@
     "case": "/Xlib11/KeymapNotify",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0x2f9209f0, client2: 0x2f931c60, client2: 0x2f93fc60'"
+    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0x1e6c79f0, client2: 0x1e6d8d50, client2: 0x1e6d9fd0'"
   },
   {
     "case": "/Xlib11/KeymapNotify",
@@ -957,9 +957,7 @@
   },
   {
     "case": "/Xlib11/ResizeRequest",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/ResizeRequest",
