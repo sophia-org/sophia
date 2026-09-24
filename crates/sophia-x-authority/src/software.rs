@@ -702,11 +702,12 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
         let damage = geometry::wide_line::bounds(spans)?;
+        let pattern_pixels = self.pattern_pixels(gc);
         let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        paint_spans(buffer, spans, gc);
+        paint_spans(buffer, spans, gc, pattern_pixels.as_ref());
         let published_damage = Some(damage);
         withhold(
             buffer,
@@ -930,17 +931,29 @@ fn coverage_area(rects: &[Rect]) -> usize {
         .fold(0usize, usize::saturating_add)
 }
 
-/// Paint wide-line spans in order, each batch in its own pixel, through the
-/// same per-pixel rules as every fill: clip list, raster function, plane
-/// mask.
+/// Paint a stroke's spans in order through the same per-pixel rules as
+/// every fill: fill style, clip list, raster function, plane mask. Each batch
+/// is painted as `mi` paints it, with the batch's pixel standing in for the
+/// foreground -- which is how a double dash's off dashes take the
+/// background, tiled or stippled as the GC says.
 fn paint_spans(
     buffer: &mut XAuthorityCpuBufferSnapshot,
     spans: &geometry::wide_line::XInkedSpans,
     gc: &XGraphicsContextValues,
+    pattern_pixels: Option<&XAuthorityCpuBufferSnapshot>,
 ) {
+    let no_mask = XClipMask {
+        pixels: None,
+        origin: (0, 0),
+    };
     for (pixel, spans) in spans {
+        let ink = XGraphicsContextValues {
+            foreground: *pixel,
+            ..gc.clone()
+        };
+        let pattern = fill_pattern::fill_pattern(&ink, pattern_pixels);
         for span in spans {
-            fill_rect(
+            fill_rect_masked(
                 buffer,
                 Rect {
                     x: span.x,
@@ -948,7 +961,8 @@ fn paint_spans(
                     width: span.width,
                     height: 1,
                 },
-                *pixel,
+                pattern,
+                no_mask,
                 gc,
             );
         }
