@@ -107,3 +107,24 @@ fn clear_area_restores_the_background_the_window_has() {
     assert_eq!(row(&mut fixture, 0x800003), vec![0x0000_ff00, 0x0000_00ff, 0x00ff_0000], "the parent's tile, from its origin");
     assert_eq!(row(&mut fixture, 0x800004), vec![0x0077_7777; 3], "background None changes nothing");
 }
+
+/// A ParentRelative tile is aligned with the parent's inside, and a child's
+/// inside begins past its border: with a border of two, the child at x = 2
+/// starts four pixels into the tile, which is one past its start.
+#[test]
+fn a_parent_relative_tile_counts_the_childs_border() {
+    let mut fixture = InferiorsFixture::new();
+    let ns = NamespaceId::from_raw(0x5605);
+    let order = fixture.order;
+    fixture.send(ns, 1, create_window_request(order, 0x810001, 0, 0, 20, 20));
+    fixture.send(ns, 1, create_window_request_with_parent(order, 0x810003, 0x810001, 2, 0, 10, 5));
+    // ConfigureWindow border-width (1 << 4).
+    fixture.send(ns, 12, configure_window_request(order, 0x810003, 1 << 4, &[2]));
+    three_tile(&mut fixture, ns, 0x810002, 0x810001);
+    fixture.send(ns, 2, cwa_request(order, 0x810001, 1 << 0, 0x810002));
+    fixture.send(ns, 2, cwa_request(order, 0x810003, 1 << 0, 1));
+    fixture.send(ns, 8, map_window_request(order, 0x810003));
+    fixture.send(ns, 8, map_window_request(order, 0x810001));
+    let row: Vec<u32> = (0..3).map(|x| fixture.read(ns, 0x810003, x, 0)).collect();
+    assert_eq!(row, vec![0x0000_ff00, 0x0000_00ff, 0x00ff_0000]);
+}

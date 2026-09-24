@@ -42,7 +42,13 @@ impl XAuthorityRuntime {
                     if record.parent == candidate {
                         return (crate::XWindowBackground::Undefined, candidate, origin);
                     }
-                    origin = (origin.0 - record.geometry.x, origin.1 - record.geometry.y);
+                    // A window's inside begins past its border, so the
+                    // parent's origin is its position and border width back.
+                    let border = i32::from(self.window_border_width(candidate));
+                    origin = (
+                        origin.0 - record.geometry.x - border,
+                        origin.1 - record.geometry.y - border,
+                    );
                     candidate = record.parent;
                 }
                 Some(background) => return (*background, candidate, origin),
