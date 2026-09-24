@@ -2,7 +2,7 @@
 id: gl2ooa99
 date: 2026-09-12
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, shell, security]
 ---
 # Shell reservation admission ignores the configured panel depth
@@ -67,10 +67,20 @@ reproduction or physical presentation claim. Existing
 profile maximum and codec maximum; it does not test a client exceeding its
 configured allowance.
 
-Task `t083` in [todo](../../../todo.md) tracks the repair as candidate work.
-Closure requires rejecting claims above the configured allowance, including
-nonzero claims when the allowance is absent or zero, while preserving valid
-claims, explicit withdrawal and the existing coherent presentation lifecycle.
+Resolved (t083, closed 2026-09-24): Session's reservation admission now
+refuses a claim before the candidate is prepared, through
+`reservation_within_profile` in `live_session/metadata_shell.rs`: a claim is
+admitted only when an allowance is configured and the claim's thickness is
+within it, so a nonzero claim against an absent or zero allowance is refused
+(`sophia_live_metadata_shell status=reservation_refused reason=profile_limit`,
+naming the configured depth), a claim within the allowance is admitted, and
+an explicit withdrawal (no reservation) is admitted whatever the allowance.
+The unit test
+`descriptor_reservations_cannot_exceed_or_invent_the_profile_allowance`
+covers absent, zero, exact and exceeded allowances and the withdrawal. The
+coherent presentation lifecycle is unchanged: admission reduces nothing, and
+only the commit that follows presentation moves the work area. This remains
+a source-backed check; no live malicious-client reproduction was run.
 
 ## Connections
 
