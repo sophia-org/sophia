@@ -94,7 +94,10 @@ and then selects on the parent sees the wrong ancestry until this seam's
 - [x] The core profile reads PASS, 144 of 144, the three cases in both
       orders.
 - [x] XTS: five rows retire, one joins the suite's own UNTESTED.
-- [ ] The gate on the committed candidate, both scenarios.
+- [x] The gate on the committed candidate
+      (`.artifacts/x11-profile-1a0961d0-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 335 passed and 54 declared, selected-core
+      with 76 passed and 23 declared.
 - [ ] The rest of t166: the input maps.
 
 ## Connections
