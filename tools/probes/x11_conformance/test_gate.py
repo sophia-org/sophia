@@ -7,7 +7,7 @@ import sys
 import unittest
 
 from report import evaluate, load_manifest
-from run import bounded, clean_environment, decode_result
+from run import bounded, case_budget, clean_environment, decode_result
 from xts_report import evaluate_journal
 
 HERE = Path(__file__).resolve().parent
@@ -48,6 +48,14 @@ class GateTests(unittest.TestCase):
                                'import time\nwhile True:\n print("progress",flush=True);time.sleep(.01)'],
                               .15, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertEqual(status, 124)
+
+    def test_a_case_may_declare_its_own_budget_within_the_runner_bound(self):
+        self.assertEqual(case_budget({'id': 'x', 'mandatory': True}, 3), 3)
+        self.assertEqual(case_budget({'id': 'x', 'mandatory': True, 'timeout': 15}, 3), 15)
+        with self.assertRaises(ValueError):
+            case_budget({'id': 'x', 'mandatory': True, 'timeout': 61}, 3)
+        stalled = next(c for c in self.manifest['cases'] if c['id'] == 'xfixes_selection_stalled')
+        self.assertGreater(case_budget(stalled, 3), 6, 'the case waits out the silence allowance')
 
     def test_clear_live_opt_ins(self):
         from unittest.mock import patch

@@ -86,6 +86,17 @@ still refuses further output; the private-control tests were timing
 sensitive to teardown, which now wakes the drain the instant it is told to
 stop rather than at its next fifty-millisecond slice.
 
+The core conformance probe's `xfixes_selection_stalled` assumed the same
+cut (t175, found by the x11bench pane on master): it flooded a subscriber
+that never read, then read everything back and waited for EOF, inside a
+three-second budget. A subscriber that catches up has lost nothing and is
+kept; one that stays silent is ended after the allowance, which the budget
+could not hold. The case now floods two subscribers: the laggard reads
+afterwards and must receive every notice and stay, the silent one must be
+ended past the allowance with EOF and fewer than all; its manifest row
+declares a fifteen-second budget through a per-case `timeout` the runner
+honours (`case_budget`), so no other case is stretched.
+
 ## Validation and remaining work
 
 - [x] Wire red then green, `tests/x11_wire/flooding_client.rs`: the burst
@@ -95,6 +106,8 @@ stop rather than at its next fifty-millisecond slice.
 - [x] `private_stalled_reader`, `routed_service` backpressure,
       `graceful_disconnect`, `peer_write_failure` and the record tests stay
       as they were.
+- [x] The core conformance profile with the reworked stalled-subscriber
+      case (t175): 126 of 126 PASS, `.artifacts/conformance-core-t175/`.
 - [x] The 120 excluded `TOO_LONG` purposes rejoin the Xproto scenario,
       recorded in [fy4a5tes](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):
       all 389 purposes complete, none hangs, and the gate reads PASS on the

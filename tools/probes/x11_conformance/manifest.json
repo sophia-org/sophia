@@ -196,7 +196,8 @@
     },
     {
       "id": "xfixes_selection_stalled",
-      "mandatory": true
+      "mandatory": true,
+      "timeout": 15
     },
     {
       "id": "xfixes_selection_peer_descendant",
