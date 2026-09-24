@@ -109,3 +109,69 @@ fn a_quarter_arc_stays_in_its_quadrant() {
     }
     assert!(arcs(&[arc(0, 0, 0, 360 * 64)]).is_empty());
 }
+
+fn dashed_gc(style: u8, dashes: &[u8], offset: u16, cap: u8) -> crate::XGraphicsContextValues {
+    crate::XGraphicsContextValues {
+        line_style: style,
+        dashes: dashes.to_vec(),
+        dash_offset: offset,
+        cap_style: cap,
+        foreground: 1,
+        background: 2,
+        ..crate::XGraphicsContextValues::default()
+    }
+}
+
+fn inked(spans: crate::software::geometry::wide_line::XInkedSpans) -> Vec<(u32, (i32, i32))> {
+    spans
+        .into_iter()
+        .flat_map(|(pixel, spans)| spans.into_iter().map(move |span| (pixel, (span.x, span.y))))
+        .collect()
+}
+
+/// `fbZeroLine` steps the dash once per pixel and runs the offset on from
+/// segment to segment; only the last segment draws its end point. With
+/// dashes 2 on, 1 off: the first segment's four pixels are on, on, off, on,
+/// and the second picks up four pixels into the pattern.
+#[test]
+fn a_dashed_thin_polyline_carries_its_phase_across_the_joint() {
+    let gc = dashed_gc(crate::X_LINE_ON_OFF_DASH, &[2, 1], 0, crate::X_CAP_BUTT);
+    let got = inked(super::dash::polyline(
+        &[point(0, 0), point(4, 0), point(4, 4)],
+        &gc,
+    ));
+    let want: Vec<(u32, (i32, i32))> = [(0, 0), (1, 0), (3, 0), (4, 0), (4, 2), (4, 3)]
+        .into_iter()
+        .map(|p| (1, p))
+        .collect();
+    assert_eq!(got, want);
+}
+
+/// A double dash paints the off dashes in the background, and the offset
+/// shifts the pattern: starting one pixel in, the first pixel is the second
+/// of the first dash.
+#[test]
+fn a_double_dashed_thin_line_paints_its_gaps_in_the_background() {
+    let gc = dashed_gc(crate::X_LINE_DOUBLE_DASH, &[2, 1], 1, crate::X_CAP_BUTT);
+    let got = inked(super::dash::polyline(&[point(0, 0), point(5, 0)], &gc));
+    assert_eq!(
+        got,
+        vec![
+            (1, (0, 0)),
+            (2, (1, 0)),
+            (1, (2, 0)),
+            (1, (3, 0)),
+            (2, (4, 0)),
+            (1, (5, 0))
+        ]
+    );
+}
+
+/// An odd dash list is kept twice over, so on and off swap on each pass.
+#[test]
+fn an_odd_dash_list_alternates_its_phase_each_pass() {
+    let gc = dashed_gc(crate::X_LINE_ON_OFF_DASH, &[1], 0, crate::X_CAP_BUTT);
+    let got = inked(super::dash::polyline(&[point(0, 0), point(5, 0)], &gc));
+    let xs: Vec<i32> = got.into_iter().map(|(_, (x, _))| x).collect();
+    assert_eq!(xs, vec![0, 2, 4]);
+}

@@ -37,6 +37,7 @@ mod span_group;
 mod tests;
 
 use dash::dashes_walkable;
+pub(super) use dash::step_dash;
 use poly::{build_edge, build_poly};
 pub use rectangles::rectangles;
 use span_group::{append_spans, unique_spans};
@@ -876,8 +877,8 @@ pub fn polyline(points: &[XPoint], gc: &XGraphicsContextValues) -> XInkedSpans {
 }
 
 /// `miPolylines`: a connected polyline of any width. Zero width is
-/// `miZeroLine` when solid; a dashed zero-width line is, as in `mi`'s
-/// `miZeroDashLine`, the wide dash at width one.
+/// `miZeroLine` when solid, and `fb`'s dashed Bresenham walk when dashed,
+/// which is what the reference server draws.
 pub fn polylines(points: &[XPoint], gc: &XGraphicsContextValues) -> XInkedSpans {
     if gc.line_width != 0 {
         return polyline(points, gc);
@@ -894,11 +895,7 @@ pub fn polylines(points: &[XPoint], gc: &XGraphicsContextValues) -> XInkedSpans 
             vec![(gc.foreground, spans)]
         };
     }
-    let one = XGraphicsContextValues {
-        line_width: 1,
-        ..gc.clone()
-    };
-    polyline(points, &one)
+    super::zero_line::dash::polyline(points, gc)
 }
 
 /// `miPolySegment`: each segment its own two-point polyline, so each has

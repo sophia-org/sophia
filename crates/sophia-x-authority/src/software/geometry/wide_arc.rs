@@ -888,15 +888,27 @@ fn clip_spans(spans: Vec<XSpan>, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<XSpa
 }
 
 /// `miPolyArc`: stroked arcs at any width and style. A solid thin arc the
-/// walker can take is `zero_line`'s; the rest are `miWideArc`'s. Dashed thin
-/// arcs the walker could take are drawn here as `miWideArc` draws the ones
-/// it cannot -- `miZeroArcDashPts` is not ported.
+/// walker can take is `zero_line`'s, dashed or not; the rest are
+/// `miWideArc`'s.
 pub fn poly_arc(arcs: &[XArc], gc: &XGraphicsContextValues) -> XInkedSpans {
     if gc.line_width != 0 {
         return wide_arcs(arcs, gc);
     }
     if gc.line_style != X_LINE_SOLID {
-        return wide_arcs(arcs, gc);
+        // `miZeroPolyArc`: the arcs the walker cannot take go to `miWideArc`
+        // first, then the rest are walked with their dashes.
+        let large: Vec<XArc> = arcs
+            .iter()
+            .filter(|arc| !super::zero_line::can_zero_arc(arc))
+            .copied()
+            .collect();
+        let mut out = if large.is_empty() {
+            Vec::new()
+        } else {
+            wide_arcs(&large, gc)
+        };
+        out.extend(super::zero_line::dash::arcs(arcs, gc));
+        return out;
     }
     let mut out = Vec::new();
     let thin: Vec<XSpan> = super::zero_line::arcs(arcs)
