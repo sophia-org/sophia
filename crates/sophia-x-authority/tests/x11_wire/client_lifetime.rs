@@ -205,6 +205,52 @@ mod client_lifetime {
         }
     }
 
+    /// A watcher that departed before the window's owner does not fail the
+    /// owner's teardown: the DestroyNotify it was owed goes to a recipient
+    /// that has gone, or is going, and the service carries on (t090).
+    #[test]
+    fn a_departed_watcher_does_not_fail_the_owners_teardown() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (socket_path, server) = routed_service("departed-watcher", 3);
+            let (mut owner, owner_base) = connected(&socket_path, byte_order);
+            let window = owner_base + 1;
+            owner.write_all(&create_window_request(byte_order, window, 0, 0, 40, 40)).unwrap();
+            owner.write_all(&get_input_focus(byte_order)).unwrap();
+            loop {
+                if read_x_record(&mut owner)[0] == 1 {
+                    break;
+                }
+            }
+            let (mut watcher, _) = connected(&socket_path, byte_order);
+            watcher.write_all(&change_window_event_mask_request(byte_order, window, 1 << 17)).unwrap();
+            watcher.write_all(&get_input_focus(byte_order)).unwrap();
+            loop {
+                if read_x_record(&mut watcher)[0] == 1 {
+                    break;
+                }
+            }
+            drop(watcher);
+            drop(owner);
+            // The owner's teardown runs on its own thread: wait for the
+            // window to be gone rather than assume it already is.
+            let (mut newcomer, _) = connected(&socket_path, byte_order);
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                match attributes(byte_order, &mut newcomer, window) {
+                    Err(BAD_WINDOW) => break,
+                    other => assert!(
+                        std::time::Instant::now() < deadline,
+                        "{byte_order:?}: the window outlived its owner: {other:?}"
+                    ),
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            drop(newcomer);
+            server.join().unwrap().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
     #[test]
     fn a_departing_managers_save_set_returns_a_peers_window_to_the_root_mapped() {
         for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {

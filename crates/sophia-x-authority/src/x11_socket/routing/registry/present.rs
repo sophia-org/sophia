@@ -271,7 +271,9 @@ impl XServerFrontendRouteRegistry {
                 mode: mode as u8,
             };
             crate::evidence::present_event(target, Some(transaction), "ready", event);
-            self.route_protocol(target, event)?;
+            // A subscriber that cannot take it is ended; the ones behind it
+            // are still told (t090).
+            self.route_protocol_contained(target, event)?;
         }
         Ok(crate::XPresentCompleteRouteOutcome {
             routed: true,
@@ -340,7 +342,9 @@ impl XServerFrontendRouteRegistry {
                 idle_fence: presentation.idle_fence,
             };
             crate::evidence::present_event(target, Some(transaction), "ready", event);
-            self.route_protocol(target, event)?;
+            // A subscriber that cannot take it is ended; the ones behind it
+            // are still told (t090).
+            self.route_protocol_contained(target, event)?;
         }
         Ok(true)
     }

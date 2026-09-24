@@ -93,13 +93,10 @@ impl XServerFrontendRouteRegistry {
         &self,
         stalled: XServerFrontendStalledRecipient,
     ) -> Result<(), XServerFrontendRouteError> {
-        self.input_recovery.disconnect_exact(
-            stalled.client,
-            &stalled.occupant,
-            XAuthorityInputDeliveryOutcome::ClientDisconnected,
-            None,
-        )?;
-        self.remove_row_of(stalled.client, &stalled.occupant)?;
+        let client = stalled.client;
+        let occupant = stalled.occupant.clone();
+        self.end_stalled_recipient(stalled)?;
+        self.remove_row_of(client, &occupant)?;
         Ok(())
     }
 

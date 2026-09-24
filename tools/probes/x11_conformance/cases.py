@@ -795,6 +795,74 @@ def xfixes_selection_stalled(context):
             assert newcomer.u16(newcomer.reply(14, newcomer.pack('I', owned)), 16) == 80
 
 
+def destroy_notify_stalled(context):
+    # The lifecycle-path twin of xfixes_selection_stalled (t090). Three
+    # watchers select SubstructureNotify on the owner's window and are owed a
+    # CreateNotify and a DestroyNotify for every child it creates and
+    # destroys. The healthy one drains every batch; the laggard asks but does
+    # not read through the flood and catches up afterwards, losing nothing;
+    # the silent one neither reads nor asks and is ended past the allowance
+    # (t165). What t090 adds: the owner, whose notices the silent watcher
+    # could not take, is never the one to pay -- it keeps destroying through
+    # the flood and after it, and a newcomer is admitted at the end.
+    with client(context) as owner, peer_client(context) as healthy, \
+            client(context) as laggard, client(context) as silent:
+        parent = owner.window()
+        for watcher in (healthy, laggard, silent):
+            watcher.send(2, watcher.pack('III', parent, 1 << 11, 1 << 19))
+            watcher.sync()
+        child = owner.xid()
+        create = owner.pack('IIhhHHHHII', child, parent, 0, 0, 8, 8, 0, 1, 0, 0)
+        destroy = owner.pack('I', child)
+        count = 2048
+        for _ in range(count // 16):
+            for _ in range(16):
+                owner.send(1, create)
+                owner.send(4, destroy)
+            laggard.send(127)
+            owner.sync()
+            for _ in range(16):
+                healthy.event(16, lambda e: healthy.u32(e, 8) == child)
+                healthy.event(17, lambda e: healthy.u32(e, 8) == child)
+        owner.sync()
+        healthy.sync()
+        # The laggard catches up: every notice, in order, then a round trip.
+        for _ in range(count):
+            laggard.event(16, lambda e: laggard.u32(e, 8) == child)
+            laggard.event(17, lambda e: laggard.u32(e, 8) == child)
+        laggard.sync()
+        time.sleep(OUTPUT_SILENCE_ALLOWANCE + 1)
+        laggard.sync()
+        received = 0
+        while True:
+            silent.sock.settimeout(silent.remaining())
+            try:
+                part = silent.sock.recv(65536)
+            except ConnectionResetError:
+                break
+            except TimeoutError as error:
+                raise TimeoutError(
+                    f'silent watcher stayed connected past the allowance after {count} '
+                    f'destroys; drained {received} bytes; the laggard and the healthy watcher '
+                    f'received every notice') from error
+            if not part:
+                break
+            received += len(part)
+            assert received <= count * 64, 'unexpected output to the silent watcher'
+        assert received < count * 64, 'the silent watcher was ended with nothing owed'
+        # The owner is unharmed by the watcher it lost: one more child, told
+        # to the two that stayed, and a newcomer finds the service open.
+        owner.send(1, create)
+        owner.send(4, destroy)
+        owner.sync()
+        for watcher in (healthy, laggard):
+            watcher.event(16, lambda e: watcher.u32(e, 8) == child)
+            watcher.event(17, lambda e: watcher.u32(e, 8) == child)
+        with peer_client(context) as newcomer:
+            newcomer.sync()
+            assert newcomer.u16(newcomer.reply(14, newcomer.pack('I', parent)), 16) == 80
+
+
 def disconnect_grab(context):
     with client(context) as healthy:
         peer = client(context)
@@ -1230,6 +1298,7 @@ CASES = {'setup': setup,
          'xfixes_selection_reuse': xfixes_selection_reuse,
          'xfixes_selection_self': xfixes_selection_self,
          'xfixes_selection_stalled': xfixes_selection_stalled,
+         'destroy_notify_stalled': destroy_notify_stalled,
          'xfixes_selection_peer_descendant': xfixes_selection_peer_descendant,
          'disconnect_grab': disconnect_grab,
          'truncated_peer': truncated_peer, 'destroy_descendants': destroy_family,

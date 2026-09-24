@@ -825,12 +825,9 @@ impl XServerFrontendRouteRegistry {
             .map(|(client, _)| *client)
             .collect::<Vec<_>>();
         for recipient in recipients {
-            if let Err(error) = self.route_protocol(recipient, event) {
-                // A peer that has gone is not a failed broadcast.
-                if !matches!(error, XServerFrontendRouteError::UnknownClient { .. }) {
-                    return Err(error);
-                }
-            }
+            // A peer that has gone, or cannot take it, is not a failed
+            // broadcast (t090).
+            self.route_protocol_contained(recipient, event)?;
         }
         Ok(())
     }

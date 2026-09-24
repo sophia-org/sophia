@@ -69,7 +69,7 @@ impl XServerFrontendRouteRegistry {
         msc: u64,
     ) -> Result<(), XServerFrontendRouteError> {
         for delivery in self.present_msc_deliveries(window, serial, ust, msc)? {
-            self.route_protocol(delivery.recipient, delivery.event)?;
+            self.route_protocol_contained(delivery.recipient, delivery.event)?;
         }
         Ok(())
     }

@@ -3066,7 +3066,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 protocol_routing
                     .as_ref()
                     .expect("MSC subscription has a route registry")
-                    .route_protocol(delivery.recipient, delivery.event)
+                    .route_protocol_contained(delivery.recipient, delivery.event)
                     .map_err(|error| X11SetupSocketError::new(format!(
                         "failed to deliver peer Present NotifyMSC: {error}"
                     )))?;
@@ -3270,7 +3270,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         })?;
                 for recipient in subscribers {
                     routing
-                        .route_protocol(
+                        .route_protocol_contained(
                             recipient,
                             crate::XClientEvent::DestroyNotify {
                                 sequence: 0,

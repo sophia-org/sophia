@@ -311,8 +311,11 @@ fn suboptimal_completion_busy_runtime_routes_copy_without_waiting_or_spending() 
     idle(&fixture, next);
 }
 
+/// A recipient whose queue is full is ended and skipped (t090); the
+/// completion is still routed, with the advice it carried, and the claim it
+/// took stays spent, so the next completion is plain Copy.
 #[test]
-fn suboptimal_completion_failed_or_partial_delivery_keeps_the_claim_spent() {
+fn suboptimal_completion_with_a_blocked_recipient_keeps_the_claim_spent() {
     for partial in [false, true] {
         let fixture = fixture();
         let other = XServerFrontendClientId::from_raw(3);
@@ -346,10 +349,19 @@ fn suboptimal_completion_failed_or_partial_delivery_keeps_the_claim_spent() {
                 .unwrap();
         }
         let first = queue(&fixture, 210, true);
-        assert!(matches!(
-            complete(&fixture, first, XPresentCompletionMode::Copy, Some(fixture.comparison)),
-            Err(XServerFrontendRouteError::ClientQueueFull { client }) if client == blocked
-        ));
+        // Blocked or not, the recipient's failure is its own: the route
+        // completes with the advice, and the blocked one is told nothing more.
+        let outcome = complete(
+            &fixture,
+            first,
+            XPresentCompletionMode::Copy,
+            Some(fixture.comparison),
+        )
+        .unwrap_or_else(|error| {
+            panic!("a blocked recipient {blocked:?} failed the presenter: {error:?}")
+        });
+        assert!(outcome.routed);
+        assert_eq!(outcome.mode, XPresentCompletionMode::SuboptimalCopy);
         if partial {
             expect_complete(&fixture, 210, XPresentCompletionMode::SuboptimalCopy);
         }
