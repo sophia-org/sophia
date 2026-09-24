@@ -8,6 +8,12 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pAllocColor",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pAllocColorCells",
     "purpose": 1
   },
@@ -16,6 +22,12 @@
     "purpose": 2,
     "expected": "FAIL",
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+  },
+  {
+    "case": "/Xproto/pAllocColorCells",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pAllocColorPlanes",
@@ -28,6 +40,12 @@
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
   },
   {
+    "case": "/Xproto/pAllocColorPlanes",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pAllocNamedColor",
     "purpose": 1
   },
@@ -36,12 +54,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pAllocNamedColor",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pAllowEvents",
     "purpose": 1
   },
   {
     "case": "/Xproto/pAllowEvents",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pAllowEvents",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pBadRequest",
@@ -58,6 +88,12 @@
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
+    "case": "/Xproto/pBell",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pChangeActivePointerGrab",
     "purpose": 1,
     "expected": "FAIL",
@@ -70,12 +106,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pChangeActivePointerGrab",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pChangeGC",
     "purpose": 1
   },
   {
     "case": "/Xproto/pChangeGC",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeGC",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pChangeGC",
@@ -94,6 +142,12 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pChangeHosts",
+    "purpose": 3,
+    "expected": "UNRESOLVED",
+    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+  },
+  {
     "case": "/Xproto/pChangeKeyboardControl",
     "purpose": 1,
     "expected": "FAIL",
@@ -104,6 +158,12 @@
     "purpose": 2,
     "expected": "FAIL",
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+  },
+  {
+    "case": "/Xproto/pChangeKeyboardControl",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pChangeKeyboardControl",
@@ -124,6 +184,12 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pChangeKeyboardMapping",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pChangePointerControl",
     "purpose": 1,
     "expected": "UNRESOLVED",
@@ -136,12 +202,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pChangePointerControl",
+    "purpose": 3,
+    "expected": "UNRESOLVED",
+    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+  },
+  {
     "case": "/Xproto/pChangeProperty",
     "purpose": 1
   },
   {
     "case": "/Xproto/pChangeProperty",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeProperty",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pChangeSaveSet",
@@ -156,12 +234,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pChangeSaveSet",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pChangeWindowAttributes",
     "purpose": 1
   },
   {
     "case": "/Xproto/pChangeWindowAttributes",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pChangeWindowAttributes",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pChangeWindowAttributes",
@@ -182,12 +272,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pCirculateWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pClearArea",
     "purpose": 1
   },
   {
     "case": "/Xproto/pClearArea",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pClearArea",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pCloseFont",
@@ -202,12 +304,24 @@
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
   },
   {
+    "case": "/Xproto/pCloseFont",
+    "purpose": 3,
+    "expected": "UNRESOLVED",
+    "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
+  },
+  {
     "case": "/Xproto/pConfigureWindow",
     "purpose": 1
   },
   {
     "case": "/Xproto/pConfigureWindow",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pConfigureWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pConfigureWindow",
@@ -224,12 +338,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pConvertSelection",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pCopyArea",
     "purpose": 1
   },
   {
     "case": "/Xproto/pCopyArea",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCopyArea",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pCopyColormapAndFree",
@@ -242,6 +368,12 @@
     "purpose": 2,
     "expected": "FAIL",
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+  },
+  {
+    "case": "/Xproto/pCopyColormapAndFree",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pCopyColormapAndFree",
@@ -265,6 +397,12 @@
   },
   {
     "case": "/Xproto/pCopyGC",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
+    "case": "/Xproto/pCopyGC",
     "purpose": 4
   },
   {
@@ -276,12 +414,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pCopyPlane",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pCreateColormap",
     "purpose": 1
   },
   {
     "case": "/Xproto/pCreateColormap",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateColormap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pCreateColormap",
@@ -301,6 +451,12 @@
   },
   {
     "case": "/Xproto/pCreateCursor",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
+    "case": "/Xproto/pCreateCursor",
     "purpose": 4
   },
   {
@@ -314,6 +470,12 @@
   {
     "case": "/Xproto/pCreateGC",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateGC",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pCreateGC",
@@ -343,6 +505,12 @@
   },
   {
     "case": "/Xproto/pCreateGlyphCursor",
+    "purpose": 3,
+    "expected": "UNRESOLVED",
+    "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
+  },
+  {
+    "case": "/Xproto/pCreateGlyphCursor",
     "purpose": 4,
     "expected": "UNRESOLVED",
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
@@ -363,6 +531,12 @@
   },
   {
     "case": "/Xproto/pCreatePixmap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
+    "case": "/Xproto/pCreatePixmap",
     "purpose": 4
   },
   {
@@ -376,6 +550,12 @@
   {
     "case": "/Xproto/pCreateWindow",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pCreateWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pCreateWindow",
@@ -400,12 +580,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pDeleteProperty",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pDestroySubwindows",
     "purpose": 1
   },
   {
     "case": "/Xproto/pDestroySubwindows",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pDestroySubwindows",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pDestroyWindow",
@@ -416,12 +608,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pDestroyWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pFillPoly",
     "purpose": 1
   },
   {
     "case": "/Xproto/pFillPoly",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFillPoly",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pForceScreenSaver",
@@ -434,12 +638,24 @@
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
+    "case": "/Xproto/pForceScreenSaver",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pFreeColormap",
     "purpose": 1
   },
   {
     "case": "/Xproto/pFreeColormap",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFreeColormap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pFreeColors",
@@ -452,12 +668,24 @@
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
   },
   {
+    "case": "/Xproto/pFreeColors",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pFreeCursor",
     "purpose": 1
   },
   {
     "case": "/Xproto/pFreeCursor",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pFreeCursor",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pFreeGC",
@@ -468,6 +696,12 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pFreeGC",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pFreePixmap",
     "purpose": 1
   },
@@ -476,12 +710,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pFreePixmap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetAtomName",
     "purpose": 1
   },
   {
     "case": "/Xproto/pGetAtomName",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetAtomName",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGetFontPath",
@@ -494,6 +740,12 @@
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
   },
   {
+    "case": "/Xproto/pGetFontPath",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetGeometry",
     "purpose": 1
   },
@@ -502,12 +754,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pGetGeometry",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetImage",
     "purpose": 1
   },
   {
     "case": "/Xproto/pGetImage",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetImage",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGetInputFocus",
@@ -520,6 +784,12 @@
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
+    "case": "/Xproto/pGetInputFocus",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetKeyboardControl",
     "purpose": 1
   },
@@ -528,6 +798,12 @@
     "purpose": 2,
     "expected": "UNTESTED",
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
+  },
+  {
+    "case": "/Xproto/pGetKeyboardControl",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGetKeyboardMapping",
@@ -538,6 +814,12 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pGetKeyboardMapping",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetModifierMapping",
     "purpose": 1
   },
@@ -546,6 +828,12 @@
     "purpose": 2,
     "expected": "UNTESTED",
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
+  },
+  {
+    "case": "/Xproto/pGetModifierMapping",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGetMotionEvents",
@@ -560,6 +848,12 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pGetMotionEvents",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetPointerControl",
     "purpose": 1,
     "expected": "FAIL",
@@ -572,6 +866,12 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pGetPointerControl",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetPointerMapping",
     "purpose": 1
   },
@@ -582,12 +882,24 @@
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
+    "case": "/Xproto/pGetPointerMapping",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetProperty",
     "purpose": 1
   },
   {
     "case": "/Xproto/pGetProperty",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetProperty",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGetScreenSaver",
@@ -602,12 +914,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pGetScreenSaver",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGetSelectionOwner",
     "purpose": 1
   },
   {
     "case": "/Xproto/pGetSelectionOwner",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGetSelectionOwner",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGetWindowAttributes",
@@ -618,12 +942,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pGetWindowAttributes",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGrabButton",
     "purpose": 1
   },
   {
     "case": "/Xproto/pGrabButton",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGrabButton",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGrabKey",
@@ -634,6 +970,12 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pGrabKey",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGrabKeyboard",
     "purpose": 1
   },
@@ -642,12 +984,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pGrabKeyboard",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pGrabPointer",
     "purpose": 1
   },
   {
     "case": "/Xproto/pGrabPointer",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pGrabPointer",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pGrabServer",
@@ -658,6 +1012,12 @@
     "purpose": 2,
     "expected": "UNTESTED",
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
+  },
+  {
+    "case": "/Xproto/pGrabServer",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pImageText16",
@@ -672,12 +1032,24 @@
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
   },
   {
+    "case": "/Xproto/pImageText16",
+    "purpose": 3,
+    "expected": "UNRESOLVED",
+    "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
+  },
+  {
     "case": "/Xproto/pImageText8",
     "purpose": 1
   },
   {
     "case": "/Xproto/pImageText8",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pImageText8",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pInstallColormap",
@@ -690,12 +1062,24 @@
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
   },
   {
+    "case": "/Xproto/pInstallColormap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pInternAtom",
     "purpose": 1
   },
   {
     "case": "/Xproto/pInternAtom",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pInternAtom",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pKillClient",
@@ -708,6 +1092,12 @@
     "purpose": 2,
     "expected": "FAIL",
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+  },
+  {
+    "case": "/Xproto/pKillClient",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pListExtensions",
@@ -720,6 +1110,12 @@
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
+    "case": "/Xproto/pListExtensions",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pListFonts",
     "purpose": 1
   },
@@ -728,12 +1124,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pListFonts",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pListFontsWithInfo",
     "purpose": 1
   },
   {
     "case": "/Xproto/pListFontsWithInfo",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListFontsWithInfo",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pListHosts",
@@ -748,6 +1156,12 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pListHosts",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pListInstalledColormaps",
     "purpose": 1,
     "expected": "FAIL",
@@ -760,12 +1174,24 @@
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
   },
   {
+    "case": "/Xproto/pListInstalledColormaps",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pListProperties",
     "purpose": 1
   },
   {
     "case": "/Xproto/pListProperties",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pListProperties",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pLookupColor",
@@ -776,6 +1202,12 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pLookupColor",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pMapSubwindows",
     "purpose": 1
   },
@@ -784,12 +1216,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pMapSubwindows",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pMapWindow",
     "purpose": 1
   },
   {
     "case": "/Xproto/pMapWindow",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pMapWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pNoOperation",
@@ -806,6 +1250,12 @@
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
+    "case": "/Xproto/pNoOperation",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pOpenDisplay",
     "purpose": 1
   },
@@ -822,6 +1272,12 @@
   {
     "case": "/Xproto/pOpenFont",
     "purpose": 2,
+    "expected": "UNRESOLVED",
+    "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
+  },
+  {
+    "case": "/Xproto/pOpenFont",
+    "purpose": 3,
     "expected": "UNRESOLVED",
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
   },
@@ -846,12 +1302,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pPolyArc",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pPolyFillArc",
     "purpose": 1
   },
   {
     "case": "/Xproto/pPolyFillArc",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyFillArc",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pPolyFillRectangle",
@@ -862,12 +1330,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pPolyFillRectangle",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pPolyLine",
     "purpose": 1
   },
   {
     "case": "/Xproto/pPolyLine",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyLine",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pPolyPoint",
@@ -878,6 +1358,12 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pPolyPoint",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pPolyRectangle",
     "purpose": 1
   },
@@ -886,12 +1372,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pPolyRectangle",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pPolySegment",
     "purpose": 1
   },
   {
     "case": "/Xproto/pPolySegment",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolySegment",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pPolyText16",
@@ -906,12 +1404,24 @@
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
   },
   {
+    "case": "/Xproto/pPolyText16",
+    "purpose": 3,
+    "expected": "UNRESOLVED",
+    "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
+  },
+  {
     "case": "/Xproto/pPolyText8",
     "purpose": 1
   },
   {
     "case": "/Xproto/pPolyText8",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pPolyText8",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pPutImage",
@@ -922,12 +1432,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pPutImage",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pQueryBestSize",
     "purpose": 1
   },
   {
     "case": "/Xproto/pQueryBestSize",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryBestSize",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pQueryColors",
@@ -938,12 +1460,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pQueryColors",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pQueryExtension",
     "purpose": 1
   },
   {
     "case": "/Xproto/pQueryExtension",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryExtension",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pQueryFont",
@@ -954,6 +1488,12 @@
   {
     "case": "/Xproto/pQueryFont",
     "purpose": 2,
+    "expected": "UNRESOLVED",
+    "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
+  },
+  {
+    "case": "/Xproto/pQueryFont",
+    "purpose": 3,
     "expected": "UNRESOLVED",
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
   },
@@ -970,12 +1510,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pQueryKeymap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pQueryPointer",
     "purpose": 1
   },
   {
     "case": "/Xproto/pQueryPointer",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryPointer",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pQueryTextExtents",
@@ -990,12 +1542,24 @@
     "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
   },
   {
+    "case": "/Xproto/pQueryTextExtents",
+    "purpose": 3,
+    "expected": "UNRESOLVED",
+    "reason": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded"
+  },
+  {
     "case": "/Xproto/pQueryTree",
     "purpose": 1
   },
   {
     "case": "/Xproto/pQueryTree",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pQueryTree",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pRecolorCursor",
@@ -1006,12 +1570,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pRecolorCursor",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pReparentWindow",
     "purpose": 1
   },
   {
     "case": "/Xproto/pReparentWindow",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pReparentWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pRotateProperties",
@@ -1024,6 +1600,12 @@
     "purpose": 2,
     "expected": "FAIL",
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+  },
+  {
+    "case": "/Xproto/pRotateProperties",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pSendEvent",
@@ -1036,6 +1618,12 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pSendEvent",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pSetAccessControl",
     "purpose": 1,
     "expected": "FAIL",
@@ -1048,12 +1636,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pSetAccessControl",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pSetClipRectangles",
     "purpose": 1
   },
   {
     "case": "/Xproto/pSetClipRectangles",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetClipRectangles",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pSetCloseDownMode",
@@ -1068,12 +1668,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pSetCloseDownMode",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pSetDashes",
     "purpose": 1
   },
   {
     "case": "/Xproto/pSetDashes",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetDashes",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pSetFontPath",
@@ -1088,12 +1700,24 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pSetFontPath",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pSetInputFocus",
     "purpose": 1
   },
   {
     "case": "/Xproto/pSetInputFocus",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetInputFocus",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pSetModifierMapping",
@@ -1108,6 +1732,12 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pSetModifierMapping",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pSetPointerMapping",
     "purpose": 1,
     "expected": "FAIL",
@@ -1118,6 +1748,12 @@
     "purpose": 2,
     "expected": "FAIL",
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+  },
+  {
+    "case": "/Xproto/pSetPointerMapping",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pSetScreenSaver",
@@ -1128,6 +1764,12 @@
   {
     "case": "/Xproto/pSetScreenSaver",
     "purpose": 2,
+    "expected": "UNRESOLVED",
+    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+  },
+  {
+    "case": "/Xproto/pSetScreenSaver",
+    "purpose": 3,
     "expected": "UNRESOLVED",
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
@@ -1138,6 +1780,12 @@
   {
     "case": "/Xproto/pSetSelectionOwner",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pSetSelectionOwner",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pStoreColors",
@@ -1156,6 +1804,12 @@
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
   },
   {
+    "case": "/Xproto/pStoreColors",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pStoreNamedColor",
     "purpose": 1,
     "expected": "UNSUPPORTED",
@@ -1172,12 +1826,24 @@
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
   },
   {
+    "case": "/Xproto/pStoreNamedColor",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pTranslateCoords",
     "purpose": 1
   },
   {
     "case": "/Xproto/pTranslateCoords",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pTranslateCoords",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pUngrabButton",
@@ -1188,12 +1854,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pUngrabButton",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pUngrabKey",
     "purpose": 1
   },
   {
     "case": "/Xproto/pUngrabKey",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUngrabKey",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pUngrabKeyboard",
@@ -1204,12 +1882,24 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pUngrabKeyboard",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pUngrabPointer",
     "purpose": 1
   },
   {
     "case": "/Xproto/pUngrabPointer",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pUngrabPointer",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pUngrabServer",
@@ -1222,6 +1912,12 @@
     "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
+    "case": "/Xproto/pUngrabServer",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pUninstallColormap",
     "purpose": 1
   },
@@ -1230,6 +1926,12 @@
     "purpose": 2,
     "expected": "FAIL",
     "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+  },
+  {
+    "case": "/Xproto/pUninstallColormap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   },
   {
     "case": "/Xproto/pUnmapSubwindows",
@@ -1244,6 +1946,12 @@
     "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
   },
   {
+    "case": "/Xproto/pUnmapSubwindows",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pUnmapWindow",
     "purpose": 1
   },
@@ -1252,11 +1960,23 @@
     "purpose": 2
   },
   {
+    "case": "/Xproto/pUnmapWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
+  },
+  {
     "case": "/Xproto/pWarpPointer",
     "purpose": 1
   },
   {
     "case": "/Xproto/pWarpPointer",
     "purpose": 2
+  },
+  {
+    "case": "/Xproto/pWarpPointer",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "t174: BIG-REQUESTS is advertised but an extended-length request is not framed: the zero-length header is read as a four-byte request and the 262 KB body as some 65 000 requests, each answered, where the suite wants one BadLength"
   }
 ]

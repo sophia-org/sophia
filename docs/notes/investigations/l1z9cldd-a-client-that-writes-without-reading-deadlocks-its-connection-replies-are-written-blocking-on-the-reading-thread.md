@@ -95,8 +95,13 @@ stop rather than at its next fifty-millisecond slice.
 - [x] `private_stalled_reader`, `routed_service` backpressure,
       `graceful_disconnect`, `peer_write_failure` and the record tests stay
       as they were.
-- [ ] The 120 excluded `TOO_LONG` purposes rejoin the Xproto scenario:
-      recorded in [fy4a5tes](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md).
+- [x] The 120 excluded `TOO_LONG` purposes rejoin the Xproto scenario,
+      recorded in [fy4a5tes](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):
+      all 389 purposes complete, none hangs, and the gate reads PASS on the
+      committed candidate. The rejoined purposes do not pass, for a reason
+      this task never owned: the suite frames `TOO_LONG` as a BIG-REQUESTS
+      request because the authority advertises the extension, and the
+      reader does not frame the extended length. That is t174.
 
 ## Connections
 

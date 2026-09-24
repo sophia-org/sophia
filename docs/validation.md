@@ -1026,15 +1026,16 @@ copied over its `check.sh`. Scenarios and their manifests are enumerated
 from the built suite by `xts_select.py`, never typed:
 `xts_expected_selected_core.json` is nine cases around windows, properties,
 atoms, selections and focus; `xts_expected_xproto.json` is every core
-request's wire test, 122 cases, with the `TOO_LONG` purposes excluded by
-name (`xts_expected_xproto.excluded.json`) until t165 lets a flooding client
-be served. A manifest is the suite's account of itself: every purpose is
+request's wire test, 122 cases and all 389 purposes; the `TOO_LONG`
+purposes, excluded by name until t165 let a flooding client be served, are
+back and declared against t174, which owes them BIG-REQUESTS framing. A
+manifest is the suite's account of itself: every purpose is
 listed, and one the suite or the authority cannot pass today is declared
 with its disposition and a reason (`xts_declare.py`, from a real journal and
 the reviewed `xts_reasons_*.json`), never removed. The gate reads PASS only
 when every manifested purpose starts and meets its declaration, a declared
 purpose that starts passing fails it as a stale manifest, and the verdict
-line carries the count: `XTS5 PASS (177 passed, 92 declared)` is 92
+line carries the count: `XTS5 PASS (177 passed, 212 declared)` is 212
 purposes of debt, each naming its row.
 
 ## xterm as a pointer oracle
