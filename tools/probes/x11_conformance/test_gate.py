@@ -156,6 +156,22 @@ class JournalTests(unittest.TestCase):
     def test_timeout_with_all_passes_still_fails(self):
         self.assertEqual(evaluate_journal(self.expected, self.journal(), 124)['status'], 'FAIL')
 
+    def test_the_suites_own_result_codes_and_unknown_ones_are_read_not_refused(self):
+        # WARNING is the suite's code 101 (xts5/tet_code): declarable, never a PASS.
+        report = evaluate_journal(self.expected, self.journal('WARNING', 101))
+        self.assertEqual(report['status'], 'FAIL')
+        self.assertIn("('/Xlib3/XDestroyWindow', '1'): WARNING", report['failures'])
+        declared = [dict(self.expected[0], expected='WARNING', reason='the suite warns'), self.expected[1]]
+        self.assertEqual(evaluate_journal(declared, self.journal('WARNING', 101))['status'], 'PASS')
+        # A code nobody named keeps the journal's own word for it.
+        report = evaluate_journal(self.expected, self.journal('ODDITY', 250))
+        self.assertIn("('/Xlib3/XDestroyWindow', '1'): ODDITY", report['failures'])
+        # A known code whose text disagrees is a journal nobody can read:
+        # refused, naming the line, and the adapter reports the refusal.
+        with self.assertRaises(ValueError) as refused:
+            evaluate_journal(self.expected, self.journal('PASS', 1))
+        self.assertIn('numeric and textual verdict disagree: 220|0 1 1 00:00|PASS', str(refused.exception))
+
     def test_no_unsupported_untested_or_notinuse_pass(self):
         for code, status in [(3, 'NOTINUSE'), (4, 'UNSUPPORTED'), (5, 'UNTESTED')]:
             self.assertEqual(evaluate_journal(self.expected, self.journal(status, code))['status'], 'FAIL')

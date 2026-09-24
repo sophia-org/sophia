@@ -144,6 +144,29 @@ committed beside the manifests (`xts_reasons_selected_core.json`,
 `xts_reasons_xproto.json`); for Xproto every declared failure names its
 row.
 
+**The adapter and a scenario with shared purposes** (t183, found by the
+x11bench pane on master 83708031). An `arcs` scenario of four Xlib9 cases
+manifested 71 purposes against some 300 journal results, and `xts.py` died
+in the journal parser on `numeric and textual verdict disagree`, so the
+gate read FAIL with no result. Two causes. The selector counted the
+`>>ASSERTION` markers of a case's own source, but the suite's preprocessor
+(`xts5/src/bin/mc`) reads two inclusions before TET numbers anything:
+`>>INCLUDE file` is the file's text, found beside the source or under
+`xts5/lib`, and `>>ASSERTION gc` is no purpose of its own but names GC
+components, one `.M name ,` line each, each the text of
+`xts5/lib/gc/<include>.mc` with the include name cut to nine characters
+(`gccomps.c`); a `>>#` line is a comment and ends nothing. The selector
+now expands sources the same way (`expanded`), for counting and for the
+test-type exclusions, and the four arc cases enumerate to 102, 112, 44
+and 46 purposes, which is what the journal ran; the Xproto and
+selected-core manifests re-enumerate unchanged. The parser knew TET's
+eight result codes and refused code 101, which is the suite's own
+`WARNING` (`xts5/tet_code`, with 102 `FIP` and 103 `ABORT`); it knows the
+three now, keeps the journal's own word for a code nobody named, and a
+genuine disagreement is refused naming the line, with the adapter writing
+the refusal into its report instead of leaving "no XTS result".
+`WARNING` and `FIP` are declarable dispositions; neither is a PASS.
+
 ## Finding and resolution
 
 The gate runs XTS now, and `XTS5 BLOCKED` means what it says: the checkout
@@ -174,6 +197,9 @@ against the fixture host.
       reasons their cases already carry.
 - [x] As t174 landed, the 110 `TOO_LONG` declarations turned stale and the
       gate said so; removed with the repair, fourth run above.
+- [x] The selector follows the preprocessor's inclusions and the parser
+      reads the suite's own result codes (t183): the arcs journal reads
+      304 results, 2 of them WARNING.
 - [ ] As t166 to t169 land, their declarations turn stale and the gate says
       so; remove each with its repair.
 
