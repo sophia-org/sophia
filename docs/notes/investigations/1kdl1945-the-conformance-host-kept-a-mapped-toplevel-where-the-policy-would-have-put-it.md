@@ -54,7 +54,10 @@ green after.
 - [x] Wire red then green in both byte orders.
 - [x] `sophia-x-authority` suite and clippy under the gate's isolation.
 - [x] The core profile reads PASS, 154 of 154.
-- [ ] The gate on the committed candidate, both scenarios.
+- [x] The gate on the committed candidate
+      (`.artifacts/x11-profile-b552e8f8-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 339 passed and 50 declared, selected-core
+      with 76 passed and 23 declared.
 - [ ] The arcs scenario's root halves, rerun by the x11bench pane on the
       merged master.
 
