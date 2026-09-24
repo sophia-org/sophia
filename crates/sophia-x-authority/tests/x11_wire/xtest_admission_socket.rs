@@ -126,6 +126,16 @@ mod xtest_admission_socket {
 
     impl XtestFixture {
         pub(super) fn new() -> Self {
+            Self::with_client_toplevel_placement(false)
+        }
+
+        /// The conformance host's posture: clients place their own
+        /// toplevels, and the authority resolves which one a point is in.
+        pub(super) fn placing_toplevels() -> Self {
+            Self::with_client_toplevel_placement(true)
+        }
+
+        fn with_client_toplevel_placement(client_places: bool) -> Self {
             let path = std::env::temp_dir().join(format!(
                 "sophia-xtest-admission-{}-{}.sock",
                 std::process::id(),
@@ -156,6 +166,7 @@ mod xtest_admission_socket {
             });
             let config = XServerFrontendConfig::new(&path, NamespaceId::from_raw(901))
                 .unwrap()
+                .with_client_toplevel_placement(client_places)
                 .with_max_concurrent_clients(NonZeroUsize::new(4).unwrap())
                 .with_admission_policy(Arc::new(SequencedXAdmissionPolicy {
                     namespaces,
@@ -468,5 +479,155 @@ mod xtest_admission_socket {
         client.fake_input(3, 22);
         let _ = read_x_record(&mut client.stream);
         client.barrier();
+    }
+
+    /// XWarpPointer moves the pointer. On this authority the pointer is the
+    /// Engine's, so a warp moves the routed pointer only for a client that
+    /// may inject input, through its own injector, as an absolute motion:
+    /// the motion and crossing events a warp owes are the ones any motion
+    /// owes, and a press after it lands where the warp put the pointer. Red
+    /// on the tree before the seam: the warp placed only QueryPointer's
+    /// answer, no motion was reported, and the press below landed at the
+    /// origin (XTS Xlib11 MotionNotify 1, ButtonPress 1).
+    #[test]
+    fn a_warp_from_a_client_that_may_inject_moves_the_routed_pointer() {
+        let mut fixture = XtestFixture::new();
+        let mut client = fixture.connect();
+        let window = fixture.focused_window(&mut client);
+        // ButtonPress, ButtonRelease and PointerMotion beside the fixture's own.
+        client.stream
+            .write_all(&change_window_event_mask_request(
+                client.order,
+                window,
+                3 | (1 << 21) | (1 << 2) | (1 << 3) | (1 << 6),
+            ))
+            .unwrap();
+        client.barrier();
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        let next_motion = |client: &mut XtestClient| loop {
+            let record = read_x_record(&mut client.stream);
+            if record[0] & 0x7f == 6 {
+                break record;
+            }
+        };
+
+        // Into the window, at (5, 7) of it.
+        client.stream
+            .write_all(&warp_pointer_request(client.order, 0, window, 0, 0, 0, 0, 5, 7))
+            .unwrap();
+        let motion = next_motion(&mut client);
+        assert_eq!(
+            u32::from_le_bytes([motion[12], motion[13], motion[14], motion[15]]),
+            window,
+            "the warp is reported as motion on the window it entered"
+        );
+        assert_eq!((at(&motion, 20), at(&motion, 22)), (5, 7), "root position is the warp's");
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!((at(&press, 20), at(&press, 22)), (5, 7), "the press lands where the warp put the pointer");
+        assert_eq!((at(&press, 24), at(&press, 26)), (5, 7), "window position too");
+        client.fake_input(5, 1);
+        let _ = client.next_event(5);
+
+        // No destination window: an offset from where the pointer is.
+        client.stream
+            .write_all(&warp_pointer_request(client.order, 0, 0, 0, 0, 0, 0, 3, 2))
+            .unwrap();
+        let motion = next_motion(&mut client);
+        assert_eq!((at(&motion, 20), at(&motion, 22)), (8, 9), "a relative warp moves from where the pointer was");
+
+        // A source rectangle the pointer is outside of: no warp, no motion,
+        // and the barrier answers with nothing in between.
+        client.stream
+            .write_all(&warp_pointer_request(client.order, window, window, 12, 12, 4, 4, 1, 1))
+            .unwrap();
+        client.barrier();
+    }
+
+    /// Where clients place their own toplevels (the conformance host), an
+    /// injected pointer event goes to the toplevel under the pointer, not to
+    /// the focused surface: a suite's plain, unfocused window selecting
+    /// ButtonPress is told of a press over it, and motion into it is reported
+    /// on it. Red before the fix: with no focused surface a button had no
+    /// target and was dropped, and motion was reported on nothing (XTS Xlib11
+    /// ButtonPress 1, MotionNotify 1).
+    #[test]
+    fn a_client_placed_toplevel_under_the_pointer_receives_injected_pointer_events() {
+        let mut fixture = XtestFixture::placing_toplevels();
+        let mut client = fixture.connect();
+        let window = client.next;
+        client.next += 2;
+        // A plain toplevel at (20, 0), never focused, never presented.
+        client.stream
+            .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, (1 << 2) | (1 << 3) | (1 << 6)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        client.barrier();
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        let event_window = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let motion = loop {
+            let record = read_x_record(&mut client.stream);
+            if record[0] & 0x7f == 6 {
+                break record;
+            }
+        };
+        assert_eq!(event_window(&motion), window, "motion into the toplevel under the pointer");
+        assert_eq!((at(&motion, 20), at(&motion, 22), at(&motion, 24), at(&motion, 26)), (25, 5, 5, 5));
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!(event_window(&press), window, "the press lands on the toplevel under the pointer");
+        assert_eq!((at(&press, 20), at(&press, 22), at(&press, 24), at(&press, 26)), (25, 5, 5, 5));
+        client.fake_input(5, 1);
+        let release = client.next_event(5);
+        assert_eq!(event_window(&release), window);
+        // With the focus on the root, PointerRoot applies: a key goes to the
+        // toplevel under the pointer too.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, 3 | (1 << 2) | (1 << 3) | (1 << 6)))
+            .unwrap();
+        client.barrier();
+        client.fake_input(2, 38);
+        let key = client.next_event(2);
+        assert_eq!(event_window(&key), window, "a key with the focus on the root lands under the pointer");
+        assert_eq!(key[1], 38, "keycode");
+        client.fake_input(3, 38);
+        let _ = client.next_event(3);
+        // Over the bare root, a button or a key has nowhere to go and is
+        // dropped without parking the connection.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 100, 100);
+        client.fake_input(4, 1);
+        client.fake_input(5, 1);
+        client.fake_input(2, 38);
+        client.fake_input(3, 38);
+        client.settle();
+    }
+
+    fn warp_pointer_request(
+        order: XByteOrder,
+        source: u32,
+        destination: u32,
+        src_x: i16,
+        src_y: i16,
+        src_width: u16,
+        src_height: u16,
+        dst_x: i16,
+        dst_y: i16,
+    ) -> Vec<u8> {
+        let mut out = vec![41, 0];
+        push_u16(&mut out, order, 6);
+        push_u32(&mut out, order, source);
+        push_u32(&mut out, order, destination);
+        push_u16(&mut out, order, src_x as u16);
+        push_u16(&mut out, order, src_y as u16);
+        push_u16(&mut out, order, src_width);
+        push_u16(&mut out, order, src_height);
+        push_u16(&mut out, order, dst_x as u16);
+        push_u16(&mut out, order, dst_y as u16);
+        out
     }
 }

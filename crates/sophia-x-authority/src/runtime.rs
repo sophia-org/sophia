@@ -57,8 +57,12 @@ include!("runtime/pointer_query.rs");
 pub struct XSaveSetReparent {
     pub window: crate::XResourceId,
     pub old_parent: crate::XResourceId,
+    /// Equal to `old_parent` when the window was not an inferior of the
+    /// departing client's windows and only needed mapping.
     pub new_parent: crate::XResourceId,
+    /// Mapped before the walk; the walk leaves every saved window mapped.
     pub was_mapped: bool,
+    pub input_only: bool,
     pub x: i16,
     pub y: i16,
     pub override_redirect: bool,
@@ -70,7 +74,7 @@ pub struct XAuthorityClientResourceRelease {
     /// X11 windows whose properties must be removed from the frontend table.
     pub destroyed_windows: Vec<crate::XResourceId>,
     /// Windows the departing client had saved (ChangeSaveSet), given to the
-    /// nearest ancestor outside its range and re-mapped if they were mapped,
+    /// nearest ancestor outside its range and mapped if they were not,
     /// each owed UnmapNotify, ReparentNotify and MapNotify as applicable.
     pub save_set_reparents: Vec<crate::XSaveSetReparent>,
     /// Selection ownerships this client's departure ended.

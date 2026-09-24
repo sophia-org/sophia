@@ -40,6 +40,36 @@ impl XAuthorityRuntime {
     /// QueryPointer agrees with it, and the events are a named gap rather
     /// than a silent one. Refusing to move at all would be the larger lie,
     /// since moving the pointer is what the request is for.
+    /// The topmost viewable toplevel containing a root position, on an
+    /// instance where clients place their own toplevels and nothing else
+    /// stacks them. Elsewhere `None`: which toplevel a point falls in is the
+    /// Engine's answer, and the authority does not invent one.
+    pub fn client_placed_toplevel_at(
+        &self,
+        namespace: NamespaceId,
+        x: i32,
+        y: i32,
+    ) -> Option<crate::XResourceId> {
+        if !self.client_places_toplevels {
+            return None;
+        }
+        let root = crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1);
+        self.windows
+            .direct_children_bottom_to_top(namespace, root)
+            .into_iter()
+            .rev()
+            .find(|toplevel| self.pointer_window_contains(namespace, *toplevel, (x, y)))
+    }
+
+    /// Where the pointer is, as QueryPointer reports it, in root
+    /// coordinates; `None` before any motion or warp placed it.
+    pub fn pointer_query_position(&self, namespace: NamespaceId) -> Option<(i16, i16)> {
+        self.input_authority_mut()
+            .pointer_query_state(namespace)
+            .position
+            .map(|pointer| (pointer.root_x, pointer.root_y))
+    }
+
     pub fn warp_pointer(
         &mut self,
         namespace: NamespaceId,

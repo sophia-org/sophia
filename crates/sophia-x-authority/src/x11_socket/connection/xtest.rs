@@ -35,6 +35,17 @@ impl XTestFakeInputRequest {
             root_y,
         })
     }
+
+    /// The motion an accepted WarpPointer resolves to: absolute, at the
+    /// position the dispatcher placed.
+    fn absolute_motion(root_x: i16, root_y: i16) -> Self {
+        Self {
+            event_type: 6,
+            detail: crate::X_TEST_MOTION_ABSOLUTE,
+            root_x,
+            root_y,
+        }
+    }
 }
 
 /// What an accepted FakeInput resolves to, once the runtime has been asked
@@ -122,6 +133,26 @@ fn pointer_points(
             y: f64::from(y.saturating_sub(origin_y)),
         },
     )
+}
+
+/// Where a pointer event goes: the toplevel under the point when this
+/// instance is the one that placed the toplevels (the conformance host, where
+/// no Engine stacks them and a suite's window is a plain toplevel), else the
+/// focused surface the plan already resolved, which is the Engine's business
+/// to have put under the pointer. Returns the target surface and the window
+/// the local position is measured from.
+fn pointer_target(
+    runtime: &XAuthorityRuntime,
+    namespace: NamespaceId,
+    focused_window: crate::XResourceId,
+    focused_target: Option<SurfaceId>,
+    x: i32,
+    y: i32,
+) -> Option<(SurfaceId, crate::XResourceId)> {
+    runtime
+        .client_placed_toplevel_at(namespace, x, y)
+        .and_then(|toplevel| runtime.window_surface(namespace, toplevel).map(|surface| (surface, toplevel)))
+        .or_else(|| focused_target.map(|target| (target, focused_window)))
 }
 
 /// The evdev button an X button number names, where one exists.
@@ -310,14 +341,31 @@ impl XTestConnection {
         // the executor names that state with a surface of its own so the
         // position can move and a client that selected motion on the root
         // can be told.
-        let target = match (focused_surface, request.event_type) {
-            (Some(surface), _) => surface,
-            (None, 6) => crate::ROOT_POINTER_SURFACE,
-            (None, _) => return Err(XTestUnplanned::NoTarget),
+        let focused_target = match (focused_surface, request.event_type) {
+            (Some(surface), _) => Some(surface),
+            (None, 6) => Some(crate::ROOT_POINTER_SURFACE),
+            (None, _) => None,
         };
         match request.event_type {
             2 | 3 => Ok(XTestPlan::Key {
-                target,
+                // With the focus on the root the protocol's PointerRoot rule
+                // applies: the key goes to the window under the pointer,
+                // which this instance resolves only where it placed the
+                // toplevels itself.
+                target: focused_target
+                    .or_else(|| {
+                        let (x, y) = runtime
+                            .input_authority_mut()
+                            .pointer_query_state(namespace)
+                            .position
+                            .map_or((0, 0), |pointer| {
+                                (i32::from(pointer.root_x), i32::from(pointer.root_y))
+                            });
+                        runtime
+                            .client_placed_toplevel_at(namespace, x, y)
+                            .and_then(|toplevel| runtime.window_surface(namespace, toplevel))
+                    })
+                    .ok_or(XTestUnplanned::NoTarget)?,
                 // The executor takes evdev; X keycodes sit eight above it.
                 // The dispatcher refused anything below eight.
                 keycode: u32::from(request.detail) - 8,
@@ -338,7 +386,10 @@ impl XTestConnection {
                         .map_or((0, 0), |pointer| {
                             (i32::from(pointer.root_x), i32::from(pointer.root_y))
                         });
-                    let (global, local) = pointer_points(runtime, focused_window, x, y);
+                    let (target, anchor) =
+                        pointer_target(runtime, namespace, focused_window, focused_target, x, y)
+                            .ok_or(XTestUnplanned::NoTarget)?;
+                    let (global, local) = pointer_points(runtime, anchor, x, y);
                     return Ok(XTestPlan::Button {
                         target,
                         button,
@@ -384,7 +435,10 @@ impl XTestConnection {
                 // this instance has is zero.
                 let x = x.clamp(0, root.width.saturating_sub(1).max(0));
                 let y = y.clamp(0, root.height.saturating_sub(1).max(0));
-                let (global, local) = pointer_points(runtime, focused_window, x, y);
+                let (target, anchor) =
+                    pointer_target(runtime, namespace, focused_window, focused_target, x, y)
+                        .ok_or(XTestUnplanned::NoTarget)?;
+                let (global, local) = pointer_points(runtime, anchor, x, y);
                 Ok(XTestPlan::Motion {
                     target,
                     global,

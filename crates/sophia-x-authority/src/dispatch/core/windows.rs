@@ -177,6 +177,7 @@ fn dispatch_core_window_request(
                             runtime
                                 .window_override_redirect(context.namespace, window)
                                 .unwrap_or(false),
+                            runtime.window_is_input_only(window),
                             &response,
                         )
                     } else {
@@ -566,7 +567,9 @@ fn dispatch_core_window_request(
                                             override_redirect,
                                         },
                                     )];
-                                    if map_state == Some(crate::XMapState::Viewable) {
+                                    if map_state == Some(crate::XMapState::Viewable)
+                                        && !runtime.window_is_input_only(window)
+                                    {
                                         outputs.push(XClientOutput::Event(
                                             XClientEvent::VisibilityNotify {
                                             sequence: context.sequence,
@@ -733,6 +736,22 @@ fn dispatch_core_window_request(
                     ..
                 } => {
                     let before = runtime.window_geometry(context.namespace, window).ok();
+                    // The siblings' order before, so a restack that changed
+                    // nothing reports nothing and one that did names the
+                    // sibling now beneath the window.
+                    let siblings_of = |runtime: &XAuthorityRuntime| {
+                        runtime
+                            .window_parent_and_children(context.namespace, window)
+                            .ok()
+                            .map(|(parent, _)| {
+                                runtime
+                                    .window_parent_and_children(context.namespace, parent)
+                                    .map(|(_, children)| children)
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default()
+                    };
+                    let siblings_before = siblings_of(runtime);
                     let client_controls = runtime
                         .client_controls_window_geometry(context.namespace, window)
                         .unwrap_or(false);
@@ -775,8 +794,20 @@ fn dispatch_core_window_request(
                             0,
                             u32::try_from(window.local.raw()).unwrap_or(0)))]
                     } else {
+                        // A stacking change alone is a configuration change
+                        // too: "Raise lowest window to top" owes the same
+                        // ConfigureNotify a move does, with above-sibling
+                        // naming the sibling now beneath (XTS ConfigureNotify
+                        // 1-2). Nothing changed, nothing reported.
+                        let siblings_after = siblings_of(runtime);
+                        let restacked_order = restacked.is_some() && siblings_after != siblings_before;
+                        let above_sibling = siblings_after
+                            .iter()
+                            .position(|sibling| *sibling == window)
+                            .and_then(|index| index.checked_sub(1))
+                            .map(|index| siblings_after[index]);
                         match runtime.window_geometry(context.namespace, window) {
-                            Ok(geometry) if before != Some(geometry) || !client_controls => {
+                            Ok(geometry) if before != Some(geometry) || restacked_order || !client_controls => {
                                 let override_redirect = runtime
                                     .window_override_redirect(context.namespace, window)
                                     .unwrap_or(false);
@@ -785,7 +816,7 @@ fn dispatch_core_window_request(
                                     synthetic: !client_controls,
                                     event: window,
                                     window,
-                                    above_sibling: None,
+                                    above_sibling,
                                     x: clamp_i16(geometry.x),
                                     y: clamp_i16(geometry.y),
                                     width: clamp_u16(geometry.width),
@@ -991,12 +1022,14 @@ fn resolve_window_visual(
     Ok((resolved_depth, resolved_visual, resolved_colormap))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn outputs_from_map_response(
     context: XDispatchContext,
     window: XResourceId,
     already_mapped: bool,
     map_state: Option<crate::XMapState>,
     override_redirect: bool,
+    input_only: bool,
     response: &XAuthorityResponsePacket,
 ) -> Vec<XClientOutput> {
     if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
@@ -1022,7 +1055,10 @@ fn outputs_from_map_response(
         window,
         override_redirect,
     })];
-    if map_state == Some(crate::XMapState::Viewable) {
+    // "The server does not generate Expose events on windows whose class is
+    // specified as InputOnly", nor VisibilityNotify: such a window has no
+    // contents to show or hide, only a map state.
+    if map_state == Some(crate::XMapState::Viewable) && !input_only {
         outputs.push(XClientOutput::Event(XClientEvent::VisibilityNotify {
             sequence: context.sequence,
             window,

@@ -332,4 +332,52 @@ mod client_lifetime {
             let _ = std::fs::remove_file(&socket_path);
         }
     }
+
+    /// Save-set processing maps a saved window that is unmapped, "even if it
+    /// was not an inferior of a window created by the client": a peer's
+    /// unmapped window under the root, saved by a manager that departs, is
+    /// mapped and its StructureNotify selector told. Red before the fix: the
+    /// walk skipped a window it had no reason to reparent, and mapped again
+    /// only what had been mapped (XTS Xlib11 MapNotify 1).
+    #[test]
+    fn a_departing_managers_save_set_maps_a_peers_unmapped_window() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (socket_path, server) = routed_service("saveset-map", 2);
+            let (mut manager, _manager_base) = connected(&socket_path, byte_order);
+            let (mut peer, peer_base) = connected(&socket_path, byte_order);
+            let window = peer_base + 1;
+            peer.write_all(&create_window_request(byte_order, window, 0, 0, 40, 40)).unwrap();
+            peer.write_all(&change_window_event_mask_request(byte_order, window, 1 << 17)).unwrap();
+            peer.write_all(&get_input_focus(byte_order)).unwrap();
+            loop {
+                if read_x_record(&mut peer)[0] == 1 {
+                    break;
+                }
+            }
+            manager.write_all(&request(byte_order, 6, 0, &[window])).unwrap();
+            manager.write_all(&get_input_focus(byte_order)).unwrap();
+            loop {
+                if read_x_record(&mut manager)[0] == 1 {
+                    break;
+                }
+            }
+            drop(manager);
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            let record = loop {
+                assert!(std::time::Instant::now() < deadline, "{byte_order:?}: the save-set map was never reported");
+                let record = read_x_record(&mut peer);
+                if record[0] >= 2 {
+                    break record;
+                }
+            };
+            assert_eq!(record[0] & 0x7f, MAP_NOTIFY, "{byte_order:?}: mapped, and not reparented first: {record:?}");
+            assert_eq!(read_u32(byte_order, &record[8..12]), window, "{byte_order:?}: the saved window");
+            peer.write_all(&resource_request(byte_order, 3, window)).unwrap();
+            let reply = read_x_reply(&mut peer, byte_order);
+            assert_eq!(reply[26], 2, "{byte_order:?}: GetWindowAttributes reports IsViewable");
+            drop(peer);
+            server.join().unwrap().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
 }

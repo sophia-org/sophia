@@ -29,6 +29,10 @@ pub(super) struct ProfileOptions {
     /// A whole TET scenario is slower than a probe case, and the adapter's
     /// default of two minutes read as TIMEOUT before anything had run.
     pub xts_timeout: u64,
+    /// Start the XTS host with XTEST admitted, so a scenario whose purposes
+    /// inject input (the event section) runs them instead of reading
+    /// UNTESTED; the wire and drawing scenarios need none.
+    pub xts_admit_xtest: bool,
     /// x11bench, built from its own checkout, and the manifest it is judged
     /// by; both or neither.
     pub x11bench_bin: Option<PathBuf>,
@@ -51,6 +55,7 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
         xts_expected: None,
         xts_scenario: None,
         xts_timeout: 600,
+        xts_admit_xtest: false,
         x11bench_bin: None,
         x11bench_expected: None,
         x11bench_timeout: 600,
@@ -81,6 +86,14 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
             "--xts-scenario" => parsed.xts_scenario = Some(value.to_owned()),
             "--xts-timeout" => {
                 parsed.xts_timeout = value.parse().map_err(|_| "invalid XTS timeout")?;
+                xts_timeout_given = true;
+            }
+            "--xts-admit-xtest" => {
+                parsed.xts_admit_xtest = match value {
+                    "yes" => true,
+                    "no" => false,
+                    _ => return Err("--xts-admit-xtest takes yes or no".into()),
+                };
                 xts_timeout_given = true;
             }
             "--x11bench-bin" => parsed.x11bench_bin = Some(value.into()),
@@ -114,7 +127,7 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
     let xts_all = xts_given.iter().all(|given| *given);
     if (xts_given.iter().any(|given| *given) || xts_timeout_given) && !xts_all {
         return Err(
-            "XTS needs --xts-root, --xts-expected and --xts-scenario together, or none; --xts-timeout only with them".into(),
+            "XTS needs --xts-root, --xts-expected and --xts-scenario together, or none; --xts-timeout and --xts-admit-xtest only with them".into(),
         );
     }
     if xts_all
@@ -373,7 +386,7 @@ pub(super) fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, Stri
     process::arm_subreaper()?;
     if arguments.iter().any(|argument| argument == "--help") {
         return Ok(vec![
-            "cargo xtask check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json --xts-scenario=NAME [--xts-timeout=SECONDS]] [--x11bench-bin=/X11BENCH --x11bench-expected=/TESTS.json [--x11bench-timeout=SECONDS]]".into(),
+            "cargo xtask check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json --xts-scenario=NAME [--xts-timeout=SECONDS] [--xts-admit-xtest=yes|no]] [--x11bench-bin=/X11BENCH --x11bench-expected=/TESTS.json [--x11bench-timeout=SECONDS]]".into(),
         ]);
     }
     let mut opts = options(arguments)?;
@@ -649,6 +662,9 @@ fn xts(
         .arg(opts.xts_timeout.to_string());
     if let Some(scenario) = &opts.xts_scenario {
         command.arg("--scenario").arg(scenario);
+    }
+    if opts.xts_admit_xtest {
+        command.arg("--admit-xtest");
     }
     let execution = process::run(
         &mut command,

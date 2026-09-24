@@ -330,6 +330,45 @@ fn drawing_family_put_image_left_pad_on_z_pixmap_is_a_match_error() {
     }
 }
 
+/// "The server does not generate Expose events on windows whose class is
+/// specified as InputOnly", and no VisibilityNotify either: an InputOnly
+/// window has a map state and nothing to show. Red before the fix: mapping
+/// one reported MapNotify, VisibilityNotify and an Expose of its whole
+/// extent, as for a window with pixels (XTS Xlib11 Expose 1,
+/// VisibilityNotify 1).
+#[test]
+fn mapping_an_input_only_window_reports_the_map_and_nothing_to_show() {
+    for order in BOTH_BYTE_ORDERS {
+        let mut host = DrawingHost::new(order);
+        let (window, input_only) = (0x22_0350, 0x22_0351);
+        host.window(&create_window_request(order, window, 0, 0, 8, 8));
+        host.input_only_window(input_only);
+        let kinds = |outputs: &[XClientOutput]| {
+            outputs
+                .iter()
+                .map(|output| match output {
+                    XClientOutput::Event(XClientEvent::MapNotify { .. }) => "MapNotify",
+                    XClientOutput::Event(XClientEvent::VisibilityNotify { .. }) => "VisibilityNotify",
+                    XClientOutput::Event(XClientEvent::Expose { .. }) => "Expose",
+                    other => panic!("{order:?}: unexpected output {other:?}"),
+                })
+                .collect::<Vec<_>>()
+        };
+        let mapped = host.send(&map_window_request(order, window));
+        assert_eq!(
+            kinds(&mapped.outputs),
+            ["MapNotify", "VisibilityNotify", "Expose"],
+            "{order:?}: a window with pixels is shown and exposed"
+        );
+        let mapped = host.send(&map_window_request(order, input_only));
+        assert_eq!(
+            kinds(&mapped.outputs),
+            ["MapNotify"],
+            "{order:?}: an InputOnly window only changes map state"
+        );
+    }
+}
+
 #[test]
 fn drawing_family_query_best_size_needs_a_drawable_with_pixels_for_tiles() {
     for order in BOTH_BYTE_ORDERS {
