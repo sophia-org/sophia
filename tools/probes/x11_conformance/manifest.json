@@ -318,6 +318,18 @@
     {
       "id": "warp_pointer",
       "mandatory": true
+    },
+    {
+      "id": "text_primitives",
+      "mandatory": true
+    },
+    {
+      "id": "colormaps",
+      "mandatory": true
+    },
+    {
+      "id": "cursors",
+      "mandatory": true
     }
   ],
   "features": [
@@ -1567,33 +1579,39 @@
     },
     "74": {
       "name": "X_POLY_TEXT8",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "text_primitives"
+      ]
     },
     "75": {
       "name": "X_POLY_TEXT16",
-      "cases": [],
-      "coverage_debt": "Covered by wire tests in both byte orders including font-shift items. No independent case yet."
+      "cases": [
+        "text_primitives"
+      ]
     },
     "76": {
       "name": "X_IMAGE_TEXT8",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "text_primitives"
+      ]
     },
     "77": {
       "name": "X_IMAGE_TEXT16",
-      "cases": [],
-      "coverage_debt": "Covered by wire tests in both byte orders, and by a dispatch test asserting it paints what ImageText8 paints for the same characters. No independent case yet."
+      "cases": [
+        "text_primitives"
+      ]
     },
     "78": {
       "name": "X_CREATE_COLORMAP",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "colormaps"
+      ]
     },
     "79": {
       "name": "X_FREE_COLORMAP",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "colormaps"
+      ]
     },
     "80": {
       "name": "X_COPY_COLORMAP_AND_FREE",
@@ -1615,13 +1633,15 @@
     },
     "84": {
       "name": "X_ALLOC_COLOR",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "colormaps"
+      ]
     },
     "85": {
       "name": "X_ALLOC_NAMED_COLOR",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "colormaps"
+      ]
     },
     "86": {
       "name": "X_ALLOC_COLOR_CELLS",
@@ -1655,33 +1675,39 @@
     },
     "91": {
       "name": "X_QUERY_COLORS",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "colormaps"
+      ]
     },
     "92": {
       "name": "X_LOOKUP_COLOR",
-      "cases": [],
-      "coverage_debt": "Real-socket Rust regressions cover LookupColor; an independent t057 wire case remains unimplemented."
+      "cases": [
+        "colormaps"
+      ]
     },
     "93": {
       "name": "X_CREATE_CURSOR",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "cursors"
+      ]
     },
     "94": {
       "name": "X_CREATE_GLYPH_CURSOR",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "cursors"
+      ]
     },
     "95": {
       "name": "X_FREE_CURSOR",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "cursors"
+      ]
     },
     "96": {
       "name": "X_RECOLOR_CURSOR",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "cursors"
+      ]
     },
     "97": {
       "name": "X_QUERY_BEST_SIZE",

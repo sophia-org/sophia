@@ -354,9 +354,20 @@ fn dispatch_core_resource_request(
             cursor,
             source,
             mask,
+            hotspot_x,
+            hotspot_y,
         } => {
             if runtime.resource_id_in_use(cursor) {
                 return Handled(core_resource_bad_id_choice(context, cursor));
+            }
+            if let Some(error) =
+                cursor_bitmap_error(runtime, context, source, mask, (hotspot_x, hotspot_y))
+            {
+                return Handled(XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Error(error)],
+                    metadata_candidates: Vec::new(),
+                });
             }
             let result = runtime
                 .validate_drawable_access(context.namespace, source)
@@ -391,29 +402,57 @@ fn dispatch_core_resource_request(
             cursor,
             source_font,
             mask_font,
+            source_char,
+            mask_char,
         } => {
             if runtime.resource_id_in_use(cursor) {
                 return Handled(core_resource_bad_id_choice(context, cursor));
             }
-            let outputs = if let Err(error) =
-                runtime.validate_font_access(context.namespace, source_font)
+            // A character the font does not define is a Value error, once
+            // the font itself is known to exist.
+            let undefined = |font, char: u16| {
+                runtime.font_face(context.namespace, font).is_ok_and(|face| {
+                    let [byte1, byte2] = char.to_be_bytes();
+                    face.metrics.char_info(byte1, byte2).is_none()
+                })
+            };
+            if undefined(source_font, source_char)
+                || mask_font.is_some_and(|font| undefined(font, mask_char))
             {
-                vec![XClientOutput::Error(x_error_from_runtime(
-                    error,
-                    context.sequence,
-                    context.major_opcode,
-                    0,
-                    u32::try_from(source_font.local.raw()).unwrap_or(0),
-                ))]
+                return Handled(XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Error(crate::XClientError {
+                        code: XErrorCode::BadValue,
+                        sequence: context.sequence,
+                        resource_id: u32::from(source_char),
+                        minor_code: 0,
+                        major_code: context.major_opcode,
+                    })],
+                    metadata_candidates: Vec::new(),
+                });
+            }
+            // A font that does not exist is a Font error, whatever the
+            // runtime calls an unknown resource.
+            let bad_font = |font: crate::XResourceId| {
+                vec![XClientOutput::Error(crate::XClientError {
+                    code: XErrorCode::BadFont,
+                    sequence: context.sequence,
+                    resource_id: u32::try_from(font.local.raw()).unwrap_or(0),
+                    minor_code: 0,
+                    major_code: context.major_opcode,
+                })]
+            };
+            let outputs = if runtime
+                .validate_font_access(context.namespace, source_font)
+                .is_err()
+            {
+                bad_font(source_font)
             } else if let Some(mask_font) = mask_font {
-                if let Err(error) = runtime.validate_font_access(context.namespace, mask_font) {
-                    vec![XClientOutput::Error(x_error_from_runtime(
-                        error,
-                        context.sequence,
-                        context.major_opcode,
-                        0,
-                        u32::try_from(mask_font.local.raw()).unwrap_or(0),
-                    ))]
+                if runtime
+                    .validate_font_access(context.namespace, mask_font)
+                    .is_err()
+                {
+                    bad_font(mask_font)
                 } else {
                     match runtime.create_cursor(
                         context.namespace,
@@ -452,13 +491,7 @@ fn dispatch_core_resource_request(
         XWireRequest::FreeCursor { cursor } => {
             let outputs = match runtime.free_cursor(context.namespace, cursor) {
                 Ok(()) => Vec::new(),
-                Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                    error,
-                    context.sequence,
-                    context.major_opcode,
-                    0,
-                    u32::try_from(cursor.local.raw()).unwrap_or(0),
-                ))],
+                Err(error) => vec![XClientOutput::Error(cursor_error(error, context, cursor))],
             };
             XDispatchResult {
                 response: None,
@@ -469,13 +502,7 @@ fn dispatch_core_resource_request(
         XWireRequest::RecolorCursor { cursor } => {
             let outputs = match runtime.validate_cursor_access(context.namespace, cursor) {
                 Ok(()) => Vec::new(),
-                Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
-                    error,
-                    context.sequence,
-                    context.major_opcode,
-                    0,
-                    u32::try_from(cursor.local.raw()).unwrap_or(0),
-                ))],
+                Err(error) => vec![XClientOutput::Error(cursor_error(error, context, cursor))],
             };
             XDispatchResult {
                 response: None,
@@ -900,3 +927,65 @@ fn core_resource_validation_error(
     }
 }
 
+/// Why a core cursor's bitmaps cannot make a cursor, if they cannot.
+///
+/// The source and the mask are depth-one pixmaps, a mask is the source's
+/// size, and the hotspot lies on the source, or at most one past its edge as
+/// in Xorg; anything else is a Match error.
+/// A name that is no pixmap at all is a Pixmap error.
+fn cursor_bitmap_error(
+    runtime: &XAuthorityRuntime,
+    context: XDispatchContext,
+    source: crate::XResourceId,
+    mask: Option<crate::XResourceId>,
+    (hotspot_x, hotspot_y): (u16, u16),
+) -> Option<crate::XClientError> {
+    let error = |code, resource: crate::XResourceId| crate::XClientError {
+        code,
+        sequence: context.sequence,
+        resource_id: u32::try_from(resource.local.raw()).unwrap_or(0),
+        minor_code: 0,
+        major_code: context.major_opcode,
+    };
+    let Ok((size, depth)) = runtime.pixmap_geometry(context.namespace, source) else {
+        return Some(error(XErrorCode::BadPixmap, source));
+    };
+    // Xorg admits a hotspot one past each edge (`x > width` in dix), and
+    // clients written against it may rely on that, so this does too.
+    if depth != 1 || i32::from(hotspot_x) > size.width || i32::from(hotspot_y) > size.height {
+        return Some(error(XErrorCode::BadMatch, source));
+    }
+    let mask = mask?;
+    match runtime.pixmap_geometry(context.namespace, mask) {
+        Err(_) => Some(error(XErrorCode::BadPixmap, mask)),
+        Ok((mask_size, mask_depth)) if mask_depth != 1 || mask_size != size => {
+            Some(error(XErrorCode::BadMatch, mask))
+        }
+        Ok(_) => None,
+    }
+}
+
+/// The error for a cursor that cannot be used: a name that is no cursor is
+/// a Cursor error, which the runtime's generic mapping would call a Window.
+fn cursor_error(
+    error: XAuthorityRuntimeError,
+    context: XDispatchContext,
+    cursor: crate::XResourceId,
+) -> crate::XClientError {
+    let mut mapped = x_error_from_runtime(
+        error,
+        context.sequence,
+        context.major_opcode,
+        0,
+        u32::try_from(cursor.local.raw()).unwrap_or(0),
+    );
+    if matches!(
+        error,
+        XAuthorityRuntimeError::UnknownResource
+            | XAuthorityRuntimeError::InvalidResource
+            | XAuthorityRuntimeError::WrongResourceKind
+    ) {
+        mapped.code = XErrorCode::BadCursor;
+    }
+    mapped
+}

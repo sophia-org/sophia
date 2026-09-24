@@ -1318,11 +1318,15 @@ pub enum XWireRequest {
         cursor: XResourceId,
         source: XResourceId,
         mask: Option<XResourceId>,
+        hotspot_x: u16,
+        hotspot_y: u16,
     },
     CreateGlyphCursor {
         cursor: XResourceId,
         source_font: XResourceId,
         mask_font: Option<XResourceId>,
+        source_char: u16,
+        mask_char: u16,
     },
     FreeCursor {
         cursor: XResourceId,
