@@ -216,7 +216,7 @@ fn a_record_that_cannot_finish_says_which_things_are_stopping_it() {
     // A real refusal leaves it holding a receiver and no way to reach the
     // connection at all.
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert_eq!(
@@ -281,7 +281,7 @@ fn a_reading_reports_an_ending_and_a_closure_that_were_established() {
         .register_client_with_admission(client, Some(admitted(client)))
         .expect("a place and a row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -921,7 +921,7 @@ fn bound_connection(
     XServerFrontendClientRouteRegistration,
     PrivatePreparedRunner,
     PrivateSettlementOwner,
-    Arc<Mutex<UnixStream>>,
+    Arc<Mutex<X11ClientOutput>>,
     UnixStream,
     crate::PrivateServiceOwner,
 ) {
@@ -936,7 +936,7 @@ fn bound_connection(
     } = f;
     let (stream, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -985,7 +985,7 @@ fn a_receiver_alone_is_not_something_to_promote() {
         .register_client_with_admission(other, Some(admitted(other)))
         .expect("a second place and row");
     let (stream, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration
@@ -1034,7 +1034,7 @@ fn a_preparation_that_refuses_leaves_the_transport_and_its_queue_untouched() {
         .expect("a place and a row");
     let (stream, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
-    let output = Arc::new(Mutex::new(stream));
+    let output = X11ClientOutput::shared(stream, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     registration

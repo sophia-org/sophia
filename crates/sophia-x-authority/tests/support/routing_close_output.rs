@@ -862,7 +862,7 @@ fn a_barred_wire_stops_every_writer_of_that_socket_including_control() {
     // included, because control is the writer with PRIORITY, not the writer
     // allowed to follow the beginning of an event nobody can finish.
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = AtomicUsize::new(0);
     let sequence = AtomicU16::new(1);
@@ -933,7 +933,7 @@ fn a_serving_owner_holds_its_connections_permission_not_one_of_its_own() {
     let client = XServerFrontendClientId(7861);
     let f = prepared_ordered_fixture(client);
     let (socket, _peer) = UnixStream::pair().expect("a socket pair");
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let transport =
@@ -1003,7 +1003,7 @@ fn an_ordered_step_yields_to_control_and_acts_on_being_stopped() {
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));
@@ -1109,7 +1109,7 @@ fn a_stop_set_while_waiting_for_the_output_is_seen_before_taking_custody() {
 
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let stop = Arc::new(AtomicBool::new(false));

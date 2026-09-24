@@ -59,7 +59,7 @@ struct XAuthorityOrderedTransport {
     /// The one every other writer for this connection already goes through. A
     /// private descriptor of our own would write beside them rather than among
     /// them, which is what serialization is for.
-    output: Arc<Mutex<UnixStream>>,
+    output: Arc<Mutex<X11ClientOutput>>,
     /// A handle on the same connection that does not go through that lock.
     ///
     /// Ending a connection must not require the mutex a stalled write is
@@ -92,7 +92,7 @@ impl XAuthorityOrderedTransport {
     fn bind(
         record: &PrivateCleanupRecord,
         ordered: XAuthorityOrderedReceiver,
-        output: &Arc<Mutex<UnixStream>>,
+        output: &Arc<Mutex<X11ClientOutput>>,
         wire: &Arc<X11WirePermission>,
         control_pending: &Arc<AtomicUsize>,
         stop: Option<&Arc<AtomicBool>>,
@@ -104,7 +104,7 @@ impl XAuthorityOrderedTransport {
         // refuses the binding rather than producing one that could never be
         // ended.
         let shutdown = match output.lock() {
-            Ok(guard) => match guard.try_clone() {
+            Ok(guard) => match guard.try_clone_stream() {
                 Ok(handle) => handle,
                 Err(_) => {
                     drop(guard);
@@ -273,7 +273,7 @@ struct X11OrderedServingOwner {
     /// is the same notice the senders were counted against and not a fresh one
     /// that nothing publishes to.
     wake: Arc<PrivateOrderedWake>,
-    output: Arc<Mutex<UnixStream>>,
+    output: Arc<Mutex<X11ClientOutput>>,
     shutdown: UnixStream,
     wire: Arc<X11WirePermission>,
     control_pending: Arc<AtomicUsize>,
@@ -495,7 +495,7 @@ impl X11OrderedServingOwner {
                 None => self.stop_without_finishing(),
             };
         }
-        let socket = admitted
+        let mut socket = admitted
             .expect("checked above")
             .expect("checked above");
         // AND AGAIN UNDER SERIALIZATION. Stop may have been set while this was
@@ -538,8 +538,12 @@ impl X11OrderedServingOwner {
             }
             return X11OrderedServeStep::Stopped;
         }
+        // What the kernel refused earlier goes first, so this frame follows
+        // everything admitted before it. A refusal here is found again by
+        // the frame's own send and classified there.
+        let _ = socket.drain_once();
         let step = serve_one_ordered_delivery(
-            &socket,
+            socket.stream(),
             &self.served,
             &mut self.in_flight,
             &mut self.refused,

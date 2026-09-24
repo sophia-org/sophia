@@ -17,7 +17,7 @@ fn a_writer_parked_on_control_output_still_stops_when_told() {
     let pending = Arc::new(AtomicUsize::new(1));
     let (stream, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
     let writer = spawn_x11_protocol_event_writer(
-        Arc::new(Mutex::new(stream)),
+        X11ClientOutput::shared(stream, 0),
         pending.clone(),
         Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
@@ -45,6 +45,7 @@ fn a_writer_parked_on_control_output_still_stops_when_told() {
         input: None,
         control: None,
         protocol: Some(writer),
+        drain: None,
         transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     };
     let shutdown = writers.shut_down();
@@ -219,7 +220,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
     let pending = Arc::new(AtomicUsize::new(1));
     let writer = spawn_x11_input_event_writer(
         X11InputWriterState {
-            stream: Arc::new(Mutex::new(stream)),
+            stream: X11ClientOutput::shared(stream, 0),
             output_control_pending: pending.clone(),
             output_wire: Arc::new(X11WirePermission::open()),
             byte_order: XByteOrder::LittleEndian,
@@ -295,6 +296,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
         input: Some(writer),
         control: None,
         protocol: None,
+        drain: None,
         transport: std::os::unix::net::UnixStream::pair().unwrap().0,
     };
     let shutdown = writers.shut_down();
@@ -560,7 +562,7 @@ fn a_writer_blocked_in_a_write_is_still_joined() {
     let (stream, peer) = std::os::unix::net::UnixStream::pair().unwrap();
     let transport = stream.try_clone().expect("an independent handle");
     let writer = spawn_x11_protocol_event_writer(
-        Arc::new(Mutex::new(stream)),
+        X11ClientOutput::shared(stream, 0),
         Arc::new(AtomicUsize::new(0)),
         Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
@@ -598,6 +600,7 @@ fn a_writer_blocked_in_a_write_is_still_joined() {
         input: None,
         control: None,
         protocol: Some(writer),
+        drain: None,
         transport,
     };
     let started = std::time::Instant::now();
@@ -615,9 +618,7 @@ fn a_shutdown_handle_that_cannot_be_taken_refuses_before_any_worker_starts() {
     // A poisoned output socket stands in for the descriptor that could not be
     // had. Either way the handle is unavailable, and the moment it is
     // unavailable is exactly the moment a connection is most likely to stall.
-    let stream = Arc::new(Mutex::new(
-        std::os::unix::net::UnixStream::pair().unwrap().0,
-    ));
+    let stream = X11ClientOutput::shared(std::os::unix::net::UnixStream::pair().unwrap().0, 0);
     let poisoner = Arc::clone(&stream);
     assert!(
         std::thread::spawn(move || {
@@ -653,9 +654,7 @@ fn a_refused_cohort_leaves_no_query_owner_behind() {
     // a query owner, and the device pin releases only its device bundle. So
     // the order is the whole guarantee: nothing is registered until the
     // cohort's handle is in hand.
-    let stream = Arc::new(Mutex::new(
-        std::os::unix::net::UnixStream::pair().unwrap().0,
-    ));
+    let stream = X11ClientOutput::shared(std::os::unix::net::UnixStream::pair().unwrap().0, 0);
     let poisoner = Arc::clone(&stream);
     assert!(
         std::thread::spawn(move || {
@@ -752,6 +751,7 @@ fn losing_a_connection_gives_up_its_writers_and_then_its_registration() {
             input: None,
             control: Some(X11ControlWriter { stop, thread }),
             protocol: None,
+            drain: None,
             transport: std::os::unix::net::UnixStream::pair().unwrap().0,
         },
         query_owner: X11QueryOwner::register(&state.runtime, namespace, client, None)

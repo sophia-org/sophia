@@ -831,7 +831,7 @@ fn a_serving_owner_keeps_its_own_endpoint_when_its_registration_is_replaced() {
     // and owns them from here on.
     let (socket, peer) = UnixStream::pair().expect("a socket pair");
     peer.set_nonblocking(true).expect("a readable peer");
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let transport =
@@ -999,7 +999,7 @@ fn a_serving_constructor_rejects_another_registrations_receiver() {
     let endpoint_b=b.runner.frontend.as_ref().unwrap().endpoint_for(&b.registration).unwrap();
     assert!(!endpoint_a.matches(&endpoint_b));
     let (socket,_peer)=UnixStream::pair().unwrap();
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     // The association is established where the transport is bound, so that is
@@ -1060,7 +1060,7 @@ fn a_failed_serving_constructor_preserves_its_original_queued_capsule() {
     assert_eq!(private.terminal.holds[0].custody.dispatch,PrivateDispatchPhase::Enqueued);
     assert!(private.terminal.holds[0].native.is_some());
     let (socket,_peer)=UnixStream::pair().unwrap();
-    let output = Arc::new(Mutex::new(socket));
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     assert!(finalizer.upgrade().is_some(),"revocation did not destroy the actual queued capsule immediately before construction");
@@ -1103,8 +1103,8 @@ fn close_to_quiet(
 fn serving_owner_for(
     f: &mut PreparedOrderedFixture,
     socket: UnixStream,
-) -> (X11OrderedServingOwner, Arc<Mutex<UnixStream>>) {
-    let output = Arc::new(Mutex::new(socket));
+) -> (X11OrderedServingOwner, Arc<Mutex<X11ClientOutput>>) {
+    let output = X11ClientOutput::shared(socket, 0);
     let wire = Arc::new(X11WirePermission::open());
     let pending = Arc::new(AtomicUsize::new(0));
     let ordered = std::mem::replace(

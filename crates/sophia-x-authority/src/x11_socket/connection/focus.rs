@@ -113,7 +113,7 @@ struct X11PendingFocusPublication {
     claim: PrivateFocusClaim,
     runtime: Arc<Mutex<XAuthorityRuntime>>,
     control_runtime_pending: Arc<AtomicUsize>,
-    output: Arc<Mutex<UnixStream>>,
+    output: Arc<Mutex<X11ClientOutput>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
     revert_to: u8,
@@ -664,7 +664,7 @@ fn x11_clear_focus_records(
 /// writers yield to; making control wait on it would make control yield to
 /// itself.
 fn write_x11_control_records(
-    stream: &Arc<Mutex<UnixStream>>,
+    stream: &Arc<Mutex<X11ClientOutput>>,
     wire: &X11WirePermission,
     byte_order: XByteOrder,
     sequence: &AtomicU16,
@@ -702,7 +702,7 @@ fn x11_dispatch_private_focus(
     time: crate::XTimestamp,
     runtime_owner: Arc<Mutex<XAuthorityRuntime>>,
     control_runtime_pending: Arc<AtomicUsize>,
-    output: Arc<Mutex<UnixStream>>,
+    output: Arc<Mutex<X11ClientOutput>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
 ) -> Result<(XDispatchResult, Option<X11PendingFocusPublication>), X11SetupSocketError> {

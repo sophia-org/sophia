@@ -372,7 +372,7 @@ fn a_control_writer_records_that_its_client_has_none_when_it_stops() {
     let state = X11CoreSocketServerState::new();
     let (writer_stream, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
     let writer = spawn_x11_control_writer(
-        Arc::new(Mutex::new(writer_stream)),
+        X11ClientOutput::shared(writer_stream, 0),
         Arc::new(AtomicUsize::new(0)),
         Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,
@@ -797,7 +797,7 @@ fn writer_start(
     peer.set_read_timeout(Some(std::time::Duration::from_millis(500)))
         .unwrap();
     let writer = spawn_x11_control_writer(
-        Arc::new(Mutex::new(stream)),
+        X11ClientOutput::shared(stream, 0),
         priority,
         Arc::new(X11WirePermission::open()),
         XByteOrder::LittleEndian,

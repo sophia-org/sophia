@@ -1,5 +1,5 @@
 struct X11InputWriterState {
-    stream: Arc<Mutex<UnixStream>>,
+    stream: Arc<Mutex<X11ClientOutput>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
     byte_order: XByteOrder,

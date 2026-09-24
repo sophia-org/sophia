@@ -44,7 +44,8 @@ fn x11_output_record_sends_bounded_scm_rights_with_the_first_bytes() {
     use std::os::fd::OwnedFd;
 
     for fd_count in [1, sophia_protocol::DMA_BUF_MAX_PLANES] {
-        let (mut sender, receiver) = UnixStream::pair().unwrap();
+        let (sender, receiver) = UnixStream::pair().unwrap();
+        let mut sender = X11ClientOutput::new(sender, 0);
         let payload = vec![0x5a; X_CLIENT_OUTPUT_RECORD_LEN];
         let fds = (0..fd_count)
             .map(|_| OwnedFd::from(File::open("/dev/null").unwrap()))
@@ -102,7 +103,8 @@ fn x11_output_record_rejects_empty_bytes_and_excess_descriptors() {
 fn x11_output_record_preserves_byte_only_output() {
     use std::os::unix::net::UnixStream;
 
-    let (mut sender, mut receiver) = UnixStream::pair().unwrap();
+    let (sender, mut receiver) = UnixStream::pair().unwrap();
+    let mut sender = X11ClientOutput::new(sender, 0);
     let payload = vec![0xa5; X_CLIENT_OUTPUT_RECORD_LEN];
     let record = X11SocketOutputRecord::try_from(payload.clone()).unwrap();
     write_x11_socket_output_record(&mut sender, record).unwrap();

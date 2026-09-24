@@ -169,7 +169,7 @@ fn revocation_before_core_output_prevents_old_focusin_and_publication() {
     let (stream, mut peer) = UnixStream::pair().unwrap();
     peer.set_read_timeout(Some(Duration::from_millis(60)))
         .unwrap();
-    let stream = Arc::new(Mutex::new(stream));
+    let stream = X11ClientOutput::shared(stream, 0);
     let (output, mut pending) =
         core_change(&fixture, window(), &stream, &Arc::new(AtomicUsize::new(0)));
     revoke_focus_fixture(&fixture);
@@ -186,7 +186,7 @@ fn revocation_after_real_core_flush_cannot_republish_the_applied_focus() {
     let fixture = fixture();
     let (stream, mut peer) = UnixStream::pair().unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let stream = Arc::new(Mutex::new(stream));
+    let stream = X11ClientOutput::shared(stream, 0);
     let (output, mut pending) =
         core_change(&fixture, window(), &stream, &Arc::new(AtomicUsize::new(0)));
     let frames = output.encoded_outputs(XByteOrder::LittleEndian);

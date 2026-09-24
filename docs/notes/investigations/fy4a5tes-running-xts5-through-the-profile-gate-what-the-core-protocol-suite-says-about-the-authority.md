@@ -62,6 +62,43 @@ t167 and t168. The fourth is a decision about what a TrueColor-only
 authority owes the colormap requests, filed as t169. The last two are what
 the suite is, not what the authority lacks.
 
+**The third run, with `TOO_LONG` rejoined.** After t165 the manifest was
+enumerated again without the exclusion, 389 purposes, and run
+(`.artifacts/xts-xproto/run-3-full/`, journal included). Every purpose
+started and completed in four minutes twenty; no case reached its timeout,
+and no purpose that had a result in the second run changed it. The 120
+rejoined purposes: 110 FAIL, 10 UNRESOLVED.
+
+| | purposes |
+| --- | --- |
+| manifested | 389 |
+| started and completed | 389 |
+| PASS | 177 |
+| FAIL | 165 |
+| UNRESOLVED | 34 |
+| UNTESTED | 11 |
+| UNSUPPORTED | 2 |
+
+The 110 all fail the same way, and it is not the deadlock. The suite's own
+Xlib is of X11R6 lineage: it sends `BigReqEnable` at open and takes any
+reply as the extension being on, so `_Send_Req` frames the `TOO_LONG`
+request as a big request -- a zero length field, then a 32-bit length one
+past the maximum, then the body. The authority advertises `BIG-REQUESTS`
+and answers `BigReqEnable`, but its reader frames nothing: the zero-length
+header is a four-byte request, answered `BadLength`, and the 262 KB body
+is some 65 000 requests after it, each answered. The purpose wants one
+`BadLength` and then nothing (`Expect: wanted NOTHING but got at least 42
+unexpected ... replies/errors/events`); the reference server frames the
+extended length, discards a request beyond its maximum whole, and answers
+once. Filed as t174; the 110 are declared against it by `case#purpose`.
+The 10 UNRESOLVED are the cases whose setup already fails for t166
+(`ChangeHosts`, `ChangePointerControl`, `SetScreenSaver`) or for want of
+fonts, and keep those reasons. A modern client is not exposed: xcb and the
+Xlib over it take the advertised maximum of 65535 units as no extension
+at all and never send the extended frame; the exposure is a client of the
+suite's lineage, or a hand-rolled one, and the inconsistency of advertising
+what is not framed.
+
 **`selected-core` through the gate**, on candidate `0b4b7415`
 (`.artifacts/x11-profile-0b4b7415-selected-core/`): the first run in which
 `XTS5` read anything but BLOCKED. 99 purposes started and completed, 76
@@ -95,9 +132,10 @@ row.
 The gate runs XTS now, and `XTS5 BLOCKED` means what it says: the checkout
 or the manifest was not named. Two scenarios are enumerated and committed
 with their declarations: `selected-core` reads PASS with 76 passed and 23
-declared, all the suite's own; `xproto` reads PASS with 177 passed and 92
-declared, 55 of them FAIL and 24 UNRESOLVED that are the authority's and
-carry their row (t166 to t169) in the reason. A PASS here means the suite
+declared, all the suite's own; `xproto` reads PASS with 177 passed and 212
+declared, 165 of them FAIL and 34 UNRESOLVED that are the authority's and
+carry their row (t166 to t169, and t174 for the rejoined `TOO_LONG`
+purposes) in the reason. A PASS here means the suite
 said exactly what the manifest says it would, no more; the declared count
 is the debt, in the verdict line where it cannot be missed. `~/src/xts` is
 the operator's checkout; the invocation is in `docs/validation.md`.
@@ -115,7 +153,11 @@ against the fixture host.
       passed, 23 declared, 0 FAIL.
 - [x] Declared dispositions with reasons, `xts_declare.py`, tests in
       `test_gate.py` and `test_xts_select.py`.
-- [ ] Rejoin the 120 `TOO_LONG` purposes once t165 lands.
+- [x] Rejoin the 120 `TOO_LONG` purposes once t165 lands: rejoined in the
+      third run, none hangs, 110 declared against t174 and 10 against the
+      reasons their cases already carry.
+- [ ] As t174 lands, the 110 `TOO_LONG` declarations turn stale and the
+      gate says so; remove them with the repair.
 - [ ] As t166 to t169 land, their declarations turn stale and the gate says
       so; remove each with its repair.
 
@@ -127,4 +169,4 @@ against the fixture host.
   the decided and undecided opcodes; the first row of the table above is
   the suite naming which of the undecided ones matter to it.
 - [A client that writes without reading deadlocks its connection](l1z9cldd-a-client-that-writes-without-reading-deadlocks-its-connection-replies-are-written-blocking-on-the-reading-thread.md) --
-  why `TOO_LONG` is excluded.
+  why `TOO_LONG` deadlocked, and what let it rejoin.

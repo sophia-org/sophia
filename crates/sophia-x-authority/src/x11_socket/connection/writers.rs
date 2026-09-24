@@ -29,6 +29,10 @@ struct X11ClientWriters {
     input: Option<X11InputEventWriter>,
     control: Option<X11ControlWriter>,
     protocol: Option<X11ProtocolEventWriter>,
+    /// The drain that moves this connection's owed output into the kernel as
+    /// the client reads. Joined last, so no writer admits into a spill that
+    /// nothing will drain.
+    drain: Option<X11OutputDrain>,
     /// An independent handle on the same socket the writers share.
     ///
     /// A writer blocked in a write observes no flag, and whoever joins it then
@@ -53,11 +57,11 @@ impl X11ClientWriters {
     /// Separate from owning the writers so that it can happen before this
     /// client is registered as anything, while the cohort itself is declared
     /// after those registrations and so gives its workers up before them.
-    fn take_transport(stream: &Arc<Mutex<UnixStream>>) -> Result<UnixStream, X11SetupSocketError> {
+    fn take_transport(stream: &Arc<Mutex<X11ClientOutput>>) -> Result<UnixStream, X11SetupSocketError> {
         let transport = stream
             .lock()
             .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?
-            .try_clone()
+            .try_clone_stream()
             .map_err(|error| {
                 X11SetupSocketError::new(format!(
                     "failed to clone X11 output socket for writer shutdown: {error}"
@@ -68,11 +72,12 @@ impl X11ClientWriters {
 
     /// Own the writers a connection starts, with the handle that can end a
     /// write no flag reaches.
-    fn owning(transport: UnixStream) -> Self {
+    fn owning(transport: UnixStream, drain: X11OutputDrain) -> Self {
         Self {
             input: None,
             control: None,
             protocol: None,
+            drain: Some(drain),
             transport,
         }
     }
@@ -117,6 +122,9 @@ impl X11ClientWriters {
         {
             stop.store(true, Ordering::Release);
         }
+        if let Some(drain) = self.drain.as_ref() {
+            drain.stop();
+        }
     }
 
     /// Whether every writer has finished within the deadline.
@@ -127,6 +135,7 @@ impl X11ClientWriters {
                 self.input.as_ref().map(|writer| &writer.thread),
                 self.control.as_ref().map(|writer| &writer.thread),
                 self.protocol.as_ref().map(|writer| &writer.thread),
+                self.drain.as_ref().and_then(|writer| writer.thread.as_ref()),
             ]
             .into_iter()
             .flatten()
@@ -148,6 +157,9 @@ impl X11ClientWriters {
             self.protocol
                 .take()
                 .map(|writer| (writer.thread, "protocol event")),
+            self.drain
+                .take()
+                .and_then(|mut writer| writer.thread.take().map(|thread| (thread, "output drain"))),
         ];
         let mut shutdown = X11WriterShutdown {
             joined: 0,
@@ -270,9 +282,9 @@ impl X11WirePermission {
 /// else would leave a window between the answer and the write.
 #[cfg(unix)]
 fn enter_x11_wire<'a>(
-    stream: &'a Arc<Mutex<UnixStream>>,
+    stream: &'a Arc<Mutex<X11ClientOutput>>,
     wire: &X11WirePermission,
-) -> Result<std::sync::MutexGuard<'a, UnixStream>, X11SetupSocketError> {
+) -> Result<std::sync::MutexGuard<'a, X11ClientOutput>, X11SetupSocketError> {
     let guard = stream
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 output socket lock poisoned"))?;
@@ -312,11 +324,11 @@ fn wait_for_x11_control_output(control_pending: &AtomicUsize, stop: Option<&Atom
 /// and nothing is owed, and the caller's business is to leave.
 #[cfg(unix)]
 fn lock_x11_non_control_output<'a>(
-    stream: &'a Arc<Mutex<UnixStream>>,
+    stream: &'a Arc<Mutex<X11ClientOutput>>,
     wire: &X11WirePermission,
     control_pending: &AtomicUsize,
     stop: Option<&AtomicBool>,
-) -> Result<Option<std::sync::MutexGuard<'a, UnixStream>>, X11SetupSocketError> {
+) -> Result<Option<std::sync::MutexGuard<'a, X11ClientOutput>>, X11SetupSocketError> {
     loop {
         if !wait_for_x11_control_output(control_pending, stop) {
             return Ok(None);
@@ -337,7 +349,7 @@ fn lock_x11_non_control_output<'a>(
 
 #[cfg(unix)]
 fn spawn_x11_protocol_event_writer(
-    stream: Arc<Mutex<UnixStream>>,
+    stream: Arc<Mutex<X11ClientOutput>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
     byte_order: XByteOrder,

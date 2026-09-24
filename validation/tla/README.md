@@ -856,6 +856,26 @@ assumed. `InputDeliveryRecoveryNoDeadline.cfg` must fail delivery liveness;
 The brief and source mapping are in `input-delivery-recovery/`. This is bounded
 model checking, not a physical session or native-client trace acceptance.
 
+## X11ClientOutputSpill
+
+`t165` models one X11 connection's output after the spill: what the kernel's
+send buffer refuses is queued in production order behind everything already
+refused, a drain moves it as the client reads, and two bounds end a client that
+will not take its output -- a byte bound on what may be owed, and a silence
+allowance for a client that neither reads nor writes while output is owed.
+The reader is never held by the recipient. `X11ClientOutputSpill.cfg` checks
+`ReaderNeverWaitsOnRecipient`, `OutstandingBounded`, `Order` and
+`EndedIsQuiet`, and reader, prompt-client and silent-client progress under weak
+fairness of the burst, the reader, the writers, the drain, a prompt client's
+reads, time and the silence ending. Time does not pass while the server reads
+a request, the drain has room, or a prompt client has something to take.
+`X11ClientOutputSpillBlockingWriter.cfg` is today's writer and must violate
+`ReaderNeverWaitsOnRecipient`; `X11ClientOutputSpillUnbounded.cfg` must
+violate `OutstandingBounded`; `X11ClientOutputSpillNoSilence.cfg` must fail
+`SilentClientIsEnded`. The brief is in `x11-client-output-spill/`. Byte sizes,
+descriptor passing and the private ordered writer's own custody policy are
+Rust obligations outside the model.
+
 `ShellContentOutbox.tla` models the owned content response boundary for two
 outputs in one grant. `Accept` reserves producer credits; native completion makes
 the exact Presented response eligible but does not send it. `Transfer` corresponds

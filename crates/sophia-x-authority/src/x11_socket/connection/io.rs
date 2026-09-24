@@ -116,55 +116,18 @@ pub fn read_x11_setup_request(
     })
 }
 
-/// Send one X11 output record while attaching its descriptors exactly once.
+/// Admit one X11 output record to this connection's wire.
 ///
-/// `SCM_RIGHTS` accompanies the first successful byte range. If the stream
-/// accepts only part of the byte payload, the remainder is written without
-/// ancillary data so the receiver cannot observe duplicate descriptors.
+/// The descriptors travel with the record's first bytes exactly once, and
+/// whatever the kernel will not take now is owed in order rather than
+/// waited for: see `X11ClientOutput`.
 #[cfg(unix)]
 pub fn write_x11_socket_output_record(
-    stream: &mut UnixStream,
+    output: &mut X11ClientOutput,
     record: X11SocketOutputRecord,
 ) -> std::io::Result<()> {
     let X11SocketOutputRecord { bytes, fds } = record;
-    if fds.is_empty() {
-        return stream.write_all(&bytes);
-    }
-
-    let borrowed = fds.iter().map(AsFd::as_fd).collect::<Vec<_>>();
-    let mut ancillary_space = [MaybeUninit::uninit();
-        rustix::cmsg_space!(ScmRights(sophia_protocol::DMA_BUF_MAX_PLANES))];
-    let mut ancillary = rustix::net::SendAncillaryBuffer::new(&mut ancillary_space);
-    if !ancillary.push(rustix::net::SendAncillaryMessage::ScmRights(&borrowed)) {
-        return Err(std::io::Error::other(
-            "failed to encode X11 output file descriptors",
-        ));
-    }
-
-    let sent = loop {
-        match rustix::net::sendmsg(
-            &*stream,
-            &[IoSlice::new(&bytes)],
-            &mut ancillary,
-            rustix::net::SendFlags::empty(),
-        ) {
-            Ok(sent) => break sent,
-            Err(error) => {
-                let error = std::io::Error::from(error);
-                if error.kind() == ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(error);
-            }
-        }
-    };
-    if sent == 0 {
-        return Err(std::io::Error::new(
-            ErrorKind::WriteZero,
-            "failed to write X11 output record",
-        ));
-    }
-    stream.write_all(&bytes[sent..])
+    output.admit(bytes, fds)
 }
 
 #[cfg(unix)]

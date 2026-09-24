@@ -124,7 +124,7 @@ impl XServerFrontendClientRouteRegistration {
     pub(crate) fn bind_ordered_output(
         &self,
         ordered: XAuthorityOrderedReceiver,
-        output: &Arc<Mutex<UnixStream>>,
+        output: &Arc<Mutex<X11ClientOutput>>,
         wire: &Arc<X11WirePermission>,
         control_pending: &Arc<AtomicUsize>,
     ) -> Result<Option<X11OrderedServingRefusal>, XAuthorityOrderedReceiver> {
@@ -141,7 +141,7 @@ impl XServerFrontendClientRouteRegistration {
     pub(crate) fn bind_ordered_output_stoppable(
         &self,
         ordered: XAuthorityOrderedReceiver,
-        output: &Arc<Mutex<UnixStream>>,
+        output: &Arc<Mutex<X11ClientOutput>>,
         wire: &Arc<X11WirePermission>,
         control_pending: &Arc<AtomicUsize>,
         stop: &Arc<AtomicBool>,
@@ -153,7 +153,7 @@ impl XServerFrontendClientRouteRegistration {
     fn bind_ordered_output_with(
         &self,
         ordered: XAuthorityOrderedReceiver,
-        output: &Arc<Mutex<UnixStream>>,
+        output: &Arc<Mutex<X11ClientOutput>>,
         wire: &Arc<X11WirePermission>,
         control_pending: &Arc<AtomicUsize>,
         stop: Option<&Arc<AtomicBool>>,

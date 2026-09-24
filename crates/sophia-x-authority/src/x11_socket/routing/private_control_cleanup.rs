@@ -501,7 +501,7 @@ impl PrivateRetainedExecutionResources {
 #[cfg(unix)]
 fn write_private_control_records(
     execution: &Arc<Mutex<PrivateControlExecution>>,
-    stream: &Arc<Mutex<UnixStream>>,
+    stream: &Arc<Mutex<X11ClientOutput>>,
     wire: &X11WirePermission,
     byte_order: XByteOrder,
     sequence: &AtomicU16,

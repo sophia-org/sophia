@@ -143,8 +143,12 @@ fn input_recovery_disconnect_interrupts_a_blocked_writer_without_its_mutex() {
     recovery
         .attach(healthy, good_socket.try_clone().unwrap())
         .unwrap();
-    // Fill the actual kernel send queue, then block a writer holding the same
-    // serialization mutex used by the frontend. No display or client secret.
+    // Fill the actual kernel send queue, then write through the same
+    // serialization mutex the frontend uses. The writer used to block here
+    // and be interrupted by the disconnect; since t165 it never blocks -- the
+    // refused bytes are owed in the connection's spill -- and the disconnect
+    // still ends the connection without needing that mutex. No display or
+    // client secret.
     socket.set_nonblocking(true).unwrap();
     loop {
         match socket.write(&[0; 8192]) {
@@ -154,25 +158,33 @@ fn input_recovery_disconnect_interrupts_a_blocked_writer_without_its_mutex() {
         }
     }
     socket.set_nonblocking(false).unwrap();
-    let socket = Arc::new(Mutex::new(socket));
+    let socket = X11ClientOutput::shared(socket, 0);
     let writer_socket = socket.clone();
     let (locked, ready) = channel();
     let (done, finished) = channel();
     let writer = std::thread::spawn(move || {
         let mut stream = writer_socket.lock().unwrap();
         locked.send(()).unwrap();
-        done.send(stream.write_all(&[0; 8192]).is_err()).unwrap();
+        done.send(stream.write_all(&[0; 8192]).is_ok()).unwrap();
     });
     ready.recv_timeout(Duration::from_secs(1)).unwrap();
-    assert!(socket.try_lock().is_err());
+    // The write returns at once with the kernel full: owed, not waited for.
+    assert!(
+        finished.recv_timeout(Duration::from_secs(1)).unwrap(),
+        "a writer facing a full kernel buffer spills rather than blocks"
+    );
+    writer.join().unwrap();
     let request = route(1, SurfaceId::new(11, 3));
     recovery.admit(&request, 1, now);
     recovery.bind(request.delivery, client).unwrap();
     recovery
         .recover(now + Duration::from_secs(6), false)
         .unwrap();
-    assert!(finished.recv_timeout(Duration::from_secs(1)).unwrap());
-    writer.join().unwrap();
+    // The disconnect reached the socket: what was owed can no longer go.
+    assert!(
+        socket.lock().unwrap().write_all(&[0; 8]).is_err(),
+        "the ended connection refuses further output"
+    );
     good_socket.write_all(b"healthy").unwrap();
     let mut bytes = [0; 7];
     good_peer.read_exact(&mut bytes).unwrap();
