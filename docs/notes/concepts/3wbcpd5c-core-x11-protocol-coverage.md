@@ -30,16 +30,10 @@ RotateProperties are in the table below.
 
 ### Pointer and keyboard
 
-| Op | Request | What it is for | Who calls it |
-| --- | --- | --- | --- |
-| 44 | QueryKeymap | The whole keyboard state as a bit vector | Toolkits checking modifiers without an event |
-| 100 | ChangeKeyboardMapping | Rewrite keycode to keysym mappings | `xmodmap`, remapping tools |
-| 116 | SetPointerMapping | Reorder or disable buttons | Left-handed mouse configuration |
-| 118 | SetModifierMapping | Which keycodes act as which modifiers | `xmodmap`, keyboard layout tools |
-
-Sophia owns input through its own authority and Engine routes it, so several
-of these would have to be answered by policy rather than served literally.
-That is the decision the task below is for.
+All decided (t166): QueryKeymap, ChangeKeyboardMapping, SetPointerMapping
+and SetModifierMapping are in the table below. Sophia owns input through
+its own authority and Engine routes it, so each is served as far as that
+authority can honestly report it, and no further.
 
 ### Screen saver, hosts and access control
 
@@ -76,6 +70,10 @@ which is the use that made the question concrete rather than theoretical.
 | 6 | ChangeSaveSet | Serve it | A client saves another's windows, never its own (BadMatch); when it departs, each saved window still alive is given to its nearest ancestor outside the departed range (the root when none) and re-mapped if it was mapped, with UnmapNotify, ReparentNotify (21, new) and MapNotify to whoever selected on it, rather than destroyed with the departed client's subtree. |
 | 112 | SetCloseDownMode | Serve it | Destroy is the teardown as it was. RetainPermanent and RetainTemporary keep the departed client's resource range alive -- windows mapped, properties in place -- until a KillClient names one of its resources, or AllTemporary for a temporary one; selections end with the connection either way, as the reference ends them. Ranges are never reused, so a retained one is unambiguous. |
 | 113 | KillClient | Serve it | The owner of the named resource is disconnected, and its own teardown frees its resources under its own close-down mode; a resource in a retained range frees that range now; AllTemporary frees every retained temporary range; a resource nobody holds is BadValue carrying it. |
+| 116 | SetPointerMapping | Serve it | The list is validated (nine entries, no logical button named twice, else BadValue carrying the offender), refused Busy while a button whose entry changes is held, and otherwise stored per namespace and applied where the routing maps a physical button: the physical button is what is held, the logical one what a client receives, and a zero entry is held and delivered to nobody. GetPointerMapping reports it, and MappingNotify(Pointer) reaches every client of the namespace, the requester first. |
+| 100 | ChangeKeyboardMapping | Serve it as an overlay | A per-namespace keycode-to-keysym table starts as the compiled XKB keymap's and is rewritten by the request (a keycode outside min..max is BadValue carrying it); GetKeyboardMapping and XKB GetMap both report the table, so the two views agree, and MappingNotify(Keyboard) names the first keycode and count. What it does not change: xkbcommon's compiled keymap still drives the modifier state and keysym of each key event, so a remapped key is reported remapped and delivered as compiled. That is the overlay's honest limit, recorded here rather than hidden. |
+| 118 | SetModifierMapping | Serve the current map, refuse another | The request is normalised into eight keycode sets and compared with the compiled keymap's modifier map (which GetModifierMapping now reads instead of a literal): equal answers Success and MappingNotify(Modifier); different answers Failed and no event, since xkbcommon owns the modifier state events carry and a map it did not compile cannot be served. A keycode outside min..max is BadValue. |
+| 44 | QueryKeymap | Serve it | The thirty-two bytes are the keys this routing has seen go down and not yet up, per namespace, written at the routed and private key transitions; a repeat is not a transition. |
 | 11 | UnmapSubwindows | Serve it | Every mapped child, top to bottom in stacking order as the protocol orders it, each through the path UnmapWindow takes with its UnmapNotify; children already unmapped are skipped, since an event for them would report a transition that never happened. |
 | 13 | CirculateWindow | Serve it, without Expose | The lowest child occluded by a sibling above it goes to the top (RaiseLowest), the highest occluding one to the bottom (LowerHighest), occlusion being the siblings' rectangles meeting; a CirculateNotify to the child and its parent's SubstructureNotify selectors. A client selecting SubstructureRedirect on the parent is asked instead, with a CirculateRequest naming the child, as a map becomes a MapRequest. No Expose: windows are retained surfaces here, and raising one uncovers nothing that was lost; XTS5's CirculateWindow purposes pass without it. |
 | 30 | ChangeActivePointerGrab | Serve the mask, validate the cursor | The event mask of an active grab the requester holds is rewritten; without such a grab the request has no effect, as the protocol says. The cursor is validated (BadCursor) and not applied: cursor display is config-driven here, the same debt WarpPointer carries. A bit outside the pointer events is BadValue carrying the mask. |

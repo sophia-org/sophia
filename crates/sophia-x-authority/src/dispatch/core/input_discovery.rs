@@ -13,6 +13,10 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::GetPointerMapping
             | XWireRequest::GetKeyboardMapping { .. }
             | XWireRequest::GetKeyboardControl
+            | XWireRequest::SetPointerMapping { .. }
+            | XWireRequest::ChangeKeyboardMapping { .. }
+            | XWireRequest::SetModifierMapping { .. }
+            | XWireRequest::QueryKeymap
             | XWireRequest::ChangeKeyboardControl(_)
             | XWireRequest::ChangePointerControl { .. }
             | XWireRequest::GetPointerControl
@@ -71,20 +75,27 @@ fn dispatch_core_input_discovery_request(
                     };
                     input_focus_dispatch_result(context, focus, applied, events)
                 }
-                XWireRequest::GetModifierMapping => XDispatchResult {
+                XWireRequest::GetModifierMapping => {
+                    let (keycodes_per_modifier, keycodes) =
+                        runtime.xkb_keymap().core_modifier_mapping();
+                    XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetModifierMapping {
                         sequence: context.sequence,
-                        keycodes_per_modifier: 2,
-                        keycodes: vec![50, 62, 66, 0, 37, 105, 64, 108, 77, 0, 0, 0, 133, 134, 0, 0],
+                        keycodes_per_modifier,
+                        keycodes,
                     })],
                     metadata_candidates: Vec::new(),
-                },
+                }
+                }
                 XWireRequest::GetPointerMapping => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetPointerMapping {
                         sequence: context.sequence,
-                        mapping: crate::pointer::x_pointer_button_mapping(),
+                        mapping: runtime
+                            .input_authority_mut()
+                            .pointer_mapping(context.namespace)
+                            .as_vec(),
                     })],
                     metadata_candidates: Vec::new(),
                 },
@@ -95,8 +106,8 @@ fn dispatch_core_input_discovery_request(
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetKeyboardMapping {
                         sequence: context.sequence,
-                        keysyms_per_keycode: 2,
-                        keysyms: runtime.xkb_keymap().core_mapping(first_keycode, count),
+                        keysyms_per_keycode: runtime.keyboard_map().keysyms_per_keycode(),
+                        keysyms: runtime.keyboard_map().core_mapping(first_keycode, count),
                     })],
                     metadata_candidates: Vec::new(),
                 },
@@ -220,6 +231,142 @@ fn dispatch_core_input_discovery_request(
                 XWireRequest::ChangeHosts | XWireRequest::SetAccessControl => XDispatchResult {
                     response: None,
                     outputs: vec![color_error(context, XErrorCode::BadAccess, 0)],
+                    metadata_candidates: Vec::new(),
+                },
+                // The input maps (t166). A pointer mapping is stored and
+                // applied to button events; a keyboard mapping rewrites the
+                // table clients translate with; a modifier mapping is served
+                // only when it is the current one, xkbcommon owning modifier
+                // state; QueryKeymap is what the keyboard routing observed.
+                XWireRequest::SetPointerMapping { ref mapping } => {
+                    let outputs = match crate::XPointerButtonMapping::from_request(mapping) {
+                        Err(crate::XPointerMappingRefusal::LengthMismatch(len)) => {
+                            vec![color_error(context, XErrorCode::BadValue, u32::from(len))]
+                        }
+                        Err(crate::XPointerMappingRefusal::DuplicateButton(button)) => {
+                            vec![color_error(context, XErrorCode::BadValue, u32::from(button))]
+                        }
+                        Ok(new_mapping) => {
+                            let mut authority = runtime.input_authority_mut();
+                            let current = authority.pointer_mapping(context.namespace);
+                            let held = authority.held_physical_buttons(context.namespace);
+                            if current
+                                .changed_buttons(new_mapping)
+                                .any(|button| held & (1 << (button - 1)) != 0)
+                            {
+                                vec![XClientOutput::Reply(XClientReply::MappingStatus {
+                                    sequence: context.sequence,
+                                    status: 1,
+                                })]
+                            } else {
+                                authority.set_pointer_mapping(context.namespace, new_mapping);
+                                // The notice before the reply, as the reference server
+                                // orders them: a client reading the reply already holds
+                                // the map it names.
+                                vec![
+                                    XClientOutput::Event(XClientEvent::MappingNotify {
+                                        sequence: context.sequence,
+                                        request: 2,
+                                        first_keycode: 0,
+                                        count: 0,
+                                    }),
+                                    XClientOutput::Reply(XClientReply::MappingStatus {
+                                        sequence: context.sequence,
+                                        status: 0,
+                                    }),
+                                ]
+                            }
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::ChangeKeyboardMapping {
+                    first_keycode,
+                    keysyms_per_keycode,
+                    ref keysyms,
+                } => {
+                    let outputs = match runtime.keyboard_map_mut().change(
+                        first_keycode,
+                        keysyms_per_keycode,
+                        keysyms,
+                    ) {
+                        Ok(count) => vec![XClientOutput::Event(XClientEvent::MappingNotify {
+                            sequence: context.sequence,
+                            request: 1,
+                            first_keycode,
+                            count,
+                        })],
+                        Err(crate::XKeyboardMapRefusal::KeycodeOutOfRange(keycode)) => {
+                            vec![color_error(context, XErrorCode::BadValue, u32::from(keycode))]
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::SetModifierMapping {
+                    keycodes_per_modifier,
+                    ref keycodes,
+                } => {
+                    let width = usize::from(keycodes_per_modifier);
+                    let mut requested: [std::collections::BTreeSet<u8>; 8] = Default::default();
+                    let mut refused = None;
+                    for (modifier, set) in requested.iter_mut().enumerate() {
+                        for keycode in keycodes.iter().skip(modifier * width).take(width) {
+                            if *keycode == 0 {
+                                continue;
+                            }
+                            if *keycode < runtime.xkb_keymap().min_keycode() {
+                                refused = Some(*keycode);
+                            }
+                            set.insert(*keycode);
+                        }
+                    }
+                    let outputs = if let Some(keycode) = refused {
+                        vec![color_error(context, XErrorCode::BadValue, u32::from(keycode))]
+                    } else if requested == runtime.xkb_keymap().modifier_sets() {
+                        // The notice before the reply, as the reference server
+                        // orders them: a client reading the reply already holds
+                        // the map it names.
+                        vec![
+                            XClientOutput::Event(XClientEvent::MappingNotify {
+                                sequence: context.sequence,
+                                request: 0,
+                                first_keycode: 0,
+                                count: 0,
+                            }),
+                            XClientOutput::Reply(XClientReply::MappingStatus {
+                                sequence: context.sequence,
+                                status: 0,
+                            }),
+                        ]
+                    } else {
+                        // Failed: xkbcommon owns the modifier state events
+                        // carry, and a map it did not compile cannot be
+                        // served honestly. A client reads MappingFailed.
+                        vec![XClientOutput::Reply(XClientReply::MappingStatus {
+                            sequence: context.sequence,
+                            status: 2,
+                        })]
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::QueryKeymap => XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Reply(XClientReply::QueryKeymap {
+                        sequence: context.sequence,
+                        keys: runtime.input_authority_mut().pressed_keys(context.namespace),
+                    })],
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::Bell => XDispatchResult {

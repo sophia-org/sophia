@@ -1099,6 +1099,54 @@ def change_save_set(context):
         peer.reply(3, peer.pack('I', window))
 
 
+def set_pointer_mapping(context):
+    with client(context) as c, peer_client(context) as peer:
+        c.completion(c.send(116, bytes([1, 2, 3, 4, 5, 6, 7, 8]), detail=8), error=2, opcode=116, resource=8)
+        c.completion(c.send(116, bytes([3, 2, 3, 4, 5, 6, 7, 8, 9]), detail=9), error=2, opcode=116, resource=3)
+        reply = c.reply(116, bytes([3, 2, 1, 4, 5, 6, 7, 8, 9]), detail=9)
+        assert reply[1] == 0, reply.hex()
+        assert c.event(34)[4] == 2
+        assert peer.event(34)[4] == 2, 'every client is told'
+        reply = c.reply(117)
+        assert reply[32:32 + reply[1]] == bytes([3, 2, 1, 4, 5, 6, 7, 8, 9]), reply.hex()
+        assert c.reply(116, bytes([1, 2, 3, 4, 5, 6, 7, 8, 9]), detail=9)[1] == 0
+        c.event(34)
+        peer.event(34)
+
+
+def change_keyboard_mapping(context):
+    with client(context) as c:
+        c.send(100, c.pack('BB2x', 38, 3) + c.pack('III', 0x61, 0x41, 0xe6), detail=1)
+        notice = c.event(34)
+        assert notice[4:7] == bytes([1, 38, 1]), notice.hex()
+        reply = c.reply(101, c.pack('BB2x', 38, 1))
+        assert reply[1] == 3 and c.unpack('III', reply, 32) == (0x61, 0x41, 0xe6), reply.hex()
+        c.completion(c.send(100, c.pack('BB2x', 7, 1) + c.pack('I', 0), detail=1), error=2, opcode=100, resource=7)
+        c.sync()
+
+
+def set_modifier_mapping(context):
+    with client(context) as c:
+        current = c.reply(119)
+        kpm = current[1]
+        keycodes = current[32:32 + 8 * kpm]
+        reply = c.reply(118, keycodes, detail=kpm)
+        assert reply[1] == 0, reply.hex()
+        assert c.event(34)[4] == 0
+        other = bytes([9]) + keycodes[1:]
+        reply = c.reply(118, other, detail=kpm)
+        assert reply[1] == 2, reply.hex()
+        assert not any(e[0] & 127 == 34 for e in c.events), 'no notice for a refused map'
+        c.completion(c.send(118, bytes([3]) + keycodes[1:], detail=kpm), error=2, opcode=118, resource=3)
+
+
+def query_keymap(context):
+    with client(context) as c:
+        reply = c.reply(44)
+        assert c.u32(reply, 4) == 2 and all(b == 0 for b in reply[8:40]), reply.hex()
+        c.completion(c.send(44, c.pack('I', 0)), error=16, opcode=44)
+
+
 def warp_pointer(context):
     with client(context) as c:
         root, window = c.root, c.window()
@@ -1155,6 +1203,10 @@ CASES = {'setup': setup,
          'kill_client': kill_client,
          'set_close_down_mode': set_close_down_mode,
          'change_save_set': change_save_set,
+         'set_pointer_mapping': set_pointer_mapping,
+         'change_keyboard_mapping': change_keyboard_mapping,
+         'set_modifier_mapping': set_modifier_mapping,
+         'query_keymap': query_keymap,
          'warp_pointer': warp_pointer,
          **{name: setup_containment for name in ('setup_empty', 'setup_truncated_prefix',
              'setup_truncated_auth', 'setup_invalid_order', 'setup_version_containment')},

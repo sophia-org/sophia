@@ -1337,6 +1337,19 @@ pub enum XWireRequest {
         count: u8,
     },
     GetKeyboardControl,
+    SetPointerMapping {
+        mapping: Vec<u8>,
+    },
+    ChangeKeyboardMapping {
+        first_keycode: u8,
+        keysyms_per_keycode: u8,
+        keysyms: Vec<u32>,
+    },
+    SetModifierMapping {
+        keycodes_per_modifier: u8,
+        keycodes: Vec<u8>,
+    },
+    QueryKeymap,
     /// Acted on by the socket layer, which owns the leases; the dispatcher
     /// validates the window. `own_window` is the decoder's finding that the
     /// window lies in the requester's own range, which the protocol refuses.
@@ -1653,6 +1666,59 @@ pub fn decode_x11_core_request(
             Ok(XWireRequest::KillClient {
                 resource: (raw != 0).then(|| XResourceId::new(u64::from(raw), 1)),
             })
+        }
+        X_SET_POINTER_MAPPING => {
+            let count = usize::from(bytes[1]);
+            require_exact_len(
+                X_SET_POINTER_MAPPING,
+                X_SET_POINTER_MAPPING_REQ_LEN + ((count + 3) & !3),
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::SetPointerMapping {
+                mapping: bytes[4..4 + count].to_vec(),
+            })
+        }
+        X_CHANGE_KEYBOARD_MAPPING => {
+            require_len(
+                X_CHANGE_KEYBOARD_MAPPING,
+                X_CHANGE_KEYBOARD_MAPPING_REQ_LEN,
+                bytes.len(),
+            )?;
+            let count = usize::from(bytes[1]);
+            let per_keycode = bytes[5];
+            if per_keycode == 0 {
+                return Err(XWireParseError::InvalidValue(0));
+            }
+            require_exact_len(
+                X_CHANGE_KEYBOARD_MAPPING,
+                X_CHANGE_KEYBOARD_MAPPING_REQ_LEN + count * usize::from(per_keycode) * 4,
+                bytes.len(),
+            )?;
+            let keysyms = bytes[8..]
+                .chunks_exact(4)
+                .map(|word| context.byte_order.u32(word))
+                .collect();
+            Ok(XWireRequest::ChangeKeyboardMapping {
+                first_keycode: bytes[4],
+                keysyms_per_keycode: per_keycode,
+                keysyms,
+            })
+        }
+        X_SET_MODIFIER_MAPPING => {
+            let per_modifier = usize::from(bytes[1]);
+            require_exact_len(
+                X_SET_MODIFIER_MAPPING,
+                X_SET_MODIFIER_MAPPING_REQ_LEN + 8 * per_modifier,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::SetModifierMapping {
+                keycodes_per_modifier: bytes[1],
+                keycodes: bytes[4..].to_vec(),
+            })
+        }
+        X_QUERY_KEYMAP => {
+            require_exact_len(X_QUERY_KEYMAP, X_QUERY_KEYMAP_REQ_LEN, bytes.len())?;
+            Ok(XWireRequest::QueryKeymap)
         }
         X_CHANGE_KEYBOARD_CONTROL => decode_change_keyboard_control(context, bytes),
         X_CHANGE_POINTER_CONTROL => decode_change_pointer_control(context, bytes),

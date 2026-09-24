@@ -337,7 +337,15 @@ impl XServerFrontendRouteRegistry {
                         grab.window
                     });
                 }
-                let Some((button, state)) = pointer.map_evdev_button(button, pressed) else {
+                // Under the client's button mapping (t166): the physical
+                // button is what is held, the logical one what is delivered,
+                // and a disabled one is held and delivered to nobody.
+                let mapping = self
+                    .input_authority
+                    .lock()
+                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                    .pointer_mapping(surface_route.namespace);
+                let Some(mapped) = pointer.map_evdev_button_mapped(mapping, button, pressed) else {
                     tracing::warn!("sophia_x11_input_route status=rejected reason=button_mapping client={} content=redacted", client.raw());
                     return self.send_input_delivery(
                         client,
@@ -345,6 +353,20 @@ impl XServerFrontendRouteRegistry {
                         XAuthorityInputDeliveryOutcome::RouteRejected,
                     );
                 };
+                self.input_authority
+                    .lock()
+                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                    .observe_physical_button(surface_route.namespace, mapped.physical, pressed);
+                let Some(button) = mapped.logical else {
+                    // Consumed, not a fault: the button is held physically and
+                    // no client is owed it.
+                    return self.send_input_delivery(
+                        client,
+                        route.delivery,
+                        XAuthorityInputDeliveryOutcome::Flushed,
+                    );
+                };
+                let state = mapped.state_before;
                 if pressed {
                     let mut authority = self
                         .input_authority

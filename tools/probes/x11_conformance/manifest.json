@@ -292,6 +292,22 @@
       "mandatory": true
     },
     {
+      "id": "set_pointer_mapping",
+      "mandatory": true
+    },
+    {
+      "id": "change_keyboard_mapping",
+      "mandatory": true
+    },
+    {
+      "id": "set_modifier_mapping",
+      "mandatory": true
+    },
+    {
+      "id": "query_keymap",
+      "mandatory": true
+    },
+    {
       "id": "warp_pointer",
       "mandatory": true
     }
@@ -907,6 +923,45 @@
       ],
       "cases": [
         "change_save_set"
+      ]
+    },
+    {
+      "name": "SetPointerMapping stores a validated mapping GetPointerMapping reports, with MappingNotify to every client",
+      "accepted_core_opcodes": [
+        116,
+        117
+      ],
+      "cases": [
+        "set_pointer_mapping"
+      ]
+    },
+    {
+      "name": "ChangeKeyboardMapping rewrites the table GetKeyboardMapping reports, with MappingNotify",
+      "accepted_core_opcodes": [
+        100,
+        101
+      ],
+      "cases": [
+        "change_keyboard_mapping"
+      ]
+    },
+    {
+      "name": "SetModifierMapping serves the current map and answers Failed to another",
+      "accepted_core_opcodes": [
+        118,
+        119
+      ],
+      "cases": [
+        "set_modifier_mapping"
+      ]
+    },
+    {
+      "name": "QueryKeymap reports the keys the routing saw go down",
+      "accepted_core_opcodes": [
+        44
+      ],
+      "cases": [
+        "query_keymap"
       ]
     },
     {
@@ -1635,8 +1690,9 @@
     },
     "101": {
       "name": "X_GET_KEYBOARD_MAPPING",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "change_keyboard_mapping"
+      ]
     },
     "103": {
       "name": "X_GET_KEYBOARD_CONTROL",
@@ -1651,13 +1707,15 @@
     },
     "117": {
       "name": "X_GET_POINTER_MAPPING",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "set_pointer_mapping"
+      ]
     },
     "119": {
       "name": "X_GET_MODIFIER_MAPPING",
-      "cases": [],
-      "coverage_debt": "Decoded request outside this selected mandatory profile; not claimed behaviorally conformant. Expand t057 using a named independent case."
+      "cases": [
+        "set_modifier_mapping"
+      ]
     },
     "127": {
       "name": "NoOperation",
@@ -1779,6 +1837,30 @@
       "name": "X_CHANGE_SAVE_SET",
       "cases": [
         "change_save_set"
+      ]
+    },
+    "116": {
+      "name": "X_SET_POINTER_MAPPING",
+      "cases": [
+        "set_pointer_mapping"
+      ]
+    },
+    "100": {
+      "name": "X_CHANGE_KEYBOARD_MAPPING",
+      "cases": [
+        "change_keyboard_mapping"
+      ]
+    },
+    "118": {
+      "name": "X_SET_MODIFIER_MAPPING",
+      "cases": [
+        "set_modifier_mapping"
+      ]
+    },
+    "44": {
+      "name": "X_QUERY_KEYMAP",
+      "cases": [
+        "query_keymap"
       ]
     }
   }

@@ -11,6 +11,8 @@ fn encode_core_late_reply(
             | XClientReply::GetPointerMapping { .. }
             | XClientReply::GetKeyboardMapping { .. }
             | XClientReply::GetKeyboardControl { .. }
+            | XClientReply::MappingStatus { .. }
+            | XClientReply::QueryKeymap { .. }
             | XClientReply::GetPointerControl { .. }
             | XClientReply::GetScreenSaver { .. }
             | XClientReply::GetMotionEvents { .. }
@@ -135,6 +137,18 @@ fn encode_core_late_reply(
                     put_u16(byte_order, &mut out[14..16], keyboard.bell_pitch);
                     put_u16(byte_order, &mut out[16..18], keyboard.bell_duration);
                     out[20..52].copy_from_slice(&keyboard.auto_repeats);
+                    out
+                }
+                XClientReply::MappingStatus { sequence, status } => {
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN];
+                    write_reply_header(byte_order, &mut out, sequence, 0);
+                    out[1] = status;
+                    out
+                }
+                XClientReply::QueryKeymap { sequence, keys } => {
+                    let mut out = vec![0; 40];
+                    write_reply_header(byte_order, &mut out[..X_CLIENT_OUTPUT_RECORD_LEN], sequence, 2);
+                    out[8..40].copy_from_slice(&keys);
                     out
                 }
                 XClientReply::GetPointerControl { sequence, pointer } => {

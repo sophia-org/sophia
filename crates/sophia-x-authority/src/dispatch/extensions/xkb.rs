@@ -36,7 +36,7 @@ fn dispatch_xkb_request(
                     // outside Sophia's reduced types/symbols/modifier map are valid
                     // empty sections, represented by their zero counts in the reply.
                     let present = full | partial;
-                    let keysyms = runtime.xkb_keymap().xkb_keysyms();
+                    let keysyms = runtime.keyboard_map().xkb_keysyms();
                     let modifier_map = runtime.xkb_keymap().modifier_map();
                     XDispatchResult {
                         response: None,

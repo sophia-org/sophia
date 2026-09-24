@@ -1,8 +1,4 @@
 {
-  "/Xproto/pSetPointerMapping": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
-  "/Xproto/pQueryKeymap": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
-  "/Xproto/pChangeKeyboardMapping": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
-  "/Xproto/pSetModifierMapping": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
   "/Xproto/pOpenFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
   "/Xproto/pCloseFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
   "/Xproto/pQueryFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
@@ -30,5 +26,9 @@
   "/Xproto/pGetScreenSaver#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pListHosts#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pSetAccessControl#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
-  "/Xproto/pSetCloseDownMode#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
+  "/Xproto/pSetCloseDownMode#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
+  "/Xproto/pQueryKeymap#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
+  "/Xproto/pSetModifierMapping#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
+  "/Xproto/pSetPointerMapping#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
+  "/Xproto/pSetModifierMapping#1": "by decision: the purpose sets a modifier map that is not the current one and wants a reply and a MappingNotify; this authority answers Failed and no event, since xkbcommon owns the modifier state events carry and a map it did not compile cannot be served honestly"
 }

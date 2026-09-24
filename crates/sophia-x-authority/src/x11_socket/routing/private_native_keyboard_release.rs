@@ -211,6 +211,9 @@ impl Guards<'_> {
             .map_evdev_key(hold.evdev, false)
             .expect("retained valid key");
         hold.release_xkb_applied = true;
+        // QueryKeymap: the key is up (t166).
+        self.authority
+            .observe_pressed_key(self.origin.namespace, hold.key, false);
         let Some(after) = keyboard.ordered_state() else {
             hold.status = Status::Retained(Residual::KeyboardUnavailable);
             return Err(PrivateAppliedRefusal::Interrupted);

@@ -12,12 +12,84 @@
 /// field; X has never had bits for the rest.
 pub const X_POINTER_BUTTON_COUNT: u8 = 9;
 
-/// The button mapping `GetPointerMapping` reports.
-///
-/// Sophia remaps nothing, so entry `n` is button `n`, for as many buttons as it
-/// can emit.
+/// The identity button mapping: entry `n` is button `n`, for as many buttons
+/// as this authority can emit. What GetPointerMapping reports until a client
+/// sets another (t166).
 pub fn x_pointer_button_mapping() -> Vec<u8> {
-    (1..=X_POINTER_BUTTON_COUNT).collect()
+    XPointerButtonMapping::identity().as_vec()
+}
+
+/// The core button mapping a client sets with SetPointerMapping: physical
+/// button `n` is delivered as `logical[n - 1]`, and a zero entry disables it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XPointerButtonMapping {
+    logical: [u8; X_POINTER_BUTTON_COUNT as usize],
+}
+
+/// Why a SetPointerMapping was refused, each the Value error the protocol
+/// names, carrying the value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XPointerMappingRefusal {
+    /// The list is not as long as the buttons this authority advertises.
+    LengthMismatch(u8),
+    /// A nonzero logical button named twice.
+    DuplicateButton(u8),
+}
+
+impl Default for XPointerButtonMapping {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
+
+impl XPointerButtonMapping {
+    pub fn identity() -> Self {
+        let mut logical = [0; X_POINTER_BUTTON_COUNT as usize];
+        for (index, entry) in logical.iter_mut().enumerate() {
+            *entry = index as u8 + 1;
+        }
+        Self { logical }
+    }
+
+    pub fn from_request(list: &[u8]) -> Result<Self, XPointerMappingRefusal> {
+        if list.len() != usize::from(X_POINTER_BUTTON_COUNT) {
+            return Err(XPointerMappingRefusal::LengthMismatch(
+                u8::try_from(list.len()).unwrap_or(u8::MAX),
+            ));
+        }
+        let mut seen = [false; 256];
+        for entry in list {
+            if *entry != 0 {
+                if seen[usize::from(*entry)] {
+                    return Err(XPointerMappingRefusal::DuplicateButton(*entry));
+                }
+                seen[usize::from(*entry)] = true;
+            }
+        }
+        let mut logical = [0; X_POINTER_BUTTON_COUNT as usize];
+        logical.copy_from_slice(list);
+        Ok(Self { logical })
+    }
+
+    /// The logical button a physical one is delivered as, or `None` when the
+    /// mapping disables it.
+    pub fn logical(self, physical: u8) -> Option<u8> {
+        let entry = *self.logical.get(usize::from(physical.checked_sub(1)?))?;
+        (entry != 0).then_some(entry)
+    }
+
+    pub fn as_vec(self) -> Vec<u8> {
+        self.logical.to_vec()
+    }
+
+    /// The physical buttons whose entry differs between two mappings.
+    pub fn changed_buttons(self, other: Self) -> impl Iterator<Item = u8> {
+        self.logical
+            .into_iter()
+            .zip(other.logical)
+            .enumerate()
+            .filter_map(|(index, (before, after))| (before != after).then_some(index as u8 + 1))
+    }
 }
 
 /// XI2 reserves valuators 0 and 1 for relative pointer X and Y.
@@ -33,6 +105,16 @@ pub struct XCorePointerMapper {
     held_buttons: u16,
     horizontal_scroll_v120: i32,
     vertical_scroll_v120: i32,
+}
+
+/// One evdev button mapped: the physical button, the logical one it is
+/// delivered as (none when the mapping disables it), and the core state
+/// before it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XMappedButton {
+    pub physical: u8,
+    pub logical: Option<u8>,
+    pub state_before: u16,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,23 +175,43 @@ impl XCorePointerMapper {
     }
 
     pub fn map_evdev_button(&mut self, evdev_button: u32, pressed: bool) -> Option<(u8, u16)> {
-        let (button, mask) = match evdev_button {
-            272 => (1, 1 << 8),
-            274 => (2, 1 << 9),
-            273 => (3, 1 << 10),
-            275 => (8, 0),
-            276 => (9, 0),
+        self.map_evdev_button_mapped(XPointerButtonMapping::identity(), evdev_button, pressed)
+            .and_then(|mapped| mapped.logical.map(|logical| (logical, mapped.state_before)))
+    }
+
+    /// An evdev button under a client's mapping (t166). The physical button
+    /// is what is held; the logical one is what is delivered and what the
+    /// core state bit follows. A disabled button is held and delivered to
+    /// nobody, its state bit never set.
+    pub fn map_evdev_button_mapped(
+        &mut self,
+        mapping: XPointerButtonMapping,
+        evdev_button: u32,
+        pressed: bool,
+    ) -> Option<XMappedButton> {
+        let physical = match evdev_button {
+            272 => 1,
+            274 => 2,
+            273 => 3,
+            275 => 8,
+            276 => 9,
             _ => return None,
         };
-        let state = self.button_state;
+        let logical = mapping.logical(physical);
+        let mask = logical.map_or(0, Self::core_button_mask);
+        let state_before = self.button_state;
         if pressed {
             self.button_state |= mask;
-            self.held_buttons |= 1u16 << (button - 1);
+            self.held_buttons |= 1u16 << (physical - 1);
         } else {
             self.button_state &= !mask;
-            self.held_buttons &= !(1u16 << (button - 1));
+            self.held_buttons &= !(1u16 << (physical - 1));
         }
-        Some((button, state))
+        Some(XMappedButton {
+            physical,
+            logical,
+            state_before,
+        })
     }
 
     pub const fn map_axis_to_button(horizontal_v120: i32, vertical_v120: i32) -> Option<u8> {

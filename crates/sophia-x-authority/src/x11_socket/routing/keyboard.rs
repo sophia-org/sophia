@@ -67,6 +67,14 @@ fn resolve_x_keyboard_input(
     let Some((keycode, state, modifiers_after)) = mapped else {
         return Ok(XKeyboardRouteResolution::Rejected);
     };
+    // What QueryKeymap reports: the keys down, as this routing saw them go
+    // down and up (t166). A repeat is not a transition.
+    if !repeated {
+        input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .observe_pressed_key(surface_route.namespace, keycode, pressed);
+    }
 
     let passive = if pressed && !repeated {
         input_authority

@@ -39,6 +39,7 @@ const X_DESTROY_NOTIFY: u8 = 17;
 const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
 const X_MAP_REQUEST: u8 = 20;
+const X_MAPPING_NOTIFY: u8 = 34;
 const X_REPARENT_NOTIFY: u8 = 21;
 const X_CONFIGURE_NOTIFY: u8 = 22;
 const X_CIRCULATE_NOTIFY: u8 = 26;
@@ -219,6 +220,14 @@ pub enum XClientEvent {
         x: i16,
         y: i16,
         override_redirect: bool,
+    },
+    /// The keyboard, modifier or pointer mapping changed (request 0, 1, 2),
+    /// told to every client, as the protocol does not let it be unselected.
+    MappingNotify {
+        sequence: u16,
+        request: u8,
+        first_keycode: u8,
+        count: u8,
     },
     ConfigureNotify {
         sequence: u16,
@@ -854,6 +863,16 @@ pub enum XClientReply {
     GetKeyboardControl {
         sequence: u16,
         keyboard: crate::XKeyboardControl,
+    },
+    /// SetPointerMapping's and SetModifierMapping's status: 0 Success,
+    /// 1 Busy, 2 Failed.
+    MappingStatus {
+        sequence: u16,
+        status: u8,
+    },
+    QueryKeymap {
+        sequence: u16,
+        keys: [u8; 32],
     },
     GetPointerControl {
         sequence: u16,

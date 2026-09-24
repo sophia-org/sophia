@@ -800,6 +800,41 @@ impl XServerFrontendRouteRegistry {
         }
     }
 
+    /// An event every client of a namespace is told, the requester included
+    /// through its own outputs: MappingNotify, which the protocol does not
+    /// let a client unselect. The clients are snapshotted and the lock
+    /// released before any is written to.
+    pub(crate) fn broadcast_protocol_event(
+        &self,
+        namespace: NamespaceId,
+        except: XServerFrontendClientId,
+        event: XClientEvent,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let recipients = self
+            .clients
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .iter()
+            .filter(|(client, senders)| {
+                **client != except
+                    && senders
+                        .connection_state
+                        .get()
+                        .is_some_and(|state| state.namespace == namespace)
+            })
+            .map(|(client, _)| *client)
+            .collect::<Vec<_>>();
+        for recipient in recipients {
+            if let Err(error) = self.route_protocol(recipient, event) {
+                // A peer that has gone is not a failed broadcast.
+                if !matches!(error, XServerFrontendRouteError::UnknownClient { .. }) {
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn register_window_parent(
         &self,
         client: XServerFrontendClientId,

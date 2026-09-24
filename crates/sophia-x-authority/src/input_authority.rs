@@ -73,6 +73,15 @@ struct XNamespaceInputAuthority {
     pointer_implicit: bool,
     pointer_passive_detail: Option<u8>,
     keyboard_passive_detail: Option<u8>,
+    /// The core button mapping a client set (SetPointerMapping); identity
+    /// until then. Read by the button routing under this lock.
+    pub pointer_mapping: crate::XPointerButtonMapping,
+    /// Physical buttons currently held, bit `n - 1` for button `n`, as the
+    /// button routing observes them: what SetPointerMapping's Busy asks.
+    pub held_physical_buttons: u16,
+    /// Keys currently down, one bit per keycode, the union over the seats
+    /// that reported through this namespace: what QueryKeymap reports.
+    pub pressed_keys: [u8; 32],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -132,6 +141,59 @@ impl XInputAuthorityState {
             }
             _ => false,
         }
+    }
+
+    pub fn pointer_mapping(&self, namespace: NamespaceId) -> crate::XPointerButtonMapping {
+        self.namespaces
+            .get(&namespace)
+            .map_or_else(crate::XPointerButtonMapping::identity, |state| {
+                state.pointer_mapping
+            })
+    }
+
+    pub fn set_pointer_mapping(
+        &mut self,
+        namespace: NamespaceId,
+        mapping: crate::XPointerButtonMapping,
+    ) {
+        self.namespaces
+            .entry(namespace)
+            .or_default()
+            .pointer_mapping = mapping;
+    }
+
+    pub fn observe_physical_button(&mut self, namespace: NamespaceId, physical: u8, pressed: bool) {
+        let state = self.namespaces.entry(namespace).or_default();
+        let bit = 1u16 << (physical.saturating_sub(1));
+        if pressed {
+            state.held_physical_buttons |= bit;
+        } else {
+            state.held_physical_buttons &= !bit;
+        }
+    }
+
+    pub fn held_physical_buttons(&self, namespace: NamespaceId) -> u16 {
+        self.namespaces
+            .get(&namespace)
+            .map_or(0, |state| state.held_physical_buttons)
+    }
+
+    /// A key transition the keyboard routing observed: the bitmap QueryKeymap
+    /// reports, kept where dispatch can read it.
+    pub fn observe_pressed_key(&mut self, namespace: NamespaceId, keycode: u8, pressed: bool) {
+        let state = self.namespaces.entry(namespace).or_default();
+        let (byte, bit) = (usize::from(keycode / 8), keycode % 8);
+        if pressed {
+            state.pressed_keys[byte] |= 1 << bit;
+        } else {
+            state.pressed_keys[byte] &= !(1 << bit);
+        }
+    }
+
+    pub fn pressed_keys(&self, namespace: NamespaceId) -> [u8; 32] {
+        self.namespaces
+            .get(&namespace)
+            .map_or([0; 32], |state| state.pressed_keys)
     }
 
     pub fn ungrab_pointer(&mut self, namespace: NamespaceId, owner: u64) {

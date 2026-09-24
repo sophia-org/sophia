@@ -9,7 +9,36 @@ fn route_x11_dispatch_protocol_outputs(
     capture_clipboard_proxy_payload(state, routing, namespace, output)?;
     route_selection_event(state, routing, client, output)?;
     route_property_events(routing, client, output)?;
+    route_mapping_notify_events(routing, namespace, client, output)?;
     route_core_lifecycle_events(routing, client, output)
+}
+
+#[cfg(unix)]
+/// MappingNotify reaches every client of the namespace; the requester keeps
+/// its own copy, sequenced with its request, and the others are sequenced by
+/// their writers.
+#[cfg(unix)]
+fn route_mapping_notify_events(
+    routing: &XServerFrontendRouteRegistry,
+    namespace: NamespaceId,
+    client: XServerFrontendClientId,
+    output: &XDispatchResult,
+) -> Result<(), X11SetupSocketError> {
+    for item in &output.outputs {
+        let crate::XClientOutput::Event(event @ XClientEvent::MappingNotify { .. }) = item else {
+            continue;
+        };
+        let mut copy = *event;
+        if let XClientEvent::MappingNotify { sequence, .. } = &mut copy {
+            *sequence = 0;
+        }
+        routing
+            .broadcast_protocol_event(namespace, client, copy)
+            .map_err(|error| {
+                X11SetupSocketError::new(format!("failed to broadcast a MappingNotify: {error}"))
+            })?;
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
