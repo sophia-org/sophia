@@ -59,3 +59,25 @@ fn window_attributes_are_refused_as_x_refuses_them() {
     assert_eq!(fixture.error(2, attribute_request(order, 0x7a0001, 3, 0x123456)), None);
     assert_eq!(fixture.error(2, attribute_request(order, 0x7a0001, 0, 1)), None, "ParentRelative from the root");
 }
+
+/// CopyFromParent under an InputOnly parent makes an InputOnly window, so a
+/// background or border pixel on it is refused as on any InputOnly window
+/// (XTS XCreateSimpleWindow-10).
+#[test]
+fn a_copy_from_parent_window_under_input_only_refuses_its_pixels() {
+    let mut fixture = CursorFixture::new();
+    let order = CursorFixture::ORDER;
+    assert_eq!(fixture.error(1, input_only_request(order, 0x7a0050, 0x7a0001)), None);
+    let mut simple = vec![1, 0];
+    push_u16(&mut simple, order, 10);
+    push_u32(&mut simple, order, 0x7a0051);
+    push_u32(&mut simple, order, 0x7a0050);
+    for value in [0u16, 0, 5, 5, 0, 0] {
+        push_u16(&mut simple, order, value);
+    }
+    push_u32(&mut simple, order, 0);
+    push_u32(&mut simple, order, (1 << 1) | (1 << 3));
+    push_u32(&mut simple, order, 0);
+    push_u32(&mut simple, order, 1);
+    assert_eq!(fixture.error(1, simple), Some(XErrorCode::BadMatch));
+}

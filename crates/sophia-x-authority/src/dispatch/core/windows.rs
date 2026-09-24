@@ -86,10 +86,11 @@ fn dispatch_core_window_request(
                                 });
                             }
                         };
+                    // CopyFromParent under an InputOnly parent is InputOnly.
                     if let Some(refusal) = refused_window_attributes(
                         runtime,
                         namespace,
-                        input_only,
+                        input_only || (copy_class_from_parent && runtime.window_is_input_only(parent)),
                         resolved_depth,
                         parent,
                         XRefusableAttributes {
