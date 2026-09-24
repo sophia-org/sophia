@@ -682,6 +682,68 @@ impl XPropertyTable {
         Ok(record)
     }
 
+    /// RotateProperties: the values of `properties` move `delta` places
+    /// along the list, in place; every named property must exist on the
+    /// window and be named once, else nothing moves (BadMatch); an
+    /// Engine-owned one refuses (BadAccess). Returns the properties whose
+    /// value changed, each owed a PropertyNotify.
+    pub fn rotate(
+        &mut self,
+        namespace: NamespaceId,
+        window: XResourceId,
+        properties: &[XAtom],
+        delta: i16,
+    ) -> Result<Vec<XAtom>, XPropertyError> {
+        if !namespace.is_valid() {
+            return Err(XPropertyError::InvalidNamespace);
+        }
+        if !window.is_valid() {
+            return Err(XPropertyError::InvalidWindow);
+        }
+        let count = properties.len();
+        let distinct = properties.iter().collect::<std::collections::BTreeSet<_>>();
+        if distinct.len() != count {
+            return Err(XPropertyError::TypeMismatch);
+        }
+        for property in properties {
+            let key = (namespace, window, *property);
+            if !self.records.contains_key(&key) {
+                return Err(XPropertyError::TypeMismatch);
+            }
+            if self.engine_owned.contains(&key) {
+                return Err(XPropertyError::AuthorityOwned);
+            }
+        }
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let shift = (i64::from(delta)).rem_euclid(count as i64) as usize;
+        if shift == 0 {
+            return Ok(Vec::new());
+        }
+        let values = properties
+            .iter()
+            .map(|property| {
+                let record = &self.records[&(namespace, window, *property)];
+                (record.property_type, record.format, record.bytes.clone())
+            })
+            .collect::<Vec<_>>();
+        // The protocol: the value of properties[i] becomes that of
+        // properties[(i + delta) mod count].
+        for (index, property) in properties.iter().enumerate() {
+            let (property_type, format, bytes) = values[(index + shift) % count].clone();
+            let record = self
+                .records
+                .get_mut(&(namespace, window, *property))
+                .expect("checked present above");
+            record.property_type = property_type;
+            record.format = format;
+            record.bytes = bytes;
+            record.generation = record.generation.saturating_add(1);
+        }
+        Ok(properties.to_vec())
+    }
+
     pub fn get(
         &self,
         namespace: NamespaceId,

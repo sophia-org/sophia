@@ -381,7 +381,10 @@ impl XAuthorityRuntime {
          if window.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
              return Ok((
                  crate::XResourceId::NONE,
-                 self.windows.direct_children(namespace, window),
+                 // QueryTree lists children bottom to top in stacking order,
+                 // which a CirculateWindow or a restack makes differ from
+                 // the order they were created in.
+                 self.windows.direct_children_bottom_to_top(namespace, window),
              ));
          }
          self.resources
@@ -391,7 +394,10 @@ impl XAuthorityRuntime {
              .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?
              .parent;
-         Ok((parent, self.windows.direct_children(namespace, window)))
+         Ok((
+             parent,
+             self.windows.direct_children_bottom_to_top(namespace, window),
+         ))
      }
  
      pub fn set_window_visual(
@@ -934,6 +940,82 @@ impl XAuthorityRuntime {
              destroyed.extend(self.destroy_window_subtree(namespace, child)?);
          }
          Ok(destroyed)
+     }
+
+     /// UnmapSubwindows: every mapped direct child, top to bottom in stacking
+     /// order, as the protocol orders it. Children already unmapped are
+     /// skipped, since an event for them would report a transition that
+     /// never happened.
+     pub fn unmap_direct_subwindows(
+         &mut self,
+         namespace: NamespaceId,
+         parent: crate::XResourceId,
+     ) -> Result<Vec<(crate::XResourceId, AuthoritySurface)>, XAuthorityRuntimeError> {
+         if parent.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             self.resources
+                 .lookup(namespace, parent, XResourceKind::Window)?;
+         }
+         let mut unmapped = Vec::new();
+         let mut children = self.windows.direct_children_bottom_to_top(namespace, parent);
+         children.reverse();
+         for window in children {
+             if let Some(surface) = self.unmap_window(namespace, window)? {
+                 unmapped.push((window, surface));
+             }
+         }
+         Ok(unmapped)
+     }
+
+     /// The child CirculateWindow would move, if any: for RaiseLowest the
+     /// lowest mapped child occluded by a mapped sibling above it; for
+     /// LowerHighest the highest mapped child occluding a mapped sibling
+     /// below it. Occlusion is the siblings' rectangles meeting.
+     pub fn circulate_candidate(
+         &self,
+         namespace: NamespaceId,
+         parent: crate::XResourceId,
+         direction: u8,
+     ) -> Result<Option<crate::XResourceId>, XAuthorityRuntimeError> {
+         if parent.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
+             self.resources
+                 .lookup(namespace, parent, XResourceKind::Window)?;
+         }
+         let mapped = self
+             .windows
+             .direct_children_bottom_to_top(namespace, parent)
+             .into_iter()
+             .filter(|window| {
+                 !matches!(self.window_map_state(namespace, *window), Ok(crate::XMapState::Unmapped))
+             })
+             .filter_map(|window| self.window_geometry(namespace, window).ok().map(|geometry| (window, geometry)))
+             .collect::<Vec<_>>();
+         let meets = |a: &sophia_protocol::Rect, b: &sophia_protocol::Rect| {
+             a.x < b.x.saturating_add(b.width)
+                 && b.x < a.x.saturating_add(a.width)
+                 && a.y < b.y.saturating_add(b.height)
+                 && b.y < a.y.saturating_add(a.height)
+         };
+         let candidate = if direction == 0 {
+             mapped.iter().enumerate().find(|(index, (_, geometry))| {
+                 mapped[index + 1..].iter().any(|(_, above)| meets(geometry, above))
+             })
+         } else {
+             mapped.iter().enumerate().rev().find(|(index, (_, geometry))| {
+                 mapped[..*index].iter().any(|(_, below)| meets(geometry, below))
+             })
+         };
+         Ok(candidate.map(|(_, (window, _))| *window))
+     }
+
+     /// CirculateWindow, once the candidate is known: to the top for
+     /// RaiseLowest, to the bottom for LowerHighest.
+     pub fn circulate_window(
+         &mut self,
+         namespace: NamespaceId,
+         window: crate::XResourceId,
+         direction: u8,
+     ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
+         self.restack_window(namespace, window, None, Some(if direction == 0 { 0 } else { 1 }))
      }
 
      pub fn map_direct_subwindows(

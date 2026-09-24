@@ -1625,3 +1625,46 @@ fn an_originated_buffer_cannot_take_a_name_another_buffer_holds() {
         "a buffer stamped with a name it was not issued must be refused",
     );
 }
+
+
+/// ChangeActivePointerGrab narrows the mask of a grab this client holds,
+/// and leaves another client's grab alone.
+#[test]
+fn x11_dispatch_change_active_pointer_grab_rewrites_only_the_holders_mask() {
+    let namespace = NamespaceId::from_raw(1266);
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let order = XByteOrder::LittleEndian;
+    let mut grab = vec![26u8, 0];
+    push_u16(&mut grab, order, 6);
+    push_u32(&mut grab, order, X_SETUP_DEFAULT_ROOT);
+    push_u16(&mut grab, order, 0x0004 | 0x0008);
+    grab.extend_from_slice(&[1, 1]);
+    for _ in 0..3 {
+        push_u32(&mut grab, order, 0);
+    }
+    let decoded = decode_x11_core_request(context(namespace, 1, order), &grab).unwrap();
+    let mut holder = dispatch_context(namespace, 1, order, 26);
+    holder.client_id = 7;
+    let result = dispatch_x11_wire_request(holder, decoded, &mut runtime, &mut atoms, &mut properties);
+    assert!(matches!(result.outputs.as_slice(), [XClientOutput::Reply(XClientReply::GrabStatus { status: 0, .. })]));
+
+    let mut change = vec![30u8, 0];
+    push_u16(&mut change, order, 4);
+    push_u32(&mut change, order, 0);
+    push_u32(&mut change, order, 0);
+    push_u16(&mut change, order, 0x0004);
+    push_u16(&mut change, order, 0);
+    let decoded = decode_x11_core_request(context(namespace, 2, order), &change).unwrap();
+    let mut other = dispatch_context(namespace, 2, order, 30);
+    other.client_id = 8;
+    let result = dispatch_x11_wire_request(other, decoded.clone(), &mut runtime, &mut atoms, &mut properties);
+    assert!(result.outputs.is_empty());
+    assert_eq!(runtime.input_authority_mut().pointer_grab(namespace).map(|g| g.event_mask), Some(0x000c), "another client's request changes nothing");
+    let mut holder = dispatch_context(namespace, 3, order, 30);
+    holder.client_id = 7;
+    let result = dispatch_x11_wire_request(holder, decoded, &mut runtime, &mut atoms, &mut properties);
+    assert!(result.outputs.is_empty());
+    assert_eq!(runtime.input_authority_mut().pointer_grab(namespace).map(|g| g.event_mask), Some(0x0004), "the holder's mask is rewritten");
+}

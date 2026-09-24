@@ -932,6 +932,96 @@ def server_controls_round_trip(context):
         c.sync()
 
 
+def unmap_subwindows(context):
+    with client(context) as c:
+        parent = c.window()
+        a, b = c.window(parent), c.window(parent)
+        for w in (parent, a, b):
+            c.send(8, c.pack('I', w))
+        c.sync()
+        c.events.clear()
+        c.send(11, c.pack('I', parent))
+        c.sync()
+        unmapped = [c.u32(e, 8) for e in c.events if e[0] & 127 == 18 and c.u32(e, 4) == c.u32(e, 8)]
+        assert unmapped == [b, a], ('top to bottom, one each', unmapped)
+        c.events.clear()
+        c.send(11, c.pack('I', parent))
+        c.sync()
+        assert not any(e[0] & 127 == 18 for e in c.events), 'nothing to unmap twice'
+        c.completion(c.send(11, c.pack('I', 0x7ff00001)), error=3, opcode=11)
+
+
+def circulate_window(context):
+    with client(context) as c, peer_client(context) as manager:
+        parent = c.window()
+        c.send(8, c.pack('I', parent))
+        lower = c.xid()
+        c.send(1, c.pack('IIhhHHHHII', lower, parent, 10, 10, 80, 80, 0, 1, 0, 0), detail=24)
+        upper = c.xid()
+        c.send(1, c.pack('IIhhHHHHII', upper, parent, 40, 40, 80, 80, 0, 1, 0, 0), detail=24)
+        c.send(8, c.pack('I', lower))
+        c.send(8, c.pack('I', upper))
+        # StructureNotify on the children: CirculateNotify goes to whoever
+        # selected it on the window, not to whoever asked.
+        for child in (lower, upper):
+            c.send(2, c.pack('II', child, 1 << 11) + c.pack('I', 1 << 17))
+        c.send(2, c.pack('II', parent, 1 << 11) + c.pack('I', (1 << 17) | (1 << 19)))
+        c.sync()
+        c.events.clear()
+        # RaiseLowest: the occluded lower child to the top, one notice.
+        c.send(13, c.pack('I', parent), detail=0)
+        c.sync()
+        moved = [(c.u32(e, 8), e[16]) for e in c.events if e[0] & 127 == 26 and c.u32(e, 4) == c.u32(e, 8)]
+        assert moved == [(lower, 0)], moved
+        tree = c.reply(15, c.pack('I', parent))
+        count = c.u16(tree, 16)
+        assert c.unpack(f'{count}I', tree, 32) == (upper, lower), 'bottom to top after the raise'
+        c.completion(c.send(13, c.pack('I', parent), detail=2), error=2, opcode=13, resource=2)
+        # A manager selecting SubstructureRedirect on the parent is asked
+        # instead: it reads a CirculateRequest naming the child, and the
+        # stacking stays as it was.
+        manager.send(2, manager.pack('II', parent, 1 << 11) + manager.pack('I', 1 << 20))
+        manager.sync()
+        c.send(13, c.pack('I', parent), detail=0)
+        c.sync()
+        request = manager.event(27)
+        assert manager.unpack('II', request, 4) == (parent, upper) and request[16] == 0, request.hex()
+        tree = c.reply(15, c.pack('I', parent))
+        assert c.unpack('2I', tree, 32) == (upper, lower), 'a redirected circulate moves nothing'
+
+
+def rotate_properties(context):
+    with client(context) as c:
+        window = c.window()
+        atoms = [c.atom(f'SOPHIA_ROTATE_{name}') for name in 'ABC']
+        for index, atom in enumerate(atoms):
+            c.send(18, c.pack('IIIB3xI', window, atom, 6, 32, 1) + c.pack('I', index + 1))
+        c.send(2, c.pack('II', window, 1 << 11) + c.pack('I', 1 << 22))
+        c.sync()
+        c.events.clear()
+        c.send(114, c.pack('IHh', window, 3, 1) + c.pack('3I', *atoms))
+        c.sync()
+        notified = [c.u32(e, 8) for e in c.events if e[0] & 127 == 28]
+        assert notified == atoms, notified
+        assert c.unpack('I', c.reply(20, c.pack('IIIII', window, atoms[0], 6, 0, 1)), 32) == (2,), 'A holds what B held'
+        assert c.unpack('I', c.reply(20, c.pack('IIIII', window, atoms[2], 6, 0, 1)), 32) == (1,), 'C holds what A held'
+        d = c.atom('SOPHIA_ROTATE_D')
+        c.completion(c.send(114, c.pack('IHh', window, 3, 1) + c.pack('3I', atoms[0], atoms[1], d)), error=8, opcode=114)
+        c.completion(c.send(114, c.pack('IHh', window, 2, 1) + c.pack('2I', atoms[0], atoms[0])), error=8, opcode=114)
+        c.completion(c.send(114, c.pack('IHh', 0x7ff00001, 1, 1) + c.pack('I', atoms[0])), error=3, opcode=114)
+
+
+def change_active_pointer_grab(context):
+    with client(context) as c:
+        # No active grab: nothing. A bit outside the pointer events: BadValue
+        # carrying the mask. An unknown cursor: BadCursor.
+        c.send(30, c.pack('IIH2x', 0, 0, 0))
+        c.sync()
+        c.completion(c.send(30, c.pack('IIH2x', 0, 0, 0x8001)), error=2, opcode=30, resource=0x8001)
+        c.completion(c.send(30, c.pack('IIH2x', 0x7ff00001, 0, 4)), error=6, opcode=30, resource=0x7ff00001)
+        c.sync()
+
+
 def warp_pointer(context):
     with client(context) as c:
         root, window = c.root, c.window()
@@ -981,6 +1071,10 @@ CASES = {'setup': setup,
          'force_screen_saver': force_screen_saver,
          'colormap_static_answers': colormap_static_answers,
          'server_controls_round_trip': server_controls_round_trip,
+         'unmap_subwindows': unmap_subwindows,
+         'circulate_window': circulate_window,
+         'rotate_properties': rotate_properties,
+         'change_active_pointer_grab': change_active_pointer_grab,
          'warp_pointer': warp_pointer,
          **{name: setup_containment for name in ('setup_empty', 'setup_truncated_prefix',
              'setup_truncated_auth', 'setup_invalid_order', 'setup_version_containment')},

@@ -79,15 +79,11 @@
   },
   {
     "case": "/Xproto/pChangeActivePointerGrab",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pChangeActivePointerGrab",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pChangeActivePointerGrab",
@@ -213,15 +209,11 @@
   },
   {
     "case": "/Xproto/pCirculateWindow",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pCirculateWindow",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pCirculateWindow",
@@ -1363,15 +1355,11 @@
   },
   {
     "case": "/Xproto/pRotateProperties",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pRotateProperties",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pRotateProperties",
@@ -1651,15 +1639,11 @@
   },
   {
     "case": "/Xproto/pUnmapSubwindows",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pUnmapSubwindows",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pUnmapSubwindows",

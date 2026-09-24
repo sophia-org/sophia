@@ -1478,6 +1478,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         _ => None,
                     };
                     let mapped_subwindows = matches!(&request, crate::XWireRequest::MapSubwindows { .. });
+                    let circulated = match &request {
+                        crate::XWireRequest::CirculateWindow { window, direction } => Some((*window, *direction)),
+                        _ => None,
+                    };
                     let unmapped_window = match &request {
                         crate::XWireRequest::UnmapWindow { window } => Some(*window),
                         _ => None,
@@ -1674,9 +1678,60 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                         _ => None,
                     };
+                    // A circulate on a window another client manages
+                    // (SubstructureRedirect selected on it) is that client's
+                    // to decide: the child that would move is named in a
+                    // CirculateRequest and nothing moves, as a map becomes a
+                    // MapRequest.
+                    let redirected_circulate = match (circulated, protocol_routing.as_ref()) {
+                        (Some((parent, direction)), Some(routing)) => {
+                            let redirected = routing
+                                .core_event_subscribers(parent, SUBSTRUCTURE_REDIRECT_MASK)
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to inspect X11 circulate redirect subscriptions: {error}"
+                                    ))
+                                })?
+                                .iter()
+                                .any(|recipient| *recipient != client);
+                            if redirected {
+                                Some((parent, direction, runtime.circulate_candidate(namespace, parent, direction)))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
                     let private_focus_routing = requested_input_focus.and(protocol_routing.as_ref())
                         .filter(|routing| routing.private_applied.get().is_some());
                     let mut output = match explicit_pointer_preparation {
+                        _ if redirected_circulate.is_some() => {
+                            runtime.begin_dispatch();
+                            let (parent, place, candidate) = redirected_circulate.expect("redirect guard");
+                            let outputs = match candidate {
+                                Ok(Some(window)) => vec![crate::XClientOutput::Event(
+                                    crate::XClientEvent::CirculateRequest {
+                                        sequence,
+                                        parent,
+                                        window,
+                                        place,
+                                    },
+                                )],
+                                Ok(None) => Vec::new(),
+                                Err(error) => vec![crate::XClientOutput::Error(crate::x_error_from_runtime(
+                                    error,
+                                    sequence,
+                                    major_opcode,
+                                    0,
+                                    u32::try_from(parent.local.raw()).unwrap_or(0),
+                                ))],
+                            };
+                            XDispatchResult {
+                                response: None,
+                                outputs,
+                                metadata_candidates: Vec::new(),
+                            }
+                        }
                         _ if redirected_map.is_some() => {
                             runtime.begin_dispatch();
                             let (parent, window) = redirected_map.expect("redirect guard");

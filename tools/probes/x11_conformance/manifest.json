@@ -264,6 +264,22 @@
       "mandatory": true
     },
     {
+      "id": "unmap_subwindows",
+      "mandatory": true
+    },
+    {
+      "id": "circulate_window",
+      "mandatory": true
+    },
+    {
+      "id": "rotate_properties",
+      "mandatory": true
+    },
+    {
+      "id": "change_active_pointer_grab",
+      "mandatory": true
+    },
+    {
       "id": "warp_pointer",
       "mandatory": true
     }
@@ -814,6 +830,42 @@
       ],
       "cases": [
         "server_controls_round_trip"
+      ]
+    },
+    {
+      "name": "UnmapSubwindows unmaps every mapped child top to bottom with an UnmapNotify each",
+      "accepted_core_opcodes": [
+        11
+      ],
+      "cases": [
+        "unmap_subwindows"
+      ]
+    },
+    {
+      "name": "CirculateWindow restacks the occluded child with a CirculateNotify, and defers to a redirector with a CirculateRequest",
+      "accepted_core_opcodes": [
+        13
+      ],
+      "cases": [
+        "circulate_window"
+      ]
+    },
+    {
+      "name": "RotateProperties moves values along the list with a PropertyNotify each and refuses a missing or repeated property",
+      "accepted_core_opcodes": [
+        114
+      ],
+      "cases": [
+        "rotate_properties"
+      ]
+    },
+    {
+      "name": "ChangeActivePointerGrab changes only the holder's mask and validates the mask and cursor",
+      "accepted_core_opcodes": [
+        30
+      ],
+      "cases": [
+        "change_active_pointer_grab"
       ]
     },
     {
@@ -1644,6 +1696,30 @@
       "name": "X_SET_ACCESS_CONTROL",
       "cases": [
         "server_controls_round_trip"
+      ]
+    },
+    "11": {
+      "name": "X_UNMAP_SUBWINDOWS",
+      "cases": [
+        "unmap_subwindows"
+      ]
+    },
+    "13": {
+      "name": "X_CIRCULATE_WINDOW",
+      "cases": [
+        "circulate_window"
+      ]
+    },
+    "114": {
+      "name": "X_ROTATE_PROPERTIES",
+      "cases": [
+        "rotate_properties"
+      ]
+    },
+    "30": {
+      "name": "X_CHANGE_ACTIVE_POINTER_GRAB",
+      "cases": [
+        "change_active_pointer_grab"
       ]
     }
   }

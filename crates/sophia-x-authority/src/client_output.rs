@@ -40,6 +40,8 @@ const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
 const X_MAP_REQUEST: u8 = 20;
 const X_CONFIGURE_NOTIFY: u8 = 22;
+const X_CIRCULATE_NOTIFY: u8 = 26;
+const X_CIRCULATE_REQUEST: u8 = 27;
 const X_PROPERTY_NOTIFY: u8 = 28;
 const X_SELECTION_NOTIFY: u8 = 31;
 
@@ -188,6 +190,23 @@ pub enum XClientEvent {
         event: XResourceId,
         window: XResourceId,
         from_configure: bool,
+    },
+    /// A window moved to the top or bottom of its siblings by CirculateWindow:
+    /// to the window (StructureNotify) and its parent (SubstructureNotify).
+    CirculateNotify {
+        sequence: u16,
+        event: XResourceId,
+        window: XResourceId,
+        /// 0 Top, 1 Bottom.
+        place: u8,
+    },
+    /// A circulate a client selecting SubstructureRedirect on the parent has
+    /// asked to decide, as MapRequest is to a map.
+    CirculateRequest {
+        sequence: u16,
+        parent: XResourceId,
+        window: XResourceId,
+        place: u8,
     },
     ConfigureNotify {
         sequence: u16,

@@ -56,6 +56,7 @@ include!("x11_wire/send_event_marking.rs");
 include!("x11_wire/value_mask_bits.rs");
 include!("x11_wire/colormap_static.rs");
 include!("x11_wire/server_controls.rs");
+include!("x11_wire/hierarchy_requests.rs");
 include!("x11_wire/focus_routing.rs");
 include!("x11_wire/pointer_queries.rs");
 include!("x11_wire/popup_pointer_target.rs");

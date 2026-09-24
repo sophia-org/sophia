@@ -9,6 +9,7 @@ fn dispatch_core_grab_request(
         &request,
             XWireRequest::GrabPointer { .. }
             | XWireRequest::UngrabPointer { .. }
+            | XWireRequest::ChangeActivePointerGrab { .. }
             | XWireRequest::GrabKeyboard { .. }
             | XWireRequest::UngrabKeyboard { .. }
             | XWireRequest::GrabButton { .. }
@@ -57,6 +58,41 @@ fn dispatch_core_grab_request(
                             sequence: context.sequence,
                             status,
                         })],
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // The event mask of an active grab this client holds; without
+                // one the request has no effect, as the protocol says. The
+                // cursor is validated and not applied: cursor display is
+                // config-driven here, the same debt WarpPointer carries.
+                XWireRequest::ChangeActivePointerGrab {
+                    cursor,
+                    event_mask,
+                    ..
+                } => {
+                    let outputs = if cursor.local.raw() != 0
+                        && runtime
+                            .validate_cursor_access(context.namespace, cursor)
+                            .is_err()
+                    {
+                        vec![XClientOutput::Error(crate::XClientError {
+                            code: XErrorCode::BadCursor,
+                            sequence: context.sequence,
+                            resource_id: u32::try_from(cursor.local.raw()).unwrap_or(0),
+                            minor_code: 0,
+                            major_code: context.major_opcode,
+                        })]
+                    } else {
+                        runtime.input_authority_mut().change_active_pointer_grab(
+                            context.namespace,
+                            context.client_id,
+                            event_mask,
+                        );
+                        Vec::new()
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
                         metadata_candidates: Vec::new(),
                     }
                 }
