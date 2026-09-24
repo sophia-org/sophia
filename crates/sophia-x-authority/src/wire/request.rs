@@ -18,6 +18,9 @@ pub enum XWireRequest {
         do_not_propagate_mask: Option<u32>,
         /// Raw, for the same reason the change request carries it raw.
         cursor: Option<u32>,
+        /// The border width asked for. Sophia draws no border; the value is a
+        /// fact clients read back (GetGeometry, CreateNotify, ConfigureNotify).
+        border_width: u16,
         /// The window was created InputOnly: it can be the target of input
         /// and geometry requests but never of a drawing request.
         input_only: bool,
@@ -65,6 +68,7 @@ pub enum XWireRequest {
         y: Option<i16>,
         width: Option<u16>,
         height: Option<u16>,
+        border_width: Option<u16>,
         sibling: Option<XResourceId>,
         stack_mode: Option<u8>,
     },

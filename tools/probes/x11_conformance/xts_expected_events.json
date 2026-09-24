@@ -157,9 +157,7 @@
   },
   {
     "case": "/Xlib11/ConfigureNotify",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t197: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/ConfigureNotify",
@@ -173,9 +171,7 @@
   },
   {
     "case": "/Xlib11/ConfigureRequest",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/ConfigureRequest",
@@ -185,9 +181,7 @@
   },
   {
     "case": "/Xlib11/ConfigureRequest",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "purpose": 3
   },
   {
     "case": "/Xlib11/ConfigureRequest",
@@ -203,9 +197,7 @@
   },
   {
     "case": "/Xlib11/ConfigureRequest",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "purpose": 6
   },
   {
     "case": "/Xlib11/ConfigureRequest",
@@ -675,7 +667,7 @@
     "case": "/Xlib11/KeymapNotify",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0x2f9209f0, client2: 0x2f931c60, client2: 0x2f93fc60'"
+    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0x494d69f0, client2: 0x494e7c60, client2: 0x494f5c30'"
   },
   {
     "case": "/Xlib11/KeymapNotify",
@@ -955,9 +947,7 @@
   },
   {
     "case": "/Xlib11/ResizeRequest",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t198: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery not as expected'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/ResizeRequest",

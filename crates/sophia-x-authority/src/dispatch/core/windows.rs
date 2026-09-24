@@ -36,6 +36,7 @@ fn dispatch_core_window_request(
                     visual,
                     colormap,
                     input_only,
+                    border_width,
                     ..
                 } => {
                     let kind = packet.kind.clone();
@@ -117,6 +118,7 @@ fn dispatch_core_window_request(
                             resolved_colormap,
                         );
                         runtime.set_window_input_only(*window, input_only);
+                        runtime.set_window_border_width(*window, border_width);
                     }
                     let mut outputs = outputs_from_authority_response(context, &kind, &response);
                     if response.outcome == XAuthorityResponseOutcome::Accepted
@@ -132,7 +134,7 @@ fn dispatch_core_window_request(
                             y: clamp_i16(geometry.y),
                             width: clamp_u16(geometry.width),
                             height: clamp_u16(geometry.height),
-                            border_width: 0,
+                            border_width,
                             override_redirect,
                         }));
                     }
@@ -775,11 +777,46 @@ fn dispatch_core_window_request(
                     y,
                     width,
                     height,
+                    border_width,
                     sibling,
                     stack_mode,
                     ..
                 } => {
+                    // A sibling is only meaningful with a stack-mode, and must
+                    // be a sibling: "If a sibling is specified without a
+                    // stack-mode or the window is not actually a sibling, a
+                    // Match error results." An id that names no window at all
+                    // is a Window error, which the restack below reports.
+                    if let Some(sibling) = sibling
+                        && runtime.validate_window_access(context.namespace, window).is_ok()
+                        && (stack_mode.is_none()
+                            || runtime
+                                .window_parent_and_children(context.namespace, sibling)
+                                .ok()
+                                .zip(runtime.window_parent_and_children(context.namespace, window).ok())
+                                .is_some_and(|((sibling_parent, _), (parent, _))| sibling_parent != parent))
+                    {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadMatch,
+                                sequence: context.sequence,
+                                resource_id: u32::try_from(sibling.local.raw()).unwrap_or(0),
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
                     let before = runtime.window_geometry(context.namespace, window).ok();
+                    // The border width is a stored fact: changed here when
+                    // asked, reported below with the rest.
+                    let border_before = runtime.window_border_width(window);
+                    let border_changed = border_width.is_some_and(|asked| asked != border_before)
+                        && runtime.validate_window_access(context.namespace, window).is_ok();
+                    if border_changed {
+                        runtime.set_window_border_width(window, border_width.unwrap_or(0));
+                    }
                     // The siblings' order before, so a restack that changed
                     // nothing reports nothing and one that did names the
                     // sibling now beneath the window.
@@ -851,7 +888,7 @@ fn dispatch_core_window_request(
                             .and_then(|index| index.checked_sub(1))
                             .map(|index| siblings_after[index]);
                         match runtime.window_geometry(context.namespace, window) {
-                            Ok(geometry) if before != Some(geometry) || restacked_order || !client_controls => {
+                            Ok(geometry) if before != Some(geometry) || restacked_order || border_changed || !client_controls => {
                                 let override_redirect = runtime
                                     .window_override_redirect(context.namespace, window)
                                     .unwrap_or(false);
@@ -865,7 +902,7 @@ fn dispatch_core_window_request(
                                     y: clamp_i16(geometry.y),
                                     width: clamp_u16(geometry.width),
                                     height: clamp_u16(geometry.height),
-                                    border_width: 0,
+                                    border_width: runtime.window_border_width(window),
                                     override_redirect,
                                 })]
                             }
@@ -906,7 +943,7 @@ fn dispatch_core_window_request(
                             depth: facts.depth,
                             root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
                             geometry: facts.geometry,
-                            border_width: 0,
+                            border_width: runtime.window_border_width(drawable),
                         }),
                         Err(error) => {
                             let mut error = x_error_from_runtime(

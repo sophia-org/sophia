@@ -122,6 +122,7 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
             y: None,
             width: Some(12),
             height: Some(14),
+            border_width: None,
             sibling: None,
             stack_mode: None,
         }
