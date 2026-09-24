@@ -585,11 +585,25 @@ mod xtest_admission_socket {
         client.fake_input(5, 1);
         let release = client.next_event(5);
         assert_eq!(event_window(&release), window);
-        // Over the bare root, a button has nowhere to go and is dropped
-        // without parking the connection.
+        // With the focus on the root, PointerRoot applies: a key goes to the
+        // toplevel under the pointer too.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, 3 | (1 << 2) | (1 << 3) | (1 << 6)))
+            .unwrap();
+        client.barrier();
+        client.fake_input(2, 38);
+        let key = client.next_event(2);
+        assert_eq!(event_window(&key), window, "a key with the focus on the root lands under the pointer");
+        assert_eq!(key[1], 38, "keycode");
+        client.fake_input(3, 38);
+        let _ = client.next_event(3);
+        // Over the bare root, a button or a key has nowhere to go and is
+        // dropped without parking the connection.
         client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 100, 100);
         client.fake_input(4, 1);
         client.fake_input(5, 1);
+        client.fake_input(2, 38);
+        client.fake_input(3, 38);
         client.settle();
     }
 

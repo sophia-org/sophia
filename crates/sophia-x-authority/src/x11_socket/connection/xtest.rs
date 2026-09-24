@@ -348,7 +348,24 @@ impl XTestConnection {
         };
         match request.event_type {
             2 | 3 => Ok(XTestPlan::Key {
-                target: focused_target.ok_or(XTestUnplanned::NoTarget)?,
+                // With the focus on the root the protocol's PointerRoot rule
+                // applies: the key goes to the window under the pointer,
+                // which this instance resolves only where it placed the
+                // toplevels itself.
+                target: focused_target
+                    .or_else(|| {
+                        let (x, y) = runtime
+                            .input_authority_mut()
+                            .pointer_query_state(namespace)
+                            .position
+                            .map_or((0, 0), |pointer| {
+                                (i32::from(pointer.root_x), i32::from(pointer.root_y))
+                            });
+                        runtime
+                            .client_placed_toplevel_at(namespace, x, y)
+                            .and_then(|toplevel| runtime.window_surface(namespace, toplevel))
+                    })
+                    .ok_or(XTestUnplanned::NoTarget)?,
                 // The executor takes evdev; X keycodes sit eight above it.
                 // The dispatcher refused anything below eight.
                 keycode: u32::from(request.detail) - 8,
