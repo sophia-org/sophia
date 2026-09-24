@@ -177,3 +177,50 @@ mod stalled_recipients {
         assert_continues(&broker, &mut healthy, 4);
     }
 }
+
+/// A client is owed a namespace-wide notice from the moment it is registered
+/// (t195): its applied connection state is attached later in setup, and a
+/// broadcast that waited for that skipped a client between its setup reply
+/// and the attachment. A client registered into another namespace is not
+/// told.
+#[test]
+fn a_broadcast_reaches_a_client_registered_before_its_state_is_attached() {
+    let namespace = NamespaceId::from_raw(95);
+    let other = NamespaceId::from_raw(96);
+    let requester = XServerFrontendClientId(1);
+    let fresh = XServerFrontendClientId(2);
+    let elsewhere = XServerFrontendClientId(3);
+    let broker = XServerFrontendRouteBroker::new(std::num::NonZeroUsize::new(4).unwrap());
+    let (_requester_registration, _requester_channels) =
+        broker.registry.register_client(requester).unwrap();
+    let (_fresh_registration, fresh_channels) = broker
+        .registry
+        .register_client_in_namespace(fresh, None, Some(namespace))
+        .unwrap();
+    let (_elsewhere_registration, elsewhere_channels) = broker
+        .registry
+        .register_client_in_namespace(elsewhere, None, Some(other))
+        .unwrap();
+    let notice = XClientEvent::MappingNotify {
+        sequence: 0,
+        request: 2,
+        first_keycode: 0,
+        count: 0,
+    };
+    broker
+        .registry
+        .broadcast_protocol_event(namespace, requester, notice)
+        .unwrap();
+    assert_eq!(
+        fresh_channels
+            .protocol
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("the fresh client is told"),
+        notice
+    );
+    assert!(
+        elsewhere_channels.protocol.try_recv().is_err(),
+        "another namespace's client is not told"
+    );
+}
+

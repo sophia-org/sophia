@@ -20,10 +20,11 @@ impl XServerFrontendRouteRegistry {
             .iter()
             .filter(|(client, senders)| {
                 **client != except
-                    && senders
-                        .connection_state
-                        .get()
-                        .is_some_and(|state| state.namespace == namespace)
+                    && (senders.namespace == Some(namespace)
+                        || senders
+                            .connection_state
+                            .get()
+                            .is_some_and(|state| state.namespace == namespace))
             })
             .map(|(client, _)| *client)
             .collect::<Vec<_>>();

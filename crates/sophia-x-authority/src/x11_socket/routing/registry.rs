@@ -160,6 +160,12 @@ struct XServerFrontendClientRouteSenders {
     control: SyncSender<X11RoutedControl>,
     protocol: X11ProtocolSender,
     admission: Option<ClientAdmissionContext>,
+    /// The namespace the connection was registered into, known from the
+    /// moment it is registered (t195). The applied connection state, which
+    /// also names it, is attached later in setup; a broadcast that consulted
+    /// only that state skipped a client between its setup reply and that
+    /// attachment, and a MappingNotify it was owed never came.
+    namespace: Option<NamespaceId>,
     /// Where ordered deliveries go, kept apart from the ordinary input queue.
     ///
     /// A separate queue because the two carry different things: an ordinary
@@ -355,6 +361,20 @@ impl XServerFrontendRouteRegistry {
         self.register_client_with_admission(client, None)
     }
 
+    fn register_client_with_admission(
+        &self,
+        client: XServerFrontendClientId,
+        admission: Option<ClientAdmissionContext>,
+    ) -> Result<
+        (
+            XServerFrontendClientRouteRegistration,
+            XServerFrontendClientRouteChannels,
+        ),
+        XServerFrontendRouteError,
+    > {
+        self.register_client_in_namespace(client, admission, None)
+    }
+
     /// Give this registry the store its connections take their places from,
     /// against the declared client limit.
     ///
@@ -413,10 +433,14 @@ impl XServerFrontendRouteRegistry {
             .is_some_and(|keeper| keeper.kept_by(owner))
     }
 
-    fn register_client_with_admission(
+    /// Registers a connection with the namespace it serves, known from the
+    /// setup that admitted it, so a namespace-wide notice reaches it from
+    /// this moment on (t195).
+    fn register_client_in_namespace(
         &self,
         client: XServerFrontendClientId,
         admission: Option<ClientAdmissionContext>,
+        namespace: Option<NamespaceId>,
     ) -> Result<
         (
             XServerFrontendClientRouteRegistration,
@@ -479,6 +503,7 @@ impl XServerFrontendRouteRegistry {
             control: control_sender,
             protocol: X11ProtocolSender(protocol_sender),
             admission,
+                namespace,
             ordered: ordered_sender,
             control_writer_gone: Arc::new(AtomicBool::new(false)),
         };
