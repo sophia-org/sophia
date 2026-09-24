@@ -36,12 +36,12 @@ large crates/sophia-x-authority/tests/authority/resources.rs 1614
 large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs 5146
 large crates/sophia-x-authority/tests/x11_wire/core_dispatch.rs 1671
 large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5703
-large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1775
+large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1779
 large crates/sophia-x-authority/tests/x11_wire/resources_frontend.rs 2134
 large crates/sophia-x-authority/tests/x11_wire/support_extensions.rs 1502
 large crates/sophia-session/src/diagnostics/capture.rs 1013
 large crates/sophia-x-authority/src/dispatch/core/input_discovery.rs 1077
-large crates/sophia-x-authority/src/dispatch/core/windows.rs 1314
-large crates/sophia-x-authority/src/wire/request.rs 1333
+large crates/sophia-x-authority/src/dispatch/core/windows.rs 1379
+large crates/sophia-x-authority/src/wire/request.rs 1339
 large crates/sophia-x-authority/src/runtime.rs 1040
 large crates/sophia-x-authority/src/x11_socket/tests/socket_core.rs 1202
