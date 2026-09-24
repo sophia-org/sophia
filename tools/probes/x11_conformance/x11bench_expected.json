@@ -55,9 +55,7 @@
     "test": "copy_area"
   },
   {
-    "test": "dashed_lines",
-    "expected": "FAIL",
-    "reason": "t171: wide dashes end in the GC cap style, which the host does not read"
+    "test": "dashed_lines"
   },
   {
     "test": "diagonal_lines"
@@ -106,19 +104,13 @@
     "test": "layered_alpha"
   },
   {
-    "test": "line_cap_styles",
-    "expected": "FAIL",
-    "reason": "t171: CapButt and CapRound are drawn as projecting ends"
+    "test": "line_cap_styles"
   },
   {
-    "test": "line_join_styles",
-    "expected": "FAIL",
-    "reason": "t171: miter, round and bevel joins are drawn alike"
+    "test": "line_join_styles"
   },
   {
-    "test": "line_widths",
-    "expected": "FAIL",
-    "reason": "t171: wide lines with CapRound are drawn with square ends"
+    "test": "line_widths"
   },
   {
     "test": "nested_rectangles"

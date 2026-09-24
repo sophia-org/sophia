@@ -22,6 +22,8 @@ BAD_DRAWABLE, BAD_GC, BAD_ID_CHOICE = 9, 13, 14
 EXPOSE, GRAPHICS_EXPOSURE, NO_EXPOSURE, MAP_NOTIFY = 12, 13, 14, 19
 GC_FOREGROUND, GC_BACKGROUND, GC_LINE_STYLE, GC_TILE, GC_FONT = 1 << 2, 1 << 3, 1 << 5, 1 << 10, 1 << 14
 GC_GRAPHICS_EXPOSURES, GC_CLIP_MASK = 1 << 16, 1 << 19
+GC_LINE_WIDTH, GC_CAP_STYLE, GC_JOIN_STYLE = 1 << 4, 1 << 6, 1 << 7
+CAP_BUTT, CAP_PROJECTING, JOIN_MITER, JOIN_BEVEL = 1, 3, 0, 2
 BITMAP, XY_PIXMAP, Z_PIXMAP = 0, 1, 2
 CW_BACKGROUND_PIXEL, CW_OVERRIDE_REDIRECT, CW_EVENT_MASK = 1 << 1, 1 << 9, 1 << 11
 INPUT_OUTPUT, INPUT_ONLY = 1, 2
@@ -384,6 +386,30 @@ def poly_primitives(context):
         c.send(POLY_RECTANGLE, c.pack('II', pid, paint) + c.pack('hhHH', 1, 1, 4, 3))
         assert painted(c, pid, 8, 6) == {(x, y) for x in range(1, 6) for y in range(1, 5)
                                          if x in (1, 5) or y in (1, 4)}
+        # A wide line is the polygon its width sweeps, with the GC's caps and
+        # joins; a pixel is drawn when its centre lies inside.
+        wide = pixmap(c, 16, 14)
+        wide_back, wide_paint = gc(c, wide, 0), gc(c, wide, 0xffffff)
+
+        def stroke(width, cap, join, *points):
+            fill(c, wide, wide_back, (0, 0, 16, 14))
+            c.send(CHANGE_GC, c.pack('II', wide_paint, GC_LINE_WIDTH | GC_CAP_STYLE | GC_JOIN_STYLE)
+                   + c.pack('III', width, cap, join))
+            c.send(POLY_LINE, c.pack('II', wide, wide_paint) + c.pack('h' * len(points), *points), detail=0)
+            return painted(c, wide, 16, 14)
+
+        def block(xs, ys):
+            return {(x, y) for x in xs for y in ys}
+
+        assert stroke(4, CAP_BUTT, JOIN_MITER, 2, 5, 10, 5) == block(range(2, 10), range(3, 7))
+        assert stroke(4, CAP_PROJECTING, JOIN_MITER, 2, 5, 10, 5) == block(range(0, 12), range(3, 7))
+        # A right angle at (10, 2): the outer corner's far pixel (11, 0) is
+        # inside the miter and outside the bevel.
+        bodies = block(range(2, 10), range(0, 4)) | block(range(8, 12), range(2, 10))
+        miter = stroke(4, CAP_BUTT, JOIN_MITER, 2, 2, 10, 2, 10, 10)
+        bevel = stroke(4, CAP_BUTT, JOIN_BEVEL, 2, 2, 10, 2, 10, 10)
+        assert bodies <= miter and (11, 0) in miter, sorted(miter - bodies)
+        assert bodies <= bevel and (11, 0) not in bevel, sorted(bevel - bodies)
         for opcode in (POLY_POINT, POLY_LINE):
             c.completion(c.send(opcode, c.pack('II', pid, paint) + c.pack('hh', 0, 0), detail=2),
                          error=BAD_VALUE, opcode=opcode, resource=2)

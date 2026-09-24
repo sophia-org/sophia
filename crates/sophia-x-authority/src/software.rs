@@ -640,26 +640,44 @@ impl XSoftwareBufferStore {
     }
 
     /// Draw disjoint segments and report the rectangle they dirtied.
+    ///
+    /// A width of one or more is a wide line, drawn as `mi` draws it: each
+    /// segment its own polyline with caps at both ends. The chords of a
+    /// stroked arc are the exception, kept on the brush stroke, because a
+    /// wide arc is not a run of capped segments and `miarc.c` is not ported.
     pub fn draw_segments(
         &mut self,
         drawable: XResourceId,
         size: Size,
         segments: &[(XPoint, XPoint)],
         gc: &XGraphicsContextValues,
+        stroke: XSegmentStroke,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
-        let points: Vec<XPoint> = segments
-            .iter()
-            .flat_map(|(from, to)| [*from, *to])
-            .collect();
-        let damage = point_bounds(&points, gc.line_width)?;
+        let wide = (gc.line_width > 0 && stroke == XSegmentStroke::Segments)
+            .then(|| geometry::wide_line::segments(segments, gc));
+        let damage = match &wide {
+            Some(spans) => geometry::wide_line::bounds(spans)?,
+            None => {
+                let points: Vec<XPoint> = segments
+                    .iter()
+                    .flat_map(|(from, to)| [*from, *to])
+                    .collect();
+                point_bounds(&points, gc.line_width)?
+            }
+        };
         let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        let width = i32::from(gc.line_width.max(1));
-        let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
-        for (from, to) in segments {
-            draw_dashed(buffer, *from, *to, width, gc, &mut dashes);
+        match &wide {
+            Some(spans) => paint_spans(buffer, spans, gc),
+            None => {
+                let width = i32::from(gc.line_width.max(1));
+                let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
+                for (from, to) in segments {
+                    draw_dashed(buffer, *from, *to, width, gc, &mut dashes);
+                }
+            }
         }
         let published_damage = Some(damage);
         withhold(
@@ -674,6 +692,8 @@ impl XSoftwareBufferStore {
         Some((result?, damage))
     }
 
+    /// Draw one connected polyline. A width of one or more is a wide line,
+    /// with the GC's joins between its segments and caps at its ends.
     pub fn draw_lines(
         &mut self,
         drawable: XResourceId,
@@ -681,18 +701,27 @@ impl XSoftwareBufferStore {
         points: &[XPoint],
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuDrawResult> {
-        let damage = point_bounds(points, gc.line_width)?;
+        let wide = (gc.line_width > 0).then(|| geometry::wide_line::polyline(points, gc));
+        let damage = match &wide {
+            Some(spans) => geometry::wide_line::bounds(spans)?,
+            None => point_bounds(points, gc.line_width)?,
+        };
         let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        let width = i32::from(gc.line_width.max(1));
-        // The dash pattern is walked across the whole polyline rather than
-        // restarted at each vertex, so a dashed outline is dashed evenly
-        // around its corners instead of putting a dash at every one.
-        let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
-        for pair in points.windows(2) {
-            draw_dashed(buffer, pair[0], pair[1], width, gc, &mut dashes);
+        match &wide {
+            Some(spans) => paint_spans(buffer, spans, gc),
+            None => {
+                // The dash pattern is walked across the whole polyline rather
+                // than restarted at each vertex, so a dashed outline is dashed
+                // evenly around its corners instead of putting a dash at every
+                // one.
+                let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
+                for pair in points.windows(2) {
+                    draw_dashed(buffer, pair[0], pair[1], 1, gc, &mut dashes);
+                }
+            }
         }
         let published_damage = Some(damage);
         withhold(
@@ -707,6 +736,8 @@ impl XSoftwareBufferStore {
         result
     }
 
+    /// Outline rectangles. A width of one or more follows `miPolyRectangle`:
+    /// four bands for a solid mitred outline, a closed polyline otherwise.
     pub fn draw_rectangles(
         &mut self,
         drawable: XResourceId,
@@ -714,14 +745,22 @@ impl XSoftwareBufferStore {
         rectangles: &[Rect],
         gc: &XGraphicsContextValues,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
-        let damage = rectangle_outline_bounds(rectangles, gc.line_width)?;
+        let wide = (gc.line_width > 0).then(|| geometry::wide_line::rectangles(rectangles, gc));
+        let damage = match &wide {
+            Some(spans) => geometry::wide_line::bounds(spans)?,
+            None => rectangle_outline_bounds(rectangles, gc.line_width)?,
+        };
         let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        let line_width = i32::from(gc.line_width.max(1));
-        for rectangle in rectangles {
-            draw_rectangle_outline(buffer, *rectangle, line_width, gc);
+        match &wide {
+            Some(spans) => paint_spans(buffer, spans, gc),
+            None => {
+                for rectangle in rectangles {
+                    draw_rectangle_outline(buffer, *rectangle, 1, gc);
+                }
+            }
         }
         let published_damage = Some(damage);
         withhold(
@@ -944,6 +983,41 @@ fn coverage_area(rects: &[Rect]) -> usize {
                 .saturating_mul(usize::try_from(rect.height.max(0)).unwrap_or(0))
         })
         .fold(0usize, usize::saturating_add)
+}
+
+/// How a run of segments is stroked when its line is wide.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XSegmentStroke {
+    /// `PolySegment`: each segment a line of its own, capped at both ends.
+    Segments,
+    /// The chords of a stroked arc, kept on the brush stroke until wide arcs
+    /// are drawn as arcs.
+    ArcChords,
+}
+
+/// Paint wide-line spans in order, each batch in its own pixel, through the
+/// same per-pixel rules as every fill: clip list, raster function, plane
+/// mask.
+fn paint_spans(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    spans: &geometry::wide_line::XInkedSpans,
+    gc: &XGraphicsContextValues,
+) {
+    for (pixel, spans) in spans {
+        for span in spans {
+            fill_rect(
+                buffer,
+                Rect {
+                    x: span.x,
+                    y: span.y,
+                    width: span.width,
+                    height: 1,
+                },
+                *pixel,
+                gc,
+            );
+        }
+    }
 }
 
 /// Undo what a request wrote outside its graphics context's clip pixmap.

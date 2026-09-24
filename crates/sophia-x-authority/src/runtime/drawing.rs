@@ -421,6 +421,7 @@ impl XAuthorityRuntime {
         window: crate::XResourceId,
         segments: &[(XPoint, XPoint)],
         gc: &XGraphicsContextValues,
+        stroke: crate::XSegmentStroke,
     ) -> XAuthorityResponsePacket {
         let (size, window_generation) = match self.core_draw_target(namespace, window) {
             Ok(target) => target,
@@ -428,7 +429,7 @@ impl XAuthorityRuntime {
         };
         let Some((update, damage)) = self
             .software_buffers
-            .draw_segments(window, size, segments, gc)
+            .draw_segments(window, size, segments, gc, stroke)
         else {
             return XAuthorityResponsePacket::accepted(transaction);
         };
