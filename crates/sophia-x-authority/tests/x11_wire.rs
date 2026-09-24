@@ -72,6 +72,7 @@ include!("x11_wire/reparent_notify.rs");
 include!("x11_wire/colormap_notify.rs");
 include!("x11_wire/window_background_tile.rs");
 include!("x11_wire/window_attribute_refusals.rs");
+include!("x11_wire/bit_gravity.rs");
 include!("x11_wire/send_event_routing.rs");
 include!("x11_wire/toplevel_placement.rs");
 include!("x11_wire/focus_routing.rs");

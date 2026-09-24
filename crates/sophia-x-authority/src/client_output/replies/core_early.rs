@@ -140,6 +140,8 @@ fn encode_core_early_reply(
                     colormap,
                     map_state,
                     override_redirect,
+                    bit_gravity,
+                    win_gravity,
                 } => {
                     let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN + 12];
                     write_reply_header(
@@ -151,8 +153,8 @@ fn encode_core_early_reply(
                     out[1] = 0;
                     put_u32(byte_order, &mut out[8..12], visual);
                     put_u16(byte_order, &mut out[12..14], 1);
-                    out[14] = 0;
-                    out[15] = 1;
+                    out[14] = bit_gravity;
+                    out[15] = win_gravity;
                     // backing-planes defaults to all ones.
                     put_u32(byte_order, &mut out[16..20], 0xffff_ffff);
                     put_u32(byte_order, &mut out[20..24], 0);
