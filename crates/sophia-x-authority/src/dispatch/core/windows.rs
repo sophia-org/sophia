@@ -39,6 +39,8 @@ fn dispatch_core_window_request(
                     copy_class_from_parent,
                     border_width,
                     win_gravity,
+                    border_pixmap,
+                    border_pixel,
                     ..
                 } => {
                     let kind = packet.kind.clone();
@@ -84,6 +86,22 @@ fn dispatch_core_window_request(
                                 });
                             }
                         };
+                    // CopyFromParent under an InputOnly parent is InputOnly.
+                    if let Some(refusal) = refused_window_attributes(
+                        runtime,
+                        namespace,
+                        input_only || (copy_class_from_parent && runtime.window_is_input_only(parent)),
+                        resolved_depth,
+                        parent,
+                        XRefusableAttributes {
+                            background_pixmap,
+                            background_pixel: background_pixel.is_some(),
+                            border_pixmap,
+                            border_pixel: border_pixel.is_some(),
+                        },
+                    ) {
+                        return Handled(window_attribute_refusal(context, refusal));
+                    }
                     // After the parent, as the reference orders its refusals:
                     // "The width and height must be nonzero, or a Value error
                     // results", and an InputOutput window cannot be created
@@ -282,10 +300,31 @@ fn dispatch_core_window_request(
                     background_pixel,
                     override_redirect,
                     cursor,
+                    border_pixmap,
+                    border_pixel,
                     win_gravity,
                     colormap,
                     ..
                 } => {
+                    if runtime.validate_drawable_access(context.namespace, window).is_ok()
+                        && let Ok((parent, _)) =
+                            runtime.window_parent_and_children(context.namespace, window)
+                        && let Some(refusal) = refused_window_attributes(
+                            runtime,
+                            context.namespace,
+                            runtime.window_is_input_only(window),
+                            runtime.window_visual(window).0,
+                            parent,
+                            XRefusableAttributes {
+                                background_pixmap,
+                                background_pixel: background_pixel.is_some(),
+                                border_pixmap,
+                                border_pixel: border_pixel.is_some(),
+                            },
+                        )
+                    {
+                        return Handled(window_attribute_refusal(context, refusal));
+                    }
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     // The colormap names a second resource too, and a change
@@ -933,6 +972,12 @@ fn dispatch_core_window_request(
                             })],
                             metadata_candidates: Vec::new(),
                         });
+                    }
+                    // An InputOnly window has no border to be wide (t216).
+                    if border_width.is_some_and(|width| width != 0)
+                        && runtime.window_is_input_only(window)
+                    {
+                        return Handled(window_attribute_refusal(context, (XErrorCode::BadMatch, 0)));
                     }
                     let before = runtime.window_geometry(context.namespace, window).ok();
                     // The border width is a stored fact: changed here when

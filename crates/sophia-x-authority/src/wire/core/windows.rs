@@ -210,6 +210,8 @@ fn decode_change_window_attributes(
     let mut background_pixel = None;
     let mut value_cursor = X_CHANGE_WINDOW_ATTRIBUTES_REQ_LEN;
     let mut bit_gravity = None;
+    let mut border_pixmap = None;
+    let mut border_pixel = None;
     let mut win_gravity = None;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
@@ -222,6 +224,8 @@ fn decode_change_window_attributes(
         match bit {
             0 => background_pixmap = Some(background_from_pixmap_value(value)),
             1 => background_pixel = Some(value),
+            2 => border_pixmap = Some(value),
+            3 => border_pixel = Some(value),
             9 => override_redirect = Some(value != 0),
             11 => event_mask = Some(value),
             4 => bit_gravity = Some(gravity_value(value)?),
@@ -243,6 +247,8 @@ fn decode_change_window_attributes(
         colormap,
         bit_gravity,
         win_gravity,
+        border_pixmap,
+        border_pixel,
     })
 }
 
@@ -276,6 +282,8 @@ fn decode_create_window(
     let mut cursor = None;
     let mut override_redirect = false;
     let mut bit_gravity = None;
+    let mut border_pixmap = None;
+    let mut border_pixel = None;
     let mut win_gravity = None;
     for bit in 0..15 {
         if value_mask & (1 << bit) == 0 {
@@ -288,6 +296,8 @@ fn decode_create_window(
         match bit {
             0 => background_pixmap = Some(background_from_pixmap_value(value)),
             1 => background_pixel = Some(value),
+            2 => border_pixmap = Some(value),
+            3 => border_pixel = Some(value),
             9 => override_redirect = value != 0,
             11 => event_mask = Some(value),
             4 => bit_gravity = Some(gravity_value(value)?),
@@ -343,6 +353,8 @@ fn decode_create_window(
         input_only: class == 2,
         bit_gravity,
         win_gravity,
+        border_pixmap,
+        border_pixel,
     })
 }
 

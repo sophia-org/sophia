@@ -239,9 +239,7 @@
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
-    "purpose": 33,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 33
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
@@ -291,9 +289,7 @@
   },
   {
     "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
-    "purpose": 10,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 10
   },
   {
     "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
@@ -791,9 +787,7 @@
   },
   {
     "case": "/Xlib4/XSetWindowBackground",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 3
   },
   {
     "case": "/Xlib4/XSetWindowBackground",
@@ -825,15 +819,11 @@
   },
   {
     "case": "/Xlib4/XSetWindowBackgroundPixmap",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 6
   },
   {
     "case": "/Xlib4/XSetWindowBackgroundPixmap",
-    "purpose": 7,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 7
   },
   {
     "case": "/Xlib4/XSetWindowBackgroundPixmap",
@@ -843,15 +833,11 @@
   },
   {
     "case": "/Xlib4/XSetWindowBackgroundPixmap",
-    "purpose": 9,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 9
   },
   {
     "case": "/Xlib4/XSetWindowBackgroundPixmap",
-    "purpose": 10,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 10
   },
   {
     "case": "/Xlib4/XSetWindowBackgroundPixmap",
@@ -877,9 +863,7 @@
   },
   {
     "case": "/Xlib4/XSetWindowBorder",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 4
   },
   {
     "case": "/Xlib4/XSetWindowBorder",
@@ -911,27 +895,19 @@
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
-    "purpose": 5,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 5
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 6
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
-    "purpose": 7,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 7
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
-    "purpose": 8,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 8
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
@@ -963,9 +939,7 @@
   },
   {
     "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+    "purpose": 6
   },
   {
     "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
