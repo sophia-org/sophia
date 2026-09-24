@@ -126,6 +126,16 @@ mod xtest_admission_socket {
 
     impl XtestFixture {
         pub(super) fn new() -> Self {
+            Self::with_client_toplevel_placement(false)
+        }
+
+        /// The conformance host's posture: clients place their own
+        /// toplevels, and the authority resolves which one a point is in.
+        pub(super) fn placing_toplevels() -> Self {
+            Self::with_client_toplevel_placement(true)
+        }
+
+        fn with_client_toplevel_placement(client_places: bool) -> Self {
             let path = std::env::temp_dir().join(format!(
                 "sophia-xtest-admission-{}-{}.sock",
                 std::process::id(),
@@ -156,6 +166,7 @@ mod xtest_admission_socket {
             });
             let config = XServerFrontendConfig::new(&path, NamespaceId::from_raw(901))
                 .unwrap()
+                .with_client_toplevel_placement(client_places)
                 .with_max_concurrent_clients(NonZeroUsize::new(4).unwrap())
                 .with_admission_policy(Arc::new(SequencedXAdmissionPolicy {
                     namespaces,
@@ -531,6 +542,55 @@ mod xtest_admission_socket {
             .write_all(&warp_pointer_request(client.order, window, window, 12, 12, 4, 4, 1, 1))
             .unwrap();
         client.barrier();
+    }
+
+    /// Where clients place their own toplevels (the conformance host), an
+    /// injected pointer event goes to the toplevel under the pointer, not to
+    /// the focused surface: a suite's plain, unfocused window selecting
+    /// ButtonPress is told of a press over it, and motion into it is reported
+    /// on it. Red before the fix: with no focused surface a button had no
+    /// target and was dropped, and motion was reported on nothing (XTS Xlib11
+    /// ButtonPress 1, MotionNotify 1).
+    #[test]
+    fn a_client_placed_toplevel_under_the_pointer_receives_injected_pointer_events() {
+        let mut fixture = XtestFixture::placing_toplevels();
+        let mut client = fixture.connect();
+        let window = client.next;
+        client.next += 2;
+        // A plain toplevel at (20, 0), never focused, never presented.
+        client.stream
+            .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, (1 << 2) | (1 << 3) | (1 << 6)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        client.barrier();
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        let event_window = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let motion = loop {
+            let record = read_x_record(&mut client.stream);
+            if record[0] & 0x7f == 6 {
+                break record;
+            }
+        };
+        assert_eq!(event_window(&motion), window, "motion into the toplevel under the pointer");
+        assert_eq!((at(&motion, 20), at(&motion, 22), at(&motion, 24), at(&motion, 26)), (25, 5, 5, 5));
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!(event_window(&press), window, "the press lands on the toplevel under the pointer");
+        assert_eq!((at(&press, 20), at(&press, 22), at(&press, 24), at(&press, 26)), (25, 5, 5, 5));
+        client.fake_input(5, 1);
+        let release = client.next_event(5);
+        assert_eq!(event_window(&release), window);
+        // Over the bare root, a button has nowhere to go and is dropped
+        // without parking the connection.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 100, 100);
+        client.fake_input(4, 1);
+        client.fake_input(5, 1);
+        client.settle();
     }
 
     fn warp_pointer_request(
