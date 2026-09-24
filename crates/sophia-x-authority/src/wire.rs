@@ -110,6 +110,21 @@ pub enum XColormapRequestKind {
     FreeColors,
 }
 
+/// What becomes of a client's resources when its connection ends.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum XCloseDownMode {
+    #[default]
+    Destroy,
+    RetainPermanent,
+    RetainTemporary,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XSaveSetMode {
+    Insert,
+    Delete,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum XWireRequest {
     Authority(XAuthorityRequestPacket),
@@ -1322,6 +1337,21 @@ pub enum XWireRequest {
         count: u8,
     },
     GetKeyboardControl,
+    /// Acted on by the socket layer, which owns the leases; the dispatcher
+    /// validates the window. `own_window` is the decoder's finding that the
+    /// window lies in the requester's own range, which the protocol refuses.
+    ChangeSaveSet {
+        window: XResourceId,
+        mode: XSaveSetMode,
+        own_window: bool,
+    },
+    SetCloseDownMode {
+        mode: XCloseDownMode,
+    },
+    /// `None` is AllTemporary.
+    KillClient {
+        resource: Option<XResourceId>,
+    },
     UnmapSubwindows {
         window: XResourceId,
     },
@@ -1587,6 +1617,43 @@ pub fn decode_x11_core_request(
         }
         X_CHANGE_ACTIVE_POINTER_GRAB => decode_change_active_pointer_grab(context, bytes),
         X_ROTATE_PROPERTIES => decode_rotate_properties(context, bytes),
+        X_CHANGE_SAVE_SET => {
+            require_exact_len(X_CHANGE_SAVE_SET, X_CHANGE_SAVE_SET_REQ_LEN, bytes.len())?;
+            let mode = match bytes[1] {
+                0 => XSaveSetMode::Insert,
+                1 => XSaveSetMode::Delete,
+                other => return Err(XWireParseError::InvalidValue(u32::from(other))),
+            };
+            let raw = context.byte_order.u32(&bytes[4..8]);
+            Ok(XWireRequest::ChangeSaveSet {
+                window: XResourceId::new(u64::from(raw), 1),
+                mode,
+                own_window: context
+                    .resource_id_range
+                    .is_some_and(|range| range.owns_new_resource(raw)),
+            })
+        }
+        X_SET_CLOSE_DOWN_MODE => {
+            require_exact_len(
+                X_SET_CLOSE_DOWN_MODE,
+                X_SET_CLOSE_DOWN_MODE_REQ_LEN,
+                bytes.len(),
+            )?;
+            let mode = match bytes[1] {
+                0 => XCloseDownMode::Destroy,
+                1 => XCloseDownMode::RetainPermanent,
+                2 => XCloseDownMode::RetainTemporary,
+                other => return Err(XWireParseError::InvalidValue(u32::from(other))),
+            };
+            Ok(XWireRequest::SetCloseDownMode { mode })
+        }
+        X_KILL_CLIENT => {
+            require_exact_len(X_KILL_CLIENT, X_KILL_CLIENT_REQ_LEN, bytes.len())?;
+            let raw = context.byte_order.u32(&bytes[4..8]);
+            Ok(XWireRequest::KillClient {
+                resource: (raw != 0).then(|| XResourceId::new(u64::from(raw), 1)),
+            })
+        }
         X_CHANGE_KEYBOARD_CONTROL => decode_change_keyboard_control(context, bytes),
         X_CHANGE_POINTER_CONTROL => decode_change_pointer_control(context, bytes),
         X_GET_POINTER_CONTROL => {

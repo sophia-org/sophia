@@ -1158,6 +1158,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // dispatcher's refusal is decided under that guard.
             let mut fake_input: Option<XTestFakeInputRequest> = None;
             let mut grab_control: Option<u8> = None;
+            // A lifetime request acts on the leases this layer owns, once
+            // the dispatcher has validated it (t166).
+            let mut lifetime_request: Option<crate::XWireRequest> = None;
             let (
                 mut output,
                 cpu_buffer_updates,
@@ -1166,7 +1169,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 present_submission,
                 software_present_submission,
                 mut released_dma_bufs,
-                released_fences,
+                mut released_fences,
                 mut server_reply_fds,
                 surface_output_reservations,
                 surface_routes,
@@ -1196,6 +1199,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     fake_input = XTestFakeInputRequest::from_request(&request);
                     if let crate::XWireRequest::XTestGrabControl { impervious } = &request {
                         grab_control = Some(*impervious);
+                    }
+                    if matches!(
+                        &request,
+                        crate::XWireRequest::ChangeSaveSet { .. }
+                            | crate::XWireRequest::SetCloseDownMode { .. }
+                            | crate::XWireRequest::KillClient { .. }
+                    ) {
+                        lifetime_request = Some(request.clone());
                     }
                     let create_surface_route = if let crate::XWireRequest::CreateWindow {
                         packet:
@@ -2648,6 +2659,32 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 if let (Some(connection), Some(impervious)) = (xtest.as_mut(), grab_control) {
                     connection.impervious = impervious == 1;
                 }
+                match lifetime_request.take() {
+                    Some(crate::XWireRequest::SetCloseDownMode { mode }) => {
+                        state.set_close_down_mode(client, mode)?;
+                    }
+                    Some(crate::XWireRequest::ChangeSaveSet { window, mode, .. }) => {
+                        state.change_save_set(client, window, mode)?;
+                    }
+                    Some(crate::XWireRequest::KillClient { resource }) => {
+                        let ended_self = apply_x11_kill_client(
+                            state,
+                            protocol_routing.as_ref(),
+                            client,
+                            resource,
+                            transaction,
+                            sequence,
+                            major_opcode,
+                            &mut output,
+                            &mut released_dma_bufs,
+                            &mut released_fences,
+                        )?;
+                        if ended_self {
+                            return Ok(());
+                        }
+                    }
+                    _ => {}
+                }
                 if let (Some(connection), Some(request)) = (xtest.as_mut(), fake_input) {
                     let planned = {
                         let runtime = lock_x11_request_runtime(
@@ -3076,10 +3113,42 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .release_client_device_bundle(client.raw());
     let client_lease = state.release_client(client)?;
     debug_assert_eq!(client_lease.resource_id_range, resource_id_range);
-    let mut release = if let Some(source) = &control_cleanup_source {
-        release_x11_client_lease_with_control(state, namespace, client_lease, Some(source))?
-    } else {
-        release_x11_client_lease(state, namespace, client_lease)?
+    let save_set = state.take_save_set(client)?.into_iter().collect::<Vec<_>>();
+    // A retain mode keeps the range -- windows mapped, properties in place --
+    // until a KillClient names one of its resources (or AllTemporary, when
+    // temporary). Selections end with the connection either way, as the
+    // reference server ends them; the save-set is honoured either way too.
+    let retained = match client_lease.close_down_mode {
+        crate::XCloseDownMode::Destroy => None,
+        crate::XCloseDownMode::RetainPermanent => Some(false),
+        crate::XCloseDownMode::RetainTemporary => Some(true),
+    };
+    let mut release = match retained {
+        None => {
+            if let Some(source) = &control_cleanup_source {
+                release_x11_client_lease_with_control(state, namespace, client_lease, &save_set, Some(source))?
+            } else {
+                release_x11_client_lease_with_control(state, namespace, client_lease, &save_set, None)?
+            }
+        }
+        Some(temporary) => {
+            let release = {
+                let mut runtime = state.runtime.lock()
+                    .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
+                runtime.retain_client_resource_range(namespace, resource_id_range, &save_set)
+                    .map_err(|error| X11SetupSocketError::new(format!("failed to retain X11 client resources: {error:?}")))?
+            };
+            if let Some(source) = &control_cleanup_source {
+                source.record_removal(state, &client_lease, &release)?;
+            }
+            state.retain_client_range(XRetainedClientRange {
+                client,
+                namespace,
+                range: resource_id_range,
+                temporary,
+            })?;
+            release
+        }
     };
     release.released_dma_bufs.extend(state.runtime.lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
@@ -3163,6 +3232,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     }
     state.notify_pixmap_progress()?;
     state.release_exported_pixmaps()?;
+    if let Some(routing) = protocol_routing.as_ref() {
+        route_x11_save_set_reparents(routing, &release.save_set_reparents)?;
+    }
     if let Some(routing) = protocol_routing.as_ref() {
         const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
         const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;

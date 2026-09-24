@@ -230,7 +230,7 @@ fn real_client_resource_teardown_retires_focused_window_publication() {
     fixture
         .apply(&old, X11FocusChange::Surface { window: window() })
         .unwrap();
-    let release = release_x11_client_lease(
+    let release = release_x11_client_lease_with_control(
         &fixture.state,
         namespace(),
         XServerFrontendClientLease {
@@ -239,7 +239,10 @@ fn real_client_resource_teardown_retires_focused_window_publication() {
                 base: 0x200000,
                 mask: 0xffff,
             },
+            close_down_mode: crate::XCloseDownMode::Destroy,
         },
+        &[],
+        None,
     )
     .unwrap();
     assert_eq!(release.destroyed_windows, [window()]);

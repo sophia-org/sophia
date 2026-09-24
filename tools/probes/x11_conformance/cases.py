@@ -1022,6 +1022,83 @@ def change_active_pointer_grab(context):
         c.sync()
 
 
+def kill_client(context):
+    with client(context) as killer, peer_client(context) as victim, client(context) as witness:
+        window = victim.window()
+        victim.send(8, victim.pack('I', window))
+        victim.sync()
+        witness.reply(3, witness.pack('I', window))
+        killer.completion(killer.send(113, killer.pack('I', 0x7ff00001)), error=2, opcode=113, resource=0x7ff00001)
+        killer.send(113, killer.pack('I', window))
+        killer.sync()
+        victim.sock.settimeout(victim.remaining())
+        while True:
+            try:
+                if not victim.sock.recv(4096):
+                    break
+            except ConnectionResetError:
+                break
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                witness.completion(witness.send(3, witness.pack('I', window)), error=3, opcode=3, resource=window)
+                break
+            except AssertionError:
+                assert time.monotonic() < deadline, 'the victim window outlived its client'
+                time.sleep(0.02)
+
+
+def set_close_down_mode(context):
+    with client(context) as witness:
+        permanent, temporary = client(context), client(context)
+        permanent.completion(permanent.send(112, detail=3), error=2, opcode=112, resource=3)
+        permanent.send(112, detail=1)
+        kept = permanent.window()
+        permanent.sync()
+        temporary.send(112, detail=2)
+        fleeting = temporary.window()
+        temporary.sync()
+        permanent.close()
+        temporary.close()
+        time.sleep(0.2)
+        witness.reply(3, witness.pack('I', kept))
+        witness.reply(3, witness.pack('I', fleeting))
+        witness.send(113, witness.pack('I', 0))
+        witness.sync()
+        witness.completion(witness.send(3, witness.pack('I', fleeting)), error=3, opcode=3, resource=fleeting)
+        witness.reply(3, witness.pack('I', kept))
+        witness.send(113, witness.pack('I', kept))
+        witness.sync()
+        witness.completion(witness.send(3, witness.pack('I', kept)), error=3, opcode=3, resource=kept)
+
+
+def change_save_set(context):
+    with client(context) as peer:
+        manager = client(context)
+        frame = manager.window()
+        manager.send(8, manager.pack('I', frame))
+        window = peer.window()
+        peer.send(2, peer.pack('II', window, 1 << 11) + peer.pack('I', 1 << 17))
+        peer.sync()
+        manager.send(7, manager.pack('IIhh', window, frame, 0, 0))
+        manager.send(8, manager.pack('I', window))
+        manager.completion(manager.send(6, manager.pack('I', frame)), error=8, opcode=6, resource=frame)
+        manager.completion(manager.send(6, manager.pack('I', 0x7ff00001)), error=3, opcode=6, resource=0x7ff00001)
+        manager.completion(manager.send(6, manager.pack('I', window), detail=2), error=2, opcode=6, resource=2)
+        manager.send(6, manager.pack('I', window))
+        manager.sync()
+        peer.sync()
+        peer.events.clear()
+        manager.close()
+        assert peer.event(18)[0] & 127 == 18
+        reparent = peer.event(21)
+        assert peer.u32(reparent, 12) == peer.root, reparent.hex()
+        peer.event(19)
+        tree = peer.reply(15, peer.pack('I', window))
+        assert peer.u32(tree, 12) == peer.root, 'back under the root'
+        peer.reply(3, peer.pack('I', window))
+
+
 def warp_pointer(context):
     with client(context) as c:
         root, window = c.root, c.window()
@@ -1075,6 +1152,9 @@ CASES = {'setup': setup,
          'circulate_window': circulate_window,
          'rotate_properties': rotate_properties,
          'change_active_pointer_grab': change_active_pointer_grab,
+         'kill_client': kill_client,
+         'set_close_down_mode': set_close_down_mode,
+         'change_save_set': change_save_set,
          'warp_pointer': warp_pointer,
          **{name: setup_containment for name in ('setup_empty', 'setup_truncated_prefix',
              'setup_truncated_auth', 'setup_invalid_order', 'setup_version_containment')},

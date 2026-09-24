@@ -3,9 +3,6 @@
   "/Xproto/pQueryKeymap": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
   "/Xproto/pChangeKeyboardMapping": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
   "/Xproto/pSetModifierMapping": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
-  "/Xproto/pKillClient": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
-  "/Xproto/pSetCloseDownMode": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
-  "/Xproto/pChangeSaveSet": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
   "/Xproto/pOpenFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
   "/Xproto/pCloseFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
   "/Xproto/pQueryFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
@@ -32,5 +29,6 @@
   "/Xproto/pGetPointerControl#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pGetScreenSaver#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pListHosts#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
-  "/Xproto/pSetAccessControl#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
+  "/Xproto/pSetAccessControl#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
+  "/Xproto/pSetCloseDownMode#2": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
 }

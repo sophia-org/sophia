@@ -300,6 +300,23 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[8..12], window);
             out[16] = place;
         }
+        XClientEvent::ReparentNotify {
+            sequence,
+            event,
+            window,
+            parent,
+            x,
+            y,
+            override_redirect,
+        } => {
+            write_event_header(byte_order, &mut out, X_REPARENT_NOTIFY, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], event);
+            put_resource(byte_order, &mut out[8..12], window);
+            put_resource(byte_order, &mut out[12..16], parent);
+            put_i16(byte_order, &mut out[16..18], x);
+            put_i16(byte_order, &mut out[18..20], y);
+            out[20] = u8::from(override_redirect);
+        }
         XClientEvent::ConfigureNotify {
             sequence,
             synthetic,

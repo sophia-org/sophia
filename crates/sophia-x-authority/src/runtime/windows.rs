@@ -638,11 +638,27 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          range: crate::XWireClientResourceRange,
      ) -> Result<XAuthorityClientResourceRelease, XAuthorityRuntimeError> {
+         self.release_client_resource_range_with_save_set(namespace, range, &[])
+     }
+
+     /// The save-set walks before the destroy loop: a saved window lives
+     /// inside the departing client's subtree, which that loop destroys
+     /// whole. Each saved window still alive and outside the range is given
+     /// to its nearest ancestor outside the range (the root when none) and
+     /// re-mapped if it was mapped, as the protocol has a departing window
+     /// manager's clients survive it.
+     pub fn release_client_resource_range_with_save_set(
+         &mut self,
+         namespace: NamespaceId,
+         range: crate::XWireClientResourceRange,
+         save_set: &[crate::XResourceId],
+     ) -> Result<XAuthorityClientResourceRelease, XAuthorityRuntimeError> {
          if !namespace.is_valid() {
              return Err(XAuthorityRuntimeError::InvalidNamespace);
          }
  
          let mut release = XAuthorityClientResourceRelease::default();
+         self.apply_save_set(namespace, range, save_set, &mut release)?;
          self.glx_contexts.retain(|id, (owner, _, _)| {
              let owned = *owner == namespace
                  && u32::try_from(id.local.raw()).is_ok_and(|raw| range.owns_new_resource(raw));
@@ -1016,6 +1032,103 @@ impl XAuthorityRuntime {
          direction: u8,
      ) -> Result<AuthoritySurface, XAuthorityRuntimeError> {
          self.restack_window(namespace, window, None, Some(if direction == 0 { 0 } else { 1 }))
+     }
+
+     /// A departing client whose close-down mode retains its range: the
+     /// save-set is honoured and its selections end with the connection, as
+     /// the reference server ends them, and nothing else is destroyed. The
+     /// range is freed later by KillClient, through the ordinary release.
+     /// The save-set walk: each saved window still alive and outside the
+     /// range is given to its nearest ancestor outside the range (the root
+     /// when none) and re-mapped if it was mapped.
+     fn apply_save_set(
+         &mut self,
+         namespace: NamespaceId,
+         range: crate::XWireClientResourceRange,
+         save_set: &[crate::XResourceId],
+         release: &mut XAuthorityClientResourceRelease,
+     ) -> Result<(), XAuthorityRuntimeError> {
+         for window in save_set {
+             let window = *window;
+             let owned = u32::try_from(window.local.raw()).is_ok_and(|raw| range.owns_new_resource(raw));
+             if owned || self.resources.lookup(namespace, window, XResourceKind::Window).is_err() {
+                 continue;
+             }
+             let Some(record) = self.windows.get(window) else {
+                 continue;
+             };
+             let old_parent = record.parent;
+             let mut new_parent = old_parent;
+             while new_parent.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT)
+                 && u32::try_from(new_parent.local.raw()).is_ok_and(|raw| range.owns_new_resource(raw))
+             {
+                 new_parent = match self.windows.get(new_parent) {
+                     Some(ancestor) => ancestor.parent,
+                     None => crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1),
+                 };
+             }
+             if new_parent == old_parent {
+                 continue;
+             }
+             let was_mapped = !matches!(
+                 self.window_map_state(namespace, window),
+                 Ok(crate::XMapState::Unmapped)
+             );
+             if was_mapped {
+                 self.unmap_window(namespace, window)?;
+             }
+             self.set_window_parent(namespace, window, new_parent)?;
+             let generation = self.windows.get(window).map_or(0, |record| record.generation);
+             let surface = if was_mapped {
+                 self.windows.apply(XWindowLifecycleEvent::Mapped {
+                     id: window,
+                     generation,
+                 })?
+             } else {
+                 None
+             };
+             let geometry = self.window_geometry(namespace, window).unwrap_or_default();
+             release.save_set_reparents.push(crate::XSaveSetReparent {
+                 window,
+                 old_parent,
+                 new_parent,
+                 was_mapped,
+                 x: i16::try_from(geometry.x).unwrap_or(i16::MAX),
+                 y: i16::try_from(geometry.y).unwrap_or(i16::MAX),
+                 override_redirect: self.window_override_redirect(namespace, window).unwrap_or(false),
+                 surface,
+             });
+         }
+         Ok(())
+     }
+
+     pub fn retain_client_resource_range(
+         &mut self,
+         namespace: NamespaceId,
+         range: crate::XWireClientResourceRange,
+         save_set: &[crate::XResourceId],
+     ) -> Result<XAuthorityClientResourceRelease, XAuthorityRuntimeError> {
+         if !namespace.is_valid() {
+             return Err(XAuthorityRuntimeError::InvalidNamespace);
+         }
+         let mut release = XAuthorityClientResourceRelease::default();
+         self.apply_save_set(namespace, range, save_set, &mut release)?;
+         let closing_windows: Vec<_> = self
+             .resources
+             .records_for_namespace_in_client_range(namespace, range)
+             .into_iter()
+             .filter(|record| record.kind == XResourceKind::Window)
+             .map(|record| record.id)
+             .collect();
+         for window in closing_windows {
+             let cleared = self.selections.clear_window_owner(
+                 window,
+                 &self.windows,
+                 crate::XSelectionChangeKind::SelectionClientClosed,
+             );
+             release.retired_selection_ownerships.extend(cleared);
+         }
+         Ok(release)
      }
 
      pub fn map_direct_subwindows(

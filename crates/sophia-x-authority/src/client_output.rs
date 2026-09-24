@@ -39,6 +39,7 @@ const X_DESTROY_NOTIFY: u8 = 17;
 const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
 const X_MAP_REQUEST: u8 = 20;
+const X_REPARENT_NOTIFY: u8 = 21;
 const X_CONFIGURE_NOTIFY: u8 = 22;
 const X_CIRCULATE_NOTIFY: u8 = 26;
 const X_CIRCULATE_REQUEST: u8 = 27;
@@ -207,6 +208,17 @@ pub enum XClientEvent {
         parent: XResourceId,
         window: XResourceId,
         place: u8,
+    },
+    /// A window given a new parent: by a departing client's save-set
+    /// (t166), which reparents what it saved to the nearest survivor.
+    ReparentNotify {
+        sequence: u16,
+        event: XResourceId,
+        window: XResourceId,
+        parent: XResourceId,
+        x: i16,
+        y: i16,
+        override_redirect: bool,
     },
     ConfigureNotify {
         sequence: u16,

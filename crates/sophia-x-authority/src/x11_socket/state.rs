@@ -52,6 +52,11 @@ struct X11CoreClientLeaseState {
     next_client_resource_range: u16,
     next_client_id: u64,
     client_leases: BTreeMap<XServerFrontendClientId, XServerFrontendClientLease>,
+    /// Windows a client asked to have saved when it departs (ChangeSaveSet):
+    /// reparented to the nearest surviving ancestor and re-mapped if they were
+    /// mapped, rather than destroyed with the client's own subtree.
+    save_sets: BTreeMap<XServerFrontendClientId, BTreeSet<XResourceId>>,
+    retained_ranges: Vec<XRetainedClientRange>,
 }
 
 #[cfg(unix)]
@@ -67,6 +72,8 @@ impl Default for X11CoreSocketServerState {
                 next_client_resource_range: 1,
                 next_client_id: 1,
                 client_leases: Default::default(),
+                save_sets: Default::default(),
+                retained_ranges: Vec::new(),
             })),
             next_transaction_id: Arc::new(AtomicU64::new(1)),
             render_device_provider: Default::default(),
@@ -277,6 +284,7 @@ impl X11CoreSocketServerState {
             XServerFrontendClientLease {
                 client,
                 resource_id_range,
+                close_down_mode: crate::XCloseDownMode::Destroy,
             },
             XSetupSuccess {
                 resource_id_base,
@@ -320,6 +328,104 @@ impl X11CoreSocketServerState {
             })
     }
 
+    fn set_close_down_mode(
+        &self,
+        client: XServerFrontendClientId,
+        mode: crate::XCloseDownMode,
+    ) -> Result<(), X11SetupSocketError> {
+        let mut clients = self
+            .clients
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 client lease lock poisoned"))?;
+        if let Some(lease) = clients.client_leases.get_mut(&client) {
+            lease.close_down_mode = mode;
+        }
+        Ok(())
+    }
+
+    fn change_save_set(
+        &self,
+        client: XServerFrontendClientId,
+        window: XResourceId,
+        mode: crate::XSaveSetMode,
+    ) -> Result<(), X11SetupSocketError> {
+        let mut clients = self
+            .clients
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 client lease lock poisoned"))?;
+        let set = clients.save_sets.entry(client).or_default();
+        match mode {
+            crate::XSaveSetMode::Insert => {
+                set.insert(window);
+            }
+            crate::XSaveSetMode::Delete => {
+                set.remove(&window);
+            }
+        }
+        Ok(())
+    }
+
+    fn take_save_set(
+        &self,
+        client: XServerFrontendClientId,
+    ) -> Result<BTreeSet<XResourceId>, X11SetupSocketError> {
+        Ok(self
+            .clients
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 client lease lock poisoned"))?
+            .save_sets
+            .remove(&client)
+            .unwrap_or_default())
+    }
+
+    fn retain_client_range(&self, retained: XRetainedClientRange) -> Result<(), X11SetupSocketError> {
+        self.clients
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 client lease lock poisoned"))?
+            .retained_ranges
+            .push(retained);
+        Ok(())
+    }
+
+    /// The retained range holding `resource`, taken out of retention.
+    fn take_retained_range_for_resource(
+        &self,
+        resource: XResourceId,
+    ) -> Result<Option<XRetainedClientRange>, X11SetupSocketError> {
+        let raw = u32::try_from(resource.local.raw()).ok();
+        let mut clients = self
+            .clients
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 client lease lock poisoned"))?;
+        let index = raw.and_then(|raw| {
+            clients
+                .retained_ranges
+                .iter()
+                .position(|retained| retained.range.owns_new_resource(raw))
+        });
+        Ok(index.map(|index| clients.retained_ranges.remove(index)))
+    }
+
+    fn take_retained_temporary_ranges(&self) -> Result<Vec<XRetainedClientRange>, X11SetupSocketError> {
+        let mut clients = self
+            .clients
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 client lease lock poisoned"))?;
+        let (temporary, kept): (Vec<_>, Vec<_>) = clients
+            .retained_ranges
+            .drain(..)
+            .partition(|retained| retained.temporary);
+        clients.retained_ranges = kept;
+        Ok(temporary)
+    }
+
+    fn has_retained_ranges(&self) -> bool {
+        self.clients
+            .lock()
+            .map(|clients| !clients.retained_ranges.is_empty())
+            .unwrap_or(false)
+    }
+
     fn active_client_count(&self) -> usize {
         self.clients
             .lock()
@@ -348,19 +454,11 @@ impl X11CoreSocketServerState {
 }
 
 #[cfg(unix)]
-fn release_x11_client_lease(
-    state: &X11CoreSocketServerState,
-    namespace: NamespaceId,
-    lease: XServerFrontendClientLease,
-) -> Result<crate::XAuthorityClientResourceRelease, X11SetupSocketError> {
-    release_x11_client_lease_with_control(state, namespace, lease, None)
-}
-
-#[cfg(unix)]
 fn release_x11_client_lease_with_control(
     state: &X11CoreSocketServerState,
     namespace: NamespaceId,
     lease: XServerFrontendClientLease,
+    save_set: &[XResourceId],
     control: Option<&PrivateControlClientSource>,
 ) -> Result<crate::XAuthorityClientResourceRelease, X11SetupSocketError> {
     // Keep authority resource destruction and property removal together. X11
@@ -372,7 +470,7 @@ fn release_x11_client_lease_with_control(
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
     let release = runtime
-        .release_client_resource_range(namespace, lease.resource_id_range)
+        .release_client_resource_range_with_save_set(namespace, lease.resource_id_range, save_set)
         .map_err(|error| {
             X11SetupSocketError::new(format!("failed to release X11 client resources: {error:?}"))
         })?;
@@ -383,7 +481,7 @@ fn release_x11_client_lease_with_control(
     // them in. The last client leaving is the one moment the protocol says
     // client-interned atoms become undefined, and the authority outlives its
     // connections, so nothing else would ever say so.
-    let forgotten = if state.active_client_count() == 0 {
+    let forgotten = if state.active_client_count() == 0 && !state.has_retained_ranges() {
         state
             .atoms
             .lock()
