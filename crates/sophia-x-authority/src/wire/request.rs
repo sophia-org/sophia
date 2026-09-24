@@ -241,6 +241,10 @@ pub enum XWireRequest {
     ColormapRequest {
         kind: XColormapRequestKind,
         colormap: XResourceId,
+        /// A value the protocol refuses once the colormap is known: a
+        /// contiguity flag other than True or False, or zero colours to
+        /// allocate. Decoded here, answered after the colormap's own check.
+        invalid_value: Option<u32>,
     },
     /// A new colormap on the source's visual: a static visual has no
     /// allocations to move, so the copy is the creation.

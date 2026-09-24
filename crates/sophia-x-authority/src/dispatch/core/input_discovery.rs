@@ -794,7 +794,11 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ColormapRequest { kind, colormap } => {
+                XWireRequest::ColormapRequest {
+                    kind,
+                    colormap,
+                    invalid_value,
+                } => {
                     let known = runtime.colormap_visual(context.namespace, colormap).is_ok();
                     let outputs = if !known {
                         vec![color_error(
@@ -802,6 +806,8 @@ fn dispatch_core_input_discovery_request(
                             XErrorCode::BadColor,
                             u32::try_from(colormap.local.raw()).unwrap_or(0),
                         )]
+                    } else if let Some(value) = invalid_value {
+                        vec![color_error(context, XErrorCode::BadValue, value)]
                     } else {
                         match kind {
                             crate::XColormapRequestKind::AllocCells

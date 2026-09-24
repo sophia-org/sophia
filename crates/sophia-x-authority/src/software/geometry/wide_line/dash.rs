@@ -388,7 +388,12 @@ impl Lines<'_> {
 }
 
 /// `miStepDash`: advance `dist` pixels into the dash pattern.
-pub(super) fn step_dash(mut dist: i32, index: &mut usize, dashes: &[u8], offset: &mut i32) {
+pub(in crate::software::geometry) fn step_dash(
+    mut dist: i32,
+    index: &mut usize,
+    dashes: &[u8],
+    offset: &mut i32,
+) {
     let dash = |i: usize| i32::from(dashes[i]);
     if dist < dash(*index) - *offset {
         *offset += dist;

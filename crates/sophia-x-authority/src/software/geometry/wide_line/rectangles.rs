@@ -104,19 +104,31 @@ pub fn rectangles(rectangles: &[Rect], gc: &XGraphicsContextValues) -> XInkedSpa
 /// is drawn more than once". A zero-width outline of a rectangle with no
 /// width or height runs down a line and back, and `mi` paints the return
 /// over the way out -- under GXxor, erasing it. The pixels are `mi`'s; each
-/// is painted once. A wide outline needs no help: its span groups already
-/// paint a union.
+/// is painted once, with the paint `mi` leaves on it last, so a dashed
+/// outline that closes over its first pixels shows the colour the reference
+/// server shows. A wide outline needs no help: its span groups already paint
+/// a union.
 fn once_per_rectangle(outline: XInkedSpans, gc: &XGraphicsContextValues) -> XInkedSpans {
     if gc.line_width != 0 {
         return outline;
     }
-    let mut seen = std::collections::BTreeSet::new();
+    // Each pixel keeps its last paint, which is the one the reference server
+    // leaves visible where a closed outline or a dash returns over it.
+    let mut last = std::collections::BTreeMap::new();
+    for (batch, (_, spans)) in outline.iter().enumerate() {
+        for (index, span) in spans.iter().enumerate() {
+            last.insert((span.x, span.y), (batch, index));
+        }
+    }
     outline
         .into_iter()
-        .map(|(pixel, spans)| {
+        .enumerate()
+        .map(|(batch, (pixel, spans))| {
             let spans = spans
                 .into_iter()
-                .filter(|span| seen.insert((span.x, span.y)))
+                .enumerate()
+                .filter(|(index, span)| last.get(&(span.x, span.y)) == Some(&(batch, *index)))
+                .map(|(_, span)| span)
                 .collect::<Vec<_>>();
             (pixel, spans)
         })

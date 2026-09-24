@@ -40,7 +40,7 @@ large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1775
 large crates/sophia-x-authority/tests/x11_wire/resources_frontend.rs 2134
 large crates/sophia-x-authority/tests/x11_wire/support_extensions.rs 1502
 large crates/sophia-session/src/diagnostics/capture.rs 1013
-large crates/sophia-x-authority/src/dispatch/core/input_discovery.rs 1056
+large crates/sophia-x-authority/src/dispatch/core/input_discovery.rs 1062
 large crates/sophia-x-authority/src/dispatch/core/windows.rs 1077
-large crates/sophia-x-authority/src/wire/request.rs 1321
+large crates/sophia-x-authority/src/wire/request.rs 1325
 large crates/sophia-x-authority/src/x11_socket/tests/socket_core.rs 1202

@@ -213,9 +213,19 @@ fn decode_colormap_request(
             )?;
         }
     }
+    // Xorg checks AllocColorCells' count before its contiguity flag, and
+    // AllocColorPlanes' flag before its count.
+    let contiguous = (bytes[1] > 1).then_some(u32::from(bytes[1]));
+    let no_colors = || (context.byte_order.u16(&bytes[8..10]) == 0).then_some(0);
+    let invalid_value = match kind {
+        XColormapRequestKind::AllocCells => no_colors().or(contiguous),
+        XColormapRequestKind::AllocPlanes => contiguous.or_else(no_colors),
+        _ => None,
+    };
     Ok(XWireRequest::ColormapRequest {
         kind,
         colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        invalid_value,
     })
 }
 
