@@ -5,9 +5,17 @@ mod retirement;
 pub(super) use content::presented_content_list_matches;
 use content::{content_binding_from_frame, presented_content_bindings, same_content_binding};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+// A region is not Copy, so neither is this since t064; it is cloned where
+// a projection is built.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct LiveSurfaceProjectionMetadata {
     namespace: Option<NamespaceId>,
+    /// The SHAPE input region the authority committed with the surface
+    /// (t064): every authority transaction carries the effective region at
+    /// that commit, so this is as fresh as the last commit. Both input
+    /// projections carry it into the hit test, which skips the layer outside
+    /// it; without it a shaped panel took every click over its bounds.
+    input_region: Option<Region>,
 }
 
 impl LiveProductionVisualRuntime {
@@ -31,6 +39,7 @@ impl LiveProductionVisualRuntime {
                 transaction.surface,
                 LiveSurfaceProjectionMetadata {
                     namespace: transaction.namespace,
+                    input_region: transaction.input_region.clone(),
                 },
             );
         }
@@ -498,15 +507,12 @@ fn presented_input_layer_snapshots(
         .enumerate()
         .map(|(index, state)| LayerSnapshot {
             translation: None,
-            // NOTE: this is wrong and the comment that used to sit here said
-            // the opposite -- that input routing reads layers carrying the
-            // region. It does not: physical_input_phase.rs takes
-            // `runtime.input_layers()`, which is exactly this projection, so a
-            // shaped window's input region never reaches the hit test and
-            // SHAPE input shapes cannot take effect on this path. Left as it
-            // was rather than widened here, because carrying the region needs
-            // a source for it in the retired frame and that is its own change.
-            input_region: None,
+            // This projection is what the session hands the hit test, so the
+            // region rides with the surface's metadata rather than with the
+            // retired frame, which records pixels and not shapes (t064).
+            input_region: metadata
+                .get(&state.surface)
+                .and_then(|metadata| metadata.input_region.clone()),
             surface: state.surface,
             authority_local_id: None,
             // Rebuilt from what the Engine committed, which records pixels
@@ -539,11 +545,9 @@ fn layer_snapshot(
 ) -> LayerSnapshot {
     LayerSnapshot {
         translation: None,
-        // Same correction as the presented constructor: these layers are what
-        // physical_input_phase.rs hands the hit test, so this projection does
-        // answer the pointer and dropping the region means SHAPE input shapes
-        // do not take effect through it.
-        input_region: None,
+        // As the presented constructor: the committed record has no shape,
+        // the surface's metadata does (t064).
+        input_region: metadata.and_then(|metadata| metadata.input_region.clone()),
         surface: state.surface,
         authority_local_id: None,
         // As above: a read-back of committed pixels names no owner.
