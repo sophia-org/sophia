@@ -38,6 +38,16 @@ macro_rules! service_session_controls {
         while !session_control_completions.is_empty() {
             let completion = session_control_completions.remove(0);
             if let Some(failure) = completion.failure {
+                if failure == crate::session_control::SessionControlFailure::Quiescing {
+                    // Retired because the session is on its way out after a
+                    // successful primary exit and nothing is left to answer
+                    // it (t187): recorded, never this session's failure.
+                    crate::session_println!(
+                        "sophia_live_session_control schema=1 status=control_quiesced kind={:?} transaction={} surface={}",
+                        completion.key.kind, completion.key.transaction.raw(), completion.key.surface.index(),
+                    );
+                    continue;
+                }
                 if failure == crate::session_control::SessionControlFailure::TimedOut
                     && !input_delivery.fail_on_client_error {
                     input_sender.disconnect_input_client(completion.key.client)?;

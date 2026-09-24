@@ -868,6 +868,9 @@ fn run_session_loop_inner(
                     now,
                     Duration::from_millis(SESSION_QUIESCENCE_TIMEOUT_MSEC),
                 ));
+                // What is pending, or arrives from now on, finds no frontend
+                // to answer it and is retired rather than timed out (t187).
+                session_controls.begin_quiescence(now);
                 crate::session_println!(
                     "sophia_live_session_quiescence schema=3 status=started reason={} timeout_msec={}",
                     $reason,

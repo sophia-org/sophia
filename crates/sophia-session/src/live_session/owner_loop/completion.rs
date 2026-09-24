@@ -1466,6 +1466,13 @@
         control_metrics.max_queue_dwell.as_millis(),
         control_metrics.max_acknowledgement_latency.as_millis(),
     );
+    if control_metrics.quiesced_before_dispatch + control_metrics.quiesced_in_flight > 0 {
+        crate::session_println!(
+            "sophia_live_session_control schema=1 status=quiesced before_dispatch={} in_flight={}",
+            control_metrics.quiesced_before_dispatch,
+            control_metrics.quiesced_in_flight,
+        );
+    }
     if if input_delivery.fail_on_client_error {
         !control_metrics.is_drained(session_controls.pending_len())
     } else { !control_metrics.is_settled(session_controls.pending_len()) } {

@@ -57,6 +57,11 @@ pub enum SessionControlFailure {
     UnexpectedAcknowledgement,
     Disconnected,
     ClientDisconnected,
+    /// Retired because the session began its quiescence after a successful
+    /// primary exit and nothing is left to answer it (t187). Never the
+    /// session's failure: a control that finds no frontend on the way out is
+    /// the way out, not a fault.
+    Quiescing,
 }
 
 impl SessionControlFailure {
@@ -99,6 +104,11 @@ pub struct SessionControlMetrics {
     pub unexpected: usize,
     pub disconnected: usize,
     pub recovered_timeouts: usize,
+    /// Controls retired by quiescence before they were dispatched, or
+    /// enqueued after it began (t187).
+    pub quiesced_before_dispatch: usize,
+    /// Controls in flight when quiescence began (t187).
+    pub quiesced_in_flight: usize,
     pub peak_depth: usize,
     pub max_queue_dwell: Duration,
     pub max_acknowledgement_latency: Duration,
@@ -113,13 +123,22 @@ impl SessionControlMetrics {
             && self.rejected == 0
             && self.timed_out == self.recovered_timeouts
             && self.enqueued
-                == self.delivered + self.stale_targets_retired + self.disconnected + self.timed_out
+                == self.delivered
+                    + self.stale_targets_retired
+                    + self.disconnected
+                    + self.timed_out
+                    + self.quiesced_before_dispatch
+                    + self.quiesced_in_flight
     }
 
     pub const fn is_drained(self, pending: usize) -> bool {
         pending == 0
-            && self.enqueued == self.dispatched
-            && self.dispatched == self.delivered.saturating_add(self.stale_targets_retired)
+            && self.enqueued == self.dispatched + self.quiesced_before_dispatch
+            && self.dispatched
+                == self
+                    .delivered
+                    .saturating_add(self.stale_targets_retired)
+                    .saturating_add(self.quiesced_in_flight)
             && self.rejected == 0
             && self.timed_out == 0
             && self.unexpected == 0
@@ -140,6 +159,12 @@ pub struct SessionControlQueue {
     pending: VecDeque<PendingControl>,
     revoked_clients: BTreeSet<XServerFrontendClientId>,
     metrics: SessionControlMetrics,
+    /// Set by `begin_quiescence` (t187): what was pending is retired, what
+    /// is enqueued afterwards completes at once, and a late acknowledgement
+    /// for either is inert.
+    quiescing: bool,
+    quiesced_keys: Vec<SessionControlKey>,
+    quiesced_completions: Vec<SessionControlCompletion>,
 }
 
 pub trait SessionControlSender {
@@ -186,6 +211,20 @@ impl SessionControlQueue {
         if self.pending.len() >= SESSION_CONTROL_CAPACITY {
             return Err(SessionControlFailure::Capacity);
         }
+        if self.quiescing {
+            // Accepted and retired in the same breath: the caller's queueing
+            // succeeds, the completion says why nothing will be applied.
+            self.metrics.enqueued += 1;
+            self.metrics.quiesced_before_dispatch += 1;
+            self.quiesced_keys.push(key);
+            self.quiesced_completions.push(SessionControlCompletion {
+                key,
+                failure: Some(SessionControlFailure::Quiescing),
+                queue_dwell: Duration::ZERO,
+                acknowledgement_latency: Duration::ZERO,
+            });
+            return Ok(key);
+        }
         self.pending.push_back(PendingControl {
             command,
             key,
@@ -216,6 +255,7 @@ impl SessionControlQueue {
         completions: &mut Vec<SessionControlCompletion>,
         dispatch_ready: bool,
     ) -> Result<(), SessionControlFailure> {
+        completions.append(&mut self.quiesced_completions);
         self.retire_revoked(now, completions);
         self.receive_acknowledgements(receiver, now, completions)?;
         if dispatch_ready {
@@ -244,6 +284,37 @@ impl SessionControlQueue {
 
     pub fn observe_recovered_timeout(&mut self) {
         self.metrics.recovered_timeouts += 1;
+    }
+
+    /// The session is on its way out after a successful primary exit and the
+    /// frontend is draining (t187): every pending control is retired as
+    /// `Quiescing`, reported by the next service, and so is anything enqueued
+    /// from now on. Nothing here is a failure of the session.
+    pub fn begin_quiescence(&mut self, now: Instant) {
+        self.quiescing = true;
+        while let Some(pending) = self.pending.pop_front() {
+            if pending.dispatched_at.is_some() {
+                self.metrics.quiesced_in_flight += 1;
+            } else {
+                self.metrics.quiesced_before_dispatch += 1;
+            }
+            self.quiesced_keys.push(pending.key);
+            self.quiesced_completions.push(SessionControlCompletion {
+                key: pending.key,
+                failure: Some(SessionControlFailure::Quiescing),
+                queue_dwell: pending
+                    .dispatched_at
+                    .unwrap_or(now)
+                    .saturating_duration_since(pending.queued_at),
+                acknowledgement_latency: pending
+                    .dispatched_at
+                    .map_or(Duration::ZERO, |sent| now.saturating_duration_since(sent)),
+            });
+        }
+    }
+
+    pub const fn is_quiescing(&self) -> bool {
+        self.quiescing
     }
 
     fn retire_revoked(&mut self, now: Instant, completions: &mut Vec<SessionControlCompletion>) {
@@ -302,6 +373,11 @@ impl SessionControlQueue {
             // Exact connection identity is never reused within a frontend.
             // Nothing from a revoked endpoint can restore control authority.
             if self.revoked_clients.contains(&key.client) {
+                continue;
+            }
+            // A control retired by quiescence may still be answered by a
+            // frontend on its way out; the answer changes nothing (t187).
+            if self.quiesced_keys.contains(&key) {
                 continue;
             }
             let Some(index) = self

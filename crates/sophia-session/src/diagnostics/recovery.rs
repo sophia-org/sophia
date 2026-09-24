@@ -71,6 +71,7 @@ pub(super) const CODES: &[&str] = &[
     "control_unexpected_ack",
     "control_disconnected",
     "control_client_disconnected",
+    "control_quiescing",
     "input_recovery_shutdown_failed",
     "input_registry_poisoned",
 ];
@@ -99,6 +100,7 @@ pub(super) fn failure_code(error: &(dyn std::error::Error + 'static)) -> Option<
             Control::UnexpectedAcknowledgement => "control_unexpected_ack",
             Control::Disconnected => "control_disconnected",
             Control::ClientDisconnected => "control_client_disconnected",
+            Control::Quiescing => "control_quiescing",
         });
     }
     if let Some(error) = error.downcast_ref::<sophia_x_authority::XServerFrontendRouteError>() {
