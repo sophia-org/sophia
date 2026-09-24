@@ -96,7 +96,10 @@ or a decision with its note: ChangeHosts 1 and SetAccessControl 1
       conversions=2, injected_buttons=4) and `xterm-pointer-oracle`
       (injected_motions=7, injected_buttons=8), pass on the seam: button
       remapping sits on the event path.
-- [ ] The gate on the committed candidate, both scenarios.
+- [x] The gate on the committed candidate
+      (`.artifacts/x11-profile-705cb338-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 339 passed and 50 declared, selected-core
+      with 76 passed and 23 declared.
 
 ## Connections
 
