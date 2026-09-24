@@ -129,6 +129,12 @@ mod xtest_admission_socket {
             Self::with_client_toplevel_placement(false)
         }
 
+        /// Every client in the one namespace, each with an injector, and
+        /// clients placing their own toplevels: two peers of one window.
+        pub(super) fn sharing_a_namespace() -> Self {
+            Self::with_namespaces([901, 901], true)
+        }
+
         /// The conformance host's posture: clients place their own
         /// toplevels, and the authority resolves which one a point is in.
         pub(super) fn placing_toplevels() -> Self {
@@ -136,6 +142,10 @@ mod xtest_admission_socket {
         }
 
         fn with_client_toplevel_placement(client_places: bool) -> Self {
+            Self::with_namespaces([901, 902], client_places)
+        }
+
+        fn with_namespaces(namespace_ids: [u64; 2], client_places: bool) -> Self {
             let path = std::env::temp_dir().join(format!(
                 "sophia-xtest-admission-{}-{}.sock",
                 std::process::id(),
@@ -156,7 +166,7 @@ mod xtest_admission_socket {
             let input = broker.routed_input_sender();
             let controls = broker.control_sender();
             let (stop, stopped) = mpsc::sync_channel(1);
-            let namespaces = [901, 902].map(|id| {
+            let namespaces = namespace_ids.map(|id| {
                 NamespaceContext::new(
                     NamespaceId::from_raw(id),
                     NamespaceProfile::Confined,
@@ -607,6 +617,74 @@ mod xtest_admission_socket {
         client.fake_input(2, 38);
         client.fake_input(3, 38);
         client.settle();
+    }
+
+    /// A core device event reaches every client that selected it on the
+    /// event window, not only the window's owner (t220): a peer that
+    /// selected motion, button release and keys on the owner's toplevel is
+    /// told of each, on that window and at the same coordinates, while the
+    /// owner still hears everything it selected. Red before the fix: only
+    /// the owner's queue was routed (XTS Xlib11 ButtonRelease 2, KeyPress
+    /// 2, MotionNotify 1).
+    #[test]
+    fn a_peer_that_selected_on_the_owners_window_is_told_of_its_device_events() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        // KeyPress, KeyRelease, ButtonPress, ButtonRelease, PointerMotion for
+        // the owner; the peer selects the same but ButtonPress, which is one
+        // client's to select.
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, 3 | (1 << 2) | (1 << 3) | (1 << 6)))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.barrier();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 3 | (1 << 3) | (1 << 6)))
+            .unwrap();
+        peer.barrier();
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        let event_window = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+        let next_motion = |client: &mut XtestClient| loop {
+            let record = read_x_record(&mut client.stream);
+            if record[0] & 0x7f == 6 {
+                break record;
+            }
+        };
+
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        for (name, client) in [("owner", &mut owner), ("peer", &mut peer)] {
+            let motion = next_motion(client);
+            assert_eq!(event_window(&motion), window, "{name}: motion on the window");
+            assert_eq!((at(&motion, 20), at(&motion, 22), at(&motion, 24), at(&motion, 26)), (25, 5, 5, 5), "{name}: motion coordinates");
+        }
+        owner.fake_input(4, 1);
+        let press = owner.next_event(4);
+        assert_eq!(event_window(&press), window, "the owner's press");
+        owner.fake_input(5, 1);
+        for (name, client) in [("owner", &mut owner), ("peer", &mut peer)] {
+            let release = client.next_event(5);
+            assert_eq!(event_window(&release), window, "{name}: release on the window");
+            assert_eq!((at(&release, 20), at(&release, 22)), (25, 5), "{name}: release coordinates");
+        }
+        owner.fake_input(2, 38);
+        for (name, client) in [("owner", &mut owner), ("peer", &mut peer)] {
+            let key = client.next_event(2);
+            assert_eq!((event_window(&key), key[1]), (window, 38), "{name}: the key on the window");
+        }
+        owner.fake_input(3, 38);
+        for client in [&mut owner, &mut peer] {
+            let _ = client.next_event(3);
+        }
+        // The press the peer did not select never reached it: its stream
+        // is quiet now.
+        peer.barrier();
+        owner.barrier();
     }
 
     fn warp_pointer_request(

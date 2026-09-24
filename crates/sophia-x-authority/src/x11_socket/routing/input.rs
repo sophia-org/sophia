@@ -481,6 +481,83 @@ impl XServerFrontendRouteRegistry {
         }
     }
 
+    /// A core device event reaches every client that selected it on the
+    /// event window or an ancestor, not only the surface's owner (t220):
+    /// each peer's writer resolves the window it selected on, propagation
+    /// and coordinates from its own selection table, given the surface
+    /// window to start from. An explicit pointer or keyboard grab confines
+    /// the event to the grabbing client, so nothing fans out under one; an
+    /// implicit grab does not, as the reference server has it. A peer whose
+    /// queue refuses the copy loses only its copy.
+    fn route_to_selecting_peers(
+        &self,
+        namespace: NamespaceId,
+        owner: XServerFrontendClientId,
+        surface_window: XResourceId,
+        target_window: Option<XResourceId>,
+        event: XAuthorityInputEvent,
+    ) -> Result<(), XServerFrontendRouteError> {
+        const KEY_PRESS: u32 = 1 << 0;
+        const KEY_RELEASE: u32 = 1 << 1;
+        const BUTTON_PRESS: u32 = 1 << 2;
+        const BUTTON_RELEASE: u32 = 1 << 3;
+        const POINTER_MOTION: u32 = 1 << 6;
+        const BUTTON_MOTION: u32 = (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+        let (mask, pointer) = match event {
+            XAuthorityInputEvent::Key(key) => (if key.pressed { KEY_PRESS } else { KEY_RELEASE }, false),
+            XAuthorityInputEvent::Pointer(pointer) => match pointer.kind {
+                XAuthorityPointerEventKind::Button { pressed, .. }
+                | XAuthorityPointerEventKind::Axis { pressed, .. } => {
+                    (if pressed { BUTTON_PRESS } else { BUTTON_RELEASE }, true)
+                }
+                XAuthorityPointerEventKind::Motion => (POINTER_MOTION | BUTTON_MOTION, true),
+            },
+        };
+        {
+            let authority = self
+                .input_authority
+                .lock()
+                .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+            let confined = if pointer {
+                authority.explicit_pointer_grab(namespace).is_some()
+            } else {
+                authority.keyboard_grab(namespace).is_some()
+            };
+            if confined {
+                return Ok(());
+            }
+        }
+        let event_window = target_window.unwrap_or(surface_window);
+        let mut peers = std::collections::BTreeSet::new();
+        for window in self.window_ancestry(owner, event_window)? {
+            for peer in self.core_event_subscribers(window, mask)? {
+                if peer != owner {
+                    peers.insert(peer);
+                }
+            }
+        }
+        for peer in peers {
+            let route = XAuthorityClientInputEvent {
+                client: peer,
+                event,
+                target_window: Some(event_window),
+                xi_event_type: None,
+                xi_event_window: None,
+                xi_emulated_button_type: None,
+                xi_emulated_button_window: None,
+                xi_pointer_crossing_mask: 0,
+                delivery: None,
+            };
+            if let Err(error) = self.route_input(route) {
+                tracing::warn!(
+                    "sophia_x11_input_route status=peer_copy_rejected reason={error:?} client={} content=redacted",
+                    peer.raw()
+                );
+            }
+        }
+        Ok(())
+    }
+
     // Compatibility ingress already supplies X input rather than an Engine
     // packet. It must publish query state too, without running XKB twice.
     fn observe_direct_query_input(

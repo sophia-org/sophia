@@ -357,6 +357,18 @@ impl XInputAuthorityState {
             .and_then(|state| state.pointer)
     }
 
+    /// The active pointer grab when a client asked for it (GrabPointer or a
+    /// passive grab activating), as opposed to the implicit grab a press
+    /// starts. An explicit grab confines pointer events to its client;
+    /// under an implicit one every client that selected the event on the
+    /// event window is still told, as the reference server tells them.
+    pub fn explicit_pointer_grab(&self, namespace: NamespaceId) -> Option<XActiveInputGrab> {
+        self.namespaces
+            .get(&namespace)
+            .filter(|state| !state.pointer_implicit)
+            .and_then(|state| state.pointer)
+    }
+
     pub fn set_pointer_route_lease(
         &mut self,
         namespace: NamespaceId,
