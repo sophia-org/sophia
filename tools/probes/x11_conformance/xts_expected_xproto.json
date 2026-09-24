@@ -137,15 +137,11 @@
   },
   {
     "case": "/Xproto/pChangeKeyboardMapping",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pChangeKeyboardMapping",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pChangeKeyboardMapping",
@@ -1265,15 +1261,13 @@
   },
   {
     "case": "/Xproto/pQueryKeymap",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pQueryKeymap",
     "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "UNTESTED",
+    "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
     "case": "/Xproto/pQueryKeymap",
@@ -1453,13 +1447,13 @@
     "case": "/Xproto/pSetModifierMapping",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "reason": "by decision: the purpose sets a modifier map that is not the current one and wants a reply and a MappingNotify; this authority answers Failed and no event, since xkbcommon owns the modifier state events carry and a map it did not compile cannot be served honestly"
   },
   {
     "case": "/Xproto/pSetModifierMapping",
     "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "UNTESTED",
+    "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
     "case": "/Xproto/pSetModifierMapping",
@@ -1467,15 +1461,13 @@
   },
   {
     "case": "/Xproto/pSetPointerMapping",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pSetPointerMapping",
     "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t166: the authority answers BadRequest to this core opcode; decide and decode it"
+    "expected": "UNTESTED",
+    "reason": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
   },
   {
     "case": "/Xproto/pSetPointerMapping",

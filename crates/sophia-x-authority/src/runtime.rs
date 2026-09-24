@@ -296,10 +296,16 @@ pub struct XAuthorityRuntime {
     input_authority: Arc<Mutex<crate::XInputAuthorityState>>,
     /// Advisory: what a client set and reads back, acted on by nothing here.
     controls: crate::XServerControls,
+    /// The core keyboard mapping clients read and may rewrite; starts as
+    /// the snapshot's.
+    keyboard_map: crate::XCoreKeyboardMap,
 }
 
 impl Default for XAuthorityRuntime {
     fn default() -> Self {
+        let keymap = crate::XkbKeymapSnapshot::new(&crate::XkbRmlvoConfig::default())
+            .expect("the deterministic default XKB keymap must compile");
+        let keyboard_map = crate::XCoreKeyboardMap::from_snapshot(&keymap);
         Self {
             resources: Default::default(),
             windows: Default::default(),
@@ -363,10 +369,10 @@ impl Default for XAuthorityRuntime {
             pixmap_textures_supported: false,
             dma_buf_import_formats: None,
             device_connections: BTreeMap::new(),
-            xkb_keymap: crate::XkbKeymapSnapshot::new(&crate::XkbRmlvoConfig::default())
-                .expect("the deterministic default XKB keymap must compile"),
+            xkb_keymap: keymap,
             input_authority: Arc::new(Mutex::new(crate::XInputAuthorityState::default())),
             controls: crate::XServerControls::default(),
+            keyboard_map,
         }
     }
 }
@@ -379,14 +385,24 @@ impl XAuthorityRuntime {
     pub fn with_xkb_config(
         config: &crate::XkbRmlvoConfig,
     ) -> Result<Self, crate::XkbKeyboardError> {
+        let keymap = crate::XkbKeymapSnapshot::new(config)?;
         Ok(Self {
-            xkb_keymap: crate::XkbKeymapSnapshot::new(config)?,
+            keyboard_map: crate::XCoreKeyboardMap::from_snapshot(&keymap),
+            xkb_keymap: keymap,
             ..Self::default()
         })
     }
 
     pub const fn xkb_keymap(&self) -> &crate::XkbKeymapSnapshot {
         &self.xkb_keymap
+    }
+
+    pub const fn keyboard_map(&self) -> &crate::XCoreKeyboardMap {
+        &self.keyboard_map
+    }
+
+    pub const fn keyboard_map_mut(&mut self) -> &mut crate::XCoreKeyboardMap {
+        &mut self.keyboard_map
     }
 
     pub const fn controls(&self) -> &crate::XServerControls {
@@ -452,10 +468,12 @@ impl XAuthorityRuntime {
         output_topology
             .validate()
             .map_err(|error| format!("invalid Engine output topology: {error:?}"))?;
+        let keymap = crate::XkbKeymapSnapshot::new(xkb_config)
+            .map_err(|error| format!("invalid XKB configuration: {error}"))?;
         Ok(Self {
             output_topology,
-            xkb_keymap: crate::XkbKeymapSnapshot::new(xkb_config)
-                .map_err(|error| format!("invalid XKB configuration: {error}"))?,
+            keyboard_map: crate::XCoreKeyboardMap::from_snapshot(&keymap),
+            xkb_keymap: keymap,
             ..Self::default()
         })
     }

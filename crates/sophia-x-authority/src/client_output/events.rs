@@ -317,6 +317,17 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_i16(byte_order, &mut out[18..20], y);
             out[20] = u8::from(override_redirect);
         }
+        XClientEvent::MappingNotify {
+            sequence,
+            request,
+            first_keycode,
+            count,
+        } => {
+            write_event_header(byte_order, &mut out, X_MAPPING_NOTIFY, 0, sequence);
+            out[4] = request;
+            out[5] = first_keycode;
+            out[6] = count;
+        }
         XClientEvent::ConfigureNotify {
             sequence,
             synthetic,

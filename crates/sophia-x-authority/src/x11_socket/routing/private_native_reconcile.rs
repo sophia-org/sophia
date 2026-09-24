@@ -162,6 +162,9 @@ impl Guards<'_> {
                 .map_evdev_key(hold.evdev, false)
                 .ok_or(Refusal::KeyboardUnavailable)?;
             hold.release_xkb_applied = true;
+            // QueryKeymap: the key is up (t166).
+            self.authority
+                .observe_pressed_key(self.origin.namespace, hold.key, false);
         }
         observe_key_modifiers(&mut self.selections, keyboard.modifier_mask() as u8);
         if let Some(activation) = hold.activation {

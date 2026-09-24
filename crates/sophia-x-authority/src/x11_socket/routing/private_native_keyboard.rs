@@ -460,6 +460,8 @@ impl BaseGuards<'_> {
         }
         hold.activation = prepared.commit();
         let (mapped, modifiers) = keyboard.map_evdev_key(evdev, true).expect("validated key");
+        self.authority
+            .observe_pressed_key(self.origin.namespace, mapped, true);
         let after = keyboard
             .ordered_state()
             .ok_or(Refusal::KeyboardUnavailable)?;

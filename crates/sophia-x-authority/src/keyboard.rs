@@ -125,6 +125,41 @@ impl XkbKeymapSnapshot {
         &self.config
     }
 
+    /// The core modifier mapping GetModifierMapping reports, derived from the
+    /// same list the XKB map reports: per modifier bit, its keycodes in list
+    /// order, padded to the widest.
+    pub fn core_modifier_mapping(&self) -> (u8, Vec<u8>) {
+        let mut per_modifier: [Vec<u8>; 8] = Default::default();
+        for (keycode, mask) in &self.modifier_map {
+            for (bit, slot) in per_modifier.iter_mut().enumerate() {
+                if mask & (1 << bit) != 0 {
+                    slot.push(*keycode);
+                }
+            }
+        }
+        let width = per_modifier.iter().map(Vec::len).max().unwrap_or(0).max(1);
+        let mut keycodes = Vec::with_capacity(width * 8);
+        for slot in &per_modifier {
+            keycodes.extend(slot.iter().copied());
+            keycodes.extend(std::iter::repeat_n(0, width - slot.len()));
+        }
+        (u8::try_from(width).unwrap_or(u8::MAX), keycodes)
+    }
+
+    /// The modifier map as sets, for comparing a SetModifierMapping request
+    /// against what is served: zero padding and order are not differences.
+    pub fn modifier_sets(&self) -> [std::collections::BTreeSet<u8>; 8] {
+        let mut sets: [std::collections::BTreeSet<u8>; 8] = Default::default();
+        for (keycode, mask) in &self.modifier_map {
+            for (bit, set) in sets.iter_mut().enumerate() {
+                if mask & (1 << bit) != 0 {
+                    set.insert(*keycode);
+                }
+            }
+        }
+        sets
+    }
+
     pub fn core_mapping(&self, first_keycode: u8, count: u8) -> Vec<u32> {
         let mut result = Vec::with_capacity(usize::from(count) * 2);
         for offset in 0..count {
@@ -162,6 +197,99 @@ impl XkbKeymapSnapshot {
     }
     pub const fn max_keycode(&self) -> u8 {
         self.max_keycode
+    }
+}
+
+/// The core keyboard mapping a client may rewrite (ChangeKeyboardMapping):
+/// one row per keycode, as wide as the widest row written, NoSymbol-padded.
+/// Starts as the snapshot's two levels; GetKeyboardMapping reports it whole
+/// and XKB GetMap reports its first two levels, so the two agree. Key events
+/// carry keycodes only, and modifier state stays xkbcommon's: this is the
+/// table a client translates with, which is what the request rewrites.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct XCoreKeyboardMap {
+    min_keycode: u8,
+    max_keycode: u8,
+    width: u8,
+    rows: Vec<Vec<u32>>,
+}
+
+/// Why a ChangeKeyboardMapping was refused: a keycode outside the range,
+/// the Value error the protocol names, carrying the first keycode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum XKeyboardMapRefusal {
+    KeycodeOutOfRange(u8),
+}
+
+impl XCoreKeyboardMap {
+    pub fn from_snapshot(snapshot: &XkbKeymapSnapshot) -> Self {
+        Self {
+            min_keycode: snapshot.min_keycode,
+            max_keycode: snapshot.max_keycode,
+            width: 2,
+            rows: snapshot.keysyms.iter().map(|pair| pair.to_vec()).collect(),
+        }
+    }
+
+    pub const fn keysyms_per_keycode(&self) -> u8 {
+        self.width
+    }
+
+    pub fn core_mapping(&self, first_keycode: u8, count: u8) -> Vec<u32> {
+        let width = usize::from(self.width);
+        let mut result = Vec::with_capacity(usize::from(count) * width);
+        for offset in 0..count {
+            let keycode = first_keycode.saturating_add(offset);
+            match keycode
+                .checked_sub(self.min_keycode)
+                .and_then(|index| self.rows.get(usize::from(index)))
+            {
+                Some(row) => result.extend(row.iter().copied()),
+                None => result.extend(std::iter::repeat_n(0, width)),
+            }
+        }
+        result
+    }
+
+    /// The first two levels of every keycode, the shape the XKB map reports.
+    pub fn xkb_keysyms(&self) -> Vec<[u32; 2]> {
+        self.rows
+            .iter()
+            .map(|row| {
+                let base = row.first().copied().unwrap_or(0);
+                [base, row.get(1).copied().unwrap_or(base)]
+            })
+            .collect()
+    }
+
+    /// ChangeKeyboardMapping: `count` rows from `first_keycode`, each
+    /// `per_keycode` keysyms; the map widens to the widest row written.
+    pub fn change(
+        &mut self,
+        first_keycode: u8,
+        per_keycode: u8,
+        keysyms: &[u32],
+    ) -> Result<u8, XKeyboardMapRefusal> {
+        let count =
+            u8::try_from(keysyms.len() / usize::from(per_keycode.max(1))).unwrap_or(u8::MAX);
+        let last = u16::from(first_keycode) + u16::from(count) - u16::from(count > 0);
+        if first_keycode < self.min_keycode || last > u16::from(self.max_keycode) {
+            return Err(XKeyboardMapRefusal::KeycodeOutOfRange(first_keycode));
+        }
+        let width = usize::from(self.width.max(per_keycode));
+        if width > usize::from(self.width) {
+            for row in &mut self.rows {
+                row.resize(width, 0);
+            }
+            self.width = u8::try_from(width).unwrap_or(u8::MAX);
+        }
+        for (offset, chunk) in keysyms.chunks(usize::from(per_keycode.max(1))).enumerate() {
+            let index = usize::from(first_keycode - self.min_keycode) + offset;
+            let row = &mut self.rows[index];
+            row.iter_mut().for_each(|sym| *sym = 0);
+            row[..chunk.len()].copy_from_slice(chunk);
+        }
+        Ok(count)
     }
 }
 
