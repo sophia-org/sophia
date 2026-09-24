@@ -1,3 +1,14 @@
+/// What a ReparentWindow did (t184), for the dispatcher to report.
+#[derive(Clone, Debug)]
+pub struct XWindowReparent {
+    pub old_parent: crate::XResourceId,
+    pub was_mapped: bool,
+    pub override_redirect: bool,
+    /// The surfaces the Engine applies, in the order the protocol performs
+    /// the steps: the unmap, the placement, the remap.
+    pub surfaces: Vec<AuthoritySurface>,
+}
+
 impl XAuthorityRuntime {
      pub fn resource_count(&self) -> usize {
          self.resources.len()
@@ -318,6 +329,62 @@ impl XAuthorityRuntime {
         // without anything in it being unmapped.
         self.revert_focus_if_unviewable(namespace);
         Ok(())
+    }
+
+    /// ReparentWindow as the protocol orders it (t184): a mapped window is
+    /// unmapped first, given its new parent and position, and mapped again.
+    /// The outcome names what the dispatcher reports and the surfaces the
+    /// Engine applies, in that order.
+    pub fn reparent_window(
+        &mut self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        parent: crate::XResourceId,
+        x: i16,
+        y: i16,
+        generation: u64,
+    ) -> Result<XWindowReparent, XAuthorityRuntimeError> {
+        self.resources
+            .lookup(namespace, window, XResourceKind::Window)?;
+        let old_parent = self
+            .windows
+            .get(window)
+            .ok_or(XAuthorityRuntimeError::UnknownResource)?
+            .parent;
+        let was_mapped = !matches!(
+            self.window_map_state(namespace, window)?,
+            crate::XMapState::Unmapped
+        );
+        let mut surfaces = Vec::new();
+        if was_mapped && let Some(surface) = self.unmap_window(namespace, window)? {
+            surfaces.push(surface);
+        }
+        self.set_window_parent(namespace, window, parent)?;
+        surfaces.push(self.configure_window_geometry_observed(
+            namespace,
+            window,
+            XWindowGeometryUpdate {
+                x: Some(x),
+                y: Some(y),
+                generation,
+                ..XWindowGeometryUpdate::default()
+            },
+        )?);
+        if was_mapped {
+            let record_generation = self.windows.get(window).map_or(0, |record| record.generation);
+            if let Some(surface) = self.windows.apply(XWindowLifecycleEvent::Mapped {
+                id: window,
+                generation: record_generation,
+            })? {
+                surfaces.push(surface);
+            }
+        }
+        Ok(XWindowReparent {
+            old_parent,
+            was_mapped,
+            override_redirect: self.window_override_redirect(namespace, window).unwrap_or(false),
+            surfaces,
+        })
     }
 
     pub fn restack_window(

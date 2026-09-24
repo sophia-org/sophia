@@ -146,9 +146,23 @@ fn route_core_lifecycle_events_with_control(
             XClientEvent::CreateNotify { parent, .. } => {
                 Some((index, parent, SUBSTRUCTURE_NOTIFY_MASK, *event))
             }
-            XClientEvent::MapNotify { event: target, .. }
-            | XClientEvent::UnmapNotify { event: target, .. }
-            | XClientEvent::CirculateNotify { event: target, .. }
+            // A map, unmap or reparent addressed to its own window is a
+            // StructureNotify record; one the handler addressed to a parent
+            // (a reparent's own copies, t184) belongs to that parent's
+            // SubstructureNotify selectors, as a destroy's parent copy does.
+            XClientEvent::MapNotify { event: target, window, .. }
+            | XClientEvent::UnmapNotify { event: target, window, .. }
+            | XClientEvent::ReparentNotify { event: target, window, .. } => Some((
+                index,
+                target,
+                if target == window {
+                    STRUCTURE_NOTIFY_MASK
+                } else {
+                    SUBSTRUCTURE_NOTIFY_MASK
+                },
+                *event,
+            )),
+            XClientEvent::CirculateNotify { event: target, .. }
             | XClientEvent::ConfigureNotify {
                 synthetic: false,
                 event: target,
@@ -196,12 +210,38 @@ fn route_core_lifecycle_events_with_control(
         }
     }
 
+    // A window reparented in this batch had its map and unmap parent copies
+    // produced by the handler, each addressed to the parent it belongs to
+    // (the old one for the unmap, the new one for the remap); nothing is
+    // derived for it here, where only one parent could be named.
+    let reparented = candidates
+        .iter()
+        .filter_map(|(_, _, _, event)| match event {
+            XClientEvent::ReparentNotify {
+                event,
+                window,
+                parent,
+                ..
+            } if event == window => Some((*window, *parent)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let structure_events = candidates
         .iter()
         .filter_map(|(_, _, _, event)| match event {
-            event @ (XClientEvent::MapNotify { window, .. }
-            | XClientEvent::UnmapNotify { window, .. }
-            | XClientEvent::CirculateNotify { window, .. }
+            event @ (XClientEvent::MapNotify {
+                event: target,
+                window,
+                ..
+            }
+            | XClientEvent::UnmapNotify {
+                event: target,
+                window,
+                ..
+            }) if target == window && !reparented.iter().any(|(reparented, _)| reparented == window) => {
+                Some((*window, *event))
+            }
+            event @ (XClientEvent::CirculateNotify { window, .. }
             | XClientEvent::DestroyNotify { window, .. }) => Some((*window, *event)),
             event @ XClientEvent::ConfigureNotify {
                 synthetic: false,
@@ -258,6 +298,13 @@ fn route_core_lifecycle_events_with_control(
             }
         }
     }
+    // The routing's parent map follows a reparent once its notices are out,
+    // so a later hierarchy event on the window finds the new parent (t184).
+    for (window, parent) in reparented {
+        routing.update_window_parent(window, parent).map_err(|error| {
+            X11SetupSocketError::new(format!("failed to record an X11 reparent: {error}"))
+        })?;
+    }
     Ok(())
 }
 
@@ -273,14 +320,38 @@ fn filter_local_core_lifecycle_events(
     const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
 
+    let reparented = output
+        .outputs
+        .iter()
+        .filter_map(|output| match output {
+            crate::XClientOutput::Event(XClientEvent::ReparentNotify { event, window, .. })
+                if event == window =>
+            {
+                Some(*window)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let structure_events = output
         .outputs
         .iter()
         .filter_map(|output| match output {
+            // As in the routed pass: a reparent's map and unmap copies are
+            // the handler's, addressed to the parent each belongs to.
             crate::XClientOutput::Event(
-                event @ (XClientEvent::MapNotify { window, .. }
-                | XClientEvent::UnmapNotify { window, .. }
-                | XClientEvent::CirculateNotify { window, .. }),
+                event @ (XClientEvent::MapNotify {
+                    event: target,
+                    window,
+                    ..
+                }
+                | XClientEvent::UnmapNotify {
+                    event: target,
+                    window,
+                    ..
+                }),
+            ) if target == window && !reparented.contains(window) => Some((*window, *event)),
+            crate::XClientOutput::Event(
+                event @ XClientEvent::CirculateNotify { window, .. },
             ) => Some((*window, *event)),
             crate::XClientOutput::Event(
                 event @ XClientEvent::ConfigureNotify {
@@ -301,9 +372,17 @@ fn filter_local_core_lifecycle_events(
             XClientEvent::CreateNotify { parent, .. } => {
                 selections.selects(parent, SUBSTRUCTURE_NOTIFY_MASK)
             }
-            XClientEvent::MapNotify { event: target, .. }
-            | XClientEvent::UnmapNotify { event: target, .. }
-            | XClientEvent::CirculateNotify { event: target, .. }
+            XClientEvent::MapNotify { event: target, window, .. }
+            | XClientEvent::UnmapNotify { event: target, window, .. }
+            | XClientEvent::ReparentNotify { event: target, window, .. } => selections.selects(
+                target,
+                if target == window {
+                    STRUCTURE_NOTIFY_MASK
+                } else {
+                    SUBSTRUCTURE_NOTIFY_MASK
+                },
+            ),
+            XClientEvent::CirculateNotify { event: target, .. }
             | XClientEvent::ConfigureNotify {
                 synthetic: false,
                 event: target,
