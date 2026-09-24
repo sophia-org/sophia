@@ -3,7 +3,7 @@
 // WHAT THESE PROVE. Every colormap request is framed as the protocol frames
 // it, so a request one unit long or short is BadLength before it is
 // anything else; CopyColormapAndFree makes a new colormap on the source's
-// visual (a static visual has no allocations to move) and refuses a reused
+// visual (the source has no allocations in this fixture) and refuses a reused
 // or foreign id as BadIDChoice; ListInstalledColormaps replies the one
 // installed colormap, the default. Before t169 one shared minimum length
 // let the long and short forms through to the semantic answer, and both
@@ -108,7 +108,7 @@ mod colormap_static {
             expect_error(byte_order, &read_x_record(&mut client), BAD_LENGTH, 86, "AllocColorCells short");
             // Framed right, the static answers stand: cells and planes
             // cannot be allocated, read-only cells cannot be stored into,
-            // and freeing what was never allocated is not an error.
+            // and freeing what was never allocated is BadAccess.
             // One colour and one plane: both halves of the word are one, so
             // the count is not zero in either byte order.
             client.write_all(&request(byte_order, 86, 0, &[default, 0x0001_0001])).unwrap();
@@ -116,9 +116,10 @@ mod colormap_static {
             client.write_all(&request(byte_order, 89, 0, &[default, 0, 0, 0])).unwrap();
             expect_error(byte_order, &read_x_record(&mut client), BAD_ACCESS, 89, "StoreColors");
             client.write_all(&request(byte_order, 88, 0, &[default, 0, 1])).unwrap();
+            expect_error(byte_order, &read_x_record(&mut client), BAD_ACCESS, 88, "unallocated color");
             client.write_all(&request(byte_order, 43, 0, &[])).unwrap();
             let record = read_x_record(&mut client);
-            assert_eq!(record[0], 1, "{byte_order:?}: FreeColors answered nothing; GetInputFocus replied");
+            assert_eq!(record[0], 1, "{byte_order:?}: GetInputFocus replied after the error");
             drop(client);
             server.join().unwrap();
             let _ = std::fs::remove_file(&socket_path);

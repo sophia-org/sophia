@@ -272,8 +272,12 @@ pub enum XWireRequest {
         /// allocate. Decoded here, answered after the colormap's own check.
         invalid_value: Option<u32>,
     },
-    /// A new colormap on the source's visual: a static visual has no
-    /// allocations to move, so the copy is the creation.
+    FreeColors {
+        colormap: XResourceId,
+        plane_mask: u32,
+        pixels: Vec<u32>,
+    },
+    /// A new colormap on the source's visual, taking this client's allocations.
     CopyColormapAndFree {
         colormap: XResourceId,
         source: XResourceId,

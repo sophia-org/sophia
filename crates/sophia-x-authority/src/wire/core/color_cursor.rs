@@ -1,3 +1,16 @@
+fn decode_free_colors(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_FREE_COLORS, X_FREE_COLORS_REQ_LEN, bytes.len())?;
+    require_item_multiple(X_FREE_COLORS, X_FREE_COLORS_REQ_LEN, 4, bytes.len())?;
+    Ok(XWireRequest::FreeColors {
+        colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        plane_mask: context.byte_order.u32(&bytes[8..12]),
+        pixels: bytes[12..].chunks_exact(4).map(|pixel| context.byte_order.u32(pixel)).collect(),
+    })
+}
+
 fn decode_query_colors(
     context: XWireClientContext,
     bytes: &[u8],

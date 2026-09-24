@@ -477,6 +477,7 @@ fn release_x11_client_lease_with_control(
         .runtime
         .lock()
         .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?;
+    runtime.release_client_colors(namespace, lease.client.raw());
     let release = runtime
         .release_client_resource_range_with_save_set(namespace, lease.resource_id_range, save_set)
         .map_err(|error| {

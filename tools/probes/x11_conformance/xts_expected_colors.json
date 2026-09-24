@@ -259,13 +259,11 @@
     "case": "/Xlib7/XFreeColors",
     "purpose": 6,
     "expected": "FAIL",
-    "reason": "colour allocations are not tracked per client, so freeing an entry the client never allocated succeeds; Xorg answers BadAccess (which XTS also calls wrong for purposes 6 and 9); t212"
+    "reason": "the suite expects BadValue when freeing a duplicate allocation and for all-one pixels on ARGB; dix instead reports BadAccess for missing component references and permits ARGB alpha bits; Sophia now agrees with dix (t212)"
   },
   {
     "case": "/Xlib7/XFreeColors",
-    "purpose": 7,
-    "expected": "FAIL",
-    "reason": "colour allocations are not tracked per client, so freeing an entry the client never allocated succeeds; Xorg answers BadAccess (which XTS also calls wrong for purposes 6 and 9); t212"
+    "purpose": 7
   },
   {
     "case": "/Xlib7/XFreeColors",
@@ -275,7 +273,7 @@
     "case": "/Xlib7/XFreeColors",
     "purpose": 9,
     "expected": "FAIL",
-    "reason": "colour allocations are not tracked per client, so freeing an entry the client never allocated succeeds; Xorg answers BadAccess (which XTS also calls wrong for purposes 6 and 9); t212"
+    "reason": "the suite expects BadValue for its mixed invalid-pixel list, but dix reports BadAccess when an unallocated component is encountered after an invalid pixel; Sophia now follows the same per-channel error order (t212)"
   },
   {
     "case": "/Xlib7/XParseColor",

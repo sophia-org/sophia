@@ -2054,9 +2054,8 @@ fn a_true_color_server_answers_the_colormap_family_rather_than_refusing_it() {
 
     // Each request framed as the protocol frames it (t169). Read-write
     // allocation has no cells to give; storing into a read-only colormap is
-    // denied; installing and freeing are accepted no-ops; a copy is a new
-    // colormap on the source's visual, since a static visual has no
-    // allocations to move.
+    // denied; installing is a no-op; freeing unallocated cells is denied.
+    // The copy starts empty because this client has no allocations yet.
     let order = XByteOrder::LittleEndian;
     let body = |words: &[u32]| {
         let mut out = Vec::new();
@@ -2081,7 +2080,7 @@ fn a_true_color_server_answers_the_colormap_family_rather_than_refusing_it() {
         (90, named, Some(XErrorCode::BadAccess)),
         (81, body(&[]), None),
         (82, body(&[]), None),
-        (88, body(&[0, 1]), None),
+        (88, body(&[0, 1]), Some(XErrorCode::BadAccess)),
     ];
     for (index, (opcode, request_body, expected)) in cases.into_iter().enumerate() {
         let sequence = u16::try_from(index).unwrap() + 3;

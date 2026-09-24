@@ -39,6 +39,7 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::CreateColormap { .. }
             | XWireRequest::FreeColormap { .. }
             | XWireRequest::ColormapRequest { .. }
+            | XWireRequest::FreeColors { .. }
             | XWireRequest::CopyColormapAndFree { .. }
             | XWireRequest::ListInstalledColormaps { .. }
             | XWireRequest::AllocNamedColor { .. }
@@ -730,9 +731,8 @@ fn dispatch_core_input_discovery_request(
                 // They are decoded at all so the answer is the protocol's own
                 // error: a client meeting BadRequest may treat it as fatal,
                 // and these arrive on ordinary teardown paths.
-                // A static visual has no allocations to move: the copy is a
-                // new colormap on the source's visual, and the source keeps
-                // what it never had. The id is the client's to choose once.
+                // The copy keeps the visual and moves only this client's
+                // component references; other clients keep theirs.
                 XWireRequest::CopyColormapAndFree { colormap, source } => {
                     let output = match runtime.colormap_visual(context.namespace, source) {
                         Err(_) => Some(color_error(
@@ -746,7 +746,10 @@ fn dispatch_core_input_discovery_request(
                             visual,
                             1,
                         ) {
-                            Ok(()) => None,
+                            Ok(()) => {
+                                runtime.copy_color_allocations(context.namespace, context.client_id, source, colormap);
+                                None
+                            },
                             Err(XColormapError::DuplicateId) => Some(color_error(
                                 context,
                                 XErrorCode::BadIdChoice,
@@ -794,6 +797,14 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
+                XWireRequest::FreeColors { colormap, plane_mask, ref pixels } => {
+                    let error = runtime.free_colors(context.namespace, context.client_id, colormap, plane_mask, pixels);
+                    XDispatchResult {
+                        response: None,
+                        outputs: error.map(|(code, value)| color_error(context, code, value)).into_iter().collect(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
                 XWireRequest::ColormapRequest {
                     kind,
                     colormap,
@@ -818,12 +829,9 @@ fn dispatch_core_input_discovery_request(
                             | crate::XColormapRequestKind::StoreNamedColor => {
                                 vec![color_error(context, XErrorCode::BadAccess, 0)]
                             }
-                            // Installing is a no-op on a visual whose colormap
-                            // is always installed, and freeing colours that
-                            // were never allocated is not an error.
+                            // Install/uninstall remain the fixed-map policy.
                             crate::XColormapRequestKind::Install
-                            | crate::XColormapRequestKind::Uninstall
-                            | crate::XColormapRequestKind::FreeColors => Vec::new(),
+                            | crate::XColormapRequestKind::Uninstall => Vec::new(),
                         }
                     };
                     XDispatchResult {
@@ -877,6 +885,9 @@ fn dispatch_core_input_discovery_request(
                                 let visual = x_true_color_visual(visual_id)
                                     .expect("registered colormaps must name advertised visuals");
                                 let screen = visual.screen_color(exact);
+                                if !lookup {
+                                    runtime.allocate_color(context.namespace, context.client_id, colormap, visual.pixel(screen));
+                                }
                                 XClientOutput::Reply(if lookup {
                                     XClientReply::LookupColor {
                                         sequence: context.sequence, exact, screen,
@@ -912,6 +923,7 @@ fn dispatch_core_input_discovery_request(
                             let visual = x_true_color_visual(visual_id)
                                 .expect("registered colormaps must name advertised visuals");
                             let screen = visual.screen_color(XColorRgb16 { red, green, blue });
+                            runtime.allocate_color(context.namespace, context.client_id, colormap, visual.pixel(screen));
                             XClientOutput::Reply(XClientReply::AllocColor {
                                 sequence: context.sequence,
                                 pixel: visual.pixel(screen),

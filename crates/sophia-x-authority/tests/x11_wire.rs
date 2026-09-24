@@ -64,6 +64,7 @@ include!("x11_wire/big_requests.rs");
 include!("x11_wire/send_event_marking.rs");
 include!("x11_wire/value_mask_bits.rs");
 include!("x11_wire/colormap_static.rs");
+include!("x11_wire/color_allocations.rs");
 include!("x11_wire/server_controls.rs");
 include!("x11_wire/hierarchy_requests.rs");
 include!("x11_wire/client_lifetime.rs");
