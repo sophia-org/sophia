@@ -22,6 +22,7 @@ mod hierarchy_requests {
     const BAD_VALUE: u8 = 2;
     const BAD_MATCH: u8 = 8;
     const UNMAP_NOTIFY: u8 = 18;
+    const CONFIGURE_NOTIFY: u8 = 22;
     const CIRCULATE_NOTIFY: u8 = 26;
     const PROPERTY_NOTIFY: u8 = 28;
 
@@ -148,6 +149,81 @@ mod hierarchy_requests {
             server.join().unwrap();
             let _ = std::fs::remove_file(&socket_path);
         }
+    }
+
+    /// A stacking change alone is a configuration change: XRaiseWindow is
+    /// ConfigureWindow with stack-mode and nothing else, and it owes the
+    /// window's StructureNotify and the parent's SubstructureNotify
+    /// selectors a ConfigureNotify whose above-sibling names the sibling now
+    /// beneath (XTS Xlib11 ConfigureNotify 1-2). A restack that leaves the
+    /// order as it was reports nothing. Red before the fix: only a geometry
+    /// change was reported, and above-sibling was always None.
+    #[test]
+    fn a_restack_alone_is_a_configure_notify_naming_the_sibling_beneath() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (mut client, socket_path, server) = served("restack", byte_order);
+            let parent = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 1;
+            let lower = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 2;
+            let upper = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 3;
+            client.write_all(&create_window_request(byte_order, parent, 0, 0, 200, 200)).unwrap();
+            client.write_all(&map_window_request(byte_order, parent)).unwrap();
+            client.write_all(&create_window_request_with_parent(byte_order, lower, parent, 10, 10, 80, 80)).unwrap();
+            client.write_all(&create_window_request_with_parent(byte_order, upper, parent, 40, 40, 80, 80)).unwrap();
+            client.write_all(&map_window_request(byte_order, lower)).unwrap();
+            client.write_all(&map_window_request(byte_order, upper)).unwrap();
+            // StructureNotify on the window, SubstructureNotify on the parent.
+            client.write_all(&change_window_event_mask_request(byte_order, lower, 1 << 17)).unwrap();
+            client.write_all(&change_window_event_mask_request(byte_order, parent, 1 << 19)).unwrap();
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            let _ = events_until_reply(byte_order, &mut client);
+
+            // Raise `lower` to the top: stack-mode Above, no sibling.
+            client.write_all(&configure_stack_mode_request(byte_order, lower, 0)).unwrap();
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            let events = events_until_reply(byte_order, &mut client);
+            let configured = events.iter().filter(|e| e[0] & 0x7f == CONFIGURE_NOTIFY).collect::<Vec<_>>();
+            assert_eq!(configured.len(), 2, "{byte_order:?}: the window's copy and the parent's: {events:?}");
+            for event in &configured {
+                assert_eq!(read_u32(byte_order, &event[8..12]), lower, "{byte_order:?}: the raised window");
+                assert_eq!(read_u32(byte_order, &event[12..16]), upper, "{byte_order:?}: above-sibling is the sibling now beneath");
+                assert_eq!((read_u16(byte_order, &event[16..18]), read_u16(byte_order, &event[18..20])), (10, 10), "{byte_order:?}: geometry unchanged");
+            }
+            let addressed = configured.iter().map(|e| read_u32(byte_order, &e[4..8])).collect::<Vec<_>>();
+            assert!(addressed.contains(&lower) && addressed.contains(&parent), "{byte_order:?}: {addressed:?}");
+            client.write_all(&resource_request(byte_order, 15, parent)).unwrap();
+            let reply = read_x_reply(&mut client, byte_order);
+            let count = usize::from(read_u16(byte_order, &reply[16..18]));
+            let children = (0..count).map(|i| read_u32(byte_order, &reply[32 + 4 * i..36 + 4 * i])).collect::<Vec<_>>();
+            assert_eq!(children, vec![upper, lower], "{byte_order:?}: bottom to top after the raise");
+
+            // Raising the top window again changes nothing and reports nothing.
+            client.write_all(&configure_stack_mode_request(byte_order, lower, 0)).unwrap();
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            assert!(events_until_reply(byte_order, &mut client).is_empty(), "{byte_order:?}: an unchanged order is not reported");
+
+            // Lowering it to the bottom: above-sibling None.
+            client.write_all(&configure_stack_mode_request(byte_order, lower, 1)).unwrap();
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            let events = events_until_reply(byte_order, &mut client);
+            let configured = events.iter().filter(|e| e[0] & 0x7f == CONFIGURE_NOTIFY).collect::<Vec<_>>();
+            assert_eq!(configured.len(), 2, "{byte_order:?}: {events:?}");
+            assert!(configured.iter().all(|e| read_u32(byte_order, &e[12..16]) == 0), "{byte_order:?}: nothing beneath the bottom");
+
+            drop(client);
+            server.join().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
+    /// ConfigureWindow with stack-mode alone (value-mask bit 6).
+    fn configure_stack_mode_request(byte_order: XByteOrder, window: u32, stack_mode: u32) -> Vec<u8> {
+        let mut out = vec![12, 0];
+        push_u16(&mut out, byte_order, 4);
+        push_u32(&mut out, byte_order, window);
+        push_u16(&mut out, byte_order, 1 << 6);
+        push_u16(&mut out, byte_order, 0);
+        push_u32(&mut out, byte_order, stack_mode);
+        out
     }
 
     #[test]
