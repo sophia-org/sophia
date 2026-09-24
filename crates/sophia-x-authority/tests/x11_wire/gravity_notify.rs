@@ -90,33 +90,41 @@ mod gravity_notify {
             owner.write_all(&request(byte_order, 2, 0, &[child, 1 << 5, 9])).unwrap();
             assert!(sync(byte_order, &mut owner).is_empty());
             watcher.write_all(&change_window_event_mask_request(byte_order, child, STRUCTURE_NOTIFY)).unwrap();
-            watcher.write_all(&change_window_event_mask_request(byte_order, parent, SUBSTRUCTURE_NOTIFY)).unwrap();
+            watcher
+                .write_all(&change_window_event_mask_request(byte_order, parent, STRUCTURE_NOTIFY | SUBSTRUCTURE_NOTIFY))
+                .unwrap();
+            watcher.write_all(&change_window_event_mask_request(byte_order, 0x20, SUBSTRUCTURE_NOTIFY)).unwrap();
             assert!(sync(byte_order, &mut watcher).is_empty());
 
-            // Grow the parent by 6 by 4: the child moves by the same.
+            // Grow the parent by 6 by 4: the child moves by the same. dix
+            // delivers the parent's ConfigureNotify and its copy to the root
+            // before either copy of the child's GravityNotify.
             owner.write_all(&configure_window_request(byte_order, parent, 0x4 | 0x8, &[46, 44])).unwrap();
             sync(byte_order, &mut owner);
-            let mut seen = Vec::new();
-            while seen.len() < 2 {
-                let record = read_x_record(&mut watcher);
-                assert!(record[0] >= 2, "{byte_order:?}: {record:?}");
-                if record[0] == CONFIGURE_NOTIFY {
-                    assert!(seen.is_empty(), "{byte_order:?}: the ConfigureNotify comes first");
-                    continue;
-                }
-                assert_eq!(record[0], GRAVITY_NOTIFY, "{byte_order:?}: {record:?}");
-                assert_eq!(read_u32(byte_order, &record[8..12]), child, "{byte_order:?}: the window");
-                assert_eq!(
-                    (read_u16(byte_order, &record[12..14]) as i16, read_u16(byte_order, &record[14..16]) as i16),
-                    (16, 14),
-                    "{byte_order:?}: where it is now"
-                );
-                seen.push(read_u32(byte_order, &record[4..8]));
-            }
-            seen.sort_unstable();
-            let mut expected = vec![parent, child];
-            expected.sort_unstable();
-            assert_eq!(seen, expected, "{byte_order:?}: one copy to each side");
+            let seen: Vec<(u8, u32, u32)> = (0..4)
+                .map(|_| {
+                    let record = read_x_record(&mut watcher);
+                    assert!(record[0] >= 2, "{byte_order:?}: {record:?}");
+                    if record[0] == GRAVITY_NOTIFY {
+                        assert_eq!(
+                            (read_u16(byte_order, &record[12..14]) as i16, read_u16(byte_order, &record[14..16]) as i16),
+                            (16, 14),
+                            "{byte_order:?}: where the child is now"
+                        );
+                    }
+                    (record[0], read_u32(byte_order, &record[4..8]), read_u32(byte_order, &record[8..12]))
+                })
+                .collect();
+            assert_eq!(
+                seen,
+                vec![
+                    (CONFIGURE_NOTIFY, parent, parent),
+                    (CONFIGURE_NOTIFY, 0x20, parent),
+                    (GRAVITY_NOTIFY, child, child),
+                    (GRAVITY_NOTIFY, parent, child),
+                ],
+                "{byte_order:?}: each copy follows its event"
+            );
             drop((owner, watcher));
             server.join().unwrap().unwrap();
             let _ = std::fs::remove_file(&socket_path);
