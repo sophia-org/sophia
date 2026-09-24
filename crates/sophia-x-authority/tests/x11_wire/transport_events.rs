@@ -26,7 +26,7 @@ fn x11_request_reader_receives_bounded_scm_rights_with_the_request_header() {
     .unwrap();
     assert_eq!(sent, request.len());
 
-    let received = read_x11_core_request(&mut receiver, XByteOrder::LittleEndian)
+    let received = read_x11_core_request(&mut receiver, XByteOrder::LittleEndian, false)
         .unwrap()
         .unwrap();
     assert_eq!(received.major_opcode, X_DRI3_MAJOR_OPCODE);

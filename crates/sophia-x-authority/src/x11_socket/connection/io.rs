@@ -130,17 +130,42 @@ pub fn write_x11_socket_output_record(
     output.admit(bytes, fds)
 }
 
+/// How a request was framed on the wire, which decides what the dispatcher
+/// owes it before any decoding.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum X11RequestFraming {
+    /// Framed by its own length field: the core encoding, or a zero length
+    /// field on a connection that never enabled BIG-REQUESTS, which the
+    /// core protocol reads as a four-byte request.
+    Ordinary,
+    /// A BIG-REQUESTS extended frame within the maximum, handed on as the
+    /// ordinary request it carries: the 32-bit length is removed and the
+    /// length field rewritten, so no decoder needs to know.
+    Extended,
+    /// An extended frame beyond the maximum the connection accepts, or
+    /// shorter than its own header. Its body was read to the end and
+    /// dropped, and the request is owed one BadLength, as the reference
+    /// server answers it.
+    Refused { units: u32 },
+}
+
 #[cfg(unix)]
 #[derive(Debug)]
 pub struct X11ReceivedCoreRequest {
     pub major_opcode: u8,
     pub bytes: Vec<u8>,
     pub fds: Vec<OwnedFd>,
+    pub framing: X11RequestFraming,
 }
 
+/// Reads one request. `big_requests` is whether this connection has enabled
+/// BIG-REQUESTS: only then does a zero length field mean that a 32-bit
+/// length follows it.
 pub fn read_x11_core_request(
     stream: &mut UnixStream,
     byte_order: crate::XByteOrder,
+    big_requests: bool,
 ) -> Result<Option<X11ReceivedCoreRequest>, X11SetupSocketError> {
     let mut header = [0; 4];
     let mut ancillary_space = [MaybeUninit::uninit();
@@ -213,10 +238,14 @@ pub fn read_x11_core_request(
 
     let length = usize::from(byte_order.u16(&header[2..4])) * 4;
     if length < 4 {
+        if big_requests {
+            return read_x11_extended_request(stream, byte_order, header, fds);
+        }
         return Ok(Some(X11ReceivedCoreRequest {
             major_opcode: header[0],
             bytes: header.to_vec(),
             fds,
+            framing: X11RequestFraming::Ordinary,
         }));
     }
     // The setup reply advertises the full core u16 request-length range. Keep
@@ -245,5 +274,86 @@ pub fn read_x11_core_request(
         major_opcode: header[0],
         bytes: request,
         fds,
+        framing: X11RequestFraming::Ordinary,
+    }))
+}
+
+/// The rest of a BIG-REQUESTS extended frame, after its zero length field:
+/// the length in units as a 32-bit field, then the body.
+///
+/// The maximum is the one the setup advertises and BigReqEnable repeats, so
+/// a frame within it always fits the ordinary length field and is handed on
+/// as the ordinary request. A frame beyond it is read to its end and dropped
+/// -- the reference server ignores the bytes the same way rather than let a
+/// client's declared length end the connection -- and answered once. Reading
+/// stays blocking and a peer that leaves mid-frame is an ordinary end of
+/// stream, as for any other request.
+#[cfg(unix)]
+fn read_x11_extended_request(
+    stream: &mut UnixStream,
+    byte_order: crate::XByteOrder,
+    header: [u8; 4],
+    fds: Vec<OwnedFd>,
+) -> Result<Option<X11ReceivedCoreRequest>, X11SetupSocketError> {
+    let mut extended = [0; 4];
+    match stream.read_exact(&mut extended) {
+        Ok(()) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::UnexpectedEof
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::TimedOut
+                    | ErrorKind::WouldBlock
+            ) =>
+        {
+            return Ok(None);
+        }
+        Err(error) => {
+            return Err(X11SetupSocketError::new(format!(
+                "failed to read X11 extended request length: {error}"
+            )));
+        }
+    }
+    let units = byte_order.u32(&extended);
+    let max_units = u32::from(crate::X_SETUP_DEFAULT_MAX_REQUEST_UNITS);
+    // Two units is the extended header itself; fewer names no body at all.
+    if !(2..=max_units).contains(&units) {
+        let mut remaining = u64::from(units).saturating_mul(4).saturating_sub(8);
+        let mut scratch = [0u8; 64 << 10];
+        while remaining > 0 {
+            let take = usize::try_from(remaining.min(scratch.len() as u64)).unwrap_or(scratch.len());
+            stream
+                .read_exact(&mut scratch[..take])
+                .map_err(|error| setup_read_failure("refused request payload", &error))?;
+            remaining -= take as u64;
+        }
+        return Ok(Some(X11ReceivedCoreRequest {
+            major_opcode: header[0],
+            bytes: header.to_vec(),
+            fds,
+            framing: X11RequestFraming::Refused { units },
+        }));
+    }
+    let length = units as usize * 4;
+    let mut request = Vec::with_capacity(length - 4);
+    request.extend_from_slice(&header);
+    // The request's length once the 32-bit field is gone: one unit fewer
+    // than the frame's, which is what the reference server's req_len
+    // becomes after it moves the header. It fits the ordinary field.
+    let field = u16::try_from(units - 1).expect("bounded by the u16 maximum above");
+    request[2..4].copy_from_slice(&match byte_order {
+        crate::XByteOrder::LittleEndian => field.to_le_bytes(),
+        crate::XByteOrder::BigEndian => field.to_be_bytes(),
+    });
+    request.resize(length - 4, 0);
+    stream
+        .read_exact(&mut request[4..])
+        .map_err(|error| setup_read_failure("request payload", &error))?;
+    Ok(Some(X11ReceivedCoreRequest {
+        major_opcode: header[0],
+        bytes: request,
+        fds,
+        framing: X11RequestFraming::Extended,
     }))
 }

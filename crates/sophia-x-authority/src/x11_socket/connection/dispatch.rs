@@ -926,9 +926,24 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         // never wait behind another's server grab, and an eventfd each would
         // be a descriptor per client for a case that rarely arises.
         let mut grab_wait_notifier: Option<ConnectionNotifier> = None;
-        while let Some(received) = read_x11_core_request(stream, setup.byte_order)? {
+        // BIG-REQUESTS is enabled per connection, by the request itself:
+        // from the one that asked, a zero length field means a 32-bit
+        // length follows. Set when the request is read rather than when
+        // its reply leaves, which is the earlier of the two and the one
+        // the reader needs; a client cannot use the encoding before the
+        // reply anyway.
+        let mut big_requests_enabled = false;
+        while let Some(received) =
+            read_x11_core_request(stream, setup.byte_order, big_requests_enabled)?
+        {
             let major_opcode = received.major_opcode;
             let request = received.bytes;
+            let framing = received.framing;
+            if major_opcode == crate::X_BIG_REQUESTS_MAJOR_OPCODE
+                && request.get(1) == Some(&crate::X_BIG_REQUESTS_ENABLE_MINOR_OPCODE)
+            {
+                big_requests_enabled = true;
+            }
             let request_minor_code = if major_opcode >= 128 {
                 u16::from(request[1])
             } else {
@@ -1156,15 +1171,27 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 surface_output_reservations,
                 surface_routes,
                 present_configure,
-            ) = match decode_x11_core_request(
-                XWireClientContext {
-                    byte_order: setup.byte_order,
-                    namespace,
-                    transaction,
-                    resource_id_range: Some(resource_id_range),
-                },
-                &request,
-            ) {
+            ) = match match framing {
+                // Read to its end and dropped by the reader: nothing here
+                // decodes it, and what it is owed is decided by its frame.
+                X11RequestFraming::Refused { units } => {
+                    Err(crate::XWireParseError::BeyondMaximumLength {
+                        opcode: major_opcode,
+                        units,
+                    })
+                }
+                X11RequestFraming::Ordinary | X11RequestFraming::Extended => {
+                    decode_x11_core_request(
+                        XWireClientContext {
+                            byte_order: setup.byte_order,
+                            namespace,
+                            transaction,
+                            resource_id_range: Some(resource_id_range),
+                        },
+                        &request,
+                    )
+                }
+            } {
                 Ok(mut request) => {
                     fake_input = XTestFakeInputRequest::from_request(&request);
                     if let crate::XWireRequest::XTestGrabControl { impervious } = &request {

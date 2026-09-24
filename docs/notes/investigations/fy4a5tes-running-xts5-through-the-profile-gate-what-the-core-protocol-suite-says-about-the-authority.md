@@ -99,6 +99,23 @@ at all and never send the extended frame; the exposure is a client of the
 suite's lineage, or a hand-rolled one, and the inconsistency of advertising
 what is not framed.
 
+**The fourth run, with the frame read**
+([t174](3lf04ev3-big-requests-is-advertised-but-never-framed-an-extended-length-request-is-read-as-thousands-of-small-ones.md),
+`.artifacts/xts-xproto/run-4-framed/`): the 110 pass and nothing else
+moves. The gate read the run as FAIL first, as designed -- 110 declared
+purposes had started passing -- and the declarations were removed with
+the repair.
+
+| | purposes |
+| --- | --- |
+| manifested | 389 |
+| started and completed | 389 |
+| PASS | 287 |
+| FAIL | 55 |
+| UNRESOLVED | 34 |
+| UNTESTED | 11 |
+| UNSUPPORTED | 2 |
+
 **`selected-core` through the gate**, on candidate `0b4b7415`
 (`.artifacts/x11-profile-0b4b7415-selected-core/`): the first run in which
 `XTS5` read anything but BLOCKED. 99 purposes started and completed, 76
@@ -132,10 +149,9 @@ row.
 The gate runs XTS now, and `XTS5 BLOCKED` means what it says: the checkout
 or the manifest was not named. Two scenarios are enumerated and committed
 with their declarations: `selected-core` reads PASS with 76 passed and 23
-declared, all the suite's own; `xproto` reads PASS with 177 passed and 212
-declared, 165 of them FAIL and 34 UNRESOLVED that are the authority's and
-carry their row (t166 to t169, and t174 for the rejoined `TOO_LONG`
-purposes) in the reason. A PASS here means the suite
+declared, all the suite's own; `xproto` reads PASS with 287 passed and 102
+declared, 55 of them FAIL and 34 UNRESOLVED that are the authority's and
+carry their row (t166 to t169) in the reason. A PASS here means the suite
 said exactly what the manifest says it would, no more; the declared count
 is the debt, in the verdict line where it cannot be missed. `~/src/xts` is
 the operator's checkout; the invocation is in `docs/validation.md`.
@@ -156,8 +172,8 @@ against the fixture host.
 - [x] Rejoin the 120 `TOO_LONG` purposes once t165 lands: rejoined in the
       third run, none hangs, 110 declared against t174 and 10 against the
       reasons their cases already carry.
-- [ ] As t174 lands, the 110 `TOO_LONG` declarations turn stale and the
-      gate says so; remove them with the repair.
+- [x] As t174 landed, the 110 `TOO_LONG` declarations turned stale and the
+      gate said so; removed with the repair, fourth run above.
 - [ ] As t166 to t169 land, their declarations turn stale and the gate says
       so; remove each with its repair.
 

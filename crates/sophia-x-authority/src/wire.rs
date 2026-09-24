@@ -1355,6 +1355,12 @@ pub enum XWireParseError {
         actual: usize,
     },
     TrailingBytes(usize),
+    /// A BIG-REQUESTS frame longer than the maximum the connection accepts,
+    /// or shorter than its own header; its body was dropped unread.
+    BeyondMaximumLength {
+        opcode: u8,
+        units: u32,
+    },
     UnknownOpcode(u8),
     InvalidPropertyMode(u8),
     InvalidPropertyFormat(u8),
