@@ -229,9 +229,7 @@
   },
   {
     "case": "/Xproto/pChangeWindowAttributes",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "t167: a set unused value-mask bit must be BadValue; accepted silently"
+    "purpose": 4
   },
   {
     "case": "/Xproto/pCirculateWindow",
@@ -293,9 +291,7 @@
   },
   {
     "case": "/Xproto/pConfigureWindow",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "t167: a set unused value-mask bit must be BadValue; accepted silently"
+    "purpose": 4
   },
   {
     "case": "/Xproto/pConvertSelection",
@@ -439,9 +435,7 @@
   },
   {
     "case": "/Xproto/pCreateGC",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t167: a set unused value-mask bit must be BadValue; answered BadLength because the extra value changes the length before the mask is read"
+    "purpose": 6
   },
   {
     "case": "/Xproto/pCreateGlyphCursor",
@@ -515,9 +509,7 @@
   },
   {
     "case": "/Xproto/pCreateWindow",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t167: a set unused value-mask bit must be BadValue; accepted silently"
+    "purpose": 6
   },
   {
     "case": "/Xproto/pDeleteProperty",
