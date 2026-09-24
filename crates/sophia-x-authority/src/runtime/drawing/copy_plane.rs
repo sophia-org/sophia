@@ -19,7 +19,9 @@ impl XAuthorityRuntime {
         if let Err(error) = self.validate_drawable_access(namespace, source) {
             return XAuthorityResponsePacket::rejected(transaction, error);
         }
-        let (size, window_generation) = match self.core_draw_target(namespace, destination) {
+        let source = self.draw_key(namespace, source);
+        let (destination, size, window_generation) =
+            match self.draw_target(namespace, destination) {
             Ok(target) => target,
             Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };

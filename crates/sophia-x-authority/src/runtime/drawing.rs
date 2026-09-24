@@ -286,26 +286,55 @@ impl XAuthorityRuntime {
         Ok(())
     }
 
-    fn core_draw_target(
+    /// Where a core draw lands: the CPU buffer's key, its size, and the
+    /// generation of the window to present afterwards, if any.
+    ///
+    /// The root is every namespace's parent and the Engine's to present, so
+    /// a client drawing on it draws into a root private to its namespace:
+    /// a buffer the size of the screen, read back by GetImage and never
+    /// presented (t181).
+    pub(crate) fn draw_target(
         &self,
         namespace: NamespaceId,
         drawable: crate::XResourceId,
-    ) -> Result<(Size, Option<u64>), XAuthorityRuntimeError> {
+    ) -> Result<(crate::XResourceId, Size, Option<u64>), XAuthorityRuntimeError> {
         self.validate_drawable_access(namespace, drawable)?;
+        if is_root(drawable) {
+            let size = self
+                .output_topology()
+                .root_size()
+                .map_err(|_| XAuthorityRuntimeError::UnknownResource)?;
+            return Ok((private_root_key(namespace), size, None));
+        }
         if let Ok(size) = self.pixmap_size(namespace, drawable) {
-            return Ok((size, None));
+            return Ok((drawable, size, None));
         }
         let record = self
             .windows
             .get(drawable)
             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
         Ok((
+            drawable,
             Size {
                 width: record.geometry.width,
                 height: record.geometry.height,
             },
             Some(record.generation),
         ))
+    }
+
+    /// The CPU buffer key a drawable's pixels live under: its own, or for the
+    /// root, the namespace's private root.
+    pub(crate) fn draw_key(
+        &self,
+        namespace: NamespaceId,
+        drawable: crate::XResourceId,
+    ) -> crate::XResourceId {
+        if is_root(drawable) {
+            private_root_key(namespace)
+        } else {
+            drawable
+        }
     }
 
     pub fn apply_core_draw(
@@ -341,7 +370,7 @@ impl XAuthorityRuntime {
         let Some(bounds) = bounding_rect(spans) else {
             return XAuthorityResponsePacket::accepted(transaction);
         };
-        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+        let (window, size, window_generation) = match self.draw_target(namespace, window) {
             Ok(target) => target,
             Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };
@@ -378,7 +407,7 @@ impl XAuthorityRuntime {
         damage: Region,
         gc: &XGraphicsContextValues,
     ) -> XAuthorityResponsePacket {
-        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+        let (window, size, window_generation) = match self.draw_target(namespace, window) {
             Ok(target) => target,
             Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };
@@ -422,7 +451,7 @@ impl XAuthorityRuntime {
         segments: &[(XPoint, XPoint)],
         gc: &XGraphicsContextValues,
     ) -> XAuthorityResponsePacket {
-        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+        let (window, size, window_generation) = match self.draw_target(namespace, window) {
             Ok(target) => target,
             Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };
@@ -471,7 +500,7 @@ impl XAuthorityRuntime {
         arcs: &[crate::XArc],
         gc: &XGraphicsContextValues,
     ) -> XAuthorityResponsePacket {
-        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+        let (window, size, window_generation) = match self.draw_target(namespace, window) {
             Ok(target) => target,
             Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };
@@ -519,7 +548,7 @@ impl XAuthorityRuntime {
         points: &[XPoint],
         gc: &XGraphicsContextValues,
     ) -> XAuthorityResponsePacket {
-        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+        let (window, size, window_generation) = match self.draw_target(namespace, window) {
             Ok(target) => target,
             Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };
@@ -597,7 +626,7 @@ impl XAuthorityRuntime {
         rectangles: &[Rect],
         gc: &XGraphicsContextValues,
     ) -> XAuthorityResponsePacket {
-        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+        let (window, size, window_generation) = match self.draw_target(namespace, window) {
             Ok(target) => target,
             Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };
@@ -640,21 +669,9 @@ impl XAuthorityRuntime {
         if draws.iter().all(|draw| draw.text.is_empty()) {
             return XAuthorityResponsePacket::accepted(transaction);
         }
-        let (size, window_generation) = if let Ok(size) = self.pixmap_size(namespace, drawable) {
-            (size, None)
-        } else if let Some(record) = self.windows.get(drawable) {
-            (
-                Size {
-                    width: record.geometry.width,
-                    height: record.geometry.height,
-                },
-                Some(record.generation),
-            )
-        } else {
-            return XAuthorityResponsePacket::rejected(
-                transaction,
-                XAuthorityRuntimeError::UnknownResource,
-            );
+        let (drawable, size, window_generation) = match self.draw_target(namespace, drawable) {
+            Ok(target) => target,
+            Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
         };
         let mut damage = Region::empty();
         for draw in draws {
@@ -1051,4 +1068,20 @@ fn bounding_rect(spans: &[Rect]) -> Option<Rect> {
         });
     }
     bounds
+}
+
+/// The root window's XID, which every namespace sees.
+fn is_root(drawable: crate::XResourceId) -> bool {
+    drawable.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT)
+}
+
+/// Private roots live above every XID and every retained-backing key: X11
+/// names 32-bit resources, and retained backings count up from 2^32.
+const PRIVATE_ROOT_KEY_BASE: u64 = 1 << 48;
+
+/// The key of a namespace's private root. Created on the first draw, and
+/// kept for the namespace's life, as the root's contents outlive any one
+/// client.
+pub(crate) fn private_root_key(namespace: NamespaceId) -> crate::XResourceId {
+    crate::XResourceId::new(PRIVATE_ROOT_KEY_BASE + namespace.raw(), 1)
 }
