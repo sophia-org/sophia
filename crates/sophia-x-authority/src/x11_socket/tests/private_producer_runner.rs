@@ -53,7 +53,9 @@ fn a_key_through_the_service_before_any_pointer_observation_carries_the_prepared
     let original = delivery_cell(&launched.registry, 97010).expect("the original admitted cell");
     let on_wire = read_event(&mut client, 15);
     let cell = delivery_cell(&launched.registry, 97010);
-    let answer = cell.as_ref().and_then(|cell| cell.answer());
+    // The answer is written after the event; on a loaded machine the write
+    // can trail the wire by a while (t194).
+    let answer = waited_for_value(|| cell.as_ref().and_then(|cell| cell.answer()));
     let registry = launched.registry.clone();
     launched.commands.send(XServerFrontendServiceCommand::StopAndDisconnect).expect("listening");
     let outcome = produced_outcome(launched, "key diagnostic");

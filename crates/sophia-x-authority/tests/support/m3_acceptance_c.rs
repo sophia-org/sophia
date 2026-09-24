@@ -1216,12 +1216,14 @@ fn c_exact_origin() {
             ),
         )
         .expect("its own keeper accepts the very same request");
-    let charged_b_unmoved = store_a.reserved();
-    assert_eq!(
-        charged_b_unmoved,
-        Some(0),
-        "the other origin's store was neither charged nor credited by any of this"
+    // The refusal above reserves and releases on the service's own turn,
+    // which a loaded machine runs late (t194): the store settles at zero.
+    assert!(
+        waited_for(|| store_a.reserved() == Some(0)),
+        "the other origin's store was neither charged nor credited by any of this: {:?}",
+        store_a.reserved()
     );
+    let charged_b_unmoved = store_a.reserved();
 
     // A COLLIDING NUMBER CANNOT REACH THE OTHER ORIGIN'S CUSTODY either.
     let foreign_turn_refusal = {
