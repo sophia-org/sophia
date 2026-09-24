@@ -472,8 +472,9 @@ usage: cargo xtask <command>
 
   check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET
         [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json [--xts-scenario=NAME]]
+        [--x11bench-bin=/X11BENCH --x11bench-expected=/TESTS.json [--x11bench-timeout=SECONDS]]
       Run the X11 conformance profiles through the probe's own entry on the committed
-      source; XTS5 is BLOCKED unless its checkout and selected purposes are supplied.
+      source; XTS5 and x11bench are each BLOCKED unless their checkout and manifest are supplied.
 
   check m6-evidence --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS]
         [--core-report=/PATH/report.json] [--canonical-report=/PATH/report.json]

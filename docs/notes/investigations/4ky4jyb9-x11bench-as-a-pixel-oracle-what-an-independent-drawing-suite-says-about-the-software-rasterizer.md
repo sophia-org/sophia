@@ -90,14 +90,32 @@ geometry and font set.
 
 ## Validation and remaining work
 
-Nothing here is a gate yet. t173 makes it one: references generated in the
-same confined run, on Xvnc at the host's own screen geometry, so both sides
-share the machine's fonts and DPI and no reference image is committed; the
-generator's identity recorded in the report; Xvnc against its own references
-as the negative control; and each non-PASS declared with a reason, as t164 made
-possible for XTS5 manifests. Zero-width arcs are declared device-dependent and
-the three restack tests declared as authority policy. AGENTS.md rule 11 asks
-for the adapter in Rust/xtask; x11bench itself stays an independent C++ client.
+**t173, the gate (2026-09-23).** x11bench is the X11 profile gate's second
+external suite, beside XTS5 (`crates/xtask/src/m3_acceptance/x11bench.rs`,
+invocation in `docs/validation.md`). The gate re-enters itself inside
+bubblewrap (`x11-profile --x11bench-contained`: private `/tmp`, no network,
+no System V IPC, own PID namespace, cleared environment), starts the host and
+Xvnc there, reads both screens from their setup replies with a parser of its
+own and requires them equal, generates the references on Xvnc, runs Xvnc
+against them as the negative control, then runs the host. No reference image
+is committed; both servers share the machine's fonts and DPI.
+`x11bench_expected.json` names all sixty tests and declares fourteen with
+reasons: four zero-width arcs, three client restacks, clip_mask's rim, and
+the t171 and t172 tests. The adapter is Rust, per AGENTS.md rule 11.
+
+Evidence: on `195fa3b6`, `x11 profiles: PASS; xtest PASS (44/44); XTS5
+BLOCKED; x11bench PASS (46 passed, 14 declared)`
+(`.artifacts/x11-profile-195fa3b6-x11bench/`; oracle `Xvnc TigerVNC 1.16.2`,
+screen 1280x720 at 339x191 mm, host sha256 `880fdaa6...`, x11bench
+`9b589879...`). The same source with a mutated manifest outside the tree, one
+arc left undeclared and a passing test declared FAIL, reads `x11bench FAIL
+... circle: FAIL (expected PASS); solid_red: PASS but declared FAIL; the
+manifest is stale` (`...-x11bench-mutation/`). The first gate run found that
+the stacking tests print PASS rather than GENERATED while references are
+drawn, because they verify themselves; generation now accepts either. Limits:
+the unstable-oracle, geometry-mismatch and BLOCKED paths are covered by unit
+tests (`tests/support/x11bench.rs`), not by a live mutation; the gate
+certifies the software fixture only.
 
 **t170, the clip pixmap (2026-09-23).** Every core path now honours it. The
 helpers strokes, text, copies and images share apply the clip list pixel by

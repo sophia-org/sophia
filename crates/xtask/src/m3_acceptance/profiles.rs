@@ -7,7 +7,7 @@
 //! own accounting: a profile is judged by the report it wrote, and a report
 //! that names another source, or none, cannot pass.
 
-use super::{host, identity, process, types::SourceIdentity};
+use super::{host, identity, process, types::SourceIdentity, x11bench};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +29,12 @@ pub(super) struct ProfileOptions {
     /// A whole TET scenario is slower than a probe case, and the adapter's
     /// default of two minutes read as TIMEOUT before anything had run.
     pub xts_timeout: u64,
+    /// x11bench, built from its own checkout, and the manifest it is judged
+    /// by; both or neither.
+    pub x11bench_bin: Option<PathBuf>,
+    pub x11bench_expected: Option<PathBuf>,
+    /// The contained run's own deadline in seconds.
+    pub x11bench_timeout: u64,
 }
 
 /// The adapter leaves itself 15 seconds for contained host cleanup; the
@@ -45,8 +51,12 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
         xts_expected: None,
         xts_scenario: None,
         xts_timeout: 600,
+        x11bench_bin: None,
+        x11bench_expected: None,
+        x11bench_timeout: 600,
     };
     let mut xts_timeout_given = false;
+    let mut x11bench_timeout_given = false;
     for argument in arguments {
         let (name, value) = argument
             .split_once('=')
@@ -72,6 +82,12 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
             "--xts-timeout" => {
                 parsed.xts_timeout = value.parse().map_err(|_| "invalid XTS timeout")?;
                 xts_timeout_given = true;
+            }
+            "--x11bench-bin" => parsed.x11bench_bin = Some(value.into()),
+            "--x11bench-expected" => parsed.x11bench_expected = Some(value.into()),
+            "--x11bench-timeout" => {
+                parsed.x11bench_timeout = value.parse().map_err(|_| "invalid x11bench timeout")?;
+                x11bench_timeout_given = true;
             }
             _ => {
                 return Err(format!(
@@ -108,6 +124,25 @@ pub(super) fn options(arguments: &[String]) -> Result<ProfileOptions, String> {
     {
         return Err(
             "--xts-timeout must be 1..=1785 seconds and leave the gate 30 seconds of its own timeout"
+                .into(),
+        );
+    }
+    let x11bench_all = parsed.x11bench_bin.is_some() && parsed.x11bench_expected.is_some();
+    if (parsed.x11bench_bin.is_some()
+        || parsed.x11bench_expected.is_some()
+        || x11bench_timeout_given)
+        && !x11bench_all
+    {
+        return Err(
+            "x11bench needs --x11bench-bin and --x11bench-expected together, or neither; --x11bench-timeout only with them".into(),
+        );
+    }
+    if x11bench_all
+        && (parsed.x11bench_timeout == 0
+            || parsed.x11bench_timeout + x11bench::GATE_MARGIN_SECS > parsed.timeout)
+    {
+        return Err(
+            "--x11bench-timeout must be at least 1 second and leave the gate 30 seconds of its own timeout"
                 .into(),
         );
     }
@@ -263,18 +298,19 @@ pub(super) fn judge(
     verdict
 }
 
-/// XTS5, reported as itself: unrun and BLOCKED without the separate
-/// checkout and the exact selected purposes, never a pass by absence.
+/// An external suite -- XTS5 or x11bench -- reported as itself: unrun and
+/// BLOCKED without its separate checkout and manifest, never a pass by
+/// absence.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(super) struct XtsVerdict {
+pub(super) struct SuiteVerdict {
     pub status: String,
     pub reason: String,
     pub exit: Option<i32>,
     pub report: Option<PathBuf>,
 }
 
-pub(super) fn xts_blocked(reason: &str) -> XtsVerdict {
-    XtsVerdict {
+pub(super) fn xts_blocked(reason: &str) -> SuiteVerdict {
+    SuiteVerdict {
         status: "BLOCKED".into(),
         reason: reason.to_owned(),
         exit: None,
@@ -282,11 +318,14 @@ pub(super) fn xts_blocked(reason: &str) -> XtsVerdict {
     }
 }
 
-/// The gate's one verdict over its profiles and XTS.
+/// The gate's one verdict over its profiles and external suites.
 ///
-/// Every selected profile must PASS. XTS that was not run is BLOCKED and
-/// changes nothing; XTS that was run and did not pass fails the gate.
-pub(super) fn overall(profiles: &BTreeMap<String, ProfileVerdict>, xts: &XtsVerdict) -> String {
+/// Every selected profile must PASS. A suite that was not run is BLOCKED and
+/// changes nothing; a suite that was run and did not pass fails the gate.
+pub(super) fn overall(
+    profiles: &BTreeMap<String, ProfileVerdict>,
+    suites: &[&SuiteVerdict],
+) -> String {
     if profiles.is_empty() {
         return "NORESULT".into();
     }
@@ -299,9 +338,13 @@ pub(super) fn overall(profiles: &BTreeMap<String, ProfileVerdict>, xts: &XtsVerd
     if profiles.values().any(|verdict| verdict.status != "PASS") {
         return "FAIL".into();
     }
-    match xts.status.as_str() {
-        "PASS" | "BLOCKED" => "PASS".into(),
-        _ => "FAIL".into(),
+    if suites
+        .iter()
+        .all(|suite| matches!(suite.status.as_str(), "PASS" | "BLOCKED"))
+    {
+        "PASS".into()
+    } else {
+        "FAIL".into()
     }
 }
 
@@ -315,15 +358,22 @@ pub(super) struct ProfileReport {
     pub build_target_namespace: String,
     pub harness_sha256: BTreeMap<String, String>,
     pub profiles: BTreeMap<String, ProfileVerdict>,
-    pub xts5: XtsVerdict,
+    pub xts5: SuiteVerdict,
+    pub x11bench: SuiteVerdict,
     pub source_unchanged_after: bool,
 }
 
 pub(super) fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
+    // The gate's own re-entry inside bubblewrap, never an operator's command.
+    if let [flag, rest @ ..] = arguments
+        && flag == "--x11bench-contained"
+    {
+        return x11bench::contained(rest).map(|()| Vec::new());
+    }
     process::arm_subreaper()?;
     if arguments.iter().any(|argument| argument == "--help") {
         return Ok(vec![
-            "cargo xtask check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json --xts-scenario=NAME [--xts-timeout=SECONDS]]".into(),
+            "cargo xtask check x11-profile --profile=xtest|native-input|all --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS] [--xts-root=/XTS --xts-expected=/PURPOSES.json --xts-scenario=NAME [--xts-timeout=SECONDS]] [--x11bench-bin=/X11BENCH --x11bench-expected=/TESTS.json [--x11bench-timeout=SECONDS]]".into(),
         ]);
     }
     let mut opts = options(arguments)?;
@@ -379,6 +429,7 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
         "isolation.py",
         "xtest_manifest.json",
         "native_manifest.json",
+        "x11bench_expected.json",
     ] {
         harness_sha256.insert(name.to_owned(), identity::digest(&probe.join(name))?);
     }
@@ -440,6 +491,24 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
             "XTS is a separate checkout and a selected-purpose manifest; neither was supplied, so nothing was run",
         ),
     };
+    let x11bench = match (&opts.x11bench_bin, &opts.x11bench_expected) {
+        (Some(bench), Some(expected)) => {
+            // The same core host XTS runs against; built once if both are.
+            if opts.xts_root.is_none() {
+                build_xts_host(repo, opts, &build_target)?;
+            }
+            x11bench::run(
+                &build_target.join("debug/examples/x11_conformance_host"),
+                bench,
+                expected,
+                &opts.output.join("x11bench"),
+                opts.x11bench_timeout,
+            )?
+        }
+        _ => x11bench::blocked(
+            "x11bench is a separate checkout and a test manifest; neither was supplied, so nothing was run",
+        ),
+    };
     let temporary = opts.output.join("git-after.log");
     let source_unchanged_after = identity::git(repo, &["rev-parse", "HEAD"], &temporary)?
         == source.commit
@@ -449,7 +518,7 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
             &temporary,
         )?
         .is_empty();
-    let mut overall = overall(&profiles, &xts5);
+    let mut overall = overall(&profiles, &[&xts5, &x11bench]);
     if !source_unchanged_after {
         overall = "NORESULT".into();
     }
@@ -463,6 +532,7 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
         harness_sha256,
         profiles,
         xts5,
+        x11bench,
         source_unchanged_after,
     };
     let path = opts.output.join("report.json");
@@ -479,9 +549,11 @@ fn execute(repo: &Path, opts: &ProfileOptions) -> Result<Vec<String>, String> {
         .collect::<Vec<_>>()
         .join(", ");
     let line = format!(
-        "xtask: X11 profiles: {overall}; {summary}; XTS5 {} ({}); {}",
+        "xtask: X11 profiles: {overall}; {summary}; XTS5 {} ({}); x11bench {} ({}); {}",
         report.xts5.status,
         report.xts5.reason,
+        report.x11bench.status,
+        report.x11bench.reason,
         path.display()
     );
     if overall == "PASS" {
@@ -555,7 +627,7 @@ fn xts(
     build_target: &Path,
     root: &Path,
     expected: &Path,
-) -> Result<XtsVerdict, String> {
+) -> Result<SuiteVerdict, String> {
     let host = build_target.join("debug/examples/x11_conformance_host");
     if !host.is_file() {
         return Ok(xts_blocked(
@@ -603,13 +675,13 @@ fn xts(
     });
     Ok(
         match (execution.timed_out, execution.returncode, status.as_deref()) {
-            (true, _, _) => XtsVerdict {
+            (true, _, _) => SuiteVerdict {
                 status: "TIMEOUT".into(),
                 reason: "the adapter's absolute process deadline expired".into(),
                 exit: None,
                 report: None,
             },
-            (false, Some(0), Some("PASS")) => XtsVerdict {
+            (false, Some(0), Some("PASS")) => SuiteVerdict {
                 status: "PASS".into(),
                 reason: format!(
                     "every manifested purpose started and met its expectation ({})",
@@ -618,13 +690,13 @@ fn xts(
                 exit: Some(0),
                 report: Some(report_path),
             },
-            (false, Some(2), _) | (false, _, Some("BLOCKED")) => XtsVerdict {
+            (false, Some(2), _) | (false, _, Some("BLOCKED")) => SuiteVerdict {
                 status: "BLOCKED".into(),
                 reason: "the adapter reported missing dependencies; see its report".into(),
                 exit: execution.returncode,
                 report: report_path.is_file().then_some(report_path),
             },
-            (false, exit, status) => XtsVerdict {
+            (false, exit, status) => SuiteVerdict {
                 status: "FAIL".into(),
                 reason: format!("adapter exit {exit:?} with status {status:?}"),
                 exit,

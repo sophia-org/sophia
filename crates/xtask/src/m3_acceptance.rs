@@ -12,6 +12,7 @@ mod process;
 mod profiles;
 mod types;
 mod worker;
+mod x11bench;
 
 use std::path::Path;
 
@@ -78,6 +79,9 @@ mod m5_tests;
 
 #[path = "../tests/support/x11_profile.rs"]
 mod profile_tests;
+
+#[path = "../tests/support/x11bench.rs"]
+mod x11bench_tests;
 
 #[path = "../tests/support/m6_evidence.rs"]
 mod m6_tests;

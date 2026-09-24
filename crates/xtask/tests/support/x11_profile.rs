@@ -241,18 +241,21 @@ fn a_reaped_orphan_is_recorded_and_a_lingering_one_is_not_a_result() {
 fn the_gate_passes_only_when_every_profile_does_and_xts_never_by_absence() {
     let blocked = xts_blocked("no checkout");
     let mut profiles = BTreeMap::new();
-    assert_eq!(overall(&profiles, &blocked), "NORESULT");
+    assert_eq!(overall(&profiles, &[&blocked, &blocked]), "NORESULT");
     profiles.insert("xtest".to_owned(), verdict("PASS"));
-    assert_eq!(overall(&profiles, &blocked), "PASS");
+    assert_eq!(overall(&profiles, &[&blocked, &blocked]), "PASS");
     profiles.insert("native-input".to_owned(), verdict("FAIL"));
-    assert_eq!(overall(&profiles, &blocked), "FAIL");
+    assert_eq!(overall(&profiles, &[&blocked, &blocked]), "FAIL");
     profiles.insert("native-input".to_owned(), verdict("NORESULT"));
-    assert_eq!(overall(&profiles, &blocked), "NORESULT");
+    assert_eq!(overall(&profiles, &[&blocked, &blocked]), "NORESULT");
     profiles.insert("native-input".to_owned(), verdict("PASS"));
     let mut failed = xts_blocked("ran");
     failed.status = "FAIL".into();
-    assert_eq!(overall(&profiles, &failed), "FAIL");
+    assert_eq!(overall(&profiles, &[&failed, &blocked]), "FAIL");
     let mut passed = xts_blocked("ran");
     passed.status = "PASS".into();
-    assert_eq!(overall(&profiles, &passed), "PASS");
+    assert_eq!(overall(&profiles, &[&passed, &blocked]), "PASS");
+    // Either suite failing fails the gate; neither passes it by absence.
+    assert_eq!(overall(&profiles, &[&passed, &failed]), "FAIL");
+    assert_eq!(overall(&profiles, &[&blocked, &failed]), "FAIL");
 }
