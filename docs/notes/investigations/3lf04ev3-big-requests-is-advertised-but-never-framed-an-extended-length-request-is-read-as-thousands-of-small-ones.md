@@ -85,7 +85,10 @@ request. The first two were red on the unframed reader.
       declared purposes pass and nothing else moves, 287 PASS of 389; the
       declarations removed and the manifest re-declared with 102, all t166
       to t169 or the suite's own.
-- [ ] Both scenarios through the gate on the committed candidate.
+- [x] Both scenarios through the gate on the committed candidate
+      (`.artifacts/x11-profile-84c7a8e1-{selected-core,xproto}/`):
+      selected-core 76 passed and 23 declared, xproto 287 passed and
+      102 declared, both PASS.
 
 ## Connections
 
