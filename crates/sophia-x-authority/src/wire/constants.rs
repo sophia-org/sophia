@@ -686,6 +686,14 @@ const X_KEYBOARD_LATCH_LOCK_STATE_REQ_LEN: usize = 16;
 const X_KEYBOARD_GET_CONTROLS_REQ_LEN: usize = 8;
 const X_KEYBOARD_PER_CLIENT_FLAGS_REQ_LEN: usize = 28;
 const X_BIG_REQUESTS_ENABLE_REQ_LEN: usize = 4;
+
+/// The value-mask bits the core protocol defines: fifteen window attributes
+/// (CreateWindow and ChangeWindowAttributes), seven configure values, and
+/// twenty-three graphics-context components. A set bit outside them is
+/// BadValue, carrying the mask.
+pub(crate) const X_CREATE_WINDOW_VALUE_MASK: u32 = 0x7fff;
+pub(crate) const X_CONFIGURE_WINDOW_VALUE_MASK: u16 = 0x007f;
+pub(crate) const X_GC_VALUE_MASK: u32 = 0x007f_ffff;
 const X_INPUT_LIST_INPUT_DEVICES_REQ_LEN: usize = 4;
 const X_INPUT_QUERY_VERSION_REQ_LEN: usize = 8;
 const X_INPUT_GET_CLIENT_POINTER_REQ_LEN: usize = 8;

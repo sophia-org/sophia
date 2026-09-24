@@ -46,9 +46,5 @@
   "/Xproto/pGrabServer": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pUngrabServer": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pListExtensions": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
-  "/Xproto/pNoOperation": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
-  "/Xproto/pCreateWindow#6": "t167: a set unused value-mask bit must be BadValue; accepted silently",
-  "/Xproto/pChangeWindowAttributes#4": "t167: a set unused value-mask bit must be BadValue; accepted silently",
-  "/Xproto/pConfigureWindow#4": "t167: a set unused value-mask bit must be BadValue; accepted silently",
-  "/Xproto/pCreateGC#6": "t167: a set unused value-mask bit must be BadValue; answered BadLength because the extra value changes the length before the mask is read"
+  "/Xproto/pNoOperation": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
 }

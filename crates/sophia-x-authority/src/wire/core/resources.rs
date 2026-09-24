@@ -167,12 +167,11 @@ fn decode_create_gc(
     let gc = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(gc)?;
     let value_mask = context.byte_order.u32(&bytes[12..16]);
-    if value_mask & !0x007f_ffff != 0 {
-        return Err(XWireParseError::InvalidLength {
-            opcode: X_CREATE_GC,
-            expected_at_least: X_CREATE_GC_REQ_LEN,
-            actual: bytes.len(),
-        });
+    // A set bit above the twenty-three components is a Value error carrying
+    // the mask, as ChangeGC and CopyGC already answer it, not a length one:
+    // the length the extra bit announces is a consequence, not the fault.
+    if value_mask & !X_GC_VALUE_MASK != 0 {
+        return Err(XWireParseError::InvalidValue(value_mask));
     }
     let value_count = usize::try_from(value_mask.count_ones()).unwrap_or(usize::MAX);
     let expected_len = X_CREATE_GC_REQ_LEN.saturating_add(value_count.saturating_mul(4));

@@ -34,6 +34,9 @@ fn decode_configure_window(
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_CONFIGURE_WINDOW, X_CONFIGURE_WINDOW_REQ_LEN, bytes.len())?;
     let value_mask = context.byte_order.u16(&bytes[8..10]);
+    if value_mask & !X_CONFIGURE_WINDOW_VALUE_MASK != 0 {
+        return Err(XWireParseError::InvalidValue(u32::from(value_mask)));
+    }
     let value_count = usize::try_from(value_mask.count_ones()).unwrap_or(usize::MAX);
     let expected_len = X_CONFIGURE_WINDOW_REQ_LEN + value_count.saturating_mul(4);
     if bytes.len() != expected_len {
@@ -186,6 +189,9 @@ fn decode_change_window_attributes(
         bytes.len(),
     )?;
     let value_mask = context.byte_order.u32(&bytes[8..12]);
+    if value_mask & !X_CREATE_WINDOW_VALUE_MASK != 0 {
+        return Err(XWireParseError::InvalidValue(value_mask));
+    }
     let value_count = usize::try_from(value_mask.count_ones()).unwrap_or(usize::MAX);
     let expected_len =
         X_CHANGE_WINDOW_ATTRIBUTES_REQ_LEN.saturating_add(value_count.saturating_mul(4));
@@ -238,6 +244,12 @@ fn decode_create_window(
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_CREATE_WINDOW, X_CREATE_WINDOW_REQ_LEN, bytes.len())?;
     let value_mask = context.byte_order.u32(&bytes[28..32]);
+    // A set bit the protocol does not define is a Value error carrying the
+    // mask, before the length is judged by it: the extra value it would
+    // announce is not a framing fault but a request nobody can mean.
+    if value_mask & !X_CREATE_WINDOW_VALUE_MASK != 0 {
+        return Err(XWireParseError::InvalidValue(value_mask));
+    }
     let value_count = usize::try_from(value_mask.count_ones()).unwrap_or(usize::MAX);
     let expected_len = X_CREATE_WINDOW_REQ_LEN.saturating_add(value_count.saturating_mul(4));
     if bytes.len() != expected_len {
