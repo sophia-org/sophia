@@ -716,14 +716,34 @@ def xfixes_selection_peer_descendant(context):
         peer.sync()
 
 
+# The authority's silence allowance for a connection that is owed output:
+# `X_AUTHORITY_CLIENT_OUTPUT_SILENCE_LIMIT`, six seconds, in
+# crates/sophia-x-authority/src/x11_socket/connection/output_spill.rs.
+OUTPUT_SILENCE_ALLOWANCE = 6.0
+
+
 def xfixes_selection_stalled(context):
-    with client(context) as owner, peer_client(context) as healthy, client(context) as stalled:
-        owned, watched, stuck = owner.window(), healthy.window(), stalled.window()
+    # A subscriber that stops reading is owed its notices, in order, up to a
+    # bound (t165): what the kernel refuses is kept in its connection's spill
+    # and delivered when it reads again. It is ended only when it has neither
+    # read nor asked for the allowance while output is owed, or when more than
+    # the byte bound is owed. Two subscribers stall through the same flood.
+    # The laggard reads afterwards: it must receive every notice and stay.
+    # The silent one never reads: past the allowance it must be ended, with
+    # EOF, and not silently kept as if still subscribed. The reference server
+    # keeps both; ending the silent one is this authority's stricter bound.
+    with client(context) as owner, peer_client(context) as healthy, \
+            client(context) as laggard, client(context) as silent:
+        owned, watched = owner.window(), healthy.window()
+        behind, stuck = laggard.window(), silent.window()
         selection = owner.atom('SOPHIA_XFIXES_STALLED')
         _, base = xfixes_listen(healthy, watched, selection, 1)
-        xfixes_listen(stalled, stuck, selection, 1)
-        # Deliberately leave this peer unread. Bound both work and elapsed time;
-        # healthy peers drain every batch so this is recipient-specific pressure.
+        _, behind_base = xfixes_listen(laggard, behind, selection, 1)
+        xfixes_listen(silent, stuck, selection, 1)
+        # Deliberately leave both peers unread through the flood. Bound both
+        # work and elapsed time; the healthy peer drains every batch so this
+        # is recipient-specific pressure, and far past a socket buffer's
+        # worth of thirty-two-byte records.
         count = 4096
         for _ in range(count // 16):
             for _ in range(16):
@@ -733,26 +753,37 @@ def xfixes_selection_stalled(context):
                 xfixes_notice(healthy, base, watched, owned, selection)
         owner.sync()
         healthy.sync()
+        # The laggard catches up: every notice, in order, then a round trip.
+        for _ in range(count):
+            xfixes_notice(laggard, behind_base, behind, owned, selection)
+        laggard.sync()
+        # The silent one is given the allowance, reading nothing and asking
+        # nothing. The laggard is quiet too, but owes nothing, and is kept.
+        time.sleep(OUTPUT_SILENCE_ALLOWANCE + 1)
+        laggard.sync()
         received = 0
         while True:
-            stalled.sock.settimeout(stalled.remaining())
+            silent.sock.settimeout(silent.remaining())
             try:
-                part = stalled.sock.recv(65536)
+                part = silent.sock.recv(65536)
             except ConnectionResetError:
                 break
             except TimeoutError as error:
                 raise TimeoutError(
-                    f'stalled subscriber stayed connected after {count} assertions; '
-                    f'drained {received} bytes; healthy watcher received every event'
-                ) from error
+                    f'silent subscriber stayed connected past the allowance after {count} '
+                    f'notices; drained {received} bytes; the laggard and the healthy watcher '
+                    f'received every notice') from error
             if not part:
                 break
             received += len(part)
-            assert received <= count * 32, 'unexpected output to stalled subscriber'
-        # EOF is mandatory: keeping the peer alive after silently losing its
-        # notifications is not a successful delivery or a policy denial.
+            assert received <= count * 32, 'unexpected output to the silent subscriber'
+        # EOF is mandatory: keeping the peer alive after dropping what it was
+        # owed is not a successful delivery or a policy denial. What the kernel
+        # held still arrives; the spill it was owed beyond that does not.
+        assert received < count * 32, 'the silent subscriber was ended with nothing owed'
         xfixes_owner(owner, owned, selection)
         xfixes_notice(healthy, base, watched, owned, selection)
+        xfixes_notice(laggard, behind_base, behind, owned, selection)
         with peer_client(context) as newcomer:
             newcomer.sync()
             assert newcomer.u16(newcomer.reply(14, newcomer.pack('I', owned)), 16) == 80

@@ -245,6 +245,16 @@ def stop_descriptor(held, inherit):
     return remaining[0]
 
 
+def case_budget(case, default):
+    """A case's own absolute budget in seconds, when its manifest row declares
+    one, else the runner's. A case that must wait out one of the authority's
+    own allowances declares it here rather than stretching every case."""
+    budget = float(case.get('timeout', default))
+    if not 0 < budget <= 60:
+        raise ValueError(f'{case["id"]}: case timeout {budget} is not within (0, 60] seconds')
+    return budget
+
+
 def isolated_case(host, case, order, timeout, log, profile='xtest'):
     from isolation import Mount, launch
     with tempfile.TemporaryDirectory(prefix='sophia-input-report-') as temporary:
@@ -336,7 +346,8 @@ def main():
         for order in manifest['byte_orders']:
             try:
                 log = args.output / f'{case["id"]}-{order}.host.log'
-                result = isolated_case(host, case['id'], order, args.timeout, log, args.profile)
+                result = isolated_case(host, case['id'], order, case_budget(case, args.timeout),
+                                       log, args.profile)
             except Exception as error:
                 result = {'status': 'FAIL', 'detail': f'harness/host failure: {type(error).__name__}: {error}'}
             result.update(case=case['id'], byte_order=order)
