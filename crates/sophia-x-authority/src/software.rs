@@ -103,6 +103,11 @@ impl XSoftwareBufferStore {
     /// the renderer already alpha-blends an ARGB layer over whatever is
     /// beneath it, so the cleared area stops being this window and starts
     /// being the desktop behind it.
+    ///
+    /// `stacking` says what else is on screen where the source is: the part
+    /// of the source its ancestors leave visible, and the windows stacked
+    /// over it. Each damaged rectangle is recomposed from the source and then
+    /// from those windows, so a draw on a parent never covers a mapped child.
     #[allow(clippy::too_many_arguments)]
     pub fn present_window_damage(
         &mut self,
@@ -113,6 +118,7 @@ impl XSoftwareBufferStore {
         source_offset_y: i32,
         damage: &[Rect],
         shape: Option<&[Rect]>,
+        stacking: &XPresentStacking,
     ) -> Option<XAuthorityCpuBufferUpdate> {
         let (source_drawable, source_size) = {
             let source_buffer = self.buffers.get(&source)?;
@@ -199,14 +205,43 @@ impl XSoftwareBufferStore {
         let presentation_buffer = self.presentations.get_mut(&presentation)?;
         let mut presentation_damage = Vec::with_capacity(damage.len());
         for rect in damage {
+            let rect = match stacking.source_clip {
+                Some(clip) => {
+                    let Some(visible) = intersect_rects(
+                        translate_rect(*rect, source_offset_x, source_offset_y),
+                        clip,
+                    ) else {
+                        continue;
+                    };
+                    translate_rect(visible, -source_offset_x, -source_offset_y)
+                }
+                None => *rect,
+            };
             if let Some(rect) = copy_buffer_region(
                 source,
                 presentation_buffer,
-                *rect,
+                rect,
                 source_offset_x,
                 source_offset_y,
             ) {
                 presentation_damage.push(rect);
+            }
+        }
+        for rect in &presentation_damage {
+            for layer in &stacking.above {
+                let Some(part) = intersect_rects(*rect, layer.clip) else {
+                    continue;
+                };
+                let Some(buffer) = self.buffers.get(&layer.window) else {
+                    continue;
+                };
+                copy_buffer_region(
+                    buffer,
+                    presentation_buffer,
+                    translate_rect(part, -layer.x, -layer.y),
+                    layer.x,
+                    layer.y,
+                );
             }
         }
         // A shaped presentation carries alpha, an unshaped one does not.
@@ -1035,4 +1070,48 @@ pub(crate) struct XTextDraw<'a> {
     pub text: &'a [u16],
     pub image: bool,
     pub font: XFontHandle,
+}
+
+/// What covers a window inside its toplevel, in presentation coordinates.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct XPresentStacking {
+    /// The part of the source its ancestors leave visible; `None` when the
+    /// source is the toplevel itself.
+    pub source_clip: Option<Rect>,
+    /// The viewable windows over the source, bottom to top.
+    pub above: Vec<XPresentLayer>,
+}
+
+/// One window composed over the source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XPresentLayer {
+    pub window: XResourceId,
+    /// The window's origin.
+    pub x: i32,
+    pub y: i32,
+    /// The part of the window its ancestors leave visible.
+    pub clip: Rect,
+}
+
+fn translate_rect(rect: Rect, dx: i32, dy: i32) -> Rect {
+    Rect {
+        x: rect.x.saturating_add(dx),
+        y: rect.y.saturating_add(dy),
+        ..rect
+    }
+}
+
+pub(crate) fn intersect_rects(a: Rect, b: Rect) -> Option<Rect> {
+    let left = a.x.max(b.x);
+    let top = a.y.max(b.y);
+    let right = a.x.saturating_add(a.width).min(b.x.saturating_add(b.width));
+    let bottom =
+        a.y.saturating_add(a.height)
+            .min(b.y.saturating_add(b.height));
+    (right > left && bottom > top).then(|| Rect {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    })
 }

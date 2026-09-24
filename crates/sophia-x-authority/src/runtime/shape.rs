@@ -411,6 +411,7 @@ impl XAuthorityRuntime {
             0,
             &[whole],
             shape.as_deref(),
+            &crate::XPresentStacking::default(),
         )?;
         let handle = update.handle();
         // The composed raster has no journal representation, so density

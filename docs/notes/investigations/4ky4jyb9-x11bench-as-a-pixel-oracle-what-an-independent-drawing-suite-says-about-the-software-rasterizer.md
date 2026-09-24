@@ -319,6 +319,28 @@ where the child is. GetImage composites inferiors and reads green, so the
 default ClipByChildren holds for a readback and not for the screen. Any
 client that fills a parent across its children hides them until they redraw.
 
+**t188, closed (2026-09-24).** `present_window_damage` now takes the source's
+stacking, from a walk of the toplevel's subtree in painting order (depth
+first, bottom to top, the order GetImage composites in): the part of the
+source its ancestors leave visible, and every mapped window painted after
+it, each clipped by its own ancestors. Each damaged rectangle is copied from
+the source, then from those windows over it. So a parent's fill no longer
+covers a mapped child, and a child's draw no longer shows past its parent's
+edge. A window counts once mapped rather than once viewable, so a draw before
+the toplevel maps still leaves the children on top when it does. A source
+the walk never reaches (unmapped, or under an unmapped ancestor) composes
+alone, as before. That draw still reaches the presentation, which is wrong,
+but it is outside this fix. The RENDER composite and shape republish callers
+pass no stacking. The shape republish ends in the same drawing update, which
+recomposes.
+
+Evidence: `a_draw_on_a_parent_leaves_its_mapped_child_on_top` in
+`x11_wire/output_and_draw.rs` replays the presented updates. It checks a
+child over a parent fill, and a grandchild overhanging its parent clipped at
+the parent's edge; without the change it presents blue over the green child.
+On `c2701e24` the core profile passes 152 of 152 and x11bench 57 of 60, with
+only the declared restack policy left.
+
 ## Connections
 
 - [Running XTS5 through the profile gate](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):

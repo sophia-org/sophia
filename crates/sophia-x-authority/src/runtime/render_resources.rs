@@ -645,6 +645,7 @@ impl XAuthorityRuntime {
                 child_y.saturating_add(i32::from(y_offset)),
                 &source_damage,
                 shape.as_deref(),
+                &crate::XPresentStacking::default(),
             ) else {
                 return XAuthorityResponsePacket::rejected(
                     transaction,
