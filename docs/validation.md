@@ -1046,7 +1046,14 @@ XGetImage and XGetSubImage purposes that read a window's border: Sophia
 draws no window borders, so they are declared by that decision. A text
 scenario (the XDrawString and XDrawText cases) does not run yet: its
 purposes need the suite's own test fonts on a font path, and every one is
-UNINITIATED on Xvnc as on the host. A
+UNINITIATED on Xvnc as on the host. `xts_expected_colors.json` (the Xlib7
+colour and colormap cases and Xlib10's install and list cases) and
+`xts_expected_gc.json` (the Xlib8 GC cases) followed the same way. Their
+declarations are the suite's omissions, the colour classes a TrueColor-only
+screen cannot offer, purposes Xvnc fails identically, and t210 and t212.
+Some cases are left out: XAllocNamedColor and XLookupColor stop before
+their last purposes on Xvnc as on the host, XInstallColormap's fourth purpose is unstable until t210 gives it the ColormapNotify it waits for, and XChangeGC, XCreateGC,
+XGetGCValues and XSetFont wait on t201's font path. A
 manifest is the suite's account of itself: every purpose is
 listed, and one the suite or the authority cannot pass today is declared
 with its disposition and a reason (`xts_declare.py`, from a real journal and

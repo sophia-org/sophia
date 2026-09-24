@@ -115,3 +115,44 @@ fn a_name_that_is_no_cursor_is_a_cursor_error() {
     assert_eq!(fixture.error(2, attributes), Some(XErrorCode::BadCursor),
         "a window attribute naming no cursor");
 }
+
+fn alloc_cells_request(order: XByteOrder, opcode: u8, contiguous: u8, colormap: u32, colors: u16) -> Vec<u8> {
+    let mut out = vec![opcode, contiguous];
+    push_u16(&mut out, order, if opcode == 86 { 3 } else { 4 });
+    push_u32(&mut out, order, colormap);
+    push_u16(&mut out, order, colors);
+    push_u16(&mut out, order, 0);
+    if opcode == 87 {
+        for _ in 0..2 {
+            push_u16(&mut out, order, 0);
+        }
+    }
+    out
+}
+
+/// AllocColorCells and AllocColorPlanes refuse a contiguity flag other than
+/// True or False and zero colours before they would refuse the allocation.
+#[test]
+fn colour_cell_requests_refuse_their_bad_values_first() {
+    let mut fixture = CursorFixture::new();
+    let order = CursorFixture::ORDER;
+    let colormap = sophia_x_authority::X_SETUP_DEFAULT_COLORMAP;
+    assert_eq!(fixture.error(86, alloc_cells_request(order, 86, 0, colormap, 0)), Some(XErrorCode::BadValue));
+    assert_eq!(fixture.error(86, alloc_cells_request(order, 86, 2, colormap, 1)), Some(XErrorCode::BadValue));
+    assert_eq!(fixture.error(87, alloc_cells_request(order, 87, 7, colormap, 1)), Some(XErrorCode::BadValue));
+    assert_eq!(fixture.error(86, alloc_cells_request(order, 86, 1, colormap, 1)), Some(XErrorCode::BadAlloc),
+        "a TrueColor map has no cells to give");
+    assert_eq!(fixture.error(86, alloc_cells_request(order, 86, 2, 0x7a00ff, 1)), Some(XErrorCode::BadColor),
+        "the colormap is checked first");
+}
+
+/// A clip mask of any depth but one is a Match error, not a Pixmap error.
+#[test]
+fn a_clip_mask_of_another_depth_is_a_match_error() {
+    let mut fixture = CursorFixture::new();
+    let order = CursorFixture::ORDER;
+    assert_eq!(fixture.error(55, create_gc_request(order, 0x7a0030, 0x7a0001)), None);
+    assert_eq!(fixture.error(56, change_gc_request(order, 0x7a0030, 1 << 19, &[0x7a0004])), Some(XErrorCode::BadMatch));
+    assert_eq!(fixture.error(56, change_gc_request(order, 0x7a0030, 1 << 19, &[0x7a00ff])), Some(XErrorCode::BadPixmap));
+    assert_eq!(fixture.error(56, change_gc_request(order, 0x7a0030, 1 << 19, &[0x7a0002])), None);
+}

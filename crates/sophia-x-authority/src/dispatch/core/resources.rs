@@ -56,12 +56,14 @@ fn dispatch_core_resource_request(
             if let Some(mask) = values.clip_mask
                 && let Err(error) = runtime.validate_clip_mask(context.namespace, mask)
             {
-                return Handled(core_resource_validation_error(
-                    context,
-                    error,
-                    XErrorCode::BadPixmap,
-                    mask,
-                ));
+                // A pixmap of another depth is a Match error; a name that is
+                // no pixmap is a Pixmap error.
+                let code = if error == XAuthorityRuntimeError::InvalidSurface {
+                    XErrorCode::BadMatch
+                } else {
+                    XErrorCode::BadPixmap
+                };
+                return Handled(core_resource_validation_error(context, error, code, mask));
             }
             if let Some(font) = values.font
                 && let Err(error) = runtime.validate_font_access(context.namespace, font)
@@ -118,12 +120,14 @@ fn dispatch_core_resource_request(
             if let Some(mask) = values.clip_mask
                 && let Err(error) = runtime.validate_clip_mask(context.namespace, mask)
             {
-                return Handled(core_resource_validation_error(
-                    context,
-                    error,
-                    XErrorCode::BadPixmap,
-                    mask,
-                ));
+                // A pixmap of another depth is a Match error; a name that is
+                // no pixmap is a Pixmap error.
+                let code = if error == XAuthorityRuntimeError::InvalidSurface {
+                    XErrorCode::BadMatch
+                } else {
+                    XErrorCode::BadPixmap
+                };
+                return Handled(core_resource_validation_error(context, error, code, mask));
             }
             if let Err(refusal) = validate_gc_pattern_pixmaps(context, runtime, depth, &values) {
                 return Handled(refusal);
