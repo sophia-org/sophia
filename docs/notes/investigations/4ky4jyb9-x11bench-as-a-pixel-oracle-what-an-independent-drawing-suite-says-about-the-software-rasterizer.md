@@ -299,6 +299,26 @@ before the change); XTS's arcs scenario on `ef25a282` passes 234 purposes
 (222 before) and fails only the four IncludeInferiors purposes of t181; the
 core profile passes 152 of 152 and x11bench 57 of 60.
 
+**t181, the root (2026-09-24, in part).** Decided with the operator: a draw on
+the root lands in a root private to the drawing client's namespace -- a
+screen-sized CPU buffer under a key above every XID and retained-backing key,
+created on the first draw and kept for the namespace's life, as a root's
+contents outlive any one client; GetImage on the root reads it with that
+namespace's own windows over it (t185 made the readback namespace-scoped);
+it is never presented, because the Engine and the shell own the desktop.
+Every core draw now resolves its target through `draw_target` and
+`draw_key`, which map the root to that key. A wire test pins that the drawer
+reads its root back, another namespace reads zero, and the draw presents
+nothing. Still open under t181: IncludeInferiors, which draws through a
+window's viewable descendants. It needs t188 first.
+
+**t188, found on the way.** `present_window_damage` copies only the drawing
+window's own pixels into its toplevel's presentation. A probe on `55e50b1e`: a
+child filled green, then its parent filled blue across it, presents blue
+where the child is. GetImage composites inferiors and reads green, so the
+default ClipByChildren holds for a readback and not for the screen. Any
+client that fills a parent across its children hides them until they redraw.
+
 ## Connections
 
 - [Running XTS5 through the profile gate](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):

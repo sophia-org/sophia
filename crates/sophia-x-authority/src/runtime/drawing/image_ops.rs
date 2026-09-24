@@ -53,22 +53,11 @@ impl XAuthorityRuntime {
         if width == 0 || height == 0 {
             return XAuthorityResponsePacket::accepted(transaction);
         }
-        let (destination_size, window_generation) =
-            if let Ok(size) = self.pixmap_size(namespace, destination) {
-                (size, None)
-            } else if let Some(record) = self.windows.get(destination) {
-                (
-                    Size {
-                        width: record.geometry.width,
-                        height: record.geometry.height,
-                    },
-                    Some(record.generation),
-                )
-            } else {
-                return XAuthorityResponsePacket::rejected(
-                    transaction,
-                    XAuthorityRuntimeError::UnknownResource,
-                );
+        let source = self.draw_key(namespace, source);
+        let (destination, destination_size, window_generation) =
+            match self.draw_target(namespace, destination) {
+                Ok(target) => target,
+                Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
             };
         let Some((update, damage)) = self.software_buffers.copy_area(
             source,
@@ -169,10 +158,13 @@ impl XAuthorityRuntime {
         {
             return XAuthorityResponsePacket::accepted(transaction);
         }
-        if let Ok(size) = self.pixmap_size(namespace, drawable) {
-            let wrote_image = self
-                .software_buffers
-                .put_image(drawable, size, rect, data, semantics);
+        // A pixmap, or a namespace's private root: stored, never presented.
+        let target = match self.draw_target(namespace, drawable) {
+            Ok((key, size, None)) => Some((key, size)),
+            _ => None,
+        };
+        if let Some((key, size)) = target {
+            let wrote_image = self.software_buffers.put_image(key, size, rect, data, semantics);
             if wrote_image.is_none() {
                 return XAuthorityResponsePacket::rejected(
                     transaction,
@@ -242,7 +234,7 @@ impl XAuthorityRuntime {
         self.validate_drawable_image_region(descriptor, region)?;
         let mut image = self
             .software_buffers
-            .image_region(drawable, region)
+            .image_region(self.draw_key(namespace, drawable), region)
             .ok_or(XDrawableImageError::AllocationFailed)?;
         // A window's inferiors are drawn over it, so reading a window back
         // shows whatever of them covers the area. Without this a parent reads

@@ -1505,3 +1505,54 @@ fn a_root_readback_shows_only_the_readers_namespace() {
     let other = send(reader, 6, 73, get_image_request(order, 2, 0x20, 15, 15, 1, 1, u32::MAX), &mut runtime);
     assert_eq!(pixel(other), 0, "and another namespace's window is not there to read");
 }
+
+/// Drawing on the root lands in a root private to the drawing client's
+/// namespace: read back there, invisible to other namespaces, and never
+/// presented, because the Engine and the shell own the desktop (t181).
+#[test]
+fn a_draw_on_the_root_lands_in_the_namespaces_private_root() {
+    let mut runtime = XAuthorityRuntime::new();
+    let mut atoms = XAtomTable::new();
+    let mut properties = XPropertyTable::new();
+    let drawer = NamespaceId::from_raw(0x5003);
+    let other = NamespaceId::from_raw(0x5004);
+    let order = XByteOrder::LittleEndian;
+    let mut send = |ns: NamespaceId, seq: u16, op: u8, bytes: Vec<u8>, runtime: &mut XAuthorityRuntime| {
+        let request = decode_x11_core_request(context(ns, u64::from(seq), order), &bytes).unwrap();
+        dispatch_x11_wire_request(
+            dispatch_context(ns, seq, order, op),
+            request,
+            runtime,
+            &mut atoms,
+            &mut properties,
+        )
+    };
+    send(
+        drawer,
+        1,
+        55,
+        create_gc_values_request(order, 0x500002, 0x20, 3, u32::MAX, 0x0012_3456, 0, 0, 0),
+        &mut runtime,
+    );
+    let fill = send(
+        drawer,
+        2,
+        70,
+        poly_fill_rectangle_request(order, 0x20, 0x500002, &[(4, 4, 8, 8)]),
+        &mut runtime,
+    );
+    assert!(fill.outputs.is_empty(), "no error: {:?}", fill.outputs);
+    let response = fill.response.expect("a response");
+    assert_eq!(response.outcome, XAuthorityResponseOutcome::Accepted);
+    assert!(response.transactions.is_empty(), "the private root is never presented");
+    let pixel = |result: XDispatchResult| match result.outputs.as_slice() {
+        [XClientOutput::Reply(XClientReply::GetImage { data, .. })] => {
+            u32::from_le_bytes(data[..4].try_into().unwrap())
+        }
+        other => panic!("unexpected GetImage result: {other:?}"),
+    };
+    let own = send(drawer, 3, 73, get_image_request(order, 2, 0x20, 6, 6, 1, 1, u32::MAX), &mut runtime);
+    assert_eq!(pixel(own), 0x0012_3456, "the drawer reads its root back");
+    let theirs = send(other, 4, 73, get_image_request(order, 2, 0x20, 6, 6, 1, 1, u32::MAX), &mut runtime);
+    assert_eq!(pixel(theirs), 0, "another namespace's root is its own");
+}
