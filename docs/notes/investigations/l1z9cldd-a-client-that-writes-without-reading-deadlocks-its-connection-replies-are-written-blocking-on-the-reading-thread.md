@@ -95,7 +95,12 @@ could not hold. The case now floods two subscribers: the laggard reads
 afterwards and must receive every notice and stay, the silent one must be
 ended past the allowance with EOF and fewer than all; its manifest row
 declares a fifteen-second budget through a per-case `timeout` the runner
-honours (`case_budget`), so no other case is stretched.
+honours (`case_budget`), so no other case is stretched. The laggard sends
+one NoOperation a batch while it does not read: a request read is
+activity the allowance measures the absence of, and on a loaded machine a
+flood can outlast the allowance, where a client that neither read nor
+asked would be ended rightly -- once, under the t167 profile run, the
+laggard was.
 
 ## Validation and remaining work
 

@@ -743,11 +743,17 @@ def xfixes_selection_stalled(context):
         # Deliberately leave both peers unread through the flood. Bound both
         # work and elapsed time; the healthy peer drains every batch so this
         # is recipient-specific pressure, and far past a socket buffer's
-        # worth of thirty-two-byte records.
+        # worth of thirty-two-byte records. The laggard keeps asking while
+        # it does not read -- one NoOperation a batch -- because a request
+        # read is activity the allowance measures the absence of: on a
+        # loaded machine a flood can outlast the allowance, and a client
+        # that neither read nor asked for that long would be ended rightly,
+        # which is the silent one's part, not this one's.
         count = 4096
         for _ in range(count // 16):
             for _ in range(16):
                 owner.send(22, owner.pack('III', owned, selection, 0))
+            laggard.send(127)
             owner.sync()
             for _ in range(16):
                 xfixes_notice(healthy, base, watched, owned, selection)
