@@ -1,9 +1,4 @@
 {
-  "/Xlib10/XInstallColormap#1": "Xorg's own server (Xvnc, 2026-09-24) gives the same FAIL: REPORT: Colourmap was not installed / REPORT: Colourmap was not installed",
-  "/Xlib10/XInstallColormap#2": "the suite's own omission: 'There is no known reliable test method for this assertion'",
-  "/Xlib10/XInstallColormap#3": "the suite's own omission: 'There is no known portable test method for this assertion'",
-  "/Xlib10/XInstallColormap#4": "Xorg's own server (Xvnc, 2026-09-24) gives the same UNRESOLVED: REPORT: Path check error (26 should be 34) / REPORT: This is usually caused by a programming error in the test-suite",
-  "/Xlib10/XInstallColormap#5": "the suite's own omission: 'There is no known portable test method for this assertion'",
   "/Xlib10/XUninstallColormap#1": "the suite's own omission: 'There is no known reliable test method for this assertion'",
   "/Xlib10/XUninstallColormap#2": "the suite's own omission: 'There is no known portable test method for this assertion'",
   "/Xlib10/XUninstallColormap#3": "the suite's own omission: 'There is no known portable test method for this assertion'",

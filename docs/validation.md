@@ -1051,8 +1051,8 @@ colour and colormap cases and Xlib10's install and list cases) and
 `xts_expected_gc.json` (the Xlib8 GC cases) followed the same way. Their
 declarations are the suite's omissions, the colour classes a TrueColor-only
 screen cannot offer, purposes Xvnc fails identically, and t210 and t212.
-Three cases are left out: XAllocNamedColor and XLookupColor stop before
-their last purposes on Xvnc as on the host, and XChangeGC, XCreateGC,
+Some cases are left out: XAllocNamedColor and XLookupColor stop before
+their last purposes on Xvnc as on the host, XInstallColormap's fourth purpose is unstable until t210 gives it the ColormapNotify it waits for, and XChangeGC, XCreateGC,
 XGetGCValues and XSetFont wait on t201's font path. A
 manifest is the suite's account of itself: every purpose is
 listed, and one the suite or the authority cannot pass today is declared
