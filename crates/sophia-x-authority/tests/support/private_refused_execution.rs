@@ -18,6 +18,16 @@ fn an_execution_refusal_answers_the_delivery_and_frees_the_grant_for_the_next_re
         .access
         .ingress_for(&lease, client_id, DeviceId::from_raw(1))
         .unwrap();
+    // Focused, so that the accepted request below runs to a delivery: an
+    // unfocused key is refused at execution, and whether that refusal was
+    // counted before the stop depended on the machine's load (t190).
+    let control = launched
+        .access
+        .control_producer(&lease)
+        .expect("the control producer");
+    // The window selects keys, not FocusChange, so no FocusIn is owed.
+    let (focus, _) = apply_focus(&launched, &control, &mut client, client_id, surface, 96401);
+    assert_eq!(focus, Some(XAuthorityControlOutcome::Delivered));
 
     // REFUSED BEFORE THE AUTHORITY: a repeat-mode key is declined by the
     // executor's own checks, which never enter common.
@@ -58,6 +68,12 @@ fn an_execution_refusal_answers_the_delivery_and_frees_the_grant_for_the_next_re
         }
     };
     assert!(accepted < Duration::from_secs(1), "freed by the refusal itself, not by a later visit: {accepted:?}");
+    // The accepted request runs to its delivery before the service is
+    // stopped; stopped earlier, its fate depended on the race.
+    assert!(
+        read_event(&mut client, 15).is_some(),
+        "the next request was delivered before the stop"
+    );
 
     launched
         .commands
