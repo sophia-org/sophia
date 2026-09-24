@@ -754,7 +754,11 @@ def xfixes_selection_stalled(context):
         for _ in range(count // 16):
             for _ in range(16):
                 owner.send(22, owner.pack('III', owned, selection, 0))
-            laggard.send(127)
+                # One ask per notice, not per batch (t192): a request read
+                # is the activity the allowance measures the absence of,
+                # and a probe process starved for part of a batch must not
+                # lose the laggard to the bound meant for a silent client.
+                laggard.send(127)
             owner.sync()
             for _ in range(16):
                 xfixes_notice(healthy, base, watched, owned, selection)
@@ -820,7 +824,8 @@ def destroy_notify_stalled(context):
             for _ in range(16):
                 owner.send(1, create)
                 owner.send(4, destroy)
-            laggard.send(127)
+                # As in xfixes_selection_stalled: one ask per pair (t192).
+                laggard.send(127)
             owner.sync()
             for _ in range(16):
                 healthy.event(16, lambda e: healthy.u32(e, 8) == child)
