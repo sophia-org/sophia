@@ -1,0 +1,210 @@
+[
+  {
+    "test": "alpha_blend"
+  },
+  {
+    "test": "alpha_gradient"
+  },
+  {
+    "test": "alpha_rectangles"
+  },
+  {
+    "test": "arc_styles",
+    "expected": "FAIL",
+    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+  },
+  {
+    "test": "basic_text"
+  },
+  {
+    "test": "checkerboard"
+  },
+  {
+    "test": "circle",
+    "expected": "FAIL",
+    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+  },
+  {
+    "test": "clip_mask",
+    "expected": "FAIL",
+    "reason": "rim only since t170: the mask confines, and the 342 differing pixels are the zero-width arc drawn over the disc (device-dependent) and the FillArc edge in the mask, which follows the polygon edge rule of t172"
+  },
+  {
+    "test": "clip_rectangles"
+  },
+  {
+    "test": "color_bars"
+  },
+  {
+    "test": "color_grid"
+  },
+  {
+    "test": "color_wheel",
+    "expected": "FAIL",
+    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+  },
+  {
+    "test": "colored_text"
+  },
+  {
+    "test": "concentric_circles",
+    "expected": "FAIL",
+    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+  },
+  {
+    "test": "copy_area"
+  },
+  {
+    "test": "dashed_lines",
+    "expected": "FAIL",
+    "reason": "t171: wide dashes end in the GC cap style, which the host does not read"
+  },
+  {
+    "test": "diagonal_lines"
+  },
+  {
+    "test": "draw_points"
+  },
+  {
+    "test": "fill_rule_evenodd",
+    "expected": "FAIL",
+    "reason": "t172: FillPolygon differs from the protocol rule on single pixels along slanted edges"
+  },
+  {
+    "test": "fill_rule_winding",
+    "expected": "FAIL",
+    "reason": "t172: FillPolygon differs from the protocol rule on single pixels along slanted edges"
+  },
+  {
+    "test": "filled_rectangle"
+  },
+  {
+    "test": "font_sizes"
+  },
+  {
+    "test": "gc_clear"
+  },
+  {
+    "test": "gc_functions"
+  },
+  {
+    "test": "gc_invert"
+  },
+  {
+    "test": "gc_noop"
+  },
+  {
+    "test": "gc_set"
+  },
+  {
+    "test": "grayscale_ramp"
+  },
+  {
+    "test": "horizontal_lines"
+  },
+  {
+    "test": "layered_alpha"
+  },
+  {
+    "test": "line_cap_styles",
+    "expected": "FAIL",
+    "reason": "t171: CapButt and CapRound are drawn as projecting ends"
+  },
+  {
+    "test": "line_join_styles",
+    "expected": "FAIL",
+    "reason": "t171: miter, round and bevel joins are drawn alike"
+  },
+  {
+    "test": "line_widths",
+    "expected": "FAIL",
+    "reason": "t171: wide lines with CapRound are drawn with square ends"
+  },
+  {
+    "test": "nested_rectangles"
+  },
+  {
+    "test": "outlined_rectangle"
+  },
+  {
+    "test": "pixel_perfect"
+  },
+  {
+    "test": "plane_mask"
+  },
+  {
+    "test": "render_fill_colors"
+  },
+  {
+    "test": "rgb_ramps"
+  },
+  {
+    "test": "solid_blue"
+  },
+  {
+    "test": "solid_green"
+  },
+  {
+    "test": "solid_red"
+  },
+  {
+    "test": "specific_colors"
+  },
+  {
+    "test": "stipple_fill"
+  },
+  {
+    "test": "stipple_patterns"
+  },
+  {
+    "test": "subwindow_mode"
+  },
+  {
+    "test": "text_on_background"
+  },
+  {
+    "test": "tile_fill"
+  },
+  {
+    "test": "unicode_text"
+  },
+  {
+    "test": "vertical_lines"
+  },
+  {
+    "test": "xor_draw"
+  },
+  {
+    "test": "xor_lines"
+  },
+  {
+    "test": "win_destroy"
+  },
+  {
+    "test": "win_hide"
+  },
+  {
+    "test": "win_lower",
+    "expected": "FAIL",
+    "reason": "authority policy: a client does not restack its own top-level; the frontend answers ConfigureWindow stack-mode with a synthetic ConfigureNotify and no Expose (protocol_routing.rs), so the raised window is never repainted"
+  },
+  {
+    "test": "win_raise",
+    "expected": "FAIL",
+    "reason": "authority policy: a client does not restack its own top-level; the frontend answers ConfigureWindow stack-mode with a synthetic ConfigureNotify and no Expose (protocol_routing.rs), so the raised window is never repainted"
+  },
+  {
+    "test": "win_restack_middle",
+    "expected": "FAIL",
+    "reason": "authority policy: a client does not restack its own top-level; the frontend answers ConfigureWindow stack-mode with a synthetic ConfigureNotify and no Expose (protocol_routing.rs), so the raised window is never repainted"
+  },
+  {
+    "test": "win_show_after_hide"
+  },
+  {
+    "test": "win_stack_basic"
+  },
+  {
+    "test": "win_three_stack"
+  }
+]
