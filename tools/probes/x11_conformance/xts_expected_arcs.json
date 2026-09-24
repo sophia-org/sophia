@@ -1,0 +1,1350 @@
+[
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 3,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 4,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 8,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 9,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 10,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 11,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 15,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 35,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 37,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test' (zero-width lines are device-dependent)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 39,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 40,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 41,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 42,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 43,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 44,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 45,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 46,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 47,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 48,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 49
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 50
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 51
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 52
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 53
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 56,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 57,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 58,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 59,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 60
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 61
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 62
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 63,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 64
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 65
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 66,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 67
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 68
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 69
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 70
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 71
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 72
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 73,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 74
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 75,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 76
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 77
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 78
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 79
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 80
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 81
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 82
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 83
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 84
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 85
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 86
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 87
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 88
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 89
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 90
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 91
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 92
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 93
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 94
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 95
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 96,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 97,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 98
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 99
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 100
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 101
+  },
+  {
+    "case": "/Xlib9/XDrawArc/XDrawArc",
+    "purpose": 102,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 3,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 4,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 8,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 9,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 10,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 11,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 18,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 35
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 37
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 38,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 40,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test' (zero-width lines are device-dependent)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 42,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 43,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 44,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 45,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 46,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 47,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 48,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 49,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 50,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 51,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 52
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 53
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 54
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 55
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 56
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 57
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 58
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 59,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 60,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 61,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 62,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 63
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 64
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 65
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 66,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 67
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 68
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 69,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 70
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 71
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 72
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 73
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 74
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 75
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 76,
+    "expected": "WARNING",
+    "reason": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 77
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 78,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 79
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 80
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 81
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 82
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 83
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 84
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 85,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 86
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 87
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 88
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 89
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 90
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 91
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 92
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 93
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 94
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 95
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 96
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 97
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 98
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 99
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 100
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 101
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 102
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 103
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 104
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 105
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 106,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 107,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 108
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 109
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 110
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 111
+  },
+  {
+    "case": "/Xlib9/XDrawArcs/XDrawArcs",
+    "purpose": 112,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 35
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 37
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XFillArc/XFillArc",
+    "purpose": 44,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 5,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 16
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 17
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 18
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 19
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 20
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 26
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 29
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 33
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 35
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 36
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 37
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 38
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 39
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 40
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 41
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 42
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 43
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 44
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 45
+  },
+  {
+    "case": "/Xlib9/XFillArcs/XFillArcs",
+    "purpose": 46,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'"
+  }
+]

@@ -1030,7 +1030,11 @@ preprocessor's inclusions (`>>INCLUDE` and the GC components an
 atoms, selections and focus; `xts_expected_xproto.json` is every core
 request's wire test, 122 cases and all 389 purposes, the `TOO_LONG`
 purposes among them since t165 let a flooding client be served and t174
-framed the BIG-REQUESTS encoding they use. A
+framed the BIG-REQUESTS encoding they use; and `xts_expected_arcs.json`
+is XDrawArc, XDrawArcs, XFillArc and XFillArcs, 304 purposes across every
+GC component, which the mi arc ports (t176, t178, t179) and IncludeInferiors
+(t181) pass wherever Xorg's own mi does -- its eight declared WARNINGs are
+pixel checks Xvnc fails identically. A
 manifest is the suite's account of itself: every purpose is
 listed, and one the suite or the authority cannot pass today is declared
 with its disposition and a reason (`xts_declare.py`, from a real journal and
