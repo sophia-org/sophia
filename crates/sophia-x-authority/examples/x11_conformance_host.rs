@@ -18,13 +18,15 @@ use sophia_protocol::{
     NamespaceCapabilities, NamespaceContext, NamespaceId, NamespaceProfile, SeatId,
 };
 use sophia_x_authority::{
-    RoutedXTestInjector, XAuthorityRoutedInputSender, XServerFrontend,
-    XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy, XServerFrontendAdmissionRequest,
-    XServerFrontendConfig, XServerFrontendInjectionError, XServerFrontendInjectionPolicy,
-    XServerFrontendRouteBroker, XTestInjector,
+    RoutedXTestInjector, X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY,
+    XAuthorityRoutedInputSender, XServerFrontendAdmissionError, XServerFrontendAdmissionPolicy,
+    XServerFrontendAdmissionRequest, XServerFrontendConfig, XServerFrontendInjectionError,
+    XServerFrontendInjectionPolicy, XServerFrontendRouteBroker, XTestInjector,
+    run_x_server_frontend_routed_until_stopped,
 };
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::sync::mpsc;
 
 /// The namespace every client on this host is admitted into.
 const HOST_NAMESPACE: u64 = 1;
@@ -135,13 +137,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 sender: broker.routed_input_sender(),
             }));
     }
-    let mut frontend = XServerFrontend::bind(config)?;
-    let observer = std::sync::Arc::new(|_| Ok(None));
-    loop {
-        frontend.try_serve_next_concurrently_routed_traced(&broker, observer.clone())?;
-        // Reap even while no new client is arriving. A blocking accept can
-        // otherwise hide a completed worker's service-fatal error indefinitely.
-        frontend.poll_client_workers()?;
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    // The production service loop, not a hand-rolled accept loop: it shares
+    // the broker's input authority with the runtime and drives the broker's
+    // routing, which is what turns an admitted XTEST injection (or a warp
+    // through one) into delivered events. The host's own loop accepted and
+    // reaped workers and never routed, so every injection waited for a
+    // completion nobody could produce, and the injecting client hung with
+    // it. Observed transactions are drained and discarded: no session sits
+    // behind this host to receive them, and a full channel would otherwise
+    // block dispatch.
+    let (transactions, observed) =
+        mpsc::sync_channel(X_AUTHORITY_OBSERVED_TRANSACTION_CHANNEL_CAPACITY);
+    std::thread::spawn(move || while observed.recv().is_ok() {});
+    // Held for the process's lifetime: a dropped sender reads as
+    // StopAndDisconnect, and the runner ends this host by signal.
+    let (_service_commands, commands) = mpsc::sync_channel(1);
+    run_x_server_frontend_routed_until_stopped(config, transactions, broker, commands)?;
+    Ok(())
 }
