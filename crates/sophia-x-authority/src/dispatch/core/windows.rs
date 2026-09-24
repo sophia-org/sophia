@@ -716,13 +716,14 @@ fn dispatch_core_window_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::MapSubwindows { window } => {
+                XWireRequest::MapSubwindows { window, withheld } => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime.map_direct_subwindows(
                         context.namespace,
                         window,
                         u64::from(context.sequence),
+                        &withheld,
                     ) {
                         Ok(surfaces) => {
                             response.surfaces = surfaces;

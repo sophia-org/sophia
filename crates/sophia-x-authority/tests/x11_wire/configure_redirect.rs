@@ -190,6 +190,55 @@ mod configure_redirect {
         }
     }
 
+    /// MapSubwindows under a parent another client manages: each unmapped
+    /// child that is not override-redirect reaches the manager as a
+    /// MapRequest and stays unmapped, while an override-redirect child maps
+    /// as before (XTS Xlib4 XMapSubwindows 5, t217). Red before the fix:
+    /// every child mapped and the manager heard nothing.
+    #[test]
+    fn map_subwindows_under_a_managed_parent_asks_the_manager_per_child() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (socket_path, server) = routed_service("map-subwindows", 2);
+            let (mut manager, _manager_base) = connected(&socket_path, byte_order);
+            let (mut owner, owner_base) = connected(&socket_path, byte_order);
+            let toplevel = owner_base + 1;
+            let (managed, unmanaged) = (owner_base + 2, owner_base + 3);
+            owner.write_all(&create_window_request(byte_order, toplevel, 0, 0, 200, 200)).unwrap();
+            owner.write_all(&map_window_request(byte_order, toplevel)).unwrap();
+            owner.write_all(&create_window_request_with_parent(byte_order, managed, toplevel, 10, 10, 50, 50)).unwrap();
+            owner.write_all(&create_window_request_with_parent(byte_order, unmanaged, toplevel, 100, 10, 50, 50)).unwrap();
+            owner.write_all(&override_redirect_request(byte_order, unmanaged, true)).unwrap();
+            owner.write_all(&change_window_event_mask_request(byte_order, toplevel, 1 << 19)).unwrap();
+            let _ = sync(byte_order, &mut owner);
+            manager.write_all(&change_window_event_mask_request(byte_order, toplevel, 1 << 20)).unwrap();
+            let _ = sync(byte_order, &mut manager);
+
+            let mut map_subwindows = vec![9, 0];
+            push_u16(&mut map_subwindows, byte_order, 2);
+            push_u32(&mut map_subwindows, byte_order, toplevel);
+            owner.write_all(&map_subwindows).unwrap();
+            let events = sync(byte_order, &mut owner);
+            let mapped = events.iter().filter(|e| e[0] & 0x7f == 19).map(|e| read_u32(byte_order, &e[8..12])).collect::<Vec<_>>();
+            assert_eq!(mapped, vec![unmanaged], "{byte_order:?}: only the override-redirect child mapped: {events:?}");
+            let request = read_x_record(&mut manager);
+            assert_eq!(request[0] & 0x7f, 20, "{byte_order:?}: MapRequest: {request:?}");
+            assert_eq!(read_u32(byte_order, &request[4..8]), toplevel, "{byte_order:?}: parent");
+            assert_eq!(read_u32(byte_order, &request[8..12]), managed, "{byte_order:?}: the withheld child");
+            owner.write_all(&resource_request(byte_order, 3, managed)).unwrap();
+            let reply = read_x_reply(&mut owner, byte_order);
+            assert_eq!(reply[26], 0, "{byte_order:?}: still unmapped");
+            owner.write_all(&resource_request(byte_order, 3, unmanaged)).unwrap();
+            let reply = read_x_reply(&mut owner, byte_order);
+            assert_eq!(reply[26], 2, "{byte_order:?}: the override-redirect child is viewable");
+            assert!(sync(byte_order, &mut manager).is_empty(), "{byte_order:?}: one request, nothing more");
+
+            drop(owner);
+            drop(manager);
+            server.join().unwrap().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
     #[test]
     fn a_size_change_on_a_resize_redirected_window_is_asked_for_and_not_applied() {
         for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {

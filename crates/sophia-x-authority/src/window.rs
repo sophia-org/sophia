@@ -393,6 +393,11 @@ impl XWindowTable {
         }) {
             return Err(XAuthorityAccessError::InvalidResource);
         }
+        let (own_rank, own_geometry, own_mapped) = (
+            record.stack_rank,
+            record.geometry,
+            record.map_state != XMapState::Unmapped,
+        );
         let mut siblings = self
             .windows
             .values()
@@ -405,11 +410,88 @@ impl XWindowTable {
                 .iter()
                 .position(|(_, candidate)| *candidate == sibling)
         });
-        let index = match (mode, sibling_index) {
-            (Some(1 | 3), Some(index)) => index,
-            (Some(1 | 3), None) => 0,
-            (Some(0 | 2 | 4), Some(index)) => index.saturating_add(1),
-            _ => siblings.len(),
+        // Whether `other` occludes this window or is occluded by it: both
+        // mapped and their extents meet, with the occluder above.
+        let meets = |a: &Rect, b: &Rect| {
+            a.x < b.x.saturating_add(b.width)
+                && b.x < a.x.saturating_add(a.width)
+                && a.y < b.y.saturating_add(b.height)
+                && b.y < a.y.saturating_add(a.height)
+        };
+        let overlaps = |other: XResourceId| {
+            own_mapped
+                && self.windows.get(&other).is_some_and(|record| {
+                    record.map_state != XMapState::Unmapped
+                        && meets(&own_geometry, &record.geometry)
+                })
+        };
+        let rank_of = |other: XResourceId| {
+            self.windows
+                .get(&other)
+                .map_or(0, |record| record.stack_rank)
+        };
+        let occluded_by = |other: XResourceId| rank_of(other) > own_rank && overlaps(other);
+        let occludes = |other: XResourceId| rank_of(other) < own_rank && overlaps(other);
+        let any_above_occludes = || siblings.iter().any(|(_, other)| occluded_by(*other));
+        let occludes_any_below = || siblings.iter().any(|(_, other)| occludes(*other));
+        // The protocol's stack modes, as the reference decides them: Above
+        // and Below place the window against the sibling or at an end;
+        // TopIf, BottomIf and Opposite move it only when the named sibling
+        // (or, with none named, any sibling) occludes it or is occluded by
+        // it, and otherwise leave the order as it is.
+        let top = siblings.len();
+        let index = match (mode, sibling, sibling_index) {
+            (Some(0), _, Some(index)) => index.saturating_add(1),
+            (Some(0), _, None) => top,
+            (Some(1), _, Some(index)) => index,
+            (Some(1), _, None) => 0,
+            (Some(2), Some(sibling), _) => {
+                if occluded_by(sibling) {
+                    top
+                } else {
+                    return Ok(record.authority_surface());
+                }
+            }
+            (Some(2), None, _) => {
+                if any_above_occludes() {
+                    top
+                } else {
+                    return Ok(record.authority_surface());
+                }
+            }
+            (Some(3), Some(sibling), _) => {
+                if occludes(sibling) {
+                    0
+                } else {
+                    return Ok(record.authority_surface());
+                }
+            }
+            (Some(3), None, _) => {
+                if occludes_any_below() {
+                    0
+                } else {
+                    return Ok(record.authority_surface());
+                }
+            }
+            (Some(4), Some(sibling), _) => {
+                if occluded_by(sibling) {
+                    top
+                } else if occludes(sibling) {
+                    0
+                } else {
+                    return Ok(record.authority_surface());
+                }
+            }
+            (Some(4), None, _) => {
+                if any_above_occludes() {
+                    top
+                } else if occludes_any_below() {
+                    0
+                } else {
+                    return Ok(record.authority_surface());
+                }
+            }
+            _ => top,
         };
         siblings.insert(index.min(siblings.len()), (0, id));
         for (rank, (_, window)) in siblings.into_iter().enumerate() {

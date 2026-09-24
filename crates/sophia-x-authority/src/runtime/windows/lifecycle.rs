@@ -276,6 +276,7 @@ impl XAuthorityRuntime {
          namespace: NamespaceId,
          parent: crate::XResourceId,
          generation: u64,
+         withheld: &[crate::XResourceId],
      ) -> Result<Vec<AuthoritySurface>, XAuthorityRuntimeError> {
          if parent.local.raw() != u64::from(crate::X_SETUP_DEFAULT_ROOT) {
              self.resources
@@ -283,6 +284,9 @@ impl XAuthorityRuntime {
          }
          let mut surfaces = Vec::new();
          for window in self.windows.direct_children(namespace, parent) {
+             if withheld.contains(&window) {
+                 continue;
+             }
              let role = self
                  .windows
                  .get(window)

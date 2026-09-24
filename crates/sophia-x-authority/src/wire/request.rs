@@ -73,6 +73,10 @@ pub enum XWireRequest {
     },
     MapSubwindows {
         window: XResourceId,
+        /// Children the socket layer withholds from this map because another
+        /// client manages the parent: each becomes a MapRequest to that
+        /// client instead. Empty at decode.
+        withheld: Vec<XResourceId>,
     },
     UnmapWindow {
         window: XResourceId,

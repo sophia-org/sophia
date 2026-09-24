@@ -105,6 +105,7 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
         map_subwindows,
         XWireRequest::MapSubwindows {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+            withheld: Vec::new(),
         }
     );
     assert_eq!(
