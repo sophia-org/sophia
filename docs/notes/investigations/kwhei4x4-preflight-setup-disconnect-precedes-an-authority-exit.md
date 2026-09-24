@@ -215,3 +215,15 @@ notification (t063) remains nonpassing, in both byte orders. Evidence:
 `.artifacts/x11-setup-containment-final/report.json`. This supersedes the
 intermediate overall count above, without changing its retained evidence or
 the limits on attribution of the physical incident.
+
+## Deployment and acceptance, 2026-09-24
+
+The repair 5cb58d3a is an ancestor of every installed identity the
+2026-09-24 installation audit verified: the current release
+0.1.0-d8eb04f6, the previous 4eacfcfb and the retained fallback d461492d
+(`git merge-base --is-ancestor 5cb58d3a <identity>` for each). The
+operator confirmed the same day, for t013, ordinary logins, logouts and
+emergency recoveries across those releases; live preflight has been
+running on the repaired authority since. With the offline containment
+gate at 78 of 80 (the rest t063) and the repair deployed and used, t089
+is closed.
