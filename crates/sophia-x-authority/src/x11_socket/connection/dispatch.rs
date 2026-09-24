@@ -3298,6 +3298,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         source.teardown.lock().map_err(|_| X11SetupSocketError::new("control teardown unavailable"))?
             .removed.as_mut().ok_or_else(|| X11SetupSocketError::new("control removal receipt missing"))?.resources = release.clone();
     }
+    // Ownerships this client took with another client's window end with it
+    // too: ownership is the requester's, not the window's (t226).
+    release.retired_selection_ownerships.extend(
+        state
+            .runtime
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
+            .retire_selections_requested_by(client.raw()),
+    );
     // The selections this client owned ended with it, and its watchers are
     // owed that. Drained before the subscriptions are retired below, because
     // those are what name the recipients.

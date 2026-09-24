@@ -246,6 +246,11 @@ fn dispatch_core_window_request(
                     if let XAuthorityRequestKind::RequestSelection { transfer, .. } = &kind {
                         runtime.set_pending_clipboard_byte_order(*transfer, context.byte_order);
                     }
+                    if response.outcome == XAuthorityResponseOutcome::Accepted
+                        && let XAuthorityRequestKind::SetSelectionOwner { selection, owner: Some(_), .. } = &kind
+                    {
+                        runtime.note_selection_requester(context.namespace, *selection, context.client_id);
+                    }
                     let outputs = if let XAuthorityRequestKind::MapWindow { window, .. } = kind {
                         outputs_from_map_response(
                             context,

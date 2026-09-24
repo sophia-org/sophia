@@ -501,6 +501,21 @@ impl XAuthorityRuntime {
          self.input_only_windows.contains(&window)
      }
 
+     /// The client that took a selection, once its SetSelectionOwner stood.
+     pub fn note_selection_requester(&mut self, namespace: NamespaceId, selection: crate::XAtom, requester: u64) {
+         self.selections.set_requester(selection, Some(namespace), requester);
+     }
+
+     /// End every ownership a departing client took, whichever window it
+     /// named; the socket layer routes the SelectionClear these owe.
+     pub fn retire_selections_requested_by(&mut self, requester: u64) -> Vec<crate::XSelectionOwnerUpdate> {
+         self.selections.clear_requester_ownerships(
+             requester,
+             &self.windows,
+             crate::XSelectionChangeKind::SelectionClientClosed,
+         )
+     }
+
      /// Record the border width a window was created or configured with.
      /// Sophia draws no border, so this is the number a client reads back
      /// and nothing on screen; zero is the default and is not stored.

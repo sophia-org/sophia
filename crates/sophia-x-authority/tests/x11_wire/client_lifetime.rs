@@ -333,6 +333,71 @@ mod client_lifetime {
         }
     }
 
+    /// "When the owner's client terminates ... the selection reverts to
+    /// having no owner." A client that took PRIMARY and departed leaves the
+    /// selection unowned for whoever asks next, and that holds when the
+    /// window it named is another client's and survives it: ownership is
+    /// the requester's, not the window's (XTS Xlib5 XSetSelectionOwner 6,
+    /// which takes the selection from a second connection with the first
+    /// connection's window; t226). Red before the fix on the second
+    /// window: the departure cleared only ownerships held by the departing
+    /// client's own windows.
+    #[test]
+    fn a_selection_reverts_to_no_owner_when_its_owners_client_departs() {
+        for (byte_order, peers_window) in [
+            (XByteOrder::LittleEndian, false),
+            (XByteOrder::BigEndian, false),
+            (XByteOrder::LittleEndian, true),
+            (XByteOrder::BigEndian, true),
+        ] {
+            let (socket_path, server) = routed_service("selection-departs", 2);
+            let (mut owner, owner_base) = connected(&socket_path, byte_order);
+            let (mut peer, peer_base) = connected(&socket_path, byte_order);
+            let window = if peers_window { peer_base + 1 } else { owner_base + 1 };
+            if peers_window {
+                peer.write_all(&create_window_request(byte_order, window, 0, 0, 40, 40)).unwrap();
+                peer.write_all(&get_input_focus(byte_order)).unwrap();
+                loop {
+                    if read_x_record(&mut peer)[0] == 1 {
+                        break;
+                    }
+                }
+            } else {
+                owner.write_all(&create_window_request(byte_order, window, 0, 0, 40, 40)).unwrap();
+            }
+            owner.write_all(&set_selection_owner_request(byte_order, window, X_ATOM_PRIMARY, 0)).unwrap();
+            owner.write_all(&get_input_focus(byte_order)).unwrap();
+            loop {
+                if read_x_record(&mut owner)[0] == 1 {
+                    break;
+                }
+            }
+            peer.write_all(&resource_request(byte_order, 23, X_ATOM_PRIMARY)).unwrap();
+            let reply = read_x_reply(&mut peer, byte_order);
+            assert_eq!(read_u32(byte_order, &reply[8..12]), window, "{byte_order:?}: owned while the owner lives");
+            let departed = std::time::Instant::now();
+            drop(owner);
+            let deadline = departed + Duration::from_secs(10);
+            loop {
+                peer.write_all(&resource_request(byte_order, 23, X_ATOM_PRIMARY)).unwrap();
+                let reply = read_x_reply(&mut peer, byte_order);
+                let holder = read_u32(byte_order, &reply[8..12]);
+                if holder == 0 {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "{byte_order:?} peers_window={peers_window}: the selection still names {holder:#x} after its taker departed"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert!(departed.elapsed() < Duration::from_secs(2), "{byte_order:?}: cleared within a departure, not a timeout: {:?}", departed.elapsed());
+            drop(peer);
+            server.join().unwrap().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
     /// Save-set processing maps a saved window that is unmapped, "even if it
     /// was not an inferior of a window created by the client": a peer's
     /// unmapped window under the root, saved by a manager that departs, is

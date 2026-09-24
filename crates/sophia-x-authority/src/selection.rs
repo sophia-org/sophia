@@ -55,6 +55,10 @@ pub struct XSelectionOwnerRecord {
     pub generation: u64,
     pub timestamp: XTimestamp,
     pub selection_timestamp: XTimestamp,
+    /// The client that made the request, when known: ownership ends with
+    /// that client's connection even when the owner window is another
+    /// client's and survives it (t226).
+    pub requester: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -121,6 +125,7 @@ impl XSelectionMonitor {
             generation: self.generation,
             timestamp: event.timestamp,
             selection_timestamp: event.selection_timestamp,
+            requester: None,
         };
 
         self.owners.insert(key, current);
@@ -130,6 +135,53 @@ impl XSelectionMonitor {
             current,
             kind: event.kind,
         }
+    }
+
+    /// Remember which client took a selection, once the ownership stands.
+    pub fn set_requester(
+        &mut self,
+        selection: XAtom,
+        namespace: Option<NamespaceId>,
+        requester: u64,
+    ) {
+        if let Some(record) = self.owners.get_mut(&(selection, namespace))
+            && record.owner.is_some()
+        {
+            record.requester = Some(requester);
+        }
+    }
+
+    /// Drop every ownership `requester` took, returning what changed: "when
+    /// the owner's client terminates, the selection reverts to having no
+    /// owner", whichever client's window it named.
+    pub fn clear_requester_ownerships(
+        &mut self,
+        requester: u64,
+        windows: &XWindowTable,
+        kind: XSelectionChangeKind,
+    ) -> Vec<XSelectionOwnerUpdate> {
+        let owners = self
+            .owners
+            .values()
+            .filter(|record| record.owner.is_some() && record.requester == Some(requester))
+            .copied()
+            .collect::<Vec<_>>();
+        owners
+            .into_iter()
+            .map(|owner| {
+                self.apply_event_in_namespace(
+                    XSelectionEvent {
+                        selection: owner.selection,
+                        owner: None,
+                        timestamp: owner.timestamp,
+                        selection_timestamp: owner.selection_timestamp,
+                        kind,
+                    },
+                    windows,
+                    owner.namespace,
+                )
+            })
+            .collect()
     }
 
     /// Drop `window`'s selection ownerships, returning what changed.
