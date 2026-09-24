@@ -1,0 +1,20 @@
+{
+  "/Xlib9/XDrawArc/XDrawArc": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawArcs/XDrawArcs": "the suite retired this assertion (NOTINUSE in the source)",
+  "/Xlib9/XDrawArc/XDrawArc#37": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test' (zero-width lines are device-dependent)",
+  "/Xlib9/XDrawArcs/XDrawArcs#40": "the suite's own omission: 'The statement in the X11 specification is not specific enough to write a test' (zero-width lines are device-dependent)",
+  "/Xlib9/XDrawArcs/XDrawArcs#18": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XFillArcs/XFillArcs#5": "the suite's own omission: 'There is no known portable test method for this assertion'",
+  "/Xlib9/XDrawArc/XDrawArc#102": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XDrawArcs/XDrawArcs#112": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XFillArc/XFillArc#44": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XFillArcs/XFillArcs#46": "needs a second root; this authority serves one screen, and the suite reports 'No alternate root supported'",
+  "/Xlib9/XDrawArc/XDrawArc#42": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer",
+  "/Xlib9/XDrawArc/XDrawArc#63": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer",
+  "/Xlib9/XDrawArc/XDrawArc#66": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer",
+  "/Xlib9/XDrawArc/XDrawArc#73": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer",
+  "/Xlib9/XDrawArcs/XDrawArcs#45": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer",
+  "/Xlib9/XDrawArcs/XDrawArcs#66": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer",
+  "/Xlib9/XDrawArcs/XDrawArcs#69": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer",
+  "/Xlib9/XDrawArcs/XDrawArcs#76": "Xorg's own mi (Xvnc, 2026-09-24) draws the same pixels and gets the same WARNING: the suite's stored image disagrees with the reference rasterizer"
+}
