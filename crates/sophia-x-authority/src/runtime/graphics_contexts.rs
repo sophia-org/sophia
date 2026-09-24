@@ -78,9 +78,12 @@ impl XAuthorityRuntime {
         destination: crate::XResourceId,
         mask: u32,
     ) -> Result<(), XAuthorityRuntimeError> {
+        let held = self.graphics_contexts.held_by(destination);
         self.graphics_contexts
             .copy(namespace, source, destination, mask)
-            .map_err(Into::into)
+            .map_err(XAuthorityRuntimeError::from)?;
+        self.release_held_pixmaps(held);
+        Ok(())
     }
 
     /// Replace a graphics context's dash pattern, as `SetDashes` asks.
@@ -140,9 +143,12 @@ impl XAuthorityRuntime {
         } else {
             None
         };
+        let held = self.graphics_contexts.held_by(gc);
         self.graphics_contexts
             .change(namespace, gc, mask, values, font_face)
-            .map_err(Into::into)
+            .map_err(XAuthorityRuntimeError::from)?;
+        self.release_held_pixmaps(held);
+        Ok(())
     }
 
     pub fn set_graphics_context_clip_rectangles(
@@ -153,9 +159,12 @@ impl XAuthorityRuntime {
         clip_y_origin: i16,
         rectangles: Vec<Rect>,
     ) -> Result<(), XAuthorityRuntimeError> {
+        let held = self.graphics_contexts.held_by(gc);
         self.graphics_contexts
             .set_clip_rectangles(namespace, gc, clip_x_origin, clip_y_origin, rectangles)
-            .map_err(Into::into)
+            .map_err(XAuthorityRuntimeError::from)?;
+        self.release_held_pixmaps(held);
+        Ok(())
     }
 
     pub fn free_graphics_context(
@@ -163,9 +172,21 @@ impl XAuthorityRuntime {
         namespace: NamespaceId,
         gc: crate::XResourceId,
     ) -> Result<(), XAuthorityRuntimeError> {
+        let held = self.graphics_contexts.held_by(gc);
         self.graphics_contexts
             .remove(namespace, gc)
-            .map_err(Into::into)
+            .map_err(XAuthorityRuntimeError::from)?;
+        self.release_held_pixmaps(held);
+        Ok(())
+    }
+
+    /// After a request that may have let go of a clip mask, tile or stipple:
+    /// a pixmap freed while this context held it lives on under a private
+    /// key, and goes once nothing holds it.
+    fn release_held_pixmaps(&mut self, held: [Option<crate::XResourceId>; 3]) {
+        for pixmap in held.into_iter().flatten() {
+            self.maybe_drop_retained_pixmap(pixmap);
+        }
     }
 }
 

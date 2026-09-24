@@ -341,6 +341,38 @@ impl XGraphicsContextTable {
         Ok(())
     }
 
+    /// Whether any graphics context holds `pixmap` as its clip mask, tile or
+    /// stipple.
+    pub(crate) fn holds_pixmap(&self, pixmap: XResourceId) -> bool {
+        self.records
+            .values()
+            .any(|record| held_pixmaps(&record.values).contains(&Some(pixmap)))
+    }
+
+    /// The pixmaps one graphics context holds, as clip mask, tile and stipple.
+    pub(crate) fn held_by(&self, id: XResourceId) -> [Option<XResourceId>; 3] {
+        self.records
+            .get(&id)
+            .map_or([None; 3], |record| held_pixmaps(&record.values))
+    }
+
+    /// Point every graphics context holding `from` at `to` instead: the
+    /// pixmap's XID is being freed while its pixels live on under a private
+    /// key.
+    pub(crate) fn rekey_held_pixmap(&mut self, from: XResourceId, to: XResourceId) {
+        for record in self.records.values_mut() {
+            for held in [
+                &mut record.values.clip_mask,
+                &mut record.values.tile,
+                &mut record.values.stipple,
+            ] {
+                if *held == Some(from) {
+                    *held = Some(to);
+                }
+            }
+        }
+    }
+
     pub fn ids_for_namespace_in_client_range(
         &self,
         namespace: NamespaceId,
@@ -356,4 +388,9 @@ impl XGraphicsContextTable {
             .map(|record| record.id)
             .collect()
     }
+}
+
+/// A graphics context's clip mask, tile and stipple.
+fn held_pixmaps(values: &XGraphicsContextValues) -> [Option<XResourceId>; 3] {
+    [values.clip_mask, values.tile, values.stipple]
 }
