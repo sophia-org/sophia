@@ -91,6 +91,7 @@ fn route_core_lifecycle_events_with_control(
     const EXPOSURE_MASK: u32 = 1 << 15;
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
+    const RESIZE_REDIRECT_MASK: u32 = 1 << 18;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
     const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
@@ -171,8 +172,12 @@ fn route_core_lifecycle_events_with_control(
             } => {
                 Some((index, target, STRUCTURE_NOTIFY_MASK, *event))
             }
-            XClientEvent::CirculateRequest { parent, .. } => {
+            XClientEvent::CirculateRequest { parent, .. }
+            | XClientEvent::ConfigureRequest { parent, .. } => {
                 Some((index, parent, SUBSTRUCTURE_REDIRECT_MASK, *event))
+            }
+            XClientEvent::ResizeRequest { window, .. } => {
+                Some((index, window, RESIZE_REDIRECT_MASK, *event))
             }
             // A destroy addressed to its own window is a StructureNotify
             // record; one addressed elsewhere is the parent-addressed form the
@@ -317,6 +322,7 @@ fn filter_local_core_lifecycle_events(
     const EXPOSURE_MASK: u32 = 1 << 15;
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
+    const RESIZE_REDIRECT_MASK: u32 = 1 << 18;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
     const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
@@ -393,8 +399,12 @@ fn filter_local_core_lifecycle_events(
             // is the one managing the parent, which is the usual case for a
             // window manager acting through its own connection.
             XClientEvent::MapRequest { parent, .. }
-            | XClientEvent::CirculateRequest { parent, .. } => {
+            | XClientEvent::CirculateRequest { parent, .. }
+            | XClientEvent::ConfigureRequest { parent, .. } => {
                 selections.selects(parent, SUBSTRUCTURE_REDIRECT_MASK)
+            }
+            XClientEvent::ResizeRequest { window, .. } => {
+                selections.selects(window, RESIZE_REDIRECT_MASK)
             }
             XClientEvent::VisibilityNotify { window, .. } => {
                 selections.selects(window, VISIBILITY_CHANGE_MASK)

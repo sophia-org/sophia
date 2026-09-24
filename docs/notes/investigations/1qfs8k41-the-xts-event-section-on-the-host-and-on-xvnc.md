@@ -114,7 +114,10 @@ does not propagate to the ancestor that selected it, `subwindow` is not
 filled, motion with a button held is not reported to Button<n>Motion
 selectors, and a key carries no pointer coordinates (t220); crossing and
 keymap events from hierarchy changes and visibility from occlusion
-(t211); redirection (t198), gravity (t199) and ColormapNotify (t210).
+(t211); gravity (t199) and ColormapNotify (t210). Redirection (t198)
+followed on the same branch: ConfigureRequest to the client managing the
+parent, ResizeRequest to a ResizeRedirect selector, as MapRequest already
+was.
 
 ## Status
 

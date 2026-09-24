@@ -300,6 +300,41 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[8..12], window);
             out[16] = place;
         }
+        XClientEvent::ConfigureRequest {
+            sequence,
+            stack_mode,
+            parent,
+            window,
+            sibling,
+            x,
+            y,
+            width,
+            height,
+            border_width,
+            value_mask,
+        } => {
+            write_event_header(byte_order, &mut out, X_CONFIGURE_REQUEST, stack_mode, sequence);
+            put_resource(byte_order, &mut out[4..8], parent);
+            put_resource(byte_order, &mut out[8..12], window);
+            put_resource(byte_order, &mut out[12..16], sibling);
+            put_i16(byte_order, &mut out[16..18], x);
+            put_i16(byte_order, &mut out[18..20], y);
+            put_u16(byte_order, &mut out[20..22], width);
+            put_u16(byte_order, &mut out[22..24], height);
+            put_u16(byte_order, &mut out[24..26], border_width);
+            put_u16(byte_order, &mut out[26..28], value_mask);
+        }
+        XClientEvent::ResizeRequest {
+            sequence,
+            window,
+            width,
+            height,
+        } => {
+            write_event_header(byte_order, &mut out, X_RESIZE_REQUEST, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], window);
+            put_u16(byte_order, &mut out[8..10], width);
+            put_u16(byte_order, &mut out[10..12], height);
+        }
         XClientEvent::ReparentNotify {
             sequence,
             event,

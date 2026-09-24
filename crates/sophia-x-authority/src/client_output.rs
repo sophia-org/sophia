@@ -39,6 +39,8 @@ const X_DESTROY_NOTIFY: u8 = 17;
 const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
 const X_MAP_REQUEST: u8 = 20;
+const X_CONFIGURE_REQUEST: u8 = 23;
+const X_RESIZE_REQUEST: u8 = 25;
 const X_MAPPING_NOTIFY: u8 = 34;
 const X_REPARENT_NOTIFY: u8 = 21;
 const X_CONFIGURE_NOTIFY: u8 = 22;
@@ -209,6 +211,30 @@ pub enum XClientEvent {
         parent: XResourceId,
         window: XResourceId,
         place: u8,
+    },
+    /// A ConfigureWindow on a child of a window another client manages
+    /// (SubstructureRedirect selected on the parent): the request as made,
+    /// unset fields carrying the current values, and nothing applied.
+    ConfigureRequest {
+        sequence: u16,
+        stack_mode: u8,
+        parent: XResourceId,
+        window: XResourceId,
+        sibling: XResourceId,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        border_width: u16,
+        value_mask: u16,
+    },
+    /// A size change on a window another client selected ResizeRedirect
+    /// on: the size asked for, and the size not applied.
+    ResizeRequest {
+        sequence: u16,
+        window: XResourceId,
+        width: u16,
+        height: u16,
     },
     /// A window given a new parent: by a departing client's save-set
     /// (t166), which reparents what it saved to the nearest survivor.

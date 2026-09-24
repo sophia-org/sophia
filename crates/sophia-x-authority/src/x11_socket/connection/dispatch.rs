@@ -1499,6 +1499,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         crate::XWireRequest::CirculateWindow { window, direction } => Some((*window, *direction)),
                         _ => None,
                     };
+                    let configured = match &request {
+                        crate::XWireRequest::ConfigureWindow { .. } => Some(request.clone()),
+                        _ => None,
+                    };
                     let unmapped_window = match &request {
                         crate::XWireRequest::UnmapWindow { window } => Some(*window),
                         _ => None,
@@ -1701,6 +1705,77 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                         _ => None,
                     };
+                    // A ConfigureWindow on a child another client manages
+                    // (SubstructureRedirect selected on the parent) is that
+                    // client's to decide: it hears the request as a
+                    // ConfigureRequest and nothing is applied. Override-redirect
+                    // is never redirected, as for a map (t198).
+                    let redirected_configure = match (&configured, protocol_routing.as_ref()) {
+                        (Some(crate::XWireRequest::ConfigureWindow { window, .. }), Some(routing))
+                            if !runtime.window_override_redirect(namespace, *window).unwrap_or(false) =>
+                        {
+                            let parent = routing.window_parent(*window).map_err(|error| {
+                                X11SetupSocketError::new(format!(
+                                    "failed to resolve X11 configure redirect parent: {error}"
+                                ))
+                            })?;
+                            match parent {
+                                Some(parent) => routing
+                                    .core_event_subscribers(parent, SUBSTRUCTURE_REDIRECT_MASK)
+                                    .map_err(|error| {
+                                        X11SetupSocketError::new(format!(
+                                            "failed to inspect X11 configure redirect subscriptions: {error}"
+                                        ))
+                                    })?
+                                    .iter()
+                                    .any(|recipient| *recipient != client)
+                                    .then_some(parent),
+                                None => None,
+                            }
+                        }
+                        _ => None,
+                    };
+                    // A size change on a window another client selected
+                    // ResizeRedirect on reaches that client as a ResizeRequest
+                    // and is not applied; the rest of the request still is.
+                    const RESIZE_REDIRECT_MASK: u32 = 1 << 18;
+                    let mut resize_request = None;
+                    if redirected_configure.is_none()
+                        && let (
+                            Some(crate::XWireRequest::ConfigureWindow { window, value_mask, width, height, .. }),
+                            Some(routing),
+                        ) = (&configured, protocol_routing.as_ref())
+                        && *value_mask & 0xC != 0
+                        && let Ok(current) = runtime.window_geometry(namespace, *window)
+                    {
+                        let clamp = |value: i32| u16::try_from(value).unwrap_or(u16::MAX);
+                        let (asked_width, asked_height) =
+                            (width.unwrap_or(clamp(current.width)), height.unwrap_or(clamp(current.height)));
+                        let changes = i32::from(asked_width) != current.width || i32::from(asked_height) != current.height;
+                        let redirected = changes
+                            && routing
+                                .core_event_subscribers(*window, RESIZE_REDIRECT_MASK)
+                                .map_err(|error| {
+                                    X11SetupSocketError::new(format!(
+                                        "failed to inspect X11 resize redirect subscriptions: {error}"
+                                    ))
+                                })?
+                                .iter()
+                                .any(|recipient| *recipient != client);
+                        if redirected {
+                            resize_request = Some(crate::XClientEvent::ResizeRequest {
+                                sequence,
+                                window: *window,
+                                width: asked_width,
+                                height: asked_height,
+                            });
+                            if let crate::XWireRequest::ConfigureWindow { value_mask, width, height, .. } = &mut request {
+                                *value_mask &= !0xC;
+                                *width = None;
+                                *height = None;
+                            }
+                        }
+                    }
                     // A circulate on a window another client manages
                     // (SubstructureRedirect selected on it) is that client's
                     // to decide: the child that would move is named in a
@@ -1752,6 +1827,38 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             XDispatchResult {
                                 response: None,
                                 outputs,
+                                metadata_candidates: Vec::new(),
+                            }
+                        }
+                        _ if redirected_configure.is_some() => {
+                            runtime.begin_dispatch();
+                            let parent = redirected_configure.expect("redirect guard");
+                            let Some(crate::XWireRequest::ConfigureWindow {
+                                window, value_mask, x, y, width, height, sibling, stack_mode,
+                            }) = configured
+                            else {
+                                unreachable!("a configure redirect names a ConfigureWindow")
+                            };
+                            let current = runtime.window_geometry(namespace, window).unwrap_or_default();
+                            let clamp_i = |value: i32| i16::try_from(value).unwrap_or(i16::MAX);
+                            let clamp_u = |value: i32| u16::try_from(value).unwrap_or(u16::MAX);
+                            XDispatchResult {
+                                response: None,
+                                outputs: vec![crate::XClientOutput::Event(
+                                    crate::XClientEvent::ConfigureRequest {
+                                        sequence,
+                                        stack_mode: stack_mode.unwrap_or(0),
+                                        parent,
+                                        window,
+                                        sibling: sibling.unwrap_or(crate::XResourceId::NONE),
+                                        x: x.unwrap_or(clamp_i(current.x)),
+                                        y: y.unwrap_or(clamp_i(current.y)),
+                                        width: width.unwrap_or(clamp_u(current.width)),
+                                        height: height.unwrap_or(clamp_u(current.height)),
+                                        border_width: 0,
+                                        value_mask,
+                                    },
+                                )],
                                 metadata_candidates: Vec::new(),
                             }
                         }
@@ -1861,6 +1968,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             dispatch_x11_wire_request(dispatch_context, request, &mut runtime, &mut atoms, &mut properties)
                         },
                     };
+                    if let Some(event) = resize_request {
+                        output.outputs.push(crate::XClientOutput::Event(event));
+                    }
                     if let X11ExplicitPointerGrabPreparation::Prepared {
                         identity, anchor, ..
                     } = explicit_pointer_preparation
