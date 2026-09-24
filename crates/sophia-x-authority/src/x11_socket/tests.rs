@@ -1505,6 +1505,7 @@ include!(concat!(
 ));
 
 include!("tests/ordered_codec.rs");
+include!("tests/dispatch_surface_generation.rs");
 
 #[path = "../../tests/support/private_control_cleanup.rs"]
 mod private_control_cleanup;

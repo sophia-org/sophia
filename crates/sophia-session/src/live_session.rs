@@ -139,9 +139,6 @@ use startup_readiness::{
     startup_surface_visual_detail,
 };
 use x_frontend::LiveXAdmissionPolicy;
-#[cfg(test)]
-use x_frontend::{LiveXPixmapAllocator, LiveXRenderDeviceProvider};
-
 include!("live_session/config.rs");
 include!("live_session/input.rs");
 include!("live_session/input_capacity.rs");
@@ -1338,21 +1335,5 @@ fn build_reloaded_output_topology_candidate(
 }
 
 mod tests;
-
-#[cfg(test)]
-#[path = "../tests/support/mirror_gate_session_config.rs"]
-mod mirror_gate_session_config;
-
-#[cfg(test)]
-#[path = "../tests/support/live_control.rs"]
-mod live_control_tests;
-
-#[cfg(test)]
-#[path = "../tests/support/panel_session_config.rs"]
-mod panel_session_config;
-
-#[cfg(test)]
-#[path = "../tests/support/desktop_composition.rs"]
-mod desktop_composition;
 
 include!("live_session/cpu_surface_sample.rs");

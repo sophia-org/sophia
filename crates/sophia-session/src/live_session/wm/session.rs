@@ -18,27 +18,6 @@ enum LiveWmProposalSource {
     Relayout,
 }
 
-#[cfg(test)]
-fn completed_pointer_gesture_geometry(
-    gesture: sophia_protocol::WmPointerGestureCompleted,
-    initial: Rect,
-) -> Rect {
-    let delta_x = gesture.end.x.saturating_sub(gesture.start.x);
-    let delta_y = gesture.end.y.saturating_sub(gesture.start.y);
-    match gesture.mode {
-        sophia_protocol::WmPointerGestureMode::Move => Rect {
-            x: initial.x.saturating_add(delta_x),
-            y: initial.y.saturating_add(delta_y),
-            ..initial
-        },
-        sophia_protocol::WmPointerGestureMode::Resize => Rect {
-            width: initial.width.saturating_add(delta_x).max(1),
-            height: initial.height.saturating_add(delta_y).max(1),
-            ..initial
-        },
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LiveWmRequestAdmission {
     Admitted,
