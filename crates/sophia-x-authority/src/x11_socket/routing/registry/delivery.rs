@@ -530,6 +530,17 @@ impl XServerFrontendRouteRegistry {
             event,
             route.delivery,
         );
+        if result.is_ok()
+            && let Err(error) = self.route_to_selecting_peers(
+                surface_route.namespace,
+                client,
+                surface_route.window,
+                target_window,
+                event,
+            )
+        {
+            tracing::warn!("sophia_x11_input_route status=peer_fanout_failed reason={error:?} content=redacted");
+        }
         if let Some((identity, kind, admission)) = lease_update {
             let reported_kind = if result.is_ok() {
                 kind
