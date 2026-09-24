@@ -441,9 +441,7 @@
   },
   {
     "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
-    "purpose": 5,
-    "expected": "FAIL",
-    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+    "purpose": 5
   },
   {
     "case": "/Xlib4/XMapSubwindows/XMapSubwindows",

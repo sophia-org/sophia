@@ -497,6 +497,88 @@ mod hierarchy_requests {
         }
     }
 
+    /// The stack modes as the reference decides them (t217): TopIf, BottomIf
+    /// and Opposite move a window only when the named sibling, or with none
+    /// named any sibling, occludes it or is occluded by it, and otherwise
+    /// leave the order alone and report nothing; Above and Below place it
+    /// against the sibling or at an end (XTS Xlib4 XConfigureWindow 9-18).
+    /// Red before the fix: TopIf and Opposite always raised, BottomIf always
+    /// lowered.
+    #[test]
+    fn conditional_stack_modes_move_a_window_only_when_occlusion_says_so() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (mut client, socket_path, server) = served("stack-modes", byte_order);
+            let parent = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 1;
+            let (a, b, c, apart) = (
+                X_SETUP_DEFAULT_RESOURCE_ID_BASE + 2,
+                X_SETUP_DEFAULT_RESOURCE_ID_BASE + 3,
+                X_SETUP_DEFAULT_RESOURCE_ID_BASE + 4,
+                X_SETUP_DEFAULT_RESOURCE_ID_BASE + 5,
+            );
+            client.write_all(&create_window_request(byte_order, parent, 0, 0, 300, 300)).unwrap();
+            client.write_all(&map_window_request(byte_order, parent)).unwrap();
+            // Three overlapping children created bottom to top (a, b, c) and
+            // one far away that meets none of them.
+            for (window, x) in [(a, 10), (b, 30), (c, 50), (apart, 200)] {
+                client.write_all(&create_window_request_with_parent(byte_order, window, parent, x, 10, 60, 60)).unwrap();
+                client.write_all(&map_window_request(byte_order, window)).unwrap();
+                client.write_all(&change_window_event_mask_request(byte_order, window, 1 << 17)).unwrap();
+            }
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            let _ = events_until_reply(byte_order, &mut client);
+            let order = |client: &mut std::os::unix::net::UnixStream| {
+                client.write_all(&resource_request(byte_order, 15, parent)).unwrap();
+                let reply = read_x_reply(client, byte_order);
+                let count = usize::from(read_u16(byte_order, &reply[16..18]));
+                (0..count).map(|i| read_u32(byte_order, &reply[32 + 4 * i..36 + 4 * i])).collect::<Vec<_>>()
+            };
+            let configure = |client: &mut std::os::unix::net::UnixStream, window: u32, sibling: Option<u32>, mode: u32| {
+                let mut out = vec![12, 0];
+                push_u16(&mut out, byte_order, 4 + u16::from(sibling.is_some()));
+                push_u32(&mut out, byte_order, window);
+                push_u16(&mut out, byte_order, (1 << 6) | if sibling.is_some() { 1 << 5 } else { 0 });
+                push_u16(&mut out, byte_order, 0);
+                if let Some(sibling) = sibling {
+                    push_u32(&mut out, byte_order, sibling);
+                }
+                push_u32(&mut out, byte_order, mode);
+                client.write_all(&out).unwrap();
+                client.write_all(&get_input_focus(byte_order)).unwrap();
+                events_until_reply(byte_order, client)
+                    .iter()
+                    .filter(|e| e[0] & 0x7f == CONFIGURE_NOTIFY)
+                    .count()
+            };
+            assert_eq!(order(&mut client), vec![a, b, c, apart], "{byte_order:?}: as created");
+
+            // TopIf with the sibling that occludes: to the top. With one that
+            // does not (apart): nothing, and nothing reported.
+            assert_eq!(configure(&mut client, a, Some(apart), 2), 0, "{byte_order:?}: TopIf against a sibling that does not occlude");
+            assert_eq!(order(&mut client), vec![a, b, c, apart], "{byte_order:?}");
+            assert!(configure(&mut client, a, Some(c), 2) > 0, "{byte_order:?}: TopIf against the occluder");
+            assert_eq!(order(&mut client), vec![b, c, apart, a], "{byte_order:?}: a on top");
+            // BottomIf: a now occludes b: to the bottom. Then a occludes nobody
+            // (it is at the bottom): nothing.
+            assert!(configure(&mut client, a, Some(b), 3) > 0, "{byte_order:?}: BottomIf over the occluded");
+            assert_eq!(order(&mut client), vec![a, b, c, apart], "{byte_order:?}: a at the bottom");
+            assert_eq!(configure(&mut client, a, None, 3), 0, "{byte_order:?}: BottomIf occluding nobody");
+            // Opposite without a sibling: a is occluded by b and c: to the
+            // top; again: a occludes b and c: to the bottom; apart meets
+            // nobody: nothing either way.
+            assert!(configure(&mut client, a, None, 4) > 0, "{byte_order:?}: Opposite, occluded");
+            assert_eq!(order(&mut client), vec![b, c, apart, a], "{byte_order:?}");
+            assert!(configure(&mut client, a, None, 4) > 0, "{byte_order:?}: Opposite, occluding");
+            assert_eq!(order(&mut client), vec![a, b, c, apart], "{byte_order:?}");
+            assert_eq!(configure(&mut client, apart, None, 4), 0, "{byte_order:?}: Opposite meeting nobody");
+            // TopIf without a sibling on the top window: nothing above it.
+            assert_eq!(configure(&mut client, c, None, 2), 0, "{byte_order:?}: TopIf with nothing above");
+            assert_eq!(order(&mut client), vec![a, b, c, apart], "{byte_order:?}: unchanged");
+            drop(client);
+            server.join().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
     #[test]
     fn rotate_properties_moves_values_along_the_list_and_a_grab_change_without_a_grab_is_nothing() {
         for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {

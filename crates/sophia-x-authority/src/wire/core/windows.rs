@@ -393,6 +393,7 @@ fn decode_map_subwindows(
     require_exact_len(X_MAP_SUBWINDOWS, X_MAP_SUBWINDOWS_REQ_LEN, bytes.len())?;
     Ok(XWireRequest::MapSubwindows {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+        withheld: Vec::new(),
     })
 }
 

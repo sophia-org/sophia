@@ -1776,6 +1776,42 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             }
                         }
                     }
+                    // MapSubwindows under a managed parent: each unmapped,
+                    // non-override-redirect child is the manager's to map, so
+                    // the manager hears a MapRequest per child and those
+                    // children stay unmapped; the rest map as before (XTS
+                    // XMapSubwindows 5, t217).
+                    let mut withheld_map_requests = Vec::new();
+                    if let (crate::XWireRequest::MapSubwindows { window: parent, withheld }, Some(routing)) =
+                        (&mut request, protocol_routing.as_ref())
+                        && routing
+                            .core_event_subscribers(*parent, SUBSTRUCTURE_REDIRECT_MASK)
+                            .map_err(|error| {
+                                X11SetupSocketError::new(format!(
+                                    "failed to inspect X11 map-subwindows redirect subscriptions: {error}"
+                                ))
+                            })?
+                            .iter()
+                            .any(|recipient| *recipient != client)
+                    {
+                        let parent = *parent;
+                        let children = runtime
+                            .window_parent_and_children(namespace, parent)
+                            .map(|(_, children)| children)
+                            .unwrap_or_default();
+                        for child in children {
+                            if matches!(runtime.window_map_state(namespace, child), Ok(crate::XMapState::Unmapped))
+                                && !runtime.window_override_redirect(namespace, child).unwrap_or(false)
+                            {
+                                withheld.push(child);
+                                withheld_map_requests.push(crate::XClientEvent::MapRequest {
+                                    sequence,
+                                    parent,
+                                    window: child,
+                                });
+                            }
+                        }
+                    }
                     // A circulate on a window another client manages
                     // (SubstructureRedirect selected on it) is that client's
                     // to decide: the child that would move is named in a
@@ -1971,6 +2007,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     if let Some(event) = resize_request {
                         output.outputs.push(crate::XClientOutput::Event(event));
                     }
+                    output
+                        .outputs
+                        .extend(withheld_map_requests.into_iter().map(crate::XClientOutput::Event));
                     if let X11ExplicitPointerGrabPreparation::Prepared {
                         identity, anchor, ..
                     } = explicit_pointer_preparation
