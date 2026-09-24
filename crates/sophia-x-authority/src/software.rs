@@ -20,9 +20,8 @@ mod window_background;
 use pixmap_exports::XPixmapExportDamage;
 
 use raster_ops::{
-    XClipMask, copy_buffer_region, copy_xrgb8888, draw_glyph, draw_line, draw_rectangle_outline,
-    fill_rect, fill_rect_masked, point_bounds, put_image_pixels, rectangle_outline_bounds,
-    set_pixel,
+    XClipMask, copy_buffer_region, copy_xrgb8888, draw_glyph, draw_line, fill_rect,
+    fill_rect_masked, point_bounds, put_image_pixels, set_pixel,
 };
 pub(crate) use raster_variants::{
     XAuthorityRasterCommand, XAuthorityRasterStore, XOwnedTextDraw, XRasterPoint,
@@ -641,10 +640,10 @@ impl XSoftwareBufferStore {
 
     /// Draw disjoint segments and report the rectangle they dirtied.
     ///
-    /// A width of one or more is a wide line, drawn as `mi` draws it: each
-    /// segment its own polyline with caps at both ends. The chords of a
-    /// stroked arc are the exception, kept on the brush stroke, because a
-    /// wide arc is not a run of capped segments and `miarc.c` is not ported.
+    /// Each segment is its own polyline, as `miPolySegment` draws it, with
+    /// caps at both ends and, at zero width, its own end pixel. The chords of
+    /// a stroked arc are the exception, kept on the brush stroke, because an
+    /// arc is not a run of capped segments and `miarc.c` is not ported.
     pub fn draw_segments(
         &mut self,
         drawable: XResourceId,
@@ -653,31 +652,23 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
         stroke: XSegmentStroke,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
-        let wide = (gc.line_width > 0 && stroke == XSegmentStroke::Segments)
-            .then(|| geometry::wide_line::segments(segments, gc));
-        let damage = match &wide {
-            Some(spans) => geometry::wide_line::bounds(spans)?,
-            None => {
-                let points: Vec<XPoint> = segments
-                    .iter()
-                    .flat_map(|(from, to)| [*from, *to])
-                    .collect();
-                point_bounds(&points, gc.line_width)?
-            }
-        };
+        if stroke == XSegmentStroke::Segments {
+            let spans = geometry::wide_line::segments(segments, gc);
+            return self.paint_stroke(drawable, size, &spans, gc);
+        }
+        let points: Vec<XPoint> = segments
+            .iter()
+            .flat_map(|(from, to)| [*from, *to])
+            .collect();
+        let damage = point_bounds(&points, gc.line_width)?;
         let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        match &wide {
-            Some(spans) => paint_spans(buffer, spans, gc),
-            None => {
-                let width = i32::from(gc.line_width.max(1));
-                let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
-                for (from, to) in segments {
-                    draw_dashed(buffer, *from, *to, width, gc, &mut dashes);
-                }
-            }
+        let width = i32::from(gc.line_width.max(1));
+        let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
+        for (from, to) in segments {
+            draw_dashed(buffer, *from, *to, width, gc, &mut dashes);
         }
         let published_damage = Some(damage);
         withhold(
@@ -692,8 +683,9 @@ impl XSoftwareBufferStore {
         Some((result?, damage))
     }
 
-    /// Draw one connected polyline. A width of one or more is a wide line,
-    /// with the GC's joins between its segments and caps at its ends.
+    /// Draw one connected polyline, as `miPolylines` draws it at any width:
+    /// the GC's joins between its segments and caps at its ends, or at zero
+    /// width `mi`'s thin line.
     pub fn draw_lines(
         &mut self,
         drawable: XResourceId,
@@ -701,43 +693,13 @@ impl XSoftwareBufferStore {
         points: &[XPoint],
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuDrawResult> {
-        let wide = (gc.line_width > 0).then(|| geometry::wide_line::polyline(points, gc));
-        let damage = match &wide {
-            Some(spans) => geometry::wide_line::bounds(spans)?,
-            None => point_bounds(points, gc.line_width)?,
-        };
-        let mask_pixels = self.clip_mask_pixels(gc);
-        let handle = self.allocate_handle();
-        let (buffer, replaced) = self.ensure(drawable, size, handle)?;
-        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        match &wide {
-            Some(spans) => paint_spans(buffer, spans, gc),
-            None => {
-                // The dash pattern is walked across the whole polyline rather
-                // than restarted at each vertex, so a dashed outline is dashed
-                // evenly around its corners instead of putting a dash at every
-                // one.
-                let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
-                for pair in points.windows(2) {
-                    draw_dashed(buffer, pair[0], pair[1], 1, gc, &mut dashes);
-                }
-            }
-        }
-        let published_damage = Some(damage);
-        withhold(
-            buffer,
-            gc,
-            mask_pixels.as_ref(),
-            before.as_deref(),
-            published_damage,
-        );
-        let result = finish_immutable_update(buffer, handle, replaced, published_damage);
-        self.note_export_damage(drawable, replaced, published_damage);
-        result
+        let spans = geometry::wide_line::polylines(points, gc);
+        self.paint_stroke(drawable, size, &spans, gc)
+            .map(|(update, _)| update)
     }
 
-    /// Outline rectangles. A width of one or more follows `miPolyRectangle`:
-    /// four bands for a solid mitred outline, a closed polyline otherwise.
+    /// Outline rectangles, as `miPolyRectangle` does: four bands for a solid
+    /// mitred wide outline, a closed polyline otherwise.
     pub fn draw_rectangles(
         &mut self,
         drawable: XResourceId,
@@ -745,23 +707,25 @@ impl XSoftwareBufferStore {
         rectangles: &[Rect],
         gc: &XGraphicsContextValues,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
-        let wide = (gc.line_width > 0).then(|| geometry::wide_line::rectangles(rectangles, gc));
-        let damage = match &wide {
-            Some(spans) => geometry::wide_line::bounds(spans)?,
-            None => rectangle_outline_bounds(rectangles, gc.line_width)?,
-        };
+        let spans = geometry::wide_line::rectangles(rectangles, gc);
+        self.paint_stroke(drawable, size, &spans, gc)
+    }
+
+    /// Paint a stroke's spans and publish the rectangle they cover. Nothing
+    /// is drawn, and nothing published, when the stroke has no pixels.
+    fn paint_stroke(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        spans: &geometry::wide_line::XInkedSpans,
+        gc: &XGraphicsContextValues,
+    ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
+        let damage = geometry::wide_line::bounds(spans)?;
         let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        match &wide {
-            Some(spans) => paint_spans(buffer, spans, gc),
-            None => {
-                for rectangle in rectangles {
-                    draw_rectangle_outline(buffer, *rectangle, 1, gc);
-                }
-            }
-        }
+        paint_spans(buffer, spans, gc);
         let published_damage = Some(damage);
         withhold(
             buffer,

@@ -483,28 +483,6 @@ pub(super) fn draw_rectangle_outline(
     }
 }
 
-pub(super) fn rectangle_outline_bounds(rectangles: &[Rect], line_width: u16) -> Option<Rect> {
-    let first = *rectangles.first()?;
-    let mut left = first.x;
-    let mut top = first.y;
-    let mut right = first.x.saturating_add(first.width);
-    let mut bottom = first.y.saturating_add(first.height);
-    for rectangle in &rectangles[1..] {
-        left = left.min(rectangle.x);
-        top = top.min(rectangle.y);
-        right = right.max(rectangle.x.saturating_add(rectangle.width));
-        bottom = bottom.max(rectangle.y.saturating_add(rectangle.height));
-    }
-    let width = i32::from(line_width.max(1));
-    let half = width / 2;
-    Some(Rect {
-        x: left.saturating_sub(half),
-        y: top.saturating_sub(half),
-        width: right.saturating_sub(left).saturating_add(width),
-        height: bottom.saturating_sub(top).saturating_add(width),
-    })
-}
-
 pub(super) fn point_bounds(points: &[XPoint], line_width: u16) -> Option<Rect> {
     let first = *points.first()?;
     let mut left = i32::from(first.x);

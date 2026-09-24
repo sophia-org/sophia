@@ -9,9 +9,7 @@
     "test": "alpha_rectangles"
   },
   {
-    "test": "arc_styles",
-    "expected": "FAIL",
-    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve; the filled arc in the same test matches mi exactly since t176"
+    "test": "arc_styles"
   },
   {
     "test": "basic_text"
@@ -20,14 +18,10 @@
     "test": "checkerboard"
   },
   {
-    "test": "circle",
-    "expected": "FAIL",
-    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+    "test": "circle"
   },
   {
-    "test": "clip_mask",
-    "expected": "FAIL",
-    "reason": "device-dependent since t170 and t176: the mask confines and its filled disc matches mi, and all 342 differing pixels lie on the zero-width arc outline drawn over it, whose pixelization the protocol leaves to the server"
+    "test": "clip_mask"
   },
   {
     "test": "clip_rectangles"
@@ -39,17 +33,13 @@
     "test": "color_grid"
   },
   {
-    "test": "color_wheel",
-    "expected": "FAIL",
-    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+    "test": "color_wheel"
   },
   {
     "test": "colored_text"
   },
   {
-    "test": "concentric_circles",
-    "expected": "FAIL",
-    "reason": "device-dependent: a zero-width arc, whose pixelization the protocol leaves to the server; the host and mi disagree on single pixels along the curve"
+    "test": "concentric_circles"
   },
   {
     "test": "copy_area"

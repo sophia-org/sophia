@@ -209,9 +209,41 @@ sizes, a pie slice against a chord, full turns, empty arcs, and that
 opposite sweeps over one span fill alike. No wire case distinguishes the
 old rim from the new; x11bench is the red and green.
 
-What x11bench still declares: the zero-width arcs of four tests and of
-`clip_mask`'s outline, whose pixels the protocol leaves to the server, and
-three client restacks (authority policy). Nothing it declares is a defect.
+What x11bench declared after t176: the zero-width arcs of four tests and
+of `clip_mask`'s outline, whose pixels the protocol leaves to the server,
+and three client restacks (authority policy).
+
+**t178, zero-width lines and arcs (2026-09-23).** Fidelity rather than a
+fix, since the protocol leaves thin pixels to the server, but the most used
+drawing path left: xterm draws its box characters as zero-width
+PolySegment. `software/geometry/zero_line.rs` ports `miZeroLine` with the
+default zero-line bias, and `miZeroArcSetup` and `miZeroArcPts` for solid
+thin arcs; `fb`'s fast paths share that bias and setup, so they are the
+pixels Xvnc draws. A dashed thin line is `mi`'s `miZeroDashLine`: the wide
+dash at width one. `mizerclip.c` is not ported, because the store clips
+pixel by pixel and so keeps the unclipped pixels it exists to preserve.
+Every line of any width now goes through `mi`-derived code; the brush is
+left to arc chords (dashed thin arcs, wide arcs, arcs too large for the
+walker -- t179) and to density replay.
+
+One deliberate departure: the protocol says of PolyRectangle that no pixel
+of a rectangle is drawn more than once, and a zero-width rectangle with no
+width or height, drawn as `mi`'s closed polyline, runs down a line and back
+-- under GXxor, `mi` erases it. The pixels here are `mi`'s, each painted
+once; `output_and_draw.rs` had pinned the protocol's answer, and still
+passes.
+
+Evidence: x11bench reads 57 of 60 -- `circle`, `color_wheel`,
+`concentric_circles`, `arc_styles` and `clip_mask` match Xvnc exactly and
+left the manifest (they failed on master's host, as the t176 run records);
+the gate reads `x11bench PASS (57 passed, 3 declared)` on `9a5ff4b9`, and
+the core profile passes 126 of 126. `zero_line/tests.rs` checks that a thin
+line covers the same pixels in either direction at several slopes, a joint
+once, NotLast, closed paths and points, and that arcs stay on their box and
+in their quadrant.
+
+What x11bench still declares: three client restacks, answered by authority
+policy. Every drawing test matches the reference server.
 
 ## Connections
 

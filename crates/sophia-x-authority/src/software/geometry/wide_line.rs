@@ -1980,18 +1980,44 @@ pub fn polyline(points: &[XPoint], gc: &XGraphicsContextValues) -> XInkedSpans {
     lines.finish()
 }
 
+/// `miPolylines`: a connected polyline of any width. Zero width is
+/// `miZeroLine` when solid; a dashed zero-width line is, as in `mi`'s
+/// `miZeroDashLine`, the wide dash at width one.
+pub fn polylines(points: &[XPoint], gc: &XGraphicsContextValues) -> XInkedSpans {
+    if gc.line_width != 0 {
+        return polyline(points, gc);
+    }
+    if gc.line_style == X_LINE_SOLID {
+        let spans: Vec<XSpan> =
+            super::zero_line::polyline(points, gc.cap_style == crate::X_CAP_NOT_LAST)
+                .into_iter()
+                .map(|(x, y)| XSpan { x, y, width: 1 })
+                .collect();
+        return if spans.is_empty() {
+            Vec::new()
+        } else {
+            vec![(gc.foreground, spans)]
+        };
+    }
+    let one = XGraphicsContextValues {
+        line_width: 1,
+        ..gc.clone()
+    };
+    polyline(points, &one)
+}
+
 /// `miPolySegment`: each segment its own two-point polyline, so each has
 /// its own caps and its own dash phase.
 pub fn segments(segments: &[(XPoint, XPoint)], gc: &XGraphicsContextValues) -> XInkedSpans {
     segments
         .iter()
-        .flat_map(|(from, to)| polyline(&[*from, *to], gc))
+        .flat_map(|(from, to)| polylines(&[*from, *to], gc))
         .collect()
 }
 
-/// `miPolyRectangle` for a line width of one or more. A solid, mitred
-/// outline is four filled bands; anything else is the closed polyline
-/// around each rectangle, which joins where it starts.
+/// `miPolyRectangle`. A solid, mitred, wide outline is four filled bands;
+/// anything else, zero width included, is the closed polyline around each
+/// rectangle, which joins where it starts.
 pub fn rectangles(rectangles: &[Rect], gc: &XGraphicsContextValues) -> XInkedSpans {
     let clamp_min = |value: i32| value.max(-32_768);
     let clamp_max = |value: i32| value.min(32_767);
@@ -2071,7 +2097,7 @@ pub fn rectangles(rectangles: &[Rect], gc: &XGraphicsContextValues) -> XInkedSpa
         .flat_map(|rect| {
             let right = clamp_max(rect.x + rect.width);
             let bottom = clamp_max(rect.y + rect.height);
-            polyline(
+            let outline = polylines(
                 &[
                     point(rect.x, rect.y),
                     point(right, rect.y),
@@ -2080,8 +2106,33 @@ pub fn rectangles(rectangles: &[Rect], gc: &XGraphicsContextValues) -> XInkedSpa
                     point(rect.x, rect.y),
                 ],
                 gc,
-            )
+            );
+            once_per_rectangle(outline, gc)
         })
+        .collect()
+}
+
+/// The protocol's rule for PolyRectangle: "for any given rectangle, no pixel
+/// is drawn more than once". A zero-width outline of a rectangle with no
+/// width or height runs down a line and back, and `mi` paints the return
+/// over the way out -- under GXxor, erasing it. The pixels are `mi`'s; each
+/// is painted once. A wide outline needs no help: its span groups already
+/// paint a union.
+fn once_per_rectangle(outline: XInkedSpans, gc: &XGraphicsContextValues) -> XInkedSpans {
+    if gc.line_width != 0 {
+        return outline;
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    outline
+        .into_iter()
+        .map(|(pixel, spans)| {
+            let spans = spans
+                .into_iter()
+                .filter(|span| seen.insert((span.x, span.y)))
+                .collect::<Vec<_>>();
+            (pixel, spans)
+        })
+        .filter(|(_, spans)| !spans.is_empty())
         .collect()
 }
 
