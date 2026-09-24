@@ -1,0 +1,1396 @@
+[
+  {
+    "case": "/Xlib4/XCirculateSubwindows/XCirculateSubwindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindows/XCirculateSubwindows",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindows/XCirculateSubwindows",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindows/XCirculateSubwindows",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindows/XCirculateSubwindows",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindows/XCirculateSubwindows",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindows/XCirculateSubwindows",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsDown/XCirculateSubwindowsDown",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsDown/XCirculateSubwindowsDown",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsDown/XCirculateSubwindowsDown",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsDown/XCirculateSubwindowsDown",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsDown/XCirculateSubwindowsDown",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsUp/XCirculateSubwindowsUp",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsUp/XCirculateSubwindowsUp",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsUp/XCirculateSubwindowsUp",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsUp/XCirculateSubwindowsUp",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XCirculateSubwindowsUp/XCirculateSubwindowsUp",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 2,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 5,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 6,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 7,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 8,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 9,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 10,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 11,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 12,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 13,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 14,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 15,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 16,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 17,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 18,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 19,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 20,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 21
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 22
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 23
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 24
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 25
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 26,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 27
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 28
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 29,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known reliable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 30
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 31
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 32
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 33,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
+    "purpose": 34
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 8,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 9,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 10,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib4/XDestroySubwindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XDestroySubwindows",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XDestroySubwindows",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XDestroySubwindows",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XDestroySubwindows",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XDestroyWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XLowerWindow/XLowerWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XLowerWindow/XLowerWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XLowerWindow/XLowerWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XLowerWindow/XLowerWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 11,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known reliable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 12,
+    "expected": "UNSUPPORTED",
+    "reason": "Xorg's own server (Xvnc, 2026-09-24) gives the same UNSUPPORTED: Reason for omission: There is no known reliable test method for this assertion / REPORT: Backing store not supported while unmapped"
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 13,
+    "expected": "UNSUPPORTED",
+    "reason": "the authority does not offer backing store (the suite reports 'Backing store is not supported')"
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 14,
+    "expected": "UNRESOLVED",
+    "reason": "follows the backing-store purpose before it, which the suite skips: the authority does not offer backing store (the suite reports 'Backing store is not supported')"
+  },
+  {
+    "case": "/Xlib4/XMapRaised/XMapRaised",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 5,
+    "expected": "FAIL",
+    "reason": "restack results and MapSubwindows redirection differ from Xorg's; t217"
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 9,
+    "expected": "FAIL",
+    "reason": "a window with no background reads back zeros where Xorg shows what is beneath it; t218"
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 10,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known reliable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 11,
+    "expected": "UNSUPPORTED",
+    "reason": "Xorg's own server (Xvnc, 2026-09-24) gives the same UNSUPPORTED: Reason for omission: There is no known reliable test method for this assertion / REPORT: Backing store not supported while unmapped"
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 12,
+    "expected": "UNSUPPORTED",
+    "reason": "the authority does not offer backing store (the suite reports 'Backing store is not supported')"
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 13,
+    "expected": "UNRESOLVED",
+    "reason": "follows the backing-store purpose before it, which the suite skips: the authority does not offer backing store (the suite reports 'Backing store is not supported')"
+  },
+  {
+    "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 2,
+    "expected": "NOTINUSE",
+    "reason": "the suite retired this assertion (NOTINUSE in the source)"
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 11,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known reliable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 12,
+    "expected": "UNSUPPORTED",
+    "reason": "Xorg's own server (Xvnc, 2026-09-24) gives the same UNSUPPORTED: Reason for omission: There is no known reliable test method for this assertion / REPORT: Backing store not supported while unmapped"
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 13,
+    "expected": "UNSUPPORTED",
+    "reason": "the authority does not offer backing store (the suite reports 'Backing store is not supported')"
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 14,
+    "expected": "UNRESOLVED",
+    "reason": "follows the backing-store purpose before it, which the suite skips: the authority does not offer backing store (the suite reports 'Backing store is not supported')"
+  },
+  {
+    "case": "/Xlib4/XMapWindow/XMapWindow",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 1,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 2,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 10,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 13,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known reliable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 14
+  },
+  {
+    "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
+    "purpose": 15
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 3,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known reliable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XMoveWindow",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib4/XRaiseWindow/XRaiseWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XRaiseWindow/XRaiseWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XRaiseWindow/XRaiseWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XRaiseWindow/XRaiseWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 1,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 2,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 10,
+    "expected": "FAIL",
+    "reason": "bit-gravity is not applied on a resize: the old contents stay where the protocol discards or moves them; t215"
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib4/XResizeWindow/XResizeWindow",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib4/XRestackWindows/XRestackWindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XRestackWindows/XRestackWindows",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XRestackWindows/XRestackWindows",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XRestackWindows/XRestackWindows",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XRestackWindows/XRestackWindows",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XRestackWindows/XRestackWindows",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackground",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackground",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackground",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackground",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 3,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 5,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 6,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 7,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 8,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second screen or root; this authority serves one screen"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 9,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 10,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBackgroundPixmap",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorder",
+    "purpose": 1,
+    "expected": "FAIL",
+    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so a border pixel is never painted or read back; t214 counts the border as space"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorder",
+    "purpose": 2,
+    "expected": "FAIL",
+    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so a border pixel is never painted or read back; t214 counts the border as space"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorder",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so a border pixel is never painted or read back; t214 counts the border as space"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorder",
+    "purpose": 4,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorder",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 1,
+    "expected": "FAIL",
+    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 2,
+    "expected": "FAIL",
+    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 4,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 5,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 6,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 7,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 8,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
+    "purpose": 1,
+    "expected": "FAIL",
+    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
+    "purpose": 2,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
+    "purpose": 6,
+    "expected": "FAIL",
+    "reason": "the attribute is not refused as X does (InputOnly, pixmap names and depths); t216"
+  },
+  {
+    "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib4/XSetWindowColormap",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XSetWindowColormap",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XSetWindowColormap",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XSetWindowColormap",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XUnmapSubwindows",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XUnmapSubwindows",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XUnmapSubwindows",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XUnmapSubwindows",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XUnmapSubwindows",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XUnmapWindow",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib4/XUnmapWindow",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib4/XUnmapWindow",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib4/XUnmapWindow",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib4/XUnmapWindow",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib4/XUnmapWindow",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib4/XVisualIDFromVisual",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 9,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 11
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 12
+  },
+  {
+    "case": "/Xlib5/XChangeProperty",
+    "purpose": 13
+  },
+  {
+    "case": "/Xlib5/XConvertSelection",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XConvertSelection",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XConvertSelection",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XConvertSelection",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XConvertSelection",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XDeleteProperty",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XDeleteProperty",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XDeleteProperty",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XDeleteProperty",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XGetAtomName",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XGetAtomName",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XGetGeometry",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XGetGeometry",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XGetGeometry",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XGetGeometry",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XGetSelectionOwner",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XGetSelectionOwner",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XGetSelectionOwner",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XGetWindowAttributes",
+    "purpose": 1,
+    "expected": "FAIL",
+    "reason": "the bit-gravity attribute is not reported; t215"
+  },
+  {
+    "case": "/Xlib5/XGetWindowAttributes",
+    "purpose": 2,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib5/XGetWindowAttributes",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 7
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib5/XGetWindowProperty",
+    "purpose": 10
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 7,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib5/XInternAtom",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib5/XListProperties",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XListProperties",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XListProperties",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XQueryPointer",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XQueryPointer",
+    "purpose": 2,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second screen or root; this authority serves one screen"
+  },
+  {
+    "case": "/Xlib5/XQueryPointer",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "a child is found at its outer corner, not past its border; t227 (with t214)"
+  },
+  {
+    "case": "/Xlib5/XQueryPointer",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XQueryPointer",
+    "purpose": 5,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib5/XQueryPointer",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XQueryTree",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XQueryTree",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XQueryTree",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XRotateWindowProperties",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XRotateWindowProperties",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XRotateWindowProperties",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XRotateWindowProperties",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XRotateWindowProperties",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XRotateWindowProperties",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 1
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 2
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 3
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 5
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 6
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 7,
+    "expected": "UNTESTED",
+    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 8
+  },
+  {
+    "case": "/Xlib5/XSetSelectionOwner",
+    "purpose": 9
+  },
+  {
+    "case": "/Xlib5/XTranslateCoordinates",
+    "purpose": 1,
+    "expected": "FAIL",
+    "reason": "a child's origin does not count its parent's border; t227 (with t214)"
+  },
+  {
+    "case": "/Xlib5/XTranslateCoordinates",
+    "purpose": 2,
+    "expected": "UNSUPPORTED",
+    "reason": "needs a second screen or root; this authority serves one screen"
+  },
+  {
+    "case": "/Xlib5/XTranslateCoordinates",
+    "purpose": 3,
+    "expected": "FAIL",
+    "reason": "a child's origin does not count its parent's border; t227 (with t214)"
+  },
+  {
+    "case": "/Xlib5/XTranslateCoordinates",
+    "purpose": 4
+  },
+  {
+    "case": "/Xlib5/XTranslateCoordinates",
+    "purpose": 5
+  }
+]
