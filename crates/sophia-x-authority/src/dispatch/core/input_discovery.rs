@@ -13,6 +13,15 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::GetPointerMapping
             | XWireRequest::GetKeyboardMapping { .. }
             | XWireRequest::GetKeyboardControl
+            | XWireRequest::ChangeKeyboardControl(_)
+            | XWireRequest::ChangePointerControl { .. }
+            | XWireRequest::GetPointerControl
+            | XWireRequest::SetScreenSaver { .. }
+            | XWireRequest::GetScreenSaver
+            | XWireRequest::GetMotionEvents { .. }
+            | XWireRequest::ListHosts
+            | XWireRequest::ChangeHosts
+            | XWireRequest::SetAccessControl
             | XWireRequest::Bell
             | XWireRequest::ForceScreenSaver { .. }
             | XWireRequest::WarpPointer { .. }
@@ -95,7 +104,122 @@ fn dispatch_core_input_discovery_request(
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetKeyboardControl {
                         sequence: context.sequence,
+                        keyboard: runtime.controls().keyboard,
                     })],
+                    metadata_candidates: Vec::new(),
+                },
+                // Advisory server controls: what a client sets it reads
+                // back, validated as the protocol validates it; nothing
+                // here acts on them. The Engine owns pointer acceleration,
+                // the session owns key repeat, and no screen is blanked.
+                XWireRequest::ChangeKeyboardControl(change) => {
+                    let outputs = match runtime.controls_mut().change_keyboard(change) {
+                        Ok(()) => Vec::new(),
+                        // A led without a mode, or a key without a repeat
+                        // mode, is the Match error the protocol names.
+                        Err(crate::XKeyboardControlRefusal::Match) => {
+                            vec![color_error(context, XErrorCode::BadMatch, 0)]
+                        }
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::ChangePointerControl {
+                    acceleration_numerator,
+                    acceleration_denominator,
+                    threshold,
+                    do_acceleration,
+                    do_threshold,
+                } => {
+                    runtime.controls_mut().change_pointer(
+                        acceleration_numerator,
+                        acceleration_denominator,
+                        threshold,
+                        do_acceleration,
+                        do_threshold,
+                    );
+                    XDispatchResult {
+                        response: None,
+                        outputs: Vec::new(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::GetPointerControl => XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Reply(XClientReply::GetPointerControl {
+                        sequence: context.sequence,
+                        pointer: runtime.controls().pointer,
+                    })],
+                    metadata_candidates: Vec::new(),
+                },
+                XWireRequest::SetScreenSaver {
+                    timeout,
+                    interval,
+                    prefer_blanking,
+                    allow_exposures,
+                } => {
+                    runtime.controls_mut().set_screen_saver(
+                        timeout,
+                        interval,
+                        prefer_blanking,
+                        allow_exposures,
+                    );
+                    XDispatchResult {
+                        response: None,
+                        outputs: Vec::new(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                XWireRequest::GetScreenSaver => XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Reply(XClientReply::GetScreenSaver {
+                        sequence: context.sequence,
+                        screen_saver: runtime.controls().screen_saver,
+                    })],
+                    metadata_candidates: Vec::new(),
+                },
+                // No motion history is kept, which the protocol allows: a
+                // valid window gets an empty reply.
+                XWireRequest::GetMotionEvents { window, .. } => {
+                    let outputs = if window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
+                        && runtime
+                            .validate_window_access(context.namespace, window)
+                            .is_err()
+                    {
+                        vec![color_error(
+                            context,
+                            XErrorCode::BadWindow,
+                            u32::try_from(window.local.raw()).unwrap_or(0),
+                        )]
+                    } else {
+                        vec![XClientOutput::Reply(XClientReply::GetMotionEvents {
+                            sequence: context.sequence,
+                        })]
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // Host-based access control is a mechanism this authority
+                // does not have: admission is by namespace and peer
+                // credentials. The list is empty and enabled, and no client
+                // is authorised to change it, which is the protocol's
+                // BadAccess.
+                XWireRequest::ListHosts => XDispatchResult {
+                    response: None,
+                    outputs: vec![XClientOutput::Reply(XClientReply::ListHosts {
+                        sequence: context.sequence,
+                    })],
+                    metadata_candidates: Vec::new(),
+                },
+                XWireRequest::ChangeHosts | XWireRequest::SetAccessControl => XDispatchResult {
+                    response: None,
+                    outputs: vec![color_error(context, XErrorCode::BadAccess, 0)],
                     metadata_candidates: Vec::new(),
                 },
                 XWireRequest::Bell => XDispatchResult {

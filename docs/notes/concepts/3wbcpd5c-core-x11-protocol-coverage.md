@@ -37,11 +37,8 @@ are decoded precisely so the answer can be a proper protocol error instead.
 | Op | Request | What it is for | Who calls it |
 | --- | --- | --- | --- |
 | 30 | ChangeActivePointerGrab | Change the event mask or cursor of a grab in progress | Drag-and-drop implementations mid-drag |
-| 39 | GetMotionEvents | Read the server's motion history buffer | Tablet and gesture code wanting sub-frame motion |
 | 44 | QueryKeymap | The whole keyboard state as a bit vector | Toolkits checking modifiers without an event |
 | 100 | ChangeKeyboardMapping | Rewrite keycode to keysym mappings | `xmodmap`, remapping tools |
-| 102 | ChangeKeyboardControl | Bell, key click, auto-repeat, LEDs | `xset` |
-| 105, 106 | Change/GetPointerControl | Pointer acceleration and threshold | `xset m` |
 | 116 | SetPointerMapping | Reorder or disable buttons | Left-handed mouse configuration |
 | 118 | SetModifierMapping | Which keycodes act as which modifiers | `xmodmap`, keyboard layout tools |
 
@@ -51,17 +48,9 @@ That is the decision the task below is for.
 
 ### Screen saver, hosts and access control
 
-| Op | Request | What it is for | Who calls it |
-| --- | --- | --- | --- |
-| 107, 108 | Set/GetScreenSaver | The server's own blanking timer | `xset s`, screensaver daemons |
-| 109, 110 | ChangeHosts, ListHosts | The host-based access list | `xhost` |
-| 111 | SetAccessControl | Enable or disable that list | `xhost +` |
-
-Host-based access control is a security mechanism Sophia deliberately does not
-have: admission is by namespace and peer credentials. Serving these would mean
-either lying about an access list or exposing one that decides nothing. The
-honest answers are probably a protocol error and an empty list, but that is a
-policy choice, not an implementation detail.
+All decided (t166): the screen saver and the pointer and keyboard controls
+are advisory state, and the host list is empty, enabled and unchangeable.
+See the decided table below.
 
 ### Connection lifetime
 
@@ -94,6 +83,11 @@ which is the use that made the question concrete rather than theoretical.
 | --- | --- | --- | --- |
 | 41 | WarpPointer | Serve it | Every XTS test's harness positions the pointer with it, and a client that asks for the pointer to move means it. The move happens and `QueryPointer` agrees. |
 | 115 | ForceScreenSaver | Serve it, as a no-op that validates | Every XTS test's startup calls `XResetScreenSaver`. This authority blanks nothing and keeps no idle timer, so both defined modes are accepted and move no state, and a mode outside the pair is the Value error the protocol names. |
+| 39 | GetMotionEvents | Serve it, with no events | This authority keeps no motion history, which the protocol allows: a valid window gets an empty reply, an unknown one BadWindow. |
+| 102, 103 | Change/GetKeyboardControl | Serve them as advisory state | What a client sets it reads back -- bell, click, LEDs, repeat flags -- validated as the protocol validates it (an unused mask bit and an out-of-range value are BadValue, a led without a mode BadMatch), and acted on by nothing here: the session owns key repeat and no bell rings. `xset` sees a server that keeps its word. |
+| 105, 106 | Change/GetPointerControl | Serve them as advisory state | Acceleration and threshold, stored and read back, a zero denominator BadValue; the Engine owns the pointer's acceleration, so nothing moves differently. |
+| 107, 108 | Set/GetScreenSaver | Serve them as advisory state | Timings and modes stored and read back, -1 restoring a default, a mode outside its set BadValue; nothing here blanks a screen, and ForceScreenSaver stays the validating no-op it was. |
+| 109, 110, 111 | ChangeHosts, ListHosts, SetAccessControl | Report an empty list, refuse changes | Host-based access control is not a mechanism this authority has: admission is by namespace and peer credentials. ListHosts replies no hosts with access control enabled, and ChangeHosts and SetAccessControl are BadAccess, the protocol's error for a client not authorised to change the list. `xhost` sees a locked-down server. The three are decoded with their exact framing so a short or long request is BadLength first. |
 | 83 | ListInstalledColormaps | Serve it | The reply is the one installed colormap, the default, which is not an invented list: the setup advertises one installed map at most and at least, and GetWindowAttributes already reports every window's colormap installed. With it (t169) the rest of the family got the protocol's own framing, so a request one unit off is BadLength before it is anything else, and CopyColormapAndFree became a new colormap on the source's visual, a static visual having no allocations to move. |
 
 **What WarpPointer does not do**, recorded because the gap is real rather

@@ -1322,6 +1322,33 @@ pub enum XWireRequest {
         count: u8,
     },
     GetKeyboardControl,
+    ChangeKeyboardControl(crate::XKeyboardControlChange),
+    ChangePointerControl {
+        acceleration_numerator: i16,
+        acceleration_denominator: i16,
+        threshold: i16,
+        do_acceleration: bool,
+        do_threshold: bool,
+    },
+    GetPointerControl,
+    SetScreenSaver {
+        timeout: i16,
+        interval: i16,
+        prefer_blanking: u8,
+        allow_exposures: u8,
+    },
+    GetScreenSaver,
+    GetMotionEvents {
+        window: XResourceId,
+        start: u32,
+        stop: u32,
+    },
+    ListHosts,
+    /// Decoded for its framing and answered BadAccess: admission is by
+    /// namespace and peer credentials, and no client may change a list
+    /// that decides nothing.
+    ChangeHosts,
+    SetAccessControl,
     Bell,
     /// Mode travels in the header's data byte rather than a body, so the
     /// request is one word long and `mode` is the only thing it carries.
@@ -1524,6 +1551,49 @@ pub fn decode_x11_core_request(
         }
         X_SET_INPUT_FOCUS => decode_set_input_focus(context, bytes),
         X_GET_INPUT_FOCUS => decode_get_input_focus(bytes),
+        X_CHANGE_KEYBOARD_CONTROL => decode_change_keyboard_control(context, bytes),
+        X_CHANGE_POINTER_CONTROL => decode_change_pointer_control(context, bytes),
+        X_GET_POINTER_CONTROL => {
+            require_exact_len(
+                X_GET_POINTER_CONTROL,
+                X_GET_POINTER_CONTROL_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::GetPointerControl)
+        }
+        X_SET_SCREEN_SAVER => decode_set_screen_saver(context, bytes),
+        X_GET_SCREEN_SAVER => {
+            require_exact_len(X_GET_SCREEN_SAVER, X_GET_SCREEN_SAVER_REQ_LEN, bytes.len())?;
+            Ok(XWireRequest::GetScreenSaver)
+        }
+        X_GET_MOTION_EVENTS => {
+            require_exact_len(
+                X_GET_MOTION_EVENTS,
+                X_GET_MOTION_EVENTS_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::GetMotionEvents {
+                window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                start: context.byte_order.u32(&bytes[8..12]),
+                stop: context.byte_order.u32(&bytes[12..16]),
+            })
+        }
+        X_LIST_HOSTS => {
+            require_exact_len(X_LIST_HOSTS, X_LIST_HOSTS_REQ_LEN, bytes.len())?;
+            Ok(XWireRequest::ListHosts)
+        }
+        X_CHANGE_HOSTS => decode_change_hosts(context, bytes),
+        X_SET_ACCESS_CONTROL => {
+            require_exact_len(
+                X_SET_ACCESS_CONTROL,
+                X_SET_ACCESS_CONTROL_REQ_LEN,
+                bytes.len(),
+            )?;
+            if bytes[1] > 1 {
+                return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
+            }
+            Ok(XWireRequest::SetAccessControl)
+        }
         X_GET_KEYBOARD_CONTROL => {
             require_exact_len(X_GET_KEYBOARD_CONTROL, 4, bytes.len())?;
             Ok(XWireRequest::GetKeyboardControl)
@@ -1582,6 +1652,19 @@ pub fn decode_x11_core_request(
         }
         X_SET_FONT_PATH => {
             require_len(X_SET_FONT_PATH, X_SET_FONT_PATH_REQ_LEN, bytes.len())?;
+            // The path list frames the request exactly: a count, then
+            // strings each led by its length, padded to four.
+            let count = usize::from(context.byte_order.u16(&bytes[4..6]));
+            let mut cursor = X_SET_FONT_PATH_REQ_LEN;
+            for _ in 0..count {
+                let len = *bytes.get(cursor).ok_or(XWireParseError::InvalidLength {
+                    opcode: X_SET_FONT_PATH,
+                    expected_at_least: cursor + 1,
+                    actual: bytes.len(),
+                })?;
+                cursor += 1 + usize::from(len);
+            }
+            require_exact_len(X_SET_FONT_PATH, (cursor + 3) & !3, bytes.len())?;
             Ok(XWireRequest::SetFontPath)
         }
         X_GET_FONT_PATH => {

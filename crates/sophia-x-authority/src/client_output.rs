@@ -822,6 +822,25 @@ pub enum XClientReply {
     },
     GetKeyboardControl {
         sequence: u16,
+        keyboard: crate::XKeyboardControl,
+    },
+    GetPointerControl {
+        sequence: u16,
+        pointer: crate::XPointerControl,
+    },
+    GetScreenSaver {
+        sequence: u16,
+        screen_saver: crate::XScreenSaverControl,
+    },
+    /// This authority keeps no motion history: the reply carries no events,
+    /// which the protocol allows.
+    GetMotionEvents {
+        sequence: u16,
+    },
+    /// An empty list with access control enabled: admission is by namespace
+    /// and peer credentials, and there is no list to report.
+    ListHosts {
+        sequence: u16,
     },
     TranslateCoordinates {
         sequence: u16,

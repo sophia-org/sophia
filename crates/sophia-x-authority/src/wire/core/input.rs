@@ -48,6 +48,172 @@ fn decode_get_keyboard_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseE
     })
 }
 
+/// ChangeKeyboardControl: a mask, then one four-byte value per set bit, in
+/// the protocol's order. A set bit outside the eight is a Value error
+/// carrying the mask; a value outside its set is a Value error carrying the
+/// value. -1 restores a default where the protocol allows it.
+fn decode_change_keyboard_control(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(
+        X_CHANGE_KEYBOARD_CONTROL,
+        X_CHANGE_KEYBOARD_CONTROL_REQ_LEN,
+        bytes.len(),
+    )?;
+    let value_mask = context.byte_order.u32(&bytes[4..8]);
+    if value_mask & !X_KEYBOARD_CONTROL_VALUE_MASK != 0 {
+        return Err(XWireParseError::InvalidValue(value_mask));
+    }
+    let expected = X_CHANGE_KEYBOARD_CONTROL_REQ_LEN + 4 * value_mask.count_ones() as usize;
+    require_exact_len(X_CHANGE_KEYBOARD_CONTROL, expected, bytes.len())?;
+    let mut change = crate::XKeyboardControlChange::default();
+    let mut cursor = X_CHANGE_KEYBOARD_CONTROL_REQ_LEN;
+    let mut next = || {
+        let word = context.byte_order.u32(&bytes[cursor..cursor + 4]);
+        cursor += 4;
+        word
+    };
+    let percent = |word: u32| -> Result<i8, XWireParseError> {
+        let value = word as i32;
+        if !(-1..=100).contains(&value) {
+            return Err(XWireParseError::InvalidValue(word));
+        }
+        Ok(value as i8)
+    };
+    let at_least_default = |word: u32| -> Result<i16, XWireParseError> {
+        let value = word as i32;
+        if value < -1 || value > i32::from(i16::MAX) {
+            return Err(XWireParseError::InvalidValue(word));
+        }
+        Ok(value as i16)
+    };
+    if value_mask & 0x01 != 0 {
+        change.key_click_percent = Some(percent(next())?);
+    }
+    if value_mask & 0x02 != 0 {
+        change.bell_percent = Some(percent(next())?);
+    }
+    if value_mask & 0x04 != 0 {
+        change.bell_pitch = Some(at_least_default(next())?);
+    }
+    if value_mask & 0x08 != 0 {
+        change.bell_duration = Some(at_least_default(next())?);
+    }
+    if value_mask & 0x10 != 0 {
+        let led = next();
+        if !(1..=32).contains(&led) {
+            return Err(XWireParseError::InvalidValue(led));
+        }
+        change.led = Some(led as u8);
+    }
+    if value_mask & 0x20 != 0 {
+        let mode = next();
+        if mode > 1 {
+            return Err(XWireParseError::InvalidValue(mode));
+        }
+        change.led_mode = Some(mode as u8);
+    }
+    if value_mask & 0x40 != 0 {
+        let key = next();
+        if !(8..=255).contains(&key) {
+            return Err(XWireParseError::InvalidValue(key));
+        }
+        change.key = Some(key as u8);
+    }
+    if value_mask & 0x80 != 0 {
+        let mode = next();
+        if mode > 2 {
+            return Err(XWireParseError::InvalidValue(mode));
+        }
+        change.auto_repeat_mode = Some(mode as u8);
+    }
+    Ok(XWireRequest::ChangeKeyboardControl(change))
+}
+
+/// ChangePointerControl: acceleration as a fraction and a threshold, each
+/// applied only when its flag says so. A zero denominator with acceleration
+/// asked for, or a value below -1, is the Value error the protocol names.
+fn decode_change_pointer_control(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_exact_len(
+        X_CHANGE_POINTER_CONTROL,
+        X_CHANGE_POINTER_CONTROL_REQ_LEN,
+        bytes.len(),
+    )?;
+    let numerator = context.byte_order.i16(&bytes[4..6]);
+    let denominator = context.byte_order.i16(&bytes[6..8]);
+    let threshold = context.byte_order.i16(&bytes[8..10]);
+    let do_acceleration = bytes[10] != 0;
+    let do_threshold = bytes[11] != 0;
+    if do_acceleration && (denominator == 0 || numerator < -1 || denominator < -1) {
+        return Err(XWireParseError::InvalidValue(if denominator == 0 {
+            0
+        } else {
+            numerator.min(denominator) as u32
+        }));
+    }
+    if do_threshold && threshold < -1 {
+        return Err(XWireParseError::InvalidValue(threshold as u32));
+    }
+    Ok(XWireRequest::ChangePointerControl {
+        acceleration_numerator: numerator,
+        acceleration_denominator: denominator,
+        threshold,
+        do_acceleration,
+        do_threshold,
+    })
+}
+
+/// SetScreenSaver: timings at least -1 (the default), and two modes each
+/// No, Yes or Default.
+fn decode_set_screen_saver(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_exact_len(X_SET_SCREEN_SAVER, X_SET_SCREEN_SAVER_REQ_LEN, bytes.len())?;
+    let timeout = context.byte_order.i16(&bytes[4..6]);
+    let interval = context.byte_order.i16(&bytes[6..8]);
+    for value in [timeout, interval] {
+        if value < -1 {
+            return Err(XWireParseError::InvalidValue(value as u32));
+        }
+    }
+    for mode in [bytes[8], bytes[9]] {
+        if mode > 2 {
+            return Err(XWireParseError::InvalidValue(u32::from(mode)));
+        }
+    }
+    Ok(XWireRequest::SetScreenSaver {
+        timeout,
+        interval,
+        prefer_blanking: bytes[8],
+        allow_exposures: bytes[9],
+    })
+}
+
+/// ChangeHosts: a mode, a family and an address whose length frames the
+/// request exactly. Decoded so the answer is the protocol's BadAccess, not
+/// BadRequest; the address itself decides nothing here.
+fn decode_change_hosts(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_len(X_CHANGE_HOSTS, X_CHANGE_HOSTS_REQ_LEN, bytes.len())?;
+    if bytes[1] > 1 {
+        return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
+    }
+    let address_len = usize::from(context.byte_order.u16(&bytes[6..8]));
+    require_exact_len(
+        X_CHANGE_HOSTS,
+        X_CHANGE_HOSTS_REQ_LEN + ((address_len + 3) & !3),
+        bytes.len(),
+    )?;
+    Ok(XWireRequest::ChangeHosts)
+}
+
 fn decode_grab_button(
     context: XWireClientContext,
     bytes: &[u8],

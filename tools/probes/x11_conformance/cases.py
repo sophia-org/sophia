@@ -899,6 +899,39 @@ def colormap_static_answers(context):
         c.sync()
 
 
+def server_controls_round_trip(context):
+    with client(context) as c:
+        # Pointer control: defaults, a change read back, a zero denominator.
+        assert c.unpack('HHH', c.reply(106), 8) == (2, 1, 4)
+        c.send(105, c.pack('hhhBB', 7, 3, 9, 1, 1))
+        assert c.unpack('HHH', c.reply(106), 8) == (7, 3, 9)
+        c.completion(c.send(105, c.pack('hhhBB', 1, 0, 4, 1, 0)), error=2, opcode=105)
+        # Screen saver: defaults, a change with one mode kept, a bad mode.
+        assert c.unpack('HHBB', c.reply(108), 8) == (600, 600, 1, 1)
+        c.send(107, c.pack('hhBB2x', 120, 30, 0, 2))
+        assert c.unpack('HHBB', c.reply(108), 8) == (120, 30, 0, 1)
+        c.completion(c.send(107, c.pack('hhBB2x', 120, 30, 3, 0)), error=2, opcode=107)
+        # Keyboard control: bell set and read back; an unused mask bit is
+        # BadValue carrying the mask; a led without a mode is BadMatch.
+        c.send(102, c.pack('III', 0x06, 75, 880))
+        reply = c.reply(103)
+        assert reply[13] == 75 and c.u16(reply, 14) == 880 and reply[1] == 1, reply.hex()
+        c.completion(c.send(102, c.pack('II', 0x100, 0)), error=2, opcode=102, resource=0x100)
+        c.completion(c.send(102, c.pack('II', 0x10, 3)), error=8, opcode=102)
+        # No motion history; an unknown window is named.
+        reply = c.reply(39, c.pack('III', c.root, 0, 0))
+        assert c.u32(reply, 8) == 0 and c.u32(reply, 4) == 0
+        c.completion(c.send(39, c.pack('III', 0x7ff00001, 0, 0)), error=3, opcode=39)
+        # The host list is empty and enabled, and nobody may change it.
+        reply = c.reply(110)
+        assert reply[1] == 1 and c.u16(reply, 8) == 0 and c.u32(reply, 4) == 0
+        c.completion(c.send(109, c.pack('BxH', 0, 4) + bytes([127, 0, 0, 1])), error=10, opcode=109)
+        c.completion(c.send(109, c.pack('BxH', 0, 4) + bytes([127, 0, 0, 1]), detail=2), error=2, opcode=109)
+        c.completion(c.send(111, detail=1), error=10, opcode=111)
+        c.completion(c.send(111, detail=2), error=2, opcode=111)
+        c.sync()
+
+
 def warp_pointer(context):
     with client(context) as c:
         root, window = c.root, c.window()
@@ -947,6 +980,7 @@ def warp_pointer(context):
 CASES = {'setup': setup,
          'force_screen_saver': force_screen_saver,
          'colormap_static_answers': colormap_static_answers,
+         'server_controls_round_trip': server_controls_round_trip,
          'warp_pointer': warp_pointer,
          **{name: setup_containment for name in ('setup_empty', 'setup_truncated_prefix',
              'setup_truncated_auth', 'setup_invalid_order', 'setup_version_containment')},
