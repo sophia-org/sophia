@@ -49,7 +49,9 @@ need that delivery; it is its own seam with its own red.
 - [x] XTS `pSendEvent 1` retires from the declared rows: the Xproto rerun
       (`.artifacts/xts-xproto/run-t168/`) moves that row and no other,
       288 passed and 101 declared.
-- [ ] The gate on the committed candidate.
+- [x] The gate on the committed candidate
+      (`.artifacts/x11-profile-38feaedb-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 288 passed and 101 declared.
 
 ## Connections
 
