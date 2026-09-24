@@ -902,10 +902,30 @@ impl XAuthorityRuntime {
             };
             cpu_buffer_updates.push(presentation_update.clone());
             if let Some(command) = semantic_command {
+                let mut command = command.translated(offset_x, offset_y);
+                // Replay draws over the whole toplevel, so a command is held
+                // to what its window shows there (t200).
+                if stacking.source_clip.is_some() || !stacking.above.is_empty() {
+                    let size = presentation_update.size();
+                    let shown = stacking.source_clip.unwrap_or(Rect {
+                        x: 0,
+                        y: 0,
+                        width: size.width,
+                        height: size.height,
+                    });
+                    let above = stacking
+                        .above
+                        .iter()
+                        .map(|layer| layer.clip)
+                        .collect::<Vec<_>>();
+                    command = command.clipped_to(
+                        &sophia_protocol::geometry::region_algebra::subtract(&[shown], &above),
+                    );
+                }
                 cpu_buffer_updates.extend(self.raster_store.record(
                     presentation_window,
                     presentation_update.size(),
-                    command.translated(offset_x, offset_y),
+                    command,
                 ));
             } else {
                 self.raster_store.invalidate_unjournaled_presentation(

@@ -384,6 +384,37 @@ and it is always covered. Clipping each command's GC to the visible region
 (the source's clip minus the windows over it) is the likely shape, with the
 baseline rule taught about it.
 
+**t200, closed (2026-09-24).** Each journaled command is now clipped
+through its GC to what its window shows in the toplevel: the source's clip
+from its ancestors, minus the windows stacked over it, from the same
+stacking walk the 1x presentation uses. Every replay writer ends in
+`set_pixel`, which tests the GC's clip list, so no replay path needs a
+change of its own. A clear has no GC, so a partly hidden one becomes the
+equivalent clipped fill. A copy whose source is partly hidden would replay
+another window's pixels, so it is refused (`UnsupportedCrossDrawableCopy`).
+A PutImage counts as a full baseline only unclipped, as retention already
+assumed.
+
+Clipping costs the old recovery path, since a toplevel its children cover
+never issues one clear of all of it. That is xterm's case: its toplevel's
+background clear was the baseline after a resize. So an abandoned journal
+now also recovers by coverage. It accumulates what each command paints
+unconditionally (a clear, an unconditional solid fill, a retained image,
+each through its clip), and replay resumes once that covers the drawable.
+A copy out of pixels the journal has not yet defined restarts the count.
+Commands that read the destination before their pixels were covered are
+overwritten by the later covering write, so the journal defines every
+pixel at the moment coverage completes.
+
+Evidence: `x11_wire/replay_stacking.rs` checks, at 0.75: a parent's fill
+under a mapped child; a child's line clipped at the child's edge; a toplevel
+whose child covers most of it recovering from an extent change through its
+own clear plus the child's; and a copy from a sibling-hidden source
+refused. The first two are red on master. The third goes red with clipping
+alone, and the fourth goes red without the copy rule. The existing density
+suites pass unchanged. On `7720fe0f` the core profile passes 154 of 154 and
+x11bench 57 of 60.
+
 ## Connections
 
 - [Running XTS5 through the profile gate](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):

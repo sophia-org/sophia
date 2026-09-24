@@ -31,6 +31,7 @@ include!("x11_wire/properties_dispatch.rs");
 include!("x11_wire/selection_cut_buffer.rs");
 include!("x11_wire/output_and_draw.rs");
 include!("x11_wire/include_inferiors.rs");
+include!("x11_wire/replay_stacking.rs");
 include!("x11_wire/image_readback.rs");
 include!("x11_wire/density_fidelity.rs");
 include!("x11_wire/put_image_replay.rs");

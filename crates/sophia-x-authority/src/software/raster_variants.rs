@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use sophia_protocol::geometry::region_algebra::{subtract, union};
 use sophia_protocol::{
     MAX_SURFACE_CONTENT_VARIANTS, Rect, Region, SURFACE_CONTENT_DENSITY_1X_MILLIS, Size,
     SurfaceContentFidelity, SurfaceContentSet, SurfaceContentVariant, SurfaceRasterClass,
@@ -299,6 +300,142 @@ impl XAuthorityRasterCommand {
         self
     }
 
+    /// The command clipped to `visible`, the part of the drawable's toplevel
+    /// its window shows, in the toplevel's coordinates.
+    ///
+    /// The journal replays over the whole toplevel, where the windows
+    /// stacked over the drawing one, and everything outside it, have no
+    /// buffer of their own. Clipping through the graphics context keeps the
+    /// replay to what the canonical draw could reach. A clear has no context,
+    /// so a partly hidden one becomes the equivalent fill; a copy whose
+    /// source the toplevel does not show would replay other windows' pixels,
+    /// so it is refused.
+    pub(crate) fn clipped_to(self, visible: &[Rect]) -> Self {
+        use sophia_protocol::geometry::region_algebra::intersect;
+        let clip = |mut gc: XGraphicsContextValues| {
+            let origin_x = i32::from(gc.clip_x_origin);
+            let origin_y = i32::from(gc.clip_y_origin);
+            let current = gc.clip_rectangles.as_ref().map(|rects| {
+                rects
+                    .iter()
+                    .map(|rect| Rect {
+                        x: rect.x.saturating_add(origin_x),
+                        y: rect.y.saturating_add(origin_y),
+                        ..*rect
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let clipped = match current {
+                Some(current) => intersect(&current, visible),
+                None => visible.to_vec(),
+            };
+            gc.clip_rectangles = Some(
+                clipped
+                    .into_iter()
+                    .map(|rect| Rect {
+                        x: rect.x.saturating_sub(origin_x),
+                        y: rect.y.saturating_sub(origin_y),
+                        ..rect
+                    })
+                    .collect(),
+            );
+            gc
+        };
+        match self {
+            Self::Paint { rects, gc } => Self::Paint {
+                rects,
+                gc: clip(gc),
+            },
+            Self::Clear { rect, pixel } => {
+                if subtract(&[rect], visible).is_empty() {
+                    Self::Clear { rect, pixel }
+                } else {
+                    Self::Paint {
+                        rects: vec![rect],
+                        gc: clip(XGraphicsContextValues {
+                            foreground: pixel,
+                            ..XGraphicsContextValues::default()
+                        }),
+                    }
+                }
+            }
+            Self::Lines { points, gc } => Self::Lines {
+                points,
+                gc: clip(gc),
+            },
+            Self::Segments { points, gc } => Self::Segments {
+                points,
+                gc: clip(gc),
+            },
+            Self::Rectangles { rectangles, gc } => Self::Rectangles {
+                rectangles,
+                gc: clip(gc),
+            },
+            Self::Text { draws, gc } => Self::Text {
+                draws,
+                gc: clip(gc),
+            },
+            Self::CopyArea {
+                source,
+                destination_x,
+                destination_y,
+                gc,
+            } => {
+                if subtract(&[source], visible).is_empty() {
+                    Self::CopyArea {
+                        source,
+                        destination_x,
+                        destination_y,
+                        gc: clip(gc),
+                    }
+                } else {
+                    Self::Unsupported(XRasterUnsupportedKind::CrossDrawableCopy)
+                }
+            }
+            Self::PutImage { image, gc } => Self::PutImage {
+                image,
+                gc: clip(gc),
+            },
+            Self::Unsupported(kind) => Self::Unsupported(kind),
+        }
+    }
+
+    /// Where this command sets every pixel regardless of what was there:
+    /// an unconditional copy of a solid pixel or of image bytes, through
+    /// its clip list. Empty for anything that reads the destination.
+    fn opaque_region(&self) -> Vec<Rect> {
+        use sophia_protocol::geometry::region_algebra::intersect;
+        let through_clip = |rects: &[Rect], gc: &XGraphicsContextValues| match &gc.clip_rectangles {
+            None => rects.to_vec(),
+            Some(clip) => {
+                let origin_x = i32::from(gc.clip_x_origin);
+                let origin_y = i32::from(gc.clip_y_origin);
+                let clip = clip
+                    .iter()
+                    .map(|rect| Rect {
+                        x: rect.x.saturating_add(origin_x),
+                        y: rect.y.saturating_add(origin_y),
+                        ..*rect
+                    })
+                    .collect::<Vec<_>>();
+                intersect(rects, &clip)
+            }
+        };
+        let unconditional = |gc: &XGraphicsContextValues| {
+            gc.function == X_GX_COPY
+                && gc.plane_mask & X_VISIBLE_PLANE_MASK == X_VISIBLE_PLANE_MASK
+                && gc.fill_style == 0
+                && gc.clip_mask.is_none()
+        };
+        match self {
+            Self::Clear { rect, .. } => vec![*rect],
+            Self::Paint { rects, gc } if unconditional(gc) => through_clip(rects, gc),
+            // Retention already required an unconditional copy.
+            Self::PutImage { image, gc } => through_clip(&[image.rect], gc),
+            _ => Vec::new(),
+        }
+    }
+
     fn payload_bytes(&self) -> usize {
         match self {
             Self::Paint { rects, gc } => {
@@ -344,7 +481,7 @@ impl XAuthorityRasterCommand {
         };
         match self {
             Self::Clear { rect, .. } => covers(rect),
-            Self::PutImage { image, .. } => covers(&image.rect),
+            Self::PutImage { image, gc } => gc.clip_rectangles.is_none() && covers(&image.rect),
             _ => false,
         }
     }
@@ -381,6 +518,11 @@ struct SurfaceRasterState {
     /// Why replay was abandoned. Retained so late density demand reports the
     /// original operation rather than a bare fallback.
     poison: Option<XRasterFallbackCause>,
+    /// While replay is abandoned, what the journal since then paints
+    /// opaquely. Once it is the whole drawable, every pixel is defined by the
+    /// journal again and replay resumes, without one command having to
+    /// cover everything -- which a toplevel its children cover never issues.
+    coverage: Vec<Rect>,
     next_variant: u32,
     required: BTreeSet<SurfaceRasterClass>,
     variants: BTreeMap<SurfaceRasterClass, VariantBacking>,
@@ -394,6 +536,7 @@ impl SurfaceRasterState {
             journal_payload_bytes: 0,
             replayable: true,
             poison: None,
+            coverage: Vec::new(),
             next_variant: 2,
             required: BTreeSet::new(),
             variants: BTreeMap::new(),
@@ -463,6 +606,7 @@ impl XAuthorityRasterStore {
             state.journal_payload_bytes = 0;
             state.replayable = true;
             state.poison = None;
+            state.coverage.clear();
         }
         let payload = command.payload_bytes();
         let poison = command
@@ -477,14 +621,39 @@ impl XAuthorityRasterStore {
             state.poison = Some(cause);
             state.journal.clear();
             state.journal_payload_bytes = 0;
+            state.coverage.clear();
             state.variants.clear();
+            return Vec::new();
+        }
+        if !state.replayable {
+            // A copy out of pixels the journal has not defined would replay
+            // whatever the variant held there, so accumulation starts over.
+            if let XAuthorityRasterCommand::CopyArea { source, .. } = &command
+                && !subtract(&[*source], &state.coverage).is_empty()
+            {
+                state.journal.clear();
+                state.journal_payload_bytes = 0;
+                state.coverage.clear();
+                return Vec::new();
+            }
+            state.journal_payload_bytes = state.journal_payload_bytes.saturating_add(payload);
+            state.journal.push(command.clone());
+            state.coverage = union(&state.coverage, &command.opaque_region());
+            let whole = Rect {
+                x: 0,
+                y: 0,
+                width: logical_size.width,
+                height: logical_size.height,
+            };
+            if subtract(&[whole], &state.coverage).is_empty() {
+                state.replayable = true;
+                state.poison = None;
+                state.coverage.clear();
+            }
             return Vec::new();
         }
         state.journal_payload_bytes = state.journal_payload_bytes.saturating_add(payload);
         state.journal.push(command.clone());
-        if !state.replayable {
-            return Vec::new();
-        }
         let mut updates = Vec::new();
         for (class, backing) in &mut state.variants {
             // Where the replay painted, in this variant's own density space.
