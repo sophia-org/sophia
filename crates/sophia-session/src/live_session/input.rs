@@ -46,22 +46,6 @@ impl RoutedInputIngress for XAuthorityRoutedInputSender {
     }
 }
 
-#[cfg(test)]
-impl RoutedInputIngress for SyncSender<XAuthorityRoutedInput> {
-    fn try_send(
-        &self,
-        route: XAuthorityRoutedInput,
-    ) -> Result<(), std::sync::mpsc::TrySendError<XAuthorityRoutedInput>> {
-        SyncSender::try_send(self, route)
-    }
-
-    fn capacity(&self) -> usize {
-        // A plain channel has no capacity accessor. The value reaches only a
-        // diagnostic field, never an admission decision.
-        8
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct ApplicationRouteLeaseUpdateReport {
     confirmed: usize,

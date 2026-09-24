@@ -15,7 +15,7 @@ use sophia_x_authority::{
     XServerFrontendRouteBroker,
 };
 
-use crate::live_session::{LiveXPixmapAllocator, LiveXRenderDeviceProvider};
+use crate::live_session::x_frontend::{LiveXPixmapAllocator, LiveXRenderDeviceProvider};
 
 #[test]
 #[ignore = "requires SOPHIA_PIXMAP_TEST_DEVICE and GL/Xlib development files; private X server, no visible windows"]

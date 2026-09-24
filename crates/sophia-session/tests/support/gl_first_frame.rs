@@ -27,7 +27,7 @@ use sophia_x_authority::{
     XServerFrontendRouteBroker,
 };
 
-use crate::live_session::{LiveXPixmapAllocator, LiveXRenderDeviceProvider};
+use crate::live_session::x_frontend::{LiveXPixmapAllocator, LiveXRenderDeviceProvider};
 
 #[path = "dri3_layout_probe.rs"]
 mod dri3_layout_probe;

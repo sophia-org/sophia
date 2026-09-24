@@ -1,6 +1,25 @@
 #![cfg(test)]
 
+// The support modules below were declared from `live_session.rs`; declared
+// here they read the same namespace through this glob (t026).
+#[allow(unused_imports)]
+use super::*;
+
 mod focus_candidate;
+mod production_test_helpers;
+use production_test_helpers::{completed_pointer_gesture_geometry, observe_public_output_topology};
+
+#[path = "../../tests/support/mirror_gate_session_config.rs"]
+mod mirror_gate_session_config;
+
+#[path = "../../tests/support/live_control.rs"]
+mod live_control_tests;
+
+#[path = "../../tests/support/panel_session_config.rs"]
+mod panel_session_config;
+
+#[path = "../../tests/support/desktop_composition.rs"]
+mod desktop_composition;
 
 #[path = "../../tests/support/launch_origin_socket.rs"]
 mod launch_origin_socket;
@@ -48,16 +67,15 @@ use super::{
     authority_batch_has_engine_work, authority_batch_is_pure_content, authority_merge_run_len,
     authority_transaction_count, authority_wait_timeout, center_geometry_without_scaling,
     clamp_floating_pointer_outline, clear_client_pressed_keys_state_only, committed_output_placing,
-    completed_pointer_gesture_geometry, control_is_pending, control_priority_should_reset,
-    current_cpu_frame_is_presented, flush_all_client_pressed_keys,
-    global_runtime_deadline_ends_session, independent_native_output_presented,
-    input_baseline_is_presented, is_shell_switcher_shortcut, live_transaction_observed_size,
-    live_transaction_raster_size, live_transaction_visual_evidence,
+    control_is_pending, control_priority_should_reset, current_cpu_frame_is_presented,
+    flush_all_client_pressed_keys, global_runtime_deadline_ends_session,
+    independent_native_output_presented, input_baseline_is_presented, is_shell_switcher_shortcut,
+    live_transaction_observed_size, live_transaction_raster_size, live_transaction_visual_evidence,
     logical_startup_output_progress, logical_synchronous_modeset_records,
     managed_child_exit_is_nonfatal, native_frame_service_requires_owner_progress,
     native_frame_service_should_preempt_authority, native_session_exported_pixels,
     newest_head_composition_frame, observe_floating_pointer_gesture,
-    observe_public_output_generations, observe_public_output_topology, paced_repaint_runnable,
+    observe_public_output_generations, paced_repaint_runnable,
     pending_wm_focus_after_engine_decision, physical_input_page_flip_correlates,
     physical_input_pixels_already_changed, physical_input_routing_mode,
     place_pointer_event_for_routing, pointer_press_starts_focus_handoff,

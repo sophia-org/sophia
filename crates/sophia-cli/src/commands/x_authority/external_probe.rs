@@ -779,6 +779,5 @@ struct ExternalProbeRequestProof {
     cpu_buffer_handle: Option<u64>,
 }
 
-#[cfg(test)]
-#[path = "../../../tests/support/external_probe_fixed_text.rs"]
-mod external_probe_fixed_text_tests;
+#[path = "external_probe/tests.rs"]
+mod external_probe_tests;

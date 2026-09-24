@@ -1943,34 +1943,6 @@ fn observe_public_output_generations(
     Ok(())
 }
 
-#[cfg(test)]
-fn observe_public_output_topology(
-    generations: &mut BTreeMap<sophia_protocol::OutputId, u64>,
-    live: &mut BTreeSet<sophia_protocol::OutputId>,
-    active: &mut sophia_protocol::OutputId,
-    outputs: &[sophia_engine::HeadlessOutput],
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let topology = output_topology_from_engine_outputs(outputs)?;
-    let next = outputs.iter().map(|output| output.id).collect::<BTreeSet<_>>();
-    let changed = next != *live;
-    let mut candidate_generations = generations.clone();
-    let mut candidate_live = live.clone();
-    observe_public_output_generations(
-        &mut candidate_generations,
-        &mut candidate_live,
-        outputs,
-    )?;
-    let candidate_active = if next.contains(active) {
-        *active
-    } else {
-        topology.primary
-    };
-    *generations = candidate_generations;
-    *live = candidate_live;
-    *active = candidate_active;
-    Ok(changed)
-}
-
 fn public_session_operations(
     config: &PersistentXtermSessionConfig,
 ) -> (

@@ -127,40 +127,6 @@ where
         self.page_flip_callback_queue = Some(queue);
         report
     }
-
-    /// Drain physical-head callbacks without publishing a logical-output flip.
-    ///
-    /// A mirror group has one logical output but several independently flipping
-    /// connectors. The group coordinator must join those callbacks before the
-    /// Engine can observe `Presented`; the ordinary queue drain publishes each
-    /// accepted callback immediately and is therefore only correct for one head.
-    // Same gate as above, plus `test`: the module at the foot of this file
-    // exercises it whatever features are selected, so gating on the features
-    // alone would delete it out from under its own tests.
-    #[cfg(test)]
-    pub(crate) fn drain_mirror_page_flip_callback_queue(
-        &mut self,
-    ) -> LivePageFlipCallbackQueueReport {
-        let Some(queue) = self.page_flip_callback_queue.take() else {
-            return LivePageFlipCallbackQueueReport::default();
-        };
-        let report = queue.drain_ready_with(|callback| {
-            let Some(state) = self.outputs.get_mut(callback.output) else {
-                return LivePageFlipCallbackReport {
-                    decision: LivePageFlipCallbackDecision::RejectedUnexpectedOutput,
-                    event: LivePageFlipEvent {
-                        status: LivePageFlipEventStatus::WaitingForOutput,
-                        frame_serial: None,
-                    },
-                };
-            };
-            state.page_flip_callback_intake.observe(callback)
-        });
-        self.page_flip_callback_queue = Some(queue);
-        report
-    }
 }
 
-#[cfg(test)]
-#[path = "../../tests/support/runtime_mirror_page_flip.rs"]
 mod tests;
