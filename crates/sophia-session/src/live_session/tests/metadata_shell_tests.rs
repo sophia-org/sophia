@@ -246,6 +246,9 @@ fn descriptor_reservations_cannot_exceed_or_invent_the_profile_allowance() {
     assert!(reservation_within_profile(None, None));
     assert!(reservation_within_profile(None, Some(32)));
     assert!(!reservation_within_profile(claim(1), None));
+    // A configured zero is a refusal of every claim, not an absent setting.
+    assert!(!reservation_within_profile(claim(1), Some(0)));
+    assert!(reservation_within_profile(None, Some(0)));
     assert!(reservation_within_profile(claim(32), Some(32)));
     assert!(!reservation_within_profile(claim(33), Some(32)));
 }
