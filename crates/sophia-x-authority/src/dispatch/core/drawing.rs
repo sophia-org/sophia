@@ -266,6 +266,7 @@ fn dispatch_core_drawing_request(
                 drawable,
                 &segments,
                 &values,
+                crate::XSegmentStroke::Segments,
             );
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
@@ -945,7 +946,7 @@ fn core_rectangle_fill(
     }
 }
 
-/// Stroke disjoint segments, reporting the drawable's own errors.
+/// Stroke an arc's chords, reporting the drawable's own errors.
 fn core_segment_draw(
     context: XDispatchContext,
     runtime: &mut XAuthorityRuntime,
@@ -959,6 +960,7 @@ fn core_segment_draw(
         drawable,
         segments,
         values,
+        crate::XSegmentStroke::ArcChords,
     );
     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
         vec![XClientOutput::Error(x_error_from_runtime(
