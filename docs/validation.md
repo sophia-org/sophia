@@ -1038,6 +1038,31 @@ purpose that starts passing fails it as a stale manifest, and the verdict
 line carries the count: `XTS5 PASS (177 passed, 212 declared)` is 212
 purposes of debt, each naming its row.
 
+x11bench, an independent Xlib/XRender/Xft drawing suite, runs through the
+same gate as a pixel oracle for the fixture host's CPU raster:
+
+```sh
+cargo xtask check x11-profile --profile=xtest \
+    --output=.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-x11bench \
+    --target-dir=.artifacts/x11-profile-target --timeout=1800 \
+    --x11bench-bin=$HOME/src/x11bench/build/x11bench \
+    --x11bench-expected=$PWD/tools/probes/x11_conformance/x11bench_expected.json
+```
+
+`~/src/x11bench` is a checkout of `github.com/KarpelesLab/x11bench`, built
+with `cmake -B build && make -C build`; its committed references are not
+used. The gate re-enters itself inside bubblewrap with a private `/tmp`, no
+network or System V IPC and a cleared environment, starts the host and
+TigerVNC's Xvnc there at the host's own screen size in pixels and
+millimetres (read from each setup reply and required to match, because Xft
+derives its DPI from the millimetres), generates the references on Xvnc,
+requires Xvnc to pass every test against them, and then runs the host
+against the same references. Without the binary, bubblewrap or Xvnc the
+report says `x11bench BLOCKED`. `x11bench_expected.json` names every test
+the suite lists; one the host does not pass is declared `FAIL` with a
+reason, a declaration that starts passing fails the run as stale, and the
+verdict line carries the count, as XTS5's does.
+
 ## xterm as a pointer oracle
 
 ```sh

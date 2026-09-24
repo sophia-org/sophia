@@ -230,6 +230,30 @@ pub(super) fn judge(rows: &[ManifestRow], result: &ContainedResult) -> Judgement
     judgement
 }
 
+/// Whether the oracle produced a reference for every test. The stacking
+/// tests verify themselves and have no reference, so they report PASS here
+/// rather than GENERATED; anything else, or silence, stops the run.
+pub(super) fn generation_complete(
+    inventory: &[String],
+    generated: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let short: Vec<String> = inventory
+        .iter()
+        .filter_map(|name| match generated.get(name).map(String::as_str) {
+            Some("GENERATED" | "PASS") => None,
+            other => Some(format!("{name}={}", other.unwrap_or("no result"))),
+        })
+        .collect();
+    if short.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the oracle did not generate every reference: {}",
+            short.join(", ")
+        ))
+    }
+}
+
 /// Search `PATH` for a program, as the contained run will.
 fn on_path(program: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
@@ -598,11 +622,7 @@ fn contained_run(
         "generate",
         deadline,
     )?);
-    if generated.values().any(|status| status != "GENERATED") {
-        return Err(format!(
-            "the oracle did not generate every reference: {generated:?}"
-        ));
-    }
+    generation_complete(&result.inventory, &generated)?;
     result.control = outcomes(&bench(
         bench_path,
         ORACLE_DISPLAY,

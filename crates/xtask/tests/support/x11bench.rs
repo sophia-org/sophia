@@ -2,7 +2,9 @@
 //! The x11bench suite's own rules: what a manifest may say, how x11bench's
 //! output is read, and how a contained run is judged. Nothing runs here.
 use super::profiles::options;
-use super::x11bench::{ContainedResult, ManifestRow, inventory, judge, manifest, outcomes};
+use super::x11bench::{
+    ContainedResult, ManifestRow, generation_complete, inventory, judge, manifest, outcomes,
+};
 use std::collections::BTreeMap;
 
 const GEOMETRY: [u16; 4] = [1280, 720, 339, 191];
@@ -199,4 +201,26 @@ fn x11bench_options_come_together_and_leave_the_gate_its_margin() {
         ])
         .is_err()
     );
+}
+
+#[test]
+fn every_test_must_leave_a_reference_or_verify_itself() {
+    let inventory = vec![
+        "circle".to_owned(),
+        "win_raise".to_owned(),
+        "gc_set".to_owned(),
+    ];
+    let complete = statuses(&[
+        ("circle", "GENERATED"),
+        ("win_raise", "PASS"),
+        ("gc_set", "GENERATED"),
+    ]);
+    assert!(generation_complete(&inventory, &complete).is_ok());
+    let short = statuses(&[("circle", "GENERATED"), ("win_raise", "FAIL")]);
+    let error = generation_complete(&inventory, &short).unwrap_err();
+    assert!(
+        error.contains("win_raise=FAIL") && error.contains("gc_set=no result"),
+        "{error}"
+    );
+    assert!(!error.contains("circle"), "{error}");
 }
