@@ -662,6 +662,11 @@ impl XSoftwareBufferStore {
         changed
     }
 
+    /// The size of a drawable's CPU buffer, when it has one.
+    pub(crate) fn buffer_size(&self, drawable: XResourceId) -> Option<Size> {
+        self.buffers.get(&drawable).map(|buffer| buffer.size)
+    }
+
     /// The handle of a drawable's CPU buffer, when it has one.
     pub(crate) fn buffer_handle(&self, drawable: XResourceId) -> Option<u64> {
         self.buffers.get(&drawable).map(|buffer| buffer.handle)
