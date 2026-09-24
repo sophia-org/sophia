@@ -614,3 +614,151 @@ fn a_clip_mask_confines_an_image() {
     );
     assert_eq!(client.pixels(), only_admitted(0x00abcdef));
 }
+
+fn whole() -> Rect {
+    Rect {
+        x: 0,
+        y: 0,
+        width: 3,
+        height: 3,
+    }
+}
+
+#[test]
+fn a_clip_mask_outlives_its_pixmap_and_a_reused_xid() {
+    // Setting a mask and freeing the pixmap at once is legal, and XTS's
+    // clip-origin purposes do exactly that: the GC keeps the mask.
+    let mut client = clipped_client();
+    client.accept(54, XWireRequest::FreePixmap { pixmap: MASK });
+    client.accept(70, fill(GC, whole()));
+    assert_eq!(client.pixels(), only_admitted(COLOR));
+
+    // The XID may now name a new pixmap; the GC still holds the old mask,
+    // not whatever the client puts there next.
+    client.accept(
+        53,
+        XWireRequest::CreatePixmap {
+            depth: 1,
+            pixmap: MASK,
+            drawable: PIXMAP,
+            width: 3,
+            height: 3,
+        },
+    );
+    client.accept(
+        70,
+        XWireRequest::PolyFillRectangle {
+            drawable: MASK,
+            gc: MASK_GC,
+            rectangles: vec![whole()],
+        },
+    );
+    client.accept(
+        56,
+        XWireRequest::ChangeGraphicsContext {
+            gc: GC,
+            value_mask: 1 << 2,
+            values: XGraphicsContextValues {
+                foreground: 0x00abcdef,
+                ..Default::default()
+            },
+        },
+    );
+    client.accept(70, fill(GC, whole()));
+    assert_eq!(client.pixels(), only_admitted(0x00abcdef));
+}
+
+#[test]
+fn a_tile_outlives_its_pixmap() {
+    const TILE: XResourceId = XResourceId::new(0x100016, 1);
+    const TILE_GC: XResourceId = XResourceId::new(0x100017, 1);
+    let mut client = Client::new();
+    client.accept(
+        53,
+        XWireRequest::CreatePixmap {
+            depth: 24,
+            pixmap: TILE,
+            drawable: PIXMAP,
+            width: 2,
+            height: 1,
+        },
+    );
+    client.accept(
+        55,
+        XWireRequest::CreateGraphicsContext {
+            gc: TILE_GC,
+            drawable: TILE,
+            values: XGraphicsContextValues {
+                foreground: 0x00abcdef,
+                ..Default::default()
+            },
+        },
+    );
+    client.accept(
+        70,
+        XWireRequest::PolyFillRectangle {
+            drawable: TILE,
+            gc: TILE_GC,
+            rectangles: vec![Rect {
+                x: 1,
+                y: 0,
+                width: 1,
+                height: 1,
+            }],
+        },
+    );
+    // A tile of two columns: 0 then 0xabcdef.
+    client.accept(
+        56,
+        XWireRequest::ChangeGraphicsContext {
+            gc: GC,
+            value_mask: (1 << 8) | (1 << 10),
+            values: XGraphicsContextValues {
+                fill_style: 1,
+                tile: Some(TILE),
+                ..Default::default()
+            },
+        },
+    );
+    client.accept(54, XWireRequest::FreePixmap { pixmap: TILE });
+    client.accept(70, fill(GC, whole()));
+    let row = [0, 0x00abcdef, 0];
+    assert_eq!(client.pixels(), [row, row, row].concat());
+}
+
+#[test]
+fn a_freed_pixmap_goes_when_the_last_context_lets_go() {
+    const OTHER_GC: XResourceId = XResourceId::new(0x100018, 1);
+    let mut client = clipped_client();
+    // A second context holding the same mask.
+    client.accept(
+        55,
+        XWireRequest::CreateGraphicsContext {
+            gc: OTHER_GC,
+            drawable: PIXMAP,
+            values: XGraphicsContextValues::default(),
+        },
+    );
+    client.accept(
+        57,
+        XWireRequest::CopyGraphicsContext {
+            source: GC,
+            destination: OTHER_GC,
+            value_mask: 1 << 19,
+        },
+    );
+    client.accept(54, XWireRequest::FreePixmap { pixmap: MASK });
+    assert_eq!(client.runtime.retained_pixmap_count(), 1);
+    // One lets go by taking no mask; the other still holds it.
+    client.accept(
+        56,
+        XWireRequest::ChangeGraphicsContext {
+            gc: GC,
+            value_mask: 1 << 19,
+            values: XGraphicsContextValues::default(),
+        },
+    );
+    assert_eq!(client.runtime.retained_pixmap_count(), 1);
+    client.accept(60, XWireRequest::FreeGraphicsContext { gc: OTHER_GC });
+    assert_eq!(client.runtime.retained_pixmap_count(), 0);
+}

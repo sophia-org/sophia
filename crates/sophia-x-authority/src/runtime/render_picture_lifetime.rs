@@ -5,7 +5,10 @@
 ///
 /// The counts are separate but the backing is ONE. Two independent lifetimes
 /// would drop it while the other kind still held it, so nothing is released
-/// until both reach zero.
+/// until both reach zero. Graphics contexts are a third kind of referent,
+/// counted from the contexts themselves rather than kept here: a context
+/// holds a clip mask, tile or stipple until a later request replaces it or
+/// frees the context, and every such request re-checks the backing.
 #[derive(Debug)]
 struct XRetainedPixmapBacking {
     namespace: NamespaceId,
@@ -51,7 +54,11 @@ impl XAuthorityRuntime {
                 matches!(record.backing, XGlxDrawableBacking::Pixmap { pixmap: backing, .. } if backing == pixmap)
             })
             .count();
-        if pictures + glx_pixmaps == 0 && !self.pixmap_export_holds_backing(pixmap) {
+        let held_by_graphics_context = self.graphics_contexts.holds_pixmap(pixmap);
+        if pictures + glx_pixmaps == 0
+            && !held_by_graphics_context
+            && !self.pixmap_export_holds_backing(pixmap)
+        {
             return Ok(false);
         }
         let metadata = *self
@@ -95,6 +102,7 @@ impl XAuthorityRuntime {
                 record.drawable = backing;
             }
         }
+        self.graphics_contexts.rekey_held_pixmap(pixmap, backing);
         for record in self.glx_drawables.values_mut() {
             if let XGlxDrawableBacking::Pixmap {
                 pixmap: current,
@@ -133,11 +141,14 @@ impl XAuthorityRuntime {
         self.maybe_drop_retained_pixmap(backing);
     }
 
-    fn maybe_drop_retained_pixmap(&mut self, backing: crate::XResourceId) {
+    pub(super) fn maybe_drop_retained_pixmap(&mut self, backing: crate::XResourceId) {
         let Some(retained) = self.retained_pixmap_backings.get(&backing) else {
             return;
         };
-        if retained.referents() != 0 || self.pixmap_export_holds_backing(backing) {
+        if retained.referents() != 0
+            || self.graphics_contexts.holds_pixmap(backing)
+            || self.pixmap_export_holds_backing(backing)
+        {
             return;
         }
         if let Some(handle) = self.pixmap_export_handles.get(&backing).copied() {
@@ -157,6 +168,11 @@ impl XAuthorityRuntime {
                 .or_default()
                 .push(handle);
         }
+    }
+
+    /// How many freed pixmaps live on because something still holds them.
+    pub fn retained_pixmap_count(&self) -> usize {
+        self.retained_pixmap_backings.len()
     }
 
     /// Takes the renderer registrations whose backings have been dropped.
