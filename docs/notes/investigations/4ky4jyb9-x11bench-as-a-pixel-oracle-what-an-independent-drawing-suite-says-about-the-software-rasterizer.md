@@ -245,6 +245,38 @@ in their quadrant.
 What x11bench still declares: three client restacks, answered by authority
 policy. Every drawing test matches the reference server.
 
+**t179, wide and dashed arcs (2026-09-23).** Promoted on XTS5's red rather
+than x11bench's, which has no wide arc: XTS's `makegc` draws at line width
+one, so its Xlib9 arc cases are all `miarc.c`'s. On master `83708031`
+(scenario `arcs`: XDrawArc, XDrawArcs, XFillArc, XFillArcs) XDrawArc failed
+38 purposes and XDrawArcs 45. `software/geometry/wide_arc.rs` with
+`wide_arc/spans.rs` and `wide_arc/faces.rs` now port `miarc.c`: the offset
+ellipse's quartic, the per-quadrant spans, caps, joins, the dash walk along
+an arc, and `miWideArc`'s grouping -- each rendered group one union painted
+once, which is what `mi`'s scratch bitmap gives a raster function that reads
+the destination and what painting twice gives one that does not, clipped for
+the first kind to that bitmap's extent. PolyArc at every width goes through
+a runtime `apply_arc_draw`; the chord stroke and the yserver dash walker had
+no callers left and are gone. Density replay is still handed each arc's
+chords. Two things found on the way: `mi` reads phase 1's arc count for an
+on/off dash, which has no phase 1 (past the end of its array; harmless there
+because every use is guarded, and kept harmless here, with a test), and
+every stroke -- wide lines, thin lines, arcs -- ignored the GC's fill style.
+Strokes are now painted through it, each batch's pixel standing in for the
+foreground as `mi` swaps it in for a double dash's off dashes.
+
+Evidence, from the XTS journal (the adapter cannot yet parse this scenario's
+journal; reported to its owner): XDrawArc 38 failures to 4, XDrawArcs 45 to
+4, and XFillArc and XFillArcs unchanged at 4 each. Every remaining failure is
+filed elsewhere: IncludeInferiors on the root (t181), and a GC clip mask,
+tile or stipple whose pixmap the client freed after setting it (t180) -- the
+clip-origin, clip-mask and tile/stipple-origin purposes all free theirs.
+x11bench still reads 57 of 60, the core profile 126 of 126, and
+`wide_arc/tests.rs` checks a wide circle against the ring it sweeps, a
+quarter arc's quadrant, double-dash phase order, once-per-pixel groups, and
+the on/off phase read. Dashed thin arcs are drawn as `miWideArc` draws the
+ones its thin walker refuses, since `miZeroArcDashPts` is not ported.
+
 ## Connections
 
 - [Running XTS5 through the profile gate](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):

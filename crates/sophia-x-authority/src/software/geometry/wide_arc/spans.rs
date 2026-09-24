@@ -692,7 +692,7 @@ fn compute_acc(arc: &XArc, lw: i32) -> (ArcDef, Accelerators) {
             t > acc.h2
         };
         if !skip {
-            t = 2.0 * def.h * t;
+            t *= 2.0 * def.h;
             t = (CUBED_ROOT_4 * acc.h2 - cbrt(t * t)) / acc.h2mw2;
             if t > 0.0 {
                 acc.tail_y = def.h / CUBED_ROOT_2 * t.sqrt();
@@ -804,7 +804,7 @@ fn compute_bound(
             y: bound.inner.min,
         };
     }
-    if let (Some(pair), Some(left)) = (faces.as_deref_mut(), left) {
+    if let (Some(pair), Some(left)) = (faces, left) {
         let left = &mut pair[left];
         left.clock = Spp {
             x: outer_x_max,

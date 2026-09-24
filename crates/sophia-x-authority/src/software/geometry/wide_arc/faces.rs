@@ -56,7 +56,7 @@ fn fill_spp_poly(
     }
     let ymin = iceil(ymin_f + y_ftrans);
     let ymax = iceil(ymax_f + y_ftrans - 1.0);
-    if ymax - ymin + 1 <= 0 {
+    if ymax < ymin {
         return;
     }
     let mut marked = vec![0i32; count];
