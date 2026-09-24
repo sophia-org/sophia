@@ -29,6 +29,30 @@ def fabricate_typed(root, case, directory, test_types):
     source.write_text(body)
 
 
+def fabricate_with_inclusions(root, case, directory):
+    """A case as the graphics sections write them: purposes of its own, a
+    `>>ASSERTION gc` naming components (one commented out), and a bare
+    include beside the source. The preprocessor counts six purposes here."""
+    source = root / 'xts5' / directory / case / f'{case}.m'
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(f'>># {case}\n'
+                      '>>ASSERTION Good A\n>>CODE\nown1();\n'
+                      '>>ASSERTION gc\nOn a call the GC components\n.M function ,\n'
+                      '>># .M join-style ,\n.M tile ,\nare used.\n'
+                      '>>INCLUDE extra.mc\n'
+                      '>>ASSERTION Bad A\n>>CODE\n\ttest_type = TOO_LONG;\n\town2();\n')
+    (source.parent / 'extra.mc').write_text('>>ASSERTION Good A\n>>CODE\nextra();\n')
+    gc = root / 'xts5' / 'lib' / 'gc'
+    gc.mkdir(parents=True, exist_ok=True)
+    (gc / 'function.mc').write_text('>>ASSERTION Good A\n>>CODE\nf1();\n'
+                                    '>>ASSERTION Bad A\n>>CODE\n\ttest_type = TOO_LONG;\n\tf2();\n')
+    (gc / 'tile.mc').write_text('>>ASSERTION Good A\n>>CODE\nt1();\n')
+    (gc / 'join-styl.mc').write_text('>>ASSERTION Good A\n>>CODE\nnever();\n')
+    scenario_file = root / 'xts5' / 'tet_scen'
+    if not scenario_file.exists():
+        scenario_file.write_text('all\n\t"everything"\n')
+
+
 class SelectionTests(unittest.TestCase):
     def run_select(self, root, *cases, install=False, exclude=()):
         manifest = root / 'manifest.json'
@@ -70,6 +94,34 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(scenario.count('\nselected-core\n'), 1)
             self.assertNotIn('/Xlib4/XInternAtom', scenario)
             self.assertIn('\t"selected scenario selected-core: 1 cases"\n\t/Xlib3/XDestroyWindow\n', scenario)
+
+    def test_purposes_are_counted_over_the_preprocessors_inclusions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fabricate_with_inclusions(root, 'XDrawThing', 'Xlib9')
+            result, manifest = self.run_select(root, 'XDrawThing')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rows = json.loads(manifest.read_text())
+            # own1, function 1 and 2, tile 1, extra, own2: the gc line is no
+            # purpose, the commented component is not included.
+            self.assertEqual([r['purpose'] for r in rows], [1, 2, 3, 4, 5, 6])
+            result, manifest = self.run_select(root, 'XDrawThing', exclude=('TOO_LONG',))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rows = json.loads(manifest.read_text())
+            # Numbered where the preprocessor puts them: function's second
+            # purpose is 3 and the case's own last is 6.
+            self.assertEqual([r['purpose'] for r in rows], [1, 2, 4, 5])
+            excluded = json.loads((root / 'manifest.excluded.json').read_text())
+            self.assertEqual([r['purpose'] for r in excluded], [3, 6])
+
+    def test_a_missing_include_or_unknown_component_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fabricate_with_inclusions(root, 'XDrawThing', 'Xlib9')
+            (root / 'xts5' / 'Xlib9' / 'XDrawThing' / 'extra.mc').unlink()
+            result, _ = self.run_select(root, 'XDrawThing')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('>>INCLUDE extra.mc', result.stderr)
 
     def test_a_case_without_sources_or_assertions_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:

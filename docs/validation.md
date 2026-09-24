@@ -1023,7 +1023,9 @@ cargo xtask check x11-profile --profile=all \
 `~/src/xts` is a checkout of `gitlab.freedesktop.org/xorg/test/xts`, built
 with `./autogen.sh && make`, with `tools/probes/x11_conformance/xts_check.sh`
 copied over its `check.sh`. Scenarios and their manifests are enumerated
-from the built suite by `xts_select.py`, never typed:
+from the built suite by `xts_select.py`, never typed, following the
+preprocessor's inclusions (`>>INCLUDE` and the GC components an
+`>>ASSERTION gc` names) so a manifest counts what TET runs:
 `xts_expected_selected_core.json` is nine cases around windows, properties,
 atoms, selections and focus; `xts_expected_xproto.json` is every core
 request's wire test, 122 cases and all 389 purposes, the `TOO_LONG`

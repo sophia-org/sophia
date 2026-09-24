@@ -66,7 +66,14 @@ def inside(host, activation_fd):
             if len(journals) != 1:
                 raise RuntimeError(f'expected exactly one fresh journal, found {len(journals)}')
             shutil.copyfile(journals[0], WORK / 'journal')
-            report = evaluate_journal(configuration['purposes'], journals[0].read_text(), status)
+            try:
+                report = evaluate_journal(configuration['purposes'], journals[0].read_text(), status)
+            except ValueError as error:
+                # A journal the evaluator refuses is a run without usable
+                # evidence; the report says why, where "no XTS result" would
+                # have said nothing.
+                report = {'status': 'FAIL', 'failures': [f'journal refused: {error}'],
+                          'process_status': status}
             (WORK / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
             return 0 if report['status'] == 'PASS' else 1
         finally:

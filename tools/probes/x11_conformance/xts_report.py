@@ -3,8 +3,11 @@ import argparse
 import json
 from pathlib import Path
 
+# TET's own results, then the three the suite adds in xts5/tet_code: WARNING
+# (a pass with a caveat), FIP (further information pending) and ABORT.
 VERDICTS = {0: 'PASS', 1: 'FAIL', 2: 'UNRESOLVED', 3: 'NOTINUSE',
-            4: 'UNSUPPORTED', 5: 'UNTESTED', 6: 'UNINITIATED', 7: 'NORESULT'}
+            4: 'UNSUPPORTED', 5: 'UNTESTED', 6: 'UNINITIATED', 7: 'NORESULT',
+            101: 'WARNING', 102: 'FIP', 103: 'ABORT'}
 
 
 def parse_journal(text):
@@ -33,16 +36,21 @@ def parse_journal(text):
         else:
             if key not in started or key in results:
                 raise ValueError('unstarted or duplicate purpose result')
-            status = VERDICTS.get(int(values[2]))
-            if status is None or status != fields[2].strip():
-                raise ValueError('numeric and textual verdict disagree')
+            code, text = int(values[2]), fields[2].strip()
+            status = VERDICTS.get(code)
+            if status is None:
+                # A result code this table does not know: the journal's own
+                # name for it is the verdict, and the report carries it.
+                status = text or f'RESULT-{code}'
+            elif status != text:
+                raise ValueError(f'numeric and textual verdict disagree: {line}')
             results[key] = status
     if not started:
         raise ValueError('empty journal: no purposes started')
     return started, results
 
 
-DECLARABLE = {'FAIL', 'UNRESOLVED', 'NOTINUSE', 'UNSUPPORTED', 'UNTESTED'}
+DECLARABLE = {'FAIL', 'UNRESOLVED', 'NOTINUSE', 'UNSUPPORTED', 'UNTESTED', 'WARNING', 'FIP'}
 
 
 def declared_expectation(row):

@@ -28,25 +28,84 @@ def case_sources(root, suite, case):
     return matches
 
 
-def purposes_of(sources):
-    count = sum(len(ASSERTION.findall(source.read_text(errors='replace'))) for source in sources)
+# The suite's preprocessor (xts5/src/bin/mc) reads a source with two kinds of
+# inclusion, and TET numbers purposes over the result. `>>INCLUDE file` is the
+# file's text, found beside the source or under xts5/lib. `>>ASSERTION gc` is
+# no purpose of its own: it names GC components, one `.M name ,` line each,
+# and each is the text of xts5/lib/gc/<include>.mc with the include name cut
+# to nine characters (gccomps.c). A `>>#` line is a comment and ends nothing.
+INCLUDE = re.compile(r'^>>INCLUDE\s+(\S+)')
+GC_ASSERTION = re.compile(r'^>>ASSERTION\s+gc\b')
+GC_COMPONENT = re.compile(r'^\.M\s+([A-Za-z-]+)')
+GC_COMPONENTS = {
+    'function': 'function', 'plane-mask': 'plane-mask', 'foreground': 'foreground',
+    'background': 'background', 'line-width': 'line-width', 'line-style': 'line-style',
+    'cap-style': 'cap-style', 'join-style': 'join-style', 'fill-style': 'fill-style',
+    'fill-rule': 'fill-rule', 'arc-mode': 'arc-mode', 'tile-stipple-x-origin': 'ts-x-origin',
+    'tile-stipple-y-origin': 'ts-y-origin', 'ts-x-origin': 'ts-x-origin',
+    'ts-y-origin': 'ts-y-origin', 'tile': 'tile', 'stipple': 'stipple', 'font': 'font',
+    'subwindow-mode': 'subwindow-mode', 'graphics-exposures': 'graphics-exposures',
+    'clip-x-origin': 'clip-x-origin', 'clip-y-origin': 'clip-y-origin',
+    'clip-mask': 'clip-mask', 'dash-offset': 'dash-offset', 'dash-list': 'dash-list',
+    'dashes': 'dash-list',
+}
+
+
+def included_path(root, suite, source, name):
+    for candidate in (source.parent / name, root / suite / 'lib' / name):
+        if candidate.is_file():
+            return candidate
+    raise ValueError(f'{source}: >>INCLUDE {name} is neither beside the source nor under {root / suite / "lib"}')
+
+
+def expanded(root, suite, source, seen=()):
+    """The source's text as the preprocessor reads it, inclusions in place."""
+    if source in seen:
+        raise ValueError(f'include cycle through {source}')
+    seen = seen + (source,)
+    out, lines, index = [], source.read_text(errors='replace').splitlines(keepends=True), 0
+    while index < len(lines):
+        line = lines[index]
+        if match := INCLUDE.match(line):
+            out.append(expanded(root, suite, included_path(root, suite, source, match.group(1)), seen))
+            index += 1
+            continue
+        if GC_ASSERTION.match(line):
+            index += 1
+            while index < len(lines) and (not lines[index].startswith('>>') or lines[index].startswith('>>#')):
+                if component := GC_COMPONENT.match(lines[index]):
+                    name = component.group(1)
+                    if name not in GC_COMPONENTS:
+                        raise ValueError(f'{source}: unknown gc component {name}')
+                    include = root / suite / 'lib' / 'gc' / (GC_COMPONENTS[name][:9] + '.mc')
+                    out.append(expanded(root, suite, include, seen))
+                index += 1
+            continue
+        out.append(line)
+        index += 1
+    return ''.join(out)
+
+
+def purposes_of(root, suite, sources):
+    count = sum(len(ASSERTION.findall(expanded(root, suite, source))) for source in sources)
     if count == 0:
         raise ValueError(f'no >>ASSERTION in {", ".join(str(s) for s in sources)}')
     return count
 
 
-def excluded_purposes(sources, test_types):
+def excluded_purposes(root, suite, sources, test_types):
     """The one-based purposes whose code sets `test_type = <T>;` for an
     excluded T. A purpose is the text from its `>>ASSERTION` to the next, so
     the assignment is read from the purpose that makes it, not the file.
     Named exclusions are the only way a purpose leaves a selection: the
     manifest then says which and why, rather than a case being dropped whole.
-    Purposes are numbered across a case's sources in order, as TET does."""
+    Purposes are numbered across a case's sources in order, inclusions in
+    place, as TET does."""
     if not test_types:
         return set()
     excluded, offset = set(), 0
     for source in sources:
-        text = source.read_text(errors='replace')
+        text = expanded(root, suite, source)
         starts = [match.start() for match in ASSERTION.finditer(text)]
         for index, start in enumerate(starts):
             end = starts[index + 1] if index + 1 < len(starts) else len(text)
@@ -92,8 +151,8 @@ def select(root, suite, cases, exclude_test_types=()):
         seen.add(case)
         sources = case_sources(root, suite, case)
         path = scenario_path(root, suite, sources)
-        total = purposes_of(sources)
-        excluded = excluded_purposes(sources, exclude_test_types)
+        total = purposes_of(root, suite, sources)
+        excluded = excluded_purposes(root, suite, sources, exclude_test_types)
         kept = [purpose for purpose in range(1, total + 1) if purpose not in excluded]
         if not kept:
             raise ValueError(f'every purpose of {path} is excluded; drop the case instead')
