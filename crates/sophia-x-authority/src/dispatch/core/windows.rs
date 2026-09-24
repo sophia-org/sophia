@@ -195,10 +195,50 @@ fn dispatch_core_window_request(
                     background_pixel,
                     override_redirect,
                     cursor,
+                    colormap,
                     ..
                 } => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
+                    // The colormap names a second resource too, and a change
+                    // is told to the window's ColormapChange selectors (t210).
+                    let mut colormap_notice = None;
+                    if let Some(raw) = colormap
+                        && runtime
+                            .validate_drawable_access(context.namespace, window)
+                            .is_ok()
+                    {
+                        match runtime.change_window_colormap(context.namespace, window, raw) {
+                            Ok(changed) => {
+                                colormap_notice = changed.map(|colormap| {
+                                    XClientOutput::Event(XClientEvent::ColormapNotify {
+                                        sequence: context.sequence,
+                                        window,
+                                        colormap,
+                                        new: true,
+                                        state: colormap_state(colormap),
+                                    })
+                                });
+                            }
+                            Err(error) => {
+                                let code = match error {
+                                    crate::XWindowColormapError::Color => XErrorCode::BadColor,
+                                    crate::XWindowColormapError::Match => XErrorCode::BadMatch,
+                                };
+                                return Handled(XDispatchResult {
+                                    response: None,
+                                    outputs: vec![XClientOutput::Error(crate::XClientError {
+                                        code,
+                                        sequence: context.sequence,
+                                        resource_id: raw,
+                                        minor_code: 0,
+                                        major_code: context.major_opcode,
+                                    })],
+                                    metadata_candidates: Vec::new(),
+                                });
+                            }
+                        }
+                    }
                     // The cursor first, and separately: it names a second
                     // resource, so it is the one attribute here that can be
                     // refused for something other than the window. A refusal
@@ -288,6 +328,10 @@ fn dispatch_core_window_request(
                     } else {
                         Vec::new()
                     };
+                    let mut outputs = outputs;
+                    if outputs.is_empty() {
+                        outputs.extend(colormap_notice);
+                    }
                     XDispatchResult {
                         response: override_redirect.map(|_| response),
                         outputs,
@@ -1110,4 +1154,10 @@ fn validate_window_or_root_access(
     } else {
         runtime.validate_window_access(namespace, window)
     }
+}
+
+/// ColormapNotify's state: the default colormap is the one installed, and
+/// the only one ListInstalledColormaps names.
+pub(crate) fn colormap_state(colormap: u32) -> u8 {
+    u8::from(colormap == crate::X_SETUP_DEFAULT_COLORMAP)
 }

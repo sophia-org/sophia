@@ -35,6 +35,7 @@ const X_EXPOSE: u8 = 12;
 const X_GRAPHICS_EXPOSE: u8 = 13;
 const X_NO_EXPOSE: u8 = 14;
 const X_VISIBILITY_NOTIFY: u8 = 15;
+const X_COLORMAP_NOTIFY: u8 = 32;
 const X_DESTROY_NOTIFY: u8 = 17;
 const X_UNMAP_NOTIFY: u8 = 18;
 const X_MAP_NOTIFY: u8 = 19;
@@ -146,6 +147,16 @@ pub enum XClientEvent {
     VisibilityNotify {
         sequence: u16,
         window: XResourceId,
+        state: u8,
+    },
+    /// A window's colormap attribute changed (`new`), or the colormap it
+    /// names was installed or uninstalled. `colormap` is raw: zero is None,
+    /// which a freed colormap leaves behind.
+    ColormapNotify {
+        sequence: u16,
+        window: XResourceId,
+        colormap: u32,
+        new: bool,
         state: u8,
     },
     CreateNotify {

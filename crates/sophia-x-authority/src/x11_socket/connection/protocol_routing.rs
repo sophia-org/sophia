@@ -90,6 +90,7 @@ fn route_core_lifecycle_events_with_control(
     };
     const EXPOSURE_MASK: u32 = 1 << 15;
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
+    const COLORMAP_CHANGE_MASK: u32 = 1 << 23;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
     const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
@@ -200,6 +201,9 @@ fn route_core_lifecycle_events_with_control(
             }
             XClientEvent::VisibilityNotify { window, .. } => {
                 Some((index, window, VISIBILITY_CHANGE_MASK, *event))
+            }
+            XClientEvent::ColormapNotify { window, .. } => {
+                Some((index, window, COLORMAP_CHANGE_MASK, *event))
             }
             XClientEvent::Expose { window, .. } => {
                 Some((index, window, EXPOSURE_MASK, *event))
@@ -316,6 +320,7 @@ fn filter_local_core_lifecycle_events(
 ) {
     const EXPOSURE_MASK: u32 = 1 << 15;
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
+    const COLORMAP_CHANGE_MASK: u32 = 1 << 23;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
     const SUBSTRUCTURE_REDIRECT_MASK: u32 = 1 << 20;
@@ -398,6 +403,9 @@ fn filter_local_core_lifecycle_events(
             }
             XClientEvent::VisibilityNotify { window, .. } => {
                 selections.selects(window, VISIBILITY_CHANGE_MASK)
+            }
+            XClientEvent::ColormapNotify { window, .. } => {
+                selections.selects(window, COLORMAP_CHANGE_MASK)
             }
             XClientEvent::Expose { window, .. } => selections.selects(window, EXPOSURE_MASK),
             // A focus transition is reported to the windows that asked about

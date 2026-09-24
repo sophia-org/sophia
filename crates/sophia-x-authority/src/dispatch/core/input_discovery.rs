@@ -834,6 +834,21 @@ fn dispatch_core_input_discovery_request(
                 }
                 XWireRequest::FreeColormap { colormap } => {
                     let outputs = match runtime.free_colormap(context.namespace, colormap) {
+                        // A window left naming the freed colormap has None,
+                        // and its ColormapChange selectors are told (t210).
+                        Ok(()) if colormap.local.raw() != u64::from(crate::X_SETUP_DEFAULT_COLORMAP) => runtime
+                            .release_window_colormaps(colormap)
+                            .into_iter()
+                            .map(|window| {
+                                XClientOutput::Event(XClientEvent::ColormapNotify {
+                                    sequence: context.sequence,
+                                    window,
+                                    colormap: 0,
+                                    new: true,
+                                    state: 0,
+                                })
+                            })
+                            .collect(),
                         Ok(()) => Vec::new(),
                         Err(_) => vec![color_error(
                             context,

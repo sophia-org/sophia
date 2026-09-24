@@ -498,6 +498,7 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         | XClientEvent::CirculateNotify { sequence, .. }
         | XClientEvent::CirculateRequest { sequence, .. }
         | XClientEvent::VisibilityNotify { sequence, .. }
+        | XClientEvent::ColormapNotify { sequence, .. }
         | XClientEvent::Expose { sequence, .. }
         | XClientEvent::RandrScreenChange { sequence, .. }
         | XClientEvent::RandrCrtcChange { sequence, .. }
