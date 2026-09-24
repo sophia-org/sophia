@@ -63,7 +63,10 @@ sent bit, the SelectionNotify form) are unchanged.
 - [x] Wire red then green in both byte orders.
 - [x] `sophia-x-authority` suite and clippy under the gate's isolation.
 - [x] The core profile reads PASS, 154 of 154.
-- [ ] The gate on the committed candidate, both scenarios.
+- [x] The gate on the committed candidate
+      (`.artifacts/x11-profile-2af52ef3-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 339 passed and 50 declared, selected-core
+      with 76 passed and 23 declared.
 - [ ] A ClientMessage aimed at PointerWindow with no pointer position falls
       back to the root, whose owner is nobody: recorded here rather than
       hidden, and the input authority's pointer window is what a session
