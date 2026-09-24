@@ -20,8 +20,8 @@ mod window_background;
 use pixmap_exports::XPixmapExportDamage;
 
 use raster_ops::{
-    XClipMask, copy_buffer_region, copy_xrgb8888, draw_glyph, draw_line, fill_rect,
-    fill_rect_masked, point_bounds, put_image_pixels, set_pixel,
+    XClipMask, copy_buffer_region, copy_xrgb8888, draw_glyph, fill_rect, fill_rect_masked,
+    put_image_pixels, set_pixel,
 };
 pub(crate) use raster_variants::{
     XAuthorityRasterCommand, XAuthorityRasterStore, XOwnedTextDraw, XRasterPoint,
@@ -638,49 +638,30 @@ impl XSoftwareBufferStore {
         Some(image)
     }
 
-    /// Draw disjoint segments and report the rectangle they dirtied.
-    ///
-    /// Each segment is its own polyline, as `miPolySegment` draws it, with
-    /// caps at both ends and, at zero width, its own end pixel. The chords of
-    /// a stroked arc are the exception, kept on the brush stroke, because an
-    /// arc is not a run of capped segments and `miarc.c` is not ported.
+    /// Draw disjoint segments and report the rectangle they dirtied: each
+    /// segment its own polyline, as `miPolySegment` draws it, with caps at
+    /// both ends and, at zero width, its own end pixel.
     pub fn draw_segments(
         &mut self,
         drawable: XResourceId,
         size: Size,
         segments: &[(XPoint, XPoint)],
         gc: &XGraphicsContextValues,
-        stroke: XSegmentStroke,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
-        if stroke == XSegmentStroke::Segments {
-            let spans = geometry::wide_line::segments(segments, gc);
-            return self.paint_stroke(drawable, size, &spans, gc);
-        }
-        let points: Vec<XPoint> = segments
-            .iter()
-            .flat_map(|(from, to)| [*from, *to])
-            .collect();
-        let damage = point_bounds(&points, gc.line_width)?;
-        let mask_pixels = self.clip_mask_pixels(gc);
-        let handle = self.allocate_handle();
-        let (buffer, replaced) = self.ensure(drawable, size, handle)?;
-        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        let width = i32::from(gc.line_width.max(1));
-        let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
-        for (from, to) in segments {
-            draw_dashed(buffer, *from, *to, width, gc, &mut dashes);
-        }
-        let published_damage = Some(damage);
-        withhold(
-            buffer,
-            gc,
-            mask_pixels.as_ref(),
-            before.as_deref(),
-            published_damage,
-        );
-        let result = finish_immutable_update(buffer, handle, replaced, published_damage);
-        self.note_export_damage(drawable, replaced, published_damage);
-        Some((result?, damage))
+        let spans = geometry::wide_line::segments(segments, gc);
+        self.paint_stroke(drawable, size, &spans, gc)
+    }
+
+    /// Stroke arcs, as `miPolyArc` draws them at any width and line style.
+    pub fn draw_arcs(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        arcs: &[geometry::arc::XArc],
+        gc: &XGraphicsContextValues,
+    ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
+        let spans = geometry::wide_arc::poly_arc(arcs, gc);
+        self.paint_stroke(drawable, size, &spans, gc)
     }
 
     /// Draw one connected polyline, as `miPolylines` draws it at any width:
@@ -721,11 +702,12 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
         let damage = geometry::wide_line::bounds(spans)?;
+        let pattern_pixels = self.pattern_pixels(gc);
         let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
-        paint_spans(buffer, spans, gc);
+        paint_spans(buffer, spans, gc, pattern_pixels.as_ref());
         let published_damage = Some(damage);
         withhold(
             buffer,
@@ -949,27 +931,29 @@ fn coverage_area(rects: &[Rect]) -> usize {
         .fold(0usize, usize::saturating_add)
 }
 
-/// How a run of segments is stroked when its line is wide.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum XSegmentStroke {
-    /// `PolySegment`: each segment a line of its own, capped at both ends.
-    Segments,
-    /// The chords of a stroked arc, kept on the brush stroke until wide arcs
-    /// are drawn as arcs.
-    ArcChords,
-}
-
-/// Paint wide-line spans in order, each batch in its own pixel, through the
-/// same per-pixel rules as every fill: clip list, raster function, plane
-/// mask.
+/// Paint a stroke's spans in order through the same per-pixel rules as
+/// every fill: fill style, clip list, raster function, plane mask. Each batch
+/// is painted as `mi` paints it, with the batch's pixel standing in for the
+/// foreground -- which is how a double dash's off dashes take the
+/// background, tiled or stippled as the GC says.
 fn paint_spans(
     buffer: &mut XAuthorityCpuBufferSnapshot,
     spans: &geometry::wide_line::XInkedSpans,
     gc: &XGraphicsContextValues,
+    pattern_pixels: Option<&XAuthorityCpuBufferSnapshot>,
 ) {
+    let no_mask = XClipMask {
+        pixels: None,
+        origin: (0, 0),
+    };
     for (pixel, spans) in spans {
+        let ink = XGraphicsContextValues {
+            foreground: *pixel,
+            ..gc.clone()
+        };
+        let pattern = fill_pattern::fill_pattern(&ink, pattern_pixels);
         for span in spans {
-            fill_rect(
+            fill_rect_masked(
                 buffer,
                 Rect {
                     x: span.x,
@@ -977,7 +961,8 @@ fn paint_spans(
                     width: span.width,
                     height: 1,
                 },
-                *pixel,
+                pattern,
+                no_mask,
                 gc,
             );
         }
@@ -1050,34 +1035,4 @@ pub(crate) struct XTextDraw<'a> {
     pub text: &'a [u16],
     pub image: bool,
     pub font: XFontHandle,
-}
-
-/// Draw one line, honouring the graphics context's line style.
-///
-/// A solid line is drawn whole. `LineOnOffDash` paints only the on runs;
-/// `LineDoubleDash` paints the off runs in the background colour, which is
-/// what makes a two-colour dashed border possible.
-fn draw_dashed(
-    buffer: &mut XAuthorityCpuBufferSnapshot,
-    from: XPoint,
-    to: XPoint,
-    width: i32,
-    gc: &XGraphicsContextValues,
-    state: &mut geometry::dash::XDashState,
-) {
-    if gc.line_style == crate::X_LINE_SOLID {
-        draw_line(buffer, from, to, width, gc);
-        return;
-    }
-    for run in geometry::dash::split(from, to, &gc.dashes, state) {
-        if run.on {
-            draw_line(buffer, run.from, run.to, width, gc);
-        } else if gc.line_style == crate::X_LINE_DOUBLE_DASH {
-            let background = XGraphicsContextValues {
-                foreground: gc.background,
-                ..gc.clone()
-            };
-            draw_line(buffer, run.from, run.to, width, &background);
-        }
-    }
 }

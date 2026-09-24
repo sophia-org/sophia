@@ -51,8 +51,9 @@ the X.Org font packages. See that directory's README for provenance.
 
 ## X.Org X server `mi` — The Open Group and Digital Equipment Corporation
 
-Four files are ports of the X server's machine-independent drawing code,
-from `gitlab.freedesktop.org/xorg/xserver`; each names the routines it ports:
+Five ports of the X server's machine-independent drawing code, from
+`gitlab.freedesktop.org/xorg/xserver`; each file names the routines it
+ports:
 
 - `crates/sophia-x-authority/src/software/geometry/wide_line.rs`:
   `mi/miwideline.c` and `mi/miwideline.h` (author Keith Packard, MIT X
@@ -75,6 +76,10 @@ from `gitlab.freedesktop.org/xorg/xserver`; each names the routines it ports:
   `DEFAULTZEROLINEBIAS` from `mi/miscrinit.c`, and `miZeroArcSetup` and
   `miZeroArcPts` from `mi/mizerarc.c` and `include/mizerarc.h` (Bob
   Scheifler; copyright 1989, 1998 The Open Group).
+- `crates/sophia-x-authority/src/software/geometry/wide_arc.rs` with
+  `wide_arc/spans.rs` and `wide_arc/faces.rs`: `mi/miarc.c` (Keith Packard
+  and Bob Scheifler, `miFillSppPoly` by Todd Newman). Copyright 1987, 1998
+  The Open Group; copyright 1987 Digital Equipment Corporation.
 
 The notices are reproduced here with the wide-line files' copyright lines;
 the other files' differ only in their years.

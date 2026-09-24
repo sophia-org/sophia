@@ -51,7 +51,7 @@ const MINSHORT: i32 = -32_768;
 
 /// `ICEIL` from `mifpoly.h`: the ceiling, computed through a truncating
 /// conversion as the C does.
-fn iceil(x: f64) -> i32 {
+pub(crate) fn iceil(x: f64) -> i32 {
     let truncated = x as i32;
     if x == f64::from(truncated) || x < 0.0 {
         truncated

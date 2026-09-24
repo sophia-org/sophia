@@ -2,9 +2,11 @@
 //!
 //! Portions derived from yserver (MIT, Copyright (c) 2026 Jos Dehaes):
 //! `crates/yserver/src/kms/render/stroke.rs` and
-//! `crates/yserver/src/kms/backend.rs`, the chord-step arc approximation and
-//! the dash walk. The polygon fill and the wide lines are ports of the X
-//! server's `mi` (`polygon.rs`, `wide_line.rs`).
+//! `crates/yserver/src/kms/backend.rs`, the chord-step arc approximation that
+//! density replay still strokes. The polygon fill, filled arcs, wide lines,
+//! thin lines and arcs, and wide arcs are ports of the X server's `mi`
+//! (`polygon.rs`, `fill_arc.rs`, `wide_line.rs`, `zero_line.rs`,
+//! `wide_arc.rs`).
 //!
 //! Everything here is pure: geometry in, rectangles out. Nothing touches a
 //! pixel. The caller feeds the rectangles to the ordinary fill, so every
@@ -15,8 +17,8 @@
 //! even-odd; `mi`'s filler, and so this one, honours both rules.
 
 pub(crate) mod arc;
-pub(crate) mod dash;
 pub(crate) mod fill_arc;
 pub(crate) mod polygon;
+pub(crate) mod wide_arc;
 pub(crate) mod wide_line;
 pub(crate) mod zero_line;

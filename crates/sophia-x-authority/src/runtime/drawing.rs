@@ -421,7 +421,6 @@ impl XAuthorityRuntime {
         window: crate::XResourceId,
         segments: &[(XPoint, XPoint)],
         gc: &XGraphicsContextValues,
-        stroke: crate::XSegmentStroke,
     ) -> XAuthorityResponsePacket {
         let (size, window_generation) = match self.core_draw_target(namespace, window) {
             Ok(target) => target,
@@ -429,7 +428,7 @@ impl XAuthorityRuntime {
         };
         let Some((update, damage)) = self
             .software_buffers
-            .draw_segments(window, size, segments, gc, stroke)
+            .draw_segments(window, size, segments, gc)
         else {
             return XAuthorityResponsePacket::accepted(transaction);
         };
@@ -443,6 +442,57 @@ impl XAuthorityRuntime {
             points: segments
                 .iter()
                 .flat_map(|(from, to)| [*from, *to])
+                .map(|point| XRasterPoint {
+                    x: i32::from(point.x),
+                    y: i32::from(point.y),
+                })
+                .collect(),
+            gc: gc.clone(),
+        });
+        self.finish_drawing_update(XDrawingUpdate::core_draw(
+            transaction,
+            namespace,
+            window,
+            handle,
+            Region::single(damage),
+            generation,
+            250,
+        ))
+    }
+
+    /// Stroke arcs as `miPolyArc` does. Density replay has no arc command,
+    /// so it is given each arc's chords, as it was before the port: a
+    /// derived store approximates the arc; the canonical drawable is exact.
+    pub fn apply_arc_draw(
+        &mut self,
+        transaction: TransactionId,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        arcs: &[crate::XArc],
+        gc: &XGraphicsContextValues,
+    ) -> XAuthorityResponsePacket {
+        let (size, window_generation) = match self.core_draw_target(namespace, window) {
+            Ok(target) => target,
+            Err(error) => return XAuthorityResponsePacket::rejected(transaction, error),
+        };
+        let Some((update, damage)) = self.software_buffers.draw_arcs(window, size, arcs, gc)
+        else {
+            return XAuthorityResponsePacket::accepted(transaction);
+        };
+        let Some(generation) = window_generation else {
+            return XAuthorityResponsePacket::accepted(transaction);
+        };
+        let handle = update.handle();
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Segments {
+            points: arcs
+                .iter()
+                .flat_map(|arc| {
+                    let chords = crate::software::geometry::arc::polyline(*arc);
+                    chords
+                        .windows(2)
+                        .flat_map(|pair| [pair[0], pair[1]])
+                        .collect::<Vec<_>>()
+                })
                 .map(|point| XRasterPoint {
                     x: i32::from(point.x),
                     y: i32::from(point.y),

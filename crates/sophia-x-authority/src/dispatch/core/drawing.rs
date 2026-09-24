@@ -266,7 +266,6 @@ fn dispatch_core_drawing_request(
                 drawable,
                 &segments,
                 &values,
-                crate::XSegmentStroke::Segments,
             );
             let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                 vec![XClientOutput::Error(x_error_from_runtime(
@@ -312,52 +311,30 @@ fn dispatch_core_drawing_request(
                     ));
                 }
             };
-            // A solid thin arc is `miZeroPolyArc`'s; an arc too large for its
-            // walker, which `mi` hands to `miarc.c`, is the thin polyline of
-            // its chords until that is ported.
-            if values.line_width == 0 && values.line_style == crate::X_LINE_SOLID {
-                let mut spans: Vec<Rect> = crate::software::geometry::zero_line::arcs(&arcs)
-                    .into_iter()
-                    .map(|(x, y)| Rect {
-                        x,
-                        y,
-                        width: 1,
-                        height: 1,
-                    })
-                    .collect();
-                for arc in arcs
-                    .iter()
-                    .filter(|arc| !crate::software::geometry::zero_line::can_zero_arc(arc))
-                {
-                    let points = crate::software::geometry::arc::polyline(*arc);
-                    spans.extend(
-                        crate::software::geometry::zero_line::polyline(&points, false)
-                            .into_iter()
-                            .map(|(x, y)| Rect {
-                                x,
-                                y,
-                                width: 1,
-                                height: 1,
-                            }),
-                    );
-                }
-                return Handled(core_rectangle_fill(
-                    context, runtime, drawable, &spans, &values,
-                ));
+            // `miPolyArc`, at every width and line style.
+            let response = runtime.apply_arc_draw(
+                transaction,
+                context.namespace,
+                drawable,
+                &arcs,
+                &values,
+            );
+            let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
+                vec![XClientOutput::Error(x_error_from_runtime(
+                    error,
+                    context.sequence,
+                    context.major_opcode,
+                    0,
+                    u32::try_from(drawable.local.raw()).unwrap_or(0),
+                ))]
+            } else {
+                Vec::new()
+            };
+            XDispatchResult {
+                response: Some(response),
+                outputs,
+                metadata_candidates: Vec::new(),
             }
-            // Otherwise stroked as the polyline the curve traces: a dashed thin
-            // arc or a wide one, until `miarc.c` is ported (t179).
-            let segments: Vec<(crate::XPoint, crate::XPoint)> = arcs
-                .iter()
-                .flat_map(|arc| {
-                    let points = crate::software::geometry::arc::polyline(*arc);
-                    points
-                        .windows(2)
-                        .map(|pair| (pair[0], pair[1]))
-                        .collect::<Vec<_>>()
-                })
-                .collect();
-            core_segment_draw(context, runtime, drawable, &segments, &values)
         }
         XWireRequest::CopyPlane {
             source,
@@ -948,40 +925,6 @@ fn core_rectangle_fill(
         drawable,
         rectangles,
         values,
-    );
-    let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
-        vec![XClientOutput::Error(x_error_from_runtime(
-            error,
-            context.sequence,
-            context.major_opcode,
-            0,
-            u32::try_from(drawable.local.raw()).unwrap_or(0),
-        ))]
-    } else {
-        Vec::new()
-    };
-    XDispatchResult {
-        response: Some(response),
-        outputs,
-        metadata_candidates: Vec::new(),
-    }
-}
-
-/// Stroke an arc's chords, reporting the drawable's own errors.
-fn core_segment_draw(
-    context: XDispatchContext,
-    runtime: &mut XAuthorityRuntime,
-    drawable: XResourceId,
-    segments: &[(crate::XPoint, crate::XPoint)],
-    values: &crate::XGraphicsContextValues,
-) -> XDispatchResult {
-    let response = runtime.apply_segment_draw(
-        context.transaction,
-        context.namespace,
-        drawable,
-        segments,
-        values,
-        crate::XSegmentStroke::ArcChords,
     );
     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
         vec![XClientOutput::Error(x_error_from_runtime(
