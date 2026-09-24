@@ -56,9 +56,7 @@ fn decode_configure_window(
     let y = (value_mask & 0x0002 != 0).then(|| next_value() as i16);
     let width = (value_mask & 0x0004 != 0).then(|| next_value() as u16);
     let height = (value_mask & 0x0008 != 0).then(|| next_value() as u16);
-    if value_mask & 0x0010 != 0 {
-        let _ = next_value();
-    }
+    let border_width = (value_mask & 0x0010 != 0).then(|| next_value() as u16);
     let sibling = (value_mask & 0x0020 != 0).then(|| XResourceId::new(u64::from(next_value()), 1));
     let stack_mode = (value_mask & 0x0040 != 0).then(|| next_value() as u8);
 
@@ -69,6 +67,7 @@ fn decode_configure_window(
         y,
         width,
         height,
+        border_width,
         sibling,
         stack_mode,
     })
@@ -291,6 +290,7 @@ fn decode_create_window(
     let window = XResourceId::new(u64::from(window_raw), 1);
     // Class is {CopyFromParent, InputOutput, InputOnly}. An InputOnly window
     // is recorded so that the drawing family can refuse it: it has no pixels.
+    let border_width = context.byte_order.u16(&bytes[20..22]);
     let class = context.byte_order.u16(&bytes[22..24]);
     if class > 2 {
         return Err(XWireParseError::InvalidValue(u32::from(class)));
@@ -325,6 +325,7 @@ fn decode_create_window(
         event_mask,
         do_not_propagate_mask,
         cursor,
+        border_width,
         input_only: class == 2,
     })
 }

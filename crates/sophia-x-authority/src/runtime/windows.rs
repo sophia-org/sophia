@@ -501,6 +501,21 @@ impl XAuthorityRuntime {
          self.input_only_windows.contains(&window)
      }
 
+     /// Record the border width a window was created or configured with.
+     /// Sophia draws no border, so this is the number a client reads back
+     /// and nothing on screen; zero is the default and is not stored.
+     pub fn set_window_border_width(&mut self, window: crate::XResourceId, border_width: u16) {
+         if border_width == 0 {
+             self.window_border_widths.remove(&window);
+         } else {
+             self.window_border_widths.insert(window, border_width);
+         }
+     }
+
+     pub fn window_border_width(&self, window: crate::XResourceId) -> u16 {
+         self.window_border_widths.get(&window).copied().unwrap_or(0)
+     }
+
      pub fn window_map_state(
          &self,
          namespace: NamespaceId,
@@ -687,6 +702,7 @@ impl XAuthorityRuntime {
          self.window_visuals.remove(&window);
          self.release_window_cursor(window);
          self.input_only_windows.remove(&window);
+         self.window_border_widths.remove(&window);
          self.glx_drawables.retain(|_, record| match record.backing {
              XGlxDrawableBacking::Window(underlying) => underlying != window,
              // Neither borrows a window, so neither is disturbed by one going.
