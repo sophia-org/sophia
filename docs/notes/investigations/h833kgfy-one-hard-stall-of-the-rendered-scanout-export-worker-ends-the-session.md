@@ -2,7 +2,7 @@
 id: h833kgfy
 date: 2026-09-24
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, scanout, renderer, session-fatal]
 ---
 # One hard stall of the rendered-scanout export worker ends the session
@@ -73,7 +73,42 @@ disproportion the note on the Super+button fatal describes: a fault that
 should be contained to what it touched (one frame, one worker) is treated as
 a loss of the session's integrity.
 
-## Required repair and proof
+## Resolution (2026-09-24, t186; the output-level escalation is t191)
+
+A hard stall is no longer a quarantine. The worker facade
+(`scanout/rendered_scanout/exporter/worker.rs`) now keeps a hard-stalled
+render as `stalled`: nothing else is submitted while it is out, so its late
+result can never be assigned to another frame; when that result arrives it
+is released, never assigned, and the facade takes renders again
+(`stall_recoveries`). Only a render that never returns within
+`LIVE_RENDERER_WORKER_STALL_ABANDON` (ten seconds) quarantines the facade
+(`stalls_abandoned`), and that is reported as the failure it is. The
+exporter (`discovery/worker_export.rs`) answers a hard stall, and every
+tick while the render is still out, with a *pending* export rather than a
+degraded one, so the native path keeps the last frame on scanout and
+retries, as it does for any pending export; the log reads
+`status=hard_stall … action=wait abandon_after_ms=10000` and the session
+does not end. The maintenance paths that touch what a render may be using
+treat a stalled render as in flight.
+
+Proof, `tests/support/renderer_worker_correlation.rs`, on the worker's
+channel harness without a GPU: a render a second late is called stalled,
+a second submit is refused while it is out, its late result is released
+and never assigned, and the next render is accepted with a fresh identity;
+a render that never returns is abandoned exactly at the bound, and only
+then is the facade quarantined and the next submit refused. Red before
+(the first case quarantined the facade for good), green after. The
+backend-live suite, clippy with and without features, and the two
+transport gates pass; the native scanout path itself runs only on the
+installed session.
+
+What remains, filed as t191: after the abandon bound the failure still
+reaches the session through the Present cohort as before, and the worker
+core (one thread per device) is not replaced; both belong to the output,
+not the session, and a replacement needs a fresh EGL context under a live
+scanout.
+
+## Required repair and proof (as filed)
 
 - On a hard stall: keep the last presented frame on scanout, quarantine the
   stalled worker and replace it (or wait it out with a bound), and count the

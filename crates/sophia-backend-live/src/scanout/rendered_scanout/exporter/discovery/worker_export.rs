@@ -77,15 +77,33 @@ where
                 return worker_pending_export();
             }
             WorkerPoll::HardStalled(age) => {
+                // A render a second late is waited for, with the last frame
+                // still on scanout, up to the abandon bound; it is not the
+                // output's failure and not the session's (t186). The
+                // abandonment, when it comes, arrives as `Failed` below.
                 self.layout_probe.candidate.invalidate();
                 self.worker_frame_kind = None;
-                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Degraded);
-                tracing::error!(
-                    "sophia_renderer_worker schema=1 status=hard_stall age_ms={} action=quarantine",
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Pending);
+                tracing::warn!(
+                    "sophia_renderer_worker schema=1 status=hard_stall age_ms={} action=wait abandon_after_ms={}",
                     age.as_millis(),
+                    super::super::worker::LIVE_RENDERER_WORKER_STALL_ABANDON.as_millis(),
                 );
                 return LiveRenderedScanoutBufferExport::new(
-                    LiveRendererScanoutBufferExportStatus::Degraded,
+                    LiveRendererScanoutBufferExportStatus::Pending,
+                    LiveRendererScanoutBufferExportDetail::WorkerStalled,
+                    None,
+                    None,
+                );
+            }
+            WorkerPoll::Stalled { age } => {
+                tracing::debug!(
+                    "sophia_renderer_worker schema=1 status=stalled age_ms={}",
+                    age.as_millis(),
+                );
+                self.last_export_status = Some(LiveRendererScanoutBufferExportStatus::Pending);
+                return LiveRenderedScanoutBufferExport::new(
+                    LiveRendererScanoutBufferExportStatus::Pending,
                     LiveRendererScanoutBufferExportDetail::WorkerStalled,
                     None,
                     None,

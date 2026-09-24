@@ -31,6 +31,10 @@ const WORKER_RESULT_CAPACITY: usize = 2;
 const WORKER_FREE_CPU_BUFFER_CAPACITY: usize = 3;
 pub const LIVE_RENDERER_WORKER_SOFT_STALL: Duration = Duration::from_millis(100);
 pub const LIVE_RENDERER_WORKER_HARD_STALL: Duration = Duration::from_secs(1);
+/// How long a hard-stalled render is waited for before the facade gives
+/// the worker up (t186). A render a second late is a busy machine; one
+/// that never returns within this bound is a worker that is gone.
+pub const LIVE_RENDERER_WORKER_STALL_ABANDON: Duration = Duration::from_secs(10);
 const WORKER_MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub(super) fn frame_correlation(
@@ -91,6 +95,12 @@ pub struct LiveRendererWorkerMetrics {
     pub result_misroutes: usize,
     pub soft_stalls: usize,
     pub hard_stalls: usize,
+    /// Hard-stalled renders whose late result arrived and was released, after
+    /// which the facade took renders again (t186).
+    pub stall_recoveries: usize,
+    /// Hard-stalled renders that never returned within the abandon bound;
+    /// each quarantined the facade (t186).
+    pub stalls_abandoned: usize,
     pub release_enqueue_failures: usize,
     pub max_request_age: Duration,
     pub frame_slots: LiveRendererFrameSlotMetrics,
@@ -310,6 +320,7 @@ impl NativeGbmRendererWorkerCore {
             frame_slot_metrics,
             metrics: LiveRendererWorkerMetrics::default(),
             quarantined: !registered,
+            stalled: None,
         }
     }
 }
@@ -335,6 +346,17 @@ pub(super) struct NativeGbmRendererWorker {
     frame_slot_metrics: LiveRendererFrameSlotMetricsHandle,
     metrics: LiveRendererWorkerMetrics,
     quarantined: bool,
+    /// A render the worker has not finished within the hard-stall bound
+    /// (t186). While it is out nothing else is submitted, so its late result
+    /// can never be assigned to another frame; when that result arrives it
+    /// is released and the facade takes renders again. Only a render that
+    /// never returns within `LIVE_RENDERER_WORKER_STALL_ABANDON` quarantines
+    /// the facade.
+    stalled: Option<StalledRequest>,
+}
+
+struct StalledRequest {
+    since: Instant,
 }
 
 impl NativeGbmRendererWorker {
@@ -362,7 +384,7 @@ impl NativeGbmRendererWorker {
     }
 
     pub const fn in_flight(&self) -> bool {
-        self.in_flight.is_some()
+        self.in_flight.is_some() || self.stalled.is_some()
     }
 
     pub const fn in_flight_correlation(&self) -> Option<LiveRendererFrameCorrelation> {
@@ -399,7 +421,7 @@ impl NativeGbmRendererWorker {
         preferred_modifiers: Vec<u64>,
         output_format: Option<sophia_renderer_live::LiveCompositionFormatRequest>,
     ) -> Result<(), LiveRendererScanoutBufferExportDetail> {
-        if self.quarantined || self.in_flight.is_some() {
+        if self.quarantined || self.in_flight.is_some() || self.stalled.is_some() {
             return Err(LiveRendererScanoutBufferExportDetail::WorkerPending);
         }
         let Some(next_request_id) = self.next_request_id.checked_add(1) else {
@@ -447,6 +469,40 @@ impl NativeGbmRendererWorker {
     pub fn poll(&mut self) -> WorkerPoll {
         let Some(mut in_flight) = self.in_flight.take() else {
             self.flush_discarded_release();
+            if let Some(since) = self.stalled.as_ref().map(|stalled| stalled.since) {
+                return match self.result_receiver.try_recv() {
+                    Ok(result) => {
+                        // The stalled render's late result: released, never
+                        // assigned, and the facade takes renders again.
+                        self.release_discarded_result(&result);
+                        self.stalled = None;
+                        self.metrics.stall_recoveries =
+                            self.metrics.stall_recoveries.saturating_add(1);
+                        WorkerPoll::Idle
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        self.stalled = None;
+                        self.quarantined = true;
+                        self.metrics.failures = self.metrics.failures.saturating_add(1);
+                        WorkerPoll::Failed(
+                            LiveRendererScanoutBufferExportDetail::WorkerDisconnected,
+                        )
+                    }
+                    Err(TryRecvError::Empty) => {
+                        let age = since.elapsed();
+                        if age >= LIVE_RENDERER_WORKER_STALL_ABANDON {
+                            self.stalled = None;
+                            self.quarantined = true;
+                            self.metrics.failures = self.metrics.failures.saturating_add(1);
+                            self.metrics.stalls_abandoned =
+                                self.metrics.stalls_abandoned.saturating_add(1);
+                            WorkerPoll::Failed(LiveRendererScanoutBufferExportDetail::WorkerStalled)
+                        } else {
+                            WorkerPoll::Stalled { age }
+                        }
+                    }
+                };
+            }
             if self.quarantined
                 && self.discarded_release.is_none()
                 && let Ok(result) = self.result_receiver.try_recv()
@@ -550,10 +606,14 @@ impl NativeGbmRendererWorker {
                 let age = in_flight.submitted_at.elapsed();
                 self.metrics.max_request_age = self.metrics.max_request_age.max(age);
                 if age >= LIVE_RENDERER_WORKER_HARD_STALL {
+                    // Not a failure yet: the render is late, not lost. It
+                    // is waited for up to the abandon bound with nothing
+                    // else submitted (t186).
                     self.in_flight = None;
-                    self.quarantined = true;
+                    self.stalled = Some(StalledRequest {
+                        since: Instant::now(),
+                    });
                     self.metrics.hard_stalls = self.metrics.hard_stalls.saturating_add(1);
-                    self.metrics.failures = self.metrics.failures.saturating_add(1);
                     WorkerPoll::HardStalled(age)
                 } else {
                     let mut soft_stall_started = false;
@@ -640,7 +700,7 @@ impl NativeGbmRendererWorker {
         &mut self,
         image_id: LiveRendererImageId,
     ) -> Result<Option<LiveRendererImageSnapshot>, LiveRendererScanoutBufferExportDetail> {
-        if self.in_flight.is_some() {
+        if self.in_flight.is_some() || self.stalled.is_some() {
             return Err(LiveRendererScanoutBufferExportDetail::WorkerPending);
         }
         let (completion_sender, completion_receiver) = sync_channel(1);
@@ -660,7 +720,7 @@ impl NativeGbmRendererWorker {
         &mut self,
         snapshot: LiveRendererImageSnapshot,
     ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
-        if self.in_flight.is_some() {
+        if self.in_flight.is_some() || self.stalled.is_some() {
             return Err(LiveRendererScanoutBufferExportDetail::WorkerPending);
         }
         let (completion_sender, completion_receiver) = sync_channel(1);
@@ -707,7 +767,7 @@ impl NativeGbmRendererWorker {
     pub fn discard_in_flight_for_maintenance(
         &mut self,
     ) -> Result<bool, LiveRendererScanoutBufferExportDetail> {
-        if self.in_flight.is_none() {
+        if self.in_flight.is_none() && self.stalled.is_none() {
             return Ok(false);
         }
         let deadline = Instant::now() + WORKER_MAINTENANCE_TIMEOUT;
@@ -720,7 +780,7 @@ impl NativeGbmRendererWorker {
                 }
                 WorkerPoll::Deferred(_) => return Ok(true),
                 WorkerPoll::Failed(detail) => return Err(detail),
-                WorkerPoll::HardStalled(_) => {
+                WorkerPoll::HardStalled(_) | WorkerPoll::Stalled { .. } => {
                     return Err(LiveRendererScanoutBufferExportDetail::WorkerStalled);
                 }
                 WorkerPoll::Pending { .. } => {
@@ -736,7 +796,9 @@ impl NativeGbmRendererWorker {
     pub fn clear_renderer_images(
         &mut self,
     ) -> Result<usize, LiveRendererScanoutBufferExportDetail> {
-        if self.in_flight.is_some() {
+        // A stalled render is still out on the worker: as much in flight as
+        // any other for what may be touched under it (t186).
+        if self.in_flight.is_some() || self.stalled.is_some() {
             return Err(LiveRendererScanoutBufferExportDetail::WorkerPending);
         }
         let (completion_sender, completion_receiver) = sync_channel(1);
@@ -786,6 +848,11 @@ pub(super) enum WorkerPoll {
     Deferred(PendingRenderedFrame),
     Failed(LiveRendererScanoutBufferExportDetail),
     HardStalled(Duration),
+    /// A hard-stalled render still out, `age` since the stall was called
+    /// (t186); nothing else is submitted until it returns or is abandoned.
+    Stalled {
+        age: Duration,
+    },
 }
 
 struct DiscardedWorkerLease {
