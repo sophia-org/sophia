@@ -139,6 +139,36 @@ edge in the mask, not the mask. Host sha256 `880fdaa6...`, run in
 `.artifacts/x11bench-oracle/run-t170/`. Text under a mask has no dedicated
 case; it takes the same restore as the paths that do.
 
+**t171, wide lines (2026-09-23).** A line of width one or more is now drawn
+by a port of the X server's `mi/miwideline.c`
+(`software/geometry/wide_line.rs`, with `miStepDash` and the wide branches
+of `miPolySegment` and `miPolyRectangle`; licence in
+`THIRD-PARTY-NOTICES.md`). yserver's stroker was the first candidate and was
+set aside: it rounds every offset corner to a whole pixel and approximates
+round caps with sixteen chords, so it could not reproduce `mi`'s sub-pixel
+edges, which are what the references are. The port keeps `mi`'s integer edge
+walkers, its floating-point expressions in their order, its span groups for
+the raster functions that must touch a pixel once, and two things that look
+like slips -- `miLineProjectingCap` passing `xorgi` for `yorgi`, and the
+fixed span array `miLineArcI` fills from both ends -- because agreeing with
+the reference server is the point. Zero-width lines keep the store's own
+path; an arc's chords stay on the brush (`XSegmentStroke::ArcChords`) until
+wide arcs are `miarc.c`; spans are painted solid in the pixel `mi` chose, so
+a wide line with a tile or stipple still ignores its fill style, as it did.
+Density replay still strokes wide lines with the brush.
+
+Evidence: x11bench `dashed_lines`, `line_cap_styles`, `line_join_styles` and
+`line_widths` match Xvnc's `fb`/`mi` output exactly; their declarations are
+gone and the gate reads `x11bench PASS (50 passed, 10 declared)` on
+`d851c8a7` (`.artifacts/x11-profile-d851c8a7-x11bench/`). `drawing_cases.py`
+`poly_primitives` gained butt, projecting, miter and bevel assertions from
+the protocol's geometry: FAIL on master's host (`a4ee182a`), PASS here. The
+port's own tests (`wide_line/tests.rs`) work the same shapes by hand, plus a
+dash and a GXxor polyline whose spans must not overlap. The same core run
+showed `xfixes_selection_stalled` TIMEOUT on master and here alike -- a
+stalled subscriber no longer disconnected since t165's output spill --
+reported to that task's owner, not a drawing matter.
+
 ## Connections
 
 - [Running XTS5 through the profile gate](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):
