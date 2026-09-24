@@ -176,17 +176,21 @@ fn failed_and_disconnected_jobs_name_the_accepted_frame() {
     assert_eq!(facade.in_flight_correlation(), None);
 }
 
+/// A hard stall is a render the worker has not finished, not a worker that
+/// is gone (t186): while the stalled render is out, nothing else is
+/// accepted, so its late result can never be assigned to another frame;
+/// once that result arrives it is released, not assigned, and the facade
+/// takes the next render. Before this, one late second quarantined the
+/// facade for good, and the session with it.
 #[test]
-fn a_hard_stalled_job_cannot_assign_its_late_result_to_another_frame() {
+fn a_hard_stalled_job_cannot_assign_its_late_result_to_another_frame_and_the_worker_recovers() {
     let (mut facade, commands, results) = correlated_facade();
     let (first, _) = submit_mixed_job(&mut facade, &commands, 46);
     facade.in_flight.as_mut().unwrap().submitted_at =
         std::time::Instant::now() - super::LIVE_RENDERER_WORKER_HARD_STALL;
     assert!(matches!(facade.poll(), super::WorkerPoll::HardStalled(_)));
     assert_eq!(facade.in_flight_correlation(), None);
-    results
-        .send(correlated_result(first, exported_outcome()))
-        .unwrap();
+    // Still out: refused, and the wait is reported rather than a failure.
     assert_eq!(
         facade.submit(
             LiveGbmEglFrameTargetRecord::new(Size {
@@ -199,16 +203,54 @@ fn a_hard_stalled_job_cannot_assign_its_late_result_to_another_frame() {
         ),
         Err(super::LiveRendererScanoutBufferExportDetail::WorkerPending)
     );
+    assert!(matches!(facade.poll(), super::WorkerPoll::Stalled { .. }));
+    // The late result: released, never assigned, and the facade is back.
+    results
+        .send(correlated_result(first, exported_outcome()))
+        .unwrap();
     assert!(matches!(facade.poll(), super::WorkerPoll::Idle));
     assert!(
         matches!(commands.recv().unwrap(), WorkerCommand::Release { output, lease_id, .. } if output == facade.output && lease_id == super::LiveRendererWorkerLeaseId(1))
     );
-    assert!(
-        commands.try_recv().is_err(),
-        "quarantined facade accepted another render"
-    );
+    assert_eq!(facade.metrics().hard_stalls, 1);
+    assert_eq!(facade.metrics().stall_recoveries, 1);
+    let (second, _) = submit_mixed_job(&mut facade, &commands, 47);
+    assert_ne!(second, first, "a fresh render, not the stalled one's identity");
+    assert!(commands.try_recv().is_err());
 }
 
+/// A render that never returns within the abandon bound is the worker
+/// being gone, and only then does the facade give up on it (t186).
+#[test]
+fn a_hard_stalled_job_that_never_returns_is_abandoned_after_the_bound() {
+    let (mut facade, commands, _results) = correlated_facade();
+    let (_first, _) = submit_mixed_job(&mut facade, &commands, 48);
+    facade.in_flight.as_mut().unwrap().submitted_at =
+        std::time::Instant::now() - super::LIVE_RENDERER_WORKER_HARD_STALL;
+    assert!(matches!(facade.poll(), super::WorkerPoll::HardStalled(_)));
+    assert!(matches!(facade.poll(), super::WorkerPoll::Stalled { .. }));
+    facade.stalled.as_mut().unwrap().since =
+        std::time::Instant::now() - super::LIVE_RENDERER_WORKER_STALL_ABANDON;
+    assert!(matches!(
+        facade.poll(),
+        super::WorkerPoll::Failed(super::LiveRendererScanoutBufferExportDetail::WorkerStalled)
+    ));
+    assert!(facade.quarantined);
+    assert_eq!(facade.metrics().stalls_abandoned, 1);
+    assert_eq!(
+        facade.submit(
+            LiveGbmEglFrameTargetRecord::new(Size {
+                width: 16,
+                height: 16
+            }),
+            mixed_job(49),
+            Vec::new(),
+            None,
+        ),
+        Err(super::LiveRendererScanoutBufferExportDetail::WorkerPending)
+    );
+    assert!(commands.try_recv().is_err());
+}
 #[test]
 fn the_result_must_preserve_output_trace_and_scanout_verdict() {
     for change in 0..7 {
