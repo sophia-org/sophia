@@ -469,4 +469,91 @@ mod xtest_admission_socket {
         let _ = read_x_record(&mut client.stream);
         client.barrier();
     }
+
+    /// XWarpPointer moves the pointer. On this authority the pointer is the
+    /// Engine's, so a warp moves the routed pointer only for a client that
+    /// may inject input, through its own injector, as an absolute motion:
+    /// the motion and crossing events a warp owes are the ones any motion
+    /// owes, and a press after it lands where the warp put the pointer. Red
+    /// on the tree before the seam: the warp placed only QueryPointer's
+    /// answer, no motion was reported, and the press below landed at the
+    /// origin (XTS Xlib11 MotionNotify 1, ButtonPress 1).
+    #[test]
+    fn a_warp_from_a_client_that_may_inject_moves_the_routed_pointer() {
+        let mut fixture = XtestFixture::new();
+        let mut client = fixture.connect();
+        let window = fixture.focused_window(&mut client);
+        // ButtonPress, ButtonRelease and PointerMotion beside the fixture's own.
+        client.stream
+            .write_all(&change_window_event_mask_request(
+                client.order,
+                window,
+                3 | (1 << 21) | (1 << 2) | (1 << 3) | (1 << 6),
+            ))
+            .unwrap();
+        client.barrier();
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        let next_motion = |client: &mut XtestClient| loop {
+            let record = read_x_record(&mut client.stream);
+            if record[0] & 0x7f == 6 {
+                break record;
+            }
+        };
+
+        // Into the window, at (5, 7) of it.
+        client.stream
+            .write_all(&warp_pointer_request(client.order, 0, window, 0, 0, 0, 0, 5, 7))
+            .unwrap();
+        let motion = next_motion(&mut client);
+        assert_eq!(
+            u32::from_le_bytes([motion[12], motion[13], motion[14], motion[15]]),
+            window,
+            "the warp is reported as motion on the window it entered"
+        );
+        assert_eq!((at(&motion, 20), at(&motion, 22)), (5, 7), "root position is the warp's");
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!((at(&press, 20), at(&press, 22)), (5, 7), "the press lands where the warp put the pointer");
+        assert_eq!((at(&press, 24), at(&press, 26)), (5, 7), "window position too");
+        client.fake_input(5, 1);
+        let _ = client.next_event(5);
+
+        // No destination window: an offset from where the pointer is.
+        client.stream
+            .write_all(&warp_pointer_request(client.order, 0, 0, 0, 0, 0, 0, 3, 2))
+            .unwrap();
+        let motion = next_motion(&mut client);
+        assert_eq!((at(&motion, 20), at(&motion, 22)), (8, 9), "a relative warp moves from where the pointer was");
+
+        // A source rectangle the pointer is outside of: no warp, no motion,
+        // and the barrier answers with nothing in between.
+        client.stream
+            .write_all(&warp_pointer_request(client.order, window, window, 12, 12, 4, 4, 1, 1))
+            .unwrap();
+        client.barrier();
+    }
+
+    fn warp_pointer_request(
+        order: XByteOrder,
+        source: u32,
+        destination: u32,
+        src_x: i16,
+        src_y: i16,
+        src_width: u16,
+        src_height: u16,
+        dst_x: i16,
+        dst_y: i16,
+    ) -> Vec<u8> {
+        let mut out = vec![41, 0];
+        push_u16(&mut out, order, 6);
+        push_u32(&mut out, order, source);
+        push_u32(&mut out, order, destination);
+        push_u16(&mut out, order, src_x as u16);
+        push_u16(&mut out, order, src_y as u16);
+        push_u16(&mut out, order, src_width);
+        push_u16(&mut out, order, src_height);
+        push_u16(&mut out, order, dst_x as u16);
+        push_u16(&mut out, order, dst_y as u16);
+        out
+    }
 }

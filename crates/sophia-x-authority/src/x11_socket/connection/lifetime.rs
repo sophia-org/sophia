@@ -133,14 +133,18 @@ fn route_x11_retained_destroys(
     Ok(())
 }
 
-/// The events a save-set window is owed: UnmapNotify if it was mapped,
-/// ReparentNotify to it and both parents' SubstructureNotify selectors, and
-/// MapNotify if it was mapped again. The registry's parent map follows.
+/// The events a save-set window is owed: for a reparented window UnmapNotify
+/// if it was mapped, then ReparentNotify to it and both parents'
+/// SubstructureNotify selectors; then MapNotify, since the walk leaves every
+/// saved window mapped, with VisibilityNotify and Expose when it became
+/// viewable, as MapWindow reports them. The registry's parent map follows.
 #[cfg(unix)]
 fn route_x11_save_set_reparents(
     routing: &XServerFrontendRouteRegistry,
     reparents: &[crate::XSaveSetReparent],
 ) -> Result<(), X11SetupSocketError> {
+    const EXPOSURE_MASK: u32 = 1 << 15;
+    const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
     let deliver = |targets: &[(crate::XResourceId, u32)], event: crate::XClientEvent| -> Result<(), X11SetupSocketError> {
@@ -157,35 +161,55 @@ fn route_x11_save_set_reparents(
     };
     for reparent in reparents {
         let window = reparent.window;
-        if reparent.was_mapped {
+        let reparented = reparent.new_parent != reparent.old_parent;
+        if reparented {
+            if reparent.was_mapped {
+                deliver(
+                    &[(window, STRUCTURE_NOTIFY_MASK), (reparent.old_parent, SUBSTRUCTURE_NOTIFY_MASK)],
+                    crate::XClientEvent::UnmapNotify { sequence: 0, event: window, window, from_configure: false },
+                )?;
+            }
+            routing.update_window_parent(window, reparent.new_parent).map_err(|error| {
+                X11SetupSocketError::new(format!("failed to record a save-set reparent: {error}"))
+            })?;
             deliver(
-                &[(window, STRUCTURE_NOTIFY_MASK), (reparent.old_parent, SUBSTRUCTURE_NOTIFY_MASK)],
-                crate::XClientEvent::UnmapNotify { sequence: 0, event: window, window, from_configure: false },
+                &[
+                    (window, STRUCTURE_NOTIFY_MASK),
+                    (reparent.old_parent, SUBSTRUCTURE_NOTIFY_MASK),
+                    (reparent.new_parent, SUBSTRUCTURE_NOTIFY_MASK),
+                ],
+                crate::XClientEvent::ReparentNotify {
+                    sequence: 0,
+                    event: window,
+                    window,
+                    parent: reparent.new_parent,
+                    x: reparent.x,
+                    y: reparent.y,
+                    override_redirect: reparent.override_redirect,
+                },
             )?;
         }
-        routing.update_window_parent(window, reparent.new_parent).map_err(|error| {
-            X11SetupSocketError::new(format!("failed to record a save-set reparent: {error}"))
-        })?;
         deliver(
-            &[
-                (window, STRUCTURE_NOTIFY_MASK),
-                (reparent.old_parent, SUBSTRUCTURE_NOTIFY_MASK),
-                (reparent.new_parent, SUBSTRUCTURE_NOTIFY_MASK),
-            ],
-            crate::XClientEvent::ReparentNotify {
-                sequence: 0,
-                event: window,
-                window,
-                parent: reparent.new_parent,
-                x: reparent.x,
-                y: reparent.y,
-                override_redirect: reparent.override_redirect,
-            },
+            &[(window, STRUCTURE_NOTIFY_MASK), (reparent.new_parent, SUBSTRUCTURE_NOTIFY_MASK)],
+            crate::XClientEvent::MapNotify { sequence: 0, event: window, window, override_redirect: reparent.override_redirect },
         )?;
-        if reparent.was_mapped {
+        if let Some(surface) = reparent.surface.as_ref().filter(|_| !reparent.input_only) {
+            let clamp = |value: i32| u16::try_from(value).unwrap_or(u16::MAX);
             deliver(
-                &[(window, STRUCTURE_NOTIFY_MASK), (reparent.new_parent, SUBSTRUCTURE_NOTIFY_MASK)],
-                crate::XClientEvent::MapNotify { sequence: 0, event: window, window, override_redirect: reparent.override_redirect },
+                &[(window, VISIBILITY_CHANGE_MASK)],
+                crate::XClientEvent::VisibilityNotify { sequence: 0, window, state: 0 },
+            )?;
+            deliver(
+                &[(window, EXPOSURE_MASK)],
+                crate::XClientEvent::Expose {
+                    sequence: 0,
+                    window,
+                    x: 0,
+                    y: 0,
+                    width: clamp(surface.geometry.width),
+                    height: clamp(surface.geometry.height),
+                    count: 0,
+                },
             )?;
         }
     }

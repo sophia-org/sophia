@@ -1046,7 +1046,10 @@ XGetImage and XGetSubImage purposes that read a window's border: Sophia
 draws no window borders, so they are declared by that decision. A text
 scenario (the XDrawString and XDrawText cases) does not run yet: its
 purposes need the suite's own test fonts on a font path, and every one is
-UNINITIATED on Xvnc as on the host. A
+UNINITIATED on Xvnc as on the host. The event section (`Xlib11`, every
+event type, 195 purposes) runs with `xts.py --admit-xtest`, which starts
+the host with XTEST admitted so the suite's extended purposes inject their
+input; it is under repair (t196) and not declared yet. A
 manifest is the suite's account of itself: every purpose is
 listed, and one the suite or the authority cannot pass today is declared
 with its disposition and a reason (`xts_declare.py`, from a real journal and

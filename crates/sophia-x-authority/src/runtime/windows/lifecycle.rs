@@ -176,7 +176,11 @@ impl XAuthorityRuntime {
      /// range is freed later by KillClient, through the ordinary release.
      /// The save-set walk: each saved window still alive and outside the
      /// range is given to its nearest ancestor outside the range (the root
-     /// when none) and re-mapped if it was mapped.
+     /// when none), and mapped if it is unmapped -- whether or not it was
+     /// reparented, as the protocol's save-set processing has it: "If the
+     /// save-set window is unmapped, a MapWindow request is performed on
+     /// it (even if it was not an inferior of a window created by the
+     /// client)".
      fn apply_save_set(
          &mut self,
          namespace: NamespaceId,
@@ -203,32 +207,32 @@ impl XAuthorityRuntime {
                      None => crate::XResourceId::new(u64::from(crate::X_SETUP_DEFAULT_ROOT), 1),
                  };
              }
-             if new_parent == old_parent {
-                 continue;
-             }
+             let reparented = new_parent != old_parent;
              let was_mapped = !matches!(
                  self.window_map_state(namespace, window),
                  Ok(crate::XMapState::Unmapped)
              );
-             if was_mapped {
-                 self.unmap_window(namespace, window)?;
+             if !reparented && was_mapped {
+                 continue;
              }
-             self.set_window_parent(namespace, window, new_parent)?;
+             if reparented {
+                 if was_mapped {
+                     self.unmap_window(namespace, window)?;
+                 }
+                 self.set_window_parent(namespace, window, new_parent)?;
+             }
              let generation = self.windows.get(window).map_or(0, |record| record.generation);
-             let surface = if was_mapped {
-                 self.windows.apply(XWindowLifecycleEvent::Mapped {
-                     id: window,
-                     generation,
-                 })?
-             } else {
-                 None
-             };
+             let surface = self.windows.apply(XWindowLifecycleEvent::Mapped {
+                 id: window,
+                 generation,
+             })?;
              let geometry = self.window_geometry(namespace, window).unwrap_or_default();
              release.save_set_reparents.push(crate::XSaveSetReparent {
                  window,
                  old_parent,
                  new_parent,
                  was_mapped,
+                 input_only: self.window_is_input_only(window),
                  x: i16::try_from(geometry.x).unwrap_or(i16::MAX),
                  y: i16::try_from(geometry.y).unwrap_or(i16::MAX),
                  override_redirect: self.window_override_redirect(namespace, window).unwrap_or(false),

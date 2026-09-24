@@ -35,6 +35,17 @@ impl XTestFakeInputRequest {
             root_y,
         })
     }
+
+    /// The motion an accepted WarpPointer resolves to: absolute, at the
+    /// position the dispatcher placed.
+    fn absolute_motion(root_x: i16, root_y: i16) -> Self {
+        Self {
+            event_type: 6,
+            detail: crate::X_TEST_MOTION_ABSOLUTE,
+            root_x,
+            root_y,
+        }
+    }
 }
 
 /// What an accepted FakeInput resolves to, once the runtime has been asked

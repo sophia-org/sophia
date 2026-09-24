@@ -1158,6 +1158,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // dispatcher's refusal is decided under that guard.
             let mut fake_input: Option<XTestFakeInputRequest> = None;
             let mut grab_control: Option<u8> = None;
+            // A WarpPointer this layer turns into motion once accepted: the
+            // dispatcher moves only the position QueryPointer reads, and the
+            // routed pointer follows through the requester's own injector.
+            let mut warp_pointer = false;
+            let mut pointer_before_warp: Option<(i16, i16)> = None;
             // A lifetime request acts on the leases this layer owns, once
             // the dispatcher has validated it (t166).
             let mut lifetime_request: Option<crate::XWireRequest> = None;
@@ -1197,6 +1202,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             } {
                 Ok(mut request) => {
                     fake_input = XTestFakeInputRequest::from_request(&request);
+                    warp_pointer = matches!(&request, crate::XWireRequest::WarpPointer { .. });
                     if let crate::XWireRequest::XTestGrabControl { impervious } = &request {
                         grab_control = Some(*impervious);
                     }
@@ -1591,6 +1597,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         &state.runtime,
                         &state.control_runtime_pending,
                     )?;
+                    // Where the pointer was, so a warp that lands where it
+                    // already is (or one the protocol makes a no-op) moves
+                    // nothing and reports nothing.
+                    if warp_pointer {
+                        pointer_before_warp = runtime.pointer_query_position(namespace);
+                    }
                     let mut atoms = state
                         .atoms
                         .lock()
@@ -2684,6 +2696,23 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                     }
                     _ => {}
+                }
+                // An accepted WarpPointer has placed the position the
+                // dispatcher keeps; a client that may inject input moves the
+                // routed pointer there too, as an absolute motion, so the
+                // crossing and motion events a warp owes are the ones any
+                // motion owes. Without an injector the warp stays what it
+                // was: a position QueryPointer reports (the pointer is the
+                // Engine's, and a client that may not inject may not move it).
+                if warp_pointer && xtest.is_some() {
+                    let runtime = lock_x11_request_runtime(
+                        &state.runtime,
+                        &state.control_runtime_pending,
+                    )?;
+                    fake_input = runtime
+                        .pointer_query_position(namespace)
+                        .filter(|placed| Some(*placed) != pointer_before_warp)
+                        .map(|(root_x, root_y)| XTestFakeInputRequest::absolute_motion(root_x, root_y));
                 }
                 if let (Some(connection), Some(request)) = (xtest.as_mut(), fake_input) {
                     let planned = {

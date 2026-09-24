@@ -177,6 +177,7 @@ fn dispatch_core_window_request(
                             runtime
                                 .window_override_redirect(context.namespace, window)
                                 .unwrap_or(false),
+                            runtime.window_is_input_only(window),
                             &response,
                         )
                     } else {
@@ -566,7 +567,9 @@ fn dispatch_core_window_request(
                                             override_redirect,
                                         },
                                     )];
-                                    if map_state == Some(crate::XMapState::Viewable) {
+                                    if map_state == Some(crate::XMapState::Viewable)
+                                        && !runtime.window_is_input_only(window)
+                                    {
                                         outputs.push(XClientOutput::Event(
                                             XClientEvent::VisibilityNotify {
                                             sequence: context.sequence,
@@ -991,12 +994,14 @@ fn resolve_window_visual(
     Ok((resolved_depth, resolved_visual, resolved_colormap))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn outputs_from_map_response(
     context: XDispatchContext,
     window: XResourceId,
     already_mapped: bool,
     map_state: Option<crate::XMapState>,
     override_redirect: bool,
+    input_only: bool,
     response: &XAuthorityResponsePacket,
 ) -> Vec<XClientOutput> {
     if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
@@ -1022,7 +1027,10 @@ fn outputs_from_map_response(
         window,
         override_redirect,
     })];
-    if map_state == Some(crate::XMapState::Viewable) {
+    // "The server does not generate Expose events on windows whose class is
+    // specified as InputOnly", nor VisibilityNotify: such a window has no
+    // contents to show or hide, only a map state.
+    if map_state == Some(crate::XMapState::Viewable) && !input_only {
         outputs.push(XClientOutput::Event(XClientEvent::VisibilityNotify {
             sequence: context.sequence,
             window,

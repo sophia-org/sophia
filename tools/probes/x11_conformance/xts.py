@@ -50,7 +50,7 @@ def inside(host, activation_fd):
     Path('/tmp/.X11-unix').mkdir(mode=0o700)
     sock = Path('/tmp/.X11-unix/X99')
     with (WORK / 'host.log').open('wb') as log:
-        server = subprocess.Popen([str(host), str(sock)], stdout=log, stderr=log)
+        server = subprocess.Popen([str(host), str(sock), *configuration.get('host_args', [])], stdout=log, stderr=log)
         try:
             deadline = time.monotonic() + 5
             while not sock.exists():
@@ -93,6 +93,8 @@ def main():
     parser.add_argument('--scenario', help='selected scenario from the separate XTS checkout')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--timeout', type=float, default=120)
+    parser.add_argument('--admit-xtest', action='store_true',
+                        help='start the host with --admit-xtest, so the suite\'s extended (XTEST-driven) purposes run')
     parser.add_argument('--inside', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--activation-fd', type=int, default=-1, help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -128,8 +130,9 @@ def main():
                         work / 'harness/tools/probes/x11_conformance',
                         ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copy2(host, work / 'host')
-        (work / 'selection.json').write_text(json.dumps({'scenario': args.scenario,
-                                                        'purposes': purposes, 'timeout': args.timeout}))
+        host_args = ['--admit-xtest'] if args.admit_xtest else []
+        (work / 'selection.json').write_text(json.dumps({'scenario': args.scenario, 'purposes': purposes,
+                                                        'timeout': args.timeout, 'host_args': host_args}))
         result = launch(inner_command(), mounts=[Mount(work, str(WORK), writable=True)],
                         timeout=args.timeout + 15, bwrap=bwrap)
         status = result.returncode

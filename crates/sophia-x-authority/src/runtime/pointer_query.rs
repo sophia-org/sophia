@@ -40,6 +40,15 @@ impl XAuthorityRuntime {
     /// QueryPointer agrees with it, and the events are a named gap rather
     /// than a silent one. Refusing to move at all would be the larger lie,
     /// since moving the pointer is what the request is for.
+    /// Where the pointer is, as QueryPointer reports it, in root
+    /// coordinates; `None` before any motion or warp placed it.
+    pub fn pointer_query_position(&self, namespace: NamespaceId) -> Option<(i16, i16)> {
+        self.input_authority_mut()
+            .pointer_query_state(namespace)
+            .position
+            .map(|pointer| (pointer.root_x, pointer.root_y))
+    }
+
     pub fn warp_pointer(
         &mut self,
         namespace: NamespaceId,
