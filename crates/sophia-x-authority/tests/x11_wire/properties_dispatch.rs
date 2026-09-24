@@ -1232,6 +1232,10 @@ fn x11_client_event_encoders_emit_32_byte_records() {
             time: 123,
             root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             event: XResourceId::new(0x220003, 1),
+            root_x: 0,
+            root_y: 0,
+            event_x: 0,
+            event_y: 0,
             state: 1,
         }),
     );

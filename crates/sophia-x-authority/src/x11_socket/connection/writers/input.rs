@@ -387,15 +387,27 @@ fn spawn_x11_input_event_writer(
             let mut record = encode_x_client_event(
                 byte_order,
                 match event {
-                    XAuthorityInputEvent::Key(event) => XClientEvent::Key {
-                        sequence: 0,
-                        pressed: event.pressed,
-                        keycode: event.keycode,
-                        time: event.time_msec,
-                        root,
-                        event: delivered_window,
-                        state: event.state,
-                    },
+                    XAuthorityInputEvent::Key(event) => {
+                        let (root_x, root_y, event_x, event_y) = key_pointer_coordinates(
+                            input_authority.as_ref(),
+                            &core_event_selections,
+                            namespace,
+                            delivered_window,
+                        )?;
+                        XClientEvent::Key {
+                            sequence: 0,
+                            pressed: event.pressed,
+                            keycode: event.keycode,
+                            time: event.time_msec,
+                            root,
+                            event: delivered_window,
+                            root_x,
+                            root_y,
+                            event_x,
+                            event_y,
+                            state: event.state,
+                        }
+                    }
                     XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                         kind: XAuthorityPointerEventKind::Motion,
                         surface: _,
@@ -860,4 +872,37 @@ fn x11_keyboard_route_ready(
     deadline_elapsed: bool,
 ) -> bool {
     !is_key || xi_selected || core_selected || deadline_elapsed
+}
+
+/// Where the pointer is when a key is delivered: a key event carries the
+/// pointer's root and event-window coordinates (XTS Xlib11 KeyPress 1,
+/// KeyRelease 1). Nothing observed yet reads as the origin.
+#[cfg(unix)]
+fn key_pointer_coordinates(
+    input_authority: Option<&Arc<Mutex<crate::XInputAuthorityState>>>,
+    core_event_selections: &Arc<Mutex<XCoreEventSelectionState>>,
+    namespace: NamespaceId,
+    delivered_window: XResourceId,
+) -> Result<(i16, i16, i16, i16), X11SetupSocketError> {
+    let Some(authority) = input_authority else {
+        return Ok((0, 0, 0, 0));
+    };
+    let position = authority
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 input authority lock poisoned"))?
+        .pointer_query_state(namespace)
+        .position;
+    let Some(pointer) = position else {
+        return Ok((0, 0, 0, 0));
+    };
+    let (event_x, event_y) = core_event_selections
+        .lock()
+        .map_err(|_| X11SetupSocketError::new("X11 core event selection lock poisoned"))?
+        .pointer_event_coordinates(
+            pointer.surface_window,
+            delivered_window,
+            i16::try_from(pointer.local_x).unwrap_or(i16::MAX),
+            i16::try_from(pointer.local_y).unwrap_or(i16::MAX),
+        );
+    Ok((pointer.root_x, pointer.root_y, event_x, event_y))
 }

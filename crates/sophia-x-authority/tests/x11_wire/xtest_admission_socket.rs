@@ -595,6 +595,8 @@ mod xtest_admission_socket {
         let key = client.next_event(2);
         assert_eq!(event_window(&key), window, "a key with the focus on the root lands under the pointer");
         assert_eq!(key[1], 38, "keycode");
+        // A key carries the pointer's position: root and event-window coordinates.
+        assert_eq!((at(&key, 20), at(&key, 22), at(&key, 24), at(&key, 26)), (25, 5, 5, 5), "the key names where the pointer is");
         client.fake_input(3, 38);
         let _ = client.next_event(3);
         // Over the bare root, a button or a key has nowhere to go and is

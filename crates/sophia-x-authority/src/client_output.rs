@@ -61,6 +61,12 @@ pub enum XClientEvent {
         time: XTimestamp,
         root: XResourceId,
         event: XResourceId,
+        /// Where the pointer is: a key event carries the pointer's root and
+        /// event-window coordinates.
+        root_x: i16,
+        root_y: i16,
+        event_x: i16,
+        event_y: i16,
         state: u16,
     },
     Focus {
