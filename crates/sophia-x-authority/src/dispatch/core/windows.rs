@@ -36,6 +36,7 @@ fn dispatch_core_window_request(
                     visual,
                     colormap,
                     input_only,
+                    copy_class_from_parent,
                     border_width,
                     ..
                 } => {
@@ -82,6 +83,41 @@ fn dispatch_core_window_request(
                                 });
                             }
                         };
+                    // After the parent, as the reference orders its refusals:
+                    // "The width and height must be nonzero, or a Value error
+                    // results", and an InputOutput window cannot be created
+                    // under an InputOnly parent (BadMatch); CopyFromParent
+                    // under one is InputOnly.
+                    let parent_input_only = runtime.window_is_input_only(parent);
+                    if let XAuthorityRequestKind::CreateWindow { geometry, .. } = &kind
+                        && (geometry.width <= 0 || geometry.height <= 0)
+                    {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadValue,
+                                sequence: context.sequence,
+                                resource_id: 0,
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
+                    if parent_input_only && !input_only && !copy_class_from_parent {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadMatch,
+                                sequence: context.sequence,
+                                resource_id: u32::try_from(parent.local.raw()).unwrap_or(0),
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
+                    let input_only = input_only || (copy_class_from_parent && parent_input_only);
                     let mut response = runtime.apply(packet);
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
@@ -155,6 +191,46 @@ fn dispatch_core_window_request(
                         *target_name = name.to_owned();
                     }
                     let kind = packet.kind.clone();
+                    // The protocol's refusals for the selection requests,
+                    // decided here where the atom table is: an atom that names
+                    // nothing is BadAtom, a requestor that names no window is
+                    // BadWindow (XTS Xlib5 XSetSelectionOwner 8, XConvertSelection 4-5).
+                    let unknown_atom = |atom: crate::XAtom| atom != 0 && atoms.name(atom).is_none();
+                    let refusal = match &kind {
+                        XAuthorityRequestKind::SetSelectionOwner { selection, .. } if unknown_atom(*selection) => {
+                            Some((XErrorCode::BadAtom, *selection))
+                        }
+                        XAuthorityRequestKind::RequestSelection { requestor, selection, target, property, .. } => {
+                            // A requestor that names no window at all. One in
+                            // another namespace keeps the confined answer, a
+                            // failed conversion, which discloses nothing.
+                            if matches!(
+                                runtime.validate_window_access(packet.namespace, *requestor),
+                                Err(XAuthorityRuntimeError::UnknownResource)
+                            ) {
+                                Some((XErrorCode::BadWindow, u32::try_from(requestor.local.raw()).unwrap_or(0)))
+                            } else {
+                                [*selection, *target, *property]
+                                    .into_iter()
+                                    .find(|atom| unknown_atom(*atom))
+                                    .map(|atom| (XErrorCode::BadAtom, atom))
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some((code, resource_id)) = refusal {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code,
+                                sequence: context.sequence,
+                                resource_id,
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
                     // Whether the window was already mapped has to be read
                     // before the effect, because afterwards a redundant map
                     // and a real one look exactly alike.
@@ -782,6 +858,43 @@ fn dispatch_core_window_request(
                     stack_mode,
                     ..
                 } => {
+                    // The root is configured by nobody: a request on it has
+                    // no effect and no error. Then the window, then its
+                    // values, in the reference's order: an id that names no
+                    // window is BadWindow before a zero size is BadValue.
+                    if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: Vec::new(),
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
+                    if let Err(error) = runtime.validate_window_access(context.namespace, window) {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(x_error_from_runtime(
+                                error,
+                                context.sequence,
+                                context.major_opcode,
+                                0,
+                                u32::try_from(window.local.raw()).unwrap_or(0),
+                            ))],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
+                    if width == Some(0) || height == Some(0) {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadValue,
+                                sequence: context.sequence,
+                                resource_id: 0,
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
                     // A sibling is only meaningful with a stack-mode, and must
                     // be a sibling: "If a sibling is specified without a
                     // stack-mode or the window is not actually a sibling, a
@@ -940,7 +1053,8 @@ fn dispatch_core_window_request(
                     let output = match runtime.drawable_facts(context.namespace, drawable) {
                         Ok(facts) => XClientOutput::Reply(XClientReply::GetGeometry {
                             sequence: context.sequence,
-                            depth: facts.depth,
+                            // An InputOnly window has no pixels and reports depth 0.
+                            depth: if runtime.window_is_input_only(drawable) { 0 } else { facts.depth },
                             root: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
                             geometry: facts.geometry,
                             border_width: runtime.window_border_width(drawable),

@@ -295,6 +295,16 @@ fn dispatch_core_property_request(
                                 u32::try_from(window.local.raw()).unwrap_or(0)))],
                             None,
                         ),
+                        Ok(()) if atoms.name(property).is_none() => (
+                            vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadAtom,
+                                sequence: context.sequence,
+                                resource_id: property,
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            None,
+                        ),
                         Ok(()) => {
                             let removed = properties.remove(context.namespace, window, property);
                             let Ok(removed) = removed else {

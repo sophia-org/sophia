@@ -153,7 +153,8 @@ fn encode_core_early_reply(
                     put_u16(byte_order, &mut out[12..14], 1);
                     out[14] = 0;
                     out[15] = 1;
-                    put_u32(byte_order, &mut out[16..20], 0);
+                    // backing-planes defaults to all ones.
+                    put_u32(byte_order, &mut out[16..20], 0xffff_ffff);
                     put_u32(byte_order, &mut out[20..24], 0);
                     out[24] = 0;
                     out[25] = 1;

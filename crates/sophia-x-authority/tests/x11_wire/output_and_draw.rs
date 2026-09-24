@@ -221,7 +221,8 @@ fn x11_dispatch_emits_configure_map_property_and_selection_failure_outputs() {
 
     let selection = decode_x11_core_request(
         context(namespace, 608, XByteOrder::LittleEndian),
-        &convert_selection_request(XByteOrder::LittleEndian, 0x220101, 100, 101, 102, 33),
+        // Atoms the table knows: an atom that names nothing is BadAtom, not a failed conversion.
+        &convert_selection_request(XByteOrder::LittleEndian, 0x220101, X_ATOM_PRIMARY, X_ATOM_STRING, X_ATOM_WM_NAME, 33),
     )
     .unwrap();
     let selection = dispatch_x11_wire_request(
