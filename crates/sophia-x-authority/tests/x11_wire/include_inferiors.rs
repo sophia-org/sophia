@@ -119,4 +119,3 @@ fn include_inferiors_on_the_root_draws_through_the_namespaces_own_windows() {
     assert_eq!(fixture.on_screen(0x700011, 6, 6), 0x0000_00ff, "the toplevel is presented with it");
     assert_eq!(fixture.read(other, 0x710001, 6, 6), 0x00ff_0000, "another namespace's window is untouched");
 }
-

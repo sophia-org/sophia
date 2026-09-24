@@ -341,6 +341,49 @@ the parent's edge; without the change it presents blue over the green child.
 On `c2701e24` the core profile passes 152 of 152 and x11bench 57 of 60, with
 only the declared restack policy left.
 
+**t181, IncludeInferiors (2026-09-24, closed).** The GC's subwindow-mode was
+stored and never read, so every draw was clipped by children. Each window
+has its own buffer, so ClipByChildren is what every path already did.
+IncludeInferiors now wraps each GC draw at dispatch
+(`draw_through_inferiors`). The target's buffer gets what is on screen over
+it: each mapped inferior of the drawing namespace, bottom to top, clipped by
+its ancestors, from the same subtree walk presentation uses. The draw then
+runs unchanged, and whatever it left over each inferior is copied back into
+that inferior. While the draw runs, presentation does not lay the
+inferiors' old pixels back over it: the target's buffer already holds
+them. On the namespace's private root the inferiors are its own toplevels,
+and each window the draw reached is presented. Another namespace's windows
+are never inferiors. The target's own pixels under an inferior are
+overwritten by the composition. They are hidden there, and on a real screen
+they do not exist: the framebuffer holds the inferior's.
+
+Evidence: `x11_wire/include_inferiors.rs` checks a fill through a child
+(GetImage on the child and on the parent, and the presented image) and a
+root fill through the namespace's toplevel, leaving another namespace's
+window alone; both are red before the change. In XTS's arcs scenario on
+`3f92c599`, the window half of XFillArc-28, XFillArcs-30, XDrawArc-81 and
+XDrawArcs-91 now passes. Each still FAILs on its second half, "Drawing on
+root window with IncludeInferiors gave incorrect results". That half first
+moves the test window to the root origin with XMoveWindow. The host refuses
+a client's move of a managed toplevel, answering with a synthetic
+ConfigureNotify at the old position (a wire probe confirms it), so the root
+draw lands offset from the window. That is the Engine's placement policy,
+the class the x11bench `win_*` restacks are declared under, not a drawing
+defect.
+
+**t200, found on the way.** Density replay ignores window stacking. The
+journal records each draw translated into the toplevel and replays it over
+the whole presentation. A parent's draw therefore replays over a mapped
+child, which t188 fixed only at 1x. A child's command is never clipped to
+the child's bounds either. A red wire test (parent red baseline, child
+green, parent blue across the child, variant at 0.75) showed blue over the
+child. Skipping the journal for any covered draw fixes that case, but it
+would poison every toplevel with children. xterm's vt100 child is one: its
+toplevel's full background fill is the journal's baseline after a resize,
+and it is always covered. Clipping each command's GC to the visible region
+(the source's clip minus the windows over it) is the likely shape, with the
+baseline rule taught about it.
+
 ## Connections
 
 - [Running XTS5 through the profile gate](fy4a5tes-running-xts5-through-the-profile-gate-what-the-core-protocol-suite-says-about-the-authority.md):
