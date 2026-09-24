@@ -542,7 +542,11 @@ impl XAuthorityRuntime {
              .windows
              .get(window)
              .ok_or(XAuthorityRuntimeError::UnknownResource)?;
-         Ok(record.map_state != crate::XMapState::Viewable
+         // A viewable, policy-managed toplevel is placed by the policy, and
+         // its own request is answered with the placement kept, unless this
+         // host has no policy at all and lets clients place themselves (t189).
+         Ok(self.client_places_toplevels
+             || record.map_state != crate::XMapState::Viewable
              || record.presentation_role()
                  != sophia_protocol::SurfacePresentationRole::PolicyManaged)
      }

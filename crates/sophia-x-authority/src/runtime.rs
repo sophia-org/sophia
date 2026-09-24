@@ -289,6 +289,10 @@ pub struct XAuthorityRuntime {
     #[cfg(unix)]
     private_focus_source: Option<crate::x11_socket::XPrivateFocusRuntimeSource>,
     defer_policy_maps: bool,
+    /// A client places its own mapped toplevels (t189): a host with no
+    /// window manager, the conformance host among them. Off wherever a
+    /// policy owns placement.
+    client_places_toplevels: bool,
     /// Whether the provider keeps pixmap backings a GL client can sample.
     ///
     /// Set once when the frontend is built and never again: `GetFBConfigs` and
@@ -372,6 +376,7 @@ impl Default for XAuthorityRuntime {
             #[cfg(unix)]
             private_focus_source: None,
             defer_policy_maps: false,
+            client_places_toplevels: false,
             pixmap_textures_supported: false,
             dma_buf_import_formats: None,
             device_connections: BTreeMap::new(),
@@ -421,6 +426,10 @@ impl XAuthorityRuntime {
 
     pub fn set_policy_map_deferred(&mut self, deferred: bool) {
         self.defer_policy_maps = deferred;
+    }
+
+    pub fn set_client_toplevel_placement(&mut self, client_places: bool) {
+        self.client_places_toplevels = client_places;
     }
 
     pub fn set_pixmap_textures_supported(&mut self, supported: bool) {
