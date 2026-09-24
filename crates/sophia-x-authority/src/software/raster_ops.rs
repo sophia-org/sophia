@@ -483,30 +483,6 @@ pub(super) fn draw_rectangle_outline(
     }
 }
 
-pub(super) fn point_bounds(points: &[XPoint], line_width: u16) -> Option<Rect> {
-    let first = *points.first()?;
-    let mut left = i32::from(first.x);
-    let mut top = i32::from(first.y);
-    let mut right = left;
-    let mut bottom = top;
-    for point in &points[1..] {
-        let x = i32::from(point.x);
-        let y = i32::from(point.y);
-        left = left.min(x);
-        top = top.min(y);
-        right = right.max(x);
-        bottom = bottom.max(y);
-    }
-    let width = i32::from(line_width.max(1));
-    let half = width / 2;
-    Some(Rect {
-        x: left.saturating_sub(half),
-        y: top.saturating_sub(half),
-        width: right.saturating_sub(left).saturating_add(width),
-        height: bottom.saturating_sub(top).saturating_add(width),
-    })
-}
-
 pub(super) fn copy_xrgb8888(buffer: &mut XAuthorityCpuBufferSnapshot, rect: Rect, data: &[u8]) {
     let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, rect) else {
         return;
