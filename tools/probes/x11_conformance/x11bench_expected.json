@@ -162,19 +162,13 @@
     "test": "win_hide"
   },
   {
-    "test": "win_lower",
-    "expected": "FAIL",
-    "reason": "authority policy: a client does not restack its own top-level; the frontend answers ConfigureWindow stack-mode with a synthetic ConfigureNotify and no Expose (protocol_routing.rs), so the raised window is never repainted"
+    "test": "win_lower"
   },
   {
-    "test": "win_raise",
-    "expected": "FAIL",
-    "reason": "authority policy: a client does not restack its own top-level; the frontend answers ConfigureWindow stack-mode with a synthetic ConfigureNotify and no Expose (protocol_routing.rs), so the raised window is never repainted"
+    "test": "win_raise"
   },
   {
-    "test": "win_restack_middle",
-    "expected": "FAIL",
-    "reason": "authority policy: a client does not restack its own top-level; the frontend answers ConfigureWindow stack-mode with a synthetic ConfigureNotify and no Expose (protocol_routing.rs), so the raised window is never repainted"
+    "test": "win_restack_middle"
   },
   {
     "test": "win_show_after_hide"
