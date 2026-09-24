@@ -301,6 +301,15 @@ impl XSoftwareBufferStore {
         self.buffers.get(&source).cloned()
     }
 
+    /// A copy of the clip pixmap a graphics context names, if any.
+    ///
+    /// Copied for the same reason as a pattern: the mask may legally be the
+    /// destination, which is about to be borrowed mutably.
+    fn clip_mask_pixels(&self, gc: &XGraphicsContextValues) -> Option<XAuthorityCpuBufferSnapshot> {
+        gc.clip_mask
+            .and_then(|mask| self.buffers.get(&mask).cloned())
+    }
+
     pub fn paint_damage(
         &mut self,
         drawable: XResourceId,
@@ -311,9 +320,7 @@ impl XSoftwareBufferStore {
         // A tile or stipple reads another drawable's pixels, so it is taken
         // out of the store before the destination is borrowed mutably.
         let pattern_pixels = self.pattern_pixels(gc);
-        let mask_pixels = gc
-            .clip_mask
-            .and_then(|mask| self.buffers.get(&mask).cloned());
+        let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let pattern = fill_pattern::fill_pattern(gc, pattern_pixels.as_ref());
@@ -448,8 +455,10 @@ impl XSoftwareBufferStore {
         draws: &[XTextDraw<'_>],
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuDrawResult> {
+        let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
         let mut damage = Vec::with_capacity(draws.len());
         for draw in draws {
             if draw.text.is_empty() {
@@ -506,6 +515,13 @@ impl XSoftwareBufferStore {
             });
         }
         let published_damage = union_rects(&damage);
+        withhold(
+            buffer,
+            gc,
+            mask_pixels.as_ref(),
+            before.as_deref(),
+            published_damage,
+        );
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
         self.note_export_damage(drawable, replaced, published_damage);
         result
@@ -528,10 +544,22 @@ impl XSoftwareBufferStore {
         {
             return None;
         }
+        let gc = semantics.map(|semantics| &semantics.gc);
+        let mask_pixels = gc.and_then(|gc| self.clip_mask_pixels(gc));
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
         put_image_pixels(buffer, destination, data, semantics);
         let published_damage = Some(destination);
+        if let Some(gc) = gc {
+            withhold(
+                buffer,
+                gc,
+                mask_pixels.as_ref(),
+                before.as_deref(),
+                published_damage,
+            );
+        }
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
         self.note_export_damage(drawable, replaced, published_damage);
         result
@@ -624,14 +652,23 @@ impl XSoftwareBufferStore {
             .flat_map(|(from, to)| [*from, *to])
             .collect();
         let damage = point_bounds(&points, gc.line_width)?;
+        let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
         let width = i32::from(gc.line_width.max(1));
         let mut dashes = geometry::dash::XDashState::new(&gc.dashes, gc.dash_offset);
         for (from, to) in segments {
             draw_dashed(buffer, *from, *to, width, gc, &mut dashes);
         }
         let published_damage = Some(damage);
+        withhold(
+            buffer,
+            gc,
+            mask_pixels.as_ref(),
+            before.as_deref(),
+            published_damage,
+        );
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
         self.note_export_damage(drawable, replaced, published_damage);
         Some((result?, damage))
@@ -645,8 +682,10 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuDrawResult> {
         let damage = point_bounds(points, gc.line_width)?;
+        let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
         let width = i32::from(gc.line_width.max(1));
         // The dash pattern is walked across the whole polyline rather than
         // restarted at each vertex, so a dashed outline is dashed evenly
@@ -656,6 +695,13 @@ impl XSoftwareBufferStore {
             draw_dashed(buffer, pair[0], pair[1], width, gc, &mut dashes);
         }
         let published_damage = Some(damage);
+        withhold(
+            buffer,
+            gc,
+            mask_pixels.as_ref(),
+            before.as_deref(),
+            published_damage,
+        );
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
         self.note_export_damage(drawable, replaced, published_damage);
         result
@@ -669,13 +715,22 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
         let damage = rectangle_outline_bounds(rectangles, gc.line_width)?;
+        let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
         let line_width = i32::from(gc.line_width.max(1));
         for rectangle in rectangles {
             draw_rectangle_outline(buffer, *rectangle, line_width, gc);
         }
         let published_damage = Some(damage);
+        withhold(
+            buffer,
+            gc,
+            mask_pixels.as_ref(),
+            before.as_deref(),
+            published_damage,
+        );
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
         self.note_export_damage(drawable, replaced, published_damage);
         result.map(|update| (update, damage))
@@ -693,8 +748,10 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
         let source = self.buffers.get(&source)?.clone();
+        let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(destination, destination_size, handle)?;
+        let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
         let source_width = source.size.width;
         let source_height = source.size.height;
         let destination_width = destination_size.width;
@@ -743,6 +800,13 @@ impl XSoftwareBufferStore {
             height: offset_bottom.saturating_sub(offset_top),
         };
         let published_damage = Some(damage);
+        withhold(
+            buffer,
+            gc,
+            mask_pixels.as_ref(),
+            before.as_deref(),
+            published_damage,
+        );
         let result = finish_immutable_update(buffer, handle, replaced, published_damage);
         self.note_export_damage(destination, replaced, published_damage);
         result.map(|update| (update, damage))
@@ -880,6 +944,27 @@ fn coverage_area(rects: &[Rect]) -> usize {
                 .saturating_mul(usize::try_from(rect.height.max(0)).unwrap_or(0))
         })
         .fold(0usize, usize::saturating_add)
+}
+
+/// Undo what a request wrote outside its graphics context's clip pixmap.
+///
+/// `before` is the destination's bytes as the request found them, held only
+/// when there is a mask; `damage` bounds everything the request wrote.
+fn withhold(
+    buffer: &mut XAuthorityCpuBufferSnapshot,
+    gc: &XGraphicsContextValues,
+    mask_pixels: Option<&XAuthorityCpuBufferSnapshot>,
+    before: Option<&Vec<u8>>,
+    damage: Option<Rect>,
+) {
+    let (Some(before), Some(damage)) = (before, damage) else {
+        return;
+    };
+    XClipMask {
+        pixels: mask_pixels,
+        origin: (i32::from(gc.clip_x_origin), i32::from(gc.clip_y_origin)),
+    }
+    .restore_withheld(buffer, before, damage);
 }
 
 fn finish_immutable_update(

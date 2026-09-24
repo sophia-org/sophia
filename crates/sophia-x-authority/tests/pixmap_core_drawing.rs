@@ -357,3 +357,260 @@ fn depth_24_raster_inversion_changes_only_admitted_planes() {
     expected[4] = COLOR ^ 0x00ff0000;
     assert_eq!(client.pixels(), expected);
 }
+
+const MASK: XResourceId = XResourceId::new(0x100012, 1);
+const MASK_GC: XResourceId = XResourceId::new(0x100013, 1);
+const SOURCE: XResourceId = XResourceId::new(0x100014, 1);
+/// The pixels a clip mask admitting (0, 0) and (1, 1) lets through, in
+/// GetImage order.
+const DIAGONAL: [usize; 2] = [0, 4];
+
+/// A 3x3 depth-24 pixmap whose graphics context clips to a depth-1 mask
+/// holding only (0, 0) and (1, 1).
+fn clipped_client() -> Client {
+    let mut client = Client::new();
+    client.accept(
+        53,
+        XWireRequest::CreatePixmap {
+            depth: 1,
+            pixmap: MASK,
+            drawable: PIXMAP,
+            width: 3,
+            height: 3,
+        },
+    );
+    client.accept(
+        55,
+        XWireRequest::CreateGraphicsContext {
+            gc: MASK_GC,
+            drawable: MASK,
+            values: XGraphicsContextValues {
+                foreground: 1,
+                ..Default::default()
+            },
+        },
+    );
+    for (x, y) in [(0, 0), (1, 1)] {
+        client.accept(
+            70,
+            XWireRequest::PolyFillRectangle {
+                drawable: MASK,
+                gc: MASK_GC,
+                rectangles: vec![Rect {
+                    x,
+                    y,
+                    width: 1,
+                    height: 1,
+                }],
+            },
+        );
+    }
+    client.accept(
+        56,
+        XWireRequest::ChangeGraphicsContext {
+            gc: GC,
+            value_mask: 1 << 19,
+            values: XGraphicsContextValues {
+                clip_mask: Some(MASK),
+                ..Default::default()
+            },
+        },
+    );
+    client
+}
+
+fn only_admitted(color: u32) -> Vec<u32> {
+    let mut expected = vec![0; 9];
+    for index in DIAGONAL {
+        expected[index] = color;
+    }
+    expected
+}
+
+fn every_row() -> Vec<(XPoint, XPoint)> {
+    (0..3)
+        .map(|y| (XPoint { x: 0, y }, XPoint { x: 2, y }))
+        .collect()
+}
+
+#[test]
+fn a_clip_mask_confines_a_fill() {
+    let mut client = clipped_client();
+    client.accept(
+        70,
+        fill(
+            GC,
+            Rect {
+                x: 0,
+                y: 0,
+                width: 3,
+                height: 3,
+            },
+        ),
+    );
+    assert_eq!(client.pixels(), only_admitted(COLOR));
+}
+
+#[test]
+fn a_clip_mask_confines_segments_at_its_origin() {
+    let mut client = clipped_client();
+    client.accept(
+        66,
+        XWireRequest::PolySegment {
+            drawable: PIXMAP,
+            gc: GC,
+            segments: every_row(),
+        },
+    );
+    assert_eq!(client.pixels(), only_admitted(COLOR));
+
+    // The clip origin moves the mask, so (1, 0) and (2, 1) are what it
+    // admits now; the pixels already drawn stay as they were.
+    client.accept(
+        56,
+        XWireRequest::ChangeGraphicsContext {
+            gc: GC,
+            value_mask: (1 << 2) | (1 << 17) | (1 << 18),
+            values: XGraphicsContextValues {
+                foreground: 0x00abcdef,
+                clip_x_origin: 1,
+                ..Default::default()
+            },
+        },
+    );
+    client.accept(
+        66,
+        XWireRequest::PolySegment {
+            drawable: PIXMAP,
+            gc: GC,
+            segments: every_row(),
+        },
+    );
+    let mut expected = only_admitted(COLOR);
+    expected[1] = 0x00abcdef;
+    expected[5] = 0x00abcdef;
+    assert_eq!(client.pixels(), expected);
+}
+
+#[test]
+fn a_clip_mask_confines_a_polyline() {
+    let mut client = clipped_client();
+    client.accept(
+        65,
+        XWireRequest::PolyLine {
+            drawable: PIXMAP,
+            gc: GC,
+            points: vec![
+                XPoint { x: 0, y: 0 },
+                XPoint { x: 2, y: 0 },
+                XPoint { x: 2, y: 2 },
+                XPoint { x: 0, y: 2 },
+                XPoint { x: 0, y: 1 },
+                XPoint { x: 1, y: 1 },
+            ],
+        },
+    );
+    assert_eq!(client.pixels(), only_admitted(COLOR));
+}
+
+#[test]
+fn a_clip_mask_confines_a_rectangle_outline() {
+    let mut client = clipped_client();
+    client.accept(
+        67,
+        XWireRequest::PolyRectangle {
+            drawable: PIXMAP,
+            gc: GC,
+            rectangles: vec![Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            }],
+        },
+    );
+    // The outline covers eight pixels; of the mask's two, only (0, 0) is on it.
+    let mut expected = vec![0; 9];
+    expected[0] = COLOR;
+    assert_eq!(client.pixels(), expected);
+}
+
+#[test]
+fn a_clip_mask_confines_a_copy() {
+    const SOURCE_GC: XResourceId = XResourceId::new(0x100015, 1);
+    let mut client = clipped_client();
+    client.accept(
+        53,
+        XWireRequest::CreatePixmap {
+            depth: 24,
+            pixmap: SOURCE,
+            drawable: PIXMAP,
+            width: 3,
+            height: 3,
+        },
+    );
+    client.accept(
+        55,
+        XWireRequest::CreateGraphicsContext {
+            gc: SOURCE_GC,
+            drawable: SOURCE,
+            values: XGraphicsContextValues {
+                foreground: COLOR,
+                ..Default::default()
+            },
+        },
+    );
+    client.accept(
+        70,
+        XWireRequest::PolyFillRectangle {
+            drawable: SOURCE,
+            gc: SOURCE_GC,
+            rectangles: vec![Rect {
+                x: 0,
+                y: 0,
+                width: 3,
+                height: 3,
+            }],
+        },
+    );
+    let result = client.send(
+        62,
+        XWireRequest::CopyArea {
+            source: SOURCE,
+            destination: PIXMAP,
+            gc: GC,
+            src_x: 0,
+            src_y: 0,
+            dst_x: 0,
+            dst_y: 0,
+            width: 3,
+            height: 3,
+        },
+    );
+    assert!(result.response.is_some(), "{result:?}");
+    assert_eq!(client.pixels(), only_admitted(COLOR));
+}
+
+#[test]
+fn a_clip_mask_confines_an_image() {
+    let mut client = clipped_client();
+    let data: Vec<u8> = std::iter::repeat_n(0x00abcdef_u32.to_le_bytes(), 9)
+        .flatten()
+        .collect();
+    client.accept(
+        72,
+        XWireRequest::PutImage {
+            format: 2,
+            drawable: PIXMAP,
+            gc: GC,
+            width: 3,
+            height: 3,
+            dst_x: 0,
+            dst_y: 0,
+            left_pad: 0,
+            depth: 24,
+            data,
+        },
+    );
+    assert_eq!(client.pixels(), only_admitted(0x00abcdef));
+}

@@ -191,6 +191,47 @@ impl XClipMask<'_> {
             u32::from_le_bytes(bytes.try_into().unwrap_or([0; 4])) & 0x00ff_ffff != 0
         })
     }
+
+    /// Put back, from the bytes the buffer held before a draw, every pixel of
+    /// `rect` the mask does not admit.
+    ///
+    /// Strokes, text, copies and images go through helpers that apply only
+    /// the clip list. Undoing what they wrote outside the mask gives the
+    /// result of never having written it, because each output pixel depends
+    /// only on its own destination and on a source read before the draw.
+    pub(super) fn restore_withheld(
+        &self,
+        buffer: &mut XAuthorityCpuBufferSnapshot,
+        before: &[u8],
+        rect: Rect,
+    ) {
+        if self.pixels.is_none() {
+            return;
+        }
+        let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, rect) else {
+            return;
+        };
+        let stride = usize::try_from(buffer.stride).unwrap_or(0);
+        let bytes = bytes_mut(buffer);
+        for y in top..bottom {
+            for x in left..right {
+                let admitted = self.admits(
+                    i32::try_from(x).unwrap_or(i32::MAX),
+                    i32::try_from(y).unwrap_or(i32::MAX),
+                );
+                if admitted {
+                    continue;
+                }
+                let offset = y.saturating_mul(stride).saturating_add(x.saturating_mul(4));
+                let end = offset.saturating_add(4);
+                if let (Some(target), Some(saved)) =
+                    (bytes.get_mut(offset..end), before.get(offset..end))
+                {
+                    target.copy_from_slice(saved);
+                }
+            }
+        }
+    }
 }
 
 /// Fill a rectangle from a pattern, under a clip mask.

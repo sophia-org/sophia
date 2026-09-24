@@ -7,7 +7,7 @@
 
 use super::{
     XAuthorityCpuDrawResult, XGraphicsContextValues, XResourceId, XSoftwareBufferStore,
-    finish_immutable_update, raster_ops::fill_rect,
+    finish_immutable_update, raster_ops::fill_rect, withhold,
 };
 use sophia_protocol::{Rect, Size};
 
@@ -34,8 +34,12 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
     ) -> Option<(XAuthorityCpuDrawResult, Rect)> {
         let source_pixels = self.buffers.get(&source).cloned()?;
+        let mask_pixels = self.clip_mask_pixels(gc);
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(destination, size, handle)?;
+        let before = mask_pixels
+            .as_ref()
+            .map(|_| std::sync::Arc::clone(&buffer.bytes));
         let stride = usize::try_from(source_pixels.stride).unwrap_or(0);
         for row in 0..extent.1 {
             let mut run: Option<(i32, bool)> = None;
@@ -89,6 +93,13 @@ impl XSoftwareBufferStore {
             height: extent.1,
         };
         let published = Some(damage);
+        withhold(
+            buffer,
+            gc,
+            mask_pixels.as_ref(),
+            before.as_deref(),
+            published,
+        );
         let result = finish_immutable_update(buffer, handle, replaced, published);
         self.note_export_damage(destination, replaced, published);
         Some((result?, damage))
