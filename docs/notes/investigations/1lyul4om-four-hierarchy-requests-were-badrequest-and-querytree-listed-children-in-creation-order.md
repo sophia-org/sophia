@@ -71,8 +71,10 @@ retire and nothing else moves, 330 passed and 59 declared.
 
 - [x] Wire red then green in both byte orders.
 - [x] `sophia-x-authority` suite and clippy under the gate's isolation.
-- [ ] The core profile with the four cases; the gate on the committed
-      candidate.
+- [x] The core profile reads PASS, 138 of 138, the four cases in both
+      orders; the gate on the committed candidate
+      (`.artifacts/x11-profile-c7997078-{selected-core,xproto}/`) reads
+      PASS on both scenarios, xproto with 330 passed and 59 declared.
 - [ ] The rest of t166: connection lifetime and the input maps.
 
 ## Connections
