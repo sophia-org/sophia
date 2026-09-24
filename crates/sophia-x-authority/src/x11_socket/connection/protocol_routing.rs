@@ -41,6 +41,21 @@ fn route_mapping_notify_events(
     Ok(())
 }
 
+/// A peer's delivery on the public path: a recipient that cannot take it is
+/// ended and one that has gone is skipped, neither being the sender's failure
+/// (t090). Anything else is.
+#[cfg(unix)]
+fn route_x11_peer_event(
+    routing: &XServerFrontendRouteRegistry,
+    recipient: XServerFrontendClientId,
+    event: XClientEvent,
+    what: &str,
+) -> Result<(), X11SetupSocketError> {
+    routing
+        .route_protocol_contained(recipient, event)
+        .map_err(|error| X11SetupSocketError::new(format!("failed to route {what}: {error}")))
+}
+
 #[cfg(unix)]
 fn route_core_lifecycle_events(
     routing: &XServerFrontendRouteRegistry,
@@ -61,6 +76,17 @@ fn route_core_lifecycle_events_with_control(
         crate::XClientOutput::Event(event) => Some((None, *event)),
         _ => None,
     }))?;
+    // The public path contains a recipient's failure to the recipient; the
+    // private control path keeps its receipts and settles them itself.
+    let deliver = |recipient: XServerFrontendClientId, event: XClientEvent, what: &str| {
+        if execution.is_some() {
+            routing
+                .route_control_protocol(recipient, event, execution)
+                .map_err(|error| X11SetupSocketError::new(format!("failed to route {what}: {error}")))
+        } else {
+            route_x11_peer_event(routing, recipient, event, what)
+        }
+    };
     const EXPOSURE_MASK: u32 = 1 << 15;
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
@@ -101,11 +127,7 @@ fn route_core_lifecycle_events_with_control(
             .filter(|recipient| *recipient != client)
         {
             retain_private_control_events(execution, [(Some(recipient), *event)])?;
-            routing
-                .route_control_protocol(recipient, *event, execution)
-                .map_err(|error| {
-                    X11SetupSocketError::new(format!("failed to route X11 focus event: {error}"))
-                })?;
+            deliver(recipient, *event, "X11 focus event")?;
         }
         if !selectors.contains(&client) {
             unselected_focus.push(index);
@@ -200,11 +222,7 @@ fn route_core_lifecycle_events_with_control(
             })?;
         for recipient in subscribers.iter().copied().filter(|recipient| *recipient != client) {
             retain_private_control_events(execution, [(Some(recipient), event)])?;
-            routing.route_control_protocol(recipient, event, execution).map_err(|error| {
-                X11SetupSocketError::new(format!(
-                    "failed to route X11 lifecycle event: {error}"
-                ))
-            })?;
+            deliver(recipient, event, "X11 lifecycle event")?;
         }
         if !subscribers.contains(&client) {
             remove.push(index);
@@ -236,11 +254,7 @@ fn route_core_lifecycle_events_with_control(
             if recipient == client {
                 output.outputs.push(crate::XClientOutput::Event(parent_event));
             } else {
-                routing.route_control_protocol(recipient, parent_event, execution).map_err(|error| {
-                    X11SetupSocketError::new(format!(
-                        "failed to route X11 parent lifecycle event: {error}"
-                    ))
-                })?;
+                deliver(recipient, parent_event, "X11 parent lifecycle event")?;
             }
         }
     }
@@ -578,7 +592,7 @@ fn route_selection_event(
         trace_selection_transfer("notify_local", property_present);
         return Ok(());
     }
-    routing.route_protocol(target, event).map_err(|error| {
+    routing.route_protocol_contained(target, event).map_err(|error| {
         X11SetupSocketError::new(format!("failed to route X11 protocol event: {error}"))
     })?;
     trace_selection_transfer(stage, property_present);
@@ -613,7 +627,7 @@ fn route_property_events(
                 ))
             })?;
         for target in subscribers.iter().copied().filter(|target| *target != client) {
-            routing.route_protocol(target, event).map_err(|error| {
+            routing.route_protocol_contained(target, event).map_err(|error| {
                 X11SetupSocketError::new(format!("failed to route X11 property event: {error}"))
             })?;
         }

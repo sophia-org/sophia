@@ -1206,6 +1206,7 @@ fn a_notify_msc_ahead_of_the_clock_waits_for_a_completion_to_ripen() {
 
 include!("tests/review_private_deadline.rs");
 include!("tests/private_lifecycle_integration.rs");
+include!("tests/stalled_recipients.rs");
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/support/routing_routed_input.rs"

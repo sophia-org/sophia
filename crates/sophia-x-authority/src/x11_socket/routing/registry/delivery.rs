@@ -735,6 +735,51 @@ impl XServerFrontendRouteRegistry {
             })
     }
 
+    /// `route_protocol` with the recipient's failure kept to the recipient
+    /// (t090). A connection that cannot take what it is owed is ended --
+    /// exactly, by the identity this route captured, never whoever holds
+    /// the number next -- and one that has already gone owes nobody
+    /// anything. Neither is the sender's failure, and neither is dropped
+    /// quietly for a client that stays connected: the ended one reads EOF,
+    /// as a departed peer does. Poisoned shared state and every other
+    /// refusal stay the caller's error. Every peer delivery of the socket
+    /// layer and the Present routes go through this; the XFixes watcher path
+    /// adds its own row removal on top.
+    pub(crate) fn route_protocol_contained(
+        &self,
+        client: XServerFrontendClientId,
+        event: XClientEvent,
+    ) -> Result<(), XServerFrontendRouteError> {
+        match self.route_protocol_to_watcher(client, event) {
+            Ok(()) => Ok(()),
+            Err(XServerFrontendWatcherRefusal::Stalled(stalled)) => {
+                self.end_stalled_recipient(stalled)
+            }
+            Err(XServerFrontendWatcherRefusal::Route(error)) => Err(error),
+        }
+    }
+
+    /// Ends the exact connection a delivery could not be queued for. Its
+    /// own thread then runs its own teardown, retiring its subscriptions and
+    /// resources as any departure does.
+    pub(crate) fn end_stalled_recipient(
+        &self,
+        stalled: XServerFrontendStalledRecipient,
+    ) -> Result<(), XServerFrontendRouteError> {
+        let client = stalled.client;
+        let ended = self.input_recovery.disconnect_exact(
+            stalled.client,
+            &stalled.occupant,
+            crate::XAuthorityInputDeliveryOutcome::ClientDisconnected,
+            None,
+        )?;
+        tracing::warn!(
+            "sophia_x11_route status=ended cause=saturated_recipient client={} ended={ended}",
+            client.raw()
+        );
+        Ok(())
+    }
+
     /// As `route_protocol`, but a recipient that has stopped draining is named
     /// exactly.
     ///

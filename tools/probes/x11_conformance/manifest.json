@@ -200,6 +200,11 @@
       "timeout": 15
     },
     {
+      "id": "destroy_notify_stalled",
+      "mandatory": true,
+      "timeout": 15
+    },
+    {
       "id": "xfixes_selection_peer_descendant",
       "mandatory": true
     },
@@ -681,6 +686,17 @@
         "xfixes_selection_self",
         "xfixes_selection_stalled",
         "xfixes_selection_peer_descendant"
+      ]
+    },
+    {
+      "name": "A watcher that cannot take a window's lifecycle notices is ended past the allowance, and the window's owner is never the one to pay",
+      "accepted_core_opcodes": [
+        1,
+        2,
+        4
+      ],
+      "cases": [
+        "destroy_notify_stalled"
       ]
     },
     {
@@ -1168,9 +1184,10 @@
         "destroy",
         "destroy_descendants",
         "destroy_invalid",
+        "destroy_mapped",
+        "destroy_notify_stalled",
         "destroy_subscribers",
-        "destroy_xid_reuse",
-        "destroy_mapped"
+        "destroy_xid_reuse"
       ]
     },
     "5": {

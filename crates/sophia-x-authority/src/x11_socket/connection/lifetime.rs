@@ -114,7 +114,7 @@ fn route_x11_retained_destroys(
                 X11SetupSocketError::new(format!("failed to inspect freed X11 subscriptions: {error}"))
             })? {
                 routing
-                    .route_protocol(
+                    .route_protocol_contained(
                         recipient,
                         crate::XClientEvent::DestroyNotify { sequence: 0, event: target, window: *window },
                     )
@@ -148,7 +148,7 @@ fn route_x11_save_set_reparents(
             for recipient in routing.core_event_subscribers(*target, *mask).map_err(|error| {
                 X11SetupSocketError::new(format!("failed to inspect save-set subscriptions: {error}"))
             })? {
-                routing.route_protocol(recipient, event).map_err(|error| {
+                routing.route_protocol_contained(recipient, event).map_err(|error| {
                     X11SetupSocketError::new(format!("failed to route a save-set event: {error}"))
                 })?;
             }
