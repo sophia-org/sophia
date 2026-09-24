@@ -1046,7 +1046,14 @@ XGetImage and XGetSubImage purposes that read a window's border: Sophia
 draws no window borders, so they are declared by that decision. A text
 scenario (the XDrawString and XDrawText cases) does not run yet: its
 purposes need the suite's own test fonts on a font path, and every one is
-UNINITIATED on Xvnc as on the host. The event section (`Xlib11`, every
+UNINITIATED on Xvnc as on the host. `xts_expected_colors.json` (the Xlib7
+colour and colormap cases and Xlib10's install and list cases) and
+`xts_expected_gc.json` (the Xlib8 GC cases) followed the same way. Their
+declarations are the suite's omissions, the colour classes a TrueColor-only
+screen cannot offer, purposes Xvnc fails identically, and t210 and t212.
+Some cases are left out: XAllocNamedColor and XLookupColor stop before
+their last purposes on Xvnc as on the host, XInstallColormap's fourth purpose is unstable until t210 gives it the ColormapNotify it waits for, and XChangeGC, XCreateGC,
+XGetGCValues and XSetFont wait on t201's font path. The event section (`Xlib11`, every
 event type, 195 purposes) is `xts_expected_events.json`: it runs with
 `--xts-admit-xtest=yes` (the adapter's `--admit-xtest`), which starts the
 host with XTEST admitted so the suite's extended purposes inject their

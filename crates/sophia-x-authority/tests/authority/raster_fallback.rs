@@ -621,11 +621,54 @@ fn a_draw_through_a_clip_pixmap_is_not_replayed_unmasked() {
 }
 
 #[test]
+fn a_draw_through_a_clip_pixmap_is_not_replayed_unmasked_through_a_tile() {
+    let namespace = NamespaceId::from_raw(226);
+    let window = XResourceId::new(0x226, 1);
+    let surface = SurfaceId::new(226, 1);
+    let mut runtime = XAuthorityRuntime::new();
+    fallback_window(&mut runtime, namespace, window, surface, 280);
+
+    // The journal has no pattern pixels either, so a tiled paint must refuse
+    // replay rather than replay solid.
+    runtime.begin_dispatch();
+    runtime.apply_core_draw_with_gc(
+        TransactionId::from_raw(281),
+        namespace,
+        window,
+        Region::single(Rect {
+            x: 1,
+            y: 1,
+            width: 4,
+            height: 4,
+        }),
+        &XGraphicsContextValues {
+            fill_style: 1,
+            tile: Some(XResourceId::new(0x227, 1)),
+            ..Default::default()
+        },
+    );
+
+    assert_eq!(
+        expect_raster_fallback(
+            runtime
+                .apply_surface_raster_requirements(
+                    TransactionId::from_raw(282),
+                    &fallback_requirement(surface, 2, &[750]),
+                )
+                .unwrap(),
+            "a tile has no journal projection",
+        ),
+        XRasterFallbackCause::UnsupportedFillPattern,
+    );
+}
+
+#[test]
 fn fallback_causes_have_distinct_stable_log_tokens() {
     let causes = [
         XRasterFallbackCause::UnsupportedPutImage,
         XRasterFallbackCause::UnsupportedCrossDrawableCopy,
         XRasterFallbackCause::UnsupportedClipMask,
+        XRasterFallbackCause::UnsupportedFillPattern,
         XRasterFallbackCause::UnsupportedCommand,
         XRasterFallbackCause::StaleContentGeneration,
         XRasterFallbackCause::JournalCapacity,
