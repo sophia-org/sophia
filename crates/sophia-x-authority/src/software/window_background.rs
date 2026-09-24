@@ -34,7 +34,13 @@ impl XSoftwareBufferStore {
         let (buffer, _) = self.ensure(drawable, size, handle)?;
         match tile.as_ref() {
             Some((bytes, tile_size, tile_stride, origin)) => {
-                raster_ops::tile_solid(buffer, bytes, *tile_size, *tile_stride, *origin);
+                let whole = Rect {
+                    x: 0,
+                    y: 0,
+                    width: size.width,
+                    height: size.height,
+                };
+                raster_ops::tile_solid(buffer, bytes, *tile_size, *tile_stride, *origin, whole);
             }
             None => raster_ops::fill_solid(buffer, pixel),
         }
@@ -86,5 +92,26 @@ impl XSoftwareBufferStore {
 
     pub(crate) fn forget_window_tile(&mut self, window: XResourceId) {
         self.window_tiles.remove(&window);
+    }
+
+    /// ClearArea on a window with a background tile: the area tiled from
+    /// `origin`, with the tile captured for `owner`, the window the
+    /// background comes from.
+    pub(crate) fn clear_tiled(
+        &mut self,
+        drawable: XResourceId,
+        size: Size,
+        rect: Rect,
+        (owner, origin): (XResourceId, (i32, i32)),
+    ) -> Option<XAuthorityCpuDrawResult> {
+        let tile = self.window_tiles.get(&owner)?.clone();
+        let handle = self.allocate_handle();
+        let (buffer, replaced) = self.ensure(drawable, size, handle)?;
+        let stride = usize::try_from(tile.stride).unwrap_or(0);
+        raster_ops::tile_solid(buffer, &tile.bytes, tile.size, stride, origin, rect);
+        let published_damage = Some(rect);
+        let result = finish_immutable_update(buffer, handle, replaced, published_damage);
+        self.note_export_damage(drawable, replaced, published_damage);
+        result
     }
 }

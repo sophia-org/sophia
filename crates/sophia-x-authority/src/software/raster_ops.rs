@@ -318,6 +318,7 @@ pub(super) fn tile_solid(
     tile_size: Size,
     tile_stride: usize,
     (origin_x, origin_y): (i32, i32),
+    area: Rect,
 ) {
     let Ok(tile_width) = usize::try_from(tile_size.width) else {
         return;
@@ -328,8 +329,9 @@ pub(super) fn tile_solid(
     if tile_width == 0 || tile_height == 0 {
         return;
     }
-    let width = usize::try_from(buffer.size.width).unwrap_or(0);
-    let height = usize::try_from(buffer.size.height).unwrap_or(0);
+    let Some((left, top, right, bottom)) = clipped_bounds(buffer.size, area) else {
+        return;
+    };
     let stride = usize::try_from(buffer.stride).unwrap_or(0);
     let bytes = bytes_mut(buffer);
     // The tile's origin in the buffer's coordinates: the pixel at `(x, y)`
@@ -339,9 +341,9 @@ pub(super) fn tile_solid(
         let at = i64::try_from(value).unwrap_or(0) - i64::from(origin);
         usize::try_from(at.rem_euclid(extent)).unwrap_or(0)
     };
-    for y in 0..height {
+    for y in top..bottom {
         let source_row = wrap(y, origin_y, tile_height).saturating_mul(tile_stride);
-        for x in 0..width {
+        for x in left..right {
             let source = source_row.saturating_add(wrap(x, origin_x, tile_width).saturating_mul(4));
             let Some(pixel) = tile.get(source..source.saturating_add(4)) else {
                 continue;

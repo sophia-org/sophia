@@ -101,4 +101,61 @@ impl XAuthorityRuntime {
         self.software_buffers
             .paint_window_background(window, size, pixel, tile);
     }
+
+    /// ClearArea: the area restored to the background the window has now --
+    /// its pixel, or its tile from the origin it is aligned with -- and left
+    /// alone where the background is None, as the protocol says.
+    pub fn apply_clear_background(
+        &mut self,
+        transaction: TransactionId,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        area: Rect,
+    ) -> XAuthorityResponsePacket {
+        if let Err(error) = self.validate_window_access(namespace, window) {
+            return XAuthorityResponsePacket::rejected(transaction, error);
+        }
+        let (background, owner, origin) = self.resolved_background(window);
+        match background {
+            crate::XWindowBackground::Pixel(pixel) => {
+                self.apply_clear_with_pixel(transaction, namespace, window, Region::single(area), pixel)
+            }
+            crate::XWindowBackground::Pixmap(_) => {
+                let Some(record) = self.windows.get(window) else {
+                    return XAuthorityResponsePacket::rejected(
+                        transaction,
+                        XAuthorityRuntimeError::UnknownResource,
+                    );
+                };
+                let size = Size {
+                    width: record.geometry.width,
+                    height: record.geometry.height,
+                };
+                let generation = record.generation;
+                let Some(buffer) =
+                    self.software_buffers
+                        .clear_tiled(window, size, area, (owner, origin))
+                else {
+                    return XAuthorityResponsePacket::accepted(transaction);
+                };
+                let handle = buffer.handle();
+                // The journal holds no pattern pixels.
+                self.pending_raster_command = Some(XAuthorityRasterCommand::Unsupported(
+                    XRasterUnsupportedKind::FillPattern,
+                ));
+                self.finish_drawing_update(XDrawingUpdate::core_draw(
+                    transaction,
+                    namespace,
+                    window,
+                    handle,
+                    Region::single(area),
+                    generation,
+                    250,
+                ))
+            }
+            crate::XWindowBackground::Undefined | crate::XWindowBackground::ParentRelative => {
+                XAuthorityResponsePacket::accepted(transaction)
+            }
+        }
+    }
 }
