@@ -8,6 +8,10 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             time,
             root,
             event,
+            root_x,
+            root_y,
+            event_x,
+            event_y,
             state,
         } => {
             write_event_header(
@@ -21,10 +25,10 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[8..12], root);
             put_resource(byte_order, &mut out[12..16], event);
             put_resource(byte_order, &mut out[16..20], XResourceId::NONE);
-            put_i16(byte_order, &mut out[20..22], 0);
-            put_i16(byte_order, &mut out[22..24], 0);
-            put_i16(byte_order, &mut out[24..26], 0);
-            put_i16(byte_order, &mut out[26..28], 0);
+            put_i16(byte_order, &mut out[20..22], root_x);
+            put_i16(byte_order, &mut out[22..24], root_y);
+            put_i16(byte_order, &mut out[24..26], event_x);
+            put_i16(byte_order, &mut out[26..28], event_y);
             put_u16(byte_order, &mut out[28..30], state);
             out[30] = 1;
         }
