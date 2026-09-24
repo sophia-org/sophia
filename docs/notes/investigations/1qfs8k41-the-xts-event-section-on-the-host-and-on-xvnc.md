@@ -119,6 +119,29 @@ followed on the same branch: ConfigureRequest to the client managing the
 parent, ResizeRequest to a ResizeRedirect selector, as MapRequest already
 was.
 
+## The windows scenario, in the authority's area
+
+The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
+the classes in this area. Read against Xvnc, the host-only rows were:
+the redirect and border-width families above (t198, t221); a zero width
+or height accepted where the reference answers BadValue, and a sibling
+refusal that read BadWindow where the protocol says BadMatch (t222,
+t223); ConfigureWindow on the root answered BadWindow instead of doing
+nothing, an unknown window with a zero size answered BadValue before
+BadWindow, an InputOutput child of an InputOnly parent was created, an
+InputOnly window reported depth 24, and the attribute reply's
+backing-planes read 0 where the default is all ones (t224); DeleteProperty,
+SetSelectionOwner and ConvertSelection accepted atoms the table did not
+know, ConvertSelection accepted a requestor that named no window, a
+SetSelectionOwner earlier than the last change took the selection, and
+RotateProperties moved values the other way round from Xorg (t225); and a
+selection taken from one connection with another client's window
+survived that connection's departure, because ownership was cleared by
+window rather than by the client that took it (t226). After those the
+host passes 214 of the scenario's purposes where Xvnc passes 277; what
+remains in this area is border geometry (t227, coupled to the raster
+side) and the pane's attribute, gravity and pixel work.
+
 ## Status
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
