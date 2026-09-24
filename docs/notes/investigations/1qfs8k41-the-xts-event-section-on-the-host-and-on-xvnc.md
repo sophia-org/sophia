@@ -104,9 +104,22 @@ it; a suite's plain, unfocused window is told of a press over it. In a
 session nothing changes: there the Engine puts the focused surface under
 the pointer.
 
+## After the repairs
+
+The rerun with the host unhung, pointer events resolved under the pointer
+and keys under PointerRoot: 60 PASS, 64 FAIL, the rest the suite's own.
+What stays red is device-event routing itself, not injection: a second
+client selecting on the same window gets nothing, an unselected event
+does not propagate to the ancestor that selected it, `subwindow` is not
+filled, motion with a button held is not reported to Button<n>Motion
+selectors, and a key carries no pointer coordinates (t220); crossing and
+keymap events from hierarchy changes and visibility from occlusion
+(t211); redirection (t198), gravity (t199) and ColormapNotify (t210).
+
 ## Status
 
-The three repairs are on `xts-events/t196` with wire tests that were red
-on the tree before them. The scenario is not declared yet: the rerun
-after the repairs decides the reasons file, and the remaining families
-are filed as tasks with their purposes named.
+The repairs are on `xts-events/t196` with wire tests that were red on the
+tree before them, and the scenario is declared: `xts_expected_events.json`
+(60 passed, 135 declared) from `xts_reasons_events.json`, every
+authority row naming its task, run under the gate with
+`--xts-admit-xtest=yes`. Each seam that lands re-declares it.
