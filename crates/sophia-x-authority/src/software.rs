@@ -599,6 +599,74 @@ impl XSoftwareBufferStore {
         result
     }
 
+    /// Copy each inferior's visible pixels into `target`, bottom to top, so
+    /// a draw through them starts from what is on screen (IncludeInferiors).
+    pub(crate) fn compose_inferiors(
+        &mut self,
+        target: XResourceId,
+        size: Size,
+        inferiors: &[XPresentLayer],
+    ) -> Option<()> {
+        let handle = self.allocate_handle();
+        self.ensure(target, size, handle)?;
+        for layer in inferiors {
+            let Some(source) = self.buffers.get(&layer.window).cloned() else {
+                continue;
+            };
+            let buffer = self.buffers.get_mut(&target)?;
+            copy_buffer_region(
+                &source,
+                buffer,
+                translate_rect(layer.clip, -layer.x, -layer.y),
+                layer.x,
+                layer.y,
+            );
+        }
+        Some(())
+    }
+
+    /// Copy what a draw through the inferiors left in `target` back into
+    /// each of them, and return the inferiors that changed, each with the
+    /// changed part in its own coordinates.
+    pub(crate) fn scatter_to_inferiors(
+        &mut self,
+        target: XResourceId,
+        inferiors: &[(XPresentLayer, Size)],
+    ) -> Vec<(XResourceId, Rect)> {
+        let mut changed = Vec::new();
+        let Some(composed) = self.buffers.get(&target).cloned() else {
+            return changed;
+        };
+        for (layer, size) in inferiors {
+            let local = translate_rect(layer.clip, -layer.x, -layer.y);
+            let Some(drawn) = self.image_region(target, layer.clip) else {
+                continue;
+            };
+            if self.image_region(layer.window, local).as_ref() == Some(&drawn) {
+                continue;
+            }
+            let handle = self.allocate_handle();
+            let Some((buffer, replaced)) = self.ensure(layer.window, *size, handle) else {
+                continue;
+            };
+            if copy_buffer_region(&composed, buffer, layer.clip, -layer.x, -layer.y).is_none() {
+                continue;
+            }
+            let Some(generation) = buffer.generation.checked_add(1) else {
+                continue;
+            };
+            buffer.generation = generation;
+            self.note_export_damage(layer.window, replaced, Some(local));
+            changed.push((layer.window, local));
+        }
+        changed
+    }
+
+    /// The handle of a drawable's CPU buffer, when it has one.
+    pub(crate) fn buffer_handle(&self, drawable: XResourceId) -> Option<u64> {
+        self.buffers.get(&drawable).map(|buffer| buffer.handle)
+    }
+
     pub fn ensure_image_backing(&mut self, drawable: XResourceId, size: Size) -> Option<()> {
         let handle = self.allocate_handle();
         self.ensure(drawable, size, handle).map(|_| ())

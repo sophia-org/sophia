@@ -275,14 +275,14 @@ fn dispatch_shm_request(
                                 gc: values,
                             })
                     });
-                    let response = runtime.apply_put_image(
+                    let response = runtime.draw_through_inferiors(transaction, context.namespace, drawable, semantics.as_ref().map_or(crate::X_CLIP_BY_CHILDREN, |semantics| semantics.gc.subwindow_mode), |runtime| runtime.apply_put_image(
                         transaction,
                         context.namespace,
                         drawable,
                         damage,
                         image.as_deref(),
                         semantics.as_ref(),
-                    );
+                    ));
                     let outputs = if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
                         tracing::debug!(?error, depth, format, total_width, total_height, src_x, src_y, src_width, src_height, offset, image_copied=image.is_some(), gc_valid=semantics.is_some(), "MIT-SHM upload rejected");
                         vec![XClientOutput::Error(x_error_from_runtime(
