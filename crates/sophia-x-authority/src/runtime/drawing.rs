@@ -709,7 +709,10 @@ impl XAuthorityRuntime {
     fn finish_drawing_update(&mut self, mut update: XDrawingUpdate) -> XAuthorityResponsePacket {
         let transaction_id = update.transaction;
         let source_window = update.target_window;
-        let semantic_command = self.pending_raster_command.take();
+        let semantic_command = self
+            .pending_raster_command
+            .take()
+            .map(XAuthorityRasterCommand::unless_clip_masked);
         let mut cpu_buffer_updates = Vec::new();
         if matches!(
             update.buffer,

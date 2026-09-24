@@ -233,6 +233,32 @@ def gc_dashes_clip(context):
         c.send(CHANGE_GC, c.pack('II', paint, GC_CLIP_MASK) + c.pack('I', 0))
         fill(c, pid, paint, (0, 0, 8, 4))
         assert pixels(c, pid, 8, 4)[0] == [[0xabcdef] * 8] * 4
+        # A clip pixmap confines every primitive, not only fills: of each
+        # request, only the mask's set pixels, (1, 0) and (2, 1), may land.
+        mask = pixmap(c, 8, 4, depth=1)
+        bit = gc(c, mask, 0)
+        fill(c, mask, bit, (0, 0, 8, 4))
+        set_foreground(c, bit, 1)
+        fill(c, mask, bit, (1, 0, 1, 1), (2, 1, 1, 1))
+        source = pixmap(c, 8, 4)
+        fill(c, source, paint, (0, 0, 8, 4))
+        c.send(CHANGE_GC, c.pack('II', paint, GC_GRAPHICS_EXPOSURES | GC_CLIP_MASK) + c.pack('II', 0, mask))
+        admitted = {(1, 0), (2, 1)}
+        rows = b''.join(c.pack('hhhh', 0, y, 7, y) for y in range(4))
+        image = pixel_bytes(c, [0xabcdef] * 32)
+        for name, draw, lands in (
+                ('fill', lambda: fill(c, pid, paint, (0, 0, 8, 4)), admitted),
+                ('segments', lambda: c.send(POLY_SEGMENT, c.pack('II', pid, paint) + rows), admitted),
+                ('outline', lambda: c.send(POLY_RECTANGLE, c.pack('II', pid, paint) + c.pack('hhHH', 0, 0, 7, 3)),
+                 {(1, 0)}),
+                ('copy', lambda: c.send(COPY_AREA, c.pack('IIIhhhhHH', source, pid, paint, 0, 0, 0, 0, 8, 4)),
+                 admitted),
+                ('image', lambda: c.send(PUT_IMAGE, c.pack('IIHHhhBBH', pid, paint, 8, 4, 0, 0, 0, c.depth, 0)
+                                         + image, detail=Z_PIXMAP), admitted)):
+            fill(c, pid, back, (0, 0, 8, 4))
+            draw()
+            expected = [[0xabcdef if (x, y) in lands else 0 for x in range(8)] for y in range(4)]
+            assert pixels(c, pid, 8, 4)[0] == expected, f'clip pixmap did not confine {name}'
         unknown = c.xid()
         c.completion(c.send(SET_DASHES, c.pack('IHH', unknown, 0, 1) + bytes([1])),
                      error=BAD_GC, opcode=SET_DASHES, resource=unknown)

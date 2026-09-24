@@ -90,13 +90,36 @@ geometry and font set.
 
 ## Validation and remaining work
 
-Nothing here is a gate yet. t173 makes it one: references
-generated on a pinned Xvnc at the host's screen geometry, retained in the
-repository with their generator's identity; the run bounded and confined as
-XTS5 is; and each non-PASS declared with a reason, as t164 made possible for
-XTS5 manifests. Zero-width arcs are declared device-dependent and the three
-restack tests declared as authority policy. AGENTS.md rule 11 asks for the
-adapter in Rust/xtask; x11bench itself stays an independent C++ client.
+Nothing here is a gate yet. t173 makes it one: references generated in the
+same confined run, on Xvnc at the host's own screen geometry, so both sides
+share the machine's fonts and DPI and no reference image is committed; the
+generator's identity recorded in the report; Xvnc against its own references
+as the negative control; and each non-PASS declared with a reason, as t164 made
+possible for XTS5 manifests. Zero-width arcs are declared device-dependent and
+the three restack tests declared as authority policy. AGENTS.md rule 11 asks
+for the adapter in Rust/xtask; x11bench itself stays an independent C++ client.
+
+**t170, the clip pixmap (2026-09-23).** Every core path now honours it. The
+helpers strokes, text, copies and images share apply the clip list pixel by
+pixel but cannot reach the mask, which lives in the store beside the
+destination; so each entry point in `software.rs` and `copy_plane.rs` holds
+the destination's bytes as it found them (an `Arc` clone, copied only on the
+first write) and `XClipMask::restore_withheld` puts back every pixel of the
+request's damage the mask does not admit. Fills keep their per-pixel test.
+Replay has no projection of a mask, so a command drawn through one now
+poisons the journal with `unsupported_clip_mask` instead of replaying
+unmasked -- which it did for fills as well as strokes.
+
+Evidence: `pixmap_core_drawing.rs` checks fill, segments (at two clip
+origins), polyline, rectangle outline, CopyArea and PutImage through a
+depth-1 mask, five of the six red before the change; `raster_fallback.rs`
+checks the replay refusal; `drawing_cases.py` `gc_dashes_clip` checks the same
+five requests from the independent client, 126 of 126 required cases PASS on
+the fixed host. x11bench `clip_mask` falls from 28 915 differing pixels to
+342, all on the disc's rim: the zero-width arc drawn over it and FillArc's
+edge in the mask, not the mask. Host sha256 `880fdaa6...`, run in
+`.artifacts/x11bench-oracle/run-t170/`. Text under a mask has no dedicated
+case; it takes the same restore as the paths that do.
 
 ## Connections
 

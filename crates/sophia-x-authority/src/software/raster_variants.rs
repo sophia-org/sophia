@@ -32,6 +32,9 @@ pub enum XRasterFallbackCause {
     UnsupportedPutImage,
     /// A `CopyArea` named a source drawable other than its destination.
     UnsupportedCrossDrawableCopy,
+    /// A core drawing request drew through a clip pixmap. The mask is 1x
+    /// content the journal does not project, so replay could not reproduce it.
+    UnsupportedClipMask,
     /// A RENDER operation wrote the drawable; compositing results have no
     /// journal representation yet, so density variants scale the 1x raster.
     UnsupportedRenderOperation,
@@ -61,6 +64,7 @@ impl XRasterFallbackCause {
         match self {
             Self::UnsupportedPutImage => "unsupported_put_image",
             Self::UnsupportedCrossDrawableCopy => "unsupported_cross_drawable_copy",
+            Self::UnsupportedClipMask => "unsupported_clip_mask",
             Self::UnsupportedRenderOperation => "unsupported_render_operation",
             Self::UnsupportedCommand => "unsupported_command",
             Self::StaleContentGeneration => "stale_content_generation",
@@ -80,6 +84,7 @@ impl XRasterFallbackCause {
 pub(crate) enum XRasterUnsupportedKind {
     PutImage,
     CrossDrawableCopy,
+    ClipMask,
     RenderOperation,
 }
 
@@ -88,6 +93,7 @@ impl XRasterUnsupportedKind {
         match self {
             Self::PutImage => XRasterFallbackCause::UnsupportedPutImage,
             Self::CrossDrawableCopy => XRasterFallbackCause::UnsupportedCrossDrawableCopy,
+            Self::ClipMask => XRasterFallbackCause::UnsupportedClipMask,
             Self::RenderOperation => XRasterFallbackCause::UnsupportedRenderOperation,
         }
     }
@@ -222,6 +228,28 @@ impl XAuthorityRasterCommand {
             gc: semantics.gc.clone(),
         }
     }
+    /// The command, or its refusal when it drew through a clip pixmap.
+    ///
+    /// Replay applies the clip list but has no projection of a mask, so a
+    /// masked command poisons the journal rather than replaying unmasked.
+    pub(crate) fn unless_clip_masked(self) -> Self {
+        let gc = match &self {
+            Self::Paint { gc, .. }
+            | Self::Lines { gc, .. }
+            | Self::Segments { gc, .. }
+            | Self::Rectangles { gc, .. }
+            | Self::Text { gc, .. }
+            | Self::CopyArea { gc, .. }
+            | Self::PutImage { gc, .. } => Some(gc),
+            Self::Clear { .. } | Self::Unsupported(_) => None,
+        };
+        if gc.is_some_and(|gc| gc.clip_mask.is_some()) {
+            Self::Unsupported(XRasterUnsupportedKind::ClipMask)
+        } else {
+            self
+        }
+    }
+
     pub(crate) fn translated(mut self, x: i32, y: i32) -> Self {
         let translate_rect = |rect: &mut Rect| {
             rect.x = rect.x.saturating_add(x);
