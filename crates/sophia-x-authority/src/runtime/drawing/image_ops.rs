@@ -234,6 +234,7 @@ impl XAuthorityRuntime {
 
     pub(crate) fn read_drawable_image_region(
         &self,
+        namespace: NamespaceId,
         drawable: crate::XResourceId,
         descriptor: XDrawableImageDescriptor,
         region: Rect,
@@ -246,8 +247,10 @@ impl XAuthorityRuntime {
         // A window's inferiors are drawn over it, so reading a window back
         // shows whatever of them covers the area. Without this a parent reads
         // as its own background everywhere and a mapped child is invisible to
-        // the client that just mapped it.
-        self.composite_inferiors(drawable, region, &mut image);
+        // the client that just mapped it. Only the reader's namespace's
+        // windows are composited: the root is every namespace's parent, and
+        // reading it must not show one namespace another's pixels.
+        self.composite_inferiors(namespace, drawable, region, &mut image);
         Ok(image)
     }
 
@@ -255,10 +258,16 @@ impl XAuthorityRuntime {
     ///
     /// Bottom to top, so a sibling above another covers it, and depth first,
     /// so a child's own children land on top of the child.
-    fn composite_inferiors(&self, drawable: crate::XResourceId, region: Rect, image: &mut [u8]) {
+    fn composite_inferiors(
+        &self,
+        namespace: NamespaceId,
+        drawable: crate::XResourceId,
+        region: Rect,
+        image: &mut [u8],
+    ) {
         let mut stack: Vec<(crate::XResourceId, i32, i32)> = self
             .windows
-            .direct_children_bottom_to_top_any_namespace(drawable)
+            .direct_children_bottom_to_top(namespace, drawable)
             .into_iter()
             .rev()
             .map(|child| (child, 0, 0))
@@ -282,7 +291,7 @@ impl XAuthorityRuntime {
             self.blit_child(child, x, y, record.geometry, region, image);
             for grandchild in self
                 .windows
-                .direct_children_bottom_to_top_any_namespace(child)
+                .direct_children_bottom_to_top(namespace, child)
                 .into_iter()
                 .rev()
             {

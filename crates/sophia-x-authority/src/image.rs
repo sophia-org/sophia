@@ -62,7 +62,7 @@ pub(crate) fn read_drawable_image(
     // Readback is passive: absent CPU backing zero-fills instead of creating a
     // renderer or screen-capture path across the Engine boundary.
     let pixels = runtime
-        .read_drawable_image_region(drawable, descriptor, region)
+        .read_drawable_image_region(namespace, drawable, descriptor, region)
         .map_err(XImageReadbackError::Drawable)?;
     let data = layout
         .encode(byte_order, plane_mask, &pixels)
