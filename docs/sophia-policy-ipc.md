@@ -187,9 +187,9 @@ valid and malformed corpora are one generated unit. The shell schema is checked
 against its maintained codecs, independent clients and corpora; it is not a
 second fully generated codec. `tools/check_policy_protocol.sh`
 and `tools/check_shell_protocol.sh` exercise the current role implementations
-against their shared bytes. A single family-level conformance entry point
-remains a roadmap gate; the separate scripts do not define separate protocol
-semantics.
+against their shared bytes. The canonical
+[family conformance command](native-protocol-conformance.md) runs them together
+with owner tests; separate scripts do not define separate protocol semantics.
 
 ### Role lifecycle differences
 
@@ -537,10 +537,9 @@ shell or output roles.
 
 Every later stable role owes the same kind of independent full-lifecycle proof,
 adapted to that role's vocabulary and authority boundary. The repository's
-current per-role conformance scripts must converge behind one family-level
-entry point before shell stabilization so a contributor can validate the
-common contract and all stable role specializations without discovering a
-tool-specific protocol.
+per-role checks run behind `cargo xtask check native-protocol-family`, including
+the immutable archived WM client. A complete deterministic family run does not
+promote experimental shell/output or replace their remaining native acceptance.
 
 ## Optional child-launch origin
 

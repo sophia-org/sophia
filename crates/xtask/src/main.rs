@@ -15,6 +15,7 @@ use std::process::Command;
 mod check;
 mod headless_client_gate;
 mod m3_acceptance;
+mod native_protocol_family;
 mod panel;
 mod xterm_pointer_oracle;
 mod xtest_selection;
@@ -463,6 +464,10 @@ usage: cargo xtask <command>
 
   check [layout]
       Run the full offline gate, or only the exact source-layout debt gate.
+
+  check native-protocol-family --output=/NEW/DIR --target-dir=/OWNED/TARGET
+        [--hagia-root=/HAGIA --narthex-root=/NARTHEX --timeout=3600]
+      Run all retained role corpora and independent clients with devices hidden.
 
   check m3-acceptance --output=/NEW/DIR --target-dir=/OWNED/TARGET [--self-test]
   check m4-acceptance --output=/NEW/DIR --target-dir=/OWNED/TARGET [--self-test]

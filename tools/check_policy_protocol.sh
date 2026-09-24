@@ -6,6 +6,8 @@ build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 cd "$root"
+target_dir=${CARGO_TARGET_DIR:-"$root/target"}
+case "$target_dir" in /*) ;; *) target_dir="$root/$target_dir" ;; esac
 cargo run --offline -q -p sophia-policy-protocol-gen -- --check
 cargo test --offline -q -p sophia-protocol --test policy_wire
 ${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic \
@@ -26,11 +28,11 @@ cargo build --offline -q -p sophia-wm-demo --bin sophia-wm-demo
 cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
     "$build_dir/sophia-wm-v1-client" "$build_dir/c" all
 cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
-    "$root/target/debug/sophia-wm-demo" "$build_dir/rust" all policy-v1-proof
+    "$target_dir/debug/sophia-wm-demo" "$build_dir/rust" all policy-v1-proof
 cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
     "$build_dir/sophia-wm-v1-client" "$build_dir/c-restart" restart
 cargo run --offline -q -p sophia-runtime --example policy_c_conformance_host -- \
-    "$root/target/debug/sophia-wm-demo" "$build_dir/rust-restart" restart policy-v1-proof
+    "$target_dir/debug/sophia-wm-demo" "$build_dir/rust-restart" restart policy-v1-proof
 tools/check_archived_policy_client.sh
 
 printf '%s\n' \
