@@ -266,10 +266,16 @@ impl XSoftwareBufferStore {
         gc: &XGraphicsContextValues,
     ) -> Option<XAuthorityCpuDrawResult> {
         let mask_pixels = self.clip_mask_pixels(gc);
+        // PolyText paints through the fill style like any other request, so
+        // under a tile or stipple its glyph ink is gathered as spans for the
+        // pattern path; ImageText is always solid.
+        let patterned = gc.fill_style != 0;
+        let pattern_pixels = patterned.then(|| self.pattern_pixels(gc)).flatten();
         let handle = self.allocate_handle();
         let (buffer, replaced) = self.ensure(drawable, size, handle)?;
         let before = mask_pixels.as_ref().map(|_| Arc::clone(&buffer.bytes));
         let mut damage = Vec::with_capacity(draws.len());
+        let mut ink = Vec::new();
         for draw in draws {
             if draw.text.is_empty() {
                 continue;
@@ -307,14 +313,13 @@ impl XSoftwareBufferStore {
                 let Some((info, glyph)) = draw.font.glyph(code) else {
                     continue;
                 };
-                draw_glyph(
-                    buffer,
-                    pen.saturating_add(i32::from(info.left_side_bearing)),
-                    draw.baseline.saturating_sub(i32::from(info.ascent)),
-                    glyph,
-                    gc.foreground,
-                    raster_gc,
-                );
+                let left = pen.saturating_add(i32::from(info.left_side_bearing));
+                let top = draw.baseline.saturating_sub(i32::from(info.ascent));
+                if patterned && !draw.image {
+                    glyph_spans(glyph, left, top, &mut ink);
+                } else {
+                    draw_glyph(buffer, left, top, glyph, gc.foreground, raster_gc);
+                }
                 pen = pen.saturating_add(i32::from(info.character_width));
             }
             damage.push(Rect {
@@ -323,6 +328,14 @@ impl XSoftwareBufferStore {
                 width,
                 height,
             });
+        }
+        if !ink.is_empty() {
+            paint_spans(
+                buffer,
+                &vec![(gc.foreground, ink)],
+                gc,
+                pattern_pixels.as_ref(),
+            );
         }
         let published_damage = union_rects(&damage);
         withhold(
@@ -841,4 +854,31 @@ pub(crate) struct XTextDraw<'a> {
     pub text: &'a [u16],
     pub image: bool,
     pub font: XFontHandle,
+}
+
+/// A glyph's set pixels as runs, one per row stretch, placed at `(left, top)`.
+fn glyph_spans(
+    glyph: &crate::font::XGlyph,
+    left: i32,
+    top: i32,
+    out: &mut Vec<geometry::wide_line::XSpan>,
+) {
+    for row in 0..glyph.height {
+        let mut column = 0;
+        while column < glyph.width {
+            if !glyph.pixel(column, row) {
+                column += 1;
+                continue;
+            }
+            let start = column;
+            while column < glyph.width && glyph.pixel(column, row) {
+                column += 1;
+            }
+            out.push(geometry::wide_line::XSpan {
+                x: left.saturating_add(i32::from(start)),
+                y: top.saturating_add(i32::from(row)),
+                width: i32::from(column - start),
+            });
+        }
+    }
 }

@@ -16,12 +16,13 @@
 //!
 //! Not ported: `mizerclip.c`, which only lets `mi` clip a line early while
 //! keeping the pixels it would have drawn unclipped. The store clips pixel by
-//! pixel, which keeps them by construction. Dashed zero-width arcs
-//! (`miZeroArcDashPts`) and arcs `miCanZeroArc` refuses, which `mi` hands to
-//! `miarc.c`, stay with the caller.
+//! pixel, which keeps them by construction. Arcs `miCanZeroArc` refuses,
+//! which `mi` hands to `miarc.c`, stay with the caller. Dashed lines and arcs
+//! are in `dash`.
 
 use crate::XPoint;
 
+pub(super) mod dash;
 mod tests;
 
 /// `miline.h`'s octant bits.
@@ -175,6 +176,12 @@ struct ZeroArc {
     altstart: ArcPoint,
     end: ArcPoint,
     altend: ArcPoint,
+    /// The arc's normalised angles and its first endpoint as `setup` found
+    /// it, which only the dashed walk reads.
+    start_angle: i32,
+    end_angle: i32,
+    first_x: i32,
+    first_y: i32,
 }
 
 /// `miCanZeroArc`: whether the zero-width arc walker can take an arc without
@@ -254,6 +261,10 @@ fn setup(arc: &super::arc::XArc, ok360: bool) -> (ZeroArc, bool) {
         altstart: OOB,
         end: OOB,
         altend: OOB,
+        start_angle: 0,
+        end_angle: 0,
+        first_x: 0,
+        first_y: 0,
     };
     if width == 0 {
         if height == 0 {
@@ -292,6 +303,8 @@ fn setup(arc: &super::arc::XArc, ok360: bool) -> (ZeroArc, bool) {
             end_angle %= FULLCIRCLE;
         }
     }
+    info.start_angle = start_angle;
+    info.end_angle = end_angle;
     if ok360 && start_angle == end_angle && arc.angle2 != 0 && width != 0 && height != 0 {
         info.initial_mask = 0xf;
         return (info, true);
@@ -319,6 +332,8 @@ fn setup(arc: &super::arc::XArc, ok360: bool) -> (ZeroArc, bool) {
     };
     let mut start = endpoint(start_angle);
     let mut end = endpoint(end_angle);
+    info.first_x = start.x;
+    info.first_y = start.y;
     let mut startseg = start_angle / OCTANT;
     let mut endseg = end_angle / OCTANT;
     info.initial_mask = 0;
