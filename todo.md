@@ -36,8 +36,6 @@
 
 (A) 2026-09-12 Make arrow navigation across outputs configurable as arrow-crosses-outputs, default on; self-contained per-monitor workspaces want it off. +critical @development id:t080 order:000.86 [details](docs/notes/plans/queue-11-parallel-production-readiness.md)
 
-(A) Reuse the existing launcher and installed session path; identify the exact Sophia/Hagia/Narthex binaries and profiles, retain a known working fallback, and document start, normal logout, emergency… +critical +cp14-3 @development id:t013 order:013 [details](docs/notes/plans/queue-04-2-establish-the-live-session.md#t013)
-
 (A) Complete the physical tab acceptance for frame-tree/Notion and i3/split-tree: empty/nested groups, hidden-member activation, shell recovery, title changes, fullscreen, and floating occlusion. +critical +cp14-3 @development id:t018 order:018 [details](docs/notes/plans/queue-06-4-exercise-real-development-workflows.md#t018)
 
 (A) Review workflow evidence, recovery, clean teardown, bounded warmed resources/no steady-state allocation growth, and relevant refresh-relative latency evidence. +critical +cp14-3 @development id:t020 order:020 [details](docs/notes/plans/queue-07-5-close-milestone-14.md#t020)
