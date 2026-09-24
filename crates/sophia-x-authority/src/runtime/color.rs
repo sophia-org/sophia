@@ -1,4 +1,105 @@
 impl XAuthorityRuntime {
+    /// TrueColor cells are immutable, but each client owns a reference to
+    /// each RGB component it allocates, including repeated allocations.
+    pub(crate) fn allocate_color(
+        &mut self,
+        namespace: NamespaceId,
+        client: u64,
+        colormap: crate::XResourceId,
+        pixel: u32,
+    ) {
+        let channels = self
+            .color_allocations
+            .entry((namespace, client, colormap))
+            .or_default();
+        for (channel, shift) in channels.iter_mut().zip([16, 8, 0]) {
+            *channel.entry((pixel >> shift) as u8).or_default() += 1;
+        }
+    }
+
+    pub(crate) fn copy_color_allocations(
+        &mut self,
+        namespace: NamespaceId,
+        client: u64,
+        source: crate::XResourceId,
+        target: crate::XResourceId,
+    ) {
+        if let Some(channels) = self.color_allocations.remove(&(namespace, client, source)) {
+            self.color_allocations
+                .insert((namespace, client, target), channels);
+        }
+    }
+
+    pub(crate) fn release_client_colors(&mut self, namespace: NamespaceId, client: u64) {
+        self.color_allocations
+            .retain(|(owner, id, _), _| *owner != namespace || *id != client);
+    }
+
+    /// Process every requested component even after an error, as FreeColors
+    /// frees the valid entries in a partially invalid request. Enumerating
+    /// masks per channel bounds the work to 256 combinations per pixel.
+    pub(crate) fn free_colors(
+        &mut self,
+        namespace: NamespaceId,
+        client: u64,
+        colormap: crate::XResourceId,
+        mask: u32,
+        pixels: &[u32],
+    ) -> Option<(crate::XErrorCode, u32)> {
+        let visual = self
+            .colormap_visual(namespace, colormap)
+            .ok()
+            .and_then(crate::x_true_color_visual);
+        let Some(visual) = visual else {
+            return Some((
+                crate::XErrorCode::BadColor,
+                u32::try_from(colormap.local.raw()).unwrap_or(0),
+            ));
+        };
+        let valid_mask = visual.valid_pixel_mask();
+        let mut error = None;
+        let key = (namespace, client, colormap);
+        let mut channels = self.color_allocations.remove(&key).unwrap_or_default();
+        for (channel, shift) in channels.iter_mut().zip([16, 8, 0]) {
+            let channel_mask = (mask >> shift) as u8;
+            for bits in 0..=u8::MAX {
+                if bits & !channel_mask != 0 {
+                    continue;
+                }
+                for &pixel in pixels {
+                    // ARGB accepts alpha bits but never allocates an alpha
+                    // channel: dix's RGBMASK includes ALPHAMASK.
+                    if pixel & !valid_mask != 0 {
+                        error = Some((
+                            crate::XErrorCode::BadValue,
+                            pixel | (u32::from(bits) << shift),
+                        ));
+                        continue;
+                    }
+                    let component = ((pixel >> shift) as u8) | bits;
+                    match channel.get_mut(&component) {
+                        Some(count) => {
+                            *count -= 1;
+                            if *count == 0 {
+                                channel.remove(&component);
+                            }
+                        }
+                        None => error = Some((crate::XErrorCode::BadAccess, 0)),
+                    }
+                }
+            }
+        }
+        if channels.iter().any(|channel| !channel.is_empty()) {
+            self.color_allocations.insert(key, channels);
+        }
+        if mask & !valid_mask != 0
+            && let Some(pixel) = pixels.first()
+        {
+            error = Some((crate::XErrorCode::BadValue, pixel | mask));
+        }
+        error
+    }
+
     pub fn create_colormap(
         &mut self,
         namespace: NamespaceId,
@@ -59,6 +160,8 @@ impl XAuthorityRuntime {
         self.colormap_visual(namespace, colormap)?;
         self.resources.remove(colormap);
         self.colormaps.remove(&colormap);
+        self.color_allocations
+            .retain(|(_, _, map), _| *map != colormap);
         Ok(())
     }
 
@@ -106,7 +209,10 @@ impl XAuthorityRuntime {
 
     /// Leave every window naming a freed colormap with None, and say which,
     /// so the caller can tell their ColormapChange selectors.
-    pub(crate) fn release_window_colormaps(&mut self, colormap: crate::XResourceId) -> Vec<crate::XResourceId> {
+    pub(crate) fn release_window_colormaps(
+        &mut self,
+        colormap: crate::XResourceId,
+    ) -> Vec<crate::XResourceId> {
         let none = crate::XResourceId::new(0, 1);
         let mut released = Vec::new();
         for (window, (_, _, named)) in &mut self.window_visuals {

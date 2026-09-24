@@ -952,12 +952,12 @@ def colormap_static_answers(context):
             c.completion(c.send(opcode, body), error=16, opcode=opcode)
         c.completion(c.send(88, c.pack('I', default)), error=16, opcode=88)
         # Framed right, a static visual answers: no cells or planes to
-        # allocate, no writable cells to store into, nothing to free.
+        # allocate and no writable cells. Freeing an unallocated cell is BadAccess.
         c.completion(c.send(86, c.pack('IHBB', default, 1, 0, 0)), error=11, opcode=86)
         c.completion(c.send(87, c.pack('IHBBB', default, 1, 0, 0, 0)), error=11, opcode=87)
         c.completion(c.send(89, c.pack('IIHHHBx', default, 0, 0, 0, 0, 7)), error=10, opcode=89)
         c.completion(c.send(90, c.pack('IIHxx', default, 0, 3) + b'red\x00', detail=7), error=10, opcode=90)
-        c.send(88, c.pack('III', default, 0, 1))
+        c.completion(c.send(88, c.pack('III', default, 0, 1)), error=10, opcode=88)
         c.send(81, c.pack('I', default))
         c.send(82, c.pack('I', default))
         c.sync()

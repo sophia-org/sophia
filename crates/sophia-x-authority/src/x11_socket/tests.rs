@@ -5,6 +5,11 @@ use crate::XAuthorityControlKind;
 use sophia_protocol::{DeviceId, Point};
 use std::sync::mpsc::sync_channel;
 
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/support/color_allocation_cleanup.rs"
+));
+
 include!("tests/socket_core.rs");
 include!("tests/review_private_deadline.rs");
 include!("tests/private_lifecycle_integration.rs");

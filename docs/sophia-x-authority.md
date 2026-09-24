@@ -295,6 +295,13 @@ the returned screen values by `0x0101`; ARGB allocation supplies an opaque
 alpha byte. `QueryColors` performs the inverse mask lookup and rejects bits
 outside the selected visual. `AllocNamedColor` accepts only the bounded,
 checked-in retained-client table and returns `BadName` for anything else.
+Both allocation requests retain per-client reference counts for each RGB
+component. `FreeColors` releases the requested component references, including
+plane-mask combinations, and reports `BadAccess` for an unallocated component;
+valid components are still freed when another component is invalid.
+`CopyColormapAndFree` moves the requesting client's references into the new
+colormap. References are released with the client's resources (respecting
+retained close-down modes), and freeing a colormap removes all its references.
 Invalid colormaps, pixels, visuals, depths, allocation modes, and duplicate
 resource IDs retain their core X11 errors. No color identity crosses into
 Engine; only normalized XRGB8888 or ARGB8888 content and opacity facts do.

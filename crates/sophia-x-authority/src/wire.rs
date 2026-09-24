@@ -106,8 +106,6 @@ pub enum XColormapRequestKind {
     /// Accepted and ignored: a TrueColor colormap is always installed.
     Install,
     Uninstall,
-    /// Accepted: nothing was allocated, so nothing needs freeing.
-    FreeColors,
 }
 
 /// What becomes of a client's resources when its connection ends.
@@ -186,11 +184,6 @@ fn decode_colormap_request(
         }
         XColormapRequestKind::AllocPlanes => {
             require_exact_len(opcode, X_ALLOC_COLOR_PLANES_REQ_LEN, bytes.len())?;
-        }
-        // The plane mask and then pixels, four bytes each.
-        XColormapRequestKind::FreeColors => {
-            require_len(opcode, X_FREE_COLORS_REQ_LEN, bytes.len())?;
-            require_item_multiple(opcode, X_FREE_COLORS_REQ_LEN, 4, bytes.len())?;
         }
         // Colour items of twelve bytes.
         XColormapRequestKind::StoreColors => {
@@ -624,12 +617,7 @@ pub fn decode_x11_core_request(
             X_ALLOC_COLOR_PLANES,
             XColormapRequestKind::AllocPlanes,
         ),
-        X_FREE_COLORS => decode_colormap_request(
-            context,
-            bytes,
-            X_FREE_COLORS,
-            XColormapRequestKind::FreeColors,
-        ),
+        X_FREE_COLORS => decode_free_colors(context, bytes),
         X_STORE_COLORS => decode_colormap_request(
             context,
             bytes,
