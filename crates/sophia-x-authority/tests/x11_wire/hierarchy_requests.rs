@@ -20,6 +20,7 @@ mod hierarchy_requests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     const BAD_VALUE: u8 = 2;
+    const BAD_WINDOW: u8 = 3;
     const BAD_MATCH: u8 = 8;
     const UNMAP_NOTIFY: u8 = 18;
     const CREATE_NOTIFY: u8 = 16;
@@ -282,6 +283,81 @@ mod hierarchy_requests {
             client.write_all(&get_input_focus(byte_order)).unwrap();
             assert!(events_until_reply(byte_order, &mut client).is_empty(), "{byte_order:?}: unchanged");
 
+            drop(client);
+            server.join().unwrap();
+            let _ = std::fs::remove_file(&socket_path);
+        }
+    }
+
+    /// The protocol's own refusals for a configure: a zero width or height
+    /// is BadValue, a sibling without a stack-mode is BadMatch, a window
+    /// that is not a sibling is BadMatch, and only an id that names no
+    /// window is BadWindow (XTS Xlib4 XConfigureWindow 30-32, XRestackWindows
+    /// 5, XCreateSimpleWindow 11, XResizeWindow 12, XMoveResizeWindow 14).
+    /// Red before the fix: zero sizes were applied, and every sibling
+    /// refusal read BadWindow.
+    #[test]
+    fn a_configure_is_refused_as_the_protocol_refuses_it() {
+        for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+            let (mut client, socket_path, server) = served("refusals", byte_order);
+            let parent = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 1;
+            let other = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 2;
+            let window = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 3;
+            let cousin = X_SETUP_DEFAULT_RESOURCE_ID_BASE + 4;
+            client.write_all(&create_window_request(byte_order, parent, 0, 0, 200, 200)).unwrap();
+            client.write_all(&create_window_request(byte_order, other, 0, 0, 200, 200)).unwrap();
+            client.write_all(&create_window_request_with_parent(byte_order, window, parent, 10, 10, 80, 80)).unwrap();
+            client.write_all(&create_window_request_with_parent(byte_order, cousin, other, 10, 10, 80, 80)).unwrap();
+            client.write_all(&get_input_focus(byte_order)).unwrap();
+            let _ = events_until_reply(byte_order, &mut client);
+            let expect = |client: &mut std::os::unix::net::UnixStream, code: u8, opcode: u8, what: &str| {
+                let record = read_x_record(client);
+                assert_eq!((record[0], record[1], record[10]), (0, code, opcode), "{byte_order:?}: {what}: {record:?}");
+            };
+            // A zero width, at creation and by configure.
+            client.write_all(&create_window_request_with_parent(byte_order, X_SETUP_DEFAULT_RESOURCE_ID_BASE + 5, parent, 0, 0, 0, 10)).unwrap();
+            expect(&mut client, BAD_VALUE, 1, "CreateWindow width 0");
+            let mut configure = vec![12, 0];
+            push_u16(&mut configure, byte_order, 4);
+            push_u32(&mut configure, byte_order, window);
+            push_u16(&mut configure, byte_order, 1 << 3);
+            push_u16(&mut configure, byte_order, 0);
+            push_u32(&mut configure, byte_order, 0);
+            client.write_all(&configure).unwrap();
+            expect(&mut client, BAD_VALUE, 12, "ConfigureWindow height 0");
+            // A sibling without a stack-mode.
+            let mut configure = vec![12, 0];
+            push_u16(&mut configure, byte_order, 4);
+            push_u32(&mut configure, byte_order, window);
+            push_u16(&mut configure, byte_order, 1 << 5);
+            push_u16(&mut configure, byte_order, 0);
+            push_u32(&mut configure, byte_order, cousin);
+            client.write_all(&configure).unwrap();
+            expect(&mut client, BAD_MATCH, 12, "sibling without stack-mode");
+            // A window that is not a sibling, with a stack-mode.
+            let mut configure = vec![12, 0];
+            push_u16(&mut configure, byte_order, 5);
+            push_u32(&mut configure, byte_order, window);
+            push_u16(&mut configure, byte_order, (1 << 5) | (1 << 6));
+            push_u16(&mut configure, byte_order, 0);
+            push_u32(&mut configure, byte_order, cousin);
+            push_u32(&mut configure, byte_order, 0);
+            client.write_all(&configure).unwrap();
+            expect(&mut client, BAD_MATCH, 12, "not a sibling");
+            // An id that names no window.
+            let mut configure = vec![12, 0];
+            push_u16(&mut configure, byte_order, 5);
+            push_u32(&mut configure, byte_order, window);
+            push_u16(&mut configure, byte_order, (1 << 5) | (1 << 6));
+            push_u16(&mut configure, byte_order, 0);
+            push_u32(&mut configure, byte_order, X_SETUP_DEFAULT_RESOURCE_ID_BASE + 0x7ff);
+            push_u32(&mut configure, byte_order, 0);
+            client.write_all(&configure).unwrap();
+            expect(&mut client, BAD_WINDOW, 12, "unknown sibling");
+            // The window is untouched by any of it.
+            client.write_all(&resource_request(byte_order, 14, window)).unwrap();
+            let reply = read_x_reply(&mut client, byte_order);
+            assert_eq!((read_u16(byte_order, &reply[16..18]), read_u16(byte_order, &reply[18..20])), (80, 80), "{byte_order:?}");
             drop(client);
             server.join().unwrap();
             let _ = std::fs::remove_file(&socket_path);

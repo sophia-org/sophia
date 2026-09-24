@@ -738,6 +738,32 @@ fn dispatch_core_window_request(
                     stack_mode,
                     ..
                 } => {
+                    // A sibling is only meaningful with a stack-mode, and must
+                    // be a sibling: "If a sibling is specified without a
+                    // stack-mode or the window is not actually a sibling, a
+                    // Match error results." An id that names no window at all
+                    // is a Window error, which the restack below reports.
+                    if let Some(sibling) = sibling
+                        && runtime.validate_window_access(context.namespace, window).is_ok()
+                        && (stack_mode.is_none()
+                            || runtime
+                                .window_parent_and_children(context.namespace, sibling)
+                                .ok()
+                                .zip(runtime.window_parent_and_children(context.namespace, window).ok())
+                                .is_some_and(|((sibling_parent, _), (parent, _))| sibling_parent != parent))
+                    {
+                        return Handled(XDispatchResult {
+                            response: None,
+                            outputs: vec![XClientOutput::Error(crate::XClientError {
+                                code: XErrorCode::BadMatch,
+                                sequence: context.sequence,
+                                resource_id: u32::try_from(sibling.local.raw()).unwrap_or(0),
+                                minor_code: 0,
+                                major_code: context.major_opcode,
+                            })],
+                            metadata_candidates: Vec::new(),
+                        });
+                    }
                     let before = runtime.window_geometry(context.namespace, window).ok();
                     // The border width is a stored fact: changed here when
                     // asked, reported below with the rest.
