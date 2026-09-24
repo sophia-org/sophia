@@ -585,3 +585,66 @@ fn disconnected_client_controls_settle_once_and_late_acks_cannot_restore_focus()
         Err(SessionControlFailure::UnexpectedAcknowledgement)
     );
 }
+
+/// After a successful primary exit the frontend drains and answers nothing
+/// (t187): what was pending is retired as `Quiescing`, what is enqueued
+/// afterwards completes the same way without failing the enqueue, a late
+/// acknowledgement is inert, and the metrics still settle and drain.
+#[test]
+fn quiescence_retires_pending_and_later_controls_without_failing_the_session() {
+    let (sender, commands) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let (acknowledgements, receiver) = sync_channel(SESSION_CONTROL_CAPACITY);
+    let now = Instant::now();
+    let in_flight = control(1, 1, surface(1), XAuthorityControlKind::FocusSurface);
+    let waiting = control(1, 2, surface(1), XAuthorityControlKind::ClearFocus);
+    let mut queue = SessionControlQueue::default();
+    queue.enqueue(in_flight, now).unwrap();
+    queue.enqueue(waiting, now).unwrap();
+    let mut completions = Vec::new();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    // One focus control in flight; the second focus-class control waits.
+    assert_eq!(commands.try_iter().count(), 1);
+    assert!(completions.is_empty());
+
+    queue.begin_quiescence(now);
+    assert!(queue.is_quiescing());
+    assert_eq!(queue.pending_len(), 0);
+    // Enqueued after quiescence began: accepted, retired at once.
+    let late = control(2, 3, surface(2), XAuthorityControlKind::FocusSurface);
+    queue.enqueue(late, now).unwrap();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert_eq!(
+        completions
+            .iter()
+            .map(|completion| (completion.key.transaction.raw(), completion.failure))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, Some(SessionControlFailure::Quiescing)),
+            (2, Some(SessionControlFailure::Quiescing)),
+            (3, Some(SessionControlFailure::Quiescing)),
+        ]
+    );
+    assert_eq!(
+        commands.try_iter().count(),
+        0,
+        "nothing is dispatched while quiescing"
+    );
+    // The frontend answers the in-flight control on its way out: inert.
+    completions.clear();
+    acknowledgements.send(acknowledgement(in_flight)).unwrap();
+    queue
+        .service(&sender, &receiver, now, &mut completions)
+        .unwrap();
+    assert!(completions.is_empty());
+    let metrics = queue.metrics();
+    assert_eq!(metrics.unexpected, 0);
+    assert_eq!(metrics.timed_out, 0);
+    assert_eq!(metrics.quiesced_in_flight, 1);
+    assert_eq!(metrics.quiesced_before_dispatch, 2);
+    assert!(metrics.is_settled(queue.pending_len()));
+    assert!(metrics.is_drained(queue.pending_len()));
+}
