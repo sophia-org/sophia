@@ -104,3 +104,19 @@ fn each_rendered_group_paints_a_pixel_once() {
         }
     }
 }
+
+#[test]
+fn an_on_off_dash_that_ends_off_draws_without_a_second_phase() {
+    // mi reads a phase-1 count that an on/off dash does not have; the port
+    // must neither panic nor draw from it.
+    let mut dashed = gc(1);
+    dashed.line_style = X_LINE_ON_OFF_DASH;
+    dashed.dashes = vec![3, 17];
+    for angle2 in [45 * 64, 90 * 64, 200 * 64, 360 * 64] {
+        let drawn = pixels(&poly_arc(
+            &[arc(0, 0, 40, 0, angle2), arc(0, 0, 40, angle2, 30 * 64)],
+            &dashed,
+        ));
+        assert!(!drawn.is_empty());
+    }
+}

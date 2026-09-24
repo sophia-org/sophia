@@ -621,7 +621,12 @@ fn compute_arcs(parcs: &[XArc], gc: &XGraphicsContextValues) -> Vec<PolyArc> {
                 iphase = iphase_start;
                 dash_remaining = dash_remaining_start;
             }
-            nextk = arcs[iphase].arcs.len();
+            // mi reads the arc count of phase 1 here even for an on/off dash,
+            // which has no phase 1 -- past the end of its array. Every later
+            // use of the value is guarded by the phase, so it is kept as it was.
+            if let Some(phase) = arcs.get(iphase) {
+                nextk = phase.arcs.len();
+            }
             if nexti == start {
                 nextk = 0;
                 i_dash = i_dash_start;
