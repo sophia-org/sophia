@@ -118,7 +118,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Production bounded worker admission and shared protocol state. The runner
     // owns the process lifetime and enforces an absolute deadline externally.
     let broker = XServerFrontendRouteBroker::new(NonZeroUsize::new(64).ok_or("zero queue")?);
-    let mut config = XServerFrontendConfig::new_with_namespace_context(path, namespace)?;
+    // No window manager runs against this host, and the suites it serves
+    // (XTS among them) assume the reference server without one: a client
+    // places its own toplevels, so a move to (0, 0) before drawing on the
+    // root lands where the test expects (t189).
+    let mut config = XServerFrontendConfig::new_with_namespace_context(path, namespace)?
+        .with_client_toplevel_placement(true);
     if admit_xtest {
         config = config
             .with_admission_policy(Arc::new(HostAdmitOneNamespace {

@@ -35,6 +35,15 @@ pub struct XServerFrontendConfig {
     output_topology: sophia_protocol::OutputTopologySnapshot,
     xkb_config: crate::XkbRmlvoConfig,
     defer_policy_maps: bool,
+    /// Whether a client places its own mapped toplevels (t189). A session
+    /// with a policy -- the native window manager, or an external one taking
+    /// deferred maps -- leaves this off, and a mapped toplevel's own move or
+    /// resize is answered with a synthetic ConfigureNotify at the placement
+    /// the policy chose, as a redirecting window manager answers it. A host
+    /// with no window manager at all, the conformance host among them, turns
+    /// it on, and the request takes effect as it does on the reference server
+    /// without a manager.
+    client_toplevel_placement: bool,
     /// Directories searched for core fonts, before the built-in element.
     ///
     /// Session configuration, never client configuration: `SetFontPath` is
@@ -60,6 +69,7 @@ impl core::fmt::Debug for XServerFrontendConfig {
             .field("output_topology", &self.output_topology)
             .field("xkb_config", &self.xkb_config)
             .field("defer_policy_maps", &self.defer_policy_maps)
+            .field("client_toplevel_placement", &self.client_toplevel_placement)
             .field("font_path", &self.font_path)
             .finish()
     }
@@ -109,6 +119,7 @@ impl XServerFrontendConfig {
             output_topology: sophia_protocol::OutputTopologySnapshot::deterministic(),
             xkb_config: crate::XkbRmlvoConfig::default(),
             defer_policy_maps: false,
+            client_toplevel_placement: false,
             // No directories by default. A frontend serves text from the
             // built-in element until a session configures a path, which keeps
             // every test and probe independent of what the host has installed.
@@ -208,6 +219,15 @@ impl XServerFrontendConfig {
     pub fn with_policy_map_deferred(mut self, deferred: bool) -> Self {
         self.defer_policy_maps = deferred;
         self
+    }
+
+    pub fn with_client_toplevel_placement(mut self, client_places: bool) -> Self {
+        self.client_toplevel_placement = client_places;
+        self
+    }
+
+    pub const fn client_toplevel_placement(&self) -> bool {
+        self.client_toplevel_placement
     }
 
     /// Replace the font path this frontend serves.

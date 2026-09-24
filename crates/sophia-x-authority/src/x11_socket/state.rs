@@ -211,6 +211,14 @@ impl X11CoreSocketServerState {
         Ok(())
     }
 
+    fn set_client_toplevel_placement(&self, client_places: bool) -> Result<(), X11SetupSocketError> {
+        self.runtime
+            .lock()
+            .map_err(|_| X11SetupSocketError::new("X11 authority runtime lock poisoned"))?
+            .set_client_toplevel_placement(client_places);
+        Ok(())
+    }
+
     pub fn with_output_topology(
         output_topology: sophia_protocol::OutputTopologySnapshot,
     ) -> Result<Self, X11SetupSocketError> {

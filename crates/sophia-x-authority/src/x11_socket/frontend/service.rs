@@ -59,6 +59,7 @@ impl XServerFrontend {
             state.install_device_bundle(bundle).map_err(|error| X11SetupSocketError::new(error.to_string()))?;
         }
         state.set_policy_map_deferred(config.policy_map_deferred())?;
+        state.set_client_toplevel_placement(config.client_toplevel_placement())?;
         state.latch_pixmap_texture_support()?;
         let (worker_completion_sender, worker_completions) = std::sync::mpsc::channel();
         let (worker_admission_event_sender, worker_admission_events) = std::sync::mpsc::channel();
