@@ -20,15 +20,6 @@
   "/Xproto/pUnmapSubwindows": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
   "/Xproto/pChangeActivePointerGrab": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
   "/Xproto/pSetFontPath": "t166: the authority answers BadRequest to this core opcode; decide and decode it",
-  "/Xproto/pAllocColorCells": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pAllocColorPlanes": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pCopyColormapAndFree": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pFreeColors": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pInstallColormap": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pUninstallColormap": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pListInstalledColormaps": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pStoreColors": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
-  "/Xproto/pStoreNamedColor": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells",
   "/Xproto/pOpenFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
   "/Xproto/pCloseFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
   "/Xproto/pQueryFont": "no server-side fonts by design: XT_FONTPATH is empty because no font opcode is decoded",
@@ -46,5 +37,7 @@
   "/Xproto/pGrabServer": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pUngrabServer": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
   "/Xproto/pListExtensions": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
-  "/Xproto/pNoOperation": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum"
+  "/Xproto/pNoOperation": "the suite's own UNTESTED: a four-byte request cannot be made shorter than its minimum",
+  "/Xproto/pStoreColors#1": "the suite's own UNSUPPORTED: no writable visual class on a TrueColor-only screen",
+  "/Xproto/pStoreNamedColor#1": "the suite's own UNSUPPORTED: no writable visual class on a TrueColor-only screen"
 }

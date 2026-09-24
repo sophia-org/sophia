@@ -20,6 +20,7 @@ fn encode_core_late_reply(
             | XClientReply::LookupColor { .. }
             | XClientReply::AllocColor { .. }
             | XClientReply::ListProperties { .. }
+            | XClientReply::ListInstalledColormaps { .. }
             | XClientReply::QueryColors { .. }
     ) {
         return Err(reply);
@@ -241,6 +242,27 @@ fn encode_core_late_reply(
                     put_u16(byte_order, &mut out[10..12], green);
                     put_u16(byte_order, &mut out[12..14], blue);
                     put_u32(byte_order, &mut out[16..20], pixel);
+                    out
+                }
+                XClientReply::ListInstalledColormaps { sequence, colormaps } => {
+                    let list_len = colormaps.len().saturating_mul(4);
+                    let mut out = vec![0; X_CLIENT_OUTPUT_RECORD_LEN + list_len];
+                    write_reply_header(
+                        byte_order,
+                        &mut out[..X_CLIENT_OUTPUT_RECORD_LEN],
+                        sequence,
+                        u32::try_from(colormaps.len()).unwrap_or(0),
+                    );
+                    put_u16(
+                        byte_order,
+                        &mut out[8..10],
+                        u16::try_from(colormaps.len()).unwrap_or(0),
+                    );
+                    let mut offset = X_CLIENT_OUTPUT_RECORD_LEN;
+                    for colormap in colormaps {
+                        put_u32(byte_order, &mut out[offset..offset + 4], colormap);
+                        offset += 4;
+                    }
                     out
                 }
                 XClientReply::ListProperties { sequence, atoms } => {

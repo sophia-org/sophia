@@ -100,7 +100,6 @@ pub enum XColormapRequestKind {
     /// visual, so the answer is `BadAlloc`.
     AllocCells,
     AllocPlanes,
-    CopyAndFree,
     /// Storing into a read-only colormap is `BadAccess`.
     StoreColors,
     StoreNamedColor,
@@ -350,6 +349,15 @@ pub enum XWireRequest {
     ColormapRequest {
         kind: XColormapRequestKind,
         colormap: XResourceId,
+    },
+    /// A new colormap on the source's visual: a static visual has no
+    /// allocations to move, so the copy is the creation.
+    CopyColormapAndFree {
+        colormap: XResourceId,
+        source: XResourceId,
+    },
+    ListInstalledColormaps {
+        window: XResourceId,
     },
     CopyGraphicsContext {
         source: XResourceId,
@@ -1386,13 +1394,50 @@ impl std::error::Error for XWireParseError {}
 /// Read the colormap every one of these requests names, at the same offset.
 ///
 /// `StoreNamedColor` puts its colormap there too, after the one-byte mode.
+/// Each colormap request framed as the protocol frames it, so a request one
+/// unit long or short is the length error before it is anything else.
 fn decode_colormap_request(
     context: XWireClientContext,
     bytes: &[u8],
     opcode: u8,
     kind: XColormapRequestKind,
 ) -> Result<XWireRequest, XWireParseError> {
-    require_len(opcode, 8, bytes.len())?;
+    match kind {
+        XColormapRequestKind::Install | XColormapRequestKind::Uninstall => {
+            require_exact_len(opcode, X_INSTALL_COLORMAP_REQ_LEN, bytes.len())?;
+        }
+        XColormapRequestKind::AllocCells => {
+            require_exact_len(opcode, X_ALLOC_COLOR_CELLS_REQ_LEN, bytes.len())?;
+        }
+        XColormapRequestKind::AllocPlanes => {
+            require_exact_len(opcode, X_ALLOC_COLOR_PLANES_REQ_LEN, bytes.len())?;
+        }
+        // The plane mask and then pixels, four bytes each.
+        XColormapRequestKind::FreeColors => {
+            require_len(opcode, X_FREE_COLORS_REQ_LEN, bytes.len())?;
+            require_item_multiple(opcode, X_FREE_COLORS_REQ_LEN, 4, bytes.len())?;
+        }
+        // Colour items of twelve bytes.
+        XColormapRequestKind::StoreColors => {
+            require_len(opcode, X_STORE_COLORS_REQ_LEN, bytes.len())?;
+            require_item_multiple(
+                opcode,
+                X_STORE_COLORS_REQ_LEN,
+                X_STORE_COLORS_ITEM_LEN,
+                bytes.len(),
+            )?;
+        }
+        // A name whose length is at 12..14, padded to four.
+        XColormapRequestKind::StoreNamedColor => {
+            require_len(opcode, X_STORE_NAMED_COLOR_REQ_LEN, bytes.len())?;
+            let name_len = usize::from(context.byte_order.u16(&bytes[12..14]));
+            require_exact_len(
+                opcode,
+                X_STORE_NAMED_COLOR_REQ_LEN + ((name_len + 3) & !3),
+                bytes.len(),
+            )?;
+        }
+    }
     Ok(XWireRequest::ColormapRequest {
         kind,
         colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
@@ -1595,12 +1640,17 @@ pub fn decode_x11_core_request(
                 colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
             })
         }
-        X_COPY_COLORMAP_AND_FREE => decode_colormap_request(
-            context,
-            bytes,
-            X_COPY_COLORMAP_AND_FREE,
-            XColormapRequestKind::CopyAndFree,
-        ),
+        X_COPY_COLORMAP_AND_FREE => decode_copy_colormap_and_free(context, bytes),
+        X_LIST_INSTALLED_COLORMAPS => {
+            require_exact_len(
+                X_LIST_INSTALLED_COLORMAPS,
+                X_LIST_INSTALLED_COLORMAPS_REQ_LEN,
+                bytes.len(),
+            )?;
+            Ok(XWireRequest::ListInstalledColormaps {
+                window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+            })
+        }
         X_INSTALL_COLORMAP => decode_colormap_request(
             context,
             bytes,

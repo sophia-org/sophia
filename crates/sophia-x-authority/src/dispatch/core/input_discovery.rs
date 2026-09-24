@@ -26,6 +26,8 @@ fn dispatch_core_input_discovery_request(
             | XWireRequest::CreateColormap { .. }
             | XWireRequest::FreeColormap { .. }
             | XWireRequest::ColormapRequest { .. }
+            | XWireRequest::CopyColormapAndFree { .. }
+            | XWireRequest::ListInstalledColormaps { .. }
             | XWireRequest::AllocNamedColor { .. }
             | XWireRequest::LookupColor { .. }
             | XWireRequest::AllocColor { .. }
@@ -457,6 +459,70 @@ fn dispatch_core_input_discovery_request(
                 // They are decoded at all so the answer is the protocol's own
                 // error: a client meeting BadRequest may treat it as fatal,
                 // and these arrive on ordinary teardown paths.
+                // A static visual has no allocations to move: the copy is a
+                // new colormap on the source's visual, and the source keeps
+                // what it never had. The id is the client's to choose once.
+                XWireRequest::CopyColormapAndFree { colormap, source } => {
+                    let output = match runtime.colormap_visual(context.namespace, source) {
+                        Err(_) => Some(color_error(
+                            context,
+                            XErrorCode::BadColor,
+                            u32::try_from(source.local.raw()).unwrap_or(0),
+                        )),
+                        Ok(visual) => match runtime.create_colormap(
+                            context.namespace,
+                            colormap,
+                            visual,
+                            1,
+                        ) {
+                            Ok(()) => None,
+                            Err(XColormapError::DuplicateId) => Some(color_error(
+                                context,
+                                XErrorCode::BadIdChoice,
+                                u32::try_from(colormap.local.raw()).unwrap_or(0),
+                            )),
+                            Err(XColormapError::UnknownVisual) => {
+                                Some(color_error(context, XErrorCode::BadMatch, visual))
+                            }
+                            Err(XColormapError::Access(_)) => Some(color_error(
+                                context,
+                                XErrorCode::BadAccess,
+                                u32::try_from(colormap.local.raw()).unwrap_or(0),
+                            )),
+                        },
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs: output.into_iter().collect(),
+                        metadata_candidates: Vec::new(),
+                    }
+                }
+                // The one installed colormap is the default, always: the
+                // setup advertises one installed map at most and at least,
+                // and GetWindowAttributes reports every window's installed.
+                XWireRequest::ListInstalledColormaps { window } => {
+                    let outputs = if window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
+                        && runtime
+                            .validate_window_access(context.namespace, window)
+                            .is_err()
+                    {
+                        vec![color_error(
+                            context,
+                            XErrorCode::BadWindow,
+                            u32::try_from(window.local.raw()).unwrap_or(0),
+                        )]
+                    } else {
+                        vec![XClientOutput::Reply(XClientReply::ListInstalledColormaps {
+                            sequence: context.sequence,
+                            colormaps: vec![crate::X_SETUP_DEFAULT_COLORMAP],
+                        })]
+                    };
+                    XDispatchResult {
+                        response: None,
+                        outputs,
+                        metadata_candidates: Vec::new(),
+                    }
+                }
                 XWireRequest::ColormapRequest { kind, colormap } => {
                     let known = runtime.colormap_visual(context.namespace, colormap).is_ok();
                     let outputs = if !known {
@@ -468,8 +534,7 @@ fn dispatch_core_input_discovery_request(
                     } else {
                         match kind {
                             crate::XColormapRequestKind::AllocCells
-                            | crate::XColormapRequestKind::AllocPlanes
-                            | crate::XColormapRequestKind::CopyAndFree => {
+                            | crate::XColormapRequestKind::AllocPlanes => {
                                 vec![color_error(context, XErrorCode::BadAlloc, 0)]
                             }
                             crate::XColormapRequestKind::StoreColors

@@ -78,6 +78,40 @@ fn decode_named_color(
     })
 }
 
+/// A list-shaped request whose body past `header` is items of `item` bytes.
+fn require_item_multiple(
+    opcode: u8,
+    header: usize,
+    item: usize,
+    actual: usize,
+) -> Result<(), XWireParseError> {
+    if !(actual - header).is_multiple_of(item) {
+        return Err(XWireParseError::InvalidLength {
+            opcode,
+            expected_at_least: header + item,
+            actual,
+        });
+    }
+    Ok(())
+}
+
+fn decode_copy_colormap_and_free(
+    context: XWireClientContext,
+    bytes: &[u8],
+) -> Result<XWireRequest, XWireParseError> {
+    require_exact_len(
+        X_COPY_COLORMAP_AND_FREE,
+        X_COPY_COLORMAP_AND_FREE_REQ_LEN,
+        bytes.len(),
+    )?;
+    let colormap = context.byte_order.u32(&bytes[4..8]);
+    context.validate_new_resource_id(colormap)?;
+    Ok(XWireRequest::CopyColormapAndFree {
+        colormap: XResourceId::new(u64::from(colormap), 1),
+        source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
+    })
+}
+
 fn decode_alloc_color(
     context: XWireClientContext,
     bytes: &[u8],

@@ -17,9 +17,7 @@
   },
   {
     "case": "/Xproto/pAllocColorCells",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pAllocColorCells",
@@ -31,9 +29,7 @@
   },
   {
     "case": "/Xproto/pAllocColorPlanes",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pAllocColorPlanes",
@@ -319,15 +315,11 @@
   },
   {
     "case": "/Xproto/pCopyColormapAndFree",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pCopyColormapAndFree",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pCopyColormapAndFree",
@@ -335,15 +327,11 @@
   },
   {
     "case": "/Xproto/pCopyColormapAndFree",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 4
   },
   {
     "case": "/Xproto/pCopyColormapAndFree",
-    "purpose": 5,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 5
   },
   {
     "case": "/Xproto/pCopyGC",
@@ -591,9 +579,7 @@
   },
   {
     "case": "/Xproto/pFreeColors",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pFreeColors",
@@ -935,9 +921,7 @@
   },
   {
     "case": "/Xproto/pInstallColormap",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pInstallColormap",
@@ -1027,15 +1011,11 @@
   },
   {
     "case": "/Xproto/pListInstalledColormaps",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 1
   },
   {
     "case": "/Xproto/pListInstalledColormaps",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pListInstalledColormaps",
@@ -1585,7 +1565,7 @@
     "case": "/Xproto/pStoreColors",
     "purpose": 1,
     "expected": "UNSUPPORTED",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "reason": "the suite's own UNSUPPORTED: no writable visual class on a TrueColor-only screen"
   },
   {
     "case": "/Xproto/pStoreColors",
@@ -1593,9 +1573,7 @@
   },
   {
     "case": "/Xproto/pStoreColors",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 3
   },
   {
     "case": "/Xproto/pStoreColors",
@@ -1605,7 +1583,7 @@
     "case": "/Xproto/pStoreNamedColor",
     "purpose": 1,
     "expected": "UNSUPPORTED",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "reason": "the suite's own UNSUPPORTED: no writable visual class on a TrueColor-only screen"
   },
   {
     "case": "/Xproto/pStoreNamedColor",
@@ -1613,9 +1591,7 @@
   },
   {
     "case": "/Xproto/pStoreNamedColor",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 3
   },
   {
     "case": "/Xproto/pStoreNamedColor",
@@ -1701,9 +1677,7 @@
   },
   {
     "case": "/Xproto/pUninstallColormap",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t169: what a TrueColor-only authority owes the colormap requests is undecided; the suite wants BadAlloc for cells and planes on the static visual and BadAccess for read-only cells"
+    "purpose": 2
   },
   {
     "case": "/Xproto/pUninstallColormap",

@@ -876,6 +876,10 @@ pub enum XClientReply {
         sequence: u16,
         atoms: Vec<u32>,
     },
+    ListInstalledColormaps {
+        sequence: u16,
+        colormaps: Vec<u32>,
+    },
     QueryColors {
         sequence: u16,
         colors: Vec<XColorRgb16>,
