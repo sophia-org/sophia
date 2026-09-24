@@ -66,7 +66,9 @@ same for the core profile, and opcode 83 enters the inventory.
       StoreColors 1 and StoreNamedColor 1 stay as the suite's own
       UNSUPPORTED. The core profile reads PASS, 128 of 128, the new case
       in both byte orders.
-- [ ] The gate on the committed candidate.
+- [x] The gate on the committed candidate
+      (`.artifacts/x11-profile-91b18fd6-{selected-core,xproto}/`): both
+      scenarios PASS, xproto with 305 passed and 84 declared.
 
 ## Connections
 
