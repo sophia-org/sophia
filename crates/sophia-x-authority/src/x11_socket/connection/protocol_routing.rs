@@ -155,7 +155,8 @@ fn route_core_lifecycle_events_with_control(
             // SubstructureNotify selectors, as a destroy's parent copy does.
             XClientEvent::MapNotify { event: target, window, .. }
             | XClientEvent::UnmapNotify { event: target, window, .. }
-            | XClientEvent::ReparentNotify { event: target, window, .. } => Some((
+            | XClientEvent::ReparentNotify { event: target, window, .. }
+            | XClientEvent::GravityNotify { event: target, window, .. } => Some((
                 index,
                 target,
                 if target == window {
@@ -253,6 +254,11 @@ fn route_core_lifecycle_events_with_control(
             }
             event @ (XClientEvent::CirculateNotify { window, .. }
             | XClientEvent::DestroyNotify { window, .. }) => Some((*window, *event)),
+            event @ XClientEvent::GravityNotify {
+                event: target,
+                window,
+                ..
+            } if target == window => Some((*window, *event)),
             event @ XClientEvent::ConfigureNotify {
                 synthetic: false,
                 window,
@@ -386,7 +392,8 @@ fn filter_local_core_lifecycle_events(
             }
             XClientEvent::MapNotify { event: target, window, .. }
             | XClientEvent::UnmapNotify { event: target, window, .. }
-            | XClientEvent::ReparentNotify { event: target, window, .. } => selections.selects(
+            | XClientEvent::ReparentNotify { event: target, window, .. }
+            | XClientEvent::GravityNotify { event: target, window, .. } => selections.selects(
                 target,
                 if target == window {
                     STRUCTURE_NOTIFY_MASK
@@ -467,6 +474,15 @@ fn lifecycle_event_for_parent(event: XClientEvent, parent: XResourceId) -> XClie
             sequence,
             event: parent,
             window,
+        },
+        XClientEvent::GravityNotify {
+            sequence, window, x, y, ..
+        } => XClientEvent::GravityNotify {
+            sequence,
+            event: parent,
+            window,
+            x,
+            y,
         },
         XClientEvent::CirculateNotify {
             sequence,

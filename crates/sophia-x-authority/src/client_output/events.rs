@@ -212,6 +212,19 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_u16(byte_order, &mut out[8..10], minor_opcode);
             out[10] = major_opcode;
         }
+        XClientEvent::GravityNotify {
+            sequence,
+            event,
+            window,
+            x,
+            y,
+        } => {
+            write_event_header(byte_order, &mut out, X_GRAVITY_NOTIFY, 0, sequence);
+            put_resource(byte_order, &mut out[4..8], event);
+            put_resource(byte_order, &mut out[8..12], window);
+            put_i16(byte_order, &mut out[12..14], x);
+            put_i16(byte_order, &mut out[14..16], y);
+        }
         XClientEvent::VisibilityNotify {
             sequence,
             window,
