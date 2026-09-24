@@ -180,10 +180,8 @@ is now a port of `mi/mipoly.c` with the macros of `mi/miscanfill.h`:
 winding chain kept as a per-edge flag recomputed exactly when `mi`
 recomputes the chain, and `miFillConvexPoly` when the client declares its
 polygon Convex, bounded so a false claim cannot spin. PolyFillArc still
-fills the polygon `arc.rs` approximates; `miPolyFillArc` is not ported, and
-that, not this rule, is what remains of `clip_mask`'s 342-pixel rim -- an
-earlier line here and the manifest's first reason said otherwise, and the
-reason now reads correctly.
+filled the polygon `arc.rs` approximates; this paragraph first said that was
+what remained of `clip_mask`'s 342-pixel rim, which t176 disproved (below).
 
 Evidence: x11bench `fill_rule_evenodd` and `fill_rule_winding` match Xvnc
 exactly; the gate reads `x11bench PASS (52 passed, 8 declared)` on
@@ -194,9 +192,26 @@ give 0-8, 0-5 and 0-2. `polygon/tests.rs` works two edge cases of the rule
 by hand and checks the convex filler against the general one. The core run
 is otherwise PASS but for t165's `xfixes_selection_stalled`, as before.
 
-What x11bench still declares: four zero-width arcs and `clip_mask`'s rim
-(the arc code: zero-width arcs are the server's choice, filled arcs are
-`miPolyFillArc`'s to match), and three client restacks (authority policy).
+**t176, filled arcs (2026-09-23).** PolyFillArc is now a port of
+`mi/mifillarc.c` (`software/geometry/fill_arc.rs`): the ellipse walker,
+written once over `i64` and `f64` for `mi`'s integer and double copies and
+chosen as `miCanFillArc` chooses, and the chord and pie-slice edges that clip
+each row. The chord-stepped polygon path for filled arcs is gone. In x11bench
+`arc_styles` the filled red arc differed from Xvnc on 48 pixels and now on
+none. `clip_mask` did not move: all 342 of its differing pixels are black on
+one side, the zero-width outline drawn over the disc, which covered the
+disc's own rim all along. Its manifest reason is corrected a second time;
+both earlier readings (the polygon edge rule, then the filled arc) were
+wrong. Evidence: the gate reads `x11bench PASS (52 passed, 8 declared)` on
+`4c7cf37b`, the core profile passes 126 of 126, and `fill_arc/tests.rs`
+checks every centre strictly inside an ellipse is drawn at both walkers'
+sizes, a pie slice against a chord, full turns, empty arcs, and that
+opposite sweeps over one span fill alike. No wire case distinguishes the
+old rim from the new; x11bench is the red and green.
+
+What x11bench still declares: the zero-width arcs of four tests and of
+`clip_mask`'s outline, whose pixels the protocol leaves to the server, and
+three client restacks (authority policy). Nothing it declares is a defect.
 
 ## Connections
 
