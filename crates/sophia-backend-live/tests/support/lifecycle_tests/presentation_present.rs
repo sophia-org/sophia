@@ -15,7 +15,8 @@
 //! lifecycle target with a Present queued through the runtime's own
 //! scheduler and feedback coordinator: the clearing repaint, frame-tick
 //! parking, first-visibility parking, the runtime service's release and
-//! expiry, and the Skipped completion, Idle and retirement the client is told.
+//! expiry, and backend-produced Skipped completion and Idle ready for routing,
+//! with presentation retirement. No independent wire client is driven here.
 //!
 //! Known limit, not broadened without a reproduction: while a presentation
 //! withholds its whole tier for a missing source, the ordinary draw returns
