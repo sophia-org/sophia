@@ -30,7 +30,6 @@
   "/Xlib4/XMapSubwindows/XMapSubwindows#12": "the authority does not offer backing store (the suite reports 'Backing store is not supported')",
   "/Xlib4/XMapSubwindows/XMapSubwindows#13": "follows the backing-store purpose before it, which the suite skips: the authority does not offer backing store (the suite reports 'Backing store is not supported')",
   "/Xlib4/XMapSubwindows/XMapSubwindows#5": "restack results and MapSubwindows redirection differ from Xorg's; t217",
-  "/Xlib4/XMapSubwindows/XMapSubwindows#9": "a window with no background reads back zeros where Xorg shows what is beneath it; t218",
   "/Xlib4/XMapWindow/XMapWindow": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib4/XMapWindow/XMapWindow#11": "the suite's own omission: 'There is no known reliable test method for this assertion'",
   "/Xlib4/XMapWindow/XMapWindow#12": "Xorg's own server (Xvnc, 2026-09-24) gives the same UNSUPPORTED: Reason for omission: There is no known reliable test method for this assertion / REPORT: Backing store not supported while unmapped",
