@@ -57,6 +57,10 @@ impl HagiaPolicy {
     /// Starts Hagia on a fresh socket under `epoch` and settles its
     /// configuration, recording the action catalog by name.
     fn start(binary: &std::ffi::OsStr, epoch: u64) -> Self {
+        Self::start_with_capabilities(binary, epoch, u64::MAX)
+    }
+
+    fn start_with_capabilities(binary: &std::ffi::OsStr, epoch: u64, supported: u64) -> Self {
         let directory = std::env::temp_dir().join(format!(
             "sophia-hagia-presentation-{}-{}",
             std::process::id(),
@@ -67,6 +71,7 @@ impl HagiaPolicy {
             rustix::process::geteuid().as_raw(),
         )
         .unwrap();
+        transport.limit_capabilities(supported).unwrap();
         let profile = directory.join("desktop.kdl");
         std::fs::write(
             &profile,
@@ -97,8 +102,8 @@ impl HagiaPolicy {
             SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
         assert_eq!(
             transport.selected_capabilities() & required,
-            required,
-            "the fixture negotiates the generic presentation mechanism"
+            supported & required,
+            "the fixture applies its execution capability ceiling"
         );
         let sophia_runtime::PolicyClientEvent::Configuration {
             transaction,
@@ -115,6 +120,10 @@ impl HagiaPolicy {
             .map(|registration| (registration.name.clone(), registration.action))
             .collect::<BTreeMap<_, _>>();
         for name in OVERVIEW_ACTIONS {
+            if supported & required != required {
+                assert!(!catalog.contains_key(name), "{name} needs both mechanisms");
+                continue;
+            }
             let registration = configuration
                 .actions
                 .iter()
@@ -244,6 +253,37 @@ impl HagiaPolicy {
                 },
             )
             .unwrap();
+    }
+}
+
+#[test]
+fn hagia_without_presentation_actions_keeps_ordinary_policy_available() {
+    let Some(binary) = std::env::var_os("SOPHIA_HAGIA_BIN") else {
+        return;
+    };
+    let mechanisms =
+        SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
+    for supported in [!mechanisms, !SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS] {
+        let mut hagia = HagiaPolicy::start_with_capabilities(&binary, 1, supported);
+        assert!(!hagia.catalog.is_empty());
+        let mut reducer = PolicyProjectionReducer::new(two_output_scene()).unwrap();
+        reducer.connect(1).unwrap();
+        for _ in 0..2 {
+            let proposal = hagia.cycle(
+                &mut reducer,
+                PolicyRequestCause::SceneChanged,
+                Settle::Commit,
+            );
+            assert!(proposal.presentation.is_none());
+            assert_eq!(proposal.outputs.len(), 2);
+            assert!(
+                proposal
+                    .outputs
+                    .iter()
+                    .all(|output| !output.placements.is_empty())
+            );
+            assert!(reducer.presentation_publication().is_none());
+        }
     }
 }
 
