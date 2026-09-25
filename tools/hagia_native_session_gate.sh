@@ -322,6 +322,7 @@ if [[ "$capture_mode" == reference ]]; then
     SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
     SOPHIA_HAGIA_ROOT="$hagia_root" \
     SOPHIA_NARTHEX_ROOT="$narthex_root" \
+    SOPHIA_HAGIA_NATIVE_SOPHIA_BIN="$ROOT_DIR/target/release/sophia" \
         "$ROOT_DIR/tools/archive_hagia_native_session_run.sh" --kind=reference \
         "$evidence" "$proof_text"
     echo "Hagia reference capture retained: native_acceptance=false tab_observations=unverified"
