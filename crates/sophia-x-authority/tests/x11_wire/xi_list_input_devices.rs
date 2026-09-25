@@ -12,7 +12,7 @@ fn xi_decoder_accepts_the_legacy_device_enumeration() {
             &[X_INPUT_MAJOR_OPCODE, X_INPUT_LIST_INPUT_DEVICES_MINOR_OPCODE, 1, 0],
         )
         .unwrap(),
-        XWireRequest::XiListInputDevices
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiListInputDevices)
     );
 }
 
@@ -48,7 +48,7 @@ fn xi_list_input_devices_reports_both_virtual_masters() {
 
     let outputs = dispatch_x11_wire_request(
         dispatch_context(namespace, 7, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
-        XWireRequest::XiListInputDevices,
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiListInputDevices),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -127,7 +127,7 @@ fn the_legacy_and_xi2_master_enumerations_describe_one_device_set() {
 
     let legacy = dispatch_x11_wire_request(
         dispatch_context(namespace, 1, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
-        XWireRequest::XiListInputDevices,
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiListInputDevices),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -135,7 +135,7 @@ fn the_legacy_and_xi2_master_enumerations_describe_one_device_set() {
     .encoded_outputs(XByteOrder::LittleEndian);
     let modern = dispatch_x11_wire_request(
         dispatch_context(namespace, 2, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
-        XWireRequest::XiQueryDevice { device_id: 1 },
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiQueryDevice { device_id: 1 }),
         &mut runtime,
         &mut atoms,
         &mut properties,

@@ -44,14 +44,14 @@ fn glx_decoder_accepts_the_initialization_pbuffer_in_both_byte_orders() {
         );
         assert_eq!(
             decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
-            XWireRequest::GlxCreatePbuffer {
+            XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreatePbuffer {
                 screen: 0,
                 fbconfig: 1,
                 pbuffer: XResourceId::new(0x220301, 1),
                 width: 1,
                 height: 1,
                 largest: false,
-            }
+            })
         );
     }
 }
@@ -72,14 +72,14 @@ fn glx_pbuffer_attributes_are_read_by_name_not_position() {
     );
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap(),
-        XWireRequest::GlxCreatePbuffer {
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreatePbuffer {
             screen: 0,
             fbconfig: 2,
             pbuffer: XResourceId::new(0x220302, 1),
             width: 64,
             height: 48,
             largest: false,
-        }
+        })
     );
 }
 
@@ -102,14 +102,14 @@ fn glx_pbuffer_ignores_attributes_it_does_not_implement() {
     );
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap(),
-        XWireRequest::GlxCreatePbuffer {
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreatePbuffer {
             screen: 0,
             fbconfig: 1,
             pbuffer: XResourceId::new(0x220303, 1),
             width: 16,
             height: 16,
             largest: true,
-        }
+        })
     );
 
     // A pair count that disagrees with the bytes that arrived is malformed. The
@@ -162,9 +162,9 @@ fn a_created_pbuffer_answers_core_get_geometry() {
 
     let geometry = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, 14),
-        XWireRequest::GetGeometry {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetGeometry {
             drawable: XResourceId::new(u64::from(pbuffer), 1),
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -184,9 +184,9 @@ fn a_created_pbuffer_answers_core_get_geometry() {
     let unknown = 0x220999;
     let missing = dispatch_x11_wire_request(
         dispatch_context(namespace, 4, XByteOrder::LittleEndian, 14),
-        XWireRequest::GetGeometry {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetGeometry {
             drawable: XResourceId::new(u64::from(unknown), 1),
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -218,9 +218,9 @@ fn a_created_pbuffer_answers_core_get_geometry() {
     assert!(result.outputs.is_empty());
     let after = dispatch_x11_wire_request(
         dispatch_context(namespace, 7, XByteOrder::LittleEndian, 14),
-        XWireRequest::GetGeometry {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetGeometry {
             drawable: XResourceId::new(u64::from(pbuffer), 1),
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -247,7 +247,7 @@ fn a_pbuffer_beyond_the_advertised_maximum_is_refused_or_clamped() {
     // other fails here.
     let configs = dispatch_x11_wire_request(
         dispatch_context(namespace, 1, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
-        XWireRequest::GlxGetFbConfigs { screen: 0 },
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -314,9 +314,9 @@ fn a_pbuffer_beyond_the_advertised_maximum_is_refused_or_clamped() {
     assert!(clamped.outputs.is_empty());
     let geometry = dispatch_x11_wire_request(
         dispatch_context(namespace, 5, XByteOrder::LittleEndian, 14),
-        XWireRequest::GetGeometry {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetGeometry {
             drawable: XResourceId::new(0x220306, 1),
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -376,9 +376,9 @@ fn glx_answers_the_remaining_thirteen_requests() {
     .unwrap();
     assert_eq!(
         query,
-        XWireRequest::GlxQueryContext {
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxQueryContext {
             context: XResourceId::new(u64::from(glx_context), 1),
-        }
+        })
     );
     let result = dispatch_x11_wire_request(
         dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
@@ -477,7 +477,7 @@ fn glx_advertises_only_the_drawable_types_it_implements() {
 
     let configs = dispatch_x11_wire_request(
         dispatch_context(namespace, 1, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
-        XWireRequest::GlxGetFbConfigs { screen: 0 },
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -515,7 +515,7 @@ fn glx_advertises_only_the_drawable_types_it_implements() {
     assert!(!runtime.pixmap_textures_supported());
     let refusal = dispatch_x11_wire_request(
         dispatch_context(namespace, 7, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
-        XWireRequest::GlxCreatePixmap {
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreatePixmap {
             screen: 0,
             fbconfig: 2,
             pixmap: XResourceId::new(0x420_001, 1),
@@ -523,7 +523,7 @@ fn glx_advertises_only_the_drawable_types_it_implements() {
             target: None,
             format: None,
             mipmap: None,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -722,7 +722,7 @@ fn glx_fb_config_reply(pixmap_textures: bool) -> Vec<Vec<(u32, u32)>> {
     runtime.set_pixmap_textures_supported(pixmap_textures);
     let result = dispatch_x11_wire_request(
         dispatch_context(namespace, 1, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
-        XWireRequest::GlxGetFbConfigs { screen: 0 },
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,

@@ -21,31 +21,31 @@ fn every_extension_separates_unimplemented_minors_from_unknown_ones() {
         // Present 1.2 defines 0..=4 and implements all of them, so the
         // in-version tier is exercised by its own boundary rather than a gap.
         (X_PRESENT_MAJOR_OPCODE, 4, 255, |minor| {
-            XWireRequest::PresentUnimplemented { minor_opcode: minor }
+            XWireRequest::Present(sophia_x_authority::XPresentRequest::PresentUnimplemented { minor_opcode: minor })
         }),
         // DRI3 minor 5 is FDFromFence: defined, deliberately not implemented.
         (X_DRI3_MAJOR_OPCODE, 5, 200, |minor| {
-            XWireRequest::Dri3Unimplemented { minor_opcode: minor }
+            XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3Unimplemented { minor_opcode: minor })
         }),
         // SHAPE minor 6 is SelectInput.
         (X_SHAPE_MAJOR_OPCODE, 6, 200, |minor| {
-            XWireRequest::ShapeUnimplemented { minor_opcode: minor }
+            XWireRequest::Shape(sophia_x_authority::XShapeRequest::ShapeUnimplemented { minor_opcode: minor })
         }),
         // XF86VidMode minor 10 is SwitchToMode.
         (X_XF86_VIDMODE_MAJOR_OPCODE, 10, 200, |minor| {
-            XWireRequest::XF86VidModeUnimplemented { minor_opcode: minor }
+            XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XF86VidModeUnimplemented { minor_opcode: minor })
         }),
         // GLX minor 30 sits inside the range its last minor, 35, closes.
         (X_GLX_MAJOR_OPCODE, 30, 200, |minor| {
-            XWireRequest::GlxUnimplemented { minor_opcode: minor }
+            XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxUnimplemented { minor_opcode: minor })
         }),
         // XFIXES and RENDER already classified; they are here so a regression
         // in the shared doctrine is caught wherever it happens.
         (X_XFIXES_MAJOR_OPCODE, 30, 200, |minor| {
-            XWireRequest::XfixesUnimplemented { minor_opcode: minor }
+            XWireRequest::Xfixes(sophia_x_authority::XFixesRequest::XfixesUnimplemented { minor_opcode: minor })
         }),
         (X_RENDER_MAJOR_OPCODE, 10, 200, |minor| {
-            XWireRequest::RenderUnimplemented { minor_opcode: minor }
+            XWireRequest::Render(sophia_x_authority::XRenderRequest::RenderUnimplemented { minor_opcode: minor })
         }),
     ];
 

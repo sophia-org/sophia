@@ -9,11 +9,11 @@ fn decode_x_input(
                 X_INPUT_LIST_INPUT_DEVICES_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::XiListInputDevices)
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiListInputDevices))
         }
         X_INPUT_DEVICE_BELL_MINOR_OPCODE => {
             require_exact_len(X_INPUT_MAJOR_OPCODE, 8, bytes.len())?;
-            Ok(XWireRequest::XiDeviceBell)
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiDeviceBell))
         }
         X_INPUT_QUERY_POINTER_MINOR_OPCODE => {
             require_exact_len(
@@ -21,10 +21,10 @@ fn decode_x_input(
                 X_INPUT_QUERY_POINTER_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::XiQueryPointer {
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiQueryPointer {
                 window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 device_id: context.byte_order.u16(&bytes[8..10]),
-            })
+            }))
         }
         X_INPUT_CHANGE_CURSOR_MINOR_OPCODE => {
             require_exact_len(
@@ -33,10 +33,10 @@ fn decode_x_input(
                 bytes.len(),
             )?;
             let cursor = context.byte_order.u32(&bytes[8..12]);
-            Ok(XWireRequest::XiChangeCursor {
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiChangeCursor {
                 window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 cursor: (cursor != 0).then(|| XResourceId::new(u64::from(cursor), 1)),
-            })
+            }))
         }
         X_INPUT_GET_CLIENT_POINTER_MINOR_OPCODE => {
             require_exact_len(
@@ -44,7 +44,7 @@ fn decode_x_input(
                 X_INPUT_GET_CLIENT_POINTER_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::XiGetClientPointer)
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiGetClientPointer))
         }
         X_INPUT_UNGRAB_DEVICE_MINOR_OPCODE => {
             require_exact_len(
@@ -52,10 +52,10 @@ fn decode_x_input(
                 X_INPUT_UNGRAB_DEVICE_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::XiUngrabDevice {
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiUngrabDevice {
                 device_id: context.byte_order.u16(&bytes[8..10]),
                 time: context.byte_order.u32(&bytes[4..8]),
-            })
+            }))
         }
         X_INPUT_GRAB_DEVICE_MINOR_OPCODE => {
             require_len(
@@ -70,7 +70,7 @@ fn decode_x_input(
             let expected = X_INPUT_GRAB_DEVICE_REQ_LEN.saturating_add(words.saturating_mul(4));
             require_exact_len(X_INPUT_MAJOR_OPCODE, expected, bytes.len())?;
             let cursor = context.byte_order.u32(&bytes[12..16]);
-            Ok(XWireRequest::XiGrabDevice {
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiGrabDevice {
                 window: XResourceId::new(
                     u64::from(context.byte_order.u32(&bytes[4..8])),
                     1,
@@ -85,14 +85,14 @@ fn decode_x_input(
                     .chunks_exact(4)
                     .map(|word| context.byte_order.u32(word))
                     .collect(),
-            })
+            }))
         }
         X_INPUT_GET_EXTENSION_VERSION_MINOR_OPCODE => {
             require_len(X_INPUT_MAJOR_OPCODE, 8, bytes.len())?;
             let name_len = usize::from(context.byte_order.u16(&bytes[4..6]));
             let expected = 8usize.saturating_add(padded_len(name_len));
             require_exact_len(X_INPUT_MAJOR_OPCODE, expected, bytes.len())?;
-            Ok(XWireRequest::XiGetExtensionVersion)
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiGetExtensionVersion))
         }
         X_INPUT_QUERY_VERSION_MINOR_OPCODE => {
             require_exact_len(
@@ -100,10 +100,10 @@ fn decode_x_input(
                 X_INPUT_QUERY_VERSION_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::XiQueryVersion {
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiQueryVersion {
                 major_version: context.byte_order.u16(&bytes[4..6]),
                 minor_version: context.byte_order.u16(&bytes[6..8]),
-            })
+            }))
         }
         X_INPUT_QUERY_DEVICE_MINOR_OPCODE => {
             require_exact_len(
@@ -111,15 +111,15 @@ fn decode_x_input(
                 X_INPUT_QUERY_DEVICE_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::XiQueryDevice {
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiQueryDevice {
                 device_id: context.byte_order.u16(&bytes[4..6]),
-            })
+            }))
         }
         X_INPUT_GET_FOCUS_MINOR_OPCODE => {
             require_exact_len(X_INPUT_MAJOR_OPCODE, X_INPUT_GET_FOCUS_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::XiGetFocus {
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiGetFocus {
                 device_id: context.byte_order.u16(&bytes[4..6]),
-            })
+            }))
         }
         X_INPUT_GET_PROPERTY_MINOR_OPCODE => {
             require_exact_len(
@@ -127,7 +127,7 @@ fn decode_x_input(
                 X_INPUT_GET_PROPERTY_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::XiGetProperty)
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiGetProperty))
         }
         X_INPUT_SELECT_EVENTS_MINOR_OPCODE => {
             require_len(
@@ -174,7 +174,7 @@ fn decode_x_input(
             if offset != bytes.len() {
                 return Err(XWireParseError::TrailingBytes(bytes.len() - offset));
             }
-            Ok(XWireRequest::XiSelectEvents { window, masks })
+            Ok(XWireRequest::Xi(crate::XInputRequest::XiSelectEvents { window, masks }))
         }
         _ => Err(XWireParseError::UnknownOpcode(bytes[0])),
     }

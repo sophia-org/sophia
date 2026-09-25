@@ -34,10 +34,10 @@ fn dispatch_render_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::RenderQueryVersion { .. }
-            | XWireRequest::RenderQueryPictFormats
-            | XWireRequest::RenderQueryFilters { .. }
-            | XWireRequest::RenderUnimplemented { .. }
+        XWireRequest::Render(crate::XRenderRequest::RenderQueryVersion { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderQueryPictFormats)
+            | XWireRequest::Render(crate::XRenderRequest::RenderQueryFilters { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderUnimplemented { .. })
     ) {
         return Unhandled(request);
     }
@@ -45,7 +45,7 @@ fn dispatch_render_request(
         // The answer is the lower of the two versions, and the server's side
         // of that comparison is the constant that moves only when the
         // requests behind the next version answer.
-        XWireRequest::RenderQueryVersion { major, minor } => {
+        XWireRequest::Render(crate::XRenderRequest::RenderQueryVersion { major, minor }) => {
             let (major_version, minor_version) = if major == crate::X_RENDER_MAJOR_VERSION {
                 (major, minor.min(crate::X_RENDER_MINOR_VERSION))
             } else {
@@ -64,14 +64,14 @@ fn dispatch_render_request(
         // The reply is a constant: the four formats are the four pixel
         // layouts the server can represent, so the encoder owns the table and
         // dispatch carries only the sequence.
-        XWireRequest::RenderQueryPictFormats => XDispatchResult {
+        XWireRequest::Render(crate::XRenderRequest::RenderQueryPictFormats) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::RenderQueryPictFormats {
                 sequence: context.sequence,
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::RenderQueryFilters { drawable } => {
+        XWireRequest::Render(crate::XRenderRequest::RenderQueryFilters { drawable }) => {
             // The drawable selects a screen, and this server has one; it is
             // still validated, because answering for a drawable that does not
             // exist would tell a client its identifier was good.
@@ -96,7 +96,7 @@ fn dispatch_render_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::RenderUnimplemented { minor_opcode } => {
+        XWireRequest::Render(crate::XRenderRequest::RenderUnimplemented { minor_opcode }) => {
             let code = match render_minor_version_gate(minor_opcode) {
                 Some(gate) if gate <= crate::X_RENDER_MINOR_VERSION => {
                     XErrorCode::BadImplementation
@@ -183,18 +183,18 @@ fn dispatch_render_picture_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::RenderCreatePicture { .. }
-            | XWireRequest::RenderChangePicture { .. }
-            | XWireRequest::RenderSetPictureClipRectangles { .. }
-            | XWireRequest::RenderFreePicture { .. }
-            | XWireRequest::RenderFillRectangles { .. }
-            | XWireRequest::RenderComposite { .. }
-            | XWireRequest::RenderSetPictureTransform { .. }
-            | XWireRequest::RenderSetPictureFilter { .. }
-            | XWireRequest::RenderTrapezoids { .. }
-            | XWireRequest::RenderTriangles { .. }
-            | XWireRequest::RenderCreateSolidFill { .. }
-            | XWireRequest::RenderCreateGradient { .. }
+        XWireRequest::Render(crate::XRenderRequest::RenderCreatePicture { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderChangePicture { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderSetPictureClipRectangles { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderFreePicture { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderFillRectangles { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderComposite { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderSetPictureTransform { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderSetPictureFilter { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderTrapezoids { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderTriangles { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderCreateSolidFill { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderCreateGradient { .. })
     ) {
         return Unhandled(request);
     }
@@ -219,12 +219,12 @@ fn dispatch_render_picture_request(
         }
     };
     Handled(match request {
-        XWireRequest::RenderCreatePicture {
+        XWireRequest::Render(crate::XRenderRequest::RenderCreatePicture {
             picture,
             drawable,
             format,
             values,
-        } => lifecycle_result(
+        }) => lifecycle_result(
             runtime.render_create_picture(
                 context.namespace,
                 picture,
@@ -236,17 +236,17 @@ fn dispatch_render_picture_request(
             u32::try_from(picture.local.raw()).unwrap_or(0),
             crate::X_RENDER_CREATE_PICTURE_MINOR_OPCODE,
         ),
-        XWireRequest::RenderChangePicture { picture, values } => lifecycle_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderChangePicture { picture, values }) => lifecycle_result(
             runtime.render_change_picture(context.namespace, picture, &values),
             u32::try_from(picture.local.raw()).unwrap_or(0),
             crate::X_RENDER_CHANGE_PICTURE_MINOR_OPCODE,
         ),
-        XWireRequest::RenderSetPictureClipRectangles {
+        XWireRequest::Render(crate::XRenderRequest::RenderSetPictureClipRectangles {
             picture,
             clip_x_origin,
             clip_y_origin,
             rectangles,
-        } => lifecycle_result(
+        }) => lifecycle_result(
             runtime.render_set_picture_clip_rectangles(
                 context.namespace,
                 picture,
@@ -257,17 +257,17 @@ fn dispatch_render_picture_request(
             u32::try_from(picture.local.raw()).unwrap_or(0),
             crate::X_RENDER_SET_PICTURE_CLIP_RECTANGLES_MINOR_OPCODE,
         ),
-        XWireRequest::RenderFreePicture { picture } => lifecycle_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderFreePicture { picture }) => lifecycle_result(
             runtime.render_free_picture(context.namespace, picture),
             u32::try_from(picture.local.raw()).unwrap_or(0),
             crate::X_RENDER_FREE_PICTURE_MINOR_OPCODE,
         ),
-        XWireRequest::RenderFillRectangles {
+        XWireRequest::Render(crate::XRenderRequest::RenderFillRectangles {
             op,
             picture,
             color,
             rectangles,
-        } => {
+        }) => {
             let transaction = context.transaction;
             if !crate::software::render_operator_is_implemented(op) {
                 return Handled(XDispatchResult {
@@ -323,7 +323,7 @@ fn dispatch_render_picture_request(
                 },
             }
         }
-        XWireRequest::RenderComposite {
+        XWireRequest::Render(crate::XRenderRequest::RenderComposite {
             op,
             source,
             mask,
@@ -336,7 +336,7 @@ fn dispatch_render_picture_request(
             destination_y,
             width,
             height,
-        } => {
+        }) => {
             let transaction = context.transaction;
             if !crate::software::render_operator_is_implemented(op) {
                 return Handled(XDispatchResult {
@@ -397,16 +397,16 @@ fn dispatch_render_picture_request(
                 },
             }
         }
-        XWireRequest::RenderSetPictureTransform { picture, matrix } => lifecycle_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderSetPictureTransform { picture, matrix }) => lifecycle_result(
             runtime.render_set_picture_transform(context.namespace, picture, matrix),
             u32::try_from(picture.local.raw()).unwrap_or(0),
             crate::X_RENDER_SET_PICTURE_TRANSFORM_MINOR_OPCODE,
         ),
-        XWireRequest::RenderSetPictureFilter {
+        XWireRequest::Render(crate::XRenderRequest::RenderSetPictureFilter {
             picture,
             name,
             has_params,
-        } => {
+        }) => {
             let outcome = match render_filter_from_name(&name) {
                 // Only a convolution filter takes parameters, and this server
                 // offers none, so a filter it does offer arriving with them is
@@ -423,7 +423,7 @@ fn dispatch_render_picture_request(
                 crate::X_RENDER_SET_PICTURE_FILTER_MINOR_OPCODE,
             )
         }
-        XWireRequest::RenderTrapezoids {
+        XWireRequest::Render(crate::XRenderRequest::RenderTrapezoids {
             op,
             source,
             destination,
@@ -431,7 +431,7 @@ fn dispatch_render_picture_request(
             source_x,
             source_y,
             trapezoids,
-        } => render_primitive_result(
+        }) => render_primitive_result(
             context,
             runtime,
             op,
@@ -442,7 +442,7 @@ fn dispatch_render_picture_request(
             crate::XRenderPrimitiveCoverage::Trapezoids(&trapezoids),
             crate::X_RENDER_TRAPEZOIDS_MINOR_OPCODE,
         ),
-        XWireRequest::RenderTriangles {
+        XWireRequest::Render(crate::XRenderRequest::RenderTriangles {
             op,
             source,
             destination,
@@ -451,7 +451,7 @@ fn dispatch_render_picture_request(
             source_y,
             triangles,
             minor_opcode,
-        } => render_primitive_result(
+        }) => render_primitive_result(
             context,
             runtime,
             op,
@@ -462,7 +462,7 @@ fn dispatch_render_picture_request(
             crate::XRenderPrimitiveCoverage::Triangles(&triangles),
             minor_opcode,
         ),
-        XWireRequest::RenderCreateSolidFill { picture, color } => lifecycle_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderCreateSolidFill { picture, color }) => lifecycle_result(
             runtime.render_create_generated_picture(
                 context.namespace,
                 picture,
@@ -479,12 +479,12 @@ fn dispatch_render_picture_request(
             u32::try_from(picture.local.raw()).unwrap_or(0),
             crate::X_RENDER_CREATE_SOLID_FILL_MINOR_OPCODE,
         ),
-        XWireRequest::RenderCreateGradient {
+        XWireRequest::Render(crate::XRenderRequest::RenderCreateGradient {
             picture,
             geometry,
             stops,
             minor_opcode,
-        } => {
+        }) => {
             // A gradient with no stops has no colour to show anywhere, which
             // the protocol treats as a bad value rather than as an empty
             // picture.
@@ -525,13 +525,13 @@ fn dispatch_render_glyph_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::RenderCreateGlyphSet { .. }
-            | XWireRequest::RenderReferenceGlyphSet { .. }
-            | XWireRequest::RenderFreeGlyphSet { .. }
-            | XWireRequest::RenderAddGlyphs { .. }
-            | XWireRequest::RenderFreeGlyphs { .. }
-            | XWireRequest::RenderCompositeGlyphs { .. }
-            | XWireRequest::RenderCreateCursor { .. }
+        XWireRequest::Render(crate::XRenderRequest::RenderCreateGlyphSet { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderReferenceGlyphSet { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderFreeGlyphSet { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderAddGlyphs { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderFreeGlyphs { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderCompositeGlyphs { .. })
+            | XWireRequest::Render(crate::XRenderRequest::RenderCreateCursor { .. })
     ) {
         return Unhandled(request);
     }
@@ -556,7 +556,7 @@ fn dispatch_render_glyph_request(
         }
     };
     Handled(match request {
-        XWireRequest::RenderCreateGlyphSet { glyphset, format } => glyph_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderCreateGlyphSet { glyphset, format }) => glyph_result(
             runtime.render_create_glyph_set(
                 context.namespace,
                 glyphset,
@@ -566,7 +566,7 @@ fn dispatch_render_glyph_request(
             u32::try_from(glyphset.local.raw()).unwrap_or(0),
             crate::X_RENDER_CREATE_GLYPH_SET_MINOR_OPCODE,
         ),
-        XWireRequest::RenderReferenceGlyphSet { glyphset, existing } => glyph_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderReferenceGlyphSet { glyphset, existing }) => glyph_result(
             runtime.render_reference_glyph_set(
                 context.namespace,
                 glyphset,
@@ -576,27 +576,27 @@ fn dispatch_render_glyph_request(
             u32::try_from(glyphset.local.raw()).unwrap_or(0),
             crate::X_RENDER_REFERENCE_GLYPH_SET_MINOR_OPCODE,
         ),
-        XWireRequest::RenderFreeGlyphSet { glyphset } => glyph_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderFreeGlyphSet { glyphset }) => glyph_result(
             runtime.render_free_glyph_set(context.namespace, glyphset),
             u32::try_from(glyphset.local.raw()).unwrap_or(0),
             crate::X_RENDER_FREE_GLYPH_SET_MINOR_OPCODE,
         ),
-        XWireRequest::RenderAddGlyphs {
+        XWireRequest::Render(crate::XRenderRequest::RenderAddGlyphs {
             glyphset,
             ids,
             glyphs,
             data,
-        } => glyph_result(
+        }) => glyph_result(
             runtime.render_add_glyphs(context.namespace, glyphset, &ids, &glyphs, &data),
             u32::try_from(glyphset.local.raw()).unwrap_or(0),
             crate::X_RENDER_ADD_GLYPHS_MINOR_OPCODE,
         ),
-        XWireRequest::RenderFreeGlyphs { glyphset, ids } => glyph_result(
+        XWireRequest::Render(crate::XRenderRequest::RenderFreeGlyphs { glyphset, ids }) => glyph_result(
             runtime.render_free_glyphs(context.namespace, glyphset, &ids),
             u32::try_from(glyphset.local.raw()).unwrap_or(0),
             crate::X_RENDER_FREE_GLYPHS_MINOR_OPCODE,
         ),
-        XWireRequest::RenderCompositeGlyphs {
+        XWireRequest::Render(crate::XRenderRequest::RenderCompositeGlyphs {
             op,
             source,
             destination,
@@ -606,7 +606,7 @@ fn dispatch_render_glyph_request(
             source_y,
             elements,
             minor_opcode,
-        } => {
+        }) => {
             let transaction = context.transaction;
             if !crate::software::render_operator_is_implemented(op) {
                 return Handled(XDispatchResult {
@@ -676,12 +676,12 @@ fn dispatch_render_glyph_request(
                 }
             }
         }
-        XWireRequest::RenderCreateCursor {
+        XWireRequest::Render(crate::XRenderRequest::RenderCreateCursor {
             cursor,
             source,
             hotspot_x,
             hotspot_y,
-        } => {
+        }) => {
             let outcome = runtime.render_create_cursor(
                 context.namespace,
                 cursor,

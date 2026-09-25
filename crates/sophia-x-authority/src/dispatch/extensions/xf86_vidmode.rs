@@ -6,15 +6,15 @@ fn dispatch_xf86_vidmode_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::XF86VidModeQueryVersion
-            | XWireRequest::XF86VidModeGetModeLine { .. }
-            | XWireRequest::XF86VidModeSetClientVersion { .. }
-            | XWireRequest::XF86VidModeUnimplemented { .. }
+        XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeQueryVersion)
+            | XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeGetModeLine { .. })
+            | XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeSetClientVersion { .. })
+            | XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeUnimplemented { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-        XWireRequest::XF86VidModeQueryVersion => XDispatchResult {
+        XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeQueryVersion) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::XF86VidModeQueryVersion {
                 sequence: context.sequence,
@@ -27,12 +27,12 @@ fn dispatch_xf86_vidmode_request(
         // The library sends it after seeing a major version of two or more,
         // and a refusal here would end the exchange one request after
         // `QueryVersion` had just succeeded.
-        XWireRequest::XF86VidModeSetClientVersion { .. } => XDispatchResult {
+        XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeSetClientVersion { .. }) => XDispatchResult {
             response: None,
             outputs: Vec::new(),
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::XF86VidModeGetModeLine { screen } => {
+        XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeGetModeLine { screen }) => {
             let topology = runtime.output_topology();
             // One X screen, whatever the display count, so any other screen
             // number names something that does not exist.
@@ -75,7 +75,7 @@ fn dispatch_xf86_vidmode_request(
         // extension, and Sophia owns modesetting. Refusing by name says which
         // request was declined rather than leaving a client to conclude the
         // extension is broken.
-        XWireRequest::XF86VidModeUnimplemented { minor_opcode } => XDispatchResult {
+        XWireRequest::Extension(crate::XExtensionRequest::XF86VidModeUnimplemented { minor_opcode }) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Error(crate::XClientError {
                 code: if minor_opcode <= crate::X_XF86_VIDMODE_LAST_MINOR_OPCODE {

@@ -59,7 +59,7 @@ fn lookup_color_checks_lengths_and_latin1_without_allocating() {
         let mut request = lookup_color_request(order, X_SETUP_DEFAULT_COLORMAP, "red");
         request[12] = 0xe9;
         assert!(matches!(decode_x11_core_request(ctx, &request).unwrap(),
-            XWireRequest::LookupColor { name, .. } if name == "éed"));
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::LookupColor { name, .. }) if name == "éed"));
         request.pop();
         assert!(decode_x11_core_request(ctx, &request).is_err());
         let oversized = lookup_color_request(order, X_SETUP_DEFAULT_COLORMAP, &"x".repeat(257));

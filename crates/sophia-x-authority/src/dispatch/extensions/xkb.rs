@@ -6,22 +6,22 @@ fn dispatch_xkb_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::XkbUseExtension { .. }
-            | XWireRequest::XkbGetMap { .. }
-            | XWireRequest::XkbGetCompatMap { .. }
-            | XWireRequest::XkbGetIndicatorMap { .. }
-            | XWireRequest::XkbGetState
-            | XWireRequest::XkbLatchLockState { .. }
-            | XWireRequest::XkbGetControls
-            | XWireRequest::XkbGetNames { .. }
-            | XWireRequest::XkbGetDeviceInfo { .. }
-            | XWireRequest::XkbSelectEvents { .. }
-            | XWireRequest::XkbPerClientFlags { .. }
+            XWireRequest::Xkb(crate::XkbRequest::XkbUseExtension { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbGetMap { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbGetCompatMap { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbGetIndicatorMap { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbGetState)
+            | XWireRequest::Xkb(crate::XkbRequest::XkbLatchLockState { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbGetControls)
+            | XWireRequest::Xkb(crate::XkbRequest::XkbGetNames { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbGetDeviceInfo { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbSelectEvents { .. })
+            | XWireRequest::Xkb(crate::XkbRequest::XkbPerClientFlags { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::XkbUseExtension { .. } => XDispatchResult {
+                XWireRequest::Xkb(crate::XkbRequest::XkbUseExtension { .. }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XkbUseExtension {
                         sequence: context.sequence,
@@ -31,7 +31,7 @@ fn dispatch_xkb_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XkbGetMap { full, partial } => {
+                XWireRequest::Xkb(crate::XkbRequest::XkbGetMap { full, partial }) => {
                     // Preserve every component requested by the client. Components
                     // outside Sophia's reduced types/symbols/modifier map are valid
                     // empty sections, represented by their zero counts in the reply.
@@ -49,7 +49,7 @@ fn dispatch_xkb_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XkbGetCompatMap { device_spec } => xkb_empty_device_reply(
+                XWireRequest::Xkb(crate::XkbRequest::XkbGetCompatMap { device_spec }) => xkb_empty_device_reply(
                     context,
                     device_spec,
                     crate::X_KEYBOARD_GET_COMPAT_MAP_MINOR_OPCODE,
@@ -58,7 +58,7 @@ fn dispatch_xkb_request(
                         device_id,
                     },
                 ),
-                XWireRequest::XkbGetIndicatorMap { device_spec } => xkb_empty_device_reply(
+                XWireRequest::Xkb(crate::XkbRequest::XkbGetIndicatorMap { device_spec }) => xkb_empty_device_reply(
                     context,
                     device_spec,
                     crate::X_KEYBOARD_GET_INDICATOR_MAP_MINOR_OPCODE,
@@ -67,7 +67,7 @@ fn dispatch_xkb_request(
                         device_id,
                     },
                 ),
-                XWireRequest::XkbGetState => XDispatchResult {
+                XWireRequest::Xkb(crate::XkbRequest::XkbGetState) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XkbGetState {
                         sequence: context.sequence,
@@ -75,14 +75,14 @@ fn dispatch_xkb_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XkbGetControls => XDispatchResult {
+                XWireRequest::Xkb(crate::XkbRequest::XkbGetControls) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XkbGetControls {
                         sequence: context.sequence,
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XkbGetNames { which } => {
+                XWireRequest::Xkb(crate::XkbRequest::XkbGetNames { which }) => {
                     let config = runtime.xkb_keymap().config();
                     let layout = if config.variant.is_empty() {
                         config.layout.clone()
@@ -160,10 +160,10 @@ fn dispatch_xkb_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XkbGetDeviceInfo {
+                XWireRequest::Xkb(crate::XkbRequest::XkbGetDeviceInfo {
                     device_spec,
                     wanted,
-                } => {
+                }) => {
                     const XKB_USE_CORE_KBD: u16 = 0x0100;
                     let outputs = if matches!(device_spec, XKB_USE_CORE_KBD | 3) {
                         vec![XClientOutput::Reply(XClientReply::XkbGetDeviceInfo {
@@ -187,7 +187,7 @@ fn dispatch_xkb_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XkbLatchLockState {
+                XWireRequest::Xkb(crate::XkbRequest::XkbLatchLockState {
                     affect_mod_locks,
                     mod_locks,
                     lock_group,
@@ -196,7 +196,7 @@ fn dispatch_xkb_request(
                     mod_latches,
                     latch_group,
                     group_latch,
-                } => {
+                }) => {
                     // SATISFIED WHEN THE STATE ASKED FOR ALREADY HOLDS, and
                     // refused when it does not, rather than accepted and
                     // dropped. This keymap has one group and XkbGetState
@@ -236,12 +236,12 @@ fn dispatch_xkb_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XkbSelectEvents { .. } => XDispatchResult {
+                XWireRequest::Xkb(crate::XkbRequest::XkbSelectEvents { .. }) => XDispatchResult {
                     response: None,
                     outputs: Vec::new(),
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XkbPerClientFlags { change, value } => XDispatchResult {
+                XWireRequest::Xkb(crate::XkbRequest::XkbPerClientFlags { change, value }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XkbPerClientFlags {
                         sequence: context.sequence,

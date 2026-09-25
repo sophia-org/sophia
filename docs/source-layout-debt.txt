@@ -7,5 +7,3 @@
 # that pushes it past the number fails the gate until someone raises it on
 # purpose. Without it a ledgered file was never measured again, which is how
 # one test file reached forty thousand lines with this gate green throughout.
-# t240 owns the remaining decoded-request enum representation change.
-large crates/sophia-x-authority/src/wire/request.rs 1355

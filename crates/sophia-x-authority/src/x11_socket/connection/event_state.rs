@@ -3,7 +3,7 @@ fn x11_core_event_selection_update(
     request: &crate::XWireRequest,
 ) -> Option<(XResourceId, Option<u32>, Option<u32>)> {
     match request {
-        crate::XWireRequest::CreateWindow {
+        crate::XWireRequest::Core(crate::XCoreRequest::CreateWindow {
             packet:
                 crate::XAuthorityRequestPacket {
                     kind: crate::XAuthorityRequestKind::CreateWindow { window, .. },
@@ -12,13 +12,13 @@ fn x11_core_event_selection_update(
             event_mask,
             do_not_propagate_mask,
             ..
-        }
-        | crate::XWireRequest::ChangeWindowAttributes {
+        })
+        | crate::XWireRequest::Core(crate::XCoreRequest::ChangeWindowAttributes {
             window,
             event_mask,
             do_not_propagate_mask,
             ..
-        } => Some((*window, *event_mask, *do_not_propagate_mask)),
+        }) => Some((*window, *event_mask, *do_not_propagate_mask)),
         _ => None,
     }
 }

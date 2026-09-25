@@ -48,13 +48,13 @@ impl Client {
     fn create_pixmap(&mut self, pixmap: XResourceId, depth: u8) {
         let outputs = self.send_with_opcode(
             53,
-            XWireRequest::CreatePixmap {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
                 depth,
                 pixmap,
                 drawable: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
                 width: 3,
                 height: 2,
-            },
+            }),
         );
         assert!(
             outputs.is_empty(),
@@ -68,7 +68,9 @@ fn every_advertised_configuration_can_create_and_bind_a_direct_context() {
     for supported in [false, true] {
         let mut client = Client::new(supported);
         let configurations = match client
-            .send(XWireRequest::GlxGetFbConfigs { screen: 0 })
+            .send(XWireRequest::Glx(
+                sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 },
+            ))
             .remove(0)
         {
             XClientOutput::Reply(XClientReply::GlxFbConfigs { configs, .. }) => configs,
@@ -84,35 +86,41 @@ fn every_advertised_configuration_can_create_and_bind_a_direct_context() {
             let pbuffer = XResourceId::new(u64::from(config) * 10 + 1, 1);
             assert!(
                 client
-                    .send(XWireRequest::GlxCreateContext {
-                        context,
-                        config: XGlxContextConfig::FbConfig(config),
-                        screen: 0,
-                        share: None,
-                        direct: true,
-                    })
+                    .send(XWireRequest::Glx(
+                        sophia_x_authority::XGlxRequest::GlxCreateContext {
+                            context,
+                            config: XGlxContextConfig::FbConfig(config),
+                            screen: 0,
+                            share: None,
+                            direct: true,
+                        }
+                    ))
                     .is_empty(),
                 "advertised config {config} rejected its context"
             );
             assert!(
                 client
-                    .send(XWireRequest::GlxCreatePbuffer {
-                        screen: 0,
-                        fbconfig: config,
-                        pbuffer,
-                        width: 3,
-                        height: 2,
-                        largest: false,
-                    })
+                    .send(XWireRequest::Glx(
+                        sophia_x_authority::XGlxRequest::GlxCreatePbuffer {
+                            screen: 0,
+                            fbconfig: config,
+                            pbuffer,
+                            width: 3,
+                            height: 2,
+                            largest: false,
+                        }
+                    ))
                     .is_empty()
             );
             assert!(matches!(
                 client
-                    .send(XWireRequest::GlxMakeCurrent {
-                        drawable: Some(pbuffer),
-                        context: Some(context),
-                        old_context_tag: 0,
-                    })
+                    .send(XWireRequest::Glx(
+                        sophia_x_authority::XGlxRequest::GlxMakeCurrent {
+                            drawable: Some(pbuffer),
+                            context: Some(context),
+                            old_context_tag: 0,
+                        }
+                    ))
                     .as_slice(),
                 [XClientOutput::Reply(XClientReply::GlxMakeCurrent {
                     context_tag: 1,
@@ -130,13 +138,15 @@ fn hidden_stencil_configurations_cannot_be_used_without_the_provider() {
         let context = XResourceId::new(u64::from(config) * 10, 1);
         assert!(matches!(
             client
-                .send(XWireRequest::GlxCreateContext {
-                    context,
-                    config: XGlxContextConfig::FbConfig(config),
-                    screen: 0,
-                    share: None,
-                    direct: true,
-                })
+                .send(XWireRequest::Glx(
+                    sophia_x_authority::XGlxRequest::GlxCreateContext {
+                        context,
+                        config: XGlxContextConfig::FbConfig(config),
+                        screen: 0,
+                        share: None,
+                        direct: true,
+                    }
+                ))
                 .as_slice(),
             [XClientOutput::Error(_)]
         ));
@@ -163,24 +173,26 @@ fn a_glx_pixmap_cannot_take_an_existing_graphics_context_id() {
         client
             .send_with_opcode(
                 55,
-                XWireRequest::CreateGraphicsContext {
+                XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
                     gc,
                     drawable: pixmap,
                     values: values.clone(),
-                }
+                })
             )
             .is_empty()
     );
 
-    let outputs = client.send(XWireRequest::GlxCreatePixmap {
-        screen: 0,
-        fbconfig: 2,
-        pixmap,
-        glx_pixmap: gc,
-        target: Some(X_GLX_TEXTURE_2D_VALUE),
-        format: Some(X_GLX_TEXTURE_FORMAT_RGBA_VALUE),
-        mipmap: Some(false),
-    });
+    let outputs = client.send(XWireRequest::Glx(
+        sophia_x_authority::XGlxRequest::GlxCreatePixmap {
+            screen: 0,
+            fbconfig: 2,
+            pixmap,
+            glx_pixmap: gc,
+            target: Some(X_GLX_TEXTURE_2D_VALUE),
+            format: Some(X_GLX_TEXTURE_FORMAT_RGBA_VALUE),
+            mipmap: Some(false),
+        },
+    ));
     assert!(
         matches!(outputs.as_slice(), [XClientOutput::Error(_)]),
         "a GLX pixmap reused the live GC id: {outputs:?}"
@@ -208,15 +220,17 @@ fn check_make_context_current(pixmap: bool, direct: bool) {
     let context = XResourceId::new(0x2003, 1);
     if pixmap {
         client.create_pixmap(backing, 32);
-        let outputs = client.send(XWireRequest::GlxCreatePixmap {
-            screen: 0,
-            fbconfig: 2,
-            pixmap: backing,
-            glx_pixmap: drawable,
-            target: Some(X_GLX_TEXTURE_2D_VALUE),
-            format: Some(X_GLX_TEXTURE_FORMAT_RGBA_VALUE),
-            mipmap: Some(false),
-        });
+        let outputs = client.send(XWireRequest::Glx(
+            sophia_x_authority::XGlxRequest::GlxCreatePixmap {
+                screen: 0,
+                fbconfig: 2,
+                pixmap: backing,
+                glx_pixmap: drawable,
+                target: Some(X_GLX_TEXTURE_2D_VALUE),
+                format: Some(X_GLX_TEXTURE_FORMAT_RGBA_VALUE),
+                mipmap: Some(false),
+            },
+        ));
         assert!(
             outputs.is_empty(),
             "GLX pixmap creation failed: {outputs:?}"
@@ -224,35 +238,41 @@ fn check_make_context_current(pixmap: bool, direct: bool) {
     } else {
         assert!(
             client
-                .send(XWireRequest::GlxCreatePbuffer {
-                    screen: 0,
-                    fbconfig: 2,
-                    pbuffer: drawable,
-                    width: 3,
-                    height: 2,
-                    largest: false,
-                })
+                .send(XWireRequest::Glx(
+                    sophia_x_authority::XGlxRequest::GlxCreatePbuffer {
+                        screen: 0,
+                        fbconfig: 2,
+                        pbuffer: drawable,
+                        width: 3,
+                        height: 2,
+                        largest: false,
+                    }
+                ))
                 .is_empty()
         );
     }
-    let created = client.send(XWireRequest::GlxCreateContext {
-        context,
-        config: XGlxContextConfig::FbConfig(2),
-        screen: 0,
-        share: None,
-        direct,
-    });
+    let created = client.send(XWireRequest::Glx(
+        sophia_x_authority::XGlxRequest::GlxCreateContext {
+            context,
+            config: XGlxContextConfig::FbConfig(2),
+            screen: 0,
+            share: None,
+            direct,
+        },
+    ));
     assert!(created.is_empty(), "context creation failed: {created:?}");
     assert!(
-        matches!(client.send(XWireRequest::GlxIsDirect { context }).as_slice(),
+        matches!(client.send(XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxIsDirect { context })).as_slice(),
         [XClientOutput::Reply(XClientReply::GlxIsDirect { direct: observed, .. })] if *observed == direct)
     );
 
-    let outputs = client.send(XWireRequest::GlxMakeContextCurrent {
-        drawable,
-        read_drawable: drawable,
-        context: Some(context),
-    });
+    let outputs = client.send(XWireRequest::Glx(
+        sophia_x_authority::XGlxRequest::GlxMakeContextCurrent {
+            drawable,
+            read_drawable: drawable,
+            context: Some(context),
+        },
+    ));
     if direct {
         assert!(
             matches!(
@@ -304,7 +324,9 @@ fn config_attribute(attributes: &[(u32, u32)], name: u32) -> u32 {
 fn advertised_rgb_and_rgba_bindings_agree_with_pixmap_creation() {
     let mut client = Client::new(true);
     let configurations = match client
-        .send(XWireRequest::GlxGetFbConfigs { screen: 0 })
+        .send(XWireRequest::Glx(
+            sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 },
+        ))
         .remove(0)
     {
         XClientOutput::Reply(XClientReply::GlxFbConfigs { configs, .. }) => configs,
@@ -340,15 +362,17 @@ fn advertised_rgb_and_rgba_bindings_agree_with_pixmap_creation() {
             let pixmap = XResourceId::new(0x3000 + u64::from(config) * 10 + index * 2, 1);
             let glx_pixmap = XResourceId::new(pixmap.local.raw() + 1, 1);
             client.create_pixmap(pixmap, depth);
-            let outputs = client.send(XWireRequest::GlxCreatePixmap {
-                screen: 0,
-                fbconfig: config,
-                pixmap,
-                glx_pixmap,
-                target: Some(X_GLX_TEXTURE_2D_VALUE),
-                format: Some(format),
-                mipmap: Some(false),
-            });
+            let outputs = client.send(XWireRequest::Glx(
+                sophia_x_authority::XGlxRequest::GlxCreatePixmap {
+                    screen: 0,
+                    fbconfig: config,
+                    pixmap,
+                    glx_pixmap,
+                    target: Some(X_GLX_TEXTURE_2D_VALUE),
+                    format: Some(format),
+                    mipmap: Some(false),
+                },
+            ));
             if advertised == 1 {
                 assert!(
                     outputs.is_empty(),
@@ -391,7 +415,9 @@ fn advertised_rgb_and_rgba_bindings_agree_with_pixmap_creation() {
 
 fn advertised_configs(client: &mut Client) -> Vec<Vec<(u32, u32)>> {
     match client
-        .send(XWireRequest::GlxGetFbConfigs { screen: 0 })
+        .send(XWireRequest::Glx(
+            sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 },
+        ))
         .as_slice()
     {
         [XClientOutput::Reply(XClientReply::GlxFbConfigs { configs, .. })] => configs.clone(),
@@ -400,7 +426,10 @@ fn advertised_configs(client: &mut Client) -> Vec<Vec<(u32, u32)>> {
 }
 
 fn assert_pixmap_geometry(client: &mut Client, drawable: XResourceId, depth: u8) {
-    let outputs = client.send_with_opcode(14, XWireRequest::GetGeometry { drawable });
+    let outputs = client.send_with_opcode(
+        14,
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetGeometry { drawable }),
+    );
     assert!(
         matches!(outputs.as_slice(),
             [XClientOutput::Reply(XClientReply::GetGeometry { depth: actual, geometry, .. })]
@@ -414,7 +443,10 @@ fn default_visual_stays_depth24_while_its_first_glx_config_has_rgba8() {
     for supported in [false, true] {
         let mut client = Client::new(supported);
         let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-        let geometry = client.send_with_opcode(14, XWireRequest::GetGeometry { drawable: root });
+        let geometry = client.send_with_opcode(
+            14,
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::GetGeometry { drawable: root }),
+        );
         assert!(matches!(
             geometry.as_slice(),
             [XClientOutput::Reply(XClientReply::GetGeometry {
@@ -422,8 +454,12 @@ fn default_visual_stays_depth24_while_its_first_glx_config_has_rgba8() {
                 ..
             })]
         ));
-        let attributes =
-            client.send_with_opcode(3, XWireRequest::GetWindowAttributes { window: root });
+        let attributes = client.send_with_opcode(
+            3,
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::GetWindowAttributes {
+                window: root,
+            }),
+        );
         assert!(matches!(attributes.as_slice(),
             [XClientOutput::Reply(XClientReply::GetWindowAttributes { visual, .. })]
             if *visual == X_SETUP_DEFAULT_VISUAL));
@@ -454,7 +490,9 @@ fn legacy_visual_configs_agree_with_the_first_modern_config_for_each_visual() {
         let mut client = Client::new(supported);
         let modern = advertised_configs(&mut client);
         let legacy = match client
-            .send(XWireRequest::GlxGetVisualConfigs { screen: 0 })
+            .send(XWireRequest::Glx(
+                sophia_x_authority::XGlxRequest::GlxGetVisualConfigs { screen: 0 },
+            ))
             .as_slice()
         {
             [XClientOutput::Reply(XClientReply::GlxVisualConfigs { configs, .. })] => {
@@ -507,15 +545,17 @@ fn modern_default_visual_pixmaps_accept_rgb24_and_argb32_and_retain_actual_depth
                 XResourceId::new(0x5000 + u64::from(fbconfig) * 100 + u64::from(depth) * 2, 1);
             let glx_pixmap = XResourceId::new(pixmap.local.raw() + 1, 1);
             client.create_pixmap(pixmap, depth);
-            let outputs = client.send(XWireRequest::GlxCreatePixmap {
-                screen: 0,
-                fbconfig,
-                pixmap,
-                glx_pixmap,
-                target: Some(X_GLX_TEXTURE_2D_VALUE),
-                format: Some(X_GLX_TEXTURE_FORMAT_RGBA_VALUE),
-                mipmap: Some(false),
-            });
+            let outputs = client.send(XWireRequest::Glx(
+                sophia_x_authority::XGlxRequest::GlxCreatePixmap {
+                    screen: 0,
+                    fbconfig,
+                    pixmap,
+                    glx_pixmap,
+                    target: Some(X_GLX_TEXTURE_2D_VALUE),
+                    format: Some(X_GLX_TEXTURE_FORMAT_RGBA_VALUE),
+                    mipmap: Some(false),
+                },
+            ));
             assert!(
                 outputs.is_empty(),
                 "config {fbconfig}, depth {depth}: {outputs:?}"
@@ -523,7 +563,10 @@ fn modern_default_visual_pixmaps_accept_rgb24_and_argb32_and_retain_actual_depth
             assert_pixmap_geometry(&mut client, glx_pixmap, depth);
             assert!(
                 client
-                    .send_with_opcode(54, XWireRequest::FreePixmap { pixmap })
+                    .send_with_opcode(
+                        54,
+                        XWireRequest::Core(sophia_x_authority::XCoreRequest::FreePixmap { pixmap })
+                    )
                     .is_empty()
             );
             assert_pixmap_geometry(&mut client, glx_pixmap, depth);
@@ -540,12 +583,14 @@ fn legacy_default_visual_pixmaps_require_the_native_depth() {
         let pixmap = XResourceId::new(0x6000, 1);
         let glx_pixmap = XResourceId::new(0x6001, 1);
         client.create_pixmap(pixmap, depth);
-        let outputs = client.send(XWireRequest::GlxCreateGlxPixmap {
-            screen: 0,
-            visual: X_SETUP_DEFAULT_VISUAL,
-            pixmap,
-            glx_pixmap,
-        });
+        let outputs = client.send(XWireRequest::Glx(
+            sophia_x_authority::XGlxRequest::GlxCreateGlxPixmap {
+                screen: 0,
+                visual: X_SETUP_DEFAULT_VISUAL,
+                pixmap,
+                glx_pixmap,
+            },
+        ));
         if depth == 24 {
             assert!(
                 outputs.is_empty(),
@@ -577,14 +622,14 @@ fn glx_pixmaps_refuse_unsupported_core_depths_without_creating_an_alias() {
             let glx_pixmap = XResourceId::new(0x7001, 1);
             client.create_pixmap(pixmap, depth);
             let request = if legacy {
-                XWireRequest::GlxCreateGlxPixmap {
+                XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreateGlxPixmap {
                     screen: 0,
                     visual: X_SETUP_DEFAULT_VISUAL,
                     pixmap,
                     glx_pixmap,
-                }
+                })
             } else {
-                XWireRequest::GlxCreatePixmap {
+                XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreatePixmap {
                     screen: 0,
                     fbconfig: 1,
                     pixmap,
@@ -592,7 +637,7 @@ fn glx_pixmaps_refuse_unsupported_core_depths_without_creating_an_alias() {
                     target: Some(X_GLX_TEXTURE_2D_VALUE),
                     format: Some(X_GLX_TEXTURE_FORMAT_RGBA_VALUE),
                     mipmap: Some(false),
-                }
+                })
             };
             let outputs = client.send(request);
             assert!(

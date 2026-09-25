@@ -14,7 +14,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         fill,
-        XWireRequest::PolyFillRectangle {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyFillRectangle {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             rectangles: vec![
@@ -31,7 +31,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                     height: 9,
                 },
             ],
-        }
+        })
     );
 
     for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
@@ -47,7 +47,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
         .unwrap();
         assert_eq!(
             outline,
-            XWireRequest::PolyRectangle {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyRectangle {
                 drawable: XResourceId::new(0x220010, 1),
                 gc: XResourceId::new(0x220011, 1),
                 rectangles: vec![
@@ -64,7 +64,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                         height: 9,
                     },
                 ],
-            }
+            })
         );
     }
 
@@ -96,7 +96,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         segments,
-        XWireRequest::PolySegment {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolySegment {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             // The endpoints themselves, not a bounding box: the decoder used
@@ -106,7 +106,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                 (XPoint { x: 5, y: 6 }, XPoint { x: 15, y: 16 }),
                 (XPoint { x: 20, y: 30 }, XPoint { x: 10, y: 24 }),
             ],
-        }
+        })
     );
 
     let line = decode_x11_core_request(
@@ -122,7 +122,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         line,
-        XWireRequest::PolyLine {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyLine {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             points: vec![
@@ -130,7 +130,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                 XPoint { x: 13, y: 9 },
                 XPoint { x: 8, y: 20 },
             ],
-        }
+        })
     );
 
     let fill_poly = decode_x11_core_request(
@@ -146,7 +146,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         fill_poly,
-        XWireRequest::FillPoly {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::FillPoly {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             shape: 0,
@@ -159,7 +159,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                 XPoint { x: 15, y: 16 },
                 XPoint { x: 8, y: 20 },
             ],
-        }
+        })
     );
 
     let fill_arcs = decode_x11_core_request(
@@ -175,7 +175,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         fill_arcs,
-        XWireRequest::PolyFillArc {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyFillArc {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             arcs: vec![sophia_x_authority::XArc {
@@ -186,7 +186,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                 angle1: 0,
                 angle2: 23040,
             }],
-        }
+        })
     );
 
     let text = decode_x11_core_request(
@@ -197,7 +197,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         text,
-        XWireRequest::PolyText8 {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyText8 {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             x: 5,
@@ -206,7 +206,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                 delta: 0,
                 chars: vec![72, 105],
             }],
-        }
+        })
     );
 
     let padded_text = decode_x11_core_request(
@@ -217,7 +217,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         padded_text,
-        XWireRequest::PolyText8 {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyText8 {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             x: 5,
@@ -226,7 +226,7 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
                 delta: 0,
                 chars: vec![61],
             }],
-        }
+        })
     );
 
     let compact_text = decode_x11_core_request(
@@ -254,13 +254,13 @@ fn x11_core_decoder_captures_poly_fill_rectangle_requests() {
 
     assert_eq!(
         image_text,
-        XWireRequest::ImageText8 {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ImageText8 {
             drawable: XResourceId::new(0x220010, 1),
             gc: XResourceId::new(0x220011, 1),
             x: 5,
             y: 16,
             text: b"Hi".to_vec(),
-        }
+        })
     );
 }
 
@@ -276,7 +276,7 @@ fn x11_poly_text8_font_shift_is_msb_first_for_both_client_orders() {
         .unwrap();
         assert_eq!(
             request,
-            XWireRequest::PolyText8 {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyText8 {
                 drawable: XResourceId::new(0x220010, 1),
                 gc: XResourceId::new(0x220011, 1),
                 x: 5,
@@ -290,7 +290,7 @@ fn x11_poly_text8_font_shift_is_msb_first_for_both_client_orders() {
                         chars: vec![120],
                     },
                 ],
-            }
+            })
         );
     }
 }
@@ -317,7 +317,7 @@ fn x11_core_decoder_captures_put_image_requests() {
 
     assert_eq!(
         put,
-        XWireRequest::PutImage {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PutImage {
             format: 2,
             drawable: XResourceId::new(0x220020, 1),
             gc: XResourceId::new(0x220021, 1),
@@ -328,7 +328,7 @@ fn x11_core_decoder_captures_put_image_requests() {
             left_pad: 0,
             depth: 24,
             data: vec![0xaa; 128],
-        }
+        })
     );
 }
 
@@ -456,13 +456,13 @@ fn x11_core_decoder_captures_pixmap_and_copy_area_requests() {
     .unwrap();
     assert_eq!(
         create,
-        XWireRequest::CreatePixmap {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
             depth: 24,
             pixmap: XResourceId::new(0x220030, 1),
             drawable: XResourceId::new(0x220031, 1),
             width: 32,
             height: 16,
-        }
+        })
     );
 
     let copy = decode_x11_core_request(
@@ -483,7 +483,7 @@ fn x11_core_decoder_captures_pixmap_and_copy_area_requests() {
     .unwrap();
     assert_eq!(
         copy,
-        XWireRequest::CopyArea {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CopyArea {
             source: XResourceId::new(0x220030, 1),
             destination: XResourceId::new(0x220031, 1),
             gc: XResourceId::new(0x220032, 1),
@@ -493,7 +493,7 @@ fn x11_core_decoder_captures_pixmap_and_copy_area_requests() {
             dst_y: 4,
             width: 20,
             height: 10,
-        }
+        })
     );
 }
 
@@ -507,10 +507,10 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         open,
-        XWireRequest::OpenFont {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::OpenFont {
             font: XResourceId::new(0x220040, 1),
             name: "fixed".to_owned(),
-        }
+        })
     );
 
     let close = decode_x11_core_request(
@@ -520,9 +520,9 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         close,
-        XWireRequest::QueryFont {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::QueryFont {
             font: XResourceId::new(0x220040, 1),
-        }
+        })
     );
 
     let close = decode_x11_core_request(
@@ -532,9 +532,9 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         close,
-        XWireRequest::CloseFont {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CloseFont {
             font: XResourceId::new(0x220040, 1),
-        }
+        })
     );
 
     let list = decode_x11_core_request(
@@ -544,10 +544,10 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         list,
-        XWireRequest::ListFonts {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ListFonts {
             max_names: 5,
             pattern: "*".to_owned(),
-        }
+        })
     );
 
     let list = decode_x11_core_request(
@@ -557,10 +557,10 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         list,
-        XWireRequest::ListFontsWithInfo {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ListFontsWithInfo {
             max_names: 5,
             pattern: "*".to_owned(),
-        }
+        })
     );
 
     let cursor = decode_x11_core_request(
@@ -570,13 +570,13 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         cursor,
-        XWireRequest::CreateGlyphCursor {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGlyphCursor {
             cursor: XResourceId::new(0x220050, 1),
             source_font: XResourceId::new(0x220040, 1),
             mask_font: Some(XResourceId::new(0x220041, 1)),
             source_char: 1,
             mask_char: 2,
-        }
+        })
     );
 
     let free_cursor = decode_x11_core_request(
@@ -586,9 +586,9 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         free_cursor,
-        XWireRequest::FreeCursor {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::FreeCursor {
             cursor: XResourceId::new(0x220050, 1),
-        }
+        })
     );
 
     let recolor_cursor = decode_x11_core_request(
@@ -598,9 +598,9 @@ fn x11_core_decoder_captures_font_requests() {
     .unwrap();
     assert_eq!(
         recolor_cursor,
-        XWireRequest::RecolorCursor {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::RecolorCursor {
             cursor: XResourceId::new(0x220050, 1),
-        }
+        })
     );
 }
 
@@ -615,9 +615,9 @@ fn x11_core_decoder_captures_query_extension_requests() {
 
     assert_eq!(
         query,
-        XWireRequest::QueryExtension {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::QueryExtension {
             name: "BIG-REQUESTS".to_owned(),
-        }
+        })
     );
 }
 
@@ -667,7 +667,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
         &mit_shm_query_version_request(XByteOrder::LittleEndian),
     )
     .unwrap();
-    assert_eq!(query, XWireRequest::ShmQueryVersion);
+    assert_eq!(query, XWireRequest::Shm(sophia_x_authority::XShmRequest::ShmQueryVersion));
 
     for byte_order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
         let create = decode_x11_core_request(
@@ -677,7 +677,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
         .unwrap();
         assert_eq!(
             create,
-            XWireRequest::ShmCreatePixmap {
+            XWireRequest::Shm(sophia_x_authority::XShmRequest::ShmCreatePixmap {
                 pixmap: XResourceId::new(0x440010, 1),
                 drawable: XResourceId::new(0x220701, 1),
                 width: 64,
@@ -685,7 +685,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
                 depth: 24,
                 segment: XResourceId::new(0x440001, 1),
                 offset: 256,
-            }
+            })
         );
     }
 
@@ -696,11 +696,11 @@ fn x11_core_decoder_captures_mit_shm_requests() {
     .unwrap();
     assert_eq!(
         attach,
-        XWireRequest::ShmAttach {
+        XWireRequest::Shm(sophia_x_authority::XShmRequest::ShmAttach {
             segment: XResourceId::new(0x440001, 1),
             shmid: 77,
             read_only: true,
-        }
+        })
     );
 
     let get = decode_x11_core_request(
@@ -710,7 +710,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
     .unwrap();
     assert_eq!(
         get,
-        XWireRequest::ShmGetImage {
+        XWireRequest::Shm(sophia_x_authority::XShmRequest::ShmGetImage {
             drawable: XResourceId::new(0x220701, 1),
             x: 3,
             y: 5,
@@ -720,7 +720,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
             format: 2,
             segment: XResourceId::new(0x440001, 1),
             offset: 128,
-        }
+        })
     );
 
     let put = decode_x11_core_request(
@@ -730,7 +730,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
     .unwrap();
     assert_eq!(
         put,
-        XWireRequest::ShmPutImage {
+        XWireRequest::Shm(sophia_x_authority::XShmRequest::ShmPutImage {
             drawable: XResourceId::new(0x220701, 1),
             gc: XResourceId::new(0x220702, 1),
             total_width: 64,
@@ -746,7 +746,7 @@ fn x11_core_decoder_captures_mit_shm_requests() {
             send_event: false,
             segment: XResourceId::new(0x440001, 1),
             offset: 128,
-        }
+        })
     );
 }
 
@@ -764,7 +764,7 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
         push_u32(&mut get_image, byte_order, u32::MAX);
         assert_eq!(
             decode_x11_core_request(context(namespace, 540, byte_order), &get_image).unwrap(),
-            XWireRequest::GetImage {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::GetImage {
                 format: 2,
                 drawable: XResourceId::new(0x220009, 1),
                 x: 3,
@@ -772,7 +772,7 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
                 width: 1290,
                 height: 1050,
                 plane_mask: u32::MAX,
-            }
+            })
         );
 
         let mut reparent = vec![7, 0];
@@ -783,12 +783,12 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
         push_i16(&mut reparent, byte_order, 6);
         assert_eq!(
             decode_x11_core_request(context(namespace, 541, byte_order), &reparent).unwrap(),
-            XWireRequest::ReparentWindow {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::ReparentWindow {
                 window: XResourceId::new(0x22000c, 1),
                 parent: XResourceId::new(0x22000d, 1),
                 x: 5,
                 y: 6,
-            }
+            })
         );
 
         let mut controls = vec![X_KEYBOARD_MAJOR_OPCODE, 6];
@@ -797,7 +797,7 @@ fn x11_core_decoder_captures_firefox_compatibility_requests_in_both_orders() {
         push_u16(&mut controls, byte_order, 0);
         assert_eq!(
             decode_x11_core_request(context(namespace, 542, byte_order), &controls).unwrap(),
-            XWireRequest::XkbGetControls
+            XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbGetControls)
         );
     }
 }
@@ -818,7 +818,7 @@ fn x11_core_decoder_reads_sixteen_bit_text_in_both_client_orders() {
         .unwrap();
         assert_eq!(
             request,
-            XWireRequest::PolyText16 {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyText16 {
                 drawable: XResourceId::new(0x330010, 1),
                 gc: XResourceId::new(0x330011, 1),
                 x: 7,
@@ -827,7 +827,7 @@ fn x11_core_decoder_reads_sixteen_bit_text_in_both_client_orders() {
                     delta: 0,
                     chars: chars.to_vec(),
                 }],
-            },
+            }),
             "{byte_order:?}"
         );
 
@@ -838,13 +838,13 @@ fn x11_core_decoder_reads_sixteen_bit_text_in_both_client_orders() {
         .unwrap();
         assert_eq!(
             image,
-            XWireRequest::ImageText16 {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::ImageText16 {
                 drawable: XResourceId::new(0x330010, 1),
                 gc: XResourceId::new(0x330011, 1),
                 x: 7,
                 y: 19,
                 chars: chars.to_vec(),
-            },
+            }),
             "{byte_order:?}"
         );
     }
@@ -872,7 +872,7 @@ fn x11_poly_text16_font_shift_is_msb_first_and_its_items_count_characters() {
             &poly_text16_items_request(byte_order, 0x330010, 0x330011, 1, 2, &items),
         )
         .unwrap();
-        let XWireRequest::PolyText16 { items, .. } = request else {
+        let XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyText16 { items, .. }) = request else {
             panic!("a PolyText16 request");
         };
         assert_eq!(
@@ -909,10 +909,10 @@ fn x11_query_text_extents_recovers_its_length_from_the_odd_flag() {
         .unwrap();
         assert_eq!(
             even,
-            XWireRequest::QueryTextExtents {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::QueryTextExtents {
                 fontable: XResourceId::new(0x330011, 1),
                 chars: vec![0x0041, 0x0042],
-            },
+            }),
             "{byte_order:?}"
         );
 
@@ -923,10 +923,10 @@ fn x11_query_text_extents_recovers_its_length_from_the_odd_flag() {
         .unwrap();
         assert_eq!(
             odd,
-            XWireRequest::QueryTextExtents {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::QueryTextExtents {
                 fontable: XResourceId::new(0x330011, 1),
                 chars: vec![0x0041],
-            },
+            }),
             "{byte_order:?}"
         );
 
@@ -937,10 +937,10 @@ fn x11_query_text_extents_recovers_its_length_from_the_odd_flag() {
         .unwrap();
         assert_eq!(
             empty,
-            XWireRequest::QueryTextExtents {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::QueryTextExtents {
                 fontable: XResourceId::new(0x330011, 1),
                 chars: Vec::new(),
-            },
+            }),
             "{byte_order:?}"
         );
     }

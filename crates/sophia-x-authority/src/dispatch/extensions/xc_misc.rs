@@ -5,14 +5,14 @@ fn dispatch_xc_misc_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::XCMiscGetVersion { .. }
-            | XWireRequest::XCMiscGetXIDRange
-            | XWireRequest::XCMiscGetXIDList { .. }
+        XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetVersion { .. })
+            | XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetXIDRange)
+            | XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetXIDList { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-        XWireRequest::XCMiscGetVersion { .. } => XDispatchResult {
+        XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetVersion { .. }) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::XCMiscGetVersion {
                 sequence: context.sequence,
@@ -29,7 +29,7 @@ fn dispatch_xc_misc_request(
         // A count of zero is a real protocol answer that clients handle. The
         // alternative -- inventing a range -- would hand out identifiers that
         // collide with another client's resources.
-        XWireRequest::XCMiscGetXIDRange => XDispatchResult {
+        XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetXIDRange) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::XCMiscGetXIDRange {
                 sequence: context.sequence,
@@ -38,7 +38,7 @@ fn dispatch_xc_misc_request(
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::XCMiscGetXIDList { .. } => XDispatchResult {
+        XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetXIDList { .. }) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::XCMiscGetXIDList {
                 sequence: context.sequence,

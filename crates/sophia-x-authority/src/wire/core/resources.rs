@@ -3,9 +3,9 @@ fn decode_free_gc(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_FREE_GC, X_FREE_GC_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::FreeGraphicsContext {
+    Ok(XWireRequest::Core(crate::XCoreRequest::FreeGraphicsContext {
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_create_pixmap(
@@ -15,13 +15,13 @@ fn decode_create_pixmap(
     require_exact_len(X_CREATE_PIXMAP, X_CREATE_PIXMAP_REQ_LEN, bytes.len())?;
     let pixmap = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(pixmap)?;
-    Ok(XWireRequest::CreatePixmap {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CreatePixmap {
         depth: bytes[1],
         pixmap: XResourceId::new(u64::from(pixmap), 1),
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         width: context.byte_order.u16(&bytes[12..14]),
         height: context.byte_order.u16(&bytes[14..16]),
-    })
+    }))
 }
 
 fn decode_open_font(
@@ -46,10 +46,10 @@ fn decode_open_font(
         })?;
     let font = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(font)?;
-    Ok(XWireRequest::OpenFont {
+    Ok(XWireRequest::Core(crate::XCoreRequest::OpenFont {
         font: XResourceId::new(u64::from(font), 1),
         name: name.to_owned(),
-    })
+    }))
 }
 
 fn decode_close_font(
@@ -57,9 +57,9 @@ fn decode_close_font(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_CLOSE_FONT, X_CLOSE_FONT_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::CloseFont {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CloseFont {
         font: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_query_font(
@@ -67,9 +67,9 @@ fn decode_query_font(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_QUERY_FONT, X_QUERY_FONT_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::QueryFont {
+    Ok(XWireRequest::Core(crate::XCoreRequest::QueryFont {
         font: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_list_fonts(
@@ -93,10 +93,10 @@ fn decode_list_fonts(
                 expected_at_least: expected_len,
                 actual: bytes.len(),
             })?;
-    Ok(XWireRequest::ListFonts {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ListFonts {
         max_names: context.byte_order.u16(&bytes[4..6]),
         pattern: pattern.to_owned(),
-    })
+    }))
 }
 
 fn decode_list_fonts_with_info(
@@ -125,10 +125,10 @@ fn decode_list_fonts_with_info(
         expected_at_least: expected_len,
         actual: bytes.len(),
     })?;
-    Ok(XWireRequest::ListFontsWithInfo {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ListFontsWithInfo {
         max_names: context.byte_order.u16(&bytes[4..6]),
         pattern: pattern.to_owned(),
-    })
+    }))
 }
 
 fn decode_free_pixmap(
@@ -136,9 +136,9 @@ fn decode_free_pixmap(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_FREE_PIXMAP, X_FREE_PIXMAP_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::FreePixmap {
+    Ok(XWireRequest::Core(crate::XCoreRequest::FreePixmap {
         pixmap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_query_best_size(
@@ -151,12 +151,12 @@ fn decode_query_best_size(
     if bytes[1] > 2 {
         return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
     }
-    Ok(XWireRequest::QueryBestSize {
+    Ok(XWireRequest::Core(crate::XCoreRequest::QueryBestSize {
         class: bytes[1],
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         width: context.byte_order.u16(&bytes[8..10]),
         height: context.byte_order.u16(&bytes[10..12]),
-    })
+    }))
 }
 
 fn decode_create_gc(
@@ -196,11 +196,11 @@ fn decode_create_gc(
         let value = next_value();
         decode_gc_value(bit, value, &mut values)?;
     }
-    Ok(XWireRequest::CreateGraphicsContext {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CreateGraphicsContext {
         gc: XResourceId::new(u64::from(gc), 1),
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         values,
-    })
+    }))
 }
 
 /// Store one graphics-context value by its mask bit, refusing anything
@@ -284,10 +284,10 @@ fn decode_change_gc(
         cursor += 4;
         decode_gc_value(bit, value, &mut values)?;
     }
-    Ok(XWireRequest::ChangeGraphicsContext {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ChangeGraphicsContext {
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         value_mask,
         values,
-    })
+    }))
 }
 

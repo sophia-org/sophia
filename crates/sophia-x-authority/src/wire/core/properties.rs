@@ -3,14 +3,14 @@ fn decode_get_property(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GET_PROPERTY, X_GET_PROPERTY_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GetProperty(XPropertyRead {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetProperty(XPropertyRead {
         delete: bytes[1] != 0,
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         property: context.byte_order.u32(&bytes[8..12]),
         property_type: context.byte_order.u32(&bytes[12..16]),
         long_offset: context.byte_order.u32(&bytes[16..20]),
         long_length: context.byte_order.u32(&bytes[20..24]),
-    }))
+    })))
 }
 
 fn decode_list_properties(
@@ -18,9 +18,9 @@ fn decode_list_properties(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_LIST_PROPERTIES, X_LIST_PROPERTIES_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::ListProperties {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ListProperties {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_intern_atom(
@@ -44,10 +44,10 @@ fn decode_intern_atom(
                 expected_at_least: expected_len,
                 actual: bytes.len(),
             })?;
-    Ok(XWireRequest::InternAtom {
+    Ok(XWireRequest::Core(crate::XCoreRequest::InternAtom {
         only_if_exists: bytes[1] != 0,
         name: name.to_owned(),
-    })
+    }))
 }
 
 fn decode_get_atom_name(
@@ -55,9 +55,9 @@ fn decode_get_atom_name(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GET_ATOM_NAME, X_GET_ATOM_NAME_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GetAtomName {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetAtomName {
         atom: context.byte_order.u32(&bytes[4..8]),
-    })
+    }))
 }
 
 fn decode_change_property(
@@ -97,14 +97,14 @@ fn decode_change_property(
         });
     }
 
-    Ok(XWireRequest::ChangeProperty(XPropertyChange {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ChangeProperty(XPropertyChange {
         mode,
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         property: context.byte_order.u32(&bytes[8..12]),
         property_type: context.byte_order.u32(&bytes[12..16]),
         format,
         bytes: bytes[X_CHANGE_PROPERTY_REQ_LEN..X_CHANGE_PROPERTY_REQ_LEN + value_len].to_vec(),
-    }))
+    })))
 }
 
 fn decode_set_selection_owner(
@@ -148,9 +148,9 @@ fn decode_get_selection_owner(
         X_GET_SELECTION_OWNER_REQ_LEN,
         bytes.len(),
     )?;
-    Ok(XWireRequest::GetSelectionOwner {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetSelectionOwner {
         selection: context.byte_order.u32(&bytes[4..8]),
-    })
+    }))
 }
 
 fn decode_convert_selection(
@@ -197,11 +197,11 @@ fn decode_rotate_properties(
             context.byte_order.u32(&bytes[at..at + 4])
         })
         .collect();
-    Ok(XWireRequest::RotateProperties {
+    Ok(XWireRequest::Core(crate::XCoreRequest::RotateProperties {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         delta: context.byte_order.i16(&bytes[10..12]),
         properties,
-    })
+    }))
 }
 
 fn decode_send_event(
@@ -224,7 +224,7 @@ fn decode_send_event(
         // send_event. The SelectionNotify form below marks itself.
         event[0] |= 0x80;
         let event_mask = context.byte_order.u32(&bytes[8..12]);
-        return Ok(XWireRequest::SendSelectionNotify {
+        return Ok(XWireRequest::Core(crate::XCoreRequest::SendSelectionNotify {
             destination,
             event_mask,
             event: XClientEvent::ClientMessage {
@@ -234,10 +234,10 @@ fn decode_send_event(
                 event_mask,
                 propagate: bytes[1] != 0,
             },
-        });
+        }));
     }
     let requestor = XResourceId::new(u64::from(context.byte_order.u32(&bytes[20..24])), 1);
-    Ok(XWireRequest::SendSelectionNotify {
+    Ok(XWireRequest::Core(crate::XCoreRequest::SendSelectionNotify {
         destination,
         event_mask: context.byte_order.u32(&bytes[8..12]),
         event: XClientEvent::SelectionNotify {
@@ -251,5 +251,5 @@ fn decode_send_event(
             target: context.byte_order.u32(&bytes[28..32]),
             property: context.byte_order.u32(&bytes[32..36]),
         },
-    })
+    }))
 }

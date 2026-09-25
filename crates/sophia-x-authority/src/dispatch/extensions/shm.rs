@@ -6,19 +6,19 @@ fn dispatch_shm_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::BigRequestsEnable
-            | XWireRequest::ShmAttach { .. }
-            | XWireRequest::ShmAttachFd { .. }
-            | XWireRequest::ShmCreateSegment { .. }
-            | XWireRequest::ShmDetach { .. }
-            | XWireRequest::ShmCreatePixmap { .. }
-            | XWireRequest::ShmPutImage { .. }
-            | XWireRequest::ShmGetImage { .. }
+            XWireRequest::Extension(crate::XExtensionRequest::BigRequestsEnable)
+            | XWireRequest::Shm(crate::XShmRequest::ShmAttach { .. })
+            | XWireRequest::Shm(crate::XShmRequest::ShmAttachFd { .. })
+            | XWireRequest::Shm(crate::XShmRequest::ShmCreateSegment { .. })
+            | XWireRequest::Shm(crate::XShmRequest::ShmDetach { .. })
+            | XWireRequest::Shm(crate::XShmRequest::ShmCreatePixmap { .. })
+            | XWireRequest::Shm(crate::XShmRequest::ShmPutImage { .. })
+            | XWireRequest::Shm(crate::XShmRequest::ShmGetImage { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::BigRequestsEnable => XDispatchResult {
+                XWireRequest::Extension(crate::XExtensionRequest::BigRequestsEnable) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::BigRequestsEnable {
                         sequence: context.sequence,
@@ -26,11 +26,11 @@ fn dispatch_shm_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::ShmAttach {
+                XWireRequest::Shm(crate::XShmRequest::ShmAttach {
                     segment,
                     shmid,
                     read_only,
-                } => {
+                }) => {
                     let outputs = match runtime.attach_shm_segment(
                         context.namespace,
                         segment,
@@ -56,7 +56,7 @@ fn dispatch_shm_request(
                 // records the segment once it has mapped it. This validates
                 // the name so a client learns about a bad id from the request
                 // that used it, and nothing is recorded that has no memory.
-                XWireRequest::ShmAttachFd { segment, .. } => XDispatchResult {
+                XWireRequest::Shm(crate::XShmRequest::ShmAttachFd { segment, .. }) => XDispatchResult {
                     response: None,
                     outputs: if runtime
                         .validate_shm_segment_access(context.namespace, segment)
@@ -74,11 +74,11 @@ fn dispatch_shm_request(
                     },
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::ShmCreateSegment {
+                XWireRequest::Shm(crate::XShmRequest::ShmCreateSegment {
                     segment,
                     size,
                     read_only,
-                } => {
+                }) => {
                     let outputs = if runtime
                         .validate_shm_segment_access(context.namespace, segment)
                         .is_ok()
@@ -121,7 +121,7 @@ fn dispatch_shm_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ShmDetach { segment } => {
+                XWireRequest::Shm(crate::XShmRequest::ShmDetach { segment }) => {
                     let outputs = match runtime.detach_shm_segment(context.namespace, segment) {
                         Ok(()) => Vec::new(),
                         Err(
@@ -141,7 +141,7 @@ fn dispatch_shm_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ShmCreatePixmap {
+                XWireRequest::Shm(crate::XShmRequest::ShmCreatePixmap {
                     pixmap,
                     drawable,
                     width,
@@ -149,7 +149,7 @@ fn dispatch_shm_request(
                     depth,
                     segment,
                     offset,
-                } => {
+                }) => {
                     let valid_shape = width != 0
                         && height != 0
                         && matches!(depth, 24 | 32)
@@ -198,7 +198,7 @@ fn dispatch_shm_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ShmPutImage {
+                XWireRequest::Shm(crate::XShmRequest::ShmPutImage {
                     drawable,
                     gc,
                     segment,
@@ -215,7 +215,7 @@ fn dispatch_shm_request(
                     offset,
                     send_event,
                     ..
-                } => {
+                }) => {
                     let transaction = context.transaction;
                     if runtime
                         .validate_shm_segment_access(context.namespace, segment)
@@ -307,7 +307,7 @@ fn dispatch_shm_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ShmGetImage {
+                XWireRequest::Shm(crate::XShmRequest::ShmGetImage {
                     drawable,
                     x,
                     y,
@@ -317,7 +317,7 @@ fn dispatch_shm_request(
                     plane_mask,
                     segment,
                     offset,
-                } => {
+                }) => {
                     let region = Rect {
                         x: i32::from(x),
                         y: i32::from(y),

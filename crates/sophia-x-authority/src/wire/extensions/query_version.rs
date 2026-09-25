@@ -1,12 +1,12 @@
 impl XWireRequest {
     pub const fn required_fd_count(&self) -> usize {
         match self {
-            Self::Dri3PixmapFromBuffer { .. }
-            | Self::Dri3FenceFromFd { .. }
+            Self::Dri3(XDri3Request::Dri3PixmapFromBuffer { .. })
+            | Self::Dri3(XDri3Request::Dri3FenceFromFd { .. })
             // The segment's memory is the descriptor; without it there is
             // nothing to attach.
-            | Self::ShmAttachFd { .. } => 1,
-            Self::Dri3PixmapFromBuffers { num_buffers, .. } => *num_buffers as usize,
+            | Self::Shm(XShmRequest::ShmAttachFd { .. }) => 1,
+            Self::Dri3(XDri3Request::Dri3PixmapFromBuffers { num_buffers, .. }) => *num_buffers as usize,
             _ => 0,
         }
     }
@@ -28,4 +28,3 @@ fn decode_extension_query_version(
         context.byte_order.u32(&bytes[8..12]),
     ))
 }
-

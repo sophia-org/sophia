@@ -12,7 +12,7 @@ fn decode_put_image(
         });
     }
 
-    Ok(XWireRequest::PutImage {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PutImage {
         format: bytes[1],
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
@@ -23,7 +23,7 @@ fn decode_put_image(
         left_pad: bytes[20],
         depth: bytes[21],
         data: bytes[X_PUT_IMAGE_REQ_LEN..].to_vec(),
-    })
+    }))
 }
 
 fn decode_get_image(
@@ -32,7 +32,7 @@ fn decode_get_image(
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GET_IMAGE, X_GET_IMAGE_REQ_LEN, bytes.len())?;
     validate_wire_get_image_format(bytes[1])?;
-    Ok(XWireRequest::GetImage {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetImage {
         format: bytes[1],
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         x: context.byte_order.i16(&bytes[8..10]),
@@ -40,7 +40,7 @@ fn decode_get_image(
         width: context.byte_order.u16(&bytes[12..14]),
         height: context.byte_order.u16(&bytes[14..16]),
         plane_mask: context.byte_order.u32(&bytes[16..20]),
-    })
+    }))
 }
 
 /// Walk a `PolyText8` or `PolyText16` item list.
@@ -137,13 +137,13 @@ fn decode_poly_text8(
         bytes,
         1,
     )?;
-    Ok(XWireRequest::PolyText8 {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyText8 {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         x: context.byte_order.i16(&bytes[12..14]),
         y: context.byte_order.i16(&bytes[14..16]),
         items,
-    })
+    }))
 }
 
 fn decode_poly_text16(
@@ -158,13 +158,13 @@ fn decode_poly_text16(
         bytes,
         2,
     )?;
-    Ok(XWireRequest::PolyText16 {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyText16 {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         x: context.byte_order.i16(&bytes[12..14]),
         y: context.byte_order.i16(&bytes[14..16]),
         items,
-    })
+    }))
 }
 
 fn decode_image_text8(
@@ -188,13 +188,13 @@ fn decode_image_text8(
         });
     }
 
-    Ok(XWireRequest::ImageText8 {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ImageText8 {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         x: context.byte_order.i16(&bytes[12..14]),
         y: context.byte_order.i16(&bytes[14..16]),
         text: bytes[X_IMAGE_TEXT8_REQ_LEN..X_IMAGE_TEXT8_REQ_LEN + text_len].to_vec(),
-    })
+    }))
 }
 
 fn decode_copy_area(
@@ -202,7 +202,7 @@ fn decode_copy_area(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_COPY_AREA, X_COPY_AREA_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::CopyArea {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CopyArea {
         source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[12..16])), 1),
@@ -212,7 +212,7 @@ fn decode_copy_area(
         dst_y: context.byte_order.i16(&bytes[22..24]),
         width: context.byte_order.u16(&bytes[24..26]),
         height: context.byte_order.u16(&bytes[26..28]),
-    })
+    }))
 }
 
 fn decode_poly_segment(
@@ -241,11 +241,11 @@ fn decode_poly_segment(
             },
         ));
     }
-    Ok(XWireRequest::PolySegment {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolySegment {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         segments,
-    })
+    }))
 }
 
 fn decode_poly_line(
@@ -277,11 +277,11 @@ fn decode_poly_line(
         previous = decoded;
         points.push(decoded);
     }
-    Ok(XWireRequest::PolyLine {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyLine {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         points,
-    })
+    }))
 }
 
 fn decode_fill_poly(
@@ -304,13 +304,13 @@ fn decode_fill_poly(
         });
     }
 
-    Ok(XWireRequest::FillPoly {
+    Ok(XWireRequest::Core(crate::XCoreRequest::FillPoly {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         shape: bytes[12],
         coordinate_mode: bytes[13],
         points: decode_points(context, point_bytes),
-    })
+    }))
 }
 
 /// A coordinate mode is `Origin` or `Previous`; the protocol lists Value
@@ -384,11 +384,11 @@ fn decode_poly_fill_rectangle(
             height: i32::from(context.byte_order.u16(&rectangle[6..8])),
         });
     }
-    Ok(XWireRequest::PolyFillRectangle {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyFillRectangle {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         rectangles,
-    })
+    }))
 }
 
 fn decode_poly_rectangle(
@@ -413,11 +413,11 @@ fn decode_poly_rectangle(
             height: i32::from(context.byte_order.u16(&rectangle[6..8])),
         });
     }
-    Ok(XWireRequest::PolyRectangle {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyRectangle {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         rectangles,
-    })
+    }))
 }
 
 fn decode_poly_fill_arc(
@@ -425,11 +425,11 @@ fn decode_poly_fill_arc(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_POLY_FILL_ARC, X_POLY_FILL_ARC_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::PolyFillArc {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyFillArc {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         arcs: decode_arcs(context, X_POLY_FILL_ARC, X_POLY_FILL_ARC_REQ_LEN, bytes)?,
-    })
+    }))
 }
 
 fn decode_poly_arc(
@@ -437,11 +437,11 @@ fn decode_poly_arc(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_POLY_ARC, X_POLY_ARC_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::PolyArc {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyArc {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         arcs: decode_arcs(context, X_POLY_ARC, X_POLY_ARC_REQ_LEN, bytes)?,
-    })
+    }))
 }
 
 fn decode_poly_point(
@@ -458,12 +458,12 @@ fn decode_poly_point(
             actual: bytes.len(),
         });
     }
-    Ok(XWireRequest::PolyPoint {
+    Ok(XWireRequest::Core(crate::XCoreRequest::PolyPoint {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         coordinate_mode: bytes[1],
         points: decode_points(context, point_bytes),
-    })
+    }))
 }
 
 /// Read a list of twelve-byte arcs.
@@ -522,13 +522,13 @@ fn decode_image_text16(
         .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
         .collect();
 
-    Ok(XWireRequest::ImageText16 {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ImageText16 {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         x: context.byte_order.i16(&bytes[12..14]),
         y: context.byte_order.i16(&bytes[14..16]),
         chars,
-    })
+    }))
 }
 
 /// `QueryTextExtents` carries no character count.
@@ -576,8 +576,8 @@ fn decode_query_text_extents(
         .chunks_exact(2)
         .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
         .collect();
-    Ok(XWireRequest::QueryTextExtents {
+    Ok(XWireRequest::Core(crate::XCoreRequest::QueryTextExtents {
         fontable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         chars,
-    })
+    }))
 }

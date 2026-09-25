@@ -6,23 +6,23 @@ fn dispatch_xfixes_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::XfixesCreateRegion { .. }
-            | XWireRequest::XfixesSetRegion { .. }
-            | XWireRequest::XfixesDestroyRegion { .. }
-            | XWireRequest::XfixesSelectSelectionInput { .. }
-            | XWireRequest::XfixesCombineRegion { .. }
-            | XWireRequest::XfixesInvertRegion { .. }
-            | XWireRequest::XfixesTranslateRegion { .. }
-            | XWireRequest::XfixesRegionExtents { .. }
-            | XWireRequest::XfixesFetchRegion { .. }
-            | XWireRequest::XfixesCreateRegionFrom { .. }
-            | XWireRequest::XfixesExpandRegion { .. }
-            | XWireRequest::XfixesUnimplemented { .. }
+            XWireRequest::Xfixes(crate::XFixesRequest::XfixesCreateRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesSetRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesDestroyRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesSelectSelectionInput { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesCombineRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesInvertRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesTranslateRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesRegionExtents { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesFetchRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesCreateRegionFrom { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesExpandRegion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesUnimplemented { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::XfixesCreateRegion { region, rectangles } => {
+                XWireRequest::Xfixes(crate::XFixesRequest::XfixesCreateRegion { region, rectangles }) => {
                     let output = runtime
                         .create_xfixes_region(
                             context.namespace,
@@ -45,7 +45,7 @@ fn dispatch_xfixes_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XfixesSetRegion { region, rectangles } => {
+                XWireRequest::Xfixes(crate::XFixesRequest::XfixesSetRegion { region, rectangles }) => {
                     let output = runtime
                         .set_xfixes_region(context.namespace, region, rectangles)
                         .err()
@@ -63,7 +63,7 @@ fn dispatch_xfixes_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XfixesDestroyRegion { region } => {
+                XWireRequest::Xfixes(crate::XFixesRequest::XfixesDestroyRegion { region }) => {
                     let output = runtime
                         .destroy_xfixes_region(context.namespace, region)
                         .err()
@@ -81,11 +81,11 @@ fn dispatch_xfixes_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XfixesSelectSelectionInput {
+                XWireRequest::Xfixes(crate::XFixesRequest::XfixesSelectSelectionInput {
                     window,
                     selection,
                     event_mask,
-                } => {
+                }) => {
                     let output = if event_mask & !0b111 != 0 {
                         Some(XClientOutput::Error(crate::XClientError {
                             code: XErrorCode::BadValue,
@@ -121,12 +121,12 @@ fn dispatch_xfixes_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-        XWireRequest::XfixesCombineRegion {
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesCombineRegion {
             minor_opcode,
             source,
             other,
             destination,
-        } => {
+        }) => {
             let combine: fn(&[Rect], &[Rect]) -> Vec<Rect> = match minor_opcode {
                 crate::X_XFIXES_UNION_REGION_MINOR_OPCODE => {
                     sophia_protocol::geometry::region_algebra::union
@@ -155,32 +155,32 @@ fn dispatch_xfixes_request(
                 destination,
             )
         }
-        XWireRequest::XfixesInvertRegion {
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesInvertRegion {
             source,
             bounds,
             destination,
-        } => xfixes_region_result(
+        }) => xfixes_region_result(
             context,
             runtime.invert_xfixes_region(context.namespace, source, bounds, destination),
             crate::X_XFIXES_INVERT_REGION_MINOR_OPCODE,
             destination,
         ),
-        XWireRequest::XfixesTranslateRegion { region, dx, dy } => xfixes_region_result(
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesTranslateRegion { region, dx, dy }) => xfixes_region_result(
             context,
             runtime.translate_xfixes_region(context.namespace, region, dx, dy),
             crate::X_XFIXES_TRANSLATE_REGION_MINOR_OPCODE,
             region,
         ),
-        XWireRequest::XfixesRegionExtents {
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesRegionExtents {
             source,
             destination,
-        } => xfixes_region_result(
+        }) => xfixes_region_result(
             context,
             runtime.set_xfixes_region_to_extents(context.namespace, source, destination),
             crate::X_XFIXES_REGION_EXTENTS_MINOR_OPCODE,
             destination,
         ),
-        XWireRequest::XfixesFetchRegion { region } => {
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesFetchRegion { region }) => {
             let outputs = match runtime.fetch_xfixes_region(context.namespace, region) {
                 Ok(rects) => {
                     let extents = sophia_protocol::geometry::region_algebra::extents(&rects)
@@ -209,12 +209,12 @@ fn dispatch_xfixes_request(
         // minor behind it, so a minor defined by that version and not
         // implemented says so, and one above it says the version does not
         // reach that far.
-        XWireRequest::XfixesCreateRegionFrom {
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesCreateRegionFrom {
             minor_opcode,
             region,
             source,
             kind,
-        } => {
+        }) => {
             let outcome = match minor_opcode {
                 crate::X_XFIXES_CREATE_REGION_FROM_BITMAP_MINOR_OPCODE => runtime
                     .create_xfixes_region_from_bitmap(
@@ -247,14 +247,14 @@ fn dispatch_xfixes_request(
             };
             xfixes_source_result(context, outcome, minor_opcode, region, source, kind)
         }
-        XWireRequest::XfixesExpandRegion {
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesExpandRegion {
             source,
             destination,
             left,
             right,
             top,
             bottom,
-        } => xfixes_source_result(
+        }) => xfixes_source_result(
             context,
             runtime.expand_xfixes_region(
                 context.namespace,
@@ -270,7 +270,7 @@ fn dispatch_xfixes_request(
             source,
             0,
         ),
-        XWireRequest::XfixesUnimplemented { minor_opcode } => XDispatchResult {
+        XWireRequest::Xfixes(crate::XFixesRequest::XfixesUnimplemented { minor_opcode }) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Error(crate::XClientError {
                 code: if minor_opcode <= crate::X_XFIXES_LAST_MINOR_OPCODE {

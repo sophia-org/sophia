@@ -7,15 +7,15 @@ fn dispatch_core_property_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::InternAtom { .. }
-            | XWireRequest::GetAtomName { .. }
-            | XWireRequest::ChangeProperty(..)
-            | XWireRequest::DeleteProperty { .. }
-            | XWireRequest::RotateProperties { .. }
-            | XWireRequest::GetProperty(..)
-            | XWireRequest::ListProperties { .. }
-            | XWireRequest::GetSelectionOwner { .. }
-            | XWireRequest::SendSelectionNotify { .. }
+            XWireRequest::Core(crate::XCoreRequest::InternAtom { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetAtomName { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ChangeProperty(..))
+            | XWireRequest::Core(crate::XCoreRequest::DeleteProperty { .. })
+            | XWireRequest::Core(crate::XCoreRequest::RotateProperties { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetProperty(..))
+            | XWireRequest::Core(crate::XCoreRequest::ListProperties { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetSelectionOwner { .. })
+            | XWireRequest::Core(crate::XCoreRequest::SendSelectionNotify { .. })
     ) {
         return Unhandled(request);
     }
@@ -24,11 +24,11 @@ fn dispatch_core_property_request(
                 // list, each moved value a PropertyNotify. A property missing
                 // or named twice moves nothing (BadMatch); an Engine-owned one
                 // refuses (BadAccess), as ChangeProperty does.
-                XWireRequest::RotateProperties {
+                XWireRequest::Core(crate::XCoreRequest::RotateProperties {
                     window,
                     delta,
                     properties: ref rotated,
-                } => {
+                }) => {
                     let error = |code: XErrorCode, resource_id: u32| {
                         XClientOutput::Error(crate::XClientError {
                             code,
@@ -78,10 +78,10 @@ fn dispatch_core_property_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::InternAtom {
+                XWireRequest::Core(crate::XCoreRequest::InternAtom {
                     only_if_exists,
                     name,
-                } => {
+                }) => {
                     let output = match atoms.intern(&name, only_if_exists) {
                         Ok(atom) => XClientOutput::Reply(XClientReply::InternAtom {
                             sequence: context.sequence,
@@ -101,7 +101,7 @@ fn dispatch_core_property_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetAtomName { atom } => {
+                XWireRequest::Core(crate::XCoreRequest::GetAtomName { atom }) => {
                     let output = match atoms.name(atom) {
                         Some(name) => XClientOutput::Reply(XClientReply::GetAtomName {
                             sequence: context.sequence,
@@ -121,7 +121,7 @@ fn dispatch_core_property_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ChangeProperty(change) => {
+                XWireRequest::Core(crate::XCoreRequest::ChangeProperty(change)) => {
                     let transaction = context.transaction;
                     // GTK rewrites its initial EWMH hints between hide and
                     // show. An earlier map having published Engine state must
@@ -278,7 +278,7 @@ fn dispatch_core_property_request(
                         metadata_candidates,
                     }
                 }
-                XWireRequest::DeleteProperty { window, property } => {
+                XWireRequest::Core(crate::XCoreRequest::DeleteProperty { window, property }) => {
                     let transaction = context.transaction;
                     let access = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         Ok(())
@@ -378,7 +378,7 @@ fn dispatch_core_property_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetProperty(read) => {
+                XWireRequest::Core(crate::XCoreRequest::GetProperty(read)) => {
                     let window = read.window;
                     let property = read.property;
                     let outputs = if property == crate::X_PROPERTY_ANY_TYPE
@@ -422,7 +422,7 @@ fn dispatch_core_property_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ListProperties { window } => {
+                XWireRequest::Core(crate::XCoreRequest::ListProperties { window }) => {
                     let output = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         XClientOutput::Reply(XClientReply::ListProperties {
                             sequence: context.sequence,
@@ -447,7 +447,7 @@ fn dispatch_core_property_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetSelectionOwner { selection } => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::GetSelectionOwner { selection }) => XDispatchResult {
                     response: None,
                     // The selection is the request's only argument and its
                     // only error: an atom that names nothing is refused
@@ -469,11 +469,11 @@ fn dispatch_core_property_request(
                     }],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::SendSelectionNotify {
+                XWireRequest::Core(crate::XCoreRequest::SendSelectionNotify {
                     destination,
                     event_mask,
                     mut event,
-                } => {
+                }) => {
                     // The ClientMessage form's two special destinations
                     // (t182): PointerWindow (0) is the window the pointer is
                     // in, the root when this authority knows of none;

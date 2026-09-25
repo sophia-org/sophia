@@ -56,14 +56,14 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
     )
     .unwrap();
 
-    let XWireRequest::CreateWindow {
+    let XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateWindow {
         packet: create,
         background_pixel,
         event_mask,
         do_not_propagate_mask,
         parent,
         ..
-    } = create
+    }) = create
     else {
         panic!("expected create-window request");
     };
@@ -103,20 +103,20 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
     );
     assert_eq!(
         map_subwindows,
-        XWireRequest::MapSubwindows {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::MapSubwindows {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             withheld: Vec::new(),
-        }
+        })
     );
     assert_eq!(
         unmap,
-        XWireRequest::UnmapWindow {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::UnmapWindow {
             window: XResourceId::new(0x220001, 1),
-        }
+        })
     );
     assert_eq!(
         configure,
-        XWireRequest::ConfigureWindow {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ConfigureWindow {
             window: XResourceId::new(0x220001, 1),
             value_mask: 0x000c,
             x: None,
@@ -126,7 +126,7 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
             border_width: None,
             sibling: None,
             stack_mode: None,
-        }
+        })
     );
     let geometry = decode_x11_core_request(
         context(namespace, 508, XByteOrder::LittleEndian),
@@ -145,21 +145,21 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
     .unwrap();
     assert_eq!(
         geometry,
-        XWireRequest::GetGeometry {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetGeometry {
             drawable: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-        }
+        })
     );
     assert_eq!(
         tree,
-        XWireRequest::QueryTree {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::QueryTree {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-        }
+        })
     );
     assert_eq!(
         list_properties,
-        XWireRequest::ListProperties {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ListProperties {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-        }
+        })
     );
     let translate = decode_x11_core_request(
         context(namespace, 511, XByteOrder::LittleEndian),
@@ -174,22 +174,22 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
     .unwrap();
     assert_eq!(
         translate,
-        XWireRequest::TranslateCoordinates {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::TranslateCoordinates {
             source: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             destination: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             src_x: 12,
             src_y: 34,
-        }
+        })
     );
     assert_eq!(
         get_attributes,
-        XWireRequest::GetWindowAttributes {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetWindowAttributes {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-        }
+        })
     );
     assert_eq!(
         attributes,
-        XWireRequest::ChangeWindowAttributes {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeWindowAttributes {
             cursor: None,
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             background_pixmap: None,
@@ -202,20 +202,20 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
             win_gravity: None,
             border_pixmap: None,
             border_pixel: None,
-        }
+        })
     );
     let modifier_mapping = decode_x11_core_request(
         context(namespace, 512, XByteOrder::LittleEndian),
         &[119, 0, 1, 0],
     )
     .unwrap();
-    assert_eq!(modifier_mapping, XWireRequest::GetModifierMapping);
+    assert_eq!(modifier_mapping, XWireRequest::Core(sophia_x_authority::XCoreRequest::GetModifierMapping));
     let pointer_mapping = decode_x11_core_request(
         context(namespace, 513, XByteOrder::LittleEndian),
         &[117, 0, 1, 0],
     )
     .unwrap();
-    assert_eq!(pointer_mapping, XWireRequest::GetPointerMapping);
+    assert_eq!(pointer_mapping, XWireRequest::Core(sophia_x_authority::XCoreRequest::GetPointerMapping));
     let keyboard_mapping = decode_x11_core_request(
         context(namespace, 514, XByteOrder::LittleEndian),
         &[101, 0, 2, 0, 8, 4, 0, 0],
@@ -223,10 +223,10 @@ fn x11_core_decoder_maps_create_and_map_to_authority_packets() {
     .unwrap();
     assert_eq!(
         keyboard_mapping,
-        XWireRequest::GetKeyboardMapping {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetKeyboardMapping {
             first_keycode: 8,
             count: 4,
-        }
+        })
     );
 }
 
@@ -247,10 +247,10 @@ fn x11_core_decoder_preserves_override_redirect_attributes() {
     .unwrap();
     assert!(matches!(
         create,
-        XWireRequest::CreateWindow {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateWindow {
             override_redirect: true,
             ..
-        }
+        })
     ));
 
     let change = decode_x11_core_request(
@@ -264,10 +264,10 @@ fn x11_core_decoder_preserves_override_redirect_attributes() {
     .unwrap();
     assert!(matches!(
         change,
-        XWireRequest::ChangeWindowAttributes {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeWindowAttributes {
             override_redirect: Some(false),
             ..
-        }
+        })
     ));
 }
 
@@ -280,10 +280,10 @@ fn keyboard_mapping_request_uses_body_keycode_and_count_bytes() {
     ] {
         assert_eq!(
             decode_x11_core_request(context(namespace, 514, byte_order), &request).unwrap(),
-            XWireRequest::GetKeyboardMapping {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::GetKeyboardMapping {
                 first_keycode: 8,
                 count: 248,
-            }
+            })
         );
     }
 }
@@ -297,9 +297,9 @@ fn x11_core_decoder_preserves_window_background_pixel() {
             &create_window_background_request(byte_order, 0x220002, 10, 20, 320, 200, 0x0012_3456),
         )
         .unwrap();
-        let XWireRequest::CreateWindow {
+        let XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateWindow {
             background_pixel, ..
-        } = create
+        }) = create
         else {
             panic!("expected create-window request");
         };
@@ -318,9 +318,9 @@ fn x11_core_decoder_captures_destroy_window_requests() {
 
     assert_eq!(
         destroy,
-        XWireRequest::DestroyWindow {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::DestroyWindow {
             window: XResourceId::new(0x220001, 1),
-        }
+        })
     );
 }
 
@@ -338,9 +338,9 @@ fn x11_core_decoder_captures_destroy_subwindows_requests() {
     // the named window survives.
     assert_eq!(
         destroy,
-        XWireRequest::DestroySubwindows {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::DestroySubwindows {
             window: XResourceId::new(0x220001, 1),
-        }
+        })
     );
 }
 
@@ -418,10 +418,10 @@ fn x11_core_decoder_maps_selection_requests_to_authority_packets() {
             transfer: sophia_protocol::PortalTransferId::from_raw(504),
         }
     );
-    assert_eq!(get_owner, XWireRequest::GetSelectionOwner { selection: 1 });
+    assert_eq!(get_owner, XWireRequest::Core(sophia_x_authority::XCoreRequest::GetSelectionOwner { selection: 1 }));
     assert_eq!(
         grab_button,
-        XWireRequest::GrabButton {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GrabButton {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             event_mask: 0x001c,
             button: 1,
@@ -429,18 +429,18 @@ fn x11_core_decoder_maps_selection_requests_to_authority_packets() {
             owner_events: true,
             pointer_mode: 1,
             keyboard_mode: 1,
-        }
+        })
     );
     assert_eq!(
         ungrab_button,
-        XWireRequest::UngrabButton {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::UngrabButton {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             button: 1,
             modifiers: 0x0040,
-        }
+        })
     );
-    assert_eq!(grab, XWireRequest::GrabServer);
-    assert_eq!(ungrab, XWireRequest::UngrabServer);
+    assert_eq!(grab, XWireRequest::Core(sophia_x_authority::XCoreRequest::GrabServer));
+    assert_eq!(ungrab, XWireRequest::Core(sophia_x_authority::XCoreRequest::UngrabServer));
 }
 
 #[test]
@@ -459,14 +459,14 @@ fn active_keyboard_pointer_key_and_allow_events_requests_decode() {
             &grab_pointer
         )
         .unwrap(),
-        XWireRequest::GrabPointer {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GrabPointer {
             window: XResourceId::new(u64::from(window), 1),
             event_mask: 0x004c,
             owner_events: true,
             pointer_mode: 1,
             keyboard_mode: 0,
             time: 7,
-        }
+        })
     );
     let mut grab_keyboard = vec![31, 0, 4, 0];
     grab_keyboard.extend_from_slice(&window.to_le_bytes());
@@ -478,13 +478,13 @@ fn active_keyboard_pointer_key_and_allow_events_requests_decode() {
             &grab_keyboard
         )
         .unwrap(),
-        XWireRequest::GrabKeyboard {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GrabKeyboard {
             window: XResourceId::new(u64::from(window), 1),
             owner_events: false,
             pointer_mode: 0,
             keyboard_mode: 1,
             time: 8,
-        }
+        })
     );
     let mut grab_key = vec![33, 1, 4, 0];
     grab_key.extend_from_slice(&window.to_le_bytes());
@@ -493,19 +493,19 @@ fn active_keyboard_pointer_key_and_allow_events_requests_decode() {
     assert_eq!(
         decode_x11_core_request(context(namespace, 3, XByteOrder::LittleEndian), &grab_key)
             .unwrap(),
-        XWireRequest::GrabKey {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GrabKey {
             window: XResourceId::new(u64::from(window), 1),
             key: 38,
             modifiers: 0x8000,
             owner_events: true,
             pointer_mode: 1,
             keyboard_mode: 0,
-        }
+        })
     );
     let allow = [35, 6, 2, 0, 9, 0, 0, 0];
     assert_eq!(
         decode_x11_core_request(context(namespace, 4, XByteOrder::LittleEndian), &allow).unwrap(),
-        XWireRequest::AllowEvents { mode: 6, time: 9 }
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::AllowEvents { mode: 6, time: 9 })
     );
 }
 
@@ -525,7 +525,7 @@ fn x11_core_decoder_captures_change_property_and_table_updates() {
         ),
     )
     .unwrap();
-    let XWireRequest::ChangeProperty(change) = decoded else {
+    let XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeProperty(change)) = decoded else {
         panic!("expected property change");
     };
 
@@ -740,10 +740,10 @@ fn x11_core_decoder_captures_atom_requests() {
     .unwrap();
     assert_eq!(
         intern,
-        XWireRequest::InternAtom {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::InternAtom {
             only_if_exists: false,
             name: X_ATOM_NAME_NET_WM_NAME.to_owned(),
-        }
+        })
     );
 
     let get_name = decode_x11_core_request(
@@ -753,9 +753,9 @@ fn x11_core_decoder_captures_atom_requests() {
     .unwrap();
     assert_eq!(
         get_name,
-        XWireRequest::GetAtomName {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetAtomName {
             atom: X_ATOM_WM_CLASS
-        }
+        })
     );
 }
 
@@ -778,14 +778,14 @@ fn x11_core_decoder_captures_get_property_requests() {
 
     assert_eq!(
         get_property,
-        XWireRequest::GetProperty(XPropertyRead {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetProperty(XPropertyRead {
             delete: false,
             window: XResourceId::new(0x220007, 1),
             property: X_ATOM_WM_NAME,
             property_type: X_PROPERTY_ANY_TYPE,
             long_offset: 1,
             long_length: 2,
-        })
+        }))
     );
 }
 
@@ -800,11 +800,11 @@ fn x11_core_decoder_captures_create_gc_requests() {
 
     assert_eq!(
         create_gc,
-        XWireRequest::CreateGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
             gc: XResourceId::new(0x220010, 1),
             drawable: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             values: XGraphicsContextValues::default(),
-        }
+        })
     );
 
     let clip = decode_x11_core_request(
@@ -814,7 +814,7 @@ fn x11_core_decoder_captures_create_gc_requests() {
     .unwrap();
     assert_eq!(
         clip,
-        XWireRequest::SetClipRectangles {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::SetClipRectangles {
             clip_x_origin: 0,
             clip_y_origin: 0,
             gc: XResourceId::new(0x220010, 1),
@@ -824,7 +824,7 @@ fn x11_core_decoder_captures_create_gc_requests() {
                 width: 20,
                 height: 10,
             }],
-        }
+        })
     );
 
     let clear = decode_x11_core_request(
@@ -835,14 +835,14 @@ fn x11_core_decoder_captures_create_gc_requests() {
 
     assert_eq!(
         clear,
-        XWireRequest::ClearArea {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ClearArea {
             exposures: true,
             window: XResourceId::new(0x220010, 1),
             x: 3,
             y: 4,
             width: 40,
             height: 30,
-        }
+        })
     );
 }
 
@@ -863,7 +863,7 @@ fn x11_core_decoder_preserves_gc_raster_values_in_both_byte_orders() {
         );
         let decoded =
             decode_x11_core_request(context(namespace, 508, byte_order), &request).unwrap();
-        let XWireRequest::CreateGraphicsContext { values, .. } = decoded else {
+        let XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext { values, .. }) = decoded else {
             panic!("expected CreateGC");
         };
         assert_eq!(values.function, 6);
@@ -889,11 +889,11 @@ fn x11_core_decoder_preserves_change_gc_mask_and_values_in_both_byte_orders() {
             ),
         )
         .unwrap();
-        let XWireRequest::ChangeGraphicsContext {
+        let XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc,
             value_mask,
             values,
-        } = decoded
+        }) = decoded
         else {
             panic!("expected ChangeGC");
         };

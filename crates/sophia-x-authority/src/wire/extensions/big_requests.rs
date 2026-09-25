@@ -6,7 +6,7 @@ fn decode_big_requests(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
                 X_BIG_REQUESTS_ENABLE_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::BigRequestsEnable)
+            Ok(XWireRequest::Extension(crate::XExtensionRequest::BigRequestsEnable))
         }
         _ => Err(XWireParseError::UnknownOpcode(bytes[0])),
     }

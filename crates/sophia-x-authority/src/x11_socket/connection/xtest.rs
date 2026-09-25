@@ -18,13 +18,13 @@ struct XTestFakeInputRequest {
 
 impl XTestFakeInputRequest {
     fn from_request(request: &crate::XWireRequest) -> Option<Self> {
-        let crate::XWireRequest::XTestFakeInput {
+        let crate::XWireRequest::XTest(crate::XTestRequest::XTestFakeInput {
             event_type,
             detail,
             root_x,
             root_y,
             ..
-        } = *request
+        }) = *request
         else {
             return None;
         };

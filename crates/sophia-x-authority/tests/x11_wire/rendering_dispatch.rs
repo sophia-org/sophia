@@ -47,7 +47,7 @@ fn x11_dispatch_advertises_big_requests_and_replies_to_enable() {
         ],
     )
     .unwrap();
-    assert_eq!(enable, XWireRequest::BigRequestsEnable);
+    assert_eq!(enable, XWireRequest::Extension(sophia_x_authority::XExtensionRequest::BigRequestsEnable));
     let enable = dispatch_x11_wire_request(
         dispatch_context(
             namespace,
@@ -559,9 +559,9 @@ fn x11_dispatch_randr_reports_root_screen_size_and_populated_resources() {
     .unwrap();
     assert_eq!(
         range,
-        XWireRequest::RandrGetScreenSizeRange {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetScreenSizeRange {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-        }
+        })
     );
 
     let range = dispatch_x11_wire_request(
@@ -601,10 +601,10 @@ fn x11_dispatch_randr_reports_root_screen_size_and_populated_resources() {
     .unwrap();
     assert_eq!(
         resources,
-        XWireRequest::RandrGetScreenResources {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetScreenResources {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             current: false,
-        }
+        })
     );
     let resources = dispatch_x11_wire_request(
         dispatch_context(namespace, 2, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
@@ -721,10 +721,10 @@ fn x11_dispatch_query_colors_returns_true_color_records_in_both_orders() {
 
         assert_eq!(
             request,
-            XWireRequest::QueryColors {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::QueryColors {
                 colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
                 pixels: pixels.to_vec(),
-            }
+            })
         );
         let encoded = dispatch_x11_wire_request(
             dispatch_context(namespace, 1, byte_order, 91),

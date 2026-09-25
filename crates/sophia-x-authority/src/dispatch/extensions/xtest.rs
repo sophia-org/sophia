@@ -1,11 +1,11 @@
 /// The minor a decoded XTEST request came from, for the error that refuses it.
 fn xtest_minor_opcode(request: &XWireRequest) -> Option<u8> {
     match request {
-        XWireRequest::XTestGetVersion { .. } => Some(crate::X_TEST_GET_VERSION_MINOR_OPCODE),
-        XWireRequest::XTestCompareCursor { .. } => Some(crate::X_TEST_COMPARE_CURSOR_MINOR_OPCODE),
-        XWireRequest::XTestFakeInput { .. } => Some(crate::X_TEST_FAKE_INPUT_MINOR_OPCODE),
-        XWireRequest::XTestGrabControl { .. } => Some(crate::X_TEST_GRAB_CONTROL_MINOR_OPCODE),
-        XWireRequest::XTestUnimplemented { minor_opcode } => Some(*minor_opcode),
+        XWireRequest::XTest(crate::XTestRequest::XTestGetVersion { .. }) => Some(crate::X_TEST_GET_VERSION_MINOR_OPCODE),
+        XWireRequest::XTest(crate::XTestRequest::XTestCompareCursor { .. }) => Some(crate::X_TEST_COMPARE_CURSOR_MINOR_OPCODE),
+        XWireRequest::XTest(crate::XTestRequest::XTestFakeInput { .. }) => Some(crate::X_TEST_FAKE_INPUT_MINOR_OPCODE),
+        XWireRequest::XTest(crate::XTestRequest::XTestGrabControl { .. }) => Some(crate::X_TEST_GRAB_CONTROL_MINOR_OPCODE),
+        XWireRequest::XTest(crate::XTestRequest::XTestUnimplemented { minor_opcode }) => Some(*minor_opcode),
         _ => None,
     }
 }
@@ -65,14 +65,14 @@ fn validate_fake_input(
     request: &XWireRequest,
     runtime: &XAuthorityRuntime,
 ) -> XDispatchResult {
-    let XWireRequest::XTestFakeInput {
+    let XWireRequest::XTest(crate::XTestRequest::XTestFakeInput {
         event_type,
         sent_event_type,
         detail,
         root,
         events,
         ..
-    } = *request
+    }) = *request
     else {
         unreachable!("validated only for FakeInput");
     };
@@ -224,7 +224,7 @@ fn dispatch_xtest_request(
     }
 
     Handled(match &request {
-        XWireRequest::XTestGetVersion { .. } => XDispatchResult {
+        XWireRequest::XTest(crate::XTestRequest::XTestGetVersion { .. }) => XDispatchResult {
             response: None,
             // A constant, whatever was asked for. The reference server never
             // reads the requested version at all, and the wire cases demand
@@ -237,8 +237,8 @@ fn dispatch_xtest_request(
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::XTestFakeInput { .. } => validate_fake_input(context, &request, runtime),
-        XWireRequest::XTestGrabControl { impervious } => {
+        XWireRequest::XTest(crate::XTestRequest::XTestFakeInput { .. }) => validate_fake_input(context, &request, runtime),
+        XWireRequest::XTest(crate::XTestRequest::XTestGrabControl { impervious }) => {
             // A strict boolean. The core protocol lets many BOOL fields pass
             // any nonzero; this one does not, and two is BadValue naming two.
             if *impervious > 1 {
@@ -250,10 +250,10 @@ fn dispatch_xtest_request(
         // XTEST has four requests and will not grow any, so a minor it does
         // not define is a request this extension does not have -- which is
         // BadRequest, not BadAccess, for a client that may use the rest.
-        XWireRequest::XTestUnimplemented { .. } => {
+        XWireRequest::XTest(crate::XTestRequest::XTestUnimplemented { .. }) => {
             xtest_error(context, XErrorCode::BadRequest, minor, 0)
         }
-        XWireRequest::XTestCompareCursor { window, cursor } => {
+        XWireRequest::XTest(crate::XTestRequest::XTestCompareCursor { window, cursor }) => {
             compare_cursor(context, *window, *cursor, runtime)
         }
         _ => xtest_error(context, XErrorCode::BadImplementation, minor, 0),

@@ -5,17 +5,17 @@ fn dispatch_present_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::PresentQueryVersion { .. }
-            | XWireRequest::PresentQueryCapabilities { .. }
-            | XWireRequest::PresentSelectInput { .. }
-            | XWireRequest::PresentNotifyMsc { .. }
-            | XWireRequest::PresentUnimplemented { .. }
-            | XWireRequest::PresentPixmap { .. }
+            XWireRequest::Present(crate::XPresentRequest::PresentQueryVersion { .. })
+            | XWireRequest::Present(crate::XPresentRequest::PresentQueryCapabilities { .. })
+            | XWireRequest::Present(crate::XPresentRequest::PresentSelectInput { .. })
+            | XWireRequest::Present(crate::XPresentRequest::PresentNotifyMsc { .. })
+            | XWireRequest::Present(crate::XPresentRequest::PresentUnimplemented { .. })
+            | XWireRequest::Present(crate::XPresentRequest::PresentPixmap { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::PresentQueryVersion { .. } => XDispatchResult {
+                XWireRequest::Present(crate::XPresentRequest::PresentQueryVersion { .. }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::PresentQueryVersion {
                         sequence: context.sequence,
@@ -24,7 +24,7 @@ fn dispatch_present_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::PresentQueryCapabilities { target } => {
+                XWireRequest::Present(crate::XPresentRequest::PresentQueryCapabilities { target }) => {
                     // Mesa's DRI3 loader queries capabilities for every drawable it
                     // initialises, offscreen ones included.
                     let outputs = if target.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT)
@@ -53,9 +53,9 @@ fn dispatch_present_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::PresentSelectInput {
+                XWireRequest::Present(crate::XPresentRequest::PresentSelectInput {
                     window, event_mask, ..
-                } => {
+                }) => {
                     let outputs = if event_mask & !0x0f != 0 {
                         vec![XClientOutput::Error(crate::XClientError {
                             code: XErrorCode::BadValue,
@@ -83,7 +83,7 @@ fn dispatch_present_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::PresentNotifyMsc { window, .. } => {
+                XWireRequest::Present(crate::XPresentRequest::PresentNotifyMsc { window, .. }) => {
                     // Void, like SelectInput: the answer is a CompleteNotify of
                     // kind NotifyMSC, delivered by the socket layer from the
                     // presentation clock once this dispatch has validated the
@@ -108,7 +108,7 @@ fn dispatch_present_request(
                     }
                 }
                 // Decoded, and refused where the client can see it.
-                XWireRequest::PresentUnimplemented { minor_opcode } => XDispatchResult {
+                XWireRequest::Present(crate::XPresentRequest::PresentUnimplemented { minor_opcode }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Error(crate::XClientError {
                         code: if minor_opcode <= crate::X_PRESENT_LAST_MINOR_OPCODE {
@@ -123,7 +123,7 @@ fn dispatch_present_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::PresentPixmap {
+                XWireRequest::Present(crate::XPresentRequest::PresentPixmap {
                     transaction,
                     window,
                     pixmap,
@@ -138,7 +138,7 @@ fn dispatch_present_request(
                     divisor,
                     remainder,
                     ..
-                } => {
+                }) => {
                     let invalid_value = target_crtc != 0
                         || options & !0x0f != 0
                         || (divisor == 0 && remainder != 0)

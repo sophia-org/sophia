@@ -6,19 +6,19 @@ fn dispatch_sync_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::SyncInitialize { .. }
-            | XWireRequest::SyncListSystemCounters
-            | XWireRequest::SyncCreateCounter { .. }
-            | XWireRequest::SyncSetCounter { .. }
-            | XWireRequest::SyncChangeCounter { .. }
-            | XWireRequest::SyncQueryCounter { .. }
-            | XWireRequest::SyncDestroyCounter { .. }
-            | XWireRequest::SyncDestroyFence { .. }
+            XWireRequest::Sync(crate::XSyncRequest::SyncInitialize { .. })
+            | XWireRequest::Sync(crate::XSyncRequest::SyncListSystemCounters)
+            | XWireRequest::Sync(crate::XSyncRequest::SyncCreateCounter { .. })
+            | XWireRequest::Sync(crate::XSyncRequest::SyncSetCounter { .. })
+            | XWireRequest::Sync(crate::XSyncRequest::SyncChangeCounter { .. })
+            | XWireRequest::Sync(crate::XSyncRequest::SyncQueryCounter { .. })
+            | XWireRequest::Sync(crate::XSyncRequest::SyncDestroyCounter { .. })
+            | XWireRequest::Sync(crate::XSyncRequest::SyncDestroyFence { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::SyncInitialize { .. } => XDispatchResult {
+                XWireRequest::Sync(crate::XSyncRequest::SyncInitialize { .. }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::SyncInitialize {
                         sequence: context.sequence,
@@ -27,7 +27,7 @@ fn dispatch_sync_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::SyncListSystemCounters => XDispatchResult {
+                XWireRequest::Sync(crate::XSyncRequest::SyncListSystemCounters) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(
                         XClientReply::SyncListSystemCounters {
@@ -36,10 +36,10 @@ fn dispatch_sync_request(
                     )],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::SyncCreateCounter {
+                XWireRequest::Sync(crate::XSyncRequest::SyncCreateCounter {
                     counter,
                     initial_value,
-                } => {
+                }) => {
                     let outputs = runtime
                         .create_sync_counter(
                             context.namespace,
@@ -64,7 +64,7 @@ fn dispatch_sync_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::SyncSetCounter { counter, value } => {
+                XWireRequest::Sync(crate::XSyncRequest::SyncSetCounter { counter, value }) => {
                     let outputs = runtime
                         .set_sync_counter(context.namespace, counter, value)
                         .err()
@@ -84,7 +84,7 @@ fn dispatch_sync_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::SyncChangeCounter { counter, delta } => {
+                XWireRequest::Sync(crate::XSyncRequest::SyncChangeCounter { counter, delta }) => {
                     let outputs = runtime
                         .change_sync_counter(context.namespace, counter, delta)
                         .err()
@@ -104,7 +104,7 @@ fn dispatch_sync_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::SyncQueryCounter { counter } => {
+                XWireRequest::Sync(crate::XSyncRequest::SyncQueryCounter { counter }) => {
                     let outputs = match runtime.sync_counter(context.namespace, counter) {
                         Ok(value) => vec![XClientOutput::Reply(XClientReply::SyncQueryCounter {
                             sequence: context.sequence,
@@ -123,7 +123,7 @@ fn dispatch_sync_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::SyncDestroyCounter { counter } => {
+                XWireRequest::Sync(crate::XSyncRequest::SyncDestroyCounter { counter }) => {
                     let outputs = runtime
                         .destroy_sync_counter(context.namespace, counter)
                         .err()
@@ -143,7 +143,7 @@ fn dispatch_sync_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::SyncDestroyFence { fence } => {
+                XWireRequest::Sync(crate::XSyncRequest::SyncDestroyFence { fence }) => {
                     let outputs = runtime
                         .destroy_dri3_fence(context.namespace, fence)
                         .err()

@@ -45,7 +45,7 @@ fn legacy_pixmap_export_encodes_the_drm_implicit_modifier() {
                 injection: XTestAdmission::Absent,
                 server_time: 4_242,
             },
-            XWireRequest::Dri3BuffersFromPixmap { pixmap },
+            XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3BuffersFromPixmap { pixmap }),
             &mut runtime,
             &mut XAtomTable::new(),
             &mut XPropertyTable::new(),
@@ -82,11 +82,13 @@ fn query(runtime: &mut XAuthorityRuntime, depth: u8) -> Vec<u64> {
             injection: XTestAdmission::Absent,
             server_time: 4_242,
         },
-        XWireRequest::Dri3GetSupportedModifiers {
-            window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-            depth,
-            bits_per_pixel: 32,
-        },
+        XWireRequest::Dri3(
+            sophia_x_authority::XDri3Request::Dri3GetSupportedModifiers {
+                window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
+                depth,
+                bits_per_pixel: 32,
+            },
+        ),
         runtime,
         &mut XAtomTable::new(),
         &mut XPropertyTable::new(),

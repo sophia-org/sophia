@@ -7,30 +7,30 @@ fn dispatch_core_grab_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::GrabPointer { .. }
-            | XWireRequest::UngrabPointer { .. }
-            | XWireRequest::ChangeActivePointerGrab { .. }
-            | XWireRequest::GrabKeyboard { .. }
-            | XWireRequest::UngrabKeyboard { .. }
-            | XWireRequest::GrabButton { .. }
-            | XWireRequest::UngrabButton { .. }
-            | XWireRequest::GrabKey { .. }
-            | XWireRequest::UngrabKey { .. }
-            | XWireRequest::AllowEvents { .. }
-            | XWireRequest::GrabServer
-            | XWireRequest::UngrabServer
+            XWireRequest::Core(crate::XCoreRequest::GrabPointer { .. })
+            | XWireRequest::Core(crate::XCoreRequest::UngrabPointer { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ChangeActivePointerGrab { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GrabKeyboard { .. })
+            | XWireRequest::Core(crate::XCoreRequest::UngrabKeyboard { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GrabButton { .. })
+            | XWireRequest::Core(crate::XCoreRequest::UngrabButton { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GrabKey { .. })
+            | XWireRequest::Core(crate::XCoreRequest::UngrabKey { .. })
+            | XWireRequest::Core(crate::XCoreRequest::AllowEvents { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GrabServer)
+            | XWireRequest::Core(crate::XCoreRequest::UngrabServer)
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::GrabPointer {
+                XWireRequest::Core(crate::XCoreRequest::GrabPointer {
                     window,
                     event_mask,
                     owner_events,
                     pointer_mode,
                     keyboard_mode,
                     ..
-                } => {
+                }) => {
                     let status = if validate_window_or_root_access(runtime, context.namespace, window).is_err() {
                         3
                     } else {
@@ -65,11 +65,11 @@ fn dispatch_core_grab_request(
                 // one the request has no effect, as the protocol says. The
                 // cursor is validated and not applied: cursor display is
                 // config-driven here, the same debt WarpPointer carries.
-                XWireRequest::ChangeActivePointerGrab {
+                XWireRequest::Core(crate::XCoreRequest::ChangeActivePointerGrab {
                     cursor,
                     event_mask,
                     ..
-                } => {
+                }) => {
                     let outputs = if cursor.local.raw() != 0
                         && runtime
                             .validate_cursor_access(context.namespace, cursor)
@@ -96,7 +96,7 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::UngrabPointer { .. } => {
+                XWireRequest::Core(crate::XCoreRequest::UngrabPointer { .. }) => {
                     runtime
                         .input_authority_mut()
                         .ungrab_pointer(context.namespace, context.client_id);
@@ -106,13 +106,13 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GrabKeyboard {
+                XWireRequest::Core(crate::XCoreRequest::GrabKeyboard {
                     window,
                     owner_events,
                     pointer_mode,
                     keyboard_mode,
                     ..
-                } => {
+                }) => {
                     let status = if validate_window_or_root_access(runtime, context.namespace, window).is_err() {
                         3
                     } else {
@@ -146,7 +146,7 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::UngrabKeyboard { .. } => {
+                XWireRequest::Core(crate::XCoreRequest::UngrabKeyboard { .. }) => {
                     runtime
                         .input_authority_mut()
                         .ungrab_keyboard(context.namespace, context.client_id);
@@ -156,7 +156,7 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GrabButton {
+                XWireRequest::Core(crate::XCoreRequest::GrabButton {
                     window,
                     event_mask,
                     button,
@@ -164,7 +164,7 @@ fn dispatch_core_grab_request(
                     owner_events,
                     pointer_mode,
                     keyboard_mode,
-                } => {
+                }) => {
                     let outputs = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         runtime
                             .input_authority_mut()
@@ -219,11 +219,11 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::UngrabButton {
+                XWireRequest::Core(crate::XCoreRequest::UngrabButton {
                     window,
                     button,
                     modifiers,
-                } => {
+                }) => {
                     runtime.input_authority_mut().ungrab_button(
                         context.namespace,
                         context.client_id,
@@ -237,14 +237,14 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GrabKey {
+                XWireRequest::Core(crate::XCoreRequest::GrabKey {
                     window,
                     key,
                     modifiers,
                     owner_events,
                     pointer_mode,
                     keyboard_mode,
-                } => {
+                }) => {
                     let outputs = match validate_window_or_root_access(runtime, context.namespace, window) {
                         Err(error) => vec![XClientOutput::Error(x_error_from_runtime(
                             error,
@@ -278,11 +278,11 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::UngrabKey {
+                XWireRequest::Core(crate::XCoreRequest::UngrabKey {
                     window,
                     key,
                     modifiers,
-                } => {
+                }) => {
                     runtime.input_authority_mut().ungrab_key(
                         context.namespace,
                         context.client_id,
@@ -296,7 +296,7 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::AllowEvents { mode, .. } => {
+                XWireRequest::Core(crate::XCoreRequest::AllowEvents { mode, .. }) => {
                     let invalid = runtime
                         .input_authority_mut()
                         .allow_events(context.namespace, context.client_id, mode)
@@ -318,7 +318,7 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GrabServer => {
+                XWireRequest::Core(crate::XCoreRequest::GrabServer) => {
                     let _ = runtime
                         .input_authority_mut()
                         .grab_server(context.namespace, context.client_id);
@@ -328,7 +328,7 @@ fn dispatch_core_grab_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::UngrabServer => {
+                XWireRequest::Core(crate::XCoreRequest::UngrabServer) => {
                     runtime
                         .input_authority_mut()
                         .ungrab_server(context.namespace, context.client_id);

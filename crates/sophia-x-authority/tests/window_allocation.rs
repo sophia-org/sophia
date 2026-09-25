@@ -88,11 +88,13 @@ fn query(runtime: &mut XAuthorityRuntime) -> (Vec<u64>, Vec<u64>) {
     match dispatch(
         runtime,
         NS,
-        XWireRequest::Dri3GetSupportedModifiers {
-            window: WINDOW,
-            depth: 32,
-            bits_per_pixel: 32,
-        },
+        XWireRequest::Dri3(
+            sophia_x_authority::XDri3Request::Dri3GetSupportedModifiers {
+                window: WINDOW,
+                depth: 32,
+                bits_per_pixel: 32,
+            },
+        ),
     )
     .remove(0)
     {
@@ -129,11 +131,11 @@ fn window_preferences_and_device_hints_never_change_the_screen_contract() {
             dispatch(
                 &mut runtime,
                 NS,
-                XWireRequest::Dri3SetDrmDeviceInUse {
+                XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3SetDrmDeviceInUse {
                     window: WINDOW,
                     major: hint.major,
                     minor: hint.minor,
-                }
+                })
             )
             .is_empty()
         );
@@ -190,11 +192,11 @@ fn hint_namespace_and_surface_lifetime_are_exact() {
     let refused = dispatch(
         &mut runtime,
         NamespaceId::from_raw(99),
-        XWireRequest::Dri3SetDrmDeviceInUse {
+        XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3SetDrmDeviceInUse {
             window: WINDOW,
             major: 226,
             minor: 129,
-        },
+        }),
     );
     assert!(matches!(refused.as_slice(), [XClientOutput::Error(_)]));
     assert_eq!(query(&mut runtime).0, vec![0]);
@@ -250,10 +252,10 @@ fn dri3_version_never_exceeds_the_clients_request() {
         let response = dispatch(
             &mut runtime,
             NS,
-            XWireRequest::Dri3QueryVersion {
+            XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3QueryVersion {
                 major_version: requested.0,
                 minor_version: requested.1,
-            },
+            }),
         );
         assert!(
             matches!(response.as_slice(), [XClientOutput::Reply(XClientReply::Dri3QueryVersion {
@@ -290,11 +292,11 @@ fn drm_device_hint_decodes_both_byte_orders_and_rejects_wrong_length() {
         };
         assert_eq!(
             decode_x11_core_request(context, &bytes).unwrap(),
-            XWireRequest::Dri3SetDrmDeviceInUse {
+            XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3SetDrmDeviceInUse {
                 window: WINDOW,
                 major: DEVICE.major,
                 minor: DEVICE.minor,
-            }
+            })
         );
         bytes.pop();
         assert!(decode_x11_core_request(context, &bytes).is_err());

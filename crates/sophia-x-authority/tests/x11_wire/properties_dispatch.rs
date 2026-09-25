@@ -676,7 +676,7 @@ fn x11_core_decoder_rejects_bad_lengths_and_unknown_opcodes() {
                 context(NamespaceId::from_raw(45), 508, XByteOrder::LittleEndian),
                 &nop
             ),
-            Ok(XWireRequest::NoOperation),
+            Ok(XWireRequest::Core(sophia_x_authority::XCoreRequest::NoOperation)),
             "NoOperation padded with {padding_units} units"
         );
     }

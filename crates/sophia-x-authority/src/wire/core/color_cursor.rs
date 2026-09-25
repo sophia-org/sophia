@@ -4,11 +4,11 @@ fn decode_free_colors(
 ) -> Result<XWireRequest, XWireParseError> {
     require_len(X_FREE_COLORS, X_FREE_COLORS_REQ_LEN, bytes.len())?;
     require_item_multiple(X_FREE_COLORS, X_FREE_COLORS_REQ_LEN, 4, bytes.len())?;
-    Ok(XWireRequest::FreeColors {
+    Ok(XWireRequest::Core(crate::XCoreRequest::FreeColors {
         colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         plane_mask: context.byte_order.u32(&bytes[8..12]),
         pixels: bytes[12..].chunks_exact(4).map(|pixel| context.byte_order.u32(pixel)).collect(),
-    })
+    }))
 }
 
 fn decode_query_colors(
@@ -31,13 +31,13 @@ fn decode_query_colors(
         });
     }
 
-    Ok(XWireRequest::QueryColors {
+    Ok(XWireRequest::Core(crate::XCoreRequest::QueryColors {
         colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         pixels: pixel_bytes
             .chunks_exact(4)
             .map(|pixel| context.byte_order.u32(pixel))
             .collect(),
-    })
+    }))
 }
 
 fn decode_create_colormap(
@@ -47,12 +47,12 @@ fn decode_create_colormap(
     require_exact_len(X_CREATE_COLORMAP, X_CREATE_COLORMAP_REQ_LEN, bytes.len())?;
     let colormap = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(colormap)?;
-    Ok(XWireRequest::CreateColormap {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CreateColormap {
         alloc: bytes[1],
         colormap: XResourceId::new(u64::from(colormap), 1),
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         visual: context.byte_order.u32(&bytes[12..16]),
-    })
+    }))
 }
 
 fn decode_named_color(
@@ -85,9 +85,9 @@ fn decode_named_color(
         .iter().copied().map(char::from).collect();
     let colormap = XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1);
     Ok(if bytes[0] == X_LOOKUP_COLOR {
-        XWireRequest::LookupColor { colormap, name }
+        XWireRequest::Core(crate::XCoreRequest::LookupColor { colormap, name })
     } else {
-        XWireRequest::AllocNamedColor { colormap, name }
+        XWireRequest::Core(crate::XCoreRequest::AllocNamedColor { colormap, name })
     })
 }
 
@@ -119,10 +119,10 @@ fn decode_copy_colormap_and_free(
     )?;
     let colormap = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(colormap)?;
-    Ok(XWireRequest::CopyColormapAndFree {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CopyColormapAndFree {
         colormap: XResourceId::new(u64::from(colormap), 1),
         source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
-    })
+    }))
 }
 
 fn decode_alloc_color(
@@ -130,12 +130,12 @@ fn decode_alloc_color(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_ALLOC_COLOR, X_ALLOC_COLOR_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::AllocColor {
+    Ok(XWireRequest::Core(crate::XCoreRequest::AllocColor {
         colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         red: context.byte_order.u16(&bytes[8..10]),
         green: context.byte_order.u16(&bytes[10..12]),
         blue: context.byte_order.u16(&bytes[12..14]),
-    })
+    }))
 }
 
 fn decode_create_cursor(
@@ -146,13 +146,13 @@ fn decode_create_cursor(
     let cursor = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(cursor)?;
     let mask = context.byte_order.u32(&bytes[12..16]);
-    Ok(XWireRequest::CreateCursor {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CreateCursor {
         cursor: XResourceId::new(u64::from(cursor), 1),
         source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         mask: (mask != 0).then(|| XResourceId::new(u64::from(mask), 1)),
         hotspot_x: context.byte_order.u16(&bytes[28..30]),
         hotspot_y: context.byte_order.u16(&bytes[30..32]),
-    })
+    }))
 }
 
 fn decode_create_glyph_cursor(
@@ -167,13 +167,13 @@ fn decode_create_glyph_cursor(
     let cursor = context.byte_order.u32(&bytes[4..8]);
     context.validate_new_resource_id(cursor)?;
     let mask_font = context.byte_order.u32(&bytes[12..16]);
-    Ok(XWireRequest::CreateGlyphCursor {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CreateGlyphCursor {
         cursor: XResourceId::new(u64::from(cursor), 1),
         source_font: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         mask_font: (mask_font != 0).then(|| XResourceId::new(u64::from(mask_font), 1)),
         source_char: context.byte_order.u16(&bytes[16..18]),
         mask_char: context.byte_order.u16(&bytes[18..20]),
-    })
+    }))
 }
 
 fn decode_free_cursor(
@@ -181,9 +181,9 @@ fn decode_free_cursor(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_FREE_CURSOR, X_FREE_CURSOR_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::FreeCursor {
+    Ok(XWireRequest::Core(crate::XCoreRequest::FreeCursor {
         cursor: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_recolor_cursor(
@@ -191,9 +191,9 @@ fn decode_recolor_cursor(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_RECOLOR_CURSOR, X_RECOLOR_CURSOR_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::RecolorCursor {
+    Ok(XWireRequest::Core(crate::XCoreRequest::RecolorCursor {
         cursor: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_set_clip_rectangles(
@@ -227,10 +227,10 @@ fn decode_set_clip_rectangles(
             height: i32::from(context.byte_order.u16(&rectangle[6..8])),
         });
     }
-    Ok(XWireRequest::SetClipRectangles {
+    Ok(XWireRequest::Core(crate::XCoreRequest::SetClipRectangles {
         clip_x_origin: context.byte_order.i16(&bytes[8..10]),
         clip_y_origin: context.byte_order.i16(&bytes[10..12]),
         gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         rectangles,
-    })
+    }))
 }

@@ -28,24 +28,24 @@ impl Client {
         };
         client.accept(
             53,
-            XWireRequest::CreatePixmap {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
                 depth,
                 pixmap: PIXMAP,
                 drawable: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
                 width: 3,
                 height: 3,
-            },
+            }),
         );
         client.accept(
             55,
-            XWireRequest::CreateGraphicsContext {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
                 gc: GC,
                 drawable: PIXMAP,
                 values: XGraphicsContextValues {
                     foreground: COLOR,
                     ..Default::default()
                 },
-            },
+            }),
         );
         client
     }
@@ -85,7 +85,7 @@ impl Client {
     fn pixels(&mut self) -> Vec<u32> {
         let result = self.send(
             73,
-            XWireRequest::GetImage {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::GetImage {
                 format: 2,
                 drawable: PIXMAP,
                 x: 0,
@@ -93,7 +93,7 @@ impl Client {
                 width: 3,
                 height: 3,
                 plane_mask: u32::MAX,
-            },
+            }),
         );
         match result.outputs.as_slice() {
             [XClientOutput::Reply(XClientReply::GetImage { depth, data, .. })] => {
@@ -109,11 +109,11 @@ impl Client {
 }
 
 fn fill(gc: XResourceId, rect: Rect) -> XWireRequest {
-    XWireRequest::PolyFillRectangle {
+    XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyFillRectangle {
         drawable: PIXMAP,
         gc,
         rectangles: vec![rect],
-    }
+    })
 }
 
 #[test]
@@ -135,14 +135,14 @@ fn a_pixmap_fill_changes_only_the_requested_pixels() {
     assert_eq!(client.pixels(), vec![COLOR; 9]);
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: 1 << 2,
             values: XGraphicsContextValues {
                 foreground: 0x00abcdef,
                 ..Default::default()
             },
-        },
+        }),
     );
     client.accept(
         70,
@@ -166,7 +166,7 @@ fn pixmap_lines_and_rectangle_outlines_reach_the_cpu_store() {
     let mut client = Client::new();
     client.accept(
         67,
-        XWireRequest::PolyRectangle {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyRectangle {
             drawable: PIXMAP,
             gc: GC,
             rectangles: vec![Rect {
@@ -175,7 +175,7 @@ fn pixmap_lines_and_rectangle_outlines_reach_the_cpu_store() {
                 width: 2,
                 height: 2,
             }],
-        },
+        }),
     );
     assert_eq!(
         client.pixels(),
@@ -183,11 +183,11 @@ fn pixmap_lines_and_rectangle_outlines_reach_the_cpu_store() {
     );
     client.accept(
         65,
-        XWireRequest::PolyLine {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyLine {
             drawable: PIXMAP,
             gc: GC,
             points: vec![XPoint { x: 0, y: 1 }, XPoint { x: 2, y: 1 }],
-        },
+        }),
     );
     assert_eq!(client.pixels(), vec![COLOR; 9]);
 }
@@ -216,21 +216,21 @@ fn invalid_graphics_contexts_cannot_change_pixmap_pixels() {
     let other_gc = XResourceId::new(0x100021, 1);
     client.accept(
         53,
-        XWireRequest::CreatePixmap {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
             depth: 32,
             pixmap: foreign_pixmap,
             drawable: PIXMAP,
             width: 3,
             height: 3,
-        },
+        }),
     );
     client.accept(
         55,
-        XWireRequest::CreateGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
             gc: other_gc,
             drawable: foreign_pixmap,
             values: Default::default(),
-        },
+        }),
     );
     let result = client.send(
         70,
@@ -255,14 +255,14 @@ fn depth_32_fill_preserves_alpha_and_applies_masked_inversion() {
     let mut client = Client::with_depth(32);
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: 1 << 2,
             values: XGraphicsContextValues {
                 foreground: 0x87654321,
                 ..Default::default()
             },
-        },
+        }),
     );
     client.accept(
         70,
@@ -279,7 +279,7 @@ fn depth_32_fill_preserves_alpha_and_applies_masked_inversion() {
     assert_eq!(client.pixels(), vec![0x87654321; 9]);
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: (1 << 0) | (1 << 1),
             values: XGraphicsContextValues {
@@ -287,7 +287,7 @@ fn depth_32_fill_preserves_alpha_and_applies_masked_inversion() {
                 plane_mask: 0xff000000,
                 ..Default::default()
             },
-        },
+        }),
     );
     client.accept(
         70,
@@ -323,7 +323,7 @@ fn depth_24_raster_inversion_changes_only_admitted_planes() {
     );
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: (1 << 0) | (1 << 1),
             values: XGraphicsContextValues {
@@ -331,7 +331,7 @@ fn depth_24_raster_inversion_changes_only_admitted_planes() {
                 plane_mask: 0xffff0000,
                 ..Default::default()
             },
-        },
+        }),
     );
     assert_eq!(
         client
@@ -371,29 +371,29 @@ fn clipped_client() -> Client {
     let mut client = Client::new();
     client.accept(
         53,
-        XWireRequest::CreatePixmap {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
             depth: 1,
             pixmap: MASK,
             drawable: PIXMAP,
             width: 3,
             height: 3,
-        },
+        }),
     );
     client.accept(
         55,
-        XWireRequest::CreateGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
             gc: MASK_GC,
             drawable: MASK,
             values: XGraphicsContextValues {
                 foreground: 1,
                 ..Default::default()
             },
-        },
+        }),
     );
     for (x, y) in [(0, 0), (1, 1)] {
         client.accept(
             70,
-            XWireRequest::PolyFillRectangle {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyFillRectangle {
                 drawable: MASK,
                 gc: MASK_GC,
                 rectangles: vec![Rect {
@@ -402,19 +402,19 @@ fn clipped_client() -> Client {
                     width: 1,
                     height: 1,
                 }],
-            },
+            }),
         );
     }
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: 1 << 19,
             values: XGraphicsContextValues {
                 clip_mask: Some(MASK),
                 ..Default::default()
             },
-        },
+        }),
     );
     client
 }
@@ -456,11 +456,11 @@ fn a_clip_mask_confines_segments_at_its_origin() {
     let mut client = clipped_client();
     client.accept(
         66,
-        XWireRequest::PolySegment {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolySegment {
             drawable: PIXMAP,
             gc: GC,
             segments: every_row(),
-        },
+        }),
     );
     assert_eq!(client.pixels(), only_admitted(COLOR));
 
@@ -468,7 +468,7 @@ fn a_clip_mask_confines_segments_at_its_origin() {
     // admits now; the pixels already drawn stay as they were.
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: (1 << 2) | (1 << 17) | (1 << 18),
             values: XGraphicsContextValues {
@@ -476,15 +476,15 @@ fn a_clip_mask_confines_segments_at_its_origin() {
                 clip_x_origin: 1,
                 ..Default::default()
             },
-        },
+        }),
     );
     client.accept(
         66,
-        XWireRequest::PolySegment {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolySegment {
             drawable: PIXMAP,
             gc: GC,
             segments: every_row(),
-        },
+        }),
     );
     let mut expected = only_admitted(COLOR);
     expected[1] = 0x00abcdef;
@@ -497,7 +497,7 @@ fn a_clip_mask_confines_a_polyline() {
     let mut client = clipped_client();
     client.accept(
         65,
-        XWireRequest::PolyLine {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyLine {
             drawable: PIXMAP,
             gc: GC,
             points: vec![
@@ -508,7 +508,7 @@ fn a_clip_mask_confines_a_polyline() {
                 XPoint { x: 0, y: 1 },
                 XPoint { x: 1, y: 1 },
             ],
-        },
+        }),
     );
     assert_eq!(client.pixels(), only_admitted(COLOR));
 }
@@ -518,7 +518,7 @@ fn a_clip_mask_confines_a_rectangle_outline() {
     let mut client = clipped_client();
     client.accept(
         67,
-        XWireRequest::PolyRectangle {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyRectangle {
             drawable: PIXMAP,
             gc: GC,
             rectangles: vec![Rect {
@@ -527,7 +527,7 @@ fn a_clip_mask_confines_a_rectangle_outline() {
                 width: 2,
                 height: 2,
             }],
-        },
+        }),
     );
     // The outline covers eight pixels; of the mask's two, only (0, 0) is on it.
     let mut expected = vec![0; 9];
@@ -541,28 +541,28 @@ fn a_clip_mask_confines_a_copy() {
     let mut client = clipped_client();
     client.accept(
         53,
-        XWireRequest::CreatePixmap {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
             depth: 24,
             pixmap: SOURCE,
             drawable: PIXMAP,
             width: 3,
             height: 3,
-        },
+        }),
     );
     client.accept(
         55,
-        XWireRequest::CreateGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
             gc: SOURCE_GC,
             drawable: SOURCE,
             values: XGraphicsContextValues {
                 foreground: COLOR,
                 ..Default::default()
             },
-        },
+        }),
     );
     client.accept(
         70,
-        XWireRequest::PolyFillRectangle {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyFillRectangle {
             drawable: SOURCE,
             gc: SOURCE_GC,
             rectangles: vec![Rect {
@@ -571,11 +571,11 @@ fn a_clip_mask_confines_a_copy() {
                 width: 3,
                 height: 3,
             }],
-        },
+        }),
     );
     let result = client.send(
         62,
-        XWireRequest::CopyArea {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CopyArea {
             source: SOURCE,
             destination: PIXMAP,
             gc: GC,
@@ -585,7 +585,7 @@ fn a_clip_mask_confines_a_copy() {
             dst_y: 0,
             width: 3,
             height: 3,
-        },
+        }),
     );
     assert!(result.response.is_some(), "{result:?}");
     assert_eq!(client.pixels(), only_admitted(COLOR));
@@ -599,7 +599,7 @@ fn a_clip_mask_confines_an_image() {
         .collect();
     client.accept(
         72,
-        XWireRequest::PutImage {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PutImage {
             format: 2,
             drawable: PIXMAP,
             gc: GC,
@@ -610,7 +610,7 @@ fn a_clip_mask_confines_an_image() {
             left_pad: 0,
             depth: 24,
             data,
-        },
+        }),
     );
     assert_eq!(client.pixels(), only_admitted(0x00abcdef));
 }
@@ -629,7 +629,10 @@ fn a_clip_mask_outlives_its_pixmap_and_a_reused_xid() {
     // Setting a mask and freeing the pixmap at once is legal, and XTS's
     // clip-origin purposes do exactly that: the GC keeps the mask.
     let mut client = clipped_client();
-    client.accept(54, XWireRequest::FreePixmap { pixmap: MASK });
+    client.accept(
+        54,
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::FreePixmap { pixmap: MASK }),
+    );
     client.accept(70, fill(GC, whole()));
     assert_eq!(client.pixels(), only_admitted(COLOR));
 
@@ -637,32 +640,32 @@ fn a_clip_mask_outlives_its_pixmap_and_a_reused_xid() {
     // not whatever the client puts there next.
     client.accept(
         53,
-        XWireRequest::CreatePixmap {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
             depth: 1,
             pixmap: MASK,
             drawable: PIXMAP,
             width: 3,
             height: 3,
-        },
+        }),
     );
     client.accept(
         70,
-        XWireRequest::PolyFillRectangle {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyFillRectangle {
             drawable: MASK,
             gc: MASK_GC,
             rectangles: vec![whole()],
-        },
+        }),
     );
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: 1 << 2,
             values: XGraphicsContextValues {
                 foreground: 0x00abcdef,
                 ..Default::default()
             },
-        },
+        }),
     );
     client.accept(70, fill(GC, whole()));
     assert_eq!(client.pixels(), only_admitted(0x00abcdef));
@@ -675,28 +678,28 @@ fn a_tile_outlives_its_pixmap() {
     let mut client = Client::new();
     client.accept(
         53,
-        XWireRequest::CreatePixmap {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreatePixmap {
             depth: 24,
             pixmap: TILE,
             drawable: PIXMAP,
             width: 2,
             height: 1,
-        },
+        }),
     );
     client.accept(
         55,
-        XWireRequest::CreateGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
             gc: TILE_GC,
             drawable: TILE,
             values: XGraphicsContextValues {
                 foreground: 0x00abcdef,
                 ..Default::default()
             },
-        },
+        }),
     );
     client.accept(
         70,
-        XWireRequest::PolyFillRectangle {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::PolyFillRectangle {
             drawable: TILE,
             gc: TILE_GC,
             rectangles: vec![Rect {
@@ -705,12 +708,12 @@ fn a_tile_outlives_its_pixmap() {
                 width: 1,
                 height: 1,
             }],
-        },
+        }),
     );
     // A tile of two columns: 0 then 0xabcdef.
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: (1 << 8) | (1 << 10),
             values: XGraphicsContextValues {
@@ -718,9 +721,12 @@ fn a_tile_outlives_its_pixmap() {
                 tile: Some(TILE),
                 ..Default::default()
             },
-        },
+        }),
     );
-    client.accept(54, XWireRequest::FreePixmap { pixmap: TILE });
+    client.accept(
+        54,
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::FreePixmap { pixmap: TILE }),
+    );
     client.accept(70, fill(GC, whole()));
     let row = [0, 0x00abcdef, 0];
     assert_eq!(client.pixels(), [row, row, row].concat());
@@ -733,32 +739,38 @@ fn a_freed_pixmap_goes_when_the_last_context_lets_go() {
     // A second context holding the same mask.
     client.accept(
         55,
-        XWireRequest::CreateGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateGraphicsContext {
             gc: OTHER_GC,
             drawable: PIXMAP,
             values: XGraphicsContextValues::default(),
-        },
+        }),
     );
     client.accept(
         57,
-        XWireRequest::CopyGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CopyGraphicsContext {
             source: GC,
             destination: OTHER_GC,
             value_mask: 1 << 19,
-        },
+        }),
     );
-    client.accept(54, XWireRequest::FreePixmap { pixmap: MASK });
+    client.accept(
+        54,
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::FreePixmap { pixmap: MASK }),
+    );
     assert_eq!(client.runtime.retained_pixmap_count(), 1);
     // One lets go by taking no mask; the other still holds it.
     client.accept(
         56,
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeGraphicsContext {
             gc: GC,
             value_mask: 1 << 19,
             values: XGraphicsContextValues::default(),
-        },
+        }),
     );
     assert_eq!(client.runtime.retained_pixmap_count(), 1);
-    client.accept(60, XWireRequest::FreeGraphicsContext { gc: OTHER_GC });
+    client.accept(
+        60,
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::FreeGraphicsContext { gc: OTHER_GC }),
+    );
     assert_eq!(client.runtime.retained_pixmap_count(), 0);
 }

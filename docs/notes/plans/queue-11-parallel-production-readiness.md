@@ -109,6 +109,9 @@ Closing t026 does not claim an empty debt ledger or fresh physical acceptance.
 
 ## t240
 
+The [decoded-request family investigation](../investigations/su9ilnw1-decoded-x11-request-families-preserve-payloads-and-dispatch-order.md)
+records the representation, mechanical equivalence check and acceptance results.
+
 Resolve the remaining `crates/sophia-x-authority/src/wire/request.rs` layout
 debt by designing and implementing cohesive decoded-request families. Preserve
 wire encodings, reply/error behavior, validation order and resource ownership.

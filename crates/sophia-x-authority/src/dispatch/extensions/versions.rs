@@ -6,14 +6,14 @@ fn dispatch_extension_version_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::ShmQueryVersion
-            | XWireRequest::Dri3QueryVersion { .. }
-            | XWireRequest::XfixesQueryVersion { .. }
+            XWireRequest::Shm(crate::XShmRequest::ShmQueryVersion)
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3QueryVersion { .. })
+            | XWireRequest::Xfixes(crate::XFixesRequest::XfixesQueryVersion { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::ShmQueryVersion => XDispatchResult {
+                XWireRequest::Shm(crate::XShmRequest::ShmQueryVersion) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::ShmQueryVersion {
                         sequence: context.sequence,
@@ -24,7 +24,7 @@ fn dispatch_extension_version_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::Dri3QueryVersion { major_version, minor_version } => {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3QueryVersion { major_version, minor_version }) => {
                     let (major_version, minor_version) = (major_version, minor_version).min((1, 3));
                     XDispatchResult {
                         response: None,
@@ -36,10 +36,10 @@ fn dispatch_extension_version_request(
                         metadata_candidates: Vec::new(),
                     }
                 },
-                XWireRequest::XfixesQueryVersion {
+                XWireRequest::Xfixes(crate::XFixesRequest::XfixesQueryVersion {
                     major_version: major,
                     minor_version: minor,
-                } => {
+                }) => {
                     // The protocol asks for the lower of the two versions, and
                     // this answered its own regardless. A client that asked for
                     // version 1 was told 6 and would then be entitled to send

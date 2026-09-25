@@ -911,7 +911,7 @@ struct XSelectionPropertyReadTrace {
 fn selection_property_read_trace(
     request: &crate::XWireRequest,
 ) -> Option<XSelectionPropertyReadTrace> {
-    let crate::XWireRequest::GetProperty(read) = request else {
+    let crate::XWireRequest::Core(crate::XCoreRequest::GetProperty(read)) = request else {
         return None;
     };
     (read.delete && read.long_offset == 0).then_some(XSelectionPropertyReadTrace {

@@ -17,16 +17,16 @@ fn dispatch_shape_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::ShapeQueryVersion
-            | XWireRequest::ShapeRectangles { .. }
-            | XWireRequest::ShapeMask { .. }
-            | XWireRequest::ShapeCombine { .. }
-            | XWireRequest::ShapeOffset { .. }
-            | XWireRequest::ShapeQueryExtents { .. }
-            | XWireRequest::ShapeSelectInput { .. }
-            | XWireRequest::ShapeInputSelected { .. }
-            | XWireRequest::ShapeGetRectangles { .. }
-            | XWireRequest::ShapeUnimplemented { .. }
+        XWireRequest::Shape(crate::XShapeRequest::ShapeQueryVersion)
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeRectangles { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeMask { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeCombine { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeOffset { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeQueryExtents { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeSelectInput { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeInputSelected { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeGetRectangles { .. })
+            | XWireRequest::Shape(crate::XShapeRequest::ShapeUnimplemented { .. })
     ) {
         return Unhandled(request);
     }
@@ -59,7 +59,7 @@ fn dispatch_shape_request(
     };
 
     Handled(match request {
-        XWireRequest::ShapeQueryVersion => XDispatchResult {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeQueryVersion) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::ShapeQueryVersion {
                 sequence: context.sequence,
@@ -68,7 +68,7 @@ fn dispatch_shape_request(
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::ShapeRectangles {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeRectangles {
             op,
             kind,
             ordering,
@@ -76,7 +76,7 @@ fn dispatch_shape_request(
             x_offset,
             y_offset,
             rectangles,
-        } => {
+        }) => {
             // Every ordering is accepted and none is trusted: the list is
             // canonicalised on arrival, so a client that mislabels its own
             // ordering still gets the shape it drew.
@@ -113,14 +113,14 @@ fn dispatch_shape_request(
                 },
             }
         }
-        XWireRequest::ShapeMask {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeMask {
             op,
             kind,
             destination,
             x_offset,
             y_offset,
             source,
-        } => {
+        }) => {
             let outcome = match source {
                 Some(pixmap) => runtime
                     .shape_mask_rects(context.namespace, pixmap)
@@ -167,7 +167,7 @@ fn dispatch_shape_request(
                 },
             }
         }
-        XWireRequest::ShapeCombine {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeCombine {
             op,
             kind,
             source_kind,
@@ -175,7 +175,7 @@ fn dispatch_shape_request(
             x_offset,
             y_offset,
             source,
-        } => {
+        }) => {
             let outcome = if !XAuthorityRuntime::shape_kind_is_valid_public(source_kind) {
                 Err(crate::XShapeError::InvalidValue)
             } else if runtime
@@ -209,12 +209,12 @@ fn dispatch_shape_request(
                 },
             }
         }
-        XWireRequest::ShapeOffset {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeOffset {
             kind,
             destination,
             x_offset,
             y_offset,
-        } => match runtime.offset_shape(
+        }) => match runtime.offset_shape(
             context.namespace,
             destination,
             kind,
@@ -236,7 +236,7 @@ fn dispatch_shape_request(
                 metadata_candidates: Vec::new(),
             },
         },
-        XWireRequest::ShapeQueryExtents { window } => {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeQueryExtents { window }) => {
             let outputs = if runtime
                 .validate_window_access(context.namespace, window)
                 .is_err()
@@ -266,7 +266,7 @@ fn dispatch_shape_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::ShapeSelectInput { window, enable } => XDispatchResult {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeSelectInput { window, enable }) => XDispatchResult {
             response: None,
             outputs: runtime
                 .select_shape_input(context.namespace, context.client_id, window, enable)
@@ -278,7 +278,7 @@ fn dispatch_shape_request(
                 .collect(),
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::ShapeInputSelected { window } => {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeInputSelected { window }) => {
             let outputs =
                 match runtime.shape_input_selected(context.namespace, context.client_id, window) {
                     Ok(enabled) => {
@@ -299,7 +299,7 @@ fn dispatch_shape_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::ShapeGetRectangles { window, kind } => {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeGetRectangles { window, kind }) => {
             let outputs = if !XAuthorityRuntime::shape_kind_is_valid_public(kind) {
                 vec![error_output(
                     crate::XShapeError::InvalidValue,
@@ -333,7 +333,7 @@ fn dispatch_shape_request(
             }
         }
         // No version of SHAPE defines a minor above eight.
-        XWireRequest::ShapeUnimplemented { minor_opcode } => XDispatchResult {
+        XWireRequest::Shape(crate::XShapeRequest::ShapeUnimplemented { minor_opcode }) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Error(crate::XClientError {
                 code: if minor_opcode <= crate::X_SHAPE_LAST_MINOR_OPCODE {

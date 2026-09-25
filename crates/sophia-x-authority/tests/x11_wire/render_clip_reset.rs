@@ -89,7 +89,7 @@ fn render_picture_clip_reset_decodes_both_byte_orders_without_confusing_omission
             let request = decode_x11_core_request(context(RenderFixture::NS, 1, order), &bytes)
                 .expect("valid picture attributes");
             match request {
-                XWireRequest::RenderChangePicture { values, .. } => {
+                XWireRequest::Render(sophia_x_authority::XRenderRequest::RenderChangePicture { values, .. }) => {
                     assert_eq!(values.clear_clip_mask, clears);
                     assert!(!values.refused_attribute);
                 }

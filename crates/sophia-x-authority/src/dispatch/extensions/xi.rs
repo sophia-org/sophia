@@ -193,25 +193,25 @@ fn dispatch_x_input_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::XiGetExtensionVersion
-            | XWireRequest::XiListInputDevices
-            | XWireRequest::XiQueryPointer { .. }
-            | XWireRequest::XiGrabDevice { .. }
-            | XWireRequest::XiUngrabDevice { .. }
-            | XWireRequest::XiGetClientPointer
-            | XWireRequest::XiDeviceBell
-            | XWireRequest::XiChangeCursor { .. }
-            | XWireRequest::GeQueryVersion { .. }
-            | XWireRequest::XiQueryVersion { .. }
-            | XWireRequest::XiQueryDevice { .. }
-            | XWireRequest::XiSelectEvents { .. }
-            | XWireRequest::XiGetFocus { .. }
-            | XWireRequest::XiGetProperty
+            XWireRequest::Xi(crate::XInputRequest::XiGetExtensionVersion)
+            | XWireRequest::Xi(crate::XInputRequest::XiListInputDevices)
+            | XWireRequest::Xi(crate::XInputRequest::XiQueryPointer { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiGrabDevice { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiUngrabDevice { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiGetClientPointer)
+            | XWireRequest::Xi(crate::XInputRequest::XiDeviceBell)
+            | XWireRequest::Xi(crate::XInputRequest::XiChangeCursor { .. })
+            | XWireRequest::Extension(crate::XExtensionRequest::GeQueryVersion { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiQueryVersion { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiQueryDevice { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiSelectEvents { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiGetFocus { .. })
+            | XWireRequest::Xi(crate::XInputRequest::XiGetProperty)
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::XiGetExtensionVersion => XDispatchResult {
+                XWireRequest::Xi(crate::XInputRequest::XiGetExtensionVersion) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XiGetExtensionVersion {
                         sequence: context.sequence,
@@ -220,15 +220,15 @@ fn dispatch_x_input_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XiQueryPointer { device_id: crate::X_INPUT_POINTER_SOURCE_ID, .. } =>
+                XWireRequest::Xi(crate::XInputRequest::XiQueryPointer { device_id: crate::X_INPUT_POINTER_SOURCE_ID, .. }) =>
                     xi_device_error(context, crate::X_INPUT_POINTER_SOURCE_ID, XErrorCode::XiBadDevice,
                         crate::X_INPUT_QUERY_POINTER_MINOR_OPCODE),
                 // Independent source grabs would detach a logical device from the
                 // Engine-owned route. This frontend explicitly denies that policy.
-                XWireRequest::XiGrabDevice { device_id: crate::X_INPUT_POINTER_SOURCE_ID, .. } =>
+                XWireRequest::Xi(crate::XInputRequest::XiGrabDevice { device_id: crate::X_INPUT_POINTER_SOURCE_ID, .. }) =>
                     xi_device_error(context, crate::X_INPUT_POINTER_SOURCE_ID, XErrorCode::BadAccess,
                         crate::X_INPUT_GRAB_DEVICE_MINOR_OPCODE),
-                XWireRequest::XiQueryPointer { window, .. } => {
+                XWireRequest::Xi(crate::XInputRequest::XiQueryPointer { window, .. }) => {
                     let output = match runtime.query_pointer(context.namespace, window) {
                         Ok(pointer) => XClientOutput::Reply(XClientReply::XiQueryPointer {
                             sequence: context.sequence,
@@ -252,7 +252,7 @@ fn dispatch_x_input_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XiUngrabDevice { device_id, .. } => {
+                XWireRequest::Xi(crate::XInputRequest::XiUngrabDevice { device_id, .. }) => {
                     match device_id {
                         2 => runtime
                             .input_authority_mut()
@@ -268,7 +268,7 @@ fn dispatch_x_input_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XiGrabDevice {
+                XWireRequest::Xi(crate::XInputRequest::XiGrabDevice {
                     window,
                     cursor,
                     device_id,
@@ -277,7 +277,7 @@ fn dispatch_x_input_request(
                     owner_events,
                     event_mask,
                     ..
-                } => {
+                }) => {
                     let mut xi_event_mask = [0; 8];
                     for (target, source) in xi_event_mask.iter_mut().zip(&event_mask) {
                         *target = *source;
@@ -319,7 +319,7 @@ fn dispatch_x_input_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XiGetClientPointer => XDispatchResult {
+                XWireRequest::Xi(crate::XInputRequest::XiGetClientPointer) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XiGetClientPointer {
                         sequence: context.sequence,
@@ -329,12 +329,12 @@ fn dispatch_x_input_request(
                 },
                 // DeviceBell has no server-side state in Sophia. Accepting the bounded
                 // legacy XInput request matches an X server with its bell disabled.
-                XWireRequest::XiDeviceBell => XDispatchResult {
+                XWireRequest::Xi(crate::XInputRequest::XiDeviceBell) => XDispatchResult {
                     response: None,
                     outputs: Vec::new(),
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XiChangeCursor { window, cursor } => {
+                XWireRequest::Xi(crate::XInputRequest::XiChangeCursor { window, cursor }) => {
                     let result = validate_window_or_root_access(
                         runtime,
                         context.namespace,
@@ -367,7 +367,7 @@ fn dispatch_x_input_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GeQueryVersion { .. } => XDispatchResult {
+                XWireRequest::Extension(crate::XExtensionRequest::GeQueryVersion { .. }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GeQueryVersion {
                         sequence: context.sequence,
@@ -376,7 +376,7 @@ fn dispatch_x_input_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XiQueryVersion { .. } => XDispatchResult {
+                XWireRequest::Xi(crate::XInputRequest::XiQueryVersion { .. }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XiQueryVersion {
                         sequence: context.sequence,
@@ -385,7 +385,7 @@ fn dispatch_x_input_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::XiQueryDevice { device_id } => {
+                XWireRequest::Xi(crate::XInputRequest::XiQueryDevice { device_id }) => {
                     let mut labels = [X_ATOM_NONE; 4];
                     for (label, name) in labels.iter_mut().zip([
                         "Rel X", "Rel Y", "Rel Horiz Scroll", "Rel Vert Scroll",
@@ -433,7 +433,7 @@ fn dispatch_x_input_request(
                 // answers the XI1 version handshake, so refusing the enumeration that
                 // follows it left an advertised extension half-implemented; a real
                 // session failed on the resulting BadRequest storm.
-                XWireRequest::XiListInputDevices => {
+                XWireRequest::Xi(crate::XInputRequest::XiListInputDevices) => {
                     let devices = X_VIRTUAL_DEVICES
                         .iter()
                         .filter(|device| device.device_id < 128)
@@ -455,7 +455,7 @@ fn dispatch_x_input_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XiSelectEvents { window, masks } => {
+                XWireRequest::Xi(crate::XInputRequest::XiSelectEvents { window, masks }) => {
                     let outputs = (window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT))
                         .then(|| {
                             runtime
@@ -487,7 +487,7 @@ fn dispatch_x_input_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XiGetFocus { .. } => {
+                XWireRequest::Xi(crate::XInputRequest::XiGetFocus { .. }) => {
                     let (focus, _) = runtime.input_focus(context.namespace);
                     XDispatchResult {
                         response: None,
@@ -498,7 +498,7 @@ fn dispatch_x_input_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::XiGetProperty => XDispatchResult {
+                XWireRequest::Xi(crate::XInputRequest::XiGetProperty) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::XiGetProperty {
                         sequence: context.sequence,

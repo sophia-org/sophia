@@ -7,28 +7,28 @@ fn dispatch_core_window_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::CreateWindow { .. }
+            XWireRequest::Core(crate::XCoreRequest::CreateWindow { .. })
             | XWireRequest::Authority(..)
-            | XWireRequest::ChangeWindowAttributes { .. }
-            | XWireRequest::GetWindowAttributes { .. }
-            | XWireRequest::DestroyWindow { .. }
-            | XWireRequest::ReparentWindow { .. }
-            | XWireRequest::DestroySubwindows { .. }
-            | XWireRequest::MapSubwindows { .. }
-            | XWireRequest::UnmapSubwindows { .. }
-            | XWireRequest::CirculateWindow { .. }
-            | XWireRequest::UnmapWindow { .. }
-            | XWireRequest::ConfigureWindow { .. }
-            | XWireRequest::GetGeometry { .. }
-            | XWireRequest::GetImage { .. }
-            | XWireRequest::QueryTree { .. }
+            | XWireRequest::Core(crate::XCoreRequest::ChangeWindowAttributes { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetWindowAttributes { .. })
+            | XWireRequest::Core(crate::XCoreRequest::DestroyWindow { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ReparentWindow { .. })
+            | XWireRequest::Core(crate::XCoreRequest::DestroySubwindows { .. })
+            | XWireRequest::Core(crate::XCoreRequest::MapSubwindows { .. })
+            | XWireRequest::Core(crate::XCoreRequest::UnmapSubwindows { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CirculateWindow { .. })
+            | XWireRequest::Core(crate::XCoreRequest::UnmapWindow { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ConfigureWindow { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetGeometry { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetImage { .. })
+            | XWireRequest::Core(crate::XCoreRequest::QueryTree { .. })
     ) {
         return Unhandled(request);
     }
     let mut result = match request {
-                request @ (XWireRequest::CreateWindow { .. } | XWireRequest::Authority(..) | XWireRequest::ChangeWindowAttributes { .. } | XWireRequest::GetWindowAttributes { .. }) => dispatch_window_creation_request(context, request, runtime, atoms, properties),
-                request @ (XWireRequest::DestroyWindow { .. } | XWireRequest::ReparentWindow { .. } | XWireRequest::DestroySubwindows { .. } | XWireRequest::MapSubwindows { .. } | XWireRequest::UnmapSubwindows { .. } | XWireRequest::CirculateWindow { .. } | XWireRequest::UnmapWindow { .. }) => dispatch_window_hierarchy_request(context, request, runtime, atoms, properties),
-                XWireRequest::ConfigureWindow {
+                request @ (XWireRequest::Core(crate::XCoreRequest::CreateWindow { .. }) | XWireRequest::Authority(..) | XWireRequest::Core(crate::XCoreRequest::ChangeWindowAttributes { .. }) | XWireRequest::Core(crate::XCoreRequest::GetWindowAttributes { .. })) => dispatch_window_creation_request(context, request, runtime, atoms, properties),
+                request @ (XWireRequest::Core(crate::XCoreRequest::DestroyWindow { .. }) | XWireRequest::Core(crate::XCoreRequest::ReparentWindow { .. }) | XWireRequest::Core(crate::XCoreRequest::DestroySubwindows { .. }) | XWireRequest::Core(crate::XCoreRequest::MapSubwindows { .. }) | XWireRequest::Core(crate::XCoreRequest::UnmapSubwindows { .. }) | XWireRequest::Core(crate::XCoreRequest::CirculateWindow { .. }) | XWireRequest::Core(crate::XCoreRequest::UnmapWindow { .. })) => dispatch_window_hierarchy_request(context, request, runtime, atoms, properties),
+                XWireRequest::Core(crate::XCoreRequest::ConfigureWindow {
                     window,
                     x,
                     y,
@@ -38,7 +38,7 @@ fn dispatch_core_window_request(
                     sibling,
                     stack_mode,
                     ..
-                } => {
+                }) => {
                     // The root is configured by nobody: a request on it has
                     // no effect and no error. Then the window, then its
                     // values, in the reference's order: an id that names no
@@ -248,7 +248,7 @@ fn dispatch_core_window_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetGeometry { drawable } => {
+                XWireRequest::Core(crate::XCoreRequest::GetGeometry { drawable }) => {
                     // Every kind of drawable answers the same four facts, so the
                     // resolver states them once rather than each kind being tried
                     // in turn here.
@@ -287,7 +287,7 @@ fn dispatch_core_window_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetImage {
+                XWireRequest::Core(crate::XCoreRequest::GetImage {
                     drawable,
                     format,
                     x,
@@ -295,7 +295,7 @@ fn dispatch_core_window_request(
                     width,
                     height,
                     plane_mask,
-                } => {
+                }) => {
                     let region = Rect {
                         x: i32::from(x),
                         y: i32::from(y),
@@ -333,7 +333,7 @@ fn dispatch_core_window_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::QueryTree { window } => {
+                XWireRequest::Core(crate::XCoreRequest::QueryTree { window }) => {
                     let output =
                         match runtime.window_parent_and_children(context.namespace, window) {
                             Ok((parent, children)) => {

@@ -9,10 +9,10 @@ fn decode_render(
                 X_RENDER_QUERY_VERSION_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::RenderQueryVersion {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderQueryVersion {
                 major: context.byte_order.u32(&bytes[4..8]),
                 minor: context.byte_order.u32(&bytes[8..12]),
-            })
+            }))
         }
         X_RENDER_QUERY_PICT_FORMATS_MINOR_OPCODE => {
             require_exact_len(
@@ -20,7 +20,7 @@ fn decode_render(
                 X_RENDER_QUERY_PICT_FORMATS_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::RenderQueryPictFormats)
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderQueryPictFormats))
         }
         X_RENDER_CREATE_PICTURE_MINOR_OPCODE => {
             require_len(X_RENDER_MAJOR_OPCODE, 20, bytes.len())?;
@@ -28,21 +28,21 @@ fn decode_render(
             context.validate_new_resource_id(picture)?;
             let mask = context.byte_order.u32(&bytes[16..20]);
             let values = decode_render_picture_values(context.byte_order, mask, &bytes[20..])?;
-            Ok(XWireRequest::RenderCreatePicture {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderCreatePicture {
                 picture: XResourceId::new(u64::from(picture), 1),
                 drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 format: context.byte_order.u32(&bytes[12..16]),
                 values,
-            })
+            }))
         }
         X_RENDER_CHANGE_PICTURE_MINOR_OPCODE => {
             require_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
             let mask = context.byte_order.u32(&bytes[8..12]);
             let values = decode_render_picture_values(context.byte_order, mask, &bytes[12..])?;
-            Ok(XWireRequest::RenderChangePicture {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderChangePicture {
                 picture: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 values,
-            })
+            }))
         }
         X_RENDER_SET_PICTURE_CLIP_RECTANGLES_MINOR_OPCODE => {
             require_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
@@ -53,18 +53,18 @@ fn decode_render(
                     actual: bytes.len(),
                 });
             }
-            Ok(XWireRequest::RenderSetPictureClipRectangles {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderSetPictureClipRectangles {
                 picture: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 clip_x_origin: context.byte_order.i16(&bytes[8..10]),
                 clip_y_origin: context.byte_order.i16(&bytes[10..12]),
                 rectangles: decode_render_rectangles(context.byte_order, &bytes[12..]),
-            })
+            }))
         }
         X_RENDER_FREE_PICTURE_MINOR_OPCODE => {
             require_exact_len(X_RENDER_MAJOR_OPCODE, 8, bytes.len())?;
-            Ok(XWireRequest::RenderFreePicture {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderFreePicture {
                 picture: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-            })
+            }))
         }
         X_RENDER_FILL_RECTANGLES_MINOR_OPCODE => {
             require_len(X_RENDER_MAJOR_OPCODE, 20, bytes.len())?;
@@ -75,7 +75,7 @@ fn decode_render(
                     actual: bytes.len(),
                 });
             }
-            Ok(XWireRequest::RenderFillRectangles {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderFillRectangles {
                 op: bytes[4],
                 picture: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 color: [
@@ -85,12 +85,12 @@ fn decode_render(
                     context.byte_order.u16(&bytes[18..20]),
                 ],
                 rectangles: decode_render_rectangles(context.byte_order, &bytes[20..]),
-            })
+            }))
         }
         X_RENDER_COMPOSITE_MINOR_OPCODE => {
             require_exact_len(X_RENDER_MAJOR_OPCODE, 36, bytes.len())?;
             let mask = context.byte_order.u32(&bytes[12..16]);
-            Ok(XWireRequest::RenderComposite {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderComposite {
                 op: bytes[4],
                 source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 // Mask None is the common case: a plain blit sends zero here.
@@ -107,31 +107,31 @@ fn decode_render(
                 destination_y: context.byte_order.i16(&bytes[30..32]),
                 width: context.byte_order.u16(&bytes[32..34]),
                 height: context.byte_order.u16(&bytes[34..36]),
-            })
+            }))
         }
         X_RENDER_CREATE_GLYPH_SET_MINOR_OPCODE => {
             require_exact_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
             let glyphset = context.byte_order.u32(&bytes[4..8]);
             context.validate_new_resource_id(glyphset)?;
-            Ok(XWireRequest::RenderCreateGlyphSet {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderCreateGlyphSet {
                 glyphset: XResourceId::new(u64::from(glyphset), 1),
                 format: context.byte_order.u32(&bytes[8..12]),
-            })
+            }))
         }
         X_RENDER_REFERENCE_GLYPH_SET_MINOR_OPCODE => {
             require_exact_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
             let glyphset = context.byte_order.u32(&bytes[4..8]);
             context.validate_new_resource_id(glyphset)?;
-            Ok(XWireRequest::RenderReferenceGlyphSet {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderReferenceGlyphSet {
                 glyphset: XResourceId::new(u64::from(glyphset), 1),
                 existing: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
-            })
+            }))
         }
         X_RENDER_FREE_GLYPH_SET_MINOR_OPCODE => {
             require_exact_len(X_RENDER_MAJOR_OPCODE, 8, bytes.len())?;
-            Ok(XWireRequest::RenderFreeGlyphSet {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderFreeGlyphSet {
                 glyphset: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-            })
+            }))
         }
         X_RENDER_ADD_GLYPHS_MINOR_OPCODE => {
             require_len(X_RENDER_MAJOR_OPCODE, 12, bytes.len())?;
@@ -178,12 +178,12 @@ fn decode_render(
                     off_y: context.byte_order.i16(&entry[10..12]),
                 });
             }
-            Ok(XWireRequest::RenderAddGlyphs {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderAddGlyphs {
                 glyphset: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 ids,
                 glyphs,
                 data: bytes[header_len..].to_vec(),
-            })
+            }))
         }
         X_RENDER_FREE_GLYPHS_MINOR_OPCODE => {
             require_len(X_RENDER_MAJOR_OPCODE, 8, bytes.len())?;
@@ -194,13 +194,13 @@ fn decode_render(
                     actual: bytes.len(),
                 });
             }
-            Ok(XWireRequest::RenderFreeGlyphs {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderFreeGlyphs {
                 glyphset: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 ids: bytes[8..]
                     .chunks_exact(4)
                     .map(|id| context.byte_order.u32(id))
                     .collect(),
-            })
+            }))
         }
         minor @ (X_RENDER_COMPOSITE_GLYPHS_8_MINOR_OPCODE
         | X_RENDER_COMPOSITE_GLYPHS_16_MINOR_OPCODE
@@ -211,7 +211,7 @@ fn decode_render(
                 X_RENDER_COMPOSITE_GLYPHS_16_MINOR_OPCODE => 2,
                 _ => 4,
             };
-            Ok(XWireRequest::RenderCompositeGlyphs {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderCompositeGlyphs {
                 op: bytes[4],
                 source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 destination: XResourceId::new(
@@ -228,18 +228,18 @@ fn decode_render(
                     id_width,
                 ),
                 minor_opcode: minor,
-            })
+            }))
         }
         X_RENDER_CREATE_CURSOR_MINOR_OPCODE => {
             require_exact_len(X_RENDER_MAJOR_OPCODE, 16, bytes.len())?;
             let cursor = context.byte_order.u32(&bytes[4..8]);
             context.validate_new_resource_id(cursor)?;
-            Ok(XWireRequest::RenderCreateCursor {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderCreateCursor {
                 cursor: XResourceId::new(u64::from(cursor), 1),
                 source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 hotspot_x: context.byte_order.u16(&bytes[12..14]),
                 hotspot_y: context.byte_order.u16(&bytes[14..16]),
-            })
+            }))
         }
         X_RENDER_SET_PICTURE_TRANSFORM_MINOR_OPCODE => {
             require_exact_len(
@@ -252,10 +252,10 @@ fn decode_render(
                 let offset = 8 + index * 4;
                 *entry = context.byte_order.u32(&bytes[offset..offset + 4]) as i32;
             }
-            Ok(XWireRequest::RenderSetPictureTransform {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderSetPictureTransform {
                 picture: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 matrix,
-            })
+            }))
         }
         X_RENDER_QUERY_FILTERS_MINOR_OPCODE => {
             require_exact_len(
@@ -263,9 +263,9 @@ fn decode_render(
                 X_RENDER_QUERY_FILTERS_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::RenderQueryFilters {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderQueryFilters {
                 drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-            })
+            }))
         }
         X_RENDER_SET_PICTURE_FILTER_MINOR_OPCODE => {
             require_len(
@@ -283,7 +283,7 @@ fn decode_render(
                 })?;
             let padded_end = name_end.next_multiple_of(4);
             require_len(X_RENDER_MAJOR_OPCODE, padded_end, bytes.len())?;
-            Ok(XWireRequest::RenderSetPictureFilter {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderSetPictureFilter {
                 picture: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 name: bytes[X_RENDER_SET_PICTURE_FILTER_REQ_LEN..name_end].to_vec(),
                 // Only a convolution filter takes parameters, and this server
@@ -291,7 +291,7 @@ fn decode_render(
                 // that the named filter takes none rather than that the name
                 // is wrong.
                 has_params: bytes.len() > padded_end,
-            })
+            }))
         }
         X_RENDER_TRAPEZOIDS_MINOR_OPCODE => {
             require_len(X_RENDER_MAJOR_OPCODE, X_RENDER_PRIMITIVE_PREFIX_LEN, bytes.len())?;
@@ -304,7 +304,7 @@ fn decode_render(
                 });
             }
             let fixed = |slice: &[u8]| context.byte_order.u32(slice) as i32;
-            Ok(XWireRequest::RenderTrapezoids {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderTrapezoids {
                 op: bytes[4],
                 source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 destination: XResourceId::new(
@@ -325,7 +325,7 @@ fn decode_render(
                         right_p2: (fixed(&trap[32..36]), fixed(&trap[36..40])),
                     })
                     .collect(),
-            })
+            }))
         }
         minor @ (X_RENDER_TRIANGLES_MINOR_OPCODE
         | X_RENDER_TRI_STRIP_MINOR_OPCODE
@@ -381,7 +381,7 @@ fn decode_render(
                     })
                     .collect()
             };
-            Ok(XWireRequest::RenderTriangles {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderTriangles {
                 op: bytes[4],
                 source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 destination: XResourceId::new(
@@ -393,7 +393,7 @@ fn decode_render(
                 source_y: context.byte_order.i16(&bytes[22..24]),
                 triangles,
                 minor_opcode: minor,
-            })
+            }))
         }
         X_RENDER_CREATE_SOLID_FILL_MINOR_OPCODE => {
             require_exact_len(
@@ -403,7 +403,7 @@ fn decode_render(
             )?;
             let picture = context.byte_order.u32(&bytes[4..8]);
             context.validate_new_resource_id(picture)?;
-            Ok(XWireRequest::RenderCreateSolidFill {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderCreateSolidFill {
                 picture: XResourceId::new(u64::from(picture), 1),
                 color: [
                     context.byte_order.u16(&bytes[8..10]),
@@ -411,7 +411,7 @@ fn decode_render(
                     context.byte_order.u16(&bytes[12..14]),
                     context.byte_order.u16(&bytes[14..16]),
                 ],
-            })
+            }))
         }
         minor @ (X_RENDER_CREATE_LINEAR_GRADIENT_MINOR_OPCODE
         | X_RENDER_CREATE_RADIAL_GRADIENT_MINOR_OPCODE
@@ -484,18 +484,18 @@ fn decode_render(
                     angle: fixed(&bytes[16..20]),
                 },
             };
-            Ok(XWireRequest::RenderCreateGradient {
+            Ok(XWireRequest::Render(crate::XRenderRequest::RenderCreateGradient {
                 picture: XResourceId::new(u64::from(picture), 1),
                 geometry,
                 stops,
                 minor_opcode: minor,
-            })
+            }))
         }
         // Decoded so the refusal can name the request. RENDER has thirty-six
         // minors and this server implements a subset; a parse rejection would
         // tell a client only that the extension exists, not which request it
         // was denied.
-        minor_opcode => Ok(XWireRequest::RenderUnimplemented { minor_opcode }),
+        minor_opcode => Ok(XWireRequest::Render(crate::XRenderRequest::RenderUnimplemented { minor_opcode })),
     }
 }
 

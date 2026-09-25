@@ -6,25 +6,25 @@ fn dispatch_randr_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::RandrQueryVersion { .. }
-            | XWireRequest::RandrSelectInput { .. }
-            | XWireRequest::RandrGetScreenSizeRange { .. }
-            | XWireRequest::RandrGetScreenResources { .. }
-            | XWireRequest::RandrGetOutputInfo { .. }
-            | XWireRequest::RandrGetOutputProperty { .. }
-            | XWireRequest::RandrGetCrtcInfo { .. }
-            | XWireRequest::RandrGetCrtcGammaSize { .. }
-            | XWireRequest::RandrGetCrtcGamma { .. }
-            | XWireRequest::RandrGetCrtcTransform { .. }
-            | XWireRequest::RandrGetPanning { .. }
-            | XWireRequest::RandrGetOutputPrimary { .. }
-            | XWireRequest::RandrGetProviders { .. }
-            | XWireRequest::RandrGetMonitors { .. }
+            XWireRequest::Randr(crate::XRandrRequest::RandrQueryVersion { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrSelectInput { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetScreenSizeRange { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetScreenResources { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputInfo { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputProperty { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcInfo { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcGammaSize { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcGamma { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcTransform { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetPanning { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputPrimary { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetProviders { .. })
+            | XWireRequest::Randr(crate::XRandrRequest::RandrGetMonitors { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::RandrQueryVersion { .. } => XDispatchResult {
+                XWireRequest::Randr(crate::XRandrRequest::RandrQueryVersion { .. }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::RandrQueryVersion {
                         sequence: context.sequence,
@@ -33,7 +33,7 @@ fn dispatch_randr_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::RandrSelectInput { window, .. } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrSelectInput { window, .. }) => {
                     let outputs = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         Vec::new()
                     } else if let Err(error) = runtime.validate_window_access(context.namespace, window) {
@@ -52,7 +52,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetScreenSizeRange { window } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetScreenSizeRange { window }) => {
                     let root_size = runtime
                         .output_topology()
                         .root_size()
@@ -89,7 +89,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetScreenResources { window, .. } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetScreenResources { window, .. }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let output = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         XClientOutput::Reply(XClientReply::RandrGetScreenResources {
@@ -121,7 +121,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetOutputInfo { output, .. } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputInfo { output, .. }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let client_output = resources
                         .outputs
@@ -156,7 +156,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetOutputProperty {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputProperty {
                     output,
                     property,
                     property_type,
@@ -164,7 +164,7 @@ fn dispatch_randr_request(
                     long_length,
                     delete: _,
                     pending: _,
-                } => {
+                }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let client_output = if !resources.outputs.contains(&output) {
                         XClientOutput::Error(crate::XClientError {
@@ -214,7 +214,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetCrtcInfo { crtc, .. } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcInfo { crtc, .. }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let client_output = resources
                         .crtcs
@@ -249,7 +249,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetCrtcGammaSize { crtc } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcGammaSize { crtc }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let client_output = if resources.crtcs.contains(&crtc) {
                         XClientOutput::Reply(XClientReply::RandrGetCrtcGammaSize {
@@ -271,7 +271,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetCrtcGamma { crtc } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcGamma { crtc }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let client_output = if resources.crtcs.contains(&crtc) {
                         XClientOutput::Reply(XClientReply::RandrGetCrtcGamma {
@@ -292,7 +292,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetCrtcTransform { crtc } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetCrtcTransform { crtc }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let client_output = if resources.crtcs.contains(&crtc) {
                         XClientOutput::Reply(XClientReply::RandrGetCrtcTransform {
@@ -313,7 +313,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetPanning { crtc } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetPanning { crtc }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let client_output = if resources.crtcs.contains(&crtc) {
                         XClientOutput::Reply(XClientReply::RandrGetPanning {
@@ -335,7 +335,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetOutputPrimary { window } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetOutputPrimary { window }) => {
                     let resources = randr_resources(runtime.output_topology());
                     let primary = runtime
                         .output_topology()
@@ -368,7 +368,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetProviders { window } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetProviders { window }) => {
                     let timestamp = u32::try_from(runtime.output_topology().generation)
                         .unwrap_or(u32::MAX)
                         .max(1);
@@ -396,7 +396,7 @@ fn dispatch_randr_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::RandrGetMonitors { window, .. } => {
+                XWireRequest::Randr(crate::XRandrRequest::RandrGetMonitors { window, .. }) => {
                     let timestamp = u32::try_from(runtime.output_topology().generation)
                         .unwrap_or(u32::MAX)
                         .max(1);
