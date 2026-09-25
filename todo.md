@@ -32,8 +32,6 @@
 
 (A) 2026-09-12 Accept Lom's globally numbered per-output refresh-safe workspace clicks/shortcuts, flash-free native panel, popouts and descriptor controls on every output with clean shutdown using exact installed evidence and a measured daily workload. +critical +lom @physical id:t081 order:000.85 depends:t101 peer:lom/t008,t009,t010 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t081)
 
-(A) 2026-09-12 Make arrow navigation across outputs configurable as arrow-crosses-outputs, default on; self-contained per-monitor workspaces want it off. +critical @development id:t080 order:000.86 [details](docs/notes/plans/queue-11-parallel-production-readiness.md)
-
 (A) Complete the physical tab acceptance for frame-tree/Notion and i3/split-tree: empty/nested groups, hidden-member activation, shell recovery, title changes, fullscreen, and floating occlusion. +critical +cp14-3 @development id:t018 order:018 [details](docs/notes/plans/queue-06-4-exercise-real-development-workflows.md#t018)
 
 (A) Review workflow evidence, recovery, clean teardown, bounded warmed resources/no steady-state allocation growth, and relevant refresh-relative latency evidence. +critical +cp14-3 @development id:t020 order:020 [details](docs/notes/plans/queue-07-5-close-milestone-14.md#t020)
