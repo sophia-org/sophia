@@ -109,6 +109,16 @@ backings remain owned separately through submission, display and retirement.
 Each mirrored head settles its own ownership. Failed rendering, supersession,
 output loss and close use the existing frame-retirement owner.
 
+An application may continue submitting Present while replacement removes its
+ordinary draw. If replacement covers every applicable output and no instance
+samples that Present, source collection must permit the existing no-captured-image
+settlement path: bounded first-visibility deferral or paced skipping, with the
+existing clearing repaint and retirement obligations. It must not manufacture
+display completion for an unsampled buffer. This exception does not excuse a
+missing source required by a sampled instance or an omitted Present owner without
+replacement. The [t246 investigation](notes/investigations/kc13g2uh-an-unsampled-present-can-terminate-a-replacement-presentation-session.md)
+records the regression and its deterministic controls.
+
 ## Presented input
 
 Visual-only records have no action. An action must name a registered pure WM

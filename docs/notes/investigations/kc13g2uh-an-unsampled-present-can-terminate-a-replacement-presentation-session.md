@@ -88,6 +88,9 @@ bounded first-visibility/pacing behavior, and buffer retirement ownership.
 
 ## Independent validation and remaining work
 
+The incident bundle's ten retained files passed its `SHA256SUMS` verification;
+the independent log is `.artifacts/overview-crash/incident-integrity.log`.
+
 The test was cherry-picked with a signature as `0c07cff0` on
 `session/overview-crash` in `/home/niltempus/dev/sophia-borders`, based on the
 installed revision. Its production source is unchanged. A device-hidden bwrap
@@ -98,12 +101,75 @@ worktree. An initial invocation with insufficient features and an exact short
 filter executed zero tests; its separate `reproduction.log` is retained and does
 not count as validation.
 
-Claude owns the bounded backend fix and production settlement controls. The
-session review has not established a separate session source defect. Integration
-must review the signed fix, preserve red and green evidence, and verify hidden,
-previewed, restored, and missing-required-source cases. The director allocated
-t246; its single critical development row is maintained on this investigation's
-isolated branch through candidate handoff.
+Claude's initial correction `df01e8a0`, joined as signed `4e4b3ff8`, admits an
+unsampled current source only when policy replacement covers every applicable
+output. The independent device-hidden `presentation_present` run passed five
+controls: hidden replacement, preview-only current source, missing sampled source,
+omitted owner without replacement, and overlay. Its log is
+`.artifacts/overview-crash/4e4b3ff8-presentation-present.log`. These controls reach
+composition and capture selection, not the subsequent scheduler settlement; they
+are not sufficient on their own for t246 acceptance.
+
+Review therefore required a shared production settlement control, including the
+feedback drain and resource release rather than only an empty scheduler queue.
+That control exposed a second visibility defect: ordinary geometry could release
+a first-visibility wait even though replacement still omitted the source. Repeated
+release and re-parking reset its budget. This is a separate deterministic finding,
+not evidence that the physical incident involved a first Present. Signed
+`8c7fc06fad574de050ba3e590e5bc7c170a35cf3`, joined as `fc012aaf`, corrects that
+eligibility check and extracts the existing no-captured-image settlement into
+`settle_uncaptured_present<T: NativeCompositionTarget>`. The native retained queue
+wrapper and trait call both use an empty required-retirement set; the extraction
+does not substitute another frame owner.
+
+The new controls queue a real backend Present and exercise that helper and the
+runtime's first-visibility service. They assert repeated hidden-frame pacing and
+clearing repaint, a hold at one second and expiry at 2.1 seconds, and recovery of
+the same parked transaction after withdrawal without a new Present. Drained
+Complete/Skipped and Idle records are backend-produced feedback ready for routing;
+these fixtures do not show an independent X client receiving wire events.
+Presentation state is removed and the live-presentation count returns to zero.
+
+The controls do not execute the concrete `drive_gpu_presentation` device path,
+DMA-BUF import, or its computation of `first_presentation`; the fixture supplies
+that branch fact. While a tier is withheld for a missing source, ordinary drawing
+can return before the visibility predicate stops seeing replacement. A parked
+first Present can then wait for its bounded budget; no broader change is claimed.
+Admission refuses, and source removal revokes, an invalid publication.
+
+## Joined development checks
+
+The joined native backend/session all-feature suites passed on `fc012aaf`:
+1,749 passed, zero failed, 39 ignored. Subsequent revisions `045e90c8` and
+`c866e112` only move or clarify comments; the retained `comment-only-delta.patch`
+records the exact change. On `c866e112`, paired `policy_transport` passed 13 tests
+with zero failures and one existing ignored case, strict backend/session
+all-target Clippy passed, and the workspace all-feature/all-target check passed.
+Fmt, metadata, layout and whitespace checks also passed in the isolated worktree.
+
+The paired binary is the frozen Hagia h004 executable at
+`~/.local/state/hagia/development-evidence/h004-e3fe2b4/hagia`, SHA256
+`8dae3277819b319962d8c85fb18437d2b0e63971a9615f8a4b0e70716b5d5d04`.
+Checks used bwrap with devices and installed-session sockets hidden, a private
+disk-backed `/tmp`, a disk Cargo cache, nice level 10, and two build jobs. No
+live-session environment or smoke permission was retained.
+
+Logs remain in `/home/niltempus/dev/sophia-borders/.artifacts/overview-crash`.
+The `negative-controls` subdirectory retains Claude's four failing mutations and
+source hashes: `present-unsampled-refused`, `present-always-released`,
+`hidden-first-released`, and `uncaptured-no-repaint`. Each exits 101 with a test
+failure; the last two establish that the hidden hold and clearing repaint are
+observed by the controls. Their original provenance is
+`/home/niltempus/dev/sophia-t196/.artifacts/t244-controls/controls.json`.
+
+The session review has not established a separate session source defect. The
+director accepted the bounded headless scope and allocated a conditional main
+gate window for static checks, default workspace tests and the native protocol
+family. That final integration gate and coordinated docs closure remain pending;
+the t246 row stays open. This does not authorize installing or reloading either
+project. The separate Hagia clipped-border concern was not reproduced: valid
+geometry constraints and the backend's clipping-before-border construction
+exclude the hypothesized case. No border repair is attributed to t246.
 
 No main-tree operation, live install, reload, GPU execution, or physical-device
 test was performed for this reproduction. Physical acceptance remains outstanding.
