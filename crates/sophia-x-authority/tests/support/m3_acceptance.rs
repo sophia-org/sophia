@@ -44,6 +44,9 @@ pub(crate) use lifecycle_support::{
 include!("m3_acceptance_lifecycle.rs");
 
 include!("m3_acceptance_c.rs");
+include!("m3_acceptance_c_handover.rs");
+include!("m3_acceptance_c_publication.rs");
+include!("m3_acceptance_c_cleanup.rs");
 include!("m3_acceptance_a_proofs.rs");
 include!("m3_acceptance_recipient.rs");
 include!("m3_acceptance_input_support.rs");
