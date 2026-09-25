@@ -192,3 +192,15 @@ watchdog, TTY/display-manager restoration and explicit physical-proof dispatch
 remain deliberate adapter responsibilities. No installed-session or physical
 acceptance is claimed. The family gate reports Lom content unavailable when no
 Lom client is supplied; that optional branch does not satisfy or close t099.
+
+After t230 landed as `79493df8`, the signed rebase retained identical production
+preparation code (`1752d0f8`). Both completed-task rows were preserved. The
+full CLI suite passed again: 85 tests, four pre-existing ignored cases; Clippy,
+formatting and layout passed. A repeat of the new outer-adapter PTY test exposed
+another harness dependency: the refusal can exit before its process-substitution
+`tee` drains. Keeping stdin open alone was insufficient. Signed `680f0c09`
+records the preparation invocation synchronously and asserts no TTY query or
+privileged handoff occurred, without relying on terminal output. Both recovery
+tests and three additional refusal repetitions pass. The rebased evidence and
+empty production-preparation diff are separately checksummed at
+`~/.local/state/sophia/development-evidence/t027-rebased-680f0c09`.
