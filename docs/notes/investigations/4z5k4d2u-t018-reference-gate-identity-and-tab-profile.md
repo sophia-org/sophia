@@ -45,7 +45,10 @@ takeover:
   are unchanged findings.
 - **Reference profile.** `SOPHIA_HAGIA_NATIVE_PROFILE` may name a profile. It
   is chosen before any build and must be an absolute, tracked, unmodified
-  file of the Sophia or Hagia checkout. The default profile is unchanged.
+  regular file of the Sophia or Hagia checkout. A symlink is refused whatever
+  it targets (\`787e0f95\`): review showed that a tracked link to an external
+  file passed while the target's bytes changed, because git records the link
+  and not those bytes. The red control is \`fab01fa5\`. The default profile is unchanged.
   `tools/fixtures/t018_tab_reference.kdl` holds only Hagia policy:
   - the native-workflow keys;
   - scroller at start;
@@ -66,7 +69,7 @@ and no device is opened.
 
 | Control | Proves |
 | --- | --- |
-| Predicate cases | A repository root and a linked worktree are accepted. A subdirectory, a symlink into one, a plain directory and a missing path are refused. The profile must be absolute, tracked, unmodified and inside a named root. |
+| Predicate cases | A repository root and a linked worktree are accepted. A subdirectory, a symlink into one, a plain directory and a missing path are refused. The profile must be absolute, tracked, unmodified, not a symlink, and inside a named root. |
 | Native dry run (pseudo-terminal) | The wrapper hands every identity to the gate for a worktree Hagia and the reference profile, and reaches the stub session start. |
 | Profile refusals | Relative, ignored-untracked and outside profiles refuse before any build. |
 | Armed gate refusals | Both gates reach the session start when bound. A mismatched Sophia, Hagia or Narthex digest, or a dirty or unsigned Narthex, refuses first with no "unbound variable". |
