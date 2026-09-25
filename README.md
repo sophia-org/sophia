@@ -83,7 +83,7 @@ Trusted applications can share a namespace and use the traditional X11 object mo
 
 ## Documentation
 
-[Building on Sophia](docs/building-on-sophia.md) describes the component interfaces and how to use them. The [documentation index](docs/README.md) links to architecture, protocol, configuration, and security specifications.
+[Building on Sophia](docs/building-on-sophia.md) describes the component interfaces and how to use them. The [Strategic Roadmap](docs/strategic-roadmap.md) outlines the migration from monorepo incubation to autonomous satellite repositories under `sophia-org`. The [documentation index](docs/README.md) links to architecture, protocol, configuration, and security specifications.
 
 Investigations and design decisions live in the [development notebook](docs/notes/README.md). Current work is tracked in [todo.md](todo.md); contributors should follow the [work-tracking guide](docs/work-tracking.md).
 

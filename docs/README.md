@@ -27,6 +27,10 @@ wins when prose disagrees.
   how a window manager, a shell, or a full desktop environment composes from
   them. Start here; every section links to the document that owns its detail.
 
+- [Strategic Roadmap](strategic-roadmap.md) defines the staged migration from
+  monorepo incubation to an autonomous multi-repository ecosystem under
+  sophia-org, outlining velocity vs. purity trade-offs and extraction gates.
+
 ## Normative Architecture
 
 - [Architecture](architecture.md) defines process ownership and the boundaries
