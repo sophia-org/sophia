@@ -868,6 +868,55 @@ mod event_delivery_socket {
     /// Unobscured again; a window mapped under a cover reports the cover
     /// from the start (XTS Xlib11 VisibilityNotify 2, 3, 7 to 9). The
     /// state was Unobscured on map and never changed. Red before the fix.
+    /// Remapping a window reports VisibilityNotify and Expose on every
+    /// mapped inferior that becomes viewable with it, the VisibilityNotify
+    /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the
+    /// remapped window was reported; its children were not.
+    #[test]
+    fn remapping_a_window_reports_visibility_and_exposure_on_its_viewable_inferiors() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let parent = client.next;
+        let child = client.next + 2;
+        let grandchild = client.next + 4;
+        client.next += 6;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, parent, 20, 0, 40, 40))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, parent)).unwrap();
+        // VisibilityChange and Exposure on the two below it.
+        for (window, above, x) in [(child, parent, 2), (grandchild, child, 1)] {
+            client.stream
+                .write_all(&create_window_request_with_parent(client.order, window, above, x, x, 10, 10))
+                .unwrap();
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 15) | (1 << 16)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+
+        let mut unmap = vec![10, 0];
+        push_u16(&mut unmap, client.order, 2);
+        push_u32(&mut unmap, client.order, child);
+        client.stream.write_all(&unmap).unwrap();
+        client.settle();
+        client.stream.write_all(&map_window_request(client.order, child)).unwrap();
+        let mut order = std::collections::BTreeMap::<u32, Vec<u8>>::new();
+        for _ in 0..4 {
+            let record = read_x_record(&mut client.stream);
+            let window = u32::from_le_bytes([record[4], record[5], record[6], record[7]]);
+            order.entry(window).or_default().push(record[0] & 0x7f);
+        }
+        assert_eq!(
+            order,
+            [(child, vec![15, 12]), (grandchild, vec![15, 12])].into_iter().collect(),
+            "VisibilityNotify then Expose on the remapped window and on its viewable child"
+        );
+        client.assert_quiet("nothing else on the remap");
+    }
+
     #[test]
     fn visibility_follows_what_covers_a_window() {
         let mut fixture = XtestFixture::sharing_a_namespace();

@@ -267,7 +267,7 @@ fn dispatch_window_creation_request(
                     {
                         runtime.note_selection_requester(context.namespace, *selection, context.client_id);
                     }
-                    let outputs = if let XAuthorityRequestKind::MapWindow { window, .. } = kind {
+                    let mut outputs = if let XAuthorityRequestKind::MapWindow { window, .. } = kind {
                         outputs_from_map_response(
                             context,
                             window,
@@ -283,6 +283,14 @@ fn dispatch_window_creation_request(
                     } else {
                         outputs_from_authority_response(context, runtime, &kind, &response)
                     };
+                    if let XAuthorityRequestKind::MapWindow { window, .. } = kind
+                        && !already_mapped
+                        && runtime
+                            .window_map_state(context.namespace, window)
+                            .is_ok_and(|state| state == crate::XMapState::Viewable)
+                    {
+                        outputs.extend(viewable_inferior_outputs(context, runtime, window));
+                    }
                     XDispatchResult {
                         response: Some(response),
                         outputs,
@@ -515,4 +523,52 @@ fn dispatch_window_creation_request(
                 }
         _ => unreachable!("request family checked before dispatch"),
     }
+}
+
+/// The inferiors a map makes viewable, top-down: the mapped windows below
+/// one that becomes viewable become viewable with it, and each is owed its
+/// VisibilityNotify and Expose as the window itself is (XTS Xlib11
+/// VisibilityNotify 3, which unmaps and remaps a parent and expects both on
+/// every window below it). An InputOnly window has neither.
+fn viewable_inferior_outputs(
+    context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
+    window: XResourceId,
+) -> Vec<XClientOutput> {
+    let children_of = |runtime: &XAuthorityRuntime, window: XResourceId| {
+        runtime
+            .window_parent_and_children(context.namespace, window)
+            .map(|(_, children)| children)
+            .unwrap_or_default()
+    };
+    let mut outputs = Vec::new();
+    let mut pending = std::collections::VecDeque::from(children_of(runtime, window));
+    while let Some(child) = pending.pop_front() {
+        if !runtime
+            .window_map_state(context.namespace, child)
+            .is_ok_and(|state| state != crate::XMapState::Unmapped)
+        {
+            continue;
+        }
+        if !runtime.window_is_input_only(child) {
+            outputs.push(XClientOutput::Event(XClientEvent::VisibilityNotify {
+                sequence: context.sequence,
+                window: child,
+                state: runtime.window_visibility(context.namespace, child),
+            }));
+            if let Ok(facts) = runtime.drawable_facts(context.namespace, child) {
+                outputs.push(XClientOutput::Event(XClientEvent::Expose {
+                    sequence: context.sequence,
+                    window: child,
+                    x: 0,
+                    y: 0,
+                    width: clamp_u16(facts.geometry.width),
+                    height: clamp_u16(facts.geometry.height),
+                    count: 0,
+                }));
+            }
+        }
+        pending.extend(children_of(runtime, child));
+    }
+    outputs
 }
