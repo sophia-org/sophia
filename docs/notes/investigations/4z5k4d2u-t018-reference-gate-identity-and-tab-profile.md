@@ -135,7 +135,7 @@ and owners. It retains a \`hagia_reference_capture\` record whose line reads
 What a capture claims:
 - the bound identity and profile;
 - an observed exit 0;
-- one validated TTY recovery record appended by this invocation;
+- one validated TTY recovery record from this invocation's own rotated runner log;
 - the retained evidence.
 
 What it does not claim: any native workflow result, clean retirement, or tab
@@ -149,8 +149,23 @@ Captures are stored under \`sophia/reference/hagia-tab-captures\`, never the
 promotion directory. Every existing reader keeps the native default and refuses
 a capture. Only an explicit \`--expected-kind=reference\` reads one.
 
-Operator observations may be retained as a bounded file with their digest.
-They stay unverified.
+The runner rotates its session and recovery logs on every run, so a capture
+binds them by requiring exactly one rotation since the session started. An
+intervening run refuses, and prior files are kept. A reference run root that
+is, contains or sits inside promotion storage is refused before the session.
+
+Operator observations may be retained with their digest. At most 256 KiB
+plus one byte is ever read, the retained copy must fit 256 KiB, and they
+stay unverified.
+
+Shell recovery is an explicit operator step. The guide prints the exact
+\`peer_pid\` this capture's session recorded for its shell, to be confirmed
+with \`ps\` and then signalled. No process is matched by name, and no restart
+API is added.
+
+The capture carries the built-binary identity repair (cherry-picked from
+\`gate/t018-sophia-bin-pin\`). The session and archive run the Sophia binary
+the wrapper built and hashed.
 
 Prepared command, not run: on tty4, with Sophia at the signed candidate and
 Hagia and Narthex at clean, signed HEADs:
