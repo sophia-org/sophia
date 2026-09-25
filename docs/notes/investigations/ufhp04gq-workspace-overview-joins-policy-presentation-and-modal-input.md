@@ -16,10 +16,13 @@ cross-repository plan at Hagia's
 The user authorized that feature across Hagia, Narthex and Sophia, and assigned
 coordination of the three Herdr agents to the director on 2026-09-25.
 
-Hagia computes a pure workspace preview and validates the confirmed selection.
-Narthex receives bounded remapped shell slots and owns modal navigation. Engine
-samples retained scene sources; the shell receives no surface IDs, buffers or
-application pixels. Only confirmed selection changes committed workspace/focus.
+Hagia owns overview layout, navigation and selection policy. On 2026-09-25 the
+implementation agent reported Mason's correction of the first checkpoint's
+Narthex-owned navigation; that ownership is being moved to Hagia before further
+session integration. Narthex may present bounded remapped shell slots and forward
+input, but does not decide overview navigation or selection. Engine samples
+retained scene sources; the shell receives no surface IDs, buffers or application
+pixels. Only confirmed selection changes committed workspace/focus.
 Client geometry and allocations do not become thumbnail-sized.
 
 The initial overview appears on the active monitor and preserves each output's

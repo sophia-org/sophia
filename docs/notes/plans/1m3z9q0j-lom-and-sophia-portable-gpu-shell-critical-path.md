@@ -230,6 +230,36 @@ Exercise the full panel/popout lifecycle with the independent C client as well
 as Lom through the protected conformance host; shared Rust code alone cannot
 prove the cross-language contract. Keep native input/presentation separate.
 
+#### 2026-09-25 production-owner audit
+
+The live allocation resolver already places popouts from acknowledged physical
+parent geometry. Three additional controls in
+`crates/sophia-session/tests/support/metadata_shell_popout.rs` cover all four
+panel-edge tie-breaks, signed margins at integer scale two without rounding an
+odd physical anchor, and refusal of oversized, out-of-parent and missing or
+wrong-output parents without consuming an allocation identity. These call the
+production resolver with supplied parent facts; they do not establish a
+presented parent, fractional output support or a native presentation. The full
+content-owner test module passes eleven controls. Reversing the away-from-panel
+tie-break produces the intended assertion failure.
+
+The remaining gap is integration, not another placement formula. The legacy
+`ContentActionLedger` issues activation and cancellation, but has no
+outside-dismiss issuance. `PresentedContentBinding` retains allocation geometry
+without the panel/popout role and parent relationship needed to select a popout
+for an outside press. Implementing dismissal therefore needs an exact presented
+popout identity through projection, consumed press/release handling, bounded
+withdrawal and independent retention of submitted pixels. Coordinate that input
+seam with overview work rather than changing its shared routing concurrently.
+
+The independent `bindings/c/tests/sophia_shell_content_client.c` explicitly reads
+a named frame corpus; it is not a live admitted client. The protected
+`shell_content_conformance_host` runs a supplied client's `content-proof` mode,
+accepts one panel and deliberately reports renderer failure while checking
+resource release. It does not present a panel/popout pair or exercise dismissal.
+Both are useful existing checks, but neither satisfies this row's joined
+cross-language lifecycle exit. t099 remains open.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,
