@@ -24,6 +24,10 @@ use placement::{panel_pixel_thickness, panel_rect, popout_rect, quantize};
 
 const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 
+#[cfg(test)]
+#[path = "../../../tests/support/component_reconnect/content.rs"]
+pub(in crate::live_session) mod reconnect_fixture;
+
 #[derive(Clone, Copy)]
 enum ContentServiceStage {
     Idle,

@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use sophia_runtime::{TraceLevel, init_tracing_with_layer};
 use sophia_session::diagnostics::{Capture, DIAGNOSTIC_RECORD_MAX_BYTES, Retention, Store};
@@ -135,6 +136,30 @@ fn capture_child(path: &Path) {
     tracing::info!(target: EXPORTER_TARGET, "{}", oversized_unicode);
 
     drop(capture);
+    wait_for_stopped_capture(&record.path);
+}
+
+fn wait_for_stopped_capture(path: &Path) {
+    // Drop bounds recovery latency, not durable completion. Keep this child
+    // alive until the worker publishes its actual synchronized health record.
+    let started = Instant::now();
+    loop {
+        let health = fs::read_to_string(path.join("health"));
+        if health
+            .as_ref()
+            .is_ok_and(|text| text.lines().any(|line| line == "recording=stopped"))
+        {
+            return;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "capture did not stop before child exit: pid={} path={} elapsed={:?} last_health={health:?}",
+            std::process::id(),
+            path.display(),
+            started.elapsed(),
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 #[test]

@@ -180,6 +180,18 @@ Test-only crate re-exports join these existing private owners without widening
 the release API. The runtime retirement-authority fixture similarly mounts
 externally to distinguish the persistent and transient custody paths.
 
+The component reconnect join also uses the backend's opt-in `test-support`
+feature from the Session dev-dependency. Its doc-hidden
+`tests/support/session_content_fixture.rs` bridge reuses the extracted
+`tests/support/composition_target.rs`; it does not expose the target trait or
+construct a native device. Ordinary `sophia-cli --features native-session`
+release dependencies must exclude this feature. Session's external
+`component_reconnect` fixtures supply protected-peer evidence and the initial
+pending-presentation record at the concrete-native submission boundary. They
+then call the unchanged production component service, real transport and
+revocation owners. Explicit fixture copy/flip completion is not physical
+acceptance. The distinct legacy recovery join is tested separately.
+
 External transport-budget and client outbox/candidate fixtures need to inspect
 exact producer credits and partial-write ownership across refusal; this includes
 `tests/support/shell_indicator_responses.rs`, which retains the exact completed

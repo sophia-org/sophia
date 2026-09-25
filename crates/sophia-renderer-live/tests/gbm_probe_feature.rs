@@ -2,14 +2,18 @@
 
 use sophia_renderer_live::{
     FakeGbmCapabilityProbe, GbmCapabilityProbeReport, GbmCapabilityProbeStatus,
-    GbmRenderDeviceToken, LiveGbmEglFrameTargetAllocationRequest,
-    LiveGbmEglFrameTargetAllocationStatus, LiveGbmEglFrameTargetRecord,
-    LiveGbmEglFrameTargetStatus, LiveRendererImportHealth, LiveRendererImportPathStatus,
-    LiveRendererImportStartupStatus, LiveRendererScanoutBufferExportDetail,
-    LiveRendererScanoutBufferExportStatus, NativeGbmBackedEglFrameTargetAllocator,
+    GbmRenderDeviceToken, LiveGbmEglFrameTargetRecord, LiveGbmEglFrameTargetStatus,
+    LiveRendererImportHealth, LiveRendererImportPathStatus, LiveRendererImportStartupStatus,
+    LiveRendererScanoutBufferExportDetail, LiveRendererScanoutBufferExportStatus,
     NativeGbmCapabilityProbe, NativeGbmOwnedScanoutBufferExportReport,
     NativeGbmRenderedScanoutContext, NativeGbmRenderedScanoutContextStatus,
     NativeGbmScanoutBufferExporter, Size,
+};
+
+#[cfg(feature = "egl-probe")]
+use sophia_renderer_live::{
+    LiveGbmEglFrameTargetAllocationRequest, LiveGbmEglFrameTargetAllocationStatus,
+    NativeGbmBackedEglFrameTargetAllocator,
 };
 
 #[test]
@@ -219,6 +223,7 @@ fn native_gbm_scanout_exporter_rejects_malformed_ready_target_before_backend_dev
     );
 }
 
+#[cfg(feature = "egl-probe")]
 #[test]
 fn native_gbm_backed_frame_target_allocator_rejects_malformed_ready_target() {
     let request = LiveGbmEglFrameTargetAllocationRequest {

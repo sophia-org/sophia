@@ -20,6 +20,10 @@ use std::path::Path;
 
 mod scheduling;
 
+#[cfg(test)]
+#[path = "../../../tests/support/component_reconnect.rs"]
+mod reconnect_tests;
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum ShellComponentService {
