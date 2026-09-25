@@ -87,7 +87,23 @@ tests across 49 groups, with two existing ignores; all-feature/all-target Clippy
 formatting and layout pass. Evidence is retained in
 `.artifacts/t026-topology-{tests,clippy-2,layout}.log`.
 
-The other Session/backend/renderer/Engine/protocol/conformance production
-source rows and the other agent's X-authority rows still require cohesive
-splits and their own validation. The task stays open until those portions
-are integrated. This note retains the Session test move as one reviewable part.
+The final Session slice separates public output responses/publication from
+policy projection, worker startup/restart, requests and work-area handling;
+layout observation/ownership from staging/settlement; and key routing from
+pointer routing. The owner loop keeps its existing ordering while seat service,
+native service, completion proofs and resource reporting move to their own
+expressions. Private helpers handle profile evidence and route-lease service.
+No test-only production API is added. All seven remaining Session size rows
+retire, leaving only the separately owned X-authority rows in the debt ledger.
+
+Device-hidden Session tests pass 911 tests across 43 groups, with 37 existing
+opt-in ignores. The source-based work-area regression check also reads the
+extracted policy files, retaining the original negative assertion's coverage.
+It passes separately after that fixture update. All-feature/all-target Clippy,
+formatting and layout pass. Evidence is retained in
+`.artifacts/t026-phases-tests.log`, `t026-phases-clippy-final.log`,
+`t026-phases-layout.log` and `t026-work-area-source-test.log`.
+
+The other agent's X-authority portion and final integration remain. The task
+stays open until both portions are integrated; these checks do not close any
+physical acceptance gate.

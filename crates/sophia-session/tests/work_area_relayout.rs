@@ -1,5 +1,16 @@
 const WM_SESSION: &str = include_str!("../src/live_session/wm/session.rs");
-const PUBLIC_POLICY: &str = include_str!("../src/live_session/wm/public_policy.rs");
+const PUBLIC_POLICY: &str = concat!(
+    include_str!("../src/live_session/wm/public_policy.rs"),
+    include_str!("../src/live_session/wm/public_policy/output_responses.rs"),
+    include_str!("../src/live_session/wm/public_policy/output_publication.rs"),
+    include_str!("../src/live_session/wm/public_policy/projection.rs"),
+    include_str!("../src/live_session/wm/public_policy/output_facade.rs"),
+    include_str!("../src/live_session/wm/public_policy/session_start.rs"),
+    include_str!("../src/live_session/wm/public_policy/requests.rs"),
+    include_str!("../src/live_session/wm/public_policy/restart.rs"),
+    include_str!("../src/live_session/wm/public_policy/work_areas.rs"),
+    include_str!("../src/live_session/wm/public_policy/commit_and_proof.rs"),
+);
 
 fn offset(haystack: &str, needle: &str) -> usize {
     haystack
