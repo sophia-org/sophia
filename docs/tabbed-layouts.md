@@ -71,9 +71,17 @@ command bound is 10,240 to accommodate the bounded client and tab primitives.
 Input currently treats client occlusion conservatively: an overlapping client
 disables the entire affected tab target until it is uncovered.
 
+The descriptor service currently runs through the legacy `LiveMetadataShell`
+owner. Independent shell components disable that owner; their content and
+indicator services do not yet include its tab descriptor exchange. A component
+transport capability or a packaged descriptor client alone does not establish
+that exchange. In a component desktop without it, the neutral, noninteractive
+fallback above applies. The physical reference run below selects Narthex as a
+separate shell configuration, rather than adding it beside the components.
+
 This descriptor tier deliberately provides fixed Engine chrome. Rich shell
-raster content remains a separate future capability; no blind-content transport
-is implied by revision 2.
+raster content uses a separate capability; no blind-content transport is implied
+by revision 2.
 
 ## Verification and operator acceptance
 

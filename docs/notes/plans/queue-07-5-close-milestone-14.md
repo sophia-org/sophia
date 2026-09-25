@@ -22,6 +22,9 @@ Review workflow evidence, recovery, clean teardown, bounded warmed
 resources/no steady-state allocation growth, and relevant refresh-relative
 latency evidence. Record the accepted candidate, limitations, and why earlier
 evidence still applies or which affected checks were rerun.
+The [September 25 review](../investigations/4l5bntke-critical-desktop-exits-require-separate-device-tab-and-workload-evidence.md#a-retained-session-supports-a-narrower-t020-conclusion)
+pins one completed session's teardown and resource samples, source-owner
+comparability, recording gaps and the remaining workload/latency limits.
 
 
 ## t021
