@@ -70,7 +70,51 @@ filesystems served over 9P—solves all four challenges simultaneously.
 
 ---
 
-## 3. The Unified Desktop VFS Hierarchy
+## 3. Interface Naming and Wire Specification
+
+Following Sophia's normative naming conventions (as defined in
+`docs/sophia-policy-ipc.md`):
+
+- **Interface Role Name:** **`sophia_vfs_v1`** (major 1, revision 1).
+- **Wire Protocol Standard:** **`9P2000.L`** (Linux VFS native extension).
+- **Fallback Dialect:** **`9P2000`** (Plan 9 legacy compatibility).
+- **Transport Endpoint:** Local Unix domain stream socket at
+  `$XDG_RUNTIME_DIR/sophia/bus.9p`.
+- **Mount Target:** `/dev/sophia/` or `$XDG_RUNTIME_DIR/sophia/fs/`.
+
+### Why `9P2000.L` is the Normative Wire Dialect
+
+While classic `9P2000` was designed for Bell Labs Plan 9, `9P2000.L` was created
+specifically to integrate natively with the Linux kernel Virtual File System
+(VFS):
+
+1. **Native In-Kernel Mounting (`v9fs`):**
+   Linux includes native 9P client support (`CONFIG_NET_9P`). The kernel driver
+   defaults to `version=9p2000.L`. This allows Sophia's synthetic desktop tree
+   to be mounted directly into the Linux VFS without userspace FUSE overhead:
+   ```bash
+   mount -t 9p -o trans=unix,version=9p2000.L "$XDG_RUNTIME_DIR/sophia/bus.9p" /dev/sophia
+   ```
+2. **POSIX Linux `errno` Codes (`Rlerror`):**
+   Instead of arbitrary English strings (`Rerror { ename: String }`), `9P2000.L`
+   returns standard Linux numeric error codes (`Rlerror { ecode: u32 }`), mapping
+   directly to `ENOENT`, `EACCES`, `EAGAIN`, and `EBUSY`.
+3. **Direct VFS Operation Mapping:**
+   `9P2000.L` introduces operations that align 1:1 with Linux filesystem
+   semantics: `Tlopen`, `Tlcreate`, `Tgetattr`, `Tsetattr`, `Treadlink`,
+   `Tmkdir`, `Tunlinkat`, and `Tstatfs`.
+
+### Dialect Negotiation
+During the initial handshake (`Tversion`), `sophia-session` supports dual
+negotiation:
+- If a modern client or the Linux kernel requests `9P2000.L`, the session
+  serves the Linux VFS dialect.
+- If a legacy Plan 9 tool (`acme`, `sam`, `plan9port`) requests `9P2000`, the
+  session falls back to classic string-error responses.
+
+---
+
+## 4. The Unified Desktop VFS Hierarchy
 
 `sophia-session` serves the following in-memory synthetic filesystem hierarchy
 at `$XDG_RUNTIME_DIR/sophia/`:
@@ -106,7 +150,7 @@ $XDG_RUNTIME_DIR/sophia/
 
 ---
 
-## 4. VFS-Native Sandboxing via Kernel Mount Namespaces
+## 5. VFS-Native Sandboxing via Kernel Mount Namespaces
 
 The core architectural invariant of Sophia is that **the Window Manager must be
 blind** and **the Desktop Shell must not dictate window management policy**.
@@ -138,7 +182,7 @@ kernel VFS via mount namespaces**:
 
 ---
 
-## 5. Transaction Atomicity and Epoch Synchronization
+## 6. Transaction Atomicity and Epoch Synchronization
 
 The fundamental requirement of window management is **visual atomicity**: when a
 layout changes, all repositioned surfaces must commit on the exact same display
@@ -170,7 +214,7 @@ atomicity is preserved through **transaction staging**:
 
 ---
 
-## 6. Developer Experience: True Language Pluralism
+## 7. Developer Experience: True Language Pluralism
 
 With 9P as the Universal Control Bus, writing desktop components requires zero
 SDKs, zero compiler toolchains, and zero foreign-function interfaces:
@@ -208,7 +252,7 @@ cat /dev/sophia/control/metrics
 
 ---
 
-## 7. Performance and Wire Efficiency
+## 8. Performance and Wire Efficiency
 
 A common concern with filesystem-based IPC is throughput and latency:
 
@@ -224,7 +268,7 @@ A common concern with filesystem-based IPC is throughput and latency:
 
 ---
 
-## 8. Dual-Stack Coexistence: Fast-Path Binary + Declarative VFS
+## 9. Dual-Stack Coexistence: Fast-Path Binary + Declarative VFS
 
 Rather than viewing the 9P Control Bus as an all-or-nothing replacement for
 `sophia-policy-ipc`, Sophia can support both paradigms **living side-by-side**.
@@ -290,7 +334,7 @@ surface coordinates simultaneously:
 
 ---
 
-## 9. Migration and Coexistence Strategy
+## 10. Migration and Coexistence Strategy
 
 Adopting the 9P Universal Control Bus does not require a risky flag-day rewrite.
 The architecture allows a clean, phased transition:
@@ -312,7 +356,7 @@ The architecture allows a clean, phased transition:
 
 ---
 
-## 10. Conclusion
+## 11. Conclusion
 
 The 9P Universal Control Bus fulfills the core promise of Sophia: **applying the
 Unix philosophy directly to the modern graphical desktop**.
