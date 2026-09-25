@@ -267,6 +267,23 @@ the crossings a map, unmap or reparent under the pointer owes; and the
 visibility purposes. Red before the fix:
 `a_pointer_move_generates_the_protocols_crossings`.
 
+## The reply side of the same race
+
+XMapWindow 6 read FAIL once under the selected-core gate while a build ran
+beside it: the MapRequest routed to the redirecting second client was
+written after the reply to that client's XSync, and the client found
+nothing pending. The protocol writer and the request loop are two threads
+of one connection with nothing between them. The connection now takes a
+mark of what the registry has queued for it when it reads a request and,
+before writing that request's outputs, waits (bounded at a quarter second,
+a stalled peer being its own failure) until its protocol writer has drained
+to the mark: a watermark the registry's sender raises as it queues and the
+writer as it finishes with each event, through a guard dropped on every
+way out of its iteration. Two connections' requests are still dispatched
+in parallel, so an event a peer's request queues after this connection
+read its own is legitimately either side of the reply; the reference
+serialises requests and never sees that half.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
