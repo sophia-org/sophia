@@ -32,7 +32,9 @@ protocol/owner check, not an installed desktop or physical input/display test.
 
 `report.json` retains the source identities and verdict for each phase, with
 separate logs. An unavailable prerequisite, failed phase or deadline stops the
-run with a failing exit status; it cannot become a partial PASS.
+run with a failing exit status; it cannot become a partial PASS. Cargo test
+phases must report at least one executed passing test; an empty or ignored-only
+target is refused. Output's owner phase explicitly enables `native-session`.
 
 | Phase | Evidence retained |
 | --- | --- |

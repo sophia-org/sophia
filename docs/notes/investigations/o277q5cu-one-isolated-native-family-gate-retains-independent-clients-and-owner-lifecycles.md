@@ -42,6 +42,13 @@ passed (`.artifacts/t023-timeout-2`). The first trial caught a Bash-only script
 being invoked through sh; selecting Bash fixed that orchestration error.
 The complete retained family run remains the gate for this candidate.
 
+The first complete run (`69eafa1f`, `.artifacts/t023-full-1`) reported PASS,
+but manual count review invalidated it: the inherited output-owner command ran
+zero tests without `native-session`. The corrected runner explicitly enables
+that feature and refuses every empty or ignored-only Cargo phase. A regression
+test pins the rejection. The old report is retained as evidence of the defect,
+not accepted as task completion; the corrected full run must replace it.
+
 Only WM r3 is stable, and its immutable client remains mandatory. Experimental
 output has schema/codec/owner tests but no independent full-lifecycle client;
 this change does not declare output stable. C descriptor/launcher and Nim

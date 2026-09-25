@@ -203,6 +203,8 @@ fn stages() -> Vec<Stage> {
                 "-q",
                 "-p",
                 "sophia-session",
+                "--features",
+                "native-session",
                 "--test",
                 "live_output_authority",
             ],
@@ -290,9 +292,27 @@ fn stage(
         .status()
         .map_err(|e| format!("start family phase: {e}"))?;
     if status.success() {
+        if program == "cargo" {
+            require_tests_ran(&fs::read_to_string(log).map_err(|e| e.to_string())?)?;
+        }
         Ok(())
     } else {
         Err(format!("family phase exited {status}; {}", log.display()))
+    }
+}
+
+/// A filtered or feature-disabled target can exit zero without asking a test.
+pub(crate) fn require_tests_ran(log: &str) -> Result<(), String> {
+    let ran = log
+        .lines()
+        .filter_map(|line| line.strip_prefix("test result: ok. "))
+        .filter_map(|line| line.split_once(" passed;"))
+        .filter_map(|(count, _)| count.parse::<usize>().ok())
+        .any(|count| count > 0);
+    if ran {
+        Ok(())
+    } else {
+        Err("Cargo phase ran no tests; check features and target selection".into())
     }
 }
 
