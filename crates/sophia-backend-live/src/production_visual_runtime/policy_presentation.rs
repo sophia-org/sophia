@@ -16,6 +16,12 @@ pub enum LivePolicyPresentationRefusal {
     /// An instance names a source with no committed content in the scene
     /// being drawn. The candidate is refused whole; readiness settles it.
     MissingSource { source: SurfaceId },
+    /// An output the candidate covers has no enabled head to draw it on.
+    MissingHeads { output: OutputId },
+    /// A target would draw no clipped pixel on some head of its output, by
+    /// the head plan's own arithmetic: presenting it would attest a draw
+    /// that did not happen. `id` is the instance or region id.
+    UndrawnTarget { output: OutputId, id: u64 },
 }
 
 impl std::fmt::Display for LivePolicyPresentationRefusal {
@@ -54,13 +60,15 @@ pub struct LivePresentedPolicyPublication {
 
 impl LivePresentedPolicyPublication {
     /// What a whole output presents, from the frame each of its heads last
-    /// retired (primary first, as the native target reports them): the
-    /// primary head's publication, only once every head has retired a frame
-    /// with the same stamp identity (owner epoch, publication generation,
-    /// output, output generation). A lagging mirror head, or one still
-    /// showing an earlier publication or none, leaves the output without a
-    /// completed publication. Target lists come from the primary head; a
-    /// head where a target rounds to nothing does not draw it.
+    /// retired (primary first, as the native target reports them): a
+    /// publication only once every head has retired a frame with the same
+    /// stamp identity (owner epoch, publication generation, output, output
+    /// generation). A lagging mirror head, or one still showing an earlier
+    /// publication or none, leaves the output without a completed
+    /// publication. A matching stamp does not prove the same draw: the
+    /// target lists are those `(id, generation)` every head drew, in the
+    /// primary's order, so a target any head crops away is not listed and
+    /// the session's completeness check fails closed (t244).
     pub fn from_presented_heads(frames: &[Option<&OutputFrameDamageSnapshot>]) -> Option<Self> {
         let mut heads = frames.iter();
         let primary = Self::from_presented_frame((*heads.next()?)?)?;
@@ -72,13 +80,17 @@ impl LivePresentedPolicyPublication {
                 publication.output_generation,
             )
         };
-        heads
-            .all(|frame| {
-                frame
-                    .and_then(Self::from_presented_frame)
-                    .is_some_and(|head| identity(&head) == identity(&primary))
-            })
-            .then_some(primary)
+        let mut all = primary.clone();
+        for frame in heads {
+            let head = frame.and_then(Self::from_presented_frame)?;
+            if identity(&head) != identity(&primary) {
+                return None;
+            }
+            all.instances
+                .retain(|target| head.instances.contains(target));
+            all.regions.retain(|target| head.regions.contains(target));
+        }
+        Some(all)
     }
 
     /// None when the frame presents no WM publication.
@@ -294,6 +306,71 @@ impl LiveProductionVisualRuntime {
             Some(source) => Err(LivePolicyPresentationRefusal::MissingSource { source }),
             None => Ok(()),
         }
+    }
+
+    /// Read-only whole-candidate geometry admission against the heads given
+    /// (normally every enabled head of the covered outputs, from
+    /// [`Self::validate_policy_presentation_on_native`]): the source checks
+    /// of [`Self::validate_policy_presentation`], then every covered output
+    /// must have at least one head, and every instance and region must draw
+    /// at least one clipped pixel on every one of them, borders by their
+    /// clipped bands. It decides with `head_draws_policy_command`, the head
+    /// plan's own arithmetic, so a refused candidate is exactly one some
+    /// head would have presented without that target. The caller refuses the
+    /// candidate before commit, so the WM keeps its prior state (t244).
+    pub fn validate_policy_presentation_on_heads(
+        &self,
+        candidate: &LivePolicyPresentation,
+        heads: &[HeadRenderTarget],
+    ) -> Result<(), LivePolicyPresentationRefusal> {
+        self.validate_policy_presentation(candidate)?;
+        for record in &candidate.presentation.outputs {
+            let output = record.output;
+            let viewport = self.outputs.logical_viewport(output);
+            let covering = heads
+                .iter()
+                .filter(|head| head.output == output)
+                .collect::<Vec<_>>();
+            let Some(viewport) = viewport.filter(|_| !covering.is_empty()) else {
+                return Err(LivePolicyPresentationRefusal::MissingHeads { output });
+            };
+            for command in candidate.tier_commands(output, self.surface_chrome_style) {
+                let id = match &command {
+                    CompositorDisplayCommand::SurfaceInstance(instance) => instance.id,
+                    CompositorDisplayCommand::Rect(CompositorRect {
+                        node: CompositorNodeId::PolicyRegion { id, .. },
+                        ..
+                    })
+                    | CompositorDisplayCommand::Border(CompositorBorder {
+                        node: CompositorNodeId::PolicyRegion { id, .. },
+                        ..
+                    }) => *id,
+                    _ => continue,
+                };
+                if covering.iter().any(|head| {
+                    !sophia_engine::head_draws_policy_command(&command, viewport, **head)
+                }) {
+                    return Err(LivePolicyPresentationRefusal::UndrawnTarget { output, id });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// [`Self::validate_policy_presentation_on_heads`] against every enabled
+    /// head the native target currently has for the covered outputs.
+    pub fn validate_policy_presentation_on_native(
+        &self,
+        candidate: &LivePolicyPresentation,
+        native: &LiveProductionNativeScanout,
+    ) -> Result<(), LivePolicyPresentationRefusal> {
+        let heads = candidate
+            .presentation
+            .outputs
+            .iter()
+            .flat_map(|record| native.head_render_targets(record.output))
+            .collect::<Vec<_>>();
+        self.validate_policy_presentation_on_heads(candidate, &heads)
     }
 
     /// Installs or withdraws the admitted WM presentation and queues a

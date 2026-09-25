@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[path = "presentation_input.rs"]
 mod presentation_input;
 
-fn commit_cpu_surface(
+pub(super) fn commit_cpu_surface(
     runtime: &mut LiveProductionVisualRuntime,
     scene: &mut LiveProductionCpuScene,
     surface: SurfaceId,
@@ -53,7 +53,7 @@ fn commit_cpu_surface(
         .unwrap();
 }
 
-fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
+pub(super) fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
     Rect {
         x,
         y,
@@ -62,7 +62,10 @@ fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
     }
 }
 
-fn presentation_output(output: OutputId, mode: PolicyPresentationMode) -> PolicyPresentationOutput {
+pub(super) fn presentation_output(
+    output: OutputId,
+    mode: PolicyPresentationMode,
+) -> PolicyPresentationOutput {
     PolicyPresentationOutput {
         output,
         generation: 6,
@@ -71,7 +74,7 @@ fn presentation_output(output: OutputId, mode: PolicyPresentationMode) -> Policy
     }
 }
 
-fn region(
+pub(super) fn region(
     output: OutputId,
     id: u64,
     z_index: u16,
@@ -91,7 +94,7 @@ fn region(
     }
 }
 
-fn shown_instance(
+pub(super) fn shown_instance(
     output: OutputId,
     id: u64,
     z_index: u16,
@@ -111,7 +114,7 @@ fn shown_instance(
     }
 }
 
-fn published(
+pub(super) fn published(
     generation: u64,
     outputs: Vec<PolicyPresentationOutput>,
     instances: Vec<PolicySurfaceInstance>,
@@ -130,7 +133,10 @@ fn published(
     }
 }
 
-fn output_list(runtime: &LiveProductionVisualRuntime, output: OutputId) -> CompositorDisplayList {
+pub(super) fn output_list(
+    runtime: &LiveProductionVisualRuntime,
+    output: OutputId,
+) -> CompositorDisplayList {
     output_composition::OutputCompositionSnapshot::capture(runtime)
         .display_list(output, runtime.committed_surfaces())
         .unwrap()

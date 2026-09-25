@@ -39,8 +39,26 @@ pub fn project_mirror_output_damage_snapshot(
         surface.geometry = crate::project_mirror_child_rect(surface.geometry, source, target);
     }
     let child = |rect| crate::project_mirror_child_rect(rect, source, target);
+    // WM policy targets round outward with the Engine's one projection,
+    // exactly as the head plan draws them (t244).
+    let policy_transform = sophia_engine::HeadLogicalTransform {
+        source,
+        projected_scene: target,
+    };
+    let policy_child = |rect| policy_transform.project_local_rect_outward(rect);
     for command in &mut projected.compositor_display_list.commands {
         match command {
+            // A WM region's stroke damages where the head plan draws it,
+            // with the same shared geometry; other borders keep theirs.
+            sophia_engine::CompositorDisplayCommand::Border(border)
+                if matches!(
+                    border.node,
+                    sophia_engine::CompositorNodeId::PolicyRegion { .. }
+                ) =>
+            {
+                (border.outer, border.inner) =
+                    policy_transform.project_local_policy_border(border.outer, border.inner);
+            }
             sophia_engine::CompositorDisplayCommand::Border(border) => {
                 border.outer = child(border.outer);
                 border.inner = child(border.inner);
@@ -49,27 +67,65 @@ pub fn project_mirror_output_damage_snapshot(
             // the presentation stamp's coverage damage the mirror head where
             // it draws them, not where the primary head does (t244).
             sophia_engine::CompositorDisplayCommand::Rect(rect) => {
-                rect.geometry = child(rect.geometry);
+                rect.geometry = if matches!(
+                    rect.node,
+                    sophia_engine::CompositorNodeId::PolicyRegion { .. }
+                ) {
+                    policy_child(rect.geometry)
+                } else {
+                    child(rect.geometry)
+                };
             }
             sophia_engine::CompositorDisplayCommand::SurfaceInstance(instance) => {
-                instance.destination = child(instance.destination);
-                instance.clip = child(instance.clip);
+                instance.destination = policy_child(instance.destination);
+                instance.clip = policy_child(instance.clip);
             }
             sophia_engine::CompositorDisplayCommand::PresentationStamp(stamp) => {
-                stamp.coverage = child(stamp.coverage);
+                stamp.coverage = policy_child(stamp.coverage);
             }
             _ => {}
         }
     }
     // What projects to nothing on this head draws and damages nothing there;
-    // it cannot stay as a record the damage ledger would refuse.
+    // it cannot stay as a record the damage ledger would refuse. A WM policy
+    // target this head crops away entirely is not drawn here either, so it
+    // is not listed as drawn (t244).
+    let screen = sophia_protocol::Rect {
+        x: 0,
+        y: 0,
+        width: destination.size.width,
+        height: destination.size.height,
+    };
+    let on_screen = |rect: sophia_protocol::Rect| {
+        rect.x < screen.width
+            && rect.y < screen.height
+            && rect.x.saturating_add(rect.width) > 0
+            && rect.y.saturating_add(rect.height) > 0
+            && !rect.is_empty()
+    };
     projected
         .compositor_display_list
         .commands
         .retain(|command| match command {
-            sophia_engine::CompositorDisplayCommand::Rect(rect) => !rect.geometry.is_empty(),
+            sophia_engine::CompositorDisplayCommand::Rect(rect) => {
+                !rect.geometry.is_empty()
+                    && (!matches!(
+                        rect.node,
+                        sophia_engine::CompositorNodeId::PolicyRegion { .. }
+                    ) || on_screen(rect.geometry))
+            }
             sophia_engine::CompositorDisplayCommand::SurfaceInstance(instance) => {
-                !instance.visible().is_empty()
+                on_screen(instance.visible())
+            }
+            sophia_engine::CompositorDisplayCommand::Border(border)
+                if matches!(
+                    border.node,
+                    sophia_engine::CompositorNodeId::PolicyRegion { .. }
+                ) =>
+            {
+                sophia_engine::compositor_border_bands(*border)
+                    .iter()
+                    .any(|band| on_screen(band.geometry))
             }
             _ => true,
         });

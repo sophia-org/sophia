@@ -171,6 +171,7 @@ include!("libdrm_events_feature/slot_damage_history.rs");
 include!("libdrm_events_feature/resource_lifetime.rs");
 include!("libdrm_events_feature/builders.rs");
 include!("libdrm_events_feature/multi_head_request.rs");
+include!("libdrm_events_feature/presentation_mirror_damage.rs");
 include!("libdrm_events_feature/mirror_group_lifecycle.rs");
 include!("libdrm_events_feature/output_authority.rs");
 include!("libdrm_events_feature/output_topology_plan.rs");

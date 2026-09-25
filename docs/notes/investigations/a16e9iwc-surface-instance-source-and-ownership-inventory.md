@@ -358,6 +358,104 @@ following.
     Refusing the capability without native scanout, or drawing the tier on
     that path, is the director's choice.
 
+## Policy targets are never rounded out of a retired frame
+
+The t245 review found that the head plan projects rectangles by truncating
+both edges, so a non-empty policy target could project to nothing.
+
+Reproduced from the production output list, through a real head plan, to
+the damage snapshot that lowering retires: a one-pixel preview at an even
+offset on a half-scale head was dropped. It left the retired target list,
+so the session's completeness check revoked every republication of the
+same records. A small backdrop rect projected to an empty geometry but
+stayed listed. A small frame border projected to a zero-width ring but
+stayed listed. Both are false attestations of a zero-pixel draw.
+
+The fix rounds WM policy targets outward, flooring the left and top edges
+and ceiling the right and bottom. That covers instance destinations and
+clips, policy region rects and borders (a border's inner edge rounds
+inward, so a logical ring pixel keeps a native one), and the presentation
+stamp's coverage. A non-empty logical target therefore keeps at least one
+native pixel inside the projected scene. The coverage encloses what the
+tier draws, and a listed region always draws.
+`HeadLogicalTransform::project_local_rect_outward` and
+`project_local_rect_inward` are the single owner of this arithmetic. The
+head plan draws with them and the mirror-copy damage projection calls the
+same functions, so the two cannot drift. Other compositor rects, borders
+and text keep their established projection.
+
+Guards:
+- `a_one_pixel_preview_survives_a_half_scale_head_in_the_retired_snapshot`
+  covers instances and backdrop, frame and emphasis regions, each listed
+  only with drawn pixels.
+- `a_tiny_overlay_coverage_encloses_its_outward_drawn_targets`.
+- `mirror_damage_projection_places_instances_regions_and_stamp_coverage`,
+  which now includes a one-pixel instance.
+
+| Control | Change | Result |
+|---|---|---|
+| instance-truncated | instances project by truncation | fails: the preview is not drawn or listed |
+| region-rect-truncated | region rects project by truncation | fails: a region rect is listed with zero pixels |
+| region-border-truncated | region borders project by truncation | fails: a region border is listed with a zero-width ring |
+| coverage-truncated | stamp coverage projects by truncation | fails: a tiny Overlay coverage loses its pixel |
+
+## Cropped targets: refused before commit, never listed as drawn
+
+A second review finding: a Cover or Exact head can crop a policy target
+away entirely. The head plan kept such a region's record (an empty rect,
+or a border whose every band lies outside the painted clip), the retired
+frame listed it, and the whole output took the primary head's target list
+on a stamp match alone. A target a mirror head never showed still counted
+as drawn.
+
+Now:
+- **Head plan.** It drops a policy region whose projected rect is empty,
+  or whose border paints no band inside the painted clip, as it already
+  drops such an instance.
+- **Shared border geometry.** `HeadLogicalTransform::project_local_policy_border`
+  (outer edge outward, inner edge inward, solid when the hole vanishes) is
+  used by both the head plan and the mirror damage projection.
+- **Mirror copies.** The mirror-copy damage projection drops policy
+  targets that fall entirely outside the mirror head.
+- **Whole-output membership.** `from_presented_heads` lists only the
+  `(id, generation)` pairs every head drew. A matching stamp alone does
+  not prove the same draw, so a later topology or source-view change fails
+  closed at the session's completeness check.
+- **Admission.** `validate_policy_presentation_on_heads(candidate, heads)`
+  is a read-only whole-candidate admission, with
+  `validate_policy_presentation_on_native` collecting the native target's
+  enabled heads. After the source checks it refuses a covered output with
+  no head (`MissingHeads`) and any instance or region that draws no
+  clipped pixel on any head (`UndrawnTarget`). It decides with
+  `sophia_engine::head_draws_policy_command`, the head plan's own
+  arithmetic with borders judged by clipped bands. The session calls it
+  before commit, so a refused candidate leaves the WM's prior state
+  instead of entering a revoke-and-republish loop.
+
+Guards:
+- `a_cover_head_lists_only_the_policy_targets_it_draws`
+- `a_whole_output_lists_only_targets_every_head_drew`
+- `geometry_admission_refuses_a_target_any_head_would_not_draw` (Fit, Cover
+  and Exact heads, a partly cropped border accepted, no heads refused)
+- `a_cover_mirror_copy_drops_policy_targets_it_crops_away`
+- the tiny frame and emphasis borders in
+  `mirror_damage_projection_places_instances_regions_and_stamp_coverage`.
+
+| Control | Change | Result |
+|---|---|---|
+| mirror-border-truncated | mirror damage truncates policy borders | fails: a different ring than the head plan draws |
+| admission-ignores-geometry | the draw predicate always answers yes | fails: cropped targets admitted |
+| admission-border-unbanded | borders judged by their outer rect | fails: a fully cropped border admitted |
+| admission-vacuous-heads | no heads accepted | fails: MissingHeads not returned |
+| cover-regions-listed | the head plan keeps cropped regions | fails: regions 4, 5 and 6 listed |
+| stamp-only-membership | membership by stamp alone | fails: the cropped preview listed |
+| mirror-crop-listed | the mirror copy keeps cropped instances | fails: the cropped preview listed |
+
+A mirror copy head's pixels are a scaled copy of the primary's frame. The
+admission check judges it with the head plan's arithmetic for that head's
+size and mapping, and the copy's damage projection uses the same outward
+policy geometry.
+
 ## Incident: the real-card smoke ran during a suite
 
 On 2026-09-25, two `cargo test --offline -p sophia-backend-live

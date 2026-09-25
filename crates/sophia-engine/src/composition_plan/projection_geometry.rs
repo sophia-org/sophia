@@ -50,6 +50,56 @@ fn project_scene(source: Size, destination: Size, mapping: OutputHeadMapping) ->
     }
 }
 
+/// [`project_child_rect`] rounding outward: the left and top edges floor,
+/// the right and bottom edges ceil.
+fn project_child_rect_outward(child: Rect, source: Size, projected: Rect) -> Rect {
+    project_child_rect_rounded(child, source, projected, true)
+}
+
+/// Rounding inward, the opposite: what a policy border's inner edge uses, so
+/// its ring keeps at least one native pixel wherever it had a logical one.
+fn project_child_rect_inward(child: Rect, source: Size, projected: Rect) -> Rect {
+    project_child_rect_rounded(child, source, projected, false)
+}
+
+fn project_child_rect_rounded(child: Rect, source: Size, projected: Rect, outward: bool) -> Rect {
+    if source.width <= 0 || source.height <= 0 || projected.is_empty() || child.is_empty() {
+        return Rect::default();
+    }
+    let edge = |value: i32, source_extent: i32, origin: i32, extent: i32, up: bool| {
+        let scaled = i64::from(value) * i64::from(extent);
+        let source_extent = i64::from(source_extent);
+        let offset = if up {
+            -(-scaled).div_euclid(source_extent)
+        } else {
+            scaled.div_euclid(source_extent)
+        };
+        (i64::from(origin) + offset).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+    };
+    let left = edge(child.x, source.width, projected.x, projected.width, !outward);
+    let right = edge(
+        child.x.saturating_add(child.width),
+        source.width,
+        projected.x,
+        projected.width,
+        outward,
+    );
+    let top = edge(child.y, source.height, projected.y, projected.height, !outward);
+    let bottom = edge(
+        child.y.saturating_add(child.height),
+        source.height,
+        projected.y,
+        projected.height,
+        outward,
+    );
+    Rect {
+        x: left,
+        y: top,
+        width: right.saturating_sub(left).max(0),
+        height: bottom.saturating_sub(top).max(0),
+    }
+}
+
 fn project_child_rect(child: Rect, source: Size, projected: Rect) -> Rect {
     if source.width <= 0 || source.height <= 0 || projected.is_empty() {
         return Rect::default();
@@ -142,17 +192,42 @@ fn background_commands(scene: Rect, target: Size) -> Vec<HeadCompositorCommand> 
     commands
 }
 
+/// Whether a projected border paints any pixel inside its clip.
+fn policy_border_draws(border: &HeadCompositorBorder) -> bool {
+    crate::compositor_border_bands(CompositorBorder {
+        node: border.node,
+        generation: border.generation,
+        outer: border.outer,
+        inner: border.inner,
+        color: border.color,
+    })
+    .iter()
+    .any(|band| !intersect_rect(band.geometry, border.clip).is_empty())
+}
+
 fn project_border(
     border: CompositorBorder,
     viewport: Rect,
     transform: HeadLogicalTransform,
     clip: Rect,
 ) -> HeadCompositorBorder {
+    // A WM region's stroke is a policy target: its outer edge rounds outward
+    // and its inner edge inward, so a ring with a logical pixel keeps a
+    // native one and the region is never listed without a drawn pixel.
+    let policy = matches!(border.node, CompositorNodeId::PolicyRegion { .. });
+    let (outer, inner) = if policy {
+        transform.project_local_policy_border(localize(viewport, border.outer), localize(viewport, border.inner))
+    } else {
+        (
+            transform.project_root_rect(viewport, border.outer),
+            transform.project_root_rect(viewport, border.inner),
+        )
+    };
     HeadCompositorBorder {
         node: border.node,
         generation: border.generation,
-        outer: transform.project_root_rect(viewport, border.outer),
-        inner: transform.project_root_rect(viewport, border.inner),
+        outer,
+        inner,
         color: border.color,
         clip,
     }
@@ -168,7 +243,17 @@ fn project_rect(
         opacity: rect.opacity,
         node: rect.node,
         generation: rect.generation,
-        geometry: intersect_rect(transform.project_root_rect(viewport, rect.geometry), clip),
+        // A WM region is a policy target: it rounds outward like an instance,
+        // so it is never rounded out of the frame that retires. Other
+        // compositor rects keep their established projection.
+        geometry: intersect_rect(
+            if matches!(rect.node, CompositorNodeId::PolicyRegion { .. }) {
+                transform.project_root_rect_outward(viewport, rect.geometry)
+            } else {
+                transform.project_root_rect(viewport, rect.geometry)
+            },
+            clip,
+        ),
         color: rect.color,
     }
 }

@@ -440,6 +440,8 @@ impl NativeCompositionTarget for MirroredTarget {
     }
 }
 
+#[path = "presentation_geometry.rs"]
+mod presentation_geometry;
 #[path = "presentation_instances.rs"]
 mod presentation_instances;
 #[path = "mirrored_intake_tests.rs"]

@@ -80,9 +80,66 @@ pub struct HeadLogicalTransform {
     pub projected_scene: Rect,
 }
 
+fn localize(viewport: Rect, rect: Rect) -> Rect {
+    Rect {
+        x: rect.x.saturating_sub(viewport.x),
+        y: rect.y.saturating_sub(viewport.y),
+        width: rect.width,
+        height: rect.height,
+    }
+}
+
 impl HeadLogicalTransform {
     pub fn project_local_rect(self, rect: Rect) -> Rect {
         project_child_rect(rect, self.source, self.projected_scene)
+    }
+
+    /// Conservative raster projection for WM policy targets, in this
+    /// transform's local (source) coordinates: left and top edges round
+    /// down, right and bottom up, so a non-empty rectangle stays at least one
+    /// native pixel on any head and, when it lies inside the source, inside
+    /// the projected scene (whose own edges project exactly). The one owner
+    /// of this arithmetic: the head plan draws with it and mirror damage
+    /// projects with it, so they cannot drift (t244).
+    pub fn project_local_rect_outward(self, rect: Rect) -> Rect {
+        project_child_rect_outward(rect, self.source, self.projected_scene)
+    }
+
+    /// The inward counterpart, for a policy border's inner edge.
+    pub fn project_local_rect_inward(self, rect: Rect) -> Rect {
+        project_child_rect_inward(rect, self.source, self.projected_scene)
+    }
+
+    /// A WM policy region's stroke, in local coordinates: the outer edge
+    /// rounds outward and the inner edge inward, so a ring with a logical
+    /// pixel keeps a native one; a stroke with no hole left on this head is
+    /// solid (an empty inner edge at the outer's bottom makes the top band
+    /// the whole region). The one owner of policy border geometry: the head
+    /// plan draws with it and mirror damage projects with it (t244).
+    pub fn project_local_policy_border(self, outer: Rect, inner: Rect) -> (Rect, Rect) {
+        let outer = self.project_local_rect_outward(outer);
+        let inner = self.project_local_rect_inward(inner);
+        let inner = if inner.is_empty() {
+            Rect {
+                x: outer.x,
+                y: outer.y.saturating_add(outer.height),
+                width: 0,
+                height: 0,
+            }
+        } else {
+            inner
+        };
+        (outer, inner)
+    }
+
+    /// [`Self::project_local_rect_outward`] for a root-space rectangle.
+    pub fn project_root_rect_outward(self, viewport: Rect, rect: Rect) -> Rect {
+        self.project_local_rect_outward(localize(viewport, rect))
+    }
+
+    /// [`Self::project_local_rect_inward`] for a root-space rectangle.
+    pub fn project_root_rect_inward(self, viewport: Rect, rect: Rect) -> Rect {
+        self.project_local_rect_inward(localize(viewport, rect))
     }
 
     pub fn project_root_rect(self, viewport: Rect, rect: Rect) -> Rect {
@@ -481,21 +538,10 @@ pub fn build_head_composition_plan(
         return Err(HeadCompositionPlanError::WrongOutput);
     }
 
-    let source = Size {
-        width: snapshot.logical_viewport.width,
-        height: snapshot.logical_viewport.height,
-    };
-    let projected_scene = project_scene(source, target.native_size, target.mapping);
-    if projected_scene.is_empty() {
-        return Err(HeadCompositionPlanError::EmptyProjection);
-    }
-    let transform = HeadLogicalTransform {
-        source,
-        projected_scene,
-    };
+    let (transform, painted) = head_transform(snapshot.logical_viewport, target)
+        .ok_or(HeadCompositionPlanError::EmptyProjection)?;
+    let projected_scene = transform.projected_scene;
     let target_density = projected_density_millis(transform);
-    // Everything the scene draws is bounded by this, not by the framebuffer.
-    let painted = scene_clip(projected_scene, target.native_size);
     let mut layers = Vec::with_capacity(snapshot.surfaces.len());
     for surface in &snapshot.surfaces {
         let variant = select_variant(&surface.content, target_density)
@@ -542,24 +588,27 @@ pub fn build_head_composition_plan(
             }
             CompositorDisplayCommand::PresentationStamp(stamp) => {
                 HeadCompositorCommand::PresentationStamp(crate::CompositorPresentationStamp {
+                    // Outward like the targets it covers, so the coverage
+                    // damage always encloses what the tier draws.
                     coverage: intersect_rect(
-                        transform.project_root_rect(snapshot.logical_viewport, stamp.coverage),
+                        transform
+                            .project_root_rect_outward(snapshot.logical_viewport, stamp.coverage),
                         painted,
                     ),
                     ..*stamp
                 })
             }
             CompositorDisplayCommand::SurfaceInstance(instance) => {
-                let destination =
-                    transform.project_root_rect(snapshot.logical_viewport, instance.destination);
-                let clip = intersect_rect(
-                    transform.project_root_rect(snapshot.logical_viewport, instance.clip),
+                // Cropped away on this head: nothing to draw, damage or list.
+                let Some(projected) = project_policy_instance(
+                    *instance,
+                    snapshot.logical_viewport,
+                    transform,
                     painted,
-                );
-                if intersect_rect(destination, clip).is_empty() {
-                    // Rounded away on this head: nothing to draw or damage.
+                ) else {
                     continue;
-                }
+                };
+                let (destination, clip) = (projected.destination, projected.clip);
                 if let Some(layer) = layers.iter().find(|layer| layer.surface == instance.source) {
                     instance_sampled |= head_sampling_class(
                         layer.source_pixel_size,
@@ -575,15 +624,27 @@ pub fn build_head_composition_plan(
                     ..*instance
                 })
             }
-            CompositorDisplayCommand::Border(border) => HeadCompositorCommand::Border(
-                project_border(*border, snapshot.logical_viewport, transform, painted),
-            ),
-            CompositorDisplayCommand::Rect(rect) => HeadCompositorCommand::Rect(project_rect(
-                *rect,
-                snapshot.logical_viewport,
-                transform,
-                painted,
-            )),
+            CompositorDisplayCommand::Border(border) => {
+                let projected =
+                    project_border(*border, snapshot.logical_viewport, transform, painted);
+                // A WM region this head crops away entirely is not drawn
+                // here, so it is not listed as drawn either (t244).
+                if matches!(border.node, CompositorNodeId::PolicyRegion { .. })
+                    && !policy_border_draws(&projected)
+                {
+                    continue;
+                }
+                HeadCompositorCommand::Border(projected)
+            }
+            CompositorDisplayCommand::Rect(rect) => {
+                let projected = project_rect(*rect, snapshot.logical_viewport, transform, painted);
+                if matches!(rect.node, CompositorNodeId::PolicyRegion { .. })
+                    && projected.geometry.is_empty()
+                {
+                    continue;
+                }
+                HeadCompositorCommand::Rect(projected)
+            }
             CompositorDisplayCommand::Text(text) => HeadCompositorCommand::Text(project_text(
                 text,
                 snapshot.logical_viewport,
@@ -896,3 +957,4 @@ pub const fn head_sampling_class(source: Size, target: Size) -> HeadSamplingClas
 }
 
 include!("composition_plan/projection_geometry.rs");
+include!("composition_plan/policy_geometry.rs");
