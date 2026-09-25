@@ -3,15 +3,6 @@
 use super::*;
 
 #[test]
-fn proof_parent_uses_the_identity_only_inventory_not_the_seat_device_opener() {
-    // A source boundary guard complements the backend inventory controls: a
-    // device-hidden run alone cannot reveal an attempt to open absent GPUs.
-    let source = include_str!("../../src/live_session/metadata_shell/gpu_content_proof.rs");
-    assert!(source.contains("sophia_backend_live::snapshot_seat_render_inventory(seat)"));
-    assert!(!source.contains("discover_seat_render_devices"));
-}
-
-#[test]
 fn production_lom_proof_admits_the_discrete_input_contract() {
     assert!(matches!(
         proof_content_admission_policy(),

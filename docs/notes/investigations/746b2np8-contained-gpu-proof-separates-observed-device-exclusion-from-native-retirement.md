@@ -141,8 +141,11 @@ CLI/Session all-feature suites passed 1,033 tests with 41 ignored; their default
 suites passed 359 with 21 ignored. Both had zero failures. After that correction,
 five focused Session controls, the protected CLI fixture, default all-target
 compilation, strict all-feature/all-target Clippy and the verifier corpus pass.
-The inventory regression is a source-boundary control, not a hardware syscall
-trace. Three profile permission/migration controls pass. Formatting, whitespace,
+The inventory check in that focused run matched source text, not hardware
+syscalls. Integration removes that check because it repeats the implementation;
+the metadata-only call boundary is established by source review. The behavioral
+identity and protected-child controls remain. Three profile permission/migration
+controls pass. Formatting, whitespace,
 metadata and layout pass. The initial layout failure (test cfg placement and
 the CLI file crossing its ceiling) is retained; no debt limit was raised.
 
