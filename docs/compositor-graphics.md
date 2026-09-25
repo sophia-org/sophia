@@ -15,6 +15,11 @@ graphics share the final composition and presentation path with those buffers,
 but they are not client surfaces and do not weaken the authority boundaries
 around them.
 
+The [rendering foundation inventory and proposal](rendering-foundation.md)
+connects these implemented mechanisms to generic WM surface presentation. It
+separates client geometry from presentation geometry and records the missing
+wire and input contract; it does not make the overview prototype normative.
+
 ## Design Direction
 
 Shell rendering and compositor rendering have separate owners. A GPU-capable

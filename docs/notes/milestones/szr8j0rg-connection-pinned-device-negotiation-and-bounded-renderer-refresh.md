@@ -96,7 +96,7 @@ identity are in `.artifacts/t070-paired-layout/`; the live release was not chang
 
 ## Installed playback observation
 
-Mason installed `76ed2fddf31a` and reported Brave Origin open with video playing
+niltempus installed `76ed2fddf31a` and reported Brave Origin open with video playing
 in session `00000001788951558950-1cb15054-f8c5-4096-b573-a10d6c7acbcd` on
 2026-09-09. The session manifest and live Sophia executables match that release.
 The recorder was running with zero discarded records and storage errors;

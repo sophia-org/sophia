@@ -394,7 +394,7 @@ An uncommitted automatic-prefix implementation covered all three managed launch
 paths and passed `cargo xtask check` (2,768 tests, zero compiler/Clippy warnings,
 20 archived proofs and buffer-age pixel equivalence). Six private hardware tests
 also passed with each render node advertised, including a real Go parser/exec
-fixture. It depended on a known-executable table. Mason explicitly rejected that
+fixture. It depended on a known-executable table. niltempus explicitly rejected that
 maintenance model and required generic behavior for arbitrary clients. The
 entire automatic integration was withdrawn before commit or installation; its
 source and validation logs were saved under
@@ -421,7 +421,7 @@ successful accelerated allocation on the permitted device.
 
 ## Controlled no-override acceptance on 2026-09-09
 
-Installed candidate `76ed2fddf31a` still fails this gate. Mason authorized opening
+Installed candidate `76ed2fddf31a` still fails this gate. niltempus authorized opening
 and closing applications for testing. Three isolated fresh-profile runs used the
 same existing Brave binary, a local 1280x720/30 H.264 loop, and DevTools media/GPU
 observations. No browser source or normal launch configuration was changed.
@@ -559,7 +559,7 @@ endpoint, autoplay override or profile override.
 The page reported AMD RX 7900 GRE/Navi31 through ANGLE/OpenGL, then stopped at
 three video callbacks and media time 0.139265 seconds with
 `PIPELINE_ERROR_DECODE`. All six five-second samples retained that state.
-Mason subsequently opened YouTube and reported working playback. The captured
+niltempus subsequently opened YouTube and reported working playback. The captured
 browser log recorded three GBM import failures and three GPU exits with 8704;
 the resulting GPU process carried `--use-gl=disabled`, held no DRM descriptors,
 and mapped no Radeon driver. Working playback therefore does not pass the
@@ -572,12 +572,12 @@ process title; its empty GPU arrays are unusable. The final process snapshot
 matches delimited flags in that title and records the fallback directly.
 No new descriptor interception was performed, so the run confirms the failure
 signature without adding a producer-device attribution. The browser remains
-open for Mason's use. Task t069's normal-launch exit remains unmet.
+open for niltempus's use. Task t069's normal-launch exit remains unmet.
 
 ## Producer attribution and stock Chromium on 2026-09-10
 
 The installed Sophia/Hagia pair remained `171345049bf6` / `3459a85d5dd7`.
-Mason authorized independent browser tests and installed Void's stock Chromium
+niltempus authorized independent browser tests and installed Void's stock Chromium
 `151.0.7922.108_1`. Brave remained `1.94.121`, Chromium `152.0.7977.83`.
 Both used the same X11 session, system Mesa and local 1280×720/30 H.264 video.
 Each test owned a temporary profile, a debugging endpoint and its own browser
@@ -656,7 +656,7 @@ passive and destination-retry runs; `trace-source-check.c` /
 `trace-source-check.so` own the exact-buffer comparison. The source-check
 probe never substitutes a successful import into the browser. Stock Chromium
 was initially downloaded and checksum-verified for isolated extraction; the
-browser runs above used Mason's subsequently installed package.
+browser runs above used niltempus's subsequently installed package.
 
 ### Repair boundary and contrary evidence
 
@@ -715,7 +715,7 @@ profile or authentication material.
 
 The [Chromium filing page](https://issues.chromium.org/new) was reopened in the
 submission browser. Google refused sign-in in the separate Chromium and Brave
-submission profiles. Mason was already signed in through his normal Brave
+submission profiles. niltempus was already signed in through his normal Brave
 Origin profile and chose to file the issue manually.
 `open-brave.mjs` and `brave-connection.json` in
 `.artifacts/t069-upstream-submission/` retain its launcher and connection.
@@ -730,7 +730,7 @@ accelerated-video gate for `t068` or `t069`.
 The [default-visual investigation](g930kzbe-default-x-visual-excluded-rgba-pixmap-configurations.md)
 records the white-video reproduction on `7dd74c5c5183` and a GLX call trace
 identifying the display's alpha-zero configuration restriction. After private
-pixel tests passed, Mason confirmed normal video in a fresh session on
+pixel tests passed, niltempus confirmed normal video in a fresh session on
 `b43d23d0bb15` on 2026-09-09. This accepts the white-video repair. The session
 still used the explicit device override, and discarded browser stderr prevents
 an error-history check; the wider accelerated-video gate remains open.

@@ -111,7 +111,7 @@ for `2097170` and `2097173`, with recording active, no discarded records and no
 storage errors. The identity and sample are retained in the evidence directory's
 `live-session.json`.
 
-Mason explicitly confirmed that Kitty and the Quickshell bar are visible and
+niltempus explicitly confirmed that Kitty and the Quickshell bar are visible and
 responsive in this session. This accepts the blank-app regression repair.
 It does not establish Brave video, cross-device migration, device-loss recovery
 or the other exits of [t069](../../../todo.md), which remains open. The

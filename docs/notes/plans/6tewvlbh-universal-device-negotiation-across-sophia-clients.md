@@ -16,7 +16,7 @@ There must be no supported-application registry anywhere in the implementation.
 Users and developers should receive the same negotiated behavior through normal
 startup, a shortcut, a catalog entry or an independent terminal command.
 
-Mason explicitly promoted this work to top priority on 2026-09-08. `t069` owns
+niltempus explicitly promoted this work to top priority on 2026-09-08. `t069` owns
 its design and implementation; its ordering and status live in
 [todo.md](../../../todo.md). The Chromium launch adapter in `t068` remains a
 bounded compatibility measure and does not satisfy this task's exit.
@@ -99,7 +99,7 @@ pushed before physical acceptance; installation and acceptance are separate.
 
 ## Native feedback model and reference boundaries
 
-On 2026-09-09 Mason directed the implementation to use XLibre/yserver as X11
+On 2026-09-09 niltempus directed the implementation to use XLibre/yserver as X11
 references and native Wayland for stronger negotiation patterns. Adapt those
 patterns within Sophia's existing authority boundaries. No Wayland server or
 Xwayland dependency is introduced.
@@ -316,7 +316,7 @@ offscreen pixel evidence, and the remaining frontend migration boundary.
 The [first-buffer regression investigation](../investigations/09ywbgwt-measured-modifiers-exposed-an-rgb-stride-check-on-compression-metadata.md)
 records a real Mesa client rejected before Present because descriptor validation
 applied RGB image geometry to compression metadata. Repair `009498fb` retains
-descriptor bounds and passes real GLX/EGL GPU pixel checks. Mason confirmed
+descriptor bounds and passes real GLX/EGL GPU pixel checks. niltempus confirmed
 Kitty and Quickshell visibility and responsiveness in the installed release;
 this accepts that regression repair without closing the broader exits above.
 
@@ -330,7 +330,7 @@ The later [default-visual investigation](../investigations/g930kzbe-default-x-vi
 traces the surviving initialization failure to alpha-zero GL configurations
 on the default X visual. The XLibre-compatible correction separates native X
 depth from GL color bits and passes default-visual texture and window pixel
-tests. Mason confirmed normal video on installed `b43d23d0bb15` on 2026-09-09.
+tests. niltempus confirmed normal video on installed `b43d23d0bb15` on 2026-09-09.
 That accepts the white-video repair with the existing CLI device override;
 it does not satisfy this plan's requirement for generic device negotiation
 without an application adapter.
