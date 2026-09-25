@@ -382,6 +382,18 @@ loss and recovery.
   first, pass after the change, and fail again when the handover clones
   instead of takes. Leases and the sixteen-generation bound are unchanged.
 
+The signed source repair is `c9cf812a9a394e2a6ef8a6f9c03a6c8021888d67`;
+`7312f777` retains its red controls. On that source, the complete device-hidden
+authority suite passed 2,073 tests with no failures and two ignored tests.
+Strict all-target, all-feature Clippy for authority and Session passed, as did
+formatting and layout. The later docs-only tip is `4bb04cdd`; the executed
+source files are unchanged. The director independently verified the 20-file
+bundle at `~/.local/state/sophia/development-evidence/t069-d1-4bb04cdd`, manifest
+SHA-256 `5c0047b2fa50217eea19cedc9fdead377aaff14503edccf99f0da2e505ef190f`.
+It preserves the red, green and compiled mutation, full checks, signatures and
+immutable upstream source copies. This is a deterministic lifetime repair;
+no GPU was removed or reset to obtain these results.
+
 These findings remain under contract review and are unchanged:
 - **D2.** A connection admitted while the current bundle is already lost is
   pinned to it, is offered DRI3, and every Open refuses.
