@@ -1,0 +1,20 @@
+[package]
+name = "sophia-9p-authority"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustix = { version = "1.1", default-features = false, features = ["event", "fs", "net", "std", "time"] }
+sophia-input-authority = { path = "../sophia-input-authority" }
+sophia-portal = { path = "../sophia-portal" }
+sophia-protocol = { path = "../sophia-protocol" }
+tracing.workspace = true
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sophia-linux-peer = { path = "../sophia-linux-peer" }
