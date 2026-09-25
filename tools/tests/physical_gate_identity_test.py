@@ -437,6 +437,20 @@ chmod 755 "$out/release/sophia"
         self.assertEqual(self.mark("policy-bound-sophia").strip(),
                          __import__("hashlib").sha256(built).hexdigest())
 
+    def test_a_cross_compilation_target_refuses_before_any_build(self):
+        # CARGO_BUILD_TARGET moves the output below target/<triple>/, which is
+        # not the executable these host-native proofs hash and run.
+        profile = self.sophia / "tools/fixtures/t018_tab_reference.kdl"
+        for script, extra in (("run_current_hagia_native_gate_tty4.sh",
+                               {"SOPHIA_HAGIA_NATIVE_PROFILE": str(profile)}),
+                              ("run_current_hagia_policy_gate_tty4.sh", {})):
+            with self.subTest(script=script):
+                result = self.run_script(script, self.environment(
+                    CARGO_BUILD_TARGET="aarch64-unknown-linux-gnu", **extra))
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn("CARGO_BUILD_TARGET", result.stderr)
+                self.assertEqual(self.mark("build"), "")
+
     def test_the_policy_launcher_runs_its_literal_bound_path(self):
         # Documentation control: the policy gate's launcher runs the literal
         # target/release/sophia it hashed and never reads SOPHIA_BIN, so it has
