@@ -632,10 +632,18 @@ fn fill_from_socket(stream: &mut std::os::unix::net::UnixStream,
     buffer: &mut [u8]) {
     use std::io::Read;
 
-    let budget = stream
-        .read_timeout()
-        .expect("socket read timeout is readable")
-        .unwrap_or(X_RECORD_READ_TIMEOUT);
+    // A socket with no read timeout never returns to the budget check
+    // below: a test waiting on a record that never comes parks instead of
+    // failing, the shape of every unnamed x11_wire hang (t228). The default
+    // budget is set on the socket itself, so the wait ends in a panic that
+    // names the test and says how much of the record arrived.
+    let timeout = stream.read_timeout().expect("socket read timeout is readable");
+    if timeout.is_none() {
+        stream
+            .set_read_timeout(Some(X_RECORD_READ_TIMEOUT))
+            .expect("socket read timeout is settable");
+    }
+    let budget = timeout.unwrap_or(X_RECORD_READ_TIMEOUT);
     let mut filled = 0;
     let mut last_progress = std::time::Instant::now();
     while filled < buffer.len() {
