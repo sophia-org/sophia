@@ -42,6 +42,7 @@ if command -v xterm >/dev/null 2>&1; then
         grep -Eq '^XTerm\([0-9]+\)$'
 fi
 
-python3 -B "$ROOT_DIR/tools/tests/session_application_arguments_test.py"
+cargo test --offline --manifest-path "$ROOT_DIR/Cargo.toml" -p sophia-cli \
+    --test session_application_arguments --test session_prepare_arguments
 
 echo "session terminal argument checks passed"

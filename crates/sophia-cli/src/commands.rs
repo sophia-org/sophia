@@ -6,6 +6,7 @@ pub(crate) mod diagnostics;
 mod help;
 mod msg;
 mod runtime;
+mod session_prepare;
 mod x_authority;
 
 #[allow(unused_imports)]
@@ -52,6 +53,9 @@ mod prelude {
 }
 
 pub(crate) fn run(args: &[String], verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if session_prepare::try_run(args)? {
+        return Ok(());
+    }
     if client_launch::try_run(args)? {
         return Ok(());
     }

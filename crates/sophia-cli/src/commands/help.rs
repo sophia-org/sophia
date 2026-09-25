@@ -8,6 +8,9 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: config check [--config=/absolute/path]");
     println!("commands: config check --wm [--wm-config=/absolute/path]");
     println!("commands: config check --desktop-profile=/absolute/path");
+    println!(
+        "commands: config check-session-profile --desktop-profile=/absolute/path --default-wm=/path/to/hagia"
+    );
     println!("commands: config print-effective --desktop-profile=/absolute/path");
     println!("commands: config print-policy --desktop-profile=/absolute/path");
     println!(
@@ -58,6 +61,12 @@ pub(crate) fn print(verbose: bool) {
     #[cfg(feature = "native-session")]
     println!(
         "diagnostics: session mark [--session=ID|latest] [LABEL] | session inspect ID|latest [--marker=ID] | session keep ID|latest [--include-application-stderr] | session launches ID|latest | session stderr ID|latest --launch=ID [--raw] | session list"
+    );
+    println!(
+        "session prepare-arguments --profile=hagia|native|kitty|standalone --root=PATH --state-dir=PATH --binary=PATH --terminal=PATH --terminal-kind=kitty|xterm --browser=PATH --standalone=PATH --wm=PATH --firefox-profile=PATH -- [session arguments]: prepare a NUL-delimited launch vector without starting a session"
+    );
+    println!(
+        "session prepare-environment --tty=PATH --firefox-probe=PATH -- [session arguments]: prepare NUL-delimited bus mode and environment entries without starting a session or bus"
     );
     println!("compatibility aliases: sophia-live-session, sophia-session-input-guard");
     #[cfg(feature = "native-session")]

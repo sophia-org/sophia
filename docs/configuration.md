@@ -185,9 +185,12 @@ staging; staged-file provenance replaces the source-file provenance on reload.
 `sophia config check --desktop-profile=...` reports
 `policy_validation=delegated`: success validates the envelope, not WM semantics.
 Use `sophia config print-policy --desktop-profile=...` to export a policy-only
-profile for `hagia config check --config=...`. The Hagia TTY adapter checks
-Sophia's envelope and passes only that exported policy to Hagia before
-display-manager takeover. An explicitly selected different WM validates its
+profile for `hagia config check --config=...`. The Hagia TTY adapter calls
+`sophia config check-session-profile --desktop-profile=... --default-wm=/path/to/hagia`
+before display-manager takeover. This installed-runtime command checks the
+envelope and selected executables, stages only the policy in a private temporary
+directory, and gives Hagia ten seconds to validate it. Rejection or timeout
+refuses the handoff and removes the staged policy. An explicitly selected different WM validates its
 own vocabulary during protocol activation. Packaging also checks both.
 Runtime still gives Hagia only its private
 Policy fragment, and Hagia constructs a valid policy model before acknowledging
@@ -201,6 +204,17 @@ handoff at a column edge or from an empty output. The setting accepts an exact
 boolean and defaults to `#true` when omitted. Local navigation and explicit
 output switching remain available with it disabled. Sophia preserves this
 WM-owned setting in policy export; Hagia validates its type and rejects duplicates.
+
+The installed launcher delegates argument construction to
+`sophia session prepare-arguments` and environment construction to
+`sophia session prepare-environment`. These commands prepare data without
+starting a session, acquiring devices, or starting a session bus. Their output
+starts with a versioned preparation record and contains NUL-delimited fields;
+the adapter loads arrays without evaluating shell text and refuses binaries
+that do not return the expected record. Preparation preserves the distinction
+between application defaults for ordinary Hagia desktops and explicit adapters
+for proofs. The launcher still validates the exact assembled command with
+`--validate-session-args` before graphics takeover.
 
 The trusted session coordinator validates and partitions all seven desktop
 authorities before constructing the graphical session. It stages owner-only
