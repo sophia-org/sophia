@@ -126,6 +126,9 @@ active event work. No physical acceptance is implied by these checks.
 
 ## t027
 
+The [launcher preparation audit](../investigations/dvvnlqq2-tty-launch-preparation-still-has-a-second-argument-builder-outside-rust.md)
+identifies the remaining live argument builder and the installed-runtime constraint.
+
 Reduce `tools/start_sophia_tty3.sh` to the minimum TTY/display-manager
 adapter around `sophia session run`. Typed parsing, verification, archive
 handling, and gate orchestration stay in Rust.
