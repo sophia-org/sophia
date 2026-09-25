@@ -55,14 +55,35 @@ impl OutputComposition<'_> {
         }
         // The WM presentation tier: above ordinary application content and
         // its decorations, below shell content and the descriptor overlay.
+        // Engine, never the WM, names the generation each instance samples.
+        // The tier is drawn whole or not at all: admission refuses a
+        // presentation whose source has no committed content and removal
+        // revokes it, so a missing source here is a view that moved on, and
+        // no instance is dropped from a presentation that is drawn.
         if let Some(presentation) = self.policy_presentation {
-            let instances = presentation.instance_commands(output);
-            if display_list.commands.len().saturating_add(instances.len())
-                > MAX_COMPOSITOR_DISPLAY_COMMANDS
-            {
-                return Err(CompositorDisplayListError::CapacityExceeded);
+            let mut tier = CompositorDisplayList {
+                output,
+                commands: presentation.instance_commands(output),
+            };
+            match sophia_engine::resolve_surface_instance_sources(&mut tier, committed_surfaces) {
+                Ok(()) => {
+                    if display_list
+                        .commands
+                        .len()
+                        .saturating_add(tier.commands.len())
+                        > MAX_COMPOSITOR_DISPLAY_COMMANDS
+                    {
+                        return Err(CompositorDisplayListError::CapacityExceeded);
+                    }
+                    display_list.commands.extend(tier.commands);
+                }
+                Err(missing) => tracing::warn!(
+                    "sophia_wm_presentation status=withheld reason=missing_source owner_epoch={} generation={} source={:?}",
+                    presentation.owner_epoch,
+                    presentation.presentation.generation,
+                    missing.source,
+                ),
             }
-            display_list.commands.extend(instances);
         }
         for (_, content) in self
             .shell_content
@@ -103,8 +124,6 @@ impl OutputComposition<'_> {
                 .commands
                 .extend(overlay.commands.iter().cloned());
         }
-        // Engine, never the WM, names the generation each instance samples.
-        sophia_engine::resolve_surface_instance_sources(&mut display_list, committed_surfaces);
         Ok(display_list)
     }
 }

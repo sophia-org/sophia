@@ -48,33 +48,6 @@ fn preview_only_instances_share_a_source_until_copy_and_backings_until_retiremen
         z_index: u16::try_from(id).unwrap(),
         action: None,
     };
-    runtime
-        .set_policy_presentation(
-            Some(LivePolicyPresentation {
-                owner_epoch: 41,
-                presentation: PolicyPresentation {
-                    generation: 1,
-                    keyboard_output: None,
-                    outputs: vec![PolicyPresentationOutput {
-                        output: output.id,
-                        generation: 1,
-                        coverage: Rect {
-                            x: 0,
-                            y: 0,
-                            width: 64,
-                            height: 32,
-                        },
-                        mode: PolicyPresentationMode::Overlay,
-                    }],
-                    instances: vec![instance(1, first), instance(2, second)],
-                    regions: vec![],
-                    bindings: vec![],
-                },
-            }),
-            &scene,
-            None,
-        )
-        .unwrap();
     let mut before = None;
     let mut source_weak = None;
     for generation in 1..=2 {
@@ -115,6 +88,36 @@ fn preview_only_instances_share_a_source_until_copy_and_backings_until_retiremen
         runtime
             .prepare_authority_transactions(transaction.transaction, &[transaction], &[])
             .unwrap();
+        // Admitted once its source has committed content.
+        if generation == 1 {
+            runtime
+                .set_policy_presentation(
+                    Some(LivePolicyPresentation {
+                        owner_epoch: 41,
+                        presentation: PolicyPresentation {
+                            generation: 1,
+                            keyboard_output: None,
+                            outputs: vec![PolicyPresentationOutput {
+                                output: output.id,
+                                generation: 1,
+                                coverage: Rect {
+                                    x: 0,
+                                    y: 0,
+                                    width: 64,
+                                    height: 32,
+                                },
+                                mode: PolicyPresentationMode::Overlay,
+                            }],
+                            instances: vec![instance(1, first), instance(2, second)],
+                            regions: vec![],
+                            bindings: vec![],
+                        },
+                    }),
+                    &scene,
+                    None,
+                )
+                .unwrap();
+        }
         assert!(
             runtime.presentation_order.is_empty(),
             "the source is not presented"
@@ -232,6 +235,176 @@ fn preview_only_instances_share_a_source_until_copy_and_backings_until_retiremen
     );
     target.teardown();
     assert_eq!(target.owners.get(), 0);
+}
+
+/// t244: a presentation naming a source with no committed content is refused
+/// whole, and the last valid presentation stays drawn; a source commit
+/// changes what an instance samples, never its interaction generation;
+/// removing a sampled source revokes the whole presentation once, never one
+/// instance of it.
+#[test]
+fn a_missing_source_refuses_the_presentation_whole_and_removal_revokes_it_whole() {
+    use std::sync::Arc;
+    let outputs = outputs();
+    let output = outputs[0];
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(output.size);
+    let shown = SurfaceId::new(5, 1);
+    let absent = SurfaceId::new(6, 1);
+    let size = Size {
+        width: 8,
+        height: 8,
+    };
+    let mut commit = |runtime: &mut LiveProductionVisualRuntime, generation: u64| {
+        scene
+            .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle: 55,
+                generation,
+                size,
+                stride: 32,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                bytes: Arc::new(vec![generation as u8; 8 * 8 * 4]),
+            })])
+            .unwrap();
+        let transaction = SurfaceTransaction {
+            transaction: TransactionId::from_raw(generation),
+            authority: AuthorityKind::SophiaX,
+            surface: shown,
+            namespace: None,
+            target_geometry: Rect {
+                x: -100,
+                y: -100,
+                width: 8,
+                height: 8,
+            },
+            presentation_extent: size,
+            content: SurfaceContentSet::singleton(BufferSource::CpuBuffer { handle: 55 }, size),
+            damage: Region::single(Rect {
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 8,
+            }),
+            readiness: SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: generation - 1,
+            input_region: None,
+        };
+        runtime
+            .prepare_authority_transactions(transaction.transaction, &[transaction], &[])
+            .unwrap();
+    };
+    commit(&mut runtime, 1);
+    let instance = |id: u64, source: SurfaceId| PolicySurfaceInstance {
+        id,
+        generation: 4,
+        output: output.id,
+        source,
+        destination: Rect {
+            x: 4 + 12 * i32::try_from(id).unwrap(),
+            y: 4,
+            width: 8,
+            height: 8,
+        },
+        clip: Rect {
+            x: 4 + 12 * i32::try_from(id).unwrap(),
+            y: 4,
+            width: 8,
+            height: 8,
+        },
+        opacity_millis: 1_000,
+        z_index: u16::try_from(id).unwrap(),
+        action: None,
+    };
+    let presentation =
+        |generation: u64, instances: Vec<PolicySurfaceInstance>| LivePolicyPresentation {
+            owner_epoch: 41,
+            presentation: PolicyPresentation {
+                generation,
+                keyboard_output: None,
+                outputs: vec![PolicyPresentationOutput {
+                    output: output.id,
+                    generation: 1,
+                    coverage: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 64,
+                        height: 32,
+                    },
+                    mode: PolicyPresentationMode::Overlay,
+                }],
+                instances,
+                regions: vec![],
+                bindings: vec![],
+            },
+        };
+    let valid = presentation(1, vec![instance(1, shown)]);
+    assert!(
+        runtime
+            .set_policy_presentation(Some(valid.clone()), &scene_for(&outputs), None)
+            .unwrap()
+    );
+    let drawn = |runtime: &LiveProductionVisualRuntime| {
+        output_composition::OutputCompositionSnapshot::capture(runtime)
+            .display_list(output.id, runtime.committed_surfaces())
+            .unwrap()
+            .surface_instances()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(drawn(&runtime).len(), 1);
+
+    // Refused whole: the candidate's committed source does not save it.
+    let refused = runtime
+        .set_policy_presentation(
+            Some(presentation(
+                2,
+                vec![instance(1, shown), instance(2, absent)],
+            )),
+            &scene_for(&outputs),
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(
+        refused.downcast_ref::<LivePolicyPresentationRefusal>(),
+        Some(&LivePolicyPresentationRefusal::MissingSource { source: absent })
+    );
+    assert_eq!(
+        runtime.policy_presentation(),
+        Some(&valid),
+        "the last valid presentation stays"
+    );
+    let before = drawn(&runtime);
+    assert_eq!(before.len(), 1);
+
+    // A content-only commit: the sample moves, the interaction does not.
+    commit(&mut runtime, 2);
+    let after = drawn(&runtime);
+    assert_eq!(after[0].generation, before[0].generation);
+    assert_eq!(after[0].node(), before[0].node());
+    assert_eq!(
+        (before[0].source_generation, after[0].source_generation),
+        (1, 2)
+    );
+
+    // Removal revokes the whole publication, and says so once.
+    runtime
+        .release_removed_presentations(&[shown], None)
+        .unwrap();
+    assert_eq!(runtime.policy_presentation(), None);
+    assert_eq!(
+        runtime.take_policy_presentation_revocation(),
+        Some(LivePolicyPresentationRevocation {
+            owner_epoch: 41,
+            generation: 1,
+            source: shown,
+        })
+    );
+    assert_eq!(runtime.take_policy_presentation_revocation(), None);
+    assert!(drawn(&runtime).is_empty());
+}
+
+fn scene_for(outputs: &[HeadlessOutput]) -> LiveProductionCpuScene {
+    LiveProductionCpuScene::new(outputs[0].size)
 }
 
 #[test]

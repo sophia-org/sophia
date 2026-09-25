@@ -183,29 +183,53 @@ fn rect_intersection(first: Rect, second: Rect) -> Rect {
     }
 }
 
+/// An instance names a source with no committed content.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorMissingInstanceSource {
+    pub source: SurfaceId,
+}
+
+impl fmt::Display for CompositorMissingInstanceSource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "surface instance source {:?} has no committed content",
+            self.source
+        )
+    }
+}
+
+impl std::error::Error for CompositorMissingInstanceSource {}
+
 /// Resolves every instance's source generation from the committed table at
-/// frame capture, and drops an instance whose source has no committed
-/// content: a frame never carries a dangling source reference. The WM never
-/// supplies the source generation.
+/// frame capture. The WM never supplies it. A source with no committed
+/// content refuses the whole list, unchanged: a presentation is drawn
+/// complete or not at all, and one instance is never silently dropped.
 pub fn resolve_surface_instance_sources<C>(
     display_list: &mut CompositorDisplayList<C>,
     committed: &[CommittedSurfaceState],
-) {
-    display_list.commands.retain_mut(|command| {
+) -> Result<(), CompositorMissingInstanceSource> {
+    let mut resolved = Vec::new();
+    for (index, command) in display_list.commands.iter().enumerate() {
         let CompositorDisplayCommand::SurfaceInstance(instance) = command else {
-            return true;
+            continue;
         };
-        match committed
+        let state = committed
             .iter()
             .find(|state| state.surface == instance.source)
+            .ok_or(CompositorMissingInstanceSource {
+                source: instance.source,
+            })?;
+        resolved.push((index, state.committed_generation));
+    }
+    for (index, generation) in resolved {
+        if let CompositorDisplayCommand::SurfaceInstance(instance) =
+            &mut display_list.commands[index]
         {
-            Some(state) => {
-                instance.source_generation = state.committed_generation;
-                true
-            }
-            None => false,
+            instance.source_generation = generation;
         }
-    });
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

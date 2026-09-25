@@ -10,6 +10,31 @@ pub struct LivePolicyPresentation {
     pub presentation: PolicyPresentation,
 }
 
+/// Why an admitted presentation was not installed. The previous one stays.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LivePolicyPresentationRefusal {
+    /// An instance names a source with no committed content in the scene
+    /// being drawn. The candidate is refused whole; readiness settles it.
+    MissingSource { source: SurfaceId },
+}
+
+impl std::fmt::Display for LivePolicyPresentationRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for LivePolicyPresentationRefusal {}
+
+/// A presentation withdrawn because a source it samples left the scene. The
+/// whole publication is revoked, never one instance; its owner is told.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LivePolicyPresentationRevocation {
+    pub owner_epoch: u64,
+    pub generation: u64,
+    pub source: SurfaceId,
+}
+
 impl LivePolicyPresentation {
     /// This output's instances as display commands in z order. The source
     /// generation is left for [`resolve_surface_instance_sources`], so a
@@ -60,6 +85,20 @@ impl LiveProductionVisualRuntime {
         if self.policy_presentation == presentation {
             return Ok(false);
         }
+        // Every source must be committed both in the scene now displayed and
+        // in the committed set the next frame draws; otherwise the whole
+        // candidate is refused and the last valid presentation stays.
+        if let Some(candidate) = &presentation
+            && let Some(source) = candidate.sources().find(|source| {
+                ![self.displayed_surface_view(), self.committed_surfaces()]
+                    .iter()
+                    .all(|scene| scene.iter().any(|state| state.surface == *source))
+            })
+        {
+            return Err(Box::new(LivePolicyPresentationRefusal::MissingSource {
+                source,
+            }));
+        }
         let previous = std::mem::replace(&mut self.policy_presentation, presentation);
         if let Some(native_scanout) = native_scanout
             && let Err(error) = self.queue_retained_projection(scene, native_scanout)
@@ -72,6 +111,34 @@ impl LiveProductionVisualRuntime {
 
     pub fn policy_presentation(&self) -> Option<&LivePolicyPresentation> {
         self.policy_presentation.as_ref()
+    }
+
+    /// Revokes the whole presentation when a source it samples was removed
+    /// from the scene, and records the revocation for its owner.
+    pub(super) fn revoke_policy_presentation_for_removed(&mut self, removed: &[SurfaceId]) {
+        let Some(source) = self.policy_presentation.as_ref().and_then(|presentation| {
+            presentation
+                .sources()
+                .find(|source| removed.contains(source))
+        }) else {
+            return;
+        };
+        let revoked = self
+            .policy_presentation
+            .take()
+            .expect("a presentation named the removed source");
+        self.policy_presentation_revocation = Some(LivePolicyPresentationRevocation {
+            owner_epoch: revoked.owner_epoch,
+            generation: revoked.presentation.generation,
+            source,
+        });
+    }
+
+    /// The last revocation, once: what presented input and the WM are told.
+    pub fn take_policy_presentation_revocation(
+        &mut self,
+    ) -> Option<LivePolicyPresentationRevocation> {
+        self.policy_presentation_revocation.take()
     }
 
     /// The surfaces a frame samples: the presentation order, then every

@@ -23,7 +23,9 @@ mod ordinary_repaint;
 mod output_composition;
 mod policy_presentation;
 use composition_target::NativeCompositionTarget;
-pub use policy_presentation::LivePolicyPresentation;
+pub use policy_presentation::{
+    LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,
+};
 mod native;
 mod ownership;
 mod present;
@@ -399,6 +401,7 @@ pub struct LiveProductionVisualRuntime {
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
     policy_presentation: Option<LivePolicyPresentation>,
+    policy_presentation_revocation: Option<LivePolicyPresentationRevocation>,
     shell_content: BTreeMap<ShellContentKey, AdmittedShellContent>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
     tab_frames: BTreeMap<OutputId, sophia_engine::CompositorDamageList>,

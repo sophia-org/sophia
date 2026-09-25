@@ -144,10 +144,17 @@ the presentation's input half are not in it.
   distinct node. `Surface` is unchanged, so every existing duplicate
   check still guards the source's own presentation.
 - **Source generation.** `resolve_surface_instance_sources` sets each
-  instance's source generation from the committed table at capture and
-  drops an instance whose source has no committed content. The snapshot
+  instance's source generation from the committed table at capture. A
+  source without committed content refuses the whole list with
+  `CompositorMissingInstanceSource`; no instance is dropped. The snapshot
   refuses a stale generation (`StaleInstanceSource`) and frame damage
   refuses an unresolved or stale one.
+- **Missing and removed sources.** `set_policy_presentation` refuses a
+  whole candidate if any source lacks committed content in the displayed
+  or committed scene (`LivePolicyPresentationRefusal::MissingSource`), and
+  the last valid presentation stays. Removing a sampled source revokes the
+  whole publication and records one `LivePolicyPresentationRevocation`
+  for its owner. Frame capture draws the tier whole or not at all.
 - **Preview-only sources.** The snapshot samples an instance's source
   whether or not it is presented on that output. It does not add the
   source to the presentation order, draw it at its own placement, or
@@ -176,7 +183,8 @@ the presentation's input half are not in it.
 Guards: `crates/sophia-engine/tests/surface_instances.rs`,
 `crates/sophia-renderer-live/tests/cpu_instance_opacity.rs`, and the
 production test
-`preview_only_instances_share_a_source_until_copy_and_backings_until_retirement`.
+`preview_only_instances_share_a_source_until_copy_and_backings_until_retirement`
+and `a_missing_source_refuses_the_presentation_whole_and_removal_revokes_it_whole`.
 The production test ports the overview prototype's
 `preview_only_updates_damage` onto the generic presentation, with two
 instances of one preview-only source.
@@ -189,6 +197,8 @@ the archived prototype's controls (overview 914858fa):
 |---|---|---|
 | missing-instance-source | retained collection ignores instance sources | fails: `MissingCpuSource(55)` |
 | missing-source-generation | display list skips source resolution | fails: instance source generation stays 0 |
+| admits-missing-source | admission skips the missing-source refusal | fails: the refused candidate is installed |
+| removal-not-revoked | removal skips revocation | fails: the presentation outlives its source |
 
 Remaining for t244: Engine chrome regions (Backdrop, Frame, Emphasis),
 ReplaceApplications suppression of that output's application surfaces,

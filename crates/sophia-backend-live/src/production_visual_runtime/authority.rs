@@ -463,6 +463,7 @@ impl LiveProductionVisualRuntime {
         removed_surfaces: &[SurfaceId],
         mut native_scanout: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<(), crate::LiveRendererScanoutBufferExportDetail> {
+        self.revoke_policy_presentation_for_removed(removed_surfaces);
         for surface in removed_surfaces {
             if let Some(displayed) = self.displayed_surfaces.remove(surface)
                 && let Some(native) = native_scanout.as_deref_mut()

@@ -64,6 +64,7 @@ impl LiveProductionVisualRuntime {
             descriptor_overlay: None,
             descriptor_overlay_interactive: false,
             policy_presentation: None,
+            policy_presentation_revocation: None,
             shell_content: BTreeMap::new(),
             tab_bars: Vec::new(),
             tab_frames: BTreeMap::new(),

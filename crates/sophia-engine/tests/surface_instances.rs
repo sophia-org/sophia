@@ -75,7 +75,7 @@ fn list(
         output: OUTPUT,
         commands,
     };
-    resolve_surface_instance_sources(&mut list, committed);
+    resolve_surface_instance_sources(&mut list, committed).unwrap();
     list
 }
 
@@ -320,30 +320,33 @@ fn an_unresolved_or_stale_source_generation_is_refused() {
 }
 
 #[test]
-fn an_instance_of_a_missing_source_is_dropped_rather_than_left_dangling() {
+fn a_missing_source_refuses_the_whole_list_instead_of_dropping_one_instance() {
     let present = SurfaceId::new(4, 1);
     let missing = SurfaceId::new(6, 1);
     let committed = [committed(present, 3, rect(0, 0, 64, 64))];
-    let resolved = list(
-        vec![
-            CompositorDisplayCommand::SurfaceInstance(instance(
-                7,
-                1,
-                missing,
-                rect(100, 10, 32, 32),
-            )),
+    let mut list: CompositorDisplayList = CompositorDisplayList {
+        output: OUTPUT,
+        commands: vec![
             CompositorDisplayCommand::SurfaceInstance(instance(
                 7,
                 2,
                 present,
                 rect(200, 10, 32, 32),
             )),
+            CompositorDisplayCommand::SurfaceInstance(instance(
+                7,
+                1,
+                missing,
+                rect(100, 10, 32, 32),
+            )),
         ],
-        &committed,
+    };
+    let before = list.clone();
+    assert_eq!(
+        resolve_surface_instance_sources(&mut list, &committed),
+        Err(CompositorMissingInstanceSource { source: missing })
     );
-    let kept = resolved.surface_instances().collect::<Vec<_>>();
-    assert_eq!(kept.len(), 1);
-    assert_eq!(kept[0].source, present);
+    assert_eq!(list, before, "nothing resolved, nothing dropped");
 }
 
 #[test]
