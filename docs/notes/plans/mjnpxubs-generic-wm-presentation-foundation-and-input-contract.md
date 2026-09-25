@@ -23,6 +23,19 @@ surface instances and their input contract are the proposed extension.
 
 ## Contract-definition exit
 
+### Subsequent authorization on 2026-09-25
+
+After the documentation checkpoint, niltempus authorized implementation of the
+generic rendering architecture as the next top priority, while explicitly
+allowing both agents to finish their current tasks first. Coordination transfers
+to the overview agent. The earlier documentation-only scope above records the
+original admission; it does not limit this subsequent authorization. The new
+director owns the implementation breakdown and priority update in the queue.
+The original reserved planning row is integrated below without preempting t099
+or the current X11 propagation work. No live installation or reload is authorized.
+
+### Required contract
+
 The reviewed contract must specify:
 
 1. The passive instance proposal: authorized source, distinct instance identity,
