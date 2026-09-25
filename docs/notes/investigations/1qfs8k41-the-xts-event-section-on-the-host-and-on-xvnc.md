@@ -327,6 +327,48 @@ drain before it answers another request, as after an injection.
 EnterNotify 1 and LeaveNotify 1 pass and the scenario reads 118. Red
 before the fix: `unmapping_the_window_under_the_pointer_crosses_to_the_one_beneath`.
 
+## The flags byte, the peer's leave and the remapped subtree
+
+EnterNotify 12 and LeaveNotify 14 read "Focus set to 1, expected 0" after
+the focus was moved to the event window's sibling, and the wire tests
+that mirrored the sequence, through injected motion and through
+WarpPointer, both passed. There is no X protocol tracer on the machine,
+so a byte-stream proxy between the suite and a fresh host recorded the
+run: the host wrote the second enter with a flags byte of 1. The
+protocol's encoding is 0x01 focus and 0x02 same-screen; the encoder had
+them swapped, so every crossing on the same screen read as one with the
+focus, and the first half of each purpose passed only because both bits
+were set. The wire tests asserted the swapped bit too. The proxy and its
+parser are `xproxy.py` and `xparse.py` beside the job's `trace_case.sh`.
+
+LeaveNotify 2 selects LeaveWindow on a window from a second client after
+the pointer is inside it. That client's crossing writer had nothing to
+leave: its table knew the window by id alone, without geometry, and had
+sent the pointer nowhere. A selection on an unregistered window now
+records the window's parent and geometry from the runtime, and a
+selection of crossings or motion seeds the table's pointer window from
+the runtime's pointer position when the table has not observed the
+pointer. The runtime is read before the selection lock is taken: the
+input writer holds the input authority while it takes the selections,
+and the runtime's pointer query takes the authority, so the first cut
+deadlocked the wire suite (a t228 shape, found by the suite's own
+sixty-second notice).
+
+VisibilityNotify 3 unmaps and remaps every child of the guardian and
+expects a VisibilityNotify before an Expose on every window below. The
+map reported the mapped window alone, and the occlusion pass could not
+stand in: a window forgotten at its unmap reads as Unobscured again on
+its remap, which is no change. After a map that makes the window
+viewable the dispatcher walks its mapped inferiors top-down and reports
+each that is not InputOnly, recording the occlusion so the pass after
+the request does not report it twice.
+
+Each purpose was run alone against a fresh host before the scenario
+rerun; the scenario reads 122 passed, 73 declared. Red
+before the fixes: the flags assertions in the crossing tests,
+`a_peer_that_selects_leave_while_the_pointer_is_inside_is_told_of_the_leave`
+and `remapping_a_window_reports_visibility_and_exposure_on_its_viewable_inferiors`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -354,8 +396,8 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(118 passed, 77 declared after the selection-by-direction, KeymapNotify,
-subwindow, propagation, wheel-button, crossing, visibility and
-hierarchy-crossing reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
+(122 passed, 73 declared after the selection-by-direction, KeymapNotify,
+subwindow, propagation, wheel-button, crossing, visibility,
+hierarchy-crossing and focus-flag reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.
