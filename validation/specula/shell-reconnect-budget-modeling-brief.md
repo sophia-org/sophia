@@ -67,11 +67,13 @@ Let `P` be the sum of every retained source charge for this profile, not just
 the immediately preceding grant. Let `U` and `V` be all existing source and
 backing reservations. Global source and backing caps are `C` and `D`.
 
-After real collection, use checked subtraction and four-byte alignment:
+After real collection, subtract with saturation at zero and four-byte alignment.
+An underflow therefore yields zero available capacity and fails the positive
+useful floor; it never wraps into admission credit:
 
 ```text
-A = min(Q - P, C - U)
-B = min(R0 + T0, D - V)
+A = min(max(Q - P, 0), max(C - U, 0))
+B = min(R0 + T0, max(D - V, 0))
 require A >= 4*M and B >= 3*M
 R = min(R0, A - 2*M, B - M)
 S = min(S0, A - R - M)

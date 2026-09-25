@@ -274,8 +274,8 @@ these cases. Focused execution and strict Clippy pass; logs are in
 
 The runtime now owns `select_reconnect_limits`, its shared
 `content_reconnect_allowance` calculation and the measured registry projection.
-The prototype selector was removed from the control executable. Checked
-headroom that would underflow is represented as zero useful allowance, causing
+The prototype selector was removed from the control executable. Subtraction
+saturates at zero when headroom would underflow, causing
 floor refusal; it never wraps into credit. Both selection and diagnostics use
 the same computed available/required values. Session invokes this only at
 component reservation, then publishes through the unchanged transport owner.
@@ -322,6 +322,37 @@ vendors `c2ff3fcd`; forty of forty-two C vendor files match, with `fields.h` and
 Those precise comparisons support the paired library controls. They are not
 Lom/bemenu executable runs, physical acceptance or evidence for arbitrary
 multi-output workloads.
+
+### Joined repair validation
+
+Signed production checkpoint `f0124607`, joined with the independent client
+controls at `bf0e70e44b4a34b9c5fbe12a1f48075293146929`, passes the device-hidden
+runtime/client suites (297 passed, zero failed, one ignored), all-feature
+backend/session suites (1,760 passed, zero failed, 39 ignored), and the full C
+wire gate. The original two-role progress control is enabled, not counted as an
+ignored red. Strict affected all-target Clippy, workspace all-target checking,
+formatting, whitespace, metadata and layout pass. Per-stage exits and timings
+are retained with the candidate evidence.
+
+Two compiled repair negatives fail their intended assertions: omitting the
+same-profile retired debit breaks the repeated-grant bound, and restoring full
+nominal admission breaks the original two-role Session reconnect control.
+`negative-controls.json` records the original and mutated source hashes and
+exits; sources were restored before the passing broad checks. Earlier failed
+controls and the initial dock-greeting fixture failure remain separate logs.
+
+Evidence is retained under
+`~/.local/state/sophia/development-evidence/t100-budget-bf0e70e4`, with a
+SHA256SUMS manifest. The disk cache
+`sophia-t027/.artifacts/t026-target` was exclusive to this lane during these
+checks; compiler paths identify `sophia-borders`, and candidate test-binary
+identities (including feature variants) accompany the report. The cache is released after the worktree
+checks for the director's separately pinned integration gate.
+
+This is bounded headless repair evidence, not final main-gate or physical
+acceptance. The genuine saturation and shared epoch-inventory refusal zones
+remain. No queue closure, main-tree operation, installation or reload is part
+of this checkpoint; the broader t100 exits remain open.
 
 ## Evidence and remaining exits
 
