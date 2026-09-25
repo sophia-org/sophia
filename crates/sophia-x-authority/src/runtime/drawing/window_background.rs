@@ -99,6 +99,7 @@ impl XAuthorityRuntime {
             // Undefined is not black: the window is not painted, and whatever
             // was on the screen underneath it shows through.
             crate::XWindowBackground::Undefined | crate::XWindowBackground::ParentRelative => {
+                self.retain_pixels_beneath_window(window);
                 return;
             }
             crate::XWindowBackground::Pixel(pixel) => (pixel, None),
@@ -106,6 +107,54 @@ impl XAuthorityRuntime {
         };
         self.software_buffers
             .paint_window_background(window, size, pixel, tile);
+    }
+
+    /// Background None preserves the screen at mapping time. Seed a
+    /// subwindow from its parent's composed pixels, including siblings, so
+    /// GetImage and a later partial draw see the same retained contents.
+    /// This is a copy, not ongoing transparency or ParentRelative tiling.
+    fn retain_pixels_beneath_window(&mut self, window: crate::XResourceId) {
+        // We do not promise backing store for obscured/unmapped contents.
+        // Drawing while unmapped must not replace the visible screen when
+        // this window subsequently becomes viewable with background None.
+        if self.window_is_input_only(window) {
+            return;
+        }
+        let Some(record) = self.windows.get(window) else {
+            return;
+        };
+        let (namespace, parent, region) =
+            (record.namespace, record.parent, record.interior_geometry());
+        // The shared root is not a source of another namespace's pixels.
+        let Some(parent_record) = self.windows.get(parent) else {
+            return;
+        };
+        if parent == window || parent_record.namespace != namespace {
+            return;
+        }
+        let Some(mut image) = self
+            .software_buffers
+            .image_region(self.draw_key(namespace, parent), region)
+        else {
+            return;
+        };
+        // Mapping has already changed viewability, but the new subtree must
+        // not contribute its old descendant backing to its own underlay.
+        self.composite_inferiors(namespace, parent, region, &mut image, Some(window));
+        self.software_buffers.put_image_backing(
+            window,
+            Size {
+                width: region.width,
+                height: region.height,
+            },
+            Rect {
+                x: 0,
+                y: 0,
+                width: region.width,
+                height: region.height,
+            },
+            &image,
+        );
     }
 
     /// ClearArea: the area restored to the background the window has now --

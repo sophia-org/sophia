@@ -308,7 +308,7 @@ impl XAuthorityRuntime {
         // the client that just mapped it. Only the reader's namespace's
         // windows are composited: the root is every namespace's parent, and
         // reading it must not show one namespace another's pixels.
-        self.composite_inferiors(namespace, drawable, region, &mut image);
+        self.composite_inferiors(namespace, drawable, region, &mut image, None);
         Ok(image)
     }
 
@@ -322,6 +322,7 @@ impl XAuthorityRuntime {
         drawable: crate::XResourceId,
         region: Rect,
         image: &mut [u8],
+        excluded: Option<crate::XResourceId>,
     ) {
         let mut stack: Vec<(crate::XResourceId, i32, i32, Rect)> = self
             .windows
@@ -334,6 +335,9 @@ impl XAuthorityRuntime {
         // own parent exactly once.
         let mut visited = 0usize;
         while let Some((child, parent_x, parent_y, parent_clip)) = stack.pop() {
+            if Some(child) == excluded {
+                continue;
+            }
             visited += 1;
             if visited > 4096 {
                 return;

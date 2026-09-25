@@ -457,9 +457,7 @@
   },
   {
     "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
-    "purpose": 9,
-    "expected": "FAIL",
-    "reason": "a window with no background reads back zeros where Xorg shows what is beneath it; t218"
+    "purpose": 9
   },
   {
     "case": "/Xlib4/XMapSubwindows/XMapSubwindows",
