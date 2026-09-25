@@ -35,15 +35,11 @@
   },
   {
     "case": "/Xlib11/ButtonPress",
-    "purpose": 8,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the ButtonPress event was not set correctly.'"
+    "purpose": 8
   },
   {
     "case": "/Xlib11/ButtonPress",
-    "purpose": 9,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the ButtonPress event was not set correctly.'"
+    "purpose": 9
   },
   {
     "case": "/Xlib11/ButtonPress",
@@ -81,15 +77,11 @@
   },
   {
     "case": "/Xlib11/ButtonRelease",
-    "purpose": 5,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the ButtonRelease event was not set correctly.'"
+    "purpose": 5
   },
   {
     "case": "/Xlib11/ButtonRelease",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the ButtonRelease event was not set correctly.'"
+    "purpose": 6
   },
   {
     "case": "/Xlib11/ButtonRelease",
@@ -557,15 +549,11 @@
   },
   {
     "case": "/Xlib11/KeyPress",
-    "purpose": 5,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the KeyPress name was not set correctly.'"
+    "purpose": 5
   },
   {
     "case": "/Xlib11/KeyPress",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the KeyPress event was not set correctly.'"
+    "purpose": 6
   },
   {
     "case": "/Xlib11/KeyPress",
@@ -601,15 +589,11 @@
   },
   {
     "case": "/Xlib11/KeyRelease",
-    "purpose": 5,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the KeyRelease name was not set correctly.'"
+    "purpose": 5
   },
   {
     "case": "/Xlib11/KeyRelease",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the KeyRelease event was not set correctly.'"
+    "purpose": 6
   },
   {
     "case": "/Xlib11/KeyRelease",
@@ -843,15 +827,11 @@
   },
   {
     "case": "/Xlib11/MotionNotify",
-    "purpose": 15,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Subwindow set to 0x0, expected 0xe000016'"
+    "purpose": 15
   },
   {
     "case": "/Xlib11/MotionNotify",
-    "purpose": 16,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Subwindow set to 0x0, expected 0xe000018'"
+    "purpose": 16
   },
   {
     "case": "/Xlib11/MotionNotify",

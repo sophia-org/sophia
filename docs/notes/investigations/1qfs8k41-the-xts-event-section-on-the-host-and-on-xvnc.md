@@ -190,6 +190,22 @@ and any physical event, is still unordered against the writer; that is
 the general seam and stays with t229. Red before the fix, on a fraction
 of its rounds: `an_injections_events_precede_the_reply_to_the_next_request`.
 
+## The child field
+
+Every core device event was written with `child` None. The protocol fills
+it with the child of the event window on the way to the source: the source
+itself when it is a child of the event window, the ancestor of the source
+that is a child of the event window when the source is deeper, and None
+when the source is the event window or not an inferior of it (as under a
+grab elsewhere). The encoders cannot know it; the input writer can, from
+the source window's ancestry it already walks to choose the event window,
+and for a key from the pointer window's. It patches the record's bytes 16
+to 20 after encoding, as it does the sequence. Ten purposes moved
+(ButtonPress 8 and 9, ButtonRelease 5 and 6, KeyPress 5 and 6, KeyRelease
+5 and 6, MotionNotify 15 and 16), the scenario reads 95 passed, and nothing
+else changed. Red before the fix:
+`a_core_events_child_is_the_event_windows_child_toward_the_source`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -217,7 +233,7 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(85 passed, 110 declared after the selection-by-direction and KeymapNotify
-reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
+(95 passed, 100 declared after the selection-by-direction, KeymapNotify
+and subwindow reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.
