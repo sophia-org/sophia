@@ -2,8 +2,10 @@
 // in docs/notes/investigations/z8jzl4oh-private-key-direction-physical-ownership-and-delivery.md.
 //
 // Each control separates the physical outcome (ledger hold, XKB, QueryKeymap,
-// activation and lease settlement) from the protocol outcome (which window,
-// which form, or no event). A control named `conflict_` asserts X11's rule
+// activation retirement, residual status) from the protocol outcome (which
+// window and form the native source builds, or none). They inspect emission
+// construction at the source: not the writer, not a flush, and not the
+// settlement of a lease or recipient obligation. A control named `conflict_` asserts X11's rule
 // where it disagrees with the retained-recipient contract; which of those
 // the production change must satisfy is the director's decision.
 
@@ -312,32 +314,38 @@ fn grab_keyboard(f: &KeyFixture, owner: XServerFrontendClientId, window: XResour
         .unwrap();
 }
 
-// R3: an active grab whose mask holds only KeyPress. The press goes to the
-// grab window; the release is written nowhere and the key still settles.
+// Guard: a core keyboard grab reports both transitions whatever the client
+// selected (GrabKeyboard: "Both KeyPress and KeyRelease events are always
+// reported, independent of any event selection made by the client"). The
+// grab's mask is always both directions; no request can make it one.
 #[test]
-fn t220_key_grab_press_only_mask_settles_the_release_without_an_event() {
+fn t220_key_core_grab_reports_the_release_without_any_selection() {
     let mut f = KeyFixture::new();
     let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-    grab_keyboard(&f, client(), root, false, 1);
+    select_core(&f, window(), 0, 0);
+    grab_keyboard(&f, client(), root, false, 3);
     let mut pending = None;
     f.press(30, 971, &mut pending).unwrap();
     let mut hold = pending.unwrap();
     assert_eq!(hold.delivered_window(), root);
     let (outcome, built) = f.release(None, &mut hold, 30, 972);
     assert_physically_released(&f, &hold, 38, outcome);
-    assert_eq!(built, Ok(None), "the grab did not select KeyRelease");
-    assert!(release_frame(&mut hold).is_none());
+    assert!(built.unwrap().is_some());
+    let frame = release_frame(&mut hold).expect("the grab reports KeyRelease");
+    assert_eq!(event_window(&frame), root);
 }
 
-// R3 with owner_events: the owner's own selection is tried per direction
-// before the grab. KeyRelease is selected on the focus window, KeyPress
-// only by the grab: the press goes to the grab window, the release to focus.
+// R3 with owner_events (GrabKeyboard: "if a generated key event would
+// normally be reported to this client, it is reported normally. Otherwise,
+// the event is reported with respect to the grab-window"). The owner selected
+// only KeyRelease on the focus window: the press is reported at the grab
+// window, the release normally at the focus window.
 #[test]
 fn t220_key_owner_events_grab_resolves_each_direction_separately() {
     let mut f = KeyFixture::new();
     let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
     select_core(&f, window(), 2, 0);
-    grab_keyboard(&f, client(), root, true, 1);
+    grab_keyboard(&f, client(), root, true, 3);
     let mut pending = None;
     f.press(30, 976, &mut pending).unwrap();
     let mut hold = pending.unwrap();
@@ -348,11 +356,15 @@ fn t220_key_owner_events_grab_resolves_each_direction_separately() {
     assert_eq!(event_window(&frame), window());
 }
 
-// A passive grab activated by a press whose grab mask holds only KeyPress:
-// the trigger's release retires the activation and writes nothing.
+// Guard: a passive key grab activated by the press reports the trigger's
+// release under the grab whatever the client selected, and the release
+// retires the activation (GrabKey: "The active grab is terminated
+// automatically when the logical state of the keyboard has the specified key
+// released").
 #[test]
-fn t220_key_passive_press_only_grab_retires_without_a_release_event() {
+fn t220_key_passive_grab_reports_the_release_and_retires_without_selection() {
     let mut f = KeyFixture::new();
+    select_core(&f, window(), 0, 0);
     f.base
         .private
         .broker
@@ -370,7 +382,7 @@ fn t220_key_passive_press_only_grab_retires_without_a_release_event() {
                 owner_events: false,
                 pointer_mode: 1,
                 keyboard_mode: 1,
-                event_mask: 1,
+                event_mask: 3,
             },
         )
         .unwrap();
@@ -392,14 +404,15 @@ fn t220_key_passive_press_only_grab_retires_without_a_release_event() {
             .is_none(),
         "the passive activation ended with its trigger"
     );
-    assert_eq!(built, Ok(None), "the passive grab did not select KeyRelease");
-    assert!(release_frame(&mut hold).is_none());
+    assert!(built.unwrap().is_some());
+    assert_eq!(event_window(&release_frame(&mut hold).unwrap()), window());
 }
 
-// A route lease is an external obligation whether or not an event is owed:
-// suppressing the release event must not report the lease settled.
+// A route lease is an external obligation whether or not an event is owed.
+// Building no release must leave the lease an unsettled residual; this
+// control reads the hold's native status, not the lease's own settlement.
 #[test]
-fn t220_key_route_lease_stays_owed_when_the_release_writes_nothing() {
+fn t220_key_route_lease_remains_a_residual_when_no_release_is_built() {
     let mut f = KeyFixture::new();
     select_core(&f, window(), 1, 0);
     let mut route = f.route(30, true, 986);
@@ -440,24 +453,31 @@ fn other_client(f: &KeyFixture, raw: u64) -> (XServerFrontendClientId, XServerFr
     (other, registration)
 }
 
-// Recipient departure: a grab owner that selected only KeyPress departs
-// while the key is down. The key still settles physically; nothing is built
-// for the departed recipient, and its obligation is not transferred.
+// Guard, recipient departure: a grab owner departs while the key is down.
+// The key still settles physically, and the release emission stays with the
+// original recipient and generation; nothing is rerouted. (A departing
+// ungrabbed focus recipient needs the termination fixture and is not
+// covered here.)
 #[test]
-fn t220_key_departed_press_only_recipient_still_settles_physically() {
+fn t220_key_departed_grab_owner_keeps_the_release_with_its_recipient() {
     let mut f = KeyFixture::new();
     let (other, registration) = other_client(&f, 699);
     let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-    grab_keyboard(&f, other, root, false, 1);
+    grab_keyboard(&f, other, root, false, 3);
     let mut pending = None;
     f.press(30, 991, &mut pending).unwrap();
     let mut hold = pending.unwrap();
-    assert_eq!(hold.incarnation().unwrap().recipient, other.raw());
+    let original = hold.incarnation().unwrap();
+    assert_eq!(original.recipient, other.raw());
     drop(registration);
-    let (outcome, built) = f.release(None, &mut hold, 30, 992);
+    let (outcome, _) = f.release(None, &mut hold, 30, 992);
     assert_physically_released(&f, &hold, 38, outcome);
-    assert_eq!(built, Ok(None));
-    assert!(release_frame(&mut hold).is_none());
+    let emission = hold.take_release_emission().unwrap();
+    assert_eq!(emission.connection().recipient, original.recipient);
+    assert_eq!(
+        emission.connection().connection_generation,
+        original.connection_generation
+    );
 }
 
 // Generation replacement (guard): once the recipient departs and its
