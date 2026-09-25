@@ -621,9 +621,6 @@ impl LiveProductionVisualRuntime {
     }
 }
 
-/// A copy Present requires a capture of its exact image in at least one
-/// physical head frame. Geometry overlap before clipping or animation is not
-/// proof that a renderer will consume the candidate pixels.
 /// A Present the driver composed but no head frame captures.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct UncapturedPresent {
@@ -635,6 +632,9 @@ pub(super) struct UncapturedPresent {
     pub paced_interval: std::time::Duration,
 }
 
+/// A copy Present requires a capture of its exact image in at least one
+/// physical head frame. Geometry overlap before clipping or animation is not
+/// proof that a renderer will consume the candidate pixels.
 pub fn live_present_head_frames_capture_image(
     frames: &[(OutputId, Vec<LiveProductionHeadCompositionFrame>)],
     image: LiveRendererImageId,
