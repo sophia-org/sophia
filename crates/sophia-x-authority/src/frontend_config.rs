@@ -177,8 +177,11 @@ impl XServerFrontendConfig {
         self
     }
 
-    pub(crate) fn device_bundle(&self) -> Option<Arc<crate::XServerFrontendDeviceBundle>> {
-        self.device_bundle.clone()
+    /// The configured first generation, handed over exactly once. The
+    /// frontend's retained configuration must not keep it alive: after it is
+    /// superseded, only connection and backing leases may (t069).
+    pub(crate) fn take_device_bundle(&mut self) -> Option<Arc<crate::XServerFrontendDeviceBundle>> {
+        self.device_bundle.take()
     }
 
     pub fn with_max_concurrent_clients(mut self, max_concurrent_clients: NonZeroUsize) -> Self {

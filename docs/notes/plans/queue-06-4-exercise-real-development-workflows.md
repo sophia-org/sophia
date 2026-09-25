@@ -29,6 +29,9 @@ Complete the [physical tab acceptance](../../tabbed-layouts.md#verification-and-
 for frame-tree/Notion and i3/split-tree: empty/nested groups, hidden-member
 activation, shell recovery, title changes, fullscreen, and floating occlusion.
 Implementation and offline verification are already complete.
+The [September 25 evidence review](../investigations/4l5bntke-critical-desktop-exits-require-separate-device-tab-and-workload-evidence.md#tabs-reference-shell-and-component-desktop)
+maps the separate Narthex reference run and the current component-desktop
+limitation; it does not claim the physical matrix was executed.
 
 
 ## t019

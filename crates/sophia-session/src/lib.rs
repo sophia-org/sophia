@@ -121,6 +121,14 @@ pub fn run_shell_gpu_content_hardware_proof(
     live_session::metadata_shell::gpu_content_proof::run(client, config, seat, render_node)
 }
 
+/// Proof-only pre-exec observation inside the admitted protection domain.
+#[cfg(feature = "native-session")]
+pub fn exec_shell_gpu_proof_client(
+    client: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    live_session::metadata_shell::gpu_content_proof::exec_client(client)
+}
+
 #[cfg(feature = "native-session")]
 pub fn plan_validation_device<'a>(
     scanout: &'a sophia_backend_live::LiveProductionNativeScanout,

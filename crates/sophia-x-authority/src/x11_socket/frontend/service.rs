@@ -45,7 +45,7 @@ impl XServerFrontend {
     /// Everything after the listener exists, shared by both bind paths so the
     /// two cannot drift into configuring the same frontend differently.
     fn over_listener(
-        config: XServerFrontendConfig,
+        mut config: XServerFrontendConfig,
         listener: UnixListener,
     ) -> Result<Self, X11SetupSocketError> {
         let state = X11CoreSocketServerState::with_output_topology_xkb_config_and_font_path(
@@ -55,9 +55,7 @@ impl XServerFrontend {
         )?
         .with_optional_render_device_provider(config.render_device_provider())
         .with_optional_pixmap_allocator(config.pixmap_allocator());
-        if let Some(bundle) = config.device_bundle() {
-            state.install_device_bundle(bundle).map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-        }
+        state.install_configured_device_bundle(&mut config)?;
         state.set_policy_map_deferred(config.policy_map_deferred())?;
         state.set_client_toplevel_placement(config.client_toplevel_placement())?;
         state.latch_pixmap_texture_support()?;

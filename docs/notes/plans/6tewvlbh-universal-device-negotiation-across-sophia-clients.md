@@ -362,6 +362,52 @@ review. A later workspace or native-protocol-family pass cannot replace those
 missing client/device observations, and a server-only transfer change cannot
 repair an allocation that the client never submitted.
 
+## 2026-09-25 device-loss audit and D1 repair
+
+An audit of accepted `caca7e37` found one in-scope server defect in device
+loss and recovery.
+
+- **The defect (D1).** The frontend kept its configuration, and through it the
+  configured generation-1 device bundle, for its whole lifetime. After loss
+  and supersession, the startup provider and its render descriptor stayed
+  open. It also permanently held one of the sixteen generation slots.
+- **The repair.** Both configured construction paths now hand that bundle over
+  exactly once: `XServerFrontend::bind` and `bind_exclusive` through
+  `over_listener`, and `run_x11_core_socket_server_once_config_traced_with_idle_timeout`.
+  Only the registry, connection pins and backing owners hold a generation
+  afterwards. Release is not immediate when the last lease ends: the registry
+  collects a superseded, unleased generation at the next install. The
+  controls observe exactly that.
+- **Evidence.** Real-frontend controls with a provider lifetime witness fail
+  first, pass after the change, and fail again when the handover clones
+  instead of takes. Leases and the sixteen-generation bound are unchanged.
+
+The signed source repair is `c9cf812a9a394e2a6ef8a6f9c03a6c8021888d67`;
+`7312f777` retains its red controls. On that source, the complete device-hidden
+authority suite passed 2,073 tests with no failures and two ignored tests.
+Strict all-target, all-feature Clippy for authority and Session passed, as did
+formatting and layout. The later docs-only tip is `4bb04cdd`; the executed
+source files are unchanged. The director independently verified the 20-file
+bundle at `~/.local/state/sophia/development-evidence/t069-d1-4bb04cdd`, manifest
+SHA-256 `5c0047b2fa50217eea19cedc9fdead377aaff14503edccf99f0da2e505ef190f`.
+It preserves the red, green and compiled mutation, full checks, signatures and
+immutable upstream source copies. This is a deterministic lifetime repair;
+no GPU was removed or reset to obtain these results.
+
+These findings remain under contract review and are unchanged:
+- **D2.** A connection admitted while the current bundle is already lost is
+  pinned to it, is offered DRI3, and every Open refuses.
+- **Capacity retry.** It has no deadline or record.
+- **Seat-wide failure.** One unopenable seat device fails every preparation.
+- **Driver reset.** A reset that keeps the node identity is not detected as
+  loss.
+- **Session-fatal edges.** Several acknowledgement paths end the session.
+
+The normal-client exit remains a client-internal boundary. The current
+upstream proposal is recorded in the
+[Brave investigation](../investigations/uqnx2t2b-brave-gpu-restarts-after-va-buffers-fail-gbm-import.md#upstream-patch-proposal-at-92802374-2026-09-25).
+No device-loss physical acceptance was performed, and `t069` remains open.
+
 ## Connections
 
 The [Brave GPU investigation](../investigations/uqnx2t2b-brave-gpu-restarts-after-va-buffers-fail-gbm-import.md)

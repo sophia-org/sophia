@@ -3,8 +3,13 @@ set -euo pipefail
 set -f
 export LC_ALL=C
 
+require_domain=false
+if [[ ${1:-} == --require-domain ]]; then
+    require_domain=true
+    shift
+fi
 if [[ $# -ne 1 || ! -f "$1" ]]; then
-    echo "usage: $0 EVIDENCE_LOG" >&2
+    echo "usage: $0 [--require-domain] EVIDENCE_LOG" >&2
     exit 2
 fi
 
@@ -124,6 +129,38 @@ compare_identity "$render_node" "$complete_render_node" render_node
 compare_identity "$device_major" "$complete_major" device_major
 compare_identity "$device_minor" "$complete_minor" device_minor
 compare_identity "$ready_pci_bus_id" "$complete_pci_bus_id" pci_bus_id
+domain_count=$(grep -c '^sophia_shell_gpu_domain ' "$log" || true)
+if "$require_domain" || [[ "$domain_count" != 0 ]]; then
+    [[ "$domain_count" == 1 ]] || { echo "expected one protected-domain observation" >&2; exit 1; }
+    domain=$(grep '^sophia_shell_gpu_domain ' "$log")
+    compare_identity "$(field "$domain" schema)" 1 domain_schema
+    compare_identity "$(field "$domain" status)" observed domain_status
+    parent_count=$(grep -c '^sophia_shell_gpu_domain_parent ' "$log" || true)
+    [[ "$parent_count" == 1 ]] || { echo "expected one protected-peer parent binding" >&2; exit 1; }
+    parent=$(grep '^sophia_shell_gpu_domain_parent ' "$log")
+    compare_identity "$(field "$parent" schema)" 1 parent_schema
+    compare_identity "$(field "$parent" status)" bound parent_status
+    observation=$(field "$domain" observation_id)
+    [[ "$observation" =~ ^[0-9a-f]{32}$ ]] || { echo "invalid observation identity" >&2; exit 1; }
+    compare_identity "$observation" "$(field "$parent" observation_id)" observation_id
+    compare_identity "$(field "$parent" protected)" true protected_peer
+    compare_identity "$(field "$parent" grant_epoch)" "$complete_epoch" parent_epoch
+    compare_identity "$(field "$parent" device_major)" "$complete_major" parent_major
+    compare_identity "$(field "$parent" device_minor)" "$complete_minor" parent_minor
+    for name in peer_pid supervisor_pid; do
+        pid=$(field "$parent" "$name")
+        bounded_unsigned "$pid" 4294967295 "$name"
+        [[ "$pid" != 0 ]] || { echo "missing protected process identity" >&2; exit 1; }
+    done
+    compare_identity "$(field "$domain" grant_epoch)" "$complete_epoch" domain_epoch
+    compare_identity "$(field "$domain" device_major)" "$complete_major" domain_major
+    compare_identity "$(field "$domain" device_minor)" "$complete_minor" domain_minor
+    for expected in dri_entries=1 device_inventory=bounded input_absent=true \
+        x11_socket_dir_absent=true user_runtime_dir_absent=true \
+        display_environment_absent=true inherited_devices=none inherited_sockets=none; do
+        compare_identity "$(field "$domain" "${expected%%=*}")" "${expected#*=}" "${expected%%=*}"
+    done
+fi
 if grep -Eq 'runtime_fatal|panic|deadline expired|deadline_exceeded' "$log"; then
     echo "proof log contains a fatal or deadline failure" >&2
     exit 1

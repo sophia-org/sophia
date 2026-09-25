@@ -20,6 +20,9 @@ const OUTPUT_HEIGHT: u32 = 64;
 const PANEL_HEIGHT: u32 = 24;
 const PROOF_TIMEOUT: Duration = Duration::from_secs(15);
 
+mod domain;
+pub use domain::exec_client;
+
 /// Run two sequential real Vulkan renders through Lom and accept both complete
 /// content candidates. The first receives a synthetic Presented outcome so the
 /// production client's replacement path and reusable renderer execute without
@@ -33,10 +36,10 @@ pub fn run(
 ) -> Result<(), Box<dyn std::error::Error>> {
     validate_input(client, "shell client")?;
     validate_input(config, "shell config")?;
-    let devices = sophia_backend_live::discover_seat_render_devices(seat)?;
+    let devices = sophia_backend_live::snapshot_seat_render_inventory(seat)?;
     let matching = devices
         .iter()
-        .filter(|device| device.identity.node == render_node)
+        .filter(|device| device.node == render_node)
         .collect::<Vec<_>>();
     let [device] = matching.as_slice() else {
         return Err("proof requires exactly one admitted render-node identity".into());
@@ -48,21 +51,40 @@ pub fn run(
         rustix::process::geteuid().as_raw(),
     )?;
     let socket = transport.socket_path().to_path_buf();
+    let mut observation = [0_u8; 16];
+    if rustix::rand::getrandom(&mut observation, rustix::rand::GetRandomFlags::empty())?
+        != observation.len()
+    {
+        return Err("GPU proof observation identity was incomplete".into());
+    }
+    let observation = observation
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])?
         .path(ProtectionPath::read_only(
             socket.parent().ok_or("shell socket lacks a parent")?,
         ))?
+        .path(ProtectionPath::read_only(client))?
         .path(ProtectionPath::read_only(config))?;
-    let base = ProcessLaunchSpec::new(client)
-        .arg("--serve")
+    let base = ProcessLaunchSpec::new(std::env::current_exe()?)
+        .arg("sophia-shell-gpu-proof-exec")
+        .arg(format!("--client={}", client.display()))
+        .env(domain::OBSERVATION_ENV, &observation)
         .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
         .env("SOPHIA_SHELL_CONFIG", config)
         .env("SOPHIA_SHELL_BAR_THICKNESS", PANEL_HEIGHT.to_string())
         .process_group()
         .protection_domain(domain);
-    let policy = ShellGpuLaunchPolicy::new(ShellGpuMode::Direct, Some(device.identity.clone()))?;
+    let policy = ShellGpuLaunchPolicy::new(ShellGpuMode::Direct, Some((**device).clone()))?;
     let (spec, gpu) = policy.prepare(&base, 1)?;
     let gpu = gpu.ok_or("direct proof produced no GPU grant evidence")?;
+    let expected = match std::env::var("SOPHIA_LOM_GPU_EXPECTED_DEVICE") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(error.into()),
+    };
+    require_expected_device(&gpu, expected.as_deref())?;
     let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
     supervisor.apply(SupervisorCommand::StartProcess {
         process: SupervisedProcessKind::Shell,
@@ -79,6 +101,17 @@ pub fn run(
         proof_content_admission_policy(),
     )?;
     let grant = transport.content_grant().ok_or("content was not granted")?;
+    // Environment fields correlate observations; only this protected-peer
+    // authorization and completed negotiation establish the parent binding.
+    crate::session_println!(
+        "sophia_shell_gpu_domain_parent schema=1 status=bound protected=true observation_id={} grant_epoch={} device_major={} device_minor={} peer_pid={} supervisor_pid={}",
+        observation,
+        gpu.epoch,
+        gpu.major,
+        gpu.minor,
+        protection.peer_pid,
+        protection.supervisor_pid,
+    );
     let output = ContentOutputId {
         id: 1,
         generation: 1,
@@ -278,6 +311,22 @@ fn proof_content_admission_policy() -> ShellContentAdmissionPolicy {
     ShellContentAdmissionPolicy::Granted {
         discrete_input: true,
     }
+}
+
+fn require_expected_device(
+    evidence: &super::gpu::ShellGpuLaunchEvidence,
+    expected: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let actual = format!(
+        "{}:{}@{}",
+        evidence.major,
+        evidence.minor,
+        evidence.pci_bus_id.as_deref().unwrap_or("none")
+    );
+    if expected.is_some_and(|expected| expected != actual) {
+        return Err("GPU proof selected device differs from the pinned expectation".into());
+    }
+    Ok(())
 }
 
 fn validate_input(path: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {

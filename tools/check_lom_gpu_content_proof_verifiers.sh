@@ -54,6 +54,36 @@ for mutation in \
     fi
 done
 
+domain_record='sophia_shell_gpu_domain schema=1 status=observed observation_id=0123456789abcdef0123456789abcdef grant_epoch=1 device_major=226 device_minor=128 dri_entries=1 device_inventory=bounded input_absent=true x11_socket_dir_absent=true user_runtime_dir_absent=true display_environment_absent=true inherited_devices=none inherited_sockets=none'
+parent_record='sophia_shell_gpu_domain_parent schema=1 status=bound protected=true observation_id=0123456789abcdef0123456789abcdef grant_epoch=1 device_major=226 device_minor=128 peer_pid=42 supervisor_pid=41'
+{ printf '%s\n' "$domain_record" "$parent_record"; cat "$work/gpu.log"; } > "$work/domain.log"
+"$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" --require-domain "$work/domain.log" >/dev/null
+if "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" --require-domain "$work/gpu.log" >/dev/null 2>&1; then
+    echo 'domain proof accepted a missing observation' >&2
+    exit 1
+fi
+for mutation in epoch device input socket runtime environment fd duplicate missing parent nonce pid; do
+    cp "$work/domain.log" "$work/domain-$mutation.log"
+    case "$mutation" in
+        epoch) sed -i '/^sophia_shell_gpu_domain /s/grant_epoch=1/grant_epoch=2/' "$work/domain-$mutation.log" ;;
+        device) sed -i '/^sophia_shell_gpu_domain /s/device_minor=128/device_minor=129/' "$work/domain-$mutation.log" ;;
+        input) sed -i 's/input_absent=true/input_absent=false/' "$work/domain-$mutation.log" ;;
+        socket) sed -i 's/x11_socket_dir_absent=true/x11_socket_dir_absent=false/' "$work/domain-$mutation.log" ;;
+        runtime) sed -i 's/user_runtime_dir_absent=true/user_runtime_dir_absent=false/' "$work/domain-$mutation.log" ;;
+        environment) sed -i 's/display_environment_absent=true/display_environment_absent=false/' "$work/domain-$mutation.log" ;;
+        fd) sed -i 's/inherited_sockets=none/inherited_sockets=present/' "$work/domain-$mutation.log" ;;
+        duplicate) printf '%s\n' "$domain_record" >> "$work/domain-$mutation.log" ;;
+        missing) sed -i 's/ inherited_devices=none//' "$work/domain-$mutation.log" ;;
+        parent) sed -i '/^sophia_shell_gpu_domain_parent /d' "$work/domain-$mutation.log" ;;
+        nonce) sed -i '/^sophia_shell_gpu_domain_parent /s/observation_id=[^ ]*/observation_id=1123456789abcdef0123456789abcdef/' "$work/domain-$mutation.log" ;;
+        pid) sed -i 's/peer_pid=42/peer_pid=0/' "$work/domain-$mutation.log" ;;
+    esac
+    if "$ROOT_DIR/tools/verify_lom_gpu_content_hardware_proof.sh" --require-domain "$work/domain-$mutation.log" >/dev/null 2>&1; then
+        echo "domain verifier accepted $mutation mutation" >&2
+        exit 1
+    fi
+done
+
 cat > "$work/native.log" <<'EOF'
 sophia_live_shell_gpu schema=1 status=granted mode=direct peer_pid=42 grant_epoch=1 device_major=226 device_minor=128 pci_bus_id=0000:01:00.0
 sophia_live_wm_configuration schema=2 status=committed catalog_generation=1 session_operation_count=7
