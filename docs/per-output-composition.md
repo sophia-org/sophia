@@ -6,7 +6,7 @@ way it does.
 
 ## What happens
 
-Mason runs DP-1 (2560x1440 at x=0) and DP-2 (1920x1080 at x=2560). Three
+niltempus runs DP-1 (2560x1440 at x=0) and DP-2 (1920x1080 at x=2560). Three
 windows sit on DP-1. The scroller lays them at strip positions 0, 1268 and
 2536, which with the camera at -8 become screen x of 16, 1284 and 2552. The
 third column is past DP-1's right edge, which in a scroller is ordinary: the

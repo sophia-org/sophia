@@ -60,7 +60,7 @@ master, see [njr7sd2q](../investigations/njr7sd2q-binding-the-last-native-obliga
 | `native_executor_order` | reworded by decision to the two producers that exist and bound to six tests | `8c01b8ca` |
 | `native_protected_action` | built: the executor refuses the synthetic press that would complete the reserved chord; wire case `xtest_reserved_chord` | `b3d23edb` |
 
-**Three decisions, Mason's, 2026-09-20.** The selected lock rank is the
+**Three decisions, niltempus's, 2026-09-20.** The selected lock rank is the
 one the code documents per edge, and the plan's paragraph was corrected to
 it. `native_executor_order` names the producers that exist rather than
 report PASS on five that never enter the order. t139 closes by refusing the
@@ -151,7 +151,7 @@ witness existed, which is the same evidence read from the other side:
 
 ## Remaining work
 
-- Closing t093 itself: done the same night, by Mason, with discovery disabled
+- Closing t093 itself: done the same night, by niltempus, with discovery disabled
   and t094 acknowledged open, recorded at the end of the plan.
 - t138 (the lane's), the continuation place returned during the run; the
   evidence-custody layer recorded rather than built.

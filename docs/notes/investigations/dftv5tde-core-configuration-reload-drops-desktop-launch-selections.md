@@ -9,7 +9,7 @@ tags: [investigation, config, session]
 
 ## Trigger and boundary
 
-On installed `fb8fe8be7960bbe0939f828dfa20d7a98eba00b9`, Mason asked to remove
+On installed `fb8fe8be7960bbe0939f828dfa20d7a98eba00b9`, niltempus asked to remove
 the explicit Chromium launch adapter from the browser registration and launch
 his Go `brave-origin` launcher directly. The replacement core configuration
 validated, but it was not written to the live watched file after the reload

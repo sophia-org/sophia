@@ -119,7 +119,7 @@ normal logout, and a separate emergency recovery after installing the candidate;
 these observations do not replace the other t013 identity and fallback exits.
 
 The [September 24 acceptance record](../investigations/6q35cl9y-normal-login-arms-recovery-without-a-keyboard-rehearsal.md#operator-acceptance-and-retained-installation-2026-09-24)
-records Mason's repeated successful login/logout/recovery, verified current and
+records niltempus's repeated successful login/logout/recovery, verified current and
 previous package identities, the retained accepted `d461492d` fallback, and
 the live user-profile/Hagia override. This supersedes the stale installation
 and physical-acceptance remainder above; no new live session was required.

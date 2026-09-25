@@ -2029,7 +2029,7 @@ remains refused. No hardware, Session change, master move or default enablement.
 
 ## Closed 2026-09-20
 
-t093 is closed, by Mason's decision after M6 read PASS on `f564b744`
+t093 is closed, by niltempus's decision after M6 read PASS on `f564b744`
 ([cfko9jxl](../milestones/cfko9jxl-m6-accepted-the-whole-of-t093-on-one-source.md)),
 with the two conditions this plan set for closing it checked on that
 source: discovery stays disabled, since the session's grant policy defaults

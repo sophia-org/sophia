@@ -78,7 +78,7 @@ Normal logout and physical emergency recovery remain unobserved for this release
 
 ## Operator acceptance and retained installation, 2026-09-24
 
-Mason confirmed that they had logged in, logged out, and performed emergency
+niltempus confirmed that they had logged in, logged out, and performed emergency
 recovery many times. This supplies the missing operator acceptance; asking for
 another rehearsal merely because this September 7 note was stale would repeat
 accepted work. The confirmation concerns ordinary use across installed releases,

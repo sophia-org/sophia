@@ -297,7 +297,7 @@ quietly false with no test failing if that layout changed; so witness the
 construction and refuse at the adapter, one filter, and the property stays
 true for a reason a reader can find from the obligation.
 
-**Decided and built, 2026-09-20 evening.** Mason chose the adapter refusal
+**Decided and built, 2026-09-20 evening.** niltempus chose the adapter refusal
 with the construction witnessed. Built on the executor rather than in the
 adapter's plan, because the plan runs at dispatch where the seat's modifier
 state is not readable, and FakeInput has no reply for an error to ride on;
@@ -369,7 +369,7 @@ profile reads the last binding.
 - [x] t139: the executor refuses the synthetic press that would complete
       the chord; the wedge it uncovered is fixed; `native_protected_action`
       bound; `xtest_reserved_chord` added to the wire profile.
-- [x] Decided 2026-09-20 with Mason: the selected rank is the code's, and
+- [x] Decided 2026-09-20 with niltempus: the selected rank is the code's, and
       the plan's paragraph is corrected to it; `native_executor_order` is
       reworded to the producers that exist and bound to six tests; t139
       closes by refusing the chord at the adapter and witnessing the
