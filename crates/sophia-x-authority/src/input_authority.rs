@@ -76,6 +76,10 @@ struct XNamespaceInputAuthority {
     /// The window the pointer is in, as the surface owner's writer last
     /// resolved it: the source window of the next press.
     pointer_window: Option<XResourceId>,
+    /// Whether the implicit grab's press was delivered to its client. A
+    /// press nobody selected activates no grab in the reference; here one
+    /// holds the route lease for the Engine, and confines nothing.
+    pointer_implicit_delivered: bool,
     /// The core button mapping a client set (SetPointerMapping); identity
     /// until then. Read by the button routing under this lock.
     pub pointer_mapping: crate::XPointerButtonMapping,
@@ -512,6 +516,15 @@ impl XInputAuthorityState {
         self.namespaces.entry(namespace).or_default().pointer_window = Some(window);
     }
 
+    /// Whether the active pointer grab confines pointer events to its
+    /// client: an explicit grab, or an implicit one whose press was
+    /// delivered (t230). One held for lease custody alone does not.
+    pub fn pointer_grab_confines(&self, namespace: NamespaceId) -> bool {
+        self.namespaces.get(&namespace).is_some_and(|state| {
+            state.pointer.is_some() && (!state.pointer_implicit || state.pointer_implicit_delivered)
+        })
+    }
+
     pub fn pointer_window(&self, namespace: NamespaceId) -> Option<XResourceId> {
         self.namespaces
             .get(&namespace)
@@ -527,7 +540,7 @@ impl XInputAuthorityState {
         modifiers: u16,
         implicit: XActiveInputGrab,
     ) -> XActiveInputGrab {
-        self.activate_button_within(namespace, button, modifiers, implicit, &[])
+        self.activate_button_within(namespace, button, modifiers, implicit, true, &[])
     }
 
     /// A press in the source window whose ancestry is given root down: "the
@@ -540,6 +553,7 @@ impl XInputAuthorityState {
         button: u8,
         modifiers: u16,
         implicit: XActiveInputGrab,
+        delivered: bool,
         ancestry: &[XResourceId],
     ) -> XActiveInputGrab {
         let state = self.namespaces.entry(namespace).or_default();
@@ -563,9 +577,11 @@ impl XInputAuthorityState {
                     .find(|grab| grab.window == *window && matches(grab))
             })
         };
-        let (active, is_implicit) = passive
-            .map(|grab| (active_from_passive(grab), false))
-            .unwrap_or((implicit, true));
+        let (active, is_implicit) = match passive {
+            Some(grab) => (active_from_passive(grab), false),
+            None => (implicit, true),
+        };
+        state.pointer_implicit_delivered = is_implicit && delivered;
         let activation =
             PointerActivationStamp::reserve(&mut self.pointer_activation_high_water, namespace);
         state.pointer_activation = PointerActivationState::Changing;
@@ -595,6 +611,7 @@ impl XInputAuthorityState {
             state.pointer_activation = PointerActivationState::Changing;
             state.pointer = None;
             state.pointer_implicit = false;
+            state.pointer_implicit_delivered = false;
             state.pointer_passive_detail = None;
             state.freeze.pointer = None;
             state.pointer_activation = PointerActivationState::Absent;

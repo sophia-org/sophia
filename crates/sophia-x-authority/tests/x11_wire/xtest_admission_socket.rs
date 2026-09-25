@@ -648,9 +648,10 @@ mod xtest_admission_socket {
     /// event window, not only the window's owner (t220): a peer that
     /// selected motion, button release and keys on the owner's toplevel is
     /// told of each, on that window and at the same coordinates, while the
-    /// owner still hears everything it selected. Red before the fix: only
-    /// the owner's queue was routed (XTS Xlib11 ButtonRelease 2, KeyPress
-    /// 2, MotionNotify 1).
+    /// owner still hears everything it selected; the release alone stays
+    /// with the owner, whose implicit grab the press activated (t230). Red
+    /// before the fix: only the owner's queue was routed (XTS Xlib11
+    /// ButtonRelease 2, KeyPress 2, MotionNotify 1).
     #[test]
     fn a_peer_that_selected_on_the_owners_window_is_told_of_its_device_events() {
         let mut fixture = XtestFixture::sharing_a_namespace();
@@ -691,12 +692,14 @@ mod xtest_admission_socket {
         owner.fake_input(4, 1);
         let press = owner.next_event(4);
         assert_eq!(event_window(&press), window, "the owner's press");
+        // The press was delivered to the owner alone, so the implicit grab
+        // is the owner's, and the release under it reaches the owner alone:
+        // the peer selected the release but is not the grab's client (t230).
         owner.fake_input(5, 1);
-        for (name, client) in [("owner", &mut owner), ("peer", &mut peer)] {
-            let release = client.next_event(5);
-            assert_eq!(event_window(&release), window, "{name}: release on the window");
-            assert_eq!((at(&release, 20), at(&release, 22)), (25, 5), "{name}: release coordinates");
-        }
+        let release = owner.next_event(5);
+        assert_eq!(event_window(&release), window, "owner: release on the window");
+        assert_eq!((at(&release, 20), at(&release, 22)), (25, 5), "owner: release coordinates");
+        peer.assert_quiet("the peer under the owner's implicit grab");
         owner.fake_input(2, 38);
         for (name, client) in [("owner", &mut owner), ("peer", &mut peer)] {
             let key = client.next_event(2);

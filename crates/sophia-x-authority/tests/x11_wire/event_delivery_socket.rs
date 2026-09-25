@@ -15,7 +15,9 @@ mod event_delivery_socket {
     /// used to be written to the surface's owner regardless: the implicit
     /// grab a press activates was taken for the owner's own grab, whose mask
     /// admits everything. Red on the tree before the fix: the owner reads a
-    /// ButtonPress ahead of its barrier's reply.
+    /// ButtonPress ahead of its barrier's reply. Since t230 the release
+    /// after the peer's press is nobody's: the implicit grab is the peer's,
+    /// with the peer's selection as its mask.
     #[test]
     fn a_press_the_owner_did_not_select_is_not_written_to_it() {
         let mut fixture = XtestFixture::sharing_a_namespace();
@@ -55,9 +57,12 @@ mod event_delivery_socket {
         let press = peer.next_event(4);
         assert_eq!(event_window(&press), window, "the peer's press");
         owner.assert_quiet("the owner did not select the press");
+        // The press was delivered to the peer alone, so the implicit grab
+        // is the peer's, with the peer's selection as its mask: the release
+        // reaches neither the owner, which is not the grab's client, nor
+        // the peer, which did not select it (t230).
         owner.fake_input(5, 1);
-        let release = owner.next_event(5);
-        assert_eq!(event_window(&release), window, "the owner's release");
+        owner.assert_quiet("the owner, not the grab's client, hears no release");
         peer.assert_quiet("the peer did not select the release");
     }
 
@@ -980,6 +985,51 @@ mod event_delivery_socket {
         let entered = client.next_event(7);
         assert_eq!((window_of(&entered), entered[1], entered[30]), (inner, 0, 2), "enter of the source window, Ancestor, NotifyUngrab");
         client.assert_quiet("after the release");
+    }
+
+    /// The implicit pointer grab belongs to the client the press was
+    /// delivered to, with that client's selection on the event window as
+    /// its mask: a peer that selected ButtonPress on the owner's window,
+    /// which the owner did not, gets the press, the grab and the release,
+    /// and the owner, which selected only the release, hears nothing while
+    /// the grab lasts (t230; the reference's TryClientEvents refuses a
+    /// client that is not the grab's). Red before the fix: the grab was the
+    /// owner's on every press, with a mask of every event.
+    #[test]
+    fn the_implicit_grab_belongs_to_the_client_the_press_was_delivered_to() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        for client in [&mut owner, &mut peer] {
+            client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        }
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        // ButtonRelease alone for the owner.
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, 1 << 3))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.settle();
+        // ButtonPress and ButtonRelease for the peer.
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, (1 << 2) | (1 << 3)))
+            .unwrap();
+        peer.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        owner.settle();
+        owner.fake_input(4, 1);
+        let pressed = peer.next_event(4);
+        assert_eq!((window_of(&pressed), pressed[1]), (window, 1), "the peer's press");
+        owner.assert_quiet("the owner did not select the press");
+        owner.fake_input(5, 1);
+        let released = peer.next_event(5);
+        assert_eq!((window_of(&released), released[1]), (window, 1), "the peer's release under its grab");
+        owner.assert_quiet("the owner, not the grab's client, hears no release");
     }
 
     /// Remapping a window reports VisibilityNotify and Expose on every
