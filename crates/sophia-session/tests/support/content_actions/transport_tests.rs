@@ -198,7 +198,10 @@ fn a_full_action_queue_cannot_erase_the_outside_dismissal_deadline() {
     assert!(!ledger.dismissal_expired(popout.allocation, deadline - 1));
     assert_eq!(ledger.dismissals.len(), 1);
     assert!(!ledger.dismissals[0].notification_sent);
-    assert_eq!(ledger.next_event_id, u64::from(limits.max_pending_actions) + 1);
+    assert_eq!(
+        ledger.next_event_id,
+        u64::from(limits.max_pending_actions) + 1
+    );
     transport.poll_io().unwrap();
     for _ in 0..limits.max_pending_actions {
         let (_, ShellContentRecord::Action(action)) =
