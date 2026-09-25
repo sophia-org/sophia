@@ -309,6 +309,24 @@ VisibilityNotify 3 stays: a hierarchy window mapped under its unmapped
 parent gets no report of its own when the parent's map makes it viewable.
 Red before the fix: `visibility_follows_what_covers_a_window`.
 
+## Crossings from a hierarchy change
+
+A window unmapped, mapped, destroyed, reparented, configured or restacked
+under the pointer changes the window the pointer is in with no motion to
+carry the news, and the writers' crossing model rides on motion. After
+such a request the connection takes the pointer's position and the
+surface now under it, under the request's own runtime lock, and once the
+request's outputs are out routes them again through the registry on its
+own thread, as a motion of no distance from the seat and device the
+pointer last arrived on: each writer re-derives the window the pointer is
+in and writes the crossings from where it was, and a motion that moved
+nothing is written to nobody as MotionNotify. Routed on the caller's
+thread rather than the broker's queue, the event is in every writer's
+queue when the call returns, and the connection waits for its own to
+drain before it answers another request, as after an injection.
+EnterNotify 1 and LeaveNotify 1 pass and the scenario reads 118. Red
+before the fix: `unmapping_the_window_under_the_pointer_crosses_to_the_one_beneath`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -336,8 +354,8 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(116 passed, 79 declared after the selection-by-direction, KeymapNotify,
-subwindow, propagation, wheel-button, crossing and visibility reruns; 60
-and 135 at the section's first declaration) from `xts_reasons_events.json`,
+(118 passed, 77 declared after the selection-by-direction, KeymapNotify,
+subwindow, propagation, wheel-button, crossing, visibility and
+hierarchy-crossing reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.

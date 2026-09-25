@@ -568,9 +568,15 @@ fn spawn_x11_input_event_writer(
             if let (XAuthorityInputEvent::Pointer(pointer), Some(surface_window), Some(ancestry)) =
                 (event, pointer_surface_window, pointer_event_ancestry.as_ref())
             {
-                let core_target = core_event_selections.lock().map_err(|_| {
+                let selections = core_event_selections.lock().map_err(|_| {
                     X11SetupSocketError::new("X11 core event selection lock poisoned")
-                })?.selected_pointer_target(
+                })?;
+                // A motion of no distance is the pointer's position routed
+                // again after a hierarchy change: its crossings are owed,
+                // a MotionNotify is not (t211).
+                let unmoved = matches!(pointer.kind, XAuthorityPointerEventKind::Motion)
+                    && selections.pointer_position() == Some((pointer.root_x, pointer.root_y));
+                let core_target = selections.selected_pointer_target(
                     surface_window,
                     pointer_selection(pointer.kind),
                     pointer.state,
@@ -585,7 +591,8 @@ fn spawn_x11_input_event_writer(
                 // event, and writing one on the surface window told clients
                 // of presses and motion they had not asked for (XTS Xlib11
                 // ButtonPress 4 and 6).
-                if core_target.is_none() && xi_depth.is_none() && own_pointer_grab.is_none() {
+                drop(selections);
+                if (core_target.is_none() && xi_depth.is_none() && own_pointer_grab.is_none()) || unmoved {
                     write_core_record = false;
                 }
                 // XI master delivery wins over core delivery at the same window.

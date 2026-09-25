@@ -582,7 +582,8 @@ mod event_delivery_socket {
         assert_eq!((entered[1], entered[31] & 2), (3, 2), "enter of the second window, Nonlinear, focus set");
 
         // The second window is destroyed under the pointer, and a third
-        // takes its place: the pointer comes from the root.
+        // takes its place: the pointer comes from the root, and the map
+        // that puts the third window under it is what generates the enter.
         let third = client.next;
         client.next += 2;
         let mut destroy = vec![4, 0];
@@ -596,9 +597,15 @@ mod event_delivery_socket {
             .write_all(&change_window_event_mask_request(client.order, third, (1 << 4) | (1 << 5)))
             .unwrap();
         client.stream.write_all(&map_window_request(client.order, third)).unwrap();
-        client.settle();
-        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 46, 6);
-        let entered = client.next_event(7);
+        // The destroyed window was the focus, so its FocusOut comes first.
+        let entered = loop {
+            let record = read_x_record(&mut client.stream);
+            match record[0] & 0x7f {
+                7 => break record,
+                6 | 9 | 10 => {}
+                other => panic!("expected an enter, got record {other}: {record:?}"),
+            }
+        };
         assert_eq!(
             (u32::from_le_bytes([entered[12], entered[13], entered[14], entered[15]]), entered[1]),
             (third, 0),
@@ -776,5 +783,78 @@ mod event_delivery_socket {
         cleared.sort_unstable();
         assert_eq!(cleared, vec![(lower, 1), (under, 0)]);
         client.assert_quiet("one report each");
+    }
+    /// A hierarchy change under the pointer generates the crossings a move
+    /// would: unmapping the window the pointer is in leaves it for the window
+    /// beneath, after the UnmapNotify, and mapping it again enters it
+    /// (XTS Xlib11 EnterNotify 1, LeaveNotify 1). Nothing was generated:
+    /// the pointer's window changed with no motion to carry the news. The
+    /// position is routed again after such a request, as a motion of no
+    /// distance that writes crossings and no MotionNotify. Red before the
+    /// fix: nothing follows the UnmapNotify.
+    #[test]
+    fn unmapping_the_window_under_the_pointer_crosses_to_the_one_beneath() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let lower = client.next;
+        let upper = client.next + 2;
+        client.next += 4;
+        // EnterWindow, LeaveWindow, PointerMotion and StructureNotify on
+        // both, over the same area; the upper one is created last and so
+        // stacks on top.
+        for window in [lower, upper] {
+            client.stream
+                .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+                .unwrap();
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 5) | (1 << 6) | (1 << 17)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let window_of = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+        let records_until_quiet = |client: &mut XtestClient| {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, client.order, 1);
+            client.stream.write_all(&request).unwrap();
+            let mut seen = Vec::new();
+            loop {
+                let record = read_x_record(&mut client.stream);
+                if record[0] == 1 {
+                    break seen;
+                }
+                seen.push((record[0] & 0x7f, record[1], window_of(&record)));
+            }
+        };
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        assert_eq!(
+            records_until_quiet(&mut client),
+            vec![(7, 0, upper), (6, 0, upper)],
+            "entered the upper window, with its motion"
+        );
+        // Unmap the upper window: UnmapNotify first, then the pointer leaves
+        // it for the lower one, siblings under the root, and no motion.
+        let mut unmap = vec![10, 0];
+        push_u16(&mut unmap, client.order, 2);
+        push_u32(&mut unmap, client.order, upper);
+        client.stream.write_all(&unmap).unwrap();
+        let seen = records_until_quiet(&mut client);
+        assert_eq!(seen[0].0, 18, "UnmapNotify first: {seen:?}");
+        assert_eq!(
+            &seen[1..],
+            &[(8, 3, upper), (7, 3, lower)],
+            "then the crossing from the unmapped window to the one beneath, and no motion: {seen:?}"
+        );
+        // Map it again: MapNotify, then the pointer crosses back into it.
+        client.stream.write_all(&map_window_request(client.order, upper)).unwrap();
+        let seen = records_until_quiet(&mut client);
+        assert_eq!(seen[0].0, 19, "MapNotify first: {seen:?}");
+        assert_eq!(
+            &seen[1..],
+            &[(8, 3, lower), (7, 3, upper)],
+            "then the crossing back into the mapped window: {seen:?}"
+        );
     }
 }

@@ -211,9 +211,7 @@
   },
   {
     "case": "/Xlib11/EnterNotify",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Expected EnterNotify event not delivered.'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/EnterNotify",
@@ -615,9 +613,7 @@
   },
   {
     "case": "/Xlib11/LeaveNotify",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Expected LeaveNotify event not delivered.'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/LeaveNotify",

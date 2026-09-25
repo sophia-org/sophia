@@ -256,6 +256,18 @@ impl XServerFrontendRouteRegistry {
             });
             return Ok(());
         }
+        if matches!(
+            route.request.kind,
+            InputEventKind::PointerMotion
+                | InputEventKind::PointerButton { .. }
+                | InputEventKind::PointerAxis { .. }
+        ) && let Ok(mut memory) = self.last_pointer_route.lock()
+        {
+            memory.insert(
+                surface_route.namespace,
+                XPointerRouteMemory { seat: route.request.seat, device: route.request.device },
+            );
+        }
         let mut client = surface_route.client;
         let mut button_lease_update = None;
         // Engine already selected the committed target surface. Preserve its

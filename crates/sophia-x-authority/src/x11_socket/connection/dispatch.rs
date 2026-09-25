@@ -1175,6 +1175,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // routed pointer follows through the requester's own injector.
             let mut warp_pointer = false;
             let mut pointer_before_warp: Option<(i16, i16)> = None;
+            // The pointer's position and the surface under it after a request
+            // that may have moved a window from under it, routed again once
+            // the request's own events are out (t211).
+            let mut pointer_replay: Option<(SurfaceId, sophia_protocol::Point, sophia_protocol::Point)> = None;
             // A lifetime request acts on the leases this layer owns, once
             // the dispatcher has validated it (t166).
             let mut lifetime_request: Option<crate::XWireRequest> = None;
@@ -2898,6 +2902,24 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     }
                 }
             }
+            // A window request may have changed what is under the pointer
+            // (map, unmap, destroy, reparent, configure, circulate, the
+            // subwindow forms): take the position and the surface under
+            // it now, under the same lock, and route them again after
+            // the outputs, so the crossings follow the hierarchy events.
+            if protocol_routing.is_some() && matches!(major_opcode, 4 | 5 | 7 | 8 | 9 | 10 | 11 | 12 | 13) {
+                let runtime = lock_x11_request_runtime(
+                    &state.runtime,
+                    &state.control_runtime_pending,
+                )?;
+                pointer_replay = runtime.pointer_query_position(namespace).and_then(|(x, y)| {
+                    let (x, y) = (i32::from(x), i32::from(y));
+                    let toplevel = runtime.client_placed_toplevel_at(namespace, x, y)?;
+                    let surface = runtime.window_surface(namespace, toplevel)?;
+                    let (global, local) = pointer_points(&runtime, toplevel, x, y);
+                    Some((surface, global, local))
+                });
+            }
             // Validation is complete; opening the pinned device must not hold
             // the authority lock or substitute a newer connection generation.
             if output.outputs.iter().any(|item| matches!(item,
@@ -3257,6 +3279,17 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             "failed to flush X11 output: {error}"
                         )));
                     }
+                }
+            }
+            if let (Some(routing), Some((surface, global, local))) = (protocol_routing.as_ref(), pointer_replay) {
+                if let Err(error) = routing.replay_pointer(namespace, surface, global, local) {
+                    tracing::warn!("sophia_x11_pointer_replay status=failed reason={error:?} content=redacted");
+                }
+                // Routed on this thread, so the crossings this client is owed
+                // are in its writer's queue now: they are written before the
+                // reply to its next request, as after an injection.
+                if let Some(watermark) = input_watermark.as_ref() {
+                    watermark.wait_drained(watermark.mark(), std::time::Duration::from_millis(250));
                 }
             }
             for delivery in peer_msc_deliveries {

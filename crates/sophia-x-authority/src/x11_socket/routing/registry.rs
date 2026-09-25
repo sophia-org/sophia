@@ -1,3 +1,11 @@
+/// The seat and device the pointer last arrived on in a namespace.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug)]
+struct XPointerRouteMemory {
+    seat: SeatId,
+    device: sophia_protocol::DeviceId,
+}
+
 #[cfg(unix)]
 #[derive(Clone)]
 struct XServerFrontendRouteRegistry {
@@ -45,6 +53,14 @@ struct XServerFrontendRouteRegistry {
     /// completions advance it. (window, serial, target_msc)
     pending_msc_notifies: Arc<Mutex<Vec<(XResourceId, u32, u64)>>>,
     pointer_state: Arc<Mutex<BTreeMap<(NamespaceId, SeatId), crate::XCorePointerMapper>>>,
+    /// The seat and device of the last pointer event routed in each
+    /// namespace: what a replay of the pointer's position after a
+    /// hierarchy change is sent as (t211).
+    last_pointer_route: Arc<Mutex<BTreeMap<NamespaceId, XPointerRouteMemory>>>,
+    /// Where such a replay goes: the broker's own ingress, so it takes the
+    /// ordinary route to every writer. None in a registry without one.
+    pointer_replay: Arc<std::sync::OnceLock<XAuthorityRoutedInputSender>>,
+    replay_serial: Arc<std::sync::atomic::AtomicU64>,
     input_authority: Arc<Mutex<crate::XInputAuthorityState>>,
     frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
     xkb_config: crate::XkbRmlvoConfig,
@@ -850,6 +866,7 @@ impl XServerFrontendRouteRegistry {
 include!("registry/present.rs");
 include!("registry/ordered.rs");
 include!("registry/delivery.rs");
+include!("registry/pointer_replay.rs");
 include!("registry/control_backlog.rs");
 include!("registry/present_msc.rs");
 

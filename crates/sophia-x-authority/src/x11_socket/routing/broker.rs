@@ -483,7 +483,7 @@ impl XServerFrontendRouteBroker {
             sync_channel(capacities.input.get());
         let (raster_sender, raster_receiver) = sync_channel(capacities.control.get());
         let input_authority = Arc::new(Mutex::new(crate::XInputAuthorityState::default()));
-        Self {
+        let broker = Self {
             control_gate: Arc::new(std::sync::OnceLock::new()),
             registry_identity: Arc::new(()),
             raw_ingress_exposed: Arc::new(AtomicBool::new(false)),
@@ -498,6 +498,9 @@ impl XServerFrontendRouteBroker {
                     input_delivery_sender.clone(), input_authority.clone(),
                 ),
                 runtime: Arc::new(std::sync::OnceLock::new()),
+                last_pointer_route: Arc::new(Mutex::new(BTreeMap::new())),
+                pointer_replay: Arc::new(std::sync::OnceLock::new()),
+                replay_serial: Arc::new(AtomicU64::new(1)),
                 private_applied: Arc::new(std::sync::OnceLock::new()),
                 continuation_owner: Arc::new(std::sync::OnceLock::new()),
                 custody_keeper: Arc::new(std::sync::OnceLock::new()),
@@ -548,7 +551,11 @@ impl XServerFrontendRouteBroker {
             source_payload_receiver,
             raster_sender,
             raster_receiver,
-        }
+        };
+        // The replay of the pointer's position after a hierarchy change
+        // enters through the broker's own ingress (t211).
+        let _ = broker.registry.pointer_replay.set(broker.routed_input_sender());
+        broker
     }
 
     /// A raw, unstamped ingress handle.
