@@ -949,8 +949,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let request = received.bytes;
             let framing = received.framing;
             // Events queued for this client before this request was read are
-            // written before its reply (t229).
+            // written before its reply (t229): the protocol writer's, and
+            // the input writer's, whose queue a peer's fan-out fills without
+            // the injector's own drain wait covering this connection.
             let protocol_mark = protocol_watermark.as_ref().map(|watermark| watermark.mark());
+            let input_mark = input_watermark.as_ref().map(|watermark| watermark.mark());
             if major_opcode == crate::X_BIG_REQUESTS_MAJOR_OPCODE
                 && request.get(1) == Some(&crate::X_BIG_REQUESTS_ENABLE_MINOR_OPCODE)
             {
@@ -3295,6 +3298,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 {
                     // Bounded: the writer may be stalled on a peer that is not
                     // reading, which is its own failure and not this reply's.
+                    watermark.wait_drained(mark, std::time::Duration::from_millis(250));
+                }
+                if let (Some(watermark), Some(mark)) = (input_watermark.as_ref(), input_mark)
+                    && (!encoded_outputs.is_empty() || !server_reply_fds.is_empty())
+                {
                     watermark.wait_drained(mark, std::time::Duration::from_millis(250));
                 }
                 let mut output_stream = lock_x11_non_control_output(

@@ -446,6 +446,37 @@ declared, unchanged. Red before the fix:
 `the_implicit_grab_belongs_to_the_client_the_press_was_delivered_to`, and the
 fan-out test's release assertion, which had encoded the wrong behaviour.
 
+## The input writer's drain, for every connection
+
+The injecting connection waited for its own input writer before
+reading its next request, and every connection waited for its protocol
+writer; a connection that did not inject still had nothing ordering
+its input writer against its replies. A peer that selected motion on
+the owner's window is told of the owner's injection through the
+fan-out, on the routing thread, before the owner's own writer has
+drained; if the peer's barrier is read in that window its reply could
+go out ahead of the MotionNotify. The same holds for physical input on
+any client's writer.
+
+The request thread now takes the input watermark's mark beside the
+protocol watermark's when it reads a request, and before the outputs
+are written waits, bounded at a quarter second, for the input writer
+to drain what was queued before the read. The injector's own wait
+stays, and covers the keyboard readiness the writer owns. That alone
+was not enough: the registry routed the recipient's own copy first and
+the peers' after, so the recipient's writer could drain, and the
+injection return, before a peer's copy was queued, and the peer's
+barrier read in that window took its mark too early. The peers' copies
+are now queued before the recipient's own. The socket guard
+`a_peers_reply_follows_the_event_fanned_out_before_its_request` has the
+injector sync before the peer's barrier goes out, as the suite's clients
+do, and holds the order twenty times over; a peer's barrier sent before
+the injector's sync races the injection itself, which no server orders,
+and that is the parallel dispatch the row still names. What remains of the row is the parallel
+dispatch of two connections' requests, where an event a peer's request
+queues after this connection read its own is legitimately either side
+of the reply.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over

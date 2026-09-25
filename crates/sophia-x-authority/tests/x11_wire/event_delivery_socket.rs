@@ -1032,6 +1032,51 @@ mod event_delivery_socket {
         owner.assert_quiet("the owner, not the grab's client, hears no release");
     }
 
+    /// A peer's reply never overtakes an event fanned out to it: the events
+    /// queued for a connection's input writer before a request was read are
+    /// on the wire before that request's reply, for every connection and
+    /// not only the injecting one, whose own drain wait covered only itself
+    /// (t229). The peer selects motion on the owner's window, the owner
+    /// injects and syncs, and the peer's barrier goes out the moment that
+    /// sync returns; the MotionNotify comes first, twenty times over. A
+    /// barrier sent before the injector's sync races the injection itself,
+    /// which no server orders. The race is a scheduling one and did not
+    /// fail reliably before the fix; the events gate read it under load.
+    #[test]
+    fn a_peers_reply_follows_the_event_fanned_out_before_its_request() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        for client in [&mut owner, &mut peer] {
+            client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        }
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.settle();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 1 << 6))
+            .unwrap();
+        peer.settle();
+        for step in 0..20u8 {
+            owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25 + i16::from(step % 8), 5);
+            // The injector syncs, as the suite's clients do: its reply comes
+            // after its own writer drained, and the peers' copies are queued
+            // before that. The peer's barrier goes out the moment it returns.
+            owner.settle();
+            let mut barrier = vec![43, 0];
+            push_u16(&mut barrier, peer.order, 1);
+            peer.stream.write_all(&barrier).unwrap();
+            let first = read_x_record(&mut peer.stream);
+            assert_eq!(first[0] & 0x7f, 6, "step {step}: the motion before the reply: {first:?}");
+            let reply = read_x_record(&mut peer.stream);
+            assert_eq!(reply[0], 1, "step {step}: then the reply: {reply:?}");
+        }
+    }
+
     /// Remapping a window reports VisibilityNotify and Expose on every
     /// mapped inferior that becomes viewable with it, the VisibilityNotify
     /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the
