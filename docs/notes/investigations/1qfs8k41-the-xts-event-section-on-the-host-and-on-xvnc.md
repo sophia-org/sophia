@@ -353,6 +353,12 @@ input writer holds the input authority while it takes the selections,
 and the runtime's pointer query takes the authority, so the first cut
 deadlocked the wire suite (a t228 shape, found by the suite's own
 sixty-second notice).
+The registration's second cut caught the root: an observer that selects
+on the root's substructure had the root registered with a parent of
+None, and the session's departure witness lost its second round's key
+to a rejected route (the authority suites never select on the root).
+The runtime reports no parent for the root, and a window without one is
+not registered; a wire test now selects on the root and reads its key.
 
 VisibilityNotify 3 unmaps and remaps every child of the guardian and
 expects a VisibilityNotify before an Expose on every window below. The
