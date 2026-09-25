@@ -138,6 +138,27 @@ fn missing_selected_shell_or_window_manager_is_refused_before_hagia() {
 }
 
 #[test]
+#[ignore = "t101 gap: preflight checks legacy shell artifacts but not component artifacts"]
+fn missing_two_component_artifacts_must_not_pass_package_preflight() {
+    let fixture = Fixture::new();
+    fixture.profile(&format!(
+        r#"schema 1
+shell {{ enabled #true; content #true; content-input #true; panel 24; }}
+session {{
+    shell-component "panel" "bar" {{ executable "{0}/missing-lom"; config "{0}/missing-lom.kdl"; gpu "direct"; reservation "top" 24; }}
+    shell-component "menu" "application-launcher" {{ executable "{0}/missing-bemenu"; gpu "denied"; }}
+}}
+"#,
+        fixture.0.display()
+    ));
+    let output = fixture.command().output().unwrap();
+    assert!(
+        !output.status.success(),
+        "missing component artifacts were accepted: {output:?}"
+    );
+}
+
+#[test]
 fn selecting_a_hagia_alias_still_checks_hagias_policy() {
     let fixture = Fixture::new();
     let alias = fixture.0.join("hagia alias");
