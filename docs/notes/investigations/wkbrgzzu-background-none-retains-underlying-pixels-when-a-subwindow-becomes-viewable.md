@@ -2,7 +2,7 @@
 id: wkbrgzzu
 date: 2026-09-25
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, x11, raster, conformance]
 ---
 # Background None retains underlying pixels when a subwindow becomes viewable
@@ -49,9 +49,26 @@ no-op. No lifecycle change was needed.
 
 ## Acceptance
 
-The focused regressions, full authority suite and authority all-target Clippy
-pass. The second standalone windows run completed all 304 purposes with
-purpose 9 PASS; its only mismatch was the stale FAIL declaration, now removed.
-Formal XTS windows, standing request-answer gates, core probe and final
-candidate identity are still pending. No physical session or installation is
-part of this acceptance.
+Signed candidate `1b9d16bf5c2e4c0591e8cfa5748ff8bf20f3e8e4`, rebased onto
+`48d2f54c`, passed the main-tree layout gate and the complete X11 chain:
+
+- selected-core, all profiles: 76 passed, 23 declared outcomes;
+- xproto: 339 passed, 50 declared outcomes;
+- windows, all profiles: 245 passed, 59 declared outcomes, including purpose 9
+  PASS with its former failure declaration removed;
+- events with XTEST: 123 passed, 72 declared outcomes.
+
+Each profile report records the same clean candidate and unchanged source
+afterward. Native-input passed 40/40 where selected; XTEST passed 44/44 on
+every scenario. The independent core probe passed 162/162. The all-feature
+authority/session suites passed 2,973 tests across 74 groups, with 39 existing
+ignores. Workspace all-target Clippy, formatting and diff checks passed.
+
+Reports, XTS journals, suite/probe logs and the red/green regression are
+retained at
+`~/.local/state/sophia/development-evidence/t218-1b9d16bf`, with verified
+`SHA256SUMS`. Main-tree runs are also under
+`.artifacts/x11-profile-1b9d16bf-xts-{selected-core,xproto,windows,events}`.
+This closes the subwindow acceptance in t218; it does not claim arbitrary
+cross-toplevel framebuffer preservation. No physical session or installation
+was part of this acceptance.
