@@ -39,6 +39,7 @@ pub enum XClientReply {
         sequence: u16,
         visual: u32,
         colormap: XResourceId,
+        colormap_installed: bool,
         map_state: u8,
         override_redirect: bool,
         bit_gravity: u8,

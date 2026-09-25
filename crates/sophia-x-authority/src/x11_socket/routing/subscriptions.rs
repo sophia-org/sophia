@@ -100,4 +100,21 @@ impl XServerFrontendRouteRegistry {
             })
             .collect())
     }
+
+    /// The root's XID is shared, but its colormap belongs to one namespace.
+    /// Drop the subscriptions lock before inspecting connection admissions.
+    fn colormap_subscribers(
+        &self,
+        namespace: NamespaceId,
+        window: XResourceId,
+    ) -> Result<Vec<XServerFrontendClientId>, XServerFrontendRouteError> {
+        let mut subscribers = self.core_event_subscribers(window, 1 << 23)?;
+        let clients = self.clients.lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+        subscribers.retain(|client| clients.get(client).is_some_and(|senders| {
+            senders.namespace == Some(namespace)
+                || senders.connection_state.get().is_some_and(|state| state.namespace == namespace)
+        }));
+        Ok(subscribers)
+    }
 }

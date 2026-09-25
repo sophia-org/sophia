@@ -169,6 +169,7 @@ include!("x11_socket/connection/server.rs");
 include!("x11_socket/connection/private_service_order.rs");
 include!("x11_socket/connection/private_service.rs");
 include!("x11_socket/connection/protocol_routing.rs");
+include!("x11_socket/connection/colormap_routing.rs");
 include!("x11_socket/connection/lifetime.rs");
 include!("x11_socket/connection/pixmap_publication.rs");
 include!("x11_socket/connection/xtest.rs");

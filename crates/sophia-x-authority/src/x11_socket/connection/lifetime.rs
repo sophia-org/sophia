@@ -89,6 +89,7 @@ fn free_x11_retained_range(
         response.removed_surfaces.extend(release.removed_surfaces.iter().copied());
     }
     if let Some(routing) = routing {
+        route_x11_colormap_changes(routing, retained.namespace, &release.colormap_changes)?;
         route_x11_retained_destroys(routing, &release.destroyed_windows)?;
     }
     Ok(())

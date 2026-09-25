@@ -542,9 +542,3 @@ fn validate_window_or_root_access(
         runtime.validate_window_access(namespace, window)
     }
 }
-
-/// ColormapNotify's state: the default colormap is the one installed, and
-/// the only one ListInstalledColormaps names.
-pub(crate) fn colormap_state(colormap: u32) -> u8 {
-    u8::from(colormap == crate::X_SETUP_DEFAULT_COLORMAP)
-}

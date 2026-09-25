@@ -1,6 +1,5 @@
 {
   "/Xlib10/XUninstallColormap#1": "the suite's own omission: 'There is no known reliable test method for this assertion'",
-  "/Xlib10/XUninstallColormap#2": "the suite's own omission: 'There is no known portable test method for this assertion'",
   "/Xlib10/XUninstallColormap#3": "the suite's own omission: 'There is no known portable test method for this assertion'",
   "/Xlib10/XUninstallColormap#4": "the suite's own omission: 'There is no known reliable test method for this assertion'",
   "/Xlib7/XAllocColor#5": "the suite's own omission: 'There is no known portable test method for this assertion'",
@@ -27,7 +26,6 @@
   "/Xlib7/XCreateColormap#6": "needs a writable or grey visual class (PseudoColor, GrayScale or DirectColor); Sophia's screen serves TrueColor visuals only, so the suite skips it",
   "/Xlib7/XCreateColormap#7": "needs a writable or grey visual class (PseudoColor, GrayScale or DirectColor); Sophia's screen serves TrueColor visuals only, so the suite skips it",
   "/Xlib7/XCreateColormap#9": "the suite's own omission: 'There is no known reliable test method for this assertion'",
-  "/Xlib7/XFreeColormap#3": "Xorg's own server (Xvnc, 2026-09-24) gives the same UNRESOLVED: REPORT: The installed colourmap was not on the required list.",
   "/Xlib7/XFreeColors#1": "needs a writable or grey visual class (PseudoColor, GrayScale or DirectColor); Sophia's screen serves TrueColor visuals only, so the suite skips it",
   "/Xlib7/XFreeColors#2": "needs a writable or grey visual class (PseudoColor, GrayScale or DirectColor); Sophia's screen serves TrueColor visuals only, so the suite skips it",
   "/Xlib7/XFreeColors#3": "needs a writable or grey visual class (PseudoColor, GrayScale or DirectColor); Sophia's screen serves TrueColor visuals only, so the suite skips it",
