@@ -2,7 +2,7 @@
 id: 5xr74jmt
 date: 2026-09-25
 kind: investigation
-status: implemented
+status: closed
 tags: [session, validation]
 ---
 # QEMU recovery fixtures must come from a current guest run
@@ -53,7 +53,8 @@ the verifier was not weakened.
 
 The unchanged guest verifier passes the new capture. The complete
 `tools/check_atomic_scanout_verifiers.sh` passes, including every case after
-the previously failing recovery fixture. `git diff --check` passes.
+the previously failing recovery fixture. The main-tree layout gate passes on
+signed fixture candidate `f7e04a94`. `git diff --check` passes.
 
 Raw logs, kernel, complete overlaid image, source/binary identities, guest
 scripts and checksums are retained at
