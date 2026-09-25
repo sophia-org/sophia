@@ -259,6 +259,29 @@ class ProofCheckoutPredicates(unittest.TestCase):
         (self.repo / "profile.kdl").write_text("schema 1\n// changed\n")
         self.assertEqual(self.predicate(call.format(path=self.repo / "profile.kdl", root=self.repo)), 1)
 
+    def test_tracked_file_refuses_a_symlink_whatever_its_target(self):
+        # A tracked, clean link does not fix the bytes it points at: an
+        # external target can change while git status stays empty.
+        external = self.directory / "external.kdl"
+        external.write_text("schema 1\n")
+        (self.repo / "linked-external.kdl").symlink_to(external)
+        (self.repo / "linked-internal.kdl").symlink_to(self.repo / "profile.kdl")
+        (self.repo / "dirty-target.kdl").write_text("schema 1\n")
+        (self.repo / "linked-dirty.kdl").symlink_to(self.repo / "dirty-target.kdl")
+        git(self.repo, "add", "linked-external.kdl", "linked-internal.kdl", "linked-dirty.kdl",
+            "dirty-target.kdl")
+        git(self.repo, "commit", "-q", "-m", "links")
+        (self.repo / "dirty-target.kdl").write_text("schema 1\n// dirty\n")
+        call = ' proof_tracked_file "{path}" "{root}"'
+        for name in ("linked-external.kdl", "linked-internal.kdl", "linked-dirty.kdl"):
+            with self.subTest(link=name):
+                self.assertEqual(self.predicate(call.format(path=self.repo / name, root=self.repo)), 1)
+        external.write_text("schema 1\n// changed outside the checkout\n")
+        self.assertEqual(self.predicate(call.format(path=self.repo / "linked-external.kdl",
+                                                    root=self.repo)), 1)
+        # The ordinary tracked, unmodified regular file is still accepted.
+        self.assertEqual(self.predicate(call.format(path=self.repo / "profile.kdl", root=self.repo)), 0)
+
 
 class NativeReferenceDryRun(unittest.TestCase):
     """The native wrapper and gate, end to end up to the session start."""
