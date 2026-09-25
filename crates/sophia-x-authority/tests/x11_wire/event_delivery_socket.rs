@@ -909,6 +909,79 @@ mod event_delivery_socket {
         let _released = client.next_event(3);
     }
 
+    /// A press with passive grabs on the source window and its ancestors
+    /// activates the ancestor-most grab, searched from the root down, and
+    /// the activation crosses the pointer from the source window to the
+    /// grab window with mode NotifyGrab: an EnterNotify on the ancestor and
+    /// none on the windows below it (XTS Xlib11 ButtonPress 2). The release
+    /// crosses back with NotifyUngrab. Red before the fix: the activation
+    /// crossed nothing.
+    #[test]
+    fn a_press_activates_the_ancestor_most_passive_grab_with_grab_crossings() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let outer = client.next;
+        let middle = client.next + 2;
+        let inner = client.next + 4;
+        client.next += 6;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, outer, 20, 0, 60, 60))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, middle, outer, 10, 10, 30, 30))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, inner, middle, 10, 10, 10, 10))
+            .unwrap();
+        for window in [outer, middle, inner] {
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 5)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 25);
+        for expected in [outer, middle, inner] {
+            let entered = client.next_event(7);
+            assert_eq!(window_of(&entered), expected, "the pointer's way into the innermost window");
+        }
+        // Passive grabs on all three: owner_events False, no event mask,
+        // asynchronous, AnyModifier, as the suite sets them.
+        for window in [outer, middle, inner] {
+            let mut grab = vec![28, 0];
+            push_u16(&mut grab, client.order, 6);
+            push_u32(&mut grab, client.order, window);
+            push_u16(&mut grab, client.order, 0);
+            grab.extend_from_slice(&[1, 1]);
+            push_u32(&mut grab, client.order, 0);
+            push_u32(&mut grab, client.order, 0);
+            grab.extend_from_slice(&[1, 0]);
+            push_u16(&mut grab, client.order, 0x8000);
+            client.stream.write_all(&grab).unwrap();
+        }
+        client.settle();
+
+        client.fake_input(4, 1);
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[1], left[30]), (inner, 0, 1), "leave of the source window, Ancestor, NotifyGrab");
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[1], left[30]), (middle, 1, 1), "leave of the window between, Virtual, NotifyGrab");
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[1], entered[30]), (outer, 2, 1), "enter of the grab window, Inferior, NotifyGrab");
+        client.assert_quiet("no enter below the grab window, and no press: the grab's mask is empty");
+
+        client.fake_input(5, 1);
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[1], left[30]), (outer, 2, 2), "leave of the grab window, Inferior, NotifyUngrab");
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[1], entered[30]), (middle, 1, 2), "enter of the window between, Virtual, NotifyUngrab");
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[1], entered[30]), (inner, 0, 2), "enter of the source window, Ancestor, NotifyUngrab");
+        client.assert_quiet("after the release");
+    }
+
     /// Remapping a window reports VisibilityNotify and Expose on every
     /// mapped inferior that becomes viewable with it, the VisibilityNotify
     /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the

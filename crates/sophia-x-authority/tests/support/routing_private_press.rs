@@ -651,6 +651,7 @@ fn an_ordinary_broker_that_exposed_raw_ingress_stays_ordinary() {
         xi_emulated_button_type: None,
         xi_emulated_button_window: None,
         xi_pointer_crossing_mask: 0,
+        grab_crossing: None,
         delivery: None,
     })
     .expect("the ordinary path to keep taking raw work");

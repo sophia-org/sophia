@@ -270,6 +270,7 @@ impl XServerFrontendRouteRegistry {
         }
         let mut client = surface_route.client;
         let mut button_lease_update = None;
+        let mut grab_crossing: Option<crate::XPointerGrabCrossing> = None;
         // Engine already selected the committed target surface. Preserve its
         // owning window as the start of core propagation; X grabs may replace
         // it below, but event-mask update order must never choose the target.
@@ -380,6 +381,18 @@ impl XServerFrontendRouteRegistry {
                 };
                 let state = mapped.state_before;
                 if pressed {
+                    // The source window's ancestry, root down, for the
+                    // passive grab search: the window the surface owner's
+                    // writer last put the pointer in, else the surface
+                    // window. Read and walked before the authority is held.
+                    let pointer_window = self
+                        .input_authority
+                        .lock()
+                        .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                        .pointer_window(surface_route.namespace)
+                        .unwrap_or(surface_route.window);
+                    let mut ancestry = self.window_ancestry(surface_route.client, pointer_window)?;
+                    ancestry.reverse();
                     let mut authority = self
                         .input_authority
                         .lock()
@@ -387,7 +400,7 @@ impl XServerFrontendRouteRegistry {
                     if authority.pointer_grab(surface_route.namespace).is_none() {
                         button_lease_update = Some(XAuthorityRouteLeaseUpdateKind::Confirmed);
                     }
-                    let grab = authority.activate_button(
+                    let grab = authority.activate_button_within(
                         surface_route.namespace,
                         button,
                         state & 0xff,
@@ -402,7 +415,16 @@ impl XServerFrontendRouteRegistry {
                             xi_event_mask_words: 0,
                             route_lease: route.route_lease,
                         },
+                        &ancestry,
                     );
+                    // A passive grab on another window than the pointer's
+                    // warps the pointer there, as far as the crossing
+                    // events tell it (NotifyGrab).
+                    if authority.explicit_pointer_grab(surface_route.namespace).is_some()
+                        && grab.window != pointer_window
+                    {
+                        grab_crossing = Some(crate::XPointerGrabCrossing { window: grab.window, mode: 1 });
+                    }
                     client = XServerFrontendClientId(grab.owner);
                     target_window = Some(if grab.owner_events && client == surface_route.client {
                         surface_route.window
@@ -414,7 +436,14 @@ impl XServerFrontendRouteRegistry {
                         .input_authority
                         .lock()
                         .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
-                    authority.release_button(surface_route.namespace, button, pointer.state() == 0);
+                    let pointer_window = authority.pointer_window(surface_route.namespace);
+                    if let Some((ended, false)) =
+                        authority.release_button(surface_route.namespace, button, pointer.state() == 0)
+                        && let Some(pointer_window) = pointer_window
+                        && ended.window != pointer_window
+                    {
+                        grab_crossing = Some(crate::XPointerGrabCrossing { window: ended.window, mode: 2 });
+                    }
                     if authority.pointer_grab(surface_route.namespace).is_none() {
                         button_lease_update = Some(XAuthorityRouteLeaseUpdateKind::Released);
                     }
@@ -498,6 +527,7 @@ impl XServerFrontendRouteRegistry {
                     target_window,
                     pointer_event(true),
                     None,
+                    None,
                 ) {
                     self.send_input_delivery(
                         client,
@@ -513,6 +543,7 @@ impl XServerFrontendRouteRegistry {
                     target_window,
                     pointer_event(false),
                     route.delivery,
+                    None,
                 );
             }
             // A device announcement is consumed on the session's physical
@@ -541,6 +572,7 @@ impl XServerFrontendRouteRegistry {
             target_window,
             event,
             route.delivery,
+            grab_crossing,
         );
         if result.is_ok()
             && let Err(error) = self.route_to_selecting_peers(

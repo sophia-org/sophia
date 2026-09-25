@@ -71,6 +71,7 @@ fn spawn_x11_input_event_writer(
                 mut xi_emulated_button_type,
                 mut xi_emulated_button_window,
                 xi_pointer_crossing_mask,
+                grab_crossing,
                 delivery,
             ) =
                 match receiver.recv_timeout(client) {
@@ -270,9 +271,22 @@ fn spawn_x11_input_event_writer(
             if let (Some(input_authority), Some(event_ancestry)) =
                 (input_authority.as_ref(), pointer_event_ancestry.as_ref())
             {
-                let authority = input_authority.lock().map_err(|_| {
+                let mut authority = input_authority.lock().map_err(|_| {
                     X11SetupSocketError::new("X11 input authority lock poisoned")
                 })?;
+                // The surface owner's view of the pointer window is the
+                // authority's: the source window of the next press, whose
+                // ancestry the passive grab search runs down. A peer's copy
+                // of the event does not know the owner's subwindows.
+                if let XAuthorityInputEvent::Pointer(routed_pointer) = event
+                    && let Some(pointer_window) = event_ancestry.first().copied()
+                    && surface_windows
+                        .lock()
+                        .map_err(|_| X11SetupSocketError::new("X11 surface/window map lock poisoned"))?
+                        .contains_key(&routed_pointer.surface)
+                {
+                    authority.observe_pointer_window(namespace, pointer_window);
+                }
                 let (selected_type, emulated_button_selected_type) = match event {
                     XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                         kind: XAuthorityPointerEventKind::Motion,
@@ -660,9 +674,22 @@ fn spawn_x11_input_event_writer(
                 }
                 let sequence = sequence.load(Ordering::Acquire);
                 write_xi_u16(byte_order, &mut record[2..4], sequence);
-                let transition = match (event, pointer_window) {
-                    (XAuthorityInputEvent::Pointer(_), Some(to)) if pointer_sent_to != Some(to) => {
-                        Some((pointer_sent_to, to, 8, 7))
+                // A grab's activation crosses to the grab window and its
+                // release back to the pointer window, with NotifyGrab and
+                // NotifyUngrab; otherwise the pointer window's own moves.
+                let transition = match (event, pointer_window, grab_crossing) {
+                    (XAuthorityInputEvent::Pointer(_), _, Some(crossing))
+                        if crossing.mode == 1 && pointer_sent_to != Some(crossing.window) =>
+                    {
+                        Some((pointer_sent_to, crossing.window, 8, 7, 1))
+                    }
+                    (XAuthorityInputEvent::Pointer(_), Some(to), Some(crossing))
+                        if crossing.mode == 2 && pointer_sent_to != Some(to) =>
+                    {
+                        Some((pointer_sent_to, to, 8, 7, 2))
+                    }
+                    (XAuthorityInputEvent::Pointer(_), Some(to), None) if pointer_sent_to != Some(to) => {
+                        Some((pointer_sent_to, to, 8, 7, 0))
                     }
                     _ => None,
                 };
@@ -678,7 +705,7 @@ fn spawn_x11_input_event_writer(
                         }
                     })?;
                 }
-                if let Some((previous, to, out_type, in_type)) = transition {
+                if let Some((previous, to, out_type, in_type, mode)) = transition {
                     write_x11_pointer_crossings(X11PointerCrossingWrite {
                         stream: &mut *stream,
                         byte_order,
@@ -687,6 +714,7 @@ fn spawn_x11_input_event_writer(
                         to,
                         out_type,
                         in_type,
+                        mode,
                         event,
                         input_authority: input_authority.as_ref(),
                         namespace,

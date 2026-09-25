@@ -84,6 +84,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
+            grab_crossing: None,
             delivery: None,
         })
         .unwrap();
@@ -104,6 +105,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
+            grab_crossing: None,
             delivery: None,
         }
     );
@@ -150,6 +152,7 @@ fn route_broker_delivers_to_the_registered_client_only() {
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
+            grab_crossing: None,
             delivery: None,
         })
         .unwrap();
@@ -407,6 +410,7 @@ fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
                 xi_emulated_button_type: None,
                 xi_emulated_button_window: None,
                 xi_pointer_crossing_mask: 0,
+                grab_crossing: None,
                 delivery: None,
             })
             .unwrap();
@@ -436,6 +440,7 @@ fn client_addressed_input_queue_saturation_does_not_fail_the_broker() {
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
+            grab_crossing: None,
             delivery: None,
         })
         .unwrap();

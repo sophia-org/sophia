@@ -74,6 +74,7 @@ type X11ReceivedInputEvent = (
     Option<u16>,
     Option<XResourceId>,
     u16,
+    Option<crate::XPointerGrabCrossing>,
     Option<XAuthorityInputDeliveryId>,
 );
 
@@ -86,7 +87,7 @@ impl X11InputEventReceiver {
         match self {
             Self::Plain(receiver) => receiver
                 .recv_timeout(Duration::from_millis(10))
-                .map(|event| (event, None, None, None, None, None, 0, None)),
+                .map(|event| (event, None, None, None, None, None, 0, None, None)),
             Self::Routed { receiver, .. } => {
                 match receiver.recv_timeout(Duration::from_millis(10)) {
                     Ok(route) if route.client == client => Ok((
@@ -97,6 +98,7 @@ impl X11InputEventReceiver {
                         route.xi_emulated_button_type,
                         route.xi_emulated_button_window,
                         route.xi_pointer_crossing_mask,
+                        route.grab_crossing,
                         route.delivery,
                     )),
                     // Drop one misaddressed route, then let the writer loop
@@ -336,6 +338,7 @@ impl XServerFrontendRouteRegistry {
         target_window: Option<XResourceId>,
         event: XAuthorityInputEvent,
         delivery: Option<XAuthorityInputDeliveryId>,
+        grab_crossing: Option<crate::XPointerGrabCrossing>,
     ) -> Result<(), XServerFrontendRouteError> {
         // This is logical input already admitted past epoch and freeze checks.
         // Publish it before subscription filtering or a possibly stalled writer.
@@ -465,6 +468,7 @@ impl XServerFrontendRouteRegistry {
             xi_emulated_button_type,
             xi_emulated_button_window,
             xi_pointer_crossing_mask,
+            grab_crossing,
             delivery,
         };
         match self.route_input(route) {
@@ -565,6 +569,7 @@ impl XServerFrontendRouteRegistry {
                 xi_emulated_button_type: None,
                 xi_emulated_button_window: None,
                 xi_pointer_crossing_mask: 0,
+                grab_crossing: None,
                 delivery: None,
             };
             if let Err(error) = self.route_input(route) {
