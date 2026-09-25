@@ -1173,3 +1173,97 @@ fn a_prepared_removal_of_a_sampled_source_revokes_the_presentation() {
     );
     assert!(output_list(&runtime, output).presentation_stamp().is_none());
 }
+
+/// Overview crash reproduction (2026-09-25, installed 8bd8c41c): an
+/// application Presents while ReplaceApplications covers its output and the
+/// publication draws no preview of it there. The output's display list then
+/// omits the presenting surface, and the Present path's source collection
+/// refuses the whole frame, which the owner loop turns into a session fatal.
+#[test]
+fn a_present_of_a_surface_replaced_without_a_preview_is_refused_by_source_collection() {
+    let outputs = outputs();
+    let output = outputs[0].id;
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(outputs[0].size);
+    let application = SurfaceId::new(7, 1);
+    let previewed = SurfaceId::new(8, 1);
+    commit_cpu_surface(
+        &mut runtime,
+        &mut scene,
+        application,
+        77,
+        1,
+        rect(0, 0, 16, 16),
+    );
+    commit_cpu_surface(
+        &mut runtime,
+        &mut scene,
+        previewed,
+        88,
+        1,
+        rect(20, 0, 16, 16),
+    );
+    runtime.presentation_order = vec![application, previewed];
+    runtime.surface_outputs.insert(application, output);
+    runtime.surface_outputs.insert(previewed, output);
+    runtime
+        .set_policy_presentation(
+            Some(published(
+                1,
+                vec![presentation_output(
+                    output,
+                    PolicyPresentationMode::ReplaceApplications,
+                )],
+                vec![shown_instance(output, 2, 1, previewed, rect(40, 4, 8, 8))],
+                vec![region(
+                    output,
+                    1,
+                    0,
+                    PolicyPresentationRegionRole::Backdrop,
+                    rect(0, 0, 64, 32),
+                    rect(0, 0, 64, 32),
+                )],
+            )),
+            &scene,
+            None,
+        )
+        .unwrap();
+    let viewport = runtime.outputs.logical_viewport(output).unwrap();
+    let committed = runtime.committed_surfaces().to_vec();
+    let list = runtime
+        .display_list_for_output(output, viewport, &committed, &runtime.presentation_order)
+        .unwrap();
+    assert!(
+        !list.commands.iter().any(|command| matches!(command,
+            CompositorDisplayCommand::Surface { surface } if *surface == application)),
+        "ReplaceApplications removes the application's own draw"
+    );
+    let current = sophia_renderer_live::LiveOwnedHeadCompositionSource {
+        surface: application,
+        source: BufferSource::CpuBuffer { handle: 77 },
+        kind: sophia_renderer_live::LiveOwnedHeadCompositionSourceKind::RendererImage {
+            image_id: sophia_renderer_live::LiveRendererImageId::from_raw(1),
+            size: Size {
+                width: 16,
+                height: 16,
+            },
+            format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        },
+    };
+    let cpu_layers =
+        scene.presentation_variant_layers(&committed, &runtime.sampled_surface_order());
+    let collected = crate::live_present_head_composition_sources(
+        application,
+        current,
+        &committed,
+        [&list],
+        &cpu_layers,
+        |_| None,
+        |_| None,
+    );
+    let error = collected.expect_err("reproduces the refusal");
+    assert_eq!(
+        error.to_string(),
+        "visible Present surface is missing from the presentation order"
+    );
+}
