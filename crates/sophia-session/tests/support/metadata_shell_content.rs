@@ -4,6 +4,9 @@ use super::*;
 use sophia_protocol::*;
 use sophia_runtime::{ContentCandidateContext, ContentCandidateStore, ContentResourceStore};
 
+#[path = "metadata_shell_popout.rs"]
+mod popout;
+
 const GRANT: ContentGrant = ContentGrant {
     connection_epoch: 7,
     content_grant_epoch: 9,
