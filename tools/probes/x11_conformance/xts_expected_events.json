@@ -223,9 +223,7 @@
   },
   {
     "case": "/Xlib11/EnterNotify",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Expected 1 event, got 2'"
+    "purpose": 3
   },
   {
     "case": "/Xlib11/EnterNotify",
@@ -607,9 +605,7 @@
   },
   {
     "case": "/Xlib11/KeymapNotify",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0x37b879f0, client2: 0x37b98c60, client2: 0x37ba6c20'"
+    "purpose": 3
   },
   {
     "case": "/Xlib11/KeymapNotify",

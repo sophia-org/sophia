@@ -255,7 +255,13 @@ its own window, and a KeymapNotify follows each written EnterNotify. A
 pointer injection over no toplevel goes to the last toplevel's client, so
 that client sees the pointer leave to the root. Eleven purposes moved
 (EnterNotify 4, 7 to 9, 13; LeaveNotify 4, 5, 8 to 10, 15) and the
-scenario reads 110. What stays with t211: a move between two clients'
+scenario reads 110, then 112 with three more: a window destroyed under
+the pointer leaves it in the root for the next crossing (EnterNotify 3), a
+peer that selected only crossings on the owner's window is told of the
+motion so its writer generates them (KeymapNotify 3), and the crossing's
+focus flag follows the focus projection, which the suite's EnterNotify 12
+and LeaveNotify 14 still read as set after the focus was moved to another
+window. What stays with t211: those two, a move between two clients'
 windows, where the registry routes nothing to the client the pointer left;
 the crossings a map, unmap or reparent under the pointer owes; and the
 visibility purposes. Red before the fix:
@@ -288,7 +294,7 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(110 passed, 85 declared after the selection-by-direction, KeymapNotify,
+(112 passed, 83 declared after the selection-by-direction, KeymapNotify,
 subwindow, propagation, wheel-button and crossing reruns; 60 and 135 at
 the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
