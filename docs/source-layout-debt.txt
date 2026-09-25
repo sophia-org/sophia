@@ -12,11 +12,6 @@ large crates/sophia-backend-live/src/production_session/native_scanout/persisten
 large crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/topology.rs 3101
 large crates/sophia-backend-live/src/production_visual_runtime.rs 1842
 large crates/sophia-backend-live/tests/libdrm_events_feature/scanout_submission.rs 1532
-large crates/sophia-conformance/src/desktop_comparison.rs 1300
-large crates/sophia-conformance/src/desktop_comparison/capture_owner.rs 1342
-large crates/sophia-engine/src/composition_plan.rs 1389
-large crates/sophia-engine/src/compositor_graphics.rs 1138
-large crates/sophia-protocol/src/ipc/wm_v1_records.rs 1749
 large crates/sophia-renderer-live/src/native_scanout.rs 1570
 large crates/sophia-session/src/live_session.rs 1367
 large crates/sophia-session/src/live_session/config.rs 1466
@@ -34,7 +29,6 @@ large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5703
 large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1779
 large crates/sophia-x-authority/tests/x11_wire/resources_frontend.rs 2134
 large crates/sophia-x-authority/tests/x11_wire/support_extensions.rs 1502
-large crates/sophia-session/src/diagnostics/capture.rs 1013
 large crates/sophia-x-authority/src/dispatch/core/input_discovery.rs 1089
 large crates/sophia-x-authority/src/dispatch/core/windows.rs 1406
 large crates/sophia-x-authority/src/wire/request.rs 1355
