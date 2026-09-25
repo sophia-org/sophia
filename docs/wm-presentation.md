@@ -116,8 +116,9 @@ output. Sophia interprets neither action names nor workspace/window selection.
 
 A keyboard output requests a modal scope over the publication's covered outputs.
 Every covered output must have replacement mode with a visible full-coverage
-Backdrop. Bindings are eligible only once the matching presentation has completed
-on all covered outputs. Protected recovery/session controls retain precedence.
+Backdrop. Bindings and pointer actions are eligible only once the matching
+presentation has completed on all covered outputs and every mirrored head.
+Protected recovery/session controls retain precedence.
 Existing application captures keep their existing owner; modal admission waits
 for them to settle rather than transferring ownership. Ordinary unbound input is
 consumed within the admitted modal scope and is never forwarded through previews.
@@ -126,6 +127,16 @@ The owner retains requested, committed and presented identities separately.
 Submission and a projection acknowledgement grant no input authority. A typed
 presentation receipt reports the actual presented generation and output epochs;
 revocation is an explicit lifecycle outcome, not a fabricated new presentation.
+All-head consensus, completed replacement and any-head visibility are separate
+facts. A lagging head which still shows a revoked tier keeps the output shielded
+from new application input. A withdrawal receipt requires completed evidence that
+every head has replaced that identity; missing consensus alone cannot certify it.
+
+The action wire identity is scoped by its authenticated session connection.
+The input owner also retains a monotonic presentation epoch across reconnects;
+reused WM publication or target counters cannot reuse an old receipt. The session
+checks this completed authority before queueing an action and before accepting its
+reply. Reducer membership validation alone is insufficient.
 
 Close, source loss, output/topology change, suspend/control-epoch loss, policy
 disconnect or reconnect revoke dependent input locally. Pending replies and

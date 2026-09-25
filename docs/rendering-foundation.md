@@ -1,9 +1,9 @@
 # Rendering foundation for window managers and shells
 
-**Role:** architecture proposal and implementation inventory, recorded
-2026-09-25. The generic WM presentation protocol remains proposed. This document
-does not claim that the complete diagram is implemented or supersede the current
-wire contracts.
+**Role:** rendering architecture and candidate implementation inventory, updated
+2026-09-25. The generic WM extension is implemented on isolated feature branches;
+joined session acceptance and integration remain pending. This document does not
+supersede the wire contracts or claim physical display acceptance.
 
 The [WM presentation contract](wm-presentation.md) defines the admitted first
 implementation, including passive identities, frame ownership and presented input.
@@ -74,7 +74,7 @@ replace its normal layout, or grant application input through the thumbnail.
 The WM proposes spatial presentation and selection using opaque surface handles.
 Sophia resolves the corresponding retained content and validates the proposal.
 
-The proposed reusable primitive is a surface instance with:
+The reusable primitive is a surface instance with:
 
 - an instance identity and generation, separate from the source surface;
 - an authorized source and its current generational identity;
@@ -95,30 +95,40 @@ control of protected layers, clipping, admission, and resource limits.
 
 ## What exists
 
-This inventory is based on source inspection of Sophia checkpoint `ba42f97e`.
-Implementation presence is separate from acceptance on particular hardware.
+The original inventory inspected Sophia checkpoint `ba42f97e`. The table below
+records the generic candidate on `rendering/foundation` through `9a8318ad`,
+including protocol, composition and paired WM controls. Session/input work is
+being joined from `rendering/input`; it is identified separately below.
+Implementation presence is separate from integration and hardware acceptance.
 
-| Mechanism | Current implementation | Remaining gap for this proposal |
+| Mechanism | Candidate implementation | Acceptance boundary |
 | --- | --- | --- |
-| Application content and ownership | Application authorities submit transactions; Engine holds committed surface content. | Validate source eligibility and lifetime for additional presentation instances. |
-| WM boundary | Opaque snapshots, bounded projection proposals, staged validation and commit are implemented. Presentation-only translation groups already exist. | A generic WM instance proposal and its capability/settlement contract. |
-| Shell boundary | Content grants, allocations, resources, candidate placement and action targets are implemented. | Reuse common internal composition without widening shell source authority. Popout outside-dismiss is separately tracked as t099. |
-| Compositor representation | `CompositorDisplayList` carries surfaces, content images, rectangles, borders, text and indicators. | Independently placed application-surface instances are not exposed through the master WM API. |
-| Frame planning and rendering | Immutable output snapshots, per-head plans, CPU/native lowering and output scaling are implemented. | Join instance geometry, source damage and bounded repetition into those paths. |
-| Retention and retirement | Source ownership, native submission, mirrored completion and scanout retirement have existing owners. | Prove that new instance references use every required ownership path. |
-| Presented input | Existing application and shell paths use presented geometry, generations, capture and revocation. | A generic presentation-scoped WM action/modal contract, including late-reply and reconnect controls. |
+| Application content and ownership | Engine resolves each authorized instance source to committed content; missing sources refuse the whole candidate, and source removal revokes the whole publication. | Preview-only sources and content-only updates have production-path controls. |
+| WM boundary | Capability-gated complete presentation records accompany ordinary projections; fixed wire layouts, bounds and generation rules are validated before commit. | Independent Nim/Rust codecs and real Hagia transport controls pass; final joined gates remain. |
+| Shell boundary | Existing content grants, allocations and action identities remain separate. Popout dismissal landed in accepted `aff26bac`. | No new shell authority or protocol is needed for WM presentation. |
+| Compositor representation | Independently placed `SurfaceInstance` and Engine-owned regions share a bounded presentation tier. Instances never become application input layers. | Repeated sources retain separate node geometry and damage. |
+| Frame planning and rendering | Immutable snapshots, head transforms, clipped instance drawing, opacity and CPU/native sampling models include the tier. | Fractional and cross-output controls pass; model equivalence does not establish physical GPU output. |
+| Retention and retirement | Source collection includes ordinary and instance-only references, deduplicates leases and preserves separate copied backing ownership. Every mirror contributes completion evidence. | Source removal, copy completion, close and lagging-head controls pass under simulated device completion. |
+| Presented input | The session candidate joins completed stamps to receipts, modal admission, exact actions, local revocation and release debt. | t245 owns joined input, reconnect, queue and protected-routing acceptance before integration. |
 
-The current compositor is therefore the foundation. A new renderer or a
-parallel frame scheduler is not required to implement the proposal.
+The existing compositor supplies this foundation. The candidate adds records and
+joins to its owners, without adding a renderer or a parallel frame scheduler.
 
 ## Evidence boundary
 
-An isolated preview prototype exercises source scaling, clipping, damage and
-retention through production rendering paths with simulated native completion.
-That evidence does not establish a public generic WM instance API, a complete
-modal input lifecycle, or physical GPU/KMS acceptance. Reference-client names,
-candidate identities, negative controls and the ownership correction belong in the
-[development investigation](notes/investigations/egmb00jq-rendering-foundation-inventory-and-overview-ownership-correction.md).
+The preserved preview prototype established the first source lookup and damage
+controls. Its [investigation](notes/investigations/egmb00jq-rendering-foundation-inventory-and-overview-ownership-correction.md)
+records those checkpoints and the ownership correction. The generic candidate's
+[renderer investigation](notes/investigations/a16e9iwc-surface-instance-source-and-ownership-inventory.md)
+records production controls, negative controls, sampling limits and the two
+unintended real-card smoke attempts. Both attempts were refused; their complete
+output was not retained. Subsequent suites run with device nodes hidden.
+
+Real Hagia transport tests exercise generic publication, repaint, exact actions,
+timeout, revoke receipts and reconnect. Their receipt fixtures are synthetic;
+they do not prove that a frame actually completed. That proof belongs to the
+backend/session completion controls. No headless result establishes physical
+GPU/KMS acceptance.
 
 ## Presentation and input lifetime
 
@@ -129,20 +139,26 @@ submission, display and retirement. Closing an overlay cannot free either class
 while its consumer still needs it. Mirrored heads must settle their own ownership.
 
 Submitting or preparing a candidate grants no new input authority. Its targets
-become usable only when the matching presentation retires. Revocation can remove
-input authority immediately while old pixels remain visible. Releases belonging
-to swallowed presses must remain swallowed after revocation.
+become usable only when every required head retires the matching presentation.
+A modal publication waits for all covered outputs. Revocation removes input
+authority immediately while old pixels may remain visible. Any head still
+displaying the tier keeps its output shielded; absence of all-head consensus is
+not evidence of withdrawal. Releases belonging to swallowed presses remain
+swallowed after revocation.
 
 The generic contract must bind input to the issuing connection, publication and
 instance generations, output topology, and actual presented identity. Close,
 source removal, topology change or reconnect must invalidate stale work. Neither
 a delayed candidate nor an old action may recreate the revoked authority. The
-exact record layout and cancellation exchange remain design work.
+record layouts and lifecycle outcomes are specified in the
+[WM presentation contract](wm-presentation.md). Software-only diagnostic sessions
+without a native retirement owner omit both presentation capabilities. CPU
+composition through the native retirement owner remains supported.
 
 ## Wire direction and compatibility
 
 The WM owns overview arrangement, modal navigation and selection. Sophia
-should receive bounded presentation proposals and deliver reduced authorized
+receives bounded presentation proposals and delivers reduced authorized
 policy actions, without interpreting an overview workspace catalog or choosing
 its selected window. Shells remain responsible for their own shell features.
 
@@ -154,11 +170,24 @@ retain their existing behavior, and an explicitly requested unsupported feature
 must fail clearly. Any shell protocol change needs its own demonstrated shell
 requirement; the WM overview alone does not justify one.
 
-Final design must settle bounds, source eligibility, instance/action identities,
-presentation settlement, damage propagation, revocation and restart behavior
-before treating the protocol as ready for integration. The
+The contract defines bounds, source eligibility, instance/action identities,
+presentation settlement, damage propagation, revocation and restart behavior.
+Joined implementation gates must establish those guarantees before integration. The
 [foundation plan](notes/plans/mjnpxubs-generic-wm-presentation-foundation-and-input-contract.md)
 holds the measurable exit; task state belongs in `todo.md`.
+
+## Reference implementations
+
+Hagia implements the WM side: overview layout, navigation, selection and generic
+presentation proposals. Its design ports spatial policy from Triad's Super+O
+overview, originally modeled after niri. Triad and niri are reference designs,
+not build or runtime dependencies of Hagia or this protocol.
+
+The early proof of concept paired Hagia with Narthex and an overview-specific
+Sophia exchange. Those signed experiments remain evidence, but the generic design
+moves navigation and selection fully into Hagia. Narthex remains a separate shell
+and is not an intermediary for overview. The role-based ASCII diagram applies to
+other WMs and shells without adopting these reference clients' vocabulary.
 
 ## Related contracts
 
