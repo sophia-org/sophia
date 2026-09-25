@@ -187,6 +187,7 @@ COPIED = (
     "tools/hagia_policy_physical_gate.sh",
     "tools/lib/proof_checkout.sh",
     "tools/lib/reference_capture.sh",
+    "tools/lib/session_lifecycle.sh",
     "tools/fixtures/t018_tab_reference.kdl",
     "tools/fixtures/hagia_reference_capture_guide.sh",
     "tools/archive_hagia_native_session_run.sh",
@@ -308,10 +309,15 @@ class NativeReferenceDryRun(unittest.TestCase):
         files["tools/start_sophia_tty3.sh"] = ("""#!/bin/bash
 printf '%s\\n' "$0 $*" >>"$MARKS/start_sophia_tty3.sh"
 [[ -n "${STUB_SESSION:-}" ]] || exit 3
-recovery="$XDG_STATE_HOME/sophia/hagia-session/recovery.log"
-mkdir -p "$(dirname "$recovery")"
-printf '%b' "$STUB_SESSION" >"$SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE"
-printf '%b' "${STUB_RECOVERY:-}" >>"$recovery"
+source "$(dirname "$0")/lib/session_lifecycle.sh"
+directory="$XDG_STATE_HOME/sophia/hagia-session"
+mkdir -p "$directory"
+for rotation in $(seq "${STUB_ROTATIONS:-1}"); do
+    sophia_session_rotate_log "$directory/recovery.log"
+    sophia_session_rotate_log "$directory/session.log"
+done
+printf '%b' "$STUB_SESSION" >>"$SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE"
+printf '%b' "${STUB_RECOVERY:-}" >>"$directory/recovery.log"
 exit "${STUB_EXIT:-0}"
 """, 0o755)
         files["tools/fixtures/hagia_native_session_guide.sh"] = ("#!/bin/sh\n", 0o755)
@@ -590,6 +596,46 @@ class ReferenceCaptureDryRun(NativeReferenceDryRun):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("exactly one TTY recovery record, found 0", result.stderr)
         self.assertEqual(self.captures(), [])
+
+    def test_consecutive_captures_each_bind_their_own_rotated_logs(self):
+        # The runner rotates recovery.log and session.log on every run, so a
+        # second capture starts from fresh files; both must be retained.
+        for attempt in (1, 2):
+            with self.subTest(capture=attempt):
+                (self.directory / "capture.log").unlink(missing_ok=True)
+                result = self.capture()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(len(self.captures()), attempt)
+
+    def test_an_intervening_rotation_is_not_this_invocation(self):
+        result = self.capture(STUB_ROTATIONS="2")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("not rotated exactly once by this invocation", result.stderr)
+        self.assertEqual(self.captures(), [])
+
+    def test_whole_families_are_counted_including_malformed_members(self):
+        identity = ("sophia_hagia_native_identity schema=2 status=bound sophia_commit=" + "0" * 40
+                    + "\n")
+        malformed = self.INPUT.replace("schema=2", "schema=oops")
+        for name, session, message in (
+                ("duplicate-identity", self.INPUT + identity + self.CURSOR,
+                 "exactly one identity record, found 2"),
+                ("valid-plus-malformed-completion", self.INPUT + malformed + self.CURSOR,
+                 "exactly one proof-input completion record, found 2")):
+            with self.subTest(case=name):
+                result = self.capture(session=session)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(self.captures(), [])
+
+    def test_a_reference_run_root_inside_promotion_refuses(self):
+        promotion = self.directory / "state/sophia/promotion/hagia-native-runs"
+        for root in (promotion, promotion / "captures", self.directory / "state/sophia/promotion"):
+            with self.subTest(root=root):
+                result = self.capture(SOPHIA_HAGIA_REFERENCE_RUN_ROOT=str(root))
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn("reference run root", result.stderr)
+                self.assertFalse(any(promotion.parent.rglob("manifest")))
 
     def test_capture_mode_refuses_before_any_build(self):
         default = self.hagia / "examples/config/default.kdl"
