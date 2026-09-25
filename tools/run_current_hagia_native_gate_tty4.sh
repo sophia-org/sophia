@@ -61,11 +61,29 @@ done
 # is a publishing question, not an evidence one.
 # Hagia's canonical default profile, unless a reference run names another one
 # (t018). Either way it is chosen and checked before anything is built.
-desktop_profile="${SOPHIA_HAGIA_NATIVE_PROFILE:-$HAGIA_ROOT/examples/config/default.kdl}"
+default_profile="$HAGIA_ROOT/examples/config/default.kdl"
+desktop_profile="${SOPHIA_HAGIA_NATIVE_PROFILE:-$default_profile}"
 proof_tracked_file "$desktop_profile" "$ROOT_DIR" "$HAGIA_ROOT" || {
     echo "The desktop profile must be an absolute, tracked, unmodified file of the Sophia or Hagia checkout: $desktop_profile" >&2
     exit 1
 }
+# A reference capture exists to observe a named reference profile; one that
+# fell back to the canonical default would retain a capture of the wrong policy.
+case "${SOPHIA_HAGIA_NATIVE_CAPTURE:-}" in
+    '') ;;
+    reference)
+        if [[ -z "${SOPHIA_HAGIA_NATIVE_PROFILE:-}" \
+            || "$(cd -- "$(dirname -- "$desktop_profile")" && pwd -P)/$(basename -- "$desktop_profile")" \
+                == "$(cd -- "$(dirname -- "$default_profile")" && pwd -P)/$(basename -- "$default_profile")" ]]; then
+            echo "A reference capture requires SOPHIA_HAGIA_NATIVE_PROFILE naming a non-default profile." >&2
+            exit 1
+        fi
+        ;;
+    *)
+        echo "SOPHIA_HAGIA_NATIVE_CAPTURE must be unset or reference" >&2
+        exit 1
+        ;;
+esac
 hagia_bin="${TMPDIR:-/tmp}/hagia-native-${hagia_commit:0:12}"
 hagia_shell_bin="${TMPDIR:-/tmp}/narthex-native-${narthex_commit:0:12}"
 hagia_nimcache="${TMPDIR:-/tmp}/hagia-native-nimcache-${hagia_commit:0:12}"

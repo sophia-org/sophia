@@ -186,7 +186,11 @@ COPIED = (
     "tools/hagia_native_session_gate.sh",
     "tools/hagia_policy_physical_gate.sh",
     "tools/lib/proof_checkout.sh",
+    "tools/lib/reference_capture.sh",
     "tools/fixtures/t018_tab_reference.kdl",
+    "tools/fixtures/hagia_reference_capture_guide.sh",
+    "tools/archive_hagia_native_session_run.sh",
+    "tools/verify_hagia_native_session_archive.sh",
 )
 
 
@@ -295,9 +299,21 @@ class NativeReferenceDryRun(unittest.TestCase):
         files = {relative: ((ROOT / relative).read_text(), (ROOT / relative).stat().st_mode & 0o777)
                  for relative in COPIED}
         stub = "#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >>\"$MARKS/{name}\"\nexit {code}\n"
-        for name, code in (("atomic_scanout_preflight.sh", 0), ("start_sophia_tty3.sh", 3),
-                           ("live_session_persistent_hardware_proof.sh", 3)):
+        for name, code in (("atomic_scanout_preflight.sh", 0),
+                           ("live_session_persistent_hardware_proof.sh", 3),
+                           ("verify_hagia_native_session.sh", 1)):
             files[f"tools/{name}"] = (stub.format(name=name, code=code), 0o755)
+        # The runner: records its call, then writes what the test's scenario
+        # says this session produced, and exits with the scenario's status.
+        files["tools/start_sophia_tty3.sh"] = ("""#!/bin/bash
+printf '%s\\n' "$0 $*" >>"$MARKS/start_sophia_tty3.sh"
+[[ -n "${STUB_SESSION:-}" ]] || exit 3
+recovery="$XDG_STATE_HOME/sophia/hagia-session/recovery.log"
+mkdir -p "$(dirname "$recovery")"
+printf '%b' "$STUB_SESSION" >"$SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE"
+printf '%b' "${STUB_RECOVERY:-}" >>"$recovery"
+exit "${STUB_EXIT:-0}"
+""", 0o755)
         files["tools/fixtures/hagia_native_session_guide.sh"] = ("#!/bin/sh\n", 0o755)
         files["tools/fixtures/hagia_physical_guide.sh"] = ("#!/bin/sh\n", 0o755)
         files[".gitignore"] = ("target/\n", 0o644)
@@ -453,6 +469,141 @@ chmod 755 target/release/sophia
                     self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertRegex(result.stderr, "changed|signature")
                     self.assertEqual(self.mark(start), "")
+
+
+class ReferenceCaptureDryRun(NativeReferenceDryRun):
+    """The t018 capture mode through the real gate, archive and re-verification.
+
+    Inherits the native dry-run fixture, so the native tests also run here."""
+
+    PROOF = "hagianativeproof"
+    RECOVERY = ("sophia_tty_recovery schema=3 profile=hagia kd_mode_before=text "
+                "kd_mode_after=text termios_restored=true emergency=false "
+                "session_shutdown=not_requested session_exit_status=none\\n")
+    INPUT = (f"sophia_live_session_input schema=2 status=complete source=physical "
+             f"text={PROOF} expected_events=17 matched_events=17 pixel_change=true\\n")
+    CURSOR = ("sophia_live_cursor_path schema=2 status=selected requested=atomic_plane "
+              "path=atomic_plane\\n")
+
+    def capture(self, session=None, recovery=None, status="0", **extra):
+        environment = self.gate_environment(
+            SOPHIA_HAGIA_NATIVE_CAPTURE="reference",
+            SOPHIA_HAGIA_NATIVE_EVIDENCE=str(self.directory / "capture.log"),
+            STUB_SESSION=self.INPUT + self.CURSOR if session is None else session,
+            STUB_RECOVERY=self.RECOVERY if recovery is None else recovery,
+            STUB_EXIT=status, **extra)
+        return self.run_script("hagia_native_session_gate.sh", environment, terminal=False)
+
+    def captures(self):
+        root = self.directory / "state/sophia/reference/hagia-tab-captures"
+        return sorted(root.iterdir()) if root.exists() else []
+
+    def read_archive(self, run, kind=None):
+        arguments = [str(self.sophia / "tools/verify_hagia_native_session_archive.sh")]
+        if kind is not None:
+            arguments.append(f"--expected-kind={kind}")
+        arguments.append(str(run))
+        return subprocess.run(["bash", *arguments], env=self.gate_environment(),
+                              capture_output=True, text=True, timeout=30, check=False)
+
+    def test_a_capture_is_retained_as_a_reference_kind_only(self):
+        notes = self.directory / "observations.txt"
+        notes.write_text("frame-tree: empty sibling had no activation\n")
+        result = self.capture(SOPHIA_HAGIA_REFERENCE_OBSERVATIONS=str(notes))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("native_acceptance=false tab_observations=unverified", result.stdout)
+        self.assertEqual(self.mark("verify_hagia_native_session.sh"), "",
+                         "the native workflow verifier must never run on a capture")
+        evidence = (self.directory / "capture.log").read_text()
+        self.assertEqual(evidence.count("sophia_hagia_reference_capture schema=1 status=captured "
+                                        "native_acceptance=false tab_observations=unverified "), 1)
+        self.assertFalse((self.directory / "state/sophia/promotion").exists())
+        [run] = self.captures()
+        manifest = (run / "manifest").read_text()
+        self.assertIn("record_kind=hagia_reference_capture\n", manifest)
+        self.assertIn("observations=unverified\n", manifest)
+        self.assertEqual((run / "observations.txt").read_text(), notes.read_text())
+        for kind, code in ((None, 1), ("native", 1), ("reference", 0), ("anything", 2)):
+            with self.subTest(read=kind):
+                read = self.read_archive(run, kind)
+                self.assertEqual(read.returncode, code, read.stderr)
+                if kind in (None, "native"):
+                    self.assertIn("not the expected native kind", read.stderr)
+        # Tampering with retained evidence or observations fails re-verification.
+        for name in ("session.log", "observations.txt"):
+            with self.subTest(tampered=name):
+                original = (run / name).read_text()
+                (run / name).write_text(original + "tampered\n")
+                self.assertEqual(self.read_archive(run, "reference").returncode, 1)
+                (run / name).write_text(original)
+        self.assertEqual(self.read_archive(run, "reference").returncode, 0)
+
+    def test_a_native_archive_is_never_read_as_a_capture(self):
+        self.assertEqual(self.capture().returncode, 0)
+        [run] = self.captures()
+        manifest = (run / "manifest").read_text().replace(
+            "record_kind=hagia_reference_capture", "record_kind=hagia_native_session")
+        (run / "manifest").write_text(manifest)
+        subprocess.run(["bash", "-c", "sha256sum manifest result.kdl session.log >SHA256SUMS"],
+                       cwd=run, check=True)
+        read = self.read_archive(run, "reference")
+        self.assertEqual(read.returncode, 1)
+        self.assertIn("not the expected reference kind", read.stderr)
+
+    def test_the_default_mode_still_runs_the_native_verifier(self):
+        environment = self.gate_environment(
+            SOPHIA_HAGIA_NATIVE_EVIDENCE=str(self.directory / "native.log"),
+            STUB_SESSION=self.INPUT + self.CURSOR, STUB_RECOVERY=self.RECOVERY, STUB_EXIT="0")
+        result = self.run_script("hagia_native_session_gate.sh", environment, terminal=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotEqual(self.mark("verify_hagia_native_session.sh"), "")
+        self.assertNotIn("sophia_hagia_reference_capture", (self.directory / "native.log").read_text())
+        self.assertEqual(self.captures(), [])
+
+    def test_an_unproven_session_writes_no_capture(self):
+        emergency = self.RECOVERY.replace("emergency=false", "emergency=true")
+        malformed = self.RECOVERY.replace(" session_exit_status=none", "")
+        cases = {
+            "exit": dict(status="1"),
+            "no-recovery": dict(recovery=""),
+            "emergency-recovery": dict(recovery=emergency),
+            "duplicate-recovery": dict(recovery=self.RECOVERY + malformed),
+            "no-input": dict(session=self.CURSOR),
+            "duplicate-input": dict(session=self.INPUT + self.INPUT.replace("17", "18") + self.CURSOR),
+            "wrong-input-text": dict(session=self.INPUT.replace(self.PROOF, "otherphrase") + self.CURSOR),
+        }
+        for name, scenario in cases.items():
+            with self.subTest(case=name):
+                result = self.capture(**scenario)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                log = self.directory / "capture.log"
+                if log.exists():
+                    self.assertNotIn("sophia_hagia_reference_capture", log.read_text())
+                self.assertEqual(self.captures(), [])
+                self.assertEqual(self.mark("verify_hagia_native_session.sh"), "")
+
+    def test_a_previous_sessions_recovery_record_cannot_stand_in(self):
+        recovery = self.directory / "state/sophia/hagia-session/recovery.log"
+        recovery.parent.mkdir(parents=True)
+        recovery.write_text(self.RECOVERY)
+        result = self.capture(recovery="")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("exactly one TTY recovery record, found 0", result.stderr)
+        self.assertEqual(self.captures(), [])
+
+    def test_capture_mode_refuses_before_any_build(self):
+        default = self.hagia / "examples/config/default.kdl"
+        for mode, profile in (("reference", None), ("reference", str(default)),
+                              ("promotion", str(self.sophia / "tools/fixtures/t018_tab_reference.kdl"))):
+            with self.subTest(mode=mode, profile=profile):
+                extra = {"SOPHIA_HAGIA_NATIVE_CAPTURE": mode}
+                if profile is not None:
+                    extra["SOPHIA_HAGIA_NATIVE_PROFILE"] = profile
+                result = self.run_script("run_current_hagia_native_gate_tty4.sh",
+                                         self.environment(**extra))
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertRegex(result.stderr, "non-default profile|must be unset or reference")
+                self.assertEqual(self.mark("build"), "")
 
 
 if __name__ == "__main__":

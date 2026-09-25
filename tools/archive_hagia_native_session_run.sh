@@ -9,17 +9,53 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tools/lib/proof_checkout.sh
 source "$ROOT_DIR/tools/lib/proof_checkout.sh"
-evidence="${1:?usage: archive_hagia_native_session_run.sh EVIDENCE [PROOF_TEXT]}"
+# shellcheck source=tools/lib/reference_capture.sh
+source "$ROOT_DIR/tools/lib/reference_capture.sh"
+# A native session by default. --kind=reference records a t018 reference
+# capture instead, under its own run root and record kind, never the promotion
+# directory; a capture is not a native session and cannot become one here.
+kind=native
+case "${1:-}" in
+    --kind=native) shift ;;
+    --kind=reference) kind=reference; shift ;;
+    --kind=*) echo "archive kind must be native or reference: $1" >&2; exit 2 ;;
+esac
+evidence="${1:?usage: archive_hagia_native_session_run.sh [--kind=native|reference] EVIDENCE [PROOF_TEXT]}"
 proof_text="${2:-hagianativeproof}"
 state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
-run_root="${SOPHIA_HAGIA_NATIVE_RUN_ROOT:-$state_home/sophia/promotion/hagia-native-runs}"
+if [[ "$kind" == reference ]]; then
+    run_root="${SOPHIA_HAGIA_REFERENCE_RUN_ROOT:-$state_home/sophia/reference/hagia-tab-captures}"
+    record_kind=hagia_reference_capture
+    result_line='sophia_hagia_reference_capture schema=1 status=captured native_acceptance=false'
+    record_schema=1
+    observations="${SOPHIA_HAGIA_REFERENCE_OBSERVATIONS:-}"
+else
+    run_root="${SOPHIA_HAGIA_NATIVE_RUN_ROOT:-$state_home/sophia/promotion/hagia-native-runs}"
+    record_kind=hagia_native_session
+    result_line='sophia_hagia_native_session schema=2 status=passed'
+    record_schema=2
+    observations=
+fi
 sophia_bin="${SOPHIA_HAGIA_NATIVE_SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
 hagia_bin="${SOPHIA_HAGIA_BIN:-}"
 hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-}"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 narthex_root="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 
-"$ROOT_DIR/tools/verify_hagia_native_session.sh" "$evidence" "$proof_text" >/dev/null
+if [[ "$kind" == reference ]]; then
+    reference_capture_validate "$evidence" "$proof_text" || exit 1
+    # Operator observations are retained with their digest and stay unverified.
+    # A bounded regular file only: a link would retain bytes it does not own.
+    if [[ -n "$observations" ]]; then
+        [[ -f "$observations" && ! -L "$observations" ]] \
+            && (( $(stat -c %s "$observations") <= 262144 )) || {
+            echo "Reference observations must be a regular file of at most 256 KiB: $observations" >&2
+            exit 1
+        }
+    fi
+else
+    "$ROOT_DIR/tools/verify_hagia_native_session.sh" "$evidence" "$proof_text" >/dev/null
+fi
 identity="$(grep -E '^sophia_hagia_native_identity schema=2 status=bound ' "$evidence")"
 source_commit="$(sed -n 's/.* sophia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")"
 hagia_commit="$(sed -n 's/.* hagia_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$identity")"
@@ -98,18 +134,24 @@ done
 trap 'rm -rf -- "$run_dir"' ERR HUP INT TERM
 
 install -m 600 "$evidence" "$run_dir/session.log"
-printf '%s\n' \
-    'sophia_hagia_native_session schema=2 status=passed' \
-    >"$run_dir/result.kdl"
-printf 'record_schema=2\nrecord_kind=hagia_native_session\nrecorded_at_utc=%s\nsource_commit=%s\nhagia_commit=%s\nnarthex_commit=%s\nproof_text=%s\nevidence_sha256=%s\nsophia_binary_sha256=%s\nhagia_binary_sha256=%s\nnarthex_binary_sha256=%s\ndesktop_profile_sha256=%s\n' \
+printf '%s\n' "$result_line" >"$run_dir/result.kdl"
+printf 'record_schema=%s\nrecord_kind=%s\nrecorded_at_utc=%s\nsource_commit=%s\nhagia_commit=%s\nnarthex_commit=%s\nproof_text=%s\nevidence_sha256=%s\nsophia_binary_sha256=%s\nhagia_binary_sha256=%s\nnarthex_binary_sha256=%s\ndesktop_profile_sha256=%s\n' \
+    "$record_schema" "$record_kind" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$source_commit" "$hagia_commit" "$narthex_commit" "$proof_text" \
     "$evidence_sha256" "$sophia_sha256" "$hagia_sha256" "$narthex_sha256" \
     "$recorded_profile_sha256" \
     >"$run_dir/manifest"
+retained=(manifest result.kdl session.log)
+if [[ -n "$observations" ]]; then
+    install -m 600 "$observations" "$run_dir/observations.txt"
+    printf 'observations_sha256=%s\nobservations=unverified\n' \
+        "$(sha256sum "$run_dir/observations.txt" | awk '{ print $1 }')" >>"$run_dir/manifest"
+    retained+=(observations.txt)
+fi
 chmod 600 "$run_dir/manifest" "$run_dir/result.kdl"
 (
     cd "$run_dir"
-    sha256sum manifest result.kdl session.log >SHA256SUMS
+    sha256sum "${retained[@]}" >SHA256SUMS
 )
 chmod 600 "$run_dir/SHA256SUMS"
 
@@ -118,6 +160,12 @@ chmod 600 "$run_dir/SHA256SUMS"
     sha256sum -c --status SHA256SUMS
 )
 SOPHIA_HAGIA_ROOT="$hagia_root" \
-    "$ROOT_DIR/tools/verify_hagia_native_session_archive.sh" "$run_dir" >/dev/null
+SOPHIA_NARTHEX_ROOT="$narthex_root" \
+    "$ROOT_DIR/tools/verify_hagia_native_session_archive.sh" --expected-kind="$kind" \
+    "$run_dir" >/dev/null
 trap - ERR HUP INT TERM
-echo "Recorded verified Hagia native session run: $run_dir"
+if [[ "$kind" == reference ]]; then
+    echo "Recorded Hagia reference capture (native_acceptance=false, tab observations unverified): $run_dir"
+else
+    echo "Recorded verified Hagia native session run: $run_dir"
+fi

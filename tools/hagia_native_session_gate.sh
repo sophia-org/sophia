@@ -16,6 +16,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tools/lib/proof_checkout.sh
 source "$ROOT_DIR/tools/lib/proof_checkout.sh"
+# shellcheck source=tools/lib/reference_capture.sh
+source "$ROOT_DIR/tools/lib/reference_capture.sh"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
 hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v narthex || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
@@ -29,9 +31,27 @@ sequence_timeout_msec="${SOPHIA_HAGIA_NATIVE_SEQUENCE_TIMEOUT_MSEC:-600000}"
 # everything after. The session still ends by the operator's normal logout, so
 # this value covers startup rather than the whole workflow.
 startup_budget_msec="${SOPHIA_HAGIA_NATIVE_STARTUP_BUDGET_MSEC:-660000}"
-evidence="${SOPHIA_HAGIA_NATIVE_EVIDENCE:-/tmp/sophia-hagia-native-session.log}"
+# The native workflow proof by default. SOPHIA_HAGIA_NATIVE_CAPTURE=reference
+# runs the same session to retain a t018 tab reference capture instead: it
+# claims only bound identity and profile, exit 0, TTY recovery and retained
+# evidence, never the native workflow or any tab observation.
+capture_mode="${SOPHIA_HAGIA_NATIVE_CAPTURE:-}"
+case "$capture_mode" in
+    ''|reference) ;;
+    *)
+        echo "SOPHIA_HAGIA_NATIVE_CAPTURE must be unset or reference" >&2
+        exit 2
+        ;;
+esac
+if [[ "$capture_mode" == reference ]]; then
+    evidence="${SOPHIA_HAGIA_NATIVE_EVIDENCE:-/tmp/sophia-hagia-reference-capture.log}"
+    default_guide="$ROOT_DIR/tools/fixtures/hagia_reference_capture_guide.sh"
+else
+    evidence="${SOPHIA_HAGIA_NATIVE_EVIDENCE:-/tmp/sophia-hagia-native-session.log}"
+    default_guide="$ROOT_DIR/tools/fixtures/hagia_native_session_guide.sh"
+fi
 proof_text="${SOPHIA_HAGIA_NATIVE_TEXT:-hagianativeproof}"
-guide="${SOPHIA_HAGIA_NATIVE_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_native_session_guide.sh}"
+guide="${SOPHIA_HAGIA_NATIVE_GUIDE:-$default_guide}"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 narthex_root="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 desktop_profile="${SOPHIA_DESKTOP_PROFILE:-}"
@@ -157,15 +177,25 @@ verify_bound_identity() {
 
 verify_bound_identity
 
-echo "Hagia native session gate"
-echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
-echo "After the startup terminal appears, follow the on-screen guide:"
-echo "  1. Type '$proof_text' and press Enter."
-echo "  2. Press Super+Return three times, waiting for each new terminal."
-echo "  3. Press Super+J once and confirm focus visibly moves."
-echo "  4. Press Super+q once to close the focused terminal."
-echo "  5. Press Ctrl+Alt+Delete once for a normal logout."
-echo "Do not use Ctrl+Alt+Backspace during the normal proof."
+if [[ "$capture_mode" == reference ]]; then
+    echo "Hagia t018 reference capture (not a native or tab acceptance)"
+    echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
+    echo "After the startup terminal appears, follow the on-screen guide:"
+    echo "  1. Type '$proof_text' and press Enter."
+    echo "  2. Work through the tab matrix the guide lists, recording what you see."
+    echo "  3. Press Ctrl+Alt+Delete once for a normal logout."
+    echo "Do not use Ctrl+Alt+Backspace during the capture."
+else
+    echo "Hagia native session gate"
+    echo "This takes exclusive DRM/KMS and seat input. Evidence: $evidence"
+    echo "After the startup terminal appears, follow the on-screen guide:"
+    echo "  1. Type '$proof_text' and press Enter."
+    echo "  2. Press Super+Return three times, waiting for each new terminal."
+    echo "  3. Press Super+J once and confirm focus visibly moves."
+    echo "  4. Press Super+q once to close the focused terminal."
+    echo "  5. Press Ctrl+Alt+Delete once for a normal logout."
+    echo "Do not use Ctrl+Alt+Backspace during the normal proof."
+fi
 
 # The runner skips its own preflight when it is not building, and this gate
 # deliberately does not let it build: a rebuild between binding the digests and
@@ -184,6 +214,13 @@ echo "Do not use Ctrl+Alt+Backspace during the normal proof."
 guide_claim_dir="$(mktemp -d "${TMPDIR:-/tmp}/sophia-hagia-native-guide.XXXXXX")"
 trap 'rm -rf -- "$guide_claim_dir"' EXIT HUP INT TERM
 guide_claim="$guide_claim_dir/startup.claim"
+
+# The recovery log is append-only across sessions. A capture takes only what
+# this invocation appended, so an earlier session's record can never stand in.
+recovery_offset=0
+if [[ -f "$recovery_log" ]]; then
+    recovery_offset="$(stat -c %s "$recovery_log")"
+fi
 
 status=0
 # Shared renderer workers stay opt-in and this run is their promotion: the
@@ -233,12 +270,23 @@ verify_bound_identity
 # session is running; the archive keeps one file, so they are joined here rather
 # than left for the verifier to correlate across the filesystem.
 install -m 600 "$session_log" "$evidence"
-recovery_record="$(grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$recovery_log" | tail -n 1 || true)"
-[[ -n "$recovery_record" ]] || {
-    echo "The runner recorded no TTY recovery for this session: $recovery_log" >&2
-    exit 1
-}
-printf '%s\n' "$recovery_record" >>"$evidence"
+if [[ "$capture_mode" == reference ]]; then
+    [[ -f "$recovery_log" ]] && (( $(stat -c %s "$recovery_log") >= recovery_offset )) || {
+        echo "The runner's recovery log was removed or truncated during the capture: $recovery_log" >&2
+        exit 1
+    }
+    # Every recovery record this invocation appended is carried; the shared
+    # validation below requires exactly one, of the exact passing form.
+    tail -c +"$((recovery_offset + 1))" "$recovery_log" \
+        | grep -E '^sophia_tty_recovery ' >>"$evidence" || true
+else
+    recovery_record="$(grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$recovery_log" | tail -n 1 || true)"
+    [[ -n "$recovery_record" ]] || {
+        echo "The runner recorded no TTY recovery for this session: $recovery_log" >&2
+        exit 1
+    }
+    printf '%s\n' "$recovery_record" >>"$evidence"
+fi
 printf 'sophia_hagia_native_identity schema=2 status=bound sophia_commit=%s hagia_commit=%s narthex_commit=%s sophia_sha256=%s hagia_sha256=%s narthex_sha256=%s desktop_profile_sha256=%s\n' \
     "$source_commit" "$hagia_commit" "$narthex_commit" "$sophia_sha256" "$hagia_sha256" \
     "$narthex_sha256" "$recorded_profile_sha256" >>"$evidence"
@@ -253,6 +301,23 @@ grep -qE '^sophia_live_cursor_path schema=2 status=selected requested=(atomic_pl
     exit 1
 }
 
+if [[ "$capture_mode" == reference ]]; then
+    # The native workflow verifier is never run on a capture: its counts
+    # describe a different workflow, and a capture neither passes nor fails it.
+    reference_capture_validate_session "$evidence" "$proof_text" || {
+        echo "The reference capture is refused; no capture record was written." >&2
+        exit 1
+    }
+    reference_capture_record "$evidence" >>"$evidence"
+    SOPHIA_HAGIA_BIN="$hagia_bin" \
+    SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
+    SOPHIA_HAGIA_ROOT="$hagia_root" \
+    SOPHIA_NARTHEX_ROOT="$narthex_root" \
+        "$ROOT_DIR/tools/archive_hagia_native_session_run.sh" --kind=reference \
+        "$evidence" "$proof_text"
+    echo "Hagia reference capture retained: native_acceptance=false tab_observations=unverified"
+    exit 0
+fi
 SOPHIA_HAGIA_NATIVE_GUIDE="$guide" \
     "$ROOT_DIR/tools/verify_hagia_native_session.sh" "$evidence" "$proof_text"
 SOPHIA_HAGIA_BIN="$hagia_bin" \
