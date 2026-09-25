@@ -9,7 +9,7 @@ tags: [investigation, scanout, renderer, session-fatal]
 
 ## Question
 
-Mason's installed session (commit 4eacfcfb, the daily desktop) exited at
+niltempus's installed session (commit 4eacfcfb, the daily desktop) exited at
 06:43:33 local on 2026-09-24 after 10.8 hours, with two of this agent's
 background jobs at full parallelism on the same machine: the core
 conformance profile and the session crate's test suite. What ended it, and

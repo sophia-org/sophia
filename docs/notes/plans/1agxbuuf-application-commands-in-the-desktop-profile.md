@@ -8,7 +8,7 @@ tags: [plan, session, configuration]
 
 ## Scope and exit
 
-Mason approved implementation on 2026-09-10. Task t076 makes the selected
+niltempus approved implementation on 2026-09-10. Task t076 makes the selected
 desktop profile the ordinary place to define application commands and their
 shortcuts. Both named applications and inline commands are supported. An
 explicit `use-core` reference imports an advanced Sophia registration as a

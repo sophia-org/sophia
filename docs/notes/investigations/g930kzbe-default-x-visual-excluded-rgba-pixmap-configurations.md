@@ -94,7 +94,7 @@ in the evidence manifest.
 
 ## Physical acceptance on 2026-09-09
 
-Mason opened a new session on `b43d23d0bb15`, launched Brave through Super+B,
+niltempus opened a new session on `b43d23d0bb15`, launched Brave through Super+B,
 and confirmed that the playing video was "normal". This accepts the installed
 white-video repair. The session identity is
 `00000001788947503816-89494440-9ce4-43e1-9884-2b7d75ea14a9`; its release and
