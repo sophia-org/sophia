@@ -37,6 +37,10 @@ wins when prose disagrees.
 - [Compositor Graphics](compositor-graphics.md) defines the renderer-neutral
   display list, native primitive lowering, cached text strategy, damage rules,
   and Niri architectural reference for compositor-owned content.
+- [Rendering foundation for WMs and shells](rendering-foundation.md) records
+  existing mechanisms, the proposed generic WM presentation boundary, its ASCII
+  architecture diagram, and the remaining protocol and input work. The proposed
+  extension does not yet change the normative wire contracts.
 - [Multi-Monitor Per-Head Composition](multi-monitor-composition.md) defines
   how one logical Engine scene becomes distinct native compositions for
   mirrored and extended display heads, including content variants, head-local
