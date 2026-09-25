@@ -75,12 +75,39 @@ acceptance was performed for this tooling change.
 ## t026
 
 The [Session and native-owner source splits](../investigations/izw9opes-private-session-tests-can-move-without-widening-the-production-api.md)
-record the validated non-X-authority portion; X-authority debt stays in the ledger.
+record the validated non-X-authority portion, merged as signed `975a5fbb`.
+The X-authority portion is merged as signed `d7e24b81`, including candidate
+`f4c6c28a`. Its selected-core gate with all profiles, core probe, full authority
+suite, Clippy, formatting and layout gate passed, as reported by its owning
+agent. Both portions are integrated.
 
 Move remaining session-private test modules out of production `src` as
 visibility boundaries permit, and split the oversized cohesive units named in
 `docs/source-layout-debt.txt`. Do not weaken privacy or add test-only
 production APIs.
+
+**Completion boundary, 2026-09-25.** The source/test relocations and cohesive
+implementation splits are complete. The sole remaining ledger entry,
+`wire/request.rs` at 1,355 lines, is explicitly carried into [t240](#t240).
+It defines one flat decoded-request enum; changing its family representation
+requires coordinated decoder and dispatcher changes rather than relocation.
+Closing t026 does not claim an empty debt ledger or fresh physical acceptance.
+
+## t240
+
+Resolve the remaining `crates/sophia-x-authority/src/wire/request.rs` layout
+debt by designing and implementing cohesive decoded-request families. Preserve
+wire encodings, reply/error behavior, validation order and resource ownership.
+Update every affected decoder, dispatcher and fixture together; do not compress
+formatting, introduce variant-generating machinery solely to evade the limit,
+or raise the existing 1,355-line ceiling to hide growth.
+
+This is the explicit representation follow-up from [t026](#t026), not a claim
+that the protocol wire format needs changing. The existing debt row remains
+until the result satisfies the layout gate. Validate with the full authority
+suite, Clippy/formatting/layout, the core probe, and selected-core, xproto and
+events profile gates. Coordinate with the X-authority owner before touching
+active event work. No physical acceptance is implied by these checks.
 
 
 ## t027

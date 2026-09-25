@@ -40,7 +40,7 @@
 
 (A) Record the concise result with zk milestone, link it from the milestone map in docs/notes/indexes/milestones.md, and update current product statements only after the development-session target is… +critical +cp14-3 @development id:t021 order:021 [details](docs/notes/plans/queue-07-5-close-milestone-14.md#t021)
 
-(B) Move remaining session-private test modules out of production src as visibility boundaries permit, and split the oversized cohesive units named in docs/source-layout-debt.txt (the sophia-x-authority portion, 2026-09-25: dispatch.rs, runtime.rs, dispatch/core/windows.rs and input_discovery.rs split by subject into included files, x11_socket/tests/socket_core.rs in two, and the seven test files over 1500 lines split by theme, twelve rows removed; wire/request.rs stays on the ledger at 1355: it is one enum with one variant per request, and taking it under 1000 lines means nesting the request families into enums of their own, a wire-type change every decoder and dispatcher would follow, not a move). +parallel @development id:t026 order:026 [details](docs/notes/plans/queue-11-parallel-production-readiness.md#t026)
+(B) 2026-09-24 Split the remaining decoded XWireRequest enum into cohesive request families, preserving wire and dispatch behavior; retain the current layout debt until verified. +parallel @development id:t240 order:026.1 [details](docs/notes/plans/queue-11-parallel-production-readiness.md#t240)
 
 (B) Reduce tools/start_sophia_tty3.sh to the minimum TTY/display-manager adapter around sophia session run. +parallel @development id:t027 order:027 [details](docs/notes/plans/queue-11-parallel-production-readiness.md#t027)
 

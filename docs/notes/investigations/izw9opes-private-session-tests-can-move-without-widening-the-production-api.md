@@ -2,7 +2,7 @@
 id: izw9opes
 date: 2026-09-24
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation]
 ---
 # Private Session tests can move without widening the production API
@@ -11,6 +11,20 @@ tags: [investigation]
 
 Can the Session portion of [t026](../plans/queue-11-parallel-production-readiness.md#t026)
 leave production `src` without exposing private runtime authority for tests?
+
+## Completion
+
+Yes. The non-X-authority portion merged as signed `975a5fbb`; the separately
+owned X-authority portion merged as signed `d7e24b81` on 2026-09-25. Its owner
+reported selected-core with all profiles, the core probe, full authority suite,
+Clippy, formatting and layout green for candidate `f4c6c28a`. These complement
+the directly retained non-X-authority evidence below.
+
+The single remaining 1,355-line `wire/request.rs` enum is carried explicitly
+as [t240](../plans/queue-11-parallel-production-readiness.md#t240). Its debt row
+and ceiling remain unchanged. t026 closes the integrated relocation and
+implementation-splitting work; it does not claim that this representation
+follow-up or a physical acceptance gate has been completed.
 
 ## Change
 
@@ -104,9 +118,9 @@ formatting and layout pass. Evidence is retained in
 `.artifacts/t026-phases-tests.log`, `t026-phases-clippy-final.log`,
 `t026-phases-layout.log` and `t026-work-area-source-test.log`.
 
-The other agent's X-authority portion and final integration remain. The task
-stays open until both portions are integrated; these checks do not close any
-physical acceptance gate.
+At this checkpoint the other agent's X-authority portion and final integration
+remained; the completion record above supersedes that pending integration.
+These checks do not close any physical acceptance gate.
 
 ## Integration candidate
 
@@ -125,4 +139,5 @@ the adjacent logs retain each phase. The top-level logs retain the affected
 crate suites and Clippy/layout checks, including earlier failed extraction
 attempts separately from the successful reruns. Formatting, metadata and
 signature checks also pass. Only X-authority rows remain in the size-debt
-ledger; the task remains open for that agent's separately gated portion.
+ledger at this checkpoint; the separately gated portion is now integrated as
+recorded above, with the remaining enum carried into t240.
