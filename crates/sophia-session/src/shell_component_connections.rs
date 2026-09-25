@@ -6,9 +6,10 @@ use std::time::Duration;
 use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentRole};
 use sophia_protocol::{ContentGrant, ContentLimits, ShellV1ServerWelcome};
 use sophia_runtime::{
-    ContentEpochAccounting, ContentEpochRegistry, ContentStoreError, ContentStoreProfile,
-    ProtectionDomainEvidence, ShellComponentTransport, ShellContentAdmissionPolicy,
-    ShellTransportConnection, ShellTransportError,
+    ContentEpochAccounting, ContentEpochRegistry, ContentReconnectAllowance,
+    ContentReconnectBudget, ContentStoreError, ContentStoreProfile, ProtectionDomainEvidence,
+    ShellComponentTransport, ShellContentAdmissionPolicy, ShellTransportConnection,
+    ShellTransportError, content_reconnect_allowance, select_reconnect_limits,
 };
 
 const MIB: u64 = 1024 * 1024;
@@ -165,15 +166,55 @@ impl ShellComponentConnections {
         };
         self.next_connection = next_connection;
         self.next_content = next_content;
-        connection.transport.reserve_content_with_profile(
-            &mut self.epochs,
-            role_limits(connection.role, grant, self.connections_have_dock),
-            match connection.role {
-                ShellComponentRole::Bar => ContentStoreProfile::Legacy,
-                ShellComponentRole::Dock => ContentStoreProfile::PersistentCatalog,
-                ShellComponentRole::ApplicationLauncher => ContentStoreProfile::NativeLauncher,
-            },
-        )?;
+        let profile = match connection.role {
+            ShellComponentRole::Bar => ContentStoreProfile::Legacy,
+            ShellComponentRole::Dock => ContentStoreProfile::PersistentCatalog,
+            ShellComponentRole::ApplicationLauncher => ContentStoreProfile::NativeLauncher,
+        };
+        // add() enforces unique roles and locks the role set before the first
+        // attempt. Thus this immutable nominal envelope has exactly one profile
+        // owner, including every retained predecessor of a reduced successor.
+        let nominal = role_limits(connection.role, grant, self.connections_have_dock);
+        self.epochs.collect();
+        let budget = self.epochs.reconnect_budget(profile);
+        let allowance = content_reconnect_allowance(&nominal, budget)?;
+        let result = select_reconnect_limits(&nominal, budget)
+            .map_err(ShellTransportError::from)
+            .and_then(|limits| {
+                connection.transport.reserve_content_with_profile(
+                    &mut self.epochs,
+                    limits.clone(),
+                    profile,
+                )?;
+                Ok(limits)
+            });
+        match result {
+            Ok(limits) if limits != nominal => record_reconnect_budget(
+                slot,
+                connection.role,
+                &nominal,
+                budget,
+                allowance,
+                Some(&limits),
+            ),
+            Ok(_) => {}
+            Err(error) => {
+                if matches!(
+                    error,
+                    ShellTransportError::ContentStore(ContentStoreError::Budget)
+                ) {
+                    record_reconnect_budget(
+                        slot,
+                        connection.role,
+                        &nominal,
+                        budget,
+                        allowance,
+                        None,
+                    );
+                }
+                return Err(error.into());
+            }
+        }
         connection.attempt = Some((grant, ComponentConnectionPhase::Reserved));
         Ok(ComponentConnectionKey { slot, grant })
     }
@@ -350,4 +391,70 @@ fn role_limits(role: ShellComponentRole, grant: ContentGrant, has_dock: bool) ->
         limits.max_retiring_bytes = 8 * MIB;
     }
     limits
+}
+
+fn record_reconnect_budget(
+    slot: usize,
+    role: ShellComponentRole,
+    nominal: &ContentLimits,
+    budget: ContentReconnectBudget,
+    allowance: ContentReconnectAllowance,
+    granted: Option<&ContentLimits>,
+) {
+    let status = if granted.is_some() {
+        "admitted_reduced"
+    } else {
+        "admission_refused"
+    };
+    let role = match role {
+        ShellComponentRole::Bar => "bar",
+        ShellComponentRole::ApplicationLauncher => "application_launcher",
+        ShellComponentRole::Dock => "dock",
+    };
+    let nominal_bytes =
+        nominal.max_staging_bytes + nominal.max_resident_bytes + nominal.max_retiring_bytes;
+    let ContentReconnectAllowance {
+        available_bytes,
+        available_backing_bytes,
+        required_bytes,
+        required_backing_bytes,
+    } = allowance;
+    let constraint =
+        if available_bytes < required_bytes || available_backing_bytes < required_backing_bytes {
+            "bytes"
+        } else if granted.is_none()
+            && (budget.active_epochs >= MAX_SHELL_COMPONENTS
+                || budget.active_epochs + budget.retired_epochs
+                    >= ContentEpochRegistry::MAX_RETAINED_EPOCHS)
+        {
+            "epochs"
+        } else if granted.is_none() {
+            "reservation"
+        } else {
+            "bytes"
+        };
+    let (staging_bytes, resident_bytes, retiring_bytes) = granted.map_or((0, 0, 0), |limits| {
+        (
+            limits.max_staging_bytes,
+            limits.max_resident_bytes,
+            limits.max_retiring_bytes,
+        )
+    });
+    // Emit typed host accounting before the process owner reduces errors to
+    // text. One record per actual attempt, paced by the existing retry owner.
+    crate::session_eprintln!(
+        "sophia_shell_component schema=1 status={status} cause=content_budget budget_constraint={constraint} slot={slot} role={role} connection_epoch={} content_grant_epoch={} source_capacity_bytes={} backing_capacity_bytes={} nominal_bytes={nominal_bytes} own_retired_bytes={} own_retired_epochs={} reserved_bytes={} reserved_backing_bytes={} available_bytes={available_bytes} available_backing_bytes={available_backing_bytes} required_bytes={required_bytes} required_backing_bytes={required_backing_bytes} active_epochs={} retired_epochs={} active_capacity={} epoch_capacity={} staging_bytes={staging_bytes} resident_bytes={resident_bytes} retiring_bytes={retiring_bytes}",
+        nominal.grant.connection_epoch,
+        nominal.grant.content_grant_epoch,
+        budget.capacity_bytes,
+        budget.capacity_backing_bytes,
+        budget.own_retired_bytes,
+        budget.own_retired_epochs,
+        budget.reserved_bytes,
+        budget.reserved_backing_bytes,
+        budget.active_epochs,
+        budget.retired_epochs,
+        MAX_SHELL_COMPONENTS,
+        ContentEpochRegistry::MAX_RETAINED_EPOCHS,
+    );
 }

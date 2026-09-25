@@ -333,6 +333,27 @@ impl ContentEpochRegistry {
         value
     }
 
+    /// Observe every retained generation of this profile after the caller's
+    /// collection pass. Never substitute only the most recent predecessor or
+    /// its negotiated ceiling for the resources actually still owned.
+    pub fn reconnect_budget(&self, profile: ContentStoreProfile) -> super::ContentReconnectBudget {
+        let mut budget = super::ContentReconnectBudget {
+            capacity_bytes: self.max_bytes,
+            capacity_backing_bytes: self.max_backing_bytes,
+            reserved_bytes: self.reserved_bytes(),
+            reserved_backing_bytes: self.reserved_backing_bytes(),
+            active_epochs: self.active.len(),
+            retired_epochs: self.retired.len(),
+            ..Default::default()
+        };
+        for epoch in self.retired.iter().filter(|epoch| epoch.profile == profile) {
+            let usage = epoch.resources.usage();
+            budget.own_retired_bytes += usage.staging + usage.resident + usage.retiring;
+            budget.own_retired_epochs += 1;
+        }
+        budget
+    }
+
     /// Final Session backend shutdown only, after its workers have ended.
     /// Join success alone is not proof of that disposition. Any still-live
     /// grant refuses the transfer and returns the actual backend unchanged.

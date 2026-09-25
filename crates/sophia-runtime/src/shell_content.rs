@@ -11,6 +11,7 @@ mod candidates;
 mod epoch_registry;
 mod epochs;
 mod profile;
+mod reconnect_budget;
 mod resources;
 
 pub use accounting::*;
@@ -19,4 +20,5 @@ pub use candidates::*;
 pub use epoch_registry::*;
 pub use epochs::*;
 pub use profile::*;
+pub use reconnect_budget::*;
 pub use resources::*;

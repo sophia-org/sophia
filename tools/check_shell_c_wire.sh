@@ -6,7 +6,7 @@ trap 'rm -rf "$build"' EXIT HUP INT TERM
 cd "$root"
 ulimit -c 0
 python3 -B tools/check_shell_c_wire_inventory.py
-for test in test corpus budget_test catalog_test native_test native_codec_test resource_test limits_test feedback_test outbox_test upload_test native_lifecycle_test; do
+for test in test corpus budget_test catalog_test native_test native_codec_test resource_test limits_test reduced_limits_test feedback_test outbox_test upload_test native_lifecycle_test; do
     if [ "$test" = budget_test ]; then
         set -- -Wl,--wrap=recv -Wl,--wrap=send
     elif [ "$test" = native_lifecycle_test ]; then
@@ -37,6 +37,7 @@ done
 "$build/native_codec_test" protocol/golden/sophia-shell-native-launcher.frames
 "$build/resource_test" protocol/golden/sophia-shell-content.frames
 "$build/limits_test" protocol/golden/sophia-shell-content.frames
+"$build/reduced_limits_test" protocol/golden/sophia-shell-content.frames
 "$build/feedback_test" protocol/golden/sophia-shell-content.frames
 for corpus in sophia-shell-v1 sophia-shell-tabs sophia-shell-reference \
     sophia-shell-launcher sophia-shell-content sophia-shell-indicators sophia-shell-native-launcher; do
