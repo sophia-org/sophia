@@ -40,10 +40,15 @@ export SOPHIA_SESSION_TYPE_CAPTURE="$capture"
 # A display manager launching a `wayland-sessions/` entry declares the session
 # Wayland and may advertise a socket. Both are wrong here, and the launcher has
 # to correct them rather than pass them on.
+# This fixture models ordinary login, even when invoked from a proof session.
 XDG_SESSION_TYPE=wayland \
     WAYLAND_DISPLAY=wayland-0 \
     XDG_STATE_HOME="$work/state" \
     SOPHIA_TTY_PROFILE=hagia \
+    SOPHIA_INSTALLED_ATTEMPT_MODE=hagia \
+    SOPHIA_HAGIA_PROFILE_MODE=user \
+    SOPHIA_TRUECOLOR_PROOF=false \
+    SOPHIA_SESSION_WATCHDOG_SECONDS= \
     "$release/bin/sophia-session"
 
 observed_type="$(sed -n 's/^XDG_SESSION_TYPE=//p' "$capture")"

@@ -175,13 +175,16 @@ to exist before either can be done, and that is Tier 2. Both moved to t142,
 which no longer waits on t141. Leaving them in t141 would have made the two
 rows wait on each other.
 
-**Not covered by any gate.** These six controls live in
-`src/live_session/tests/socket_directory_tests.rs` and run only under
-`--features native-session`, which no gate runs as a test -- xtask uses that
-feature for a release *build*, and the two shell scripts that test with it name
-individual targets. That is true of the crate's other 557 live-session tests
-as well, so it is a standing gap rather than one this row opened; worth its own
-row.
+**Coverage correction (t143, reviewed 2026-09-25).** The claim that no gate
+executes these controls was incorrect. `cargo xtask check` calls
+`workspace_tests` in `crates/xtask/src/check.rs`, which runs
+`cargo test --offline --workspace --all-features`. This enables
+`sophia-session/native-session` and executes the library tests, not merely a
+release build. Commit `9183c224` already carried that invocation;
+`65df884d` also removed the inherited destructive scanout-smoke opt-in.
+The six socket-directory tests now live under
+`crates/sophia-session/tests/support/live_session/socket_directory_tests.rs`.
+See [the t143 acceptance below](#t143-automated-native-session-coverage).
 
 Small, no runtime change, real security value.
 
@@ -281,6 +284,30 @@ than the exception, and the portal becomes load bearing for ordinary copy and
 paste. That is what the portal is for. It is proven over two sockets for
 CLIPBOARD and, as of the PRIMARY test, for PRIMARY -- what t124's evidence
 covers is the same-display case, which is the other one.
+
+## t143: automated native-session coverage
+
+The existing all-feature gate is the owner; no duplicate test runner is
+needed. It uses a fresh owner-only configuration directory and clears
+`SOPHIA_SHELL_CONFIG` and `SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE`. Ordinary
+libtest execution excludes explicitly ignored hardware, independent-Hagia,
+generated-profile and M4 acceptance tests; those retain their separate gates.
+Enabling the feature requires native development libraries to compile, but
+does not itself authorize access to live devices.
+
+An actual `cargo xtask check` on `a50e393f`, inside bubblewrap with private
+`/dev`, `/tmp`, `/run`, PID, IPC and network namespaces, reached the session
+library: 597 tests discovered, 579 passed, 18 explicitly ignored, zero filtered
+out. All six socket-directory controls passed. The first isolation attempt
+omitted `XDG_RUNTIME_DIR` and failed earlier in a CLI lifecycle test; the
+corrected run supplied a private owner-only runtime directory. Workspace
+tests and Clippy passed, then an unrelated installed-session-type fixture
+inherited the caller's `SOPHIA_INSTALLED_ATTEMPT_MODE=xtest` and entered the
+proof path with an ordinary-login stub. The fixture now explicitly selects
+ordinary mode and passes even with proof/watchdog settings injected.
+
+The final candidate, full-gate verdict and retained evidence follow after
+the clean rerun. Physical session acceptance is not claimed by this task.
 
 ## Connections
 
