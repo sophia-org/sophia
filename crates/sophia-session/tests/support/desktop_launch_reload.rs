@@ -13,6 +13,9 @@ mod desktop_probe;
 #[path = "component_launch_reload.rs"]
 mod component_launch_reload;
 
+#[path = "default_policy_catalog.rs"]
+mod default_policy_catalog;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -69,11 +72,12 @@ impl ReloadFixture {
             chrome: sophia_protocol::WmChromePolicy::default(),
         };
         let commands = SessionCommandRegistry::prepare(1, &config.applications).unwrap();
-        let registry = resolve_public_shortcuts(
+        let registry = resolve_public_shortcuts_with_dropped_defaults(
             &config.shortcut_profile_candidate,
             &configuration,
             configuration.generation,
             &commands,
+            &config.dropped_shortcuts,
         )
         .unwrap();
         let bounds = wm_output_bounds(&[output])
@@ -128,6 +132,7 @@ impl ReloadFixture {
             live_output_ids: BTreeSet::from([output.id]),
             work_areas: bounds,
             session_operations,
+            dropped_default_shortcuts: config.dropped_shortcuts.clone(),
             operation_actions,
             expected_operation_slot: None,
             pending_operation: None,
@@ -542,7 +547,7 @@ fn rejected_policy_restores_the_exact_spec_fragments_and_commands() {
 }
 
 #[test]
-fn lom_panel_gate_commits_hagias_complete_catalog_and_rejects_a_missing_slot() {
+fn lom_panel_gate_admits_only_available_actions_from_hagias_complete_catalog() {
     let core = include_str!("../../../../tools/fixtures/lom_panel_core.kdl");
     let arguments = [
         "--session-app=browser=/usr/bin/true",
@@ -634,9 +639,12 @@ fn lom_panel_gate_commits_hagias_complete_catalog_and_rejects_a_missing_slot() {
     let configuration = policy_configuration(&missing);
     assert_eq!(
         missing.stage_configuration(&configuration),
-        sophia_protocol::PolicyProjectionOutcome::RejectedInvalid
+        sophia_protocol::PolicyProjectionOutcome::Committed
     );
-    assert!(missing.wm.pending_policy_configuration.is_none());
+    missing.settle(true);
+    let accepted = missing.wm.public.as_ref().unwrap().accepted_configuration.as_ref().unwrap();
+    assert!(accepted.actions.iter().all(|action| action.session_operation_slot != Some(7)));
+    assert!(configuration.actions.iter().any(|action| action.session_operation_slot == Some(7)));
 }
 
 #[test]

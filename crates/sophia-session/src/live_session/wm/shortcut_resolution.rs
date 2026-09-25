@@ -29,6 +29,16 @@ fn resolve_public_shortcuts(
     policy_generation: u64,
     commands: &SessionCommandRegistry,
 ) -> Result<sophia_engine::WmShortcutRegistry, &'static str> {
+    resolve_public_shortcuts_with_dropped_defaults(candidate, configuration, policy_generation, commands, &[])
+}
+
+fn resolve_public_shortcuts_with_dropped_defaults(
+    candidate: &sophia_config::DesktopShortcutCandidate,
+    configuration: &sophia_protocol::PolicyConfiguration,
+    policy_generation: u64,
+    commands: &SessionCommandRegistry,
+    dropped: &[sophia_config::DesktopSessionShortcut],
+) -> Result<sophia_engine::WmShortcutRegistry, &'static str> {
     if policy_generation != configuration.generation {
         return Err("shortcut and policy generations differ");
     }
@@ -56,6 +66,13 @@ fn resolve_public_shortcuts(
         .collect::<BTreeMap<_, _>>();
     let mut bindings = Vec::with_capacity(candidate.bindings.len());
     for binding in &candidate.bindings {
+        // These omissions were admitted and reported at startup only for the
+        // compiled fallback. Keep the source candidate and its digest intact.
+        if let sophia_config::DesktopShortcutTarget::Session(shortcut) = &binding.target
+            && dropped.contains(shortcut)
+        {
+            continue;
+        }
         if binding.chord.kind == sophia_config::DesktopShortcutBindingKind::Pointer {
             let valid_engine_gesture = matches!(
                 &binding.target,

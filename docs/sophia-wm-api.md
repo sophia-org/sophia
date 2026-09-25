@@ -99,8 +99,15 @@ The policy client advertises a bounded catalog containing one nonzero opaque
 action ID, a unique semantic name of at most 128 bytes, and an optional
 session-operation slot. It never supplies keycodes or modifier masks. The
 trusted session coordinator resolves the shortcut authority's prepared profile
-against that catalog, then gives Engine only normalized chords and opaque IDs.
-Unknown names, unavailable operation slots, unsupported pointer gestures,
+against the admitted catalog, then gives Engine only normalized chords and opaque IDs.
+The offered catalog may include standard session-operation slots (1 through 7)
+that this desktop has not admitted. Session omits those actions before shortcut
+resolution and snapshot publication; an offer never creates an operation grant.
+Unknown slots remain invalid. The first snapshot carries the accepted catalog.
+An explicit shortcut naming an unavailable operation still fails resolution.
+Only unavailable compiled-default shortcuts already reported by startup are
+omitted; the prepared source and its digest remain unchanged.
+Unknown names, unavailable explicit bindings, unsupported pointer gestures,
 excessive registrations, duplicate chords, and the emergency chord fail
 closed. The slot, not an action-number range, associates a committed
 activation with one session-owned capability.

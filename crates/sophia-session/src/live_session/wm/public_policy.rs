@@ -241,6 +241,7 @@ struct LivePublicPolicyState {
     live_output_ids: BTreeSet<sophia_protocol::OutputId>,
     work_areas: BTreeMap<sophia_protocol::OutputId, Rect>,
     session_operations: Vec<sophia_protocol::PolicySessionOperation>,
+    dropped_default_shortcuts: Vec<sophia_config::DesktopSessionShortcut>,
     operation_actions: BTreeMap<u64, WmSessionAction>,
     expected_operation_slot: Option<u16>,
     pending_operation: Option<(TransactionId, sophia_protocol::PolicySessionOperationRequest)>,

@@ -193,6 +193,8 @@ impl LiveWmSession {
         config.applications = launch.applications;
         config.active_launch_profile = Some(launch.launch_profile);
         config.shortcut_profile_candidate = launch.shortcuts;
+        config.dropped_shortcuts.clear();
+        public.dropped_default_shortcuts.clear();
         config.desktop_profile = launch.profile;
         if let Some(output) = output {
             config.output_profile = output;
@@ -471,10 +473,10 @@ impl LiveWmSession {
                 .applications
                 .as_ref()
                 .ok_or("core reload has no applications")?;
-            applications.validate_shortcuts(
+            let dropped = applications.validate_shortcuts(
                 &config.shortcut_profile_candidate,
-                config.shell_process.is_some(),
-                false,
+                config.shell_shortcuts_enabled,
+                config.desktop_profile_source.is_none(),
             )?;
             let commands = SessionCommandRegistry::prepare(
                 self.command_registry.generation + 1,
@@ -486,20 +488,23 @@ impl LiveWmSession {
                 .as_ref()
                 .and_then(|public| public.accepted_configuration.as_ref())
                 .ok_or("core launch reload has no accepted policy configuration")?;
-            let registry = resolve_public_shortcuts(
+            let registry = resolve_public_shortcuts_with_dropped_defaults(
                 &config.shortcut_profile_candidate,
                 configuration,
                 configuration.generation,
                 &commands,
+                &dropped,
             )?;
-            Some((commands, registry))
+            Some((commands, registry, dropped))
         } else {
             None
         };
         let report = config.publish_core_config_reload(prepared);
-        if let Some((commands, registry)) = next {
+        if let Some((commands, registry, dropped)) = next {
             self.command_registry = commands;
             self.shortcuts = Some(WmShortcutRouter::new(registry));
+            config.dropped_shortcuts.clone_from(&dropped);
+            self.public.as_mut().expect("core reload retains public policy").dropped_default_shortcuts = dropped;
         }
         Ok(report)
     }
@@ -516,6 +521,16 @@ impl LiveWmSession {
             .iter()
             .map(|operation| operation.slot)
             .collect::<BTreeSet<_>>();
+        // The policy client offers its vocabulary before receiving a snapshot
+        // of this session's grants. An unavailable standard operation is not
+        // an accepted action. Explicit bindings still fail resolution below;
+        // unknown slots remain invalid rather than being silently discarded.
+        let mut configuration = configuration.clone();
+        configuration.actions.retain(|action| {
+            action.session_operation_slot.is_none_or(|slot| {
+                !(1..=7).contains(&slot) || admitted_slots.contains(&slot)
+            })
+        });
         let missing_slots = configuration
             .actions
             .iter()
@@ -537,12 +552,12 @@ impl LiveWmSession {
         }
         let registry = slots_valid
             .then(|| {
-                resolve_public_shortcuts(
+                resolve_public_shortcuts_with_dropped_defaults(
                     public
                         .shortcut_profile_slot
                         .candidate()
                         .expect("public policy retains its prepared shortcut candidate"),
-                    configuration,
+                    &configuration,
                     // Profile activation and the action catalog have separate
                     // generation namespaces. A replacement WM may restart its
                     // catalog at 1 after activating a later desktop profile.
@@ -551,6 +566,7 @@ impl LiveWmSession {
                         .as_ref()
                         .map(|pending| &pending.launch.commands)
                         .unwrap_or(&self.command_registry),
+                    if self.desktop_reload.is_some() { &[] } else { &public.dropped_default_shortcuts },
                 )
             })
             .and_then(|result| {
