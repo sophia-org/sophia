@@ -866,6 +866,7 @@ impl XServerFrontendRouteRegistry {
 include!("registry/present.rs");
 include!("registry/ordered.rs");
 include!("registry/delivery.rs");
+include!("registry/delivery_control.rs");
 include!("registry/pointer_replay.rs");
 include!("registry/control_backlog.rs");
 include!("registry/present_msc.rs");
