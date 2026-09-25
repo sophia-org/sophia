@@ -36,8 +36,9 @@ pub fn encode_wm_v1_policy_projection_request(
         target_generation,
         interaction,
     ) = match request.cause {
-        crate::PolicyRequestCause::OutputAction { .. } => {
-            return Err(invalid("output_action_requires_separate_message", 0));
+        crate::PolicyRequestCause::OutputAction { .. }
+        | crate::PolicyRequestCause::PresentationAction { .. } => {
+            return Err(invalid("targeted_action_requires_separate_message", 0));
         }
         PolicyRequestCause::SceneChanged => (0, 0, 0, 0, 0, 0, 0, 0, Rect::default()),
         PolicyRequestCause::Action {

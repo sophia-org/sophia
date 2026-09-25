@@ -1,7 +1,8 @@
 # WM presentation and input contract
 
 **Role:** implementation contract for t242 and its dependent work. The generic
-extension is under implementation; the current public wire is not yet changed.
+extension is under implementation on an isolated branch; it is not yet an
+accepted, integrated public feature.
 niltempus approved this plan on 2026-09-25. Overview remains WM policy.
 
 ## Authorities and passive values
@@ -47,6 +48,10 @@ Engine sorts these records into one command list. The WM presentation tier is
 above ordinary application content and below protected shell/trust content.
 Normal occlusion and authority precedence still apply.
 
+The tier follows ordinary tab bars and floating outlines and precedes shell
+content and descriptor overlays. Replacement suppresses application chrome,
+tab bars and floating outlines along with ordinary application surfaces.
+
 Overlay preserves ordinary application presentation. ReplaceApplications covers
 the entire output and substitutes the presentation tier for ordinary application
 draws and hit targets there; it does not unmap clients or discard their content.
@@ -59,6 +64,10 @@ shader or client-selected colors. A Frame supplies visible allocation for an
 empty selectable region; interaction cannot extend outside its declared clipped
 allocation. Each replacement output has a Backdrop covering its coverage.
 
+Backdrop uses the frame color at full opacity; Frame uses the frame stroke and
+Emphasis uses the focus-ring stroke. CPU and native rendering apply identical
+source-alpha and instance-opacity composition.
+
 ## Atomic publication and identity
 
 Every proposal using the new capability carries the complete presentation or
@@ -66,11 +75,15 @@ explicit absence, which withdraws it. It follows the existing request, staged
 validation and terminal projection outcome. Ordinary output coverage and focus
 remain governed by their existing records. A malformed, stale or unauthorized
 presentation rejects the whole proposal before any part becomes authoritative.
+Changing or withdrawing presentation requires the request to cover every output
+in both the old and new publication; an identical resend does not widen scope.
 
 Publication generations increase on structural or interaction change. Retaining
 the generation requires identical passive records. Changing source identity,
 destination, clip, opacity, z order, action or region role also requires a fresh
-target generation. Ids cannot be recycled within a connection epoch. Changing
+target generation. Newly introduced ids exceed the connection's previously
+admitted maximum; removed ids cannot be recycled. This keeps retirement history
+bounded to a high-water mark rather than an unbounded tombstone table. Changing
 only source content does not alter either generation. The WM may resend identical
 presentation records during unrelated ordinary projection cycles.
 
@@ -142,6 +155,10 @@ keep Hagia's independent Nim implementation covered by shared conformance data.
 Keep ordinary projection outcomes separate from presentation receipts. Add a
 dedicated typed presentation action request; do not overload normal Action,
 OutputAction or raw pointer interaction payloads with instance semantics.
+Message 54 carries PresentationActionRequest; message 55 carries
+PresentationOutcome, with Presented (1), Revoked (2) and Withdrawn (3) outcomes.
+Each receipt names a nonzero actual presentation epoch. An unpresented candidate
+receives its projection settlement and cannot manufacture a presentation receipt.
 Unnegotiated records, unknown flags, duplicate identities/order, stale epochs and
 count mismatches are refused before publication. Existing clients send no new
 records and retain their behavior. A requested unsupported feature fails clearly.

@@ -10,6 +10,7 @@ pub mod ids;
 pub mod ipc;
 pub mod packets;
 pub mod policy_behavior;
+pub mod presentation;
 pub mod table;
 
 pub use capacity::*;
@@ -19,4 +20,5 @@ pub use ids::*;
 pub use ipc::*;
 pub use packets::*;
 pub use policy_behavior::*;
+pub use presentation::*;
 pub use table::*;

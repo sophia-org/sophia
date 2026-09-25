@@ -26,6 +26,7 @@ fn policy_placement_assigns_existing_layers_and_reassigns_them_on_output_moves()
             content: BTreeMap::from([(surface, projection.placements[0].clone())]),
             adjusted_surfaces: 0,
             policy: sophia_protocol::PolicyProjectionProposal {
+                presentation: None,
                 transaction: TransactionId::from_raw(930),
                 connection_epoch: 1,
                 request_id: 1,
@@ -188,6 +189,7 @@ fn partial_drag_projection_preserves_the_other_outputs_committed_content() {
                 output.placements[0].geometry = geometry;
                 output.focus = Some(target);
                 let projection = PolicyProjectionProposal {
+                    presentation: None,
                     transaction: TransactionId::from_raw(930),
                     connection_epoch: request.connection_epoch,
                     request_id: request.request_id,

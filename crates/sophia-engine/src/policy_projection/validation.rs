@@ -234,6 +234,16 @@ pub(super) fn validate_request_cause(
             activation_serial,
             action,
         } if activation_serial != 0 && action.is_valid() => Ok(()),
+        PolicyRequestCause::PresentationAction {
+            activation_serial,
+            action,
+            identity,
+        } if activation_serial != 0
+            && action.is_valid()
+            && sophia_protocol::valid_policy_presentation_identity(identity) =>
+        {
+            Ok(())
+        }
         PolicyRequestCause::OutputAction {
             activation_serial,
             action,

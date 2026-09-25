@@ -600,6 +600,17 @@ impl PolicyWmSessionTransport {
         }
         let frame = if matches!(
             request.cause,
+            sophia_protocol::PolicyRequestCause::PresentationAction { .. }
+        ) {
+            let required = sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
+                | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
+            if self.connection.selected_capabilities() & required != required {
+                return Err(PolicyTransferError::UnsupportedCapability.into());
+            }
+            let wire = sophia_protocol::encode_wm_presentation_action_request(request)?;
+            sophia_protocol::encode_wm_v1_presentation_action_request_frame(transaction, &wire)?
+        } else if matches!(
+            request.cause,
             sophia_protocol::PolicyRequestCause::OutputAction { .. }
         ) {
             if self.connection.selected_capabilities()
@@ -638,6 +649,30 @@ impl PolicyWmSessionTransport {
             outcome,
         )?;
         let frame = encode_wm_v1_projection_outcome_frame(transaction, &outcome)?;
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn send_presentation_receipt(
+        &mut self,
+        transaction: TransactionId,
+        receipt: sophia_protocol::PolicyPresentationReceipt,
+    ) -> Result<(), PolicyTransportError> {
+        if receipt.connection_epoch != self.connection.connection_epoch()
+            || self.connection.selected_capabilities()
+                & sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
+                == 0
+        {
+            return Err(PolicyTransferError::UnsupportedCapability.into());
+        }
+        let wire = sophia_protocol::encode_wm_presentation_receipt(receipt)?;
+        let frame = sophia_protocol::encode_wm_v1_presentation_outcome_frame(transaction, &wire)?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
         stream
             .write_all(&frame)
             .and_then(|()| stream.flush())

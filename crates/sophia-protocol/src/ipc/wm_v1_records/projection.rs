@@ -113,6 +113,11 @@ pub fn encode_wm_v1_policy_projection(
         proposal.connection_epoch,
         chunks.len() as u16,
     )?);
+    chunks.extend(super::encode_wm_presentation(
+        proposal.presentation.as_ref(),
+        proposal.connection_epoch,
+        chunks.len() as u16,
+    )?);
     let begin = WmV1ProjectionBegin {
         connection_epoch: proposal.connection_epoch,
         request_id: proposal.request_id,
@@ -188,6 +193,11 @@ pub fn decode_wm_v1_policy_projection(
             | super::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
             | super::PROJECTION_LAUNCH_CONTEXT_RECORD_KIND
             | super::PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND
+            | super::PROJECTION_PRESENTATION_RECORD_KIND
+            | super::PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND
+            | super::PROJECTION_SURFACE_INSTANCE_RECORD_KIND
+            | super::PROJECTION_PRESENTATION_REGION_RECORD_KIND
+            | super::PROJECTION_PRESENTATION_BINDING_RECORD_KIND
                 if ordinal >= usize::from(transfer.begin.chunk_count) => {}
             other => return Err(invalid("projection_record_kind", u32::from(other))),
         }
@@ -217,6 +227,7 @@ pub fn decode_wm_v1_policy_projection(
         return Err(invalid("placement_count", transfer.begin.placement_count));
     }
     Ok(PolicyProjectionProposal {
+        presentation: super::decode_wm_presentation(&transfer.chunks)?,
         launch_contexts: super::decode_wm_launch_contexts(&transfer.chunks)?,
         output_launch_contexts: super::decode_wm_output_launch_contexts(&transfer.chunks)?,
         translation_groups: super::decode_wm_translation_groups(&transfer.chunks)?,

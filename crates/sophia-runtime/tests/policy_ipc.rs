@@ -10,6 +10,137 @@ use sophia_runtime::{
 };
 
 #[test]
+fn presentation_extensions_require_negotiation_and_a_complete_bounded_set() {
+    use sophia_protocol::*;
+    let output = OutputId::from_raw(1);
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+    };
+    let presentation = PolicyPresentation {
+        generation: 1,
+        keyboard_output: None,
+        outputs: vec![PolicyPresentationOutput {
+            output,
+            generation: 1,
+            coverage: bounds,
+            mode: PolicyPresentationMode::Overlay,
+        }],
+        instances: vec![PolicySurfaceInstance {
+            id: 1,
+            generation: 1,
+            output,
+            source: SurfaceId::new(1, 1),
+            destination: bounds,
+            clip: bounds,
+            opacity_millis: 1000,
+            z_index: 0,
+            action: None,
+        }],
+        regions: vec![],
+        bindings: vec![],
+    };
+    for enabled in [false, true] {
+        let mut connection = PolicyConnectionState::default();
+        connection.connect(1).unwrap();
+        let welcome = connection
+            .negotiate(&WmV1ClientHello {
+                minimum_revision: 3,
+                maximum_revision: 3,
+                capabilities: SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
+                    | if enabled {
+                        SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
+                    } else {
+                        0
+                    },
+            })
+            .unwrap();
+        assert_eq!(
+            welcome.capabilities & SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS != 0,
+            enabled
+        );
+        let tx = TransactionId::from_raw(90);
+        connection
+            .begin_projection(tx, projection_begin(1))
+            .unwrap();
+        let early = encode_wm_presentation(Some(&presentation), 1, 0).unwrap();
+        assert!(
+            connection
+                .append_projection_chunk(tx, early[0].clone())
+                .is_err()
+        );
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 0, 1, 1))
+            .unwrap();
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 1, 2, 2))
+            .unwrap();
+        let chunks = encode_wm_presentation(Some(&presentation), 1, 2).unwrap();
+        if !enabled {
+            assert_eq!(
+                connection.append_projection_chunk(tx, chunks[0].clone()),
+                Err(PolicyTransferError::UnsupportedCapability)
+            );
+            continue;
+        }
+        connection
+            .append_projection_chunk(tx, chunks[0].clone())
+            .unwrap();
+        assert_eq!(
+            connection.finish_projection(tx, projection_end(1)),
+            Err(PolicyTransferError::RecordCountMismatch)
+        );
+        for chunk in chunks.into_iter().skip(1) {
+            connection.append_projection_chunk(tx, chunk).unwrap();
+        }
+        connection.finish_projection(tx, projection_end(1)).unwrap();
+        let Some(QueuedPolicyProjection::Admitted(assembled)) = connection.settle_queued() else {
+            panic!("missing transfer");
+        };
+        assert_eq!(
+            decode_wm_presentation(&assembled.chunks).unwrap(),
+            Some(presentation.clone())
+        );
+    }
+    for actions in [false, true] {
+        let mut connection = PolicyConnectionState::default();
+        connection.connect(1).unwrap();
+        connection
+            .negotiate(&WmV1ClientHello {
+                minimum_revision: 3,
+                maximum_revision: 3,
+                capabilities: SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES,
+            })
+            .unwrap();
+        let tx = TransactionId::from_raw(91);
+        connection
+            .begin_projection(tx, projection_begin(1))
+            .unwrap();
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 0, 1, 1))
+            .unwrap();
+        connection
+            .append_projection_chunk(tx, projection_chunk(1, 1, 2, 2))
+            .unwrap();
+        let mut p = presentation.clone();
+        p.instances[0].action = actions.then(|| WmActionId::from_raw(1));
+        for chunk in encode_wm_presentation(Some(&p), 1, 2).unwrap() {
+            connection.append_projection_chunk(tx, chunk).unwrap();
+        }
+        assert_eq!(
+            connection.finish_projection(tx, projection_end(1)),
+            if actions {
+                Err(PolicyTransferError::UnsupportedCapability)
+            } else {
+                Ok(())
+            }
+        );
+    }
+}
+
+#[test]
 fn negotiation_selects_the_shared_revision_and_capabilities() {
     let mut connection = PolicyConnectionState::default();
     connection.connect(7).unwrap();

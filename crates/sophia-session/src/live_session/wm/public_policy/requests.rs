@@ -103,7 +103,9 @@ impl LiveWmSession {
                     }
                     let context_valid = projection.launch_contexts.iter().all(|context| context.epoch == public.connection_epoch && public.reducer.scene().surfaces.iter().any(|s| s.surface == context.surface))
                         && projection.output_launch_contexts.iter().all(|context| context.epoch == public.connection_epoch && public.reducer.scene().outputs.iter().any(|o| o.output == context.output && o.generation == context.output_generation));
-                    match if context_valid { public.reducer.stage_proposal(&reconciliation.policy) } else { Err(sophia_protocol::PolicyProjectionOutcome::RejectedInvalid) } {
+                    let presentation_valid = projection.presentation.as_ref().is_none_or(|p|
+                        sophia_protocol::validate_policy_presentation_actions(p, &public.actions).is_ok());
+                    match if context_valid && presentation_valid { public.reducer.stage_proposal(&reconciliation.policy) } else { Err(sophia_protocol::PolicyProjectionOutcome::RejectedInvalid) } {
                     Ok(staged) => {
                         let expected_operation_slot = match source {
                             LiveWmProposalSource::Action(action) => public
@@ -276,7 +278,8 @@ impl LiveWmSession {
                         break None;
                     }
                 }
-                if policy_cause_subject_is_live(cause.cause, &scene) {
+                if policy_cause_subject_is_live(cause.cause, &scene)
+                    && public.reducer.presentation_cause_is_current(cause.cause) {
                     break Some(cause);
                 }
                 if let sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, action, output, output_generation } = cause.cause {

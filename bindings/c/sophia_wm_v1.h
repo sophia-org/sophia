@@ -29,6 +29,8 @@
 #define SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS (UINT64_C(1) << 15)
 #define SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS (UINT64_C(1) << 16)
 #define SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT (UINT64_C(1) << 17)
+#define SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES (UINT64_C(1) << 18)
+#define SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS (UINT64_C(1) << 19)
 
 #define SOPHIA_WM_OUTCOME_COMMITTED 1u
 #define SOPHIA_WM_OUTCOME_REJECTED_STALE 2u
@@ -422,5 +424,36 @@ struct sophia_wm_v1_output_action_request {
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_output_action_request(uint64_t transaction, const struct sophia_wm_v1_output_action_request *message, uint8_t *out, size_t capacity, size_t *written);
 enum sophia_wm_v1_status sophia_wm_v1_decode_output_action_request(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_output_action_request *message);
+
+struct sophia_wm_v1_presentation_action_request {
+    uint64_t connection_epoch;
+    uint64_t request_id;
+    uint64_t scene_generation;
+    uint64_t policy_generation;
+    uint64_t activation_serial;
+    uint64_t action;
+    uint64_t output;
+    uint64_t output_generation;
+    uint64_t publication_generation;
+    uint64_t presentation_epoch;
+    uint64_t target_id;
+    uint64_t target_generation;
+    uint16_t affected_output_count;
+    const uint8_t *affected_outputs;
+    size_t affected_outputs_len;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_presentation_action_request(uint64_t transaction, const struct sophia_wm_v1_presentation_action_request *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_presentation_action_request(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_presentation_action_request *message);
+
+struct sophia_wm_v1_presentation_outcome {
+    uint64_t connection_epoch;
+    uint64_t publication_generation;
+    uint64_t output;
+    uint64_t output_generation;
+    uint64_t presentation_epoch;
+    uint16_t outcome;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_presentation_outcome(uint64_t transaction, const struct sophia_wm_v1_presentation_outcome *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_presentation_outcome(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_presentation_outcome *message);
 
 #endif

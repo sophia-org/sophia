@@ -80,3 +80,35 @@ pub struct PolicyPresentation {
     pub regions: Vec<PolicyPresentationRegion>,
     pub bindings: Vec<PolicyPresentationBinding>,
 }
+
+/// Reduced identity captured from an actually presented publication. Keyboard
+/// actions use target id/generation zero; pointer actions name both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicyPresentationIdentity {
+    pub publication_generation: u64,
+    pub output: OutputId,
+    pub output_generation: u64,
+    pub presentation_epoch: u64,
+    pub target_id: u64,
+    pub target_generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+pub enum PolicyPresentationOutcome {
+    Presented = 1,
+    Revoked = 2,
+    Withdrawn = 3,
+}
+
+/// Rendering completion and input revocation are separate from the ordinary
+/// projection settlement. Each receipt names one output's actual identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PolicyPresentationReceipt {
+    pub connection_epoch: u64,
+    pub publication_generation: u64,
+    pub output: OutputId,
+    pub output_generation: u64,
+    pub presentation_epoch: u64,
+    pub outcome: PolicyPresentationOutcome,
+}

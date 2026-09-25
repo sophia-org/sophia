@@ -35,7 +35,9 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
     | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -240,6 +242,11 @@ impl PolicyConnectionState {
                 0
             };
         self.selected_capabilities = hello.capabilities & supported;
+        if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES == 0
+        {
+            self.selected_capabilities &=
+                !sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
+        }
         if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN == 0 {
             self.selected_capabilities &=
                 !sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
@@ -335,6 +342,30 @@ impl PolicyConnectionState {
             .filter(|bytes| *bytes <= POLICY_MAX_TRANSFER_BYTES)
             .ok_or(PolicyTransferError::ExcessiveBytes)?;
         let count = chunk.item_count as usize;
+        if let Some((size, maximum, capabilities)) =
+            sophia_protocol::wm_presentation_record_layout(chunk.record_kind)
+        {
+            if self.selected_capabilities & capabilities != capabilities {
+                return Err(PolicyTransferError::UnsupportedCapability);
+            }
+            if transfer.chunks.len() < usize::from(transfer.begin.chunk_count)
+                || transfer.chunks.len() >= POLICY_MAX_TRANSFER_CHUNKS
+            {
+                return Err(PolicyTransferError::RecordCountMismatch);
+            }
+            let prior: usize = transfer
+                .chunks
+                .iter()
+                .filter(|record| record.record_kind == chunk.record_kind)
+                .map(|record| record.item_count as usize)
+                .sum();
+            if count > maximum.saturating_sub(prior) || chunk.data.len() != count * size {
+                return Err(PolicyTransferError::RecordCountMismatch);
+            }
+            transfer.bytes = next_bytes;
+            transfer.chunks.push(chunk);
+            return Ok(());
+        }
         if matches!(
             chunk.record_kind,
             sophia_protocol::PROJECTION_TAB_GROUP_RECORD_KIND
@@ -472,6 +503,18 @@ impl PolicyConnectionState {
             || transfer.status_records != usize::from(transfer.begin.status_count)
         {
             return Err(PolicyTransferError::RecordCountMismatch);
+        }
+        let presentation = sophia_protocol::decode_wm_presentation(&transfer.chunks)
+            .map_err(|_| PolicyTransferError::RecordCountMismatch)?;
+        if presentation.as_ref().is_some_and(|p| {
+            p.keyboard_output.is_some()
+                || p.instances.iter().any(|i| i.action.is_some())
+                || p.regions.iter().any(|r| r.action.is_some())
+        }) && self.selected_capabilities
+            & sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS
+            == 0
+        {
+            return Err(PolicyTransferError::UnsupportedCapability);
         }
         let transfer = self.transfer.take().expect("transfer was checked");
         self.queued = Some(AssembledPolicyProjection {

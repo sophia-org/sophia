@@ -61,6 +61,7 @@ fn empty_active_output_releases_previous_keyboard_focus_only_after_commit() {
                 .unwrap();
             let transaction = TransactionId::from_raw(91);
             let proposal = PolicyProjectionProposal {
+                presentation: None,
                 transaction,
                 connection_epoch: request.connection_epoch,
                 request_id: request.request_id,
