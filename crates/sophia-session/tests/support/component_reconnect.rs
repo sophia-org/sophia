@@ -19,6 +19,8 @@ use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+#[path = "component_reconnect/budget.rs"]
+mod budget;
 #[path = "component_reconnect/wire.rs"]
 mod wire;
 use super::super::content::reconnect_fixture::prepare;
@@ -441,12 +443,19 @@ fn component_revocation_waits_for_runtime_and_retries_without_a_peer_message() {
 
 #[test]
 fn replacement_reuses_numbers_without_inheriting_completion_actions_or_consumers() {
-    // The supported three-role profile reserves smaller per-role allowances.
-    // Two full role reservations plus retained bytes correctly refuse overlap;
-    // this positive control uses real policy headroom, not enlarged test limits.
-    let mut h = Harness::with_dock(true);
+    replacement_with_retained_predecessor(false);
+}
+
+#[test]
+fn fully_connected_three_role_replacement_keeps_neighbors_and_exact_completion() {
+    replacement_with_retained_predecessor(true);
+}
+
+fn replacement_with_retained_predecessor(has_dock: bool) {
+    let mut h = Harness::with_dock(has_dock);
     let (old, mut peer, retained) = h.connect(0);
     let (neighbor, mut neighbor_peer, neighbor_pixels) = h.connect(1);
+    let dock = has_dock.then(|| h.connect(2));
     h.debt(old, &mut peer, neighbor_pixels.clone());
     let bands = h.owner.work_area_bands();
     let old_target = h.backend.runtime().input_projections()[0].content[0].targets[0].clone();
@@ -540,6 +549,12 @@ fn replacement_reuses_numbers_without_inheriting_completion_actions_or_consumers
         "the completed replacement must publish its new extent"
     );
     h.issue_current(replacement, &mut peer);
+    if let Some((key, _, _)) = &dock {
+        assert_eq!(
+            h.owner.phase(*key).unwrap(),
+            ComponentConnectionPhase::Connected
+        );
+    }
     h.owner
         .with_service(replacement, |_, transport| {
             let epoch = h
@@ -562,6 +577,7 @@ fn replacement_reuses_numbers_without_inheriting_completion_actions_or_consumers
         .settle_revocations(Some(h.backend.runtime_mut()))
         .unwrap();
     h.backend.teardown();
+    drop(dock);
     drop((
         peer,
         neighbor_peer,
@@ -693,7 +709,6 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
 }
 
 #[test]
-#[ignore = "t100 pinned red: two-role reservations plus retained old panel block reconnect"]
 fn two_role_panel_reconnect_progresses_after_all_old_native_work_completes() {
     let mut h = Harness::new();
     let (old, mut peer, retained) = h.connect(0);

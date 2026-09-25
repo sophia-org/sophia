@@ -26,13 +26,22 @@ duplicate and expired transfers cannot acquire leases. Retire rejects new
 consumers; existing leases keep their bytes until the last reference drains.
 Release is independent of a candidate outcome.
 
-The epoch pool reserves the maximum live footprint before admission: 8 MiB
-staging + 16 MiB resident + 16 MiB retiring = 40 MiB. Disconnected owners remain
-until every consumer drains; actual retained bytes count against 64 MiB globally.
-A new 40 MiB reservation fits only with at most 24 MiB already retired. Pinned
-resident storage is not forced through the active retiring ceiling. At most
-sixteen retired epochs can retain metadata; tiny resources cannot retain an
-unbounded number of replay tables. Either limit causes backpressure, not eviction.
+The legacy epoch pool reserves the full prototype footprint before admission:
+8 MiB staging + 16 MiB resident + 16 MiB retiring = 40 MiB. A new legacy grant
+fits only with at most 24 MiB already retired. Independent component connections
+instead retain each immutable role's nominal envelope and choose coherent initial
+limits after subtracting all that profile's retained source bytes. Cold grants
+are unchanged; tightened grants keep the 4 MiB maximum resource and at least
+4/8/4 MiB staging/resident/retiring capacity. Limits remain fixed for the granted
+connection. See the [reconnect allowance design](notes/investigations/vup982br-retained-panel-pixels-can-block-fresh-component-admission-after-disconnect.md#fresh-grant-budget-design-on-accepted-69e16358).
+
+In each registry, disconnected owners remain until every real consumer drains;
+actual retained sources count against 64 MiB, separately from the 64 MiB resource
+backing-credit ceiling. Native head buffers are outside those content charges.
+Pinned resident storage is not forced through the active retiring ceiling. The
+sixteen total active/retired epoch slots also bound metadata. Byte-floor or epoch
+saturation refuses admission with bounded numeric evidence and the existing
+retry rate, without eviction or a guarantee that retained pixels will ever clear.
 
 The transport now reserves a session-global epoch owner before it publishes
 `Welcome` and `ContentLimits`. Its bounded resource service accepts only the five

@@ -32,6 +32,8 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
         ("sophia_shell_component", "status") => matches!(
             value,
             "negotiated"
+                | "admission_refused"
+                | "admitted_reduced"
                 | "negotiation_failed"
                 | "process_retired"
                 | "process_failed"
@@ -55,9 +57,33 @@ pub(super) fn field(record: &str, key: &str, value: &str) -> bool {
             matches!(value, "bar" | "application_launcher" | "dock")
         }
         ("sophia_shell_component", "gpu_mode") => matches!(value, "direct" | "denied"),
+        ("sophia_shell_component", "budget_constraint") => {
+            matches!(value, "bytes" | "epochs" | "reservation")
+        }
+        ("sophia_shell_component", "active_capacity") => number(3),
+        ("sophia_shell_component", "epoch_capacity") => number(16),
         ("sophia_shell_component", "endpoint_released") => matches!(value, "true" | "false"),
         ("sophia_shell_component", "slot") => {
             number((sophia_config::MAX_SHELL_COMPONENTS - 1) as u64)
+        }
+        (
+            "sophia_shell_component",
+            "source_capacity_bytes"
+            | "backing_capacity_bytes"
+            | "nominal_bytes"
+            | "own_retired_bytes"
+            | "reserved_bytes"
+            | "reserved_backing_bytes"
+            | "available_bytes"
+            | "available_backing_bytes"
+            | "required_bytes"
+            | "required_backing_bytes"
+            | "staging_bytes"
+            | "resident_bytes"
+            | "retiring_bytes",
+        ) => number(64 * 1024 * 1024),
+        ("sophia_shell_component", "own_retired_epochs" | "active_epochs" | "retired_epochs") => {
+            number(16)
         }
         ("sophia_shell_component", "revision") => number(u16::MAX.into()),
         ("sophia_shell_component", "device_major" | "device_minor") => number(u32::MAX.into()),

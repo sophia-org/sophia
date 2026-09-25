@@ -101,6 +101,10 @@ the existing execution boundary, preserving current descriptor-launcher behavior
 
 ### Bounds and service
 
+The maxima below remain ceilings. The [t100 reconnect allowance follow-up](../investigations/vup982br-retained-panel-pixels-can-block-fresh-component-admission-after-disconnect.md#fresh-grant-budget-design-on-accepted-69e16358)
+chooses coherent tighter initial component grants within the same envelope when
+old sources remain retained; it does not change active grants or this ADR's status.
+
 First-profile bounds (to encode and enforce before runtime enablement):
 
 - At most two live components and one active launcher opening/focus lease.

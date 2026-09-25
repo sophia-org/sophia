@@ -21,6 +21,8 @@
 /// Why a component start was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StartCause {
+    /// A fresh content grant cannot fit its useful floor or epoch capacity.
+    ContentBudget,
     /// Presentation is unavailable, or a previous attempt's cleanup is still
     /// retained. The slot is not startable yet.
     Presentation,
@@ -58,6 +60,7 @@ impl StartCause {
     /// The retained token. Reduction admits exactly these values.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
+            Self::ContentBudget => "content_budget",
             Self::Presentation => "presentation",
             Self::AttemptOwned => "attempt_owned",
             Self::Selection => "selection",
@@ -72,7 +75,8 @@ impl StartCause {
     }
 
     /// Every admitted token, for the reduction allowlist and its test.
-    pub(crate) const ALL: [&'static str; 10] = [
+    pub(crate) const ALL: [&'static str; 11] = [
+        "content_budget",
         "presentation",
         "attempt_owned",
         "selection",
@@ -91,6 +95,9 @@ impl StartCause {
 /// Matching is on the distinctive part of each message rather than the whole,
 /// so a message that gains a trailing detail keeps its code.
 pub(crate) fn classify(message: &str) -> StartCause {
+    if message.contains("ContentStore(Budget)") {
+        return StartCause::ContentBudget;
+    }
     // Identity is checked before the domain is built, so its more specific
     // phrases are tested first.
     if message.contains("render node identity changed")

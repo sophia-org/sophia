@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+#[path = "support/component_budget_records.rs"]
+mod budget_records;
 struct Harness {
     owner: ShellComponentConnections,
     directory: std::path::PathBuf,
@@ -218,7 +220,7 @@ fn failed_launcher_attempt_burns_epochs_without_resetting_bar() {
 }
 
 #[test]
-fn retained_launcher_bytes_refuse_replacement_while_bar_uploads() {
+fn retained_launcher_bytes_tighten_replacement_while_bar_uploads() {
     let mut h = Harness::new();
     let panel = h.owner.reserve_attempt(0).unwrap();
     let mut bar = h.connect(panel);
@@ -253,23 +255,23 @@ fn retained_launcher_bytes_refuse_replacement_while_bar_uploads() {
     assert_eq!(retained.memory.resident, 4);
     assert_eq!(retained.reserved_bytes, 40 * 1024 * 1024 + 4);
     assert_eq!(held.bytes(), &[1, 2, 3, 255]);
-    assert!(matches!(
-        h.owner.reserve_attempt(1),
-        Err(ComponentConnectionError::Transport(
-            ShellTransportError::ContentStore(ContentStoreError::Budget)
-        ))
-    ));
+    let replacement = h.owner.reserve_attempt(1).unwrap();
+    let _replacement = h.connect(replacement);
+    let limits = h
+        .owner
+        .with_connection(replacement, |t| t.content_limits().unwrap().clone())
+        .unwrap();
+    assert_eq!(limits.max_retiring_bytes, 8 * 1024 * 1024 - 4);
+    assert_eq!(limits.max_resident_bytes, 12 * 1024 * 1024);
+    assert_eq!(h.owner.accounting().reserved_bytes, 64 * 1024 * 1024);
     let bar_bytes = upload(&mut h, panel, &mut bar, 1);
     assert_eq!(bar_bytes.description().grant, panel.grant);
     drop(held);
     let released = h.owner.collect();
     assert_eq!(released.retired_epochs, 0);
-    assert_eq!(released.reserved_bytes, 40 * 1024 * 1024);
-    let replacement = h.owner.reserve_attempt(1).unwrap();
-    // Attempt 3 was consumed even though its budget reservation refused.
-    assert_eq!(replacement.grant.connection_epoch, 4);
-    assert_eq!(replacement.grant.content_grant_epoch, 4);
-    let _replacement = h.connect(replacement);
+    assert_eq!(released.reserved_bytes, 64 * 1024 * 1024 - 4);
+    assert_eq!(replacement.grant.connection_epoch, 3);
+    assert_eq!(replacement.grant.content_grant_epoch, 3);
     assert_eq!(
         h.owner
             .with_connection(panel, |t| t.content_grant())

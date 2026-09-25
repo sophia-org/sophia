@@ -127,7 +127,7 @@ an option. The director owns the next repair decision and gate allocation.
 
 ## Fresh-grant budget design on accepted 69e16358
 
-This is the next design/control checkpoint, not an installed repair. The
+Signed `4d8d7966` is the design/control checkpoint, without production changes. The
 director's [bounded admission brief](../../../validation/specula/shell-reconnect-budget-modeling-brief.md)
 defines the joint review. No production semantics, queues or live session have
 changed. The prototype selector is confined to
@@ -224,7 +224,10 @@ for one maximum-size resident image at `R=8 MiB`. Multiple outputs require
 updating. A retiring burst beyond T can hit Lom's five-second response timeout.
 An image larger than M was already unsupported. Grants stay fixed for that
 connection: no second Limits record, forced recycle or active-grant expansion.
-The live launcher's upload behavior still requires the independent client review.
+Independent source review found that the live launcher sizes images from M and
+its two-slot C upload owner returns Busy at staging/resident/retiring bounds,
+retrying within existing deadlines. Executable behavior is not established by
+that source review.
 
 Refusal remains real when `Q-P < 16 MiB`: two-role bar P above 24 MiB, two-role
 launcher above 8 MiB, dock-profile bar above 8 MiB and dock/launcher above 4 MiB.
@@ -266,6 +269,59 @@ the residual to 24 MiB. It uses unchanged registry admission but supplies
 per-profile totals to a test-only selector; Session integration is not proven by
 these cases. Focused execution and strict Clippy pass; logs are in
 `sophia-borders/.artifacts/t100-budget/pure-final.log` and `pure-clippy.log`.
+
+### Production repair checkpoint
+
+The runtime now owns `select_reconnect_limits`, its shared
+`content_reconnect_allowance` calculation and the measured registry projection.
+The prototype selector was removed from the control executable. Checked
+headroom that would underflow is represented as zero useful allowance, causing
+floor refusal; it never wraps into credit. Both selection and diagnostics use
+the same computed available/required values. Session invokes this only at
+component reservation, then publishes through the unchanged transport owner.
+Legacy registries and all cold role profiles retain their prior behavior.
+
+`admission_refused` carries `budget_constraint=bytes`, `epochs`, or `reservation`:
+an epoch reason requires the measured count to reach the existing capacity;
+an otherwise unexplained reservation Budget is not labeled as epoch exhaustion.
+The record includes active and total epoch capacities. One slot can occupy the
+shared sixteen-slot inventory and block another slot even when byte envelopes
+fit; the byte partition is not epoch fairness. The existing disconnect clears
+transport and calls exact `epochs.disconnect(store_grant)` before fallible
+endpoint release. An ignored endpoint-release error does not leave the old
+registry grant active; no new compensation or lifecycle state was added.
+
+The original two-role progress control is enabled and passes. The replacement
+test now covers the full two-role profile and a fully negotiated three-role
+profile, preserving old work-area bands until simulated replacement completion.
+Repeated Session successors keep exact old leases, and a real 24 MiB plus
+four-byte predecessor refuses until an independent four-MiB consumer releases.
+These retain the original current-process peer evidence, supplied initial
+pending-presentation and simulated native-completion limits. Eight focused
+Session joins pass. A separate actual reservation test captures host output,
+then checks its reduction: fifteen reduced grants, one count refusal, no idle
+record, and actual source release reopening a slot with the refused attempt's
+identity still burned. Literal-only reducer tests are supplemental.
+
+Independent client controls are supplied by signed `aad0e262` and corrected
+`3f839a38`. Their durable bundle is
+`~/.local/state/sophia/development-evidence/t100-reduced-limits-3f839a38`;
+its SHA256SUMS digest is
+`9fbde2640df8584aabfb477c6aa8e2e23b8ccef0d9cc1f3fd602a187957bde9a`.
+Four Rust cases exercise real generic transport/client welcome and resource
+admission, and C decoder/upload cases exercise staging/resident/retiring pacing.
+A refused Begin does emit status 3; the corrected resident-bound negative fails
+in 0.08 seconds with status 3/reason 2. The earlier timeout explanation is
+withdrawn, with the original log retained.
+
+Lom `ad34986` pins protocol/client `2e569301`: the limits codec and validation/
+layout code compared is identical, not the whole protocol or client crates;
+catalog, candidate, action and visibility drift exists. Bemenu `7d2d2399`
+vendors `c2ff3fcd`; forty of forty-two C vendor files match, with `fields.h` and
+`shell_wire.h` differing in catalog vocabulary, not limits/upload behavior.
+Those precise comparisons support the paired library controls. They are not
+Lom/bemenu executable runs, physical acceptance or evidence for arbitrary
+multi-output workloads.
 
 ## Evidence and remaining exits
 

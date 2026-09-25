@@ -12,6 +12,7 @@ use super::{StartCause, classify};
 /// receive. Taken from component_session.rs, component_launch.rs, gpu.rs and
 /// component_lifecycle.rs.
 const REFUSALS: &[(&str, StartCause)] = &[
+    ("Transport(ContentStore(Budget))", StartCause::ContentBudget),
     // component_session.rs
     (
         "component presentation unavailable or cleanup retained",
@@ -180,6 +181,7 @@ fn an_unrecognised_refusal_is_other_rather_than_a_wrong_code() {
 #[test]
 fn every_variant_appears_in_the_admitted_token_list() {
     let variants = [
+        StartCause::ContentBudget,
         StartCause::Presentation,
         StartCause::AttemptOwned,
         StartCause::Selection,

@@ -1,6 +1,5 @@
-//! Proposed t100 admission arithmetic, not installed runtime policy. The fit
-//! function exists only in this test executable; registry/resource operations
-//! below are unchanged production owners. No transport or native completion.
+//! t100 production allowance selection and registry/resource admission. These
+//! controls do not claim transport or native completion.
 use sophia_protocol::*;
 use sophia_runtime::*;
 
@@ -27,51 +26,26 @@ fn source(limits: &ContentLimits) -> u64 {
     limits.max_staging_bytes + limits.max_resident_bytes + limits.max_retiring_bytes
 }
 
-// Candidate design: one full staging resource, two resident resources, and one
-// retiring resource. Maximize resident, then staging, then retiring capacity.
+// Supply boundary inventories to the production selector. No test-owned copy
+// of the selection algorithm remains.
 fn proposed_fit(
     nominal: &ContentLimits,
     own_retired_source: u64,
     global_source_free: u64,
     global_backing_free: u64,
 ) -> Option<ContentLimits> {
-    nominal.validate().ok()?;
-    let available = source(nominal)
-        .checked_sub(own_retired_source)?
-        .min(global_source_free);
-    let backing =
-        (nominal.max_resident_bytes + nominal.max_retiring_bytes).min(global_backing_free);
-    let minimum = nominal.max_resource_bytes;
-    if available < 4 * minimum || backing < 3 * minimum {
-        return None;
-    }
-    let align = |bytes: u64| bytes / 4 * 4;
-    let resident = align(
-        nominal
-            .max_resident_bytes
-            .min(available - 2 * minimum)
-            .min(backing - minimum),
-    );
-    let staging = align(
-        nominal
-            .max_staging_bytes
-            .min(available - resident - minimum),
-    );
-    let retiring = align(
-        nominal
-            .max_retiring_bytes
-            .min(available - resident - staging)
-            .min(backing - resident),
-    );
-    let mut limits = nominal.clone();
-    limits.max_resident_bytes = resident;
-    limits.max_staging_bytes = staging;
-    limits.max_retiring_bytes = retiring;
-    if staging < minimum || resident < 2 * minimum || retiring < minimum {
-        return None;
-    }
-    limits.validate().ok()?;
-    Some(limits)
+    select_reconnect_limits(
+        nominal,
+        ContentReconnectBudget {
+            capacity_bytes: CAP,
+            capacity_backing_bytes: CAP,
+            reserved_bytes: CAP.checked_sub(global_source_free)?,
+            reserved_backing_bytes: CAP.checked_sub(global_backing_free)?,
+            own_retired_bytes: own_retired_source,
+            ..Default::default()
+        },
+    )
+    .ok()
 }
 
 fn begin(g: ContentGrant, id: u64) -> ContentResourceBegin {
@@ -249,13 +223,12 @@ fn both_full_profiles_can_admit_proposed_successors_without_freeing_old_pixels()
         {
             let mut requested = limits[slot].clone();
             requested.grant = grant(3 + index as u64);
-            let fit = proposed_fit(
-                &requested,
-                4,
-                CAP - registry.reserved_bytes(),
-                CAP - registry.reserved_backing_bytes(),
-            )
-            .unwrap();
+            let budget = registry.reconnect_budget(profiles[slot]);
+            assert_eq!(
+                (budget.own_retired_bytes, budget.own_retired_epochs),
+                (4, 1)
+            );
+            let fit = select_reconnect_limits(&requested, budget).unwrap();
             assert_eq!(fit.max_resource_bytes, 4 * MIB);
             assert_eq!(fit.max_retiring_bytes, requested.max_retiring_bytes - 4);
             registry.admit_with_profile(fit, profiles[slot]).unwrap();
@@ -280,6 +253,24 @@ fn saturation_refuses_useful_floor_without_consuming_an_identity() {
     let one_resident = nominal(2, 8, 4, 8);
     assert!(proposed_fit(&one_resident, 0, CAP, CAP).is_none());
     let requested = nominal(2, 8, 16, 16);
+    for (reserved_bytes, reserved_backing_bytes, own_retired_bytes) in
+        [(u64::MAX, 0, 0), (0, u64::MAX, 0), (0, 0, u64::MAX)]
+    {
+        assert_eq!(
+            select_reconnect_limits(
+                &requested,
+                ContentReconnectBudget {
+                    capacity_bytes: CAP,
+                    capacity_backing_bytes: CAP,
+                    reserved_bytes,
+                    reserved_backing_bytes,
+                    own_retired_bytes,
+                    ..Default::default()
+                }
+            ),
+            Err(ContentStoreError::Budget)
+        );
+    }
     assert!(proposed_fit(&requested, 24 * MIB + 4, CAP, CAP).is_none());
     assert!(proposed_fit(&requested, 0, CAP, 12 * MIB - 4).is_none());
     let fit = proposed_fit(&requested, 24 * MIB, CAP, CAP).unwrap();
@@ -335,13 +326,9 @@ fn all_three_slots_keep_their_envelopes_in_every_reconnect_order() {
         for (index, slot) in order.into_iter().enumerate() {
             let mut requested = limits[slot].clone();
             requested.grant = grant(4 + index as u64);
-            let fitted = proposed_fit(
-                &requested,
-                4,
-                CAP - registry.reserved_bytes(),
-                CAP - registry.reserved_backing_bytes(),
-            )
-            .unwrap();
+            let fitted =
+                select_reconnect_limits(&requested, registry.reconnect_budget(profiles[slot]))
+                    .unwrap();
             assert_eq!(source(&fitted) + 4, source(&requested));
             registry.admit_with_profile(fitted, profiles[slot]).unwrap();
         }
@@ -358,11 +345,9 @@ fn repeated_tightened_grants_need_only_actual_retired_inventory_and_keep_epoch_b
     let mut leases = Vec::new();
     for epoch in 1..=ContentEpochRegistry::MAX_RETAINED_EPOCHS as u64 {
         let requested = nominal(epoch, 8, 16, 16);
-        let fit = proposed_fit(
+        let fit = select_reconnect_limits(
             &requested,
-            registry.retired_bytes(),
-            CAP - registry.reserved_bytes(),
-            CAP - registry.reserved_backing_bytes(),
+            registry.reconnect_budget(ContentStoreProfile::Legacy),
         )
         .unwrap();
         assert_eq!(source(&fit) + registry.retired_bytes(), source(&requested));
@@ -372,11 +357,9 @@ fn repeated_tightened_grants_need_only_actual_retired_inventory_and_keep_epoch_b
         assert!(registry.retired_bytes() <= source(&requested));
     }
     let requested = nominal(17, 8, 16, 16);
-    let fit = proposed_fit(
+    let fit = select_reconnect_limits(
         &requested,
-        registry.retired_bytes(),
-        CAP - registry.reserved_bytes(),
-        CAP - registry.reserved_backing_bytes(),
+        registry.reconnect_budget(ContentStoreProfile::Legacy),
     )
     .unwrap();
     let before = registry.accounting();
@@ -460,12 +443,11 @@ fn byte_saturation_recovers_only_after_a_real_source_consumer_ends() {
     assert_eq!(registry.retired_bytes(), 28 * MIB);
     let requested = nominal(3, 8, 16, 16);
     let fit = |registry: &ContentEpochRegistry| {
-        proposed_fit(
+        select_reconnect_limits(
             &requested,
-            registry.retired_bytes(),
-            CAP - registry.reserved_bytes(),
-            CAP - registry.reserved_backing_bytes(),
+            registry.reconnect_budget(ContentStoreProfile::Legacy),
         )
+        .ok()
     };
     let before = registry.accounting();
     assert!(fit(&registry).is_none());

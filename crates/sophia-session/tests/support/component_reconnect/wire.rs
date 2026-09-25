@@ -24,7 +24,21 @@ pub(super) fn connect(
 ) -> (ComponentConnectionKey, UnixStream) {
     let (key, mut peer) = owner.processes.reconnect_fixture_peer(slot, owner.policy);
     let native = slot == 1;
-    peer.write_all(&hello(native)).unwrap();
+    let greeting = if slot == 2 {
+        encode_shell_v1_client_hello_frame(ShellV1ClientHello {
+            minimum_revision: 8,
+            maximum_revision: 8,
+            required_capabilities: SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
+                | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+                | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
+                | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT,
+        })
+        .unwrap()
+    } else {
+        hello(native)
+    };
+    peer.write_all(&greeting).unwrap();
     let visit = owner.poll(65536).unwrap();
     assert_eq!(
         visit
@@ -125,6 +139,75 @@ pub(super) fn upload_id(
 
 pub(super) fn allocate(transport: &mut ShellTransportConnection<'_>, peer: &mut UnixStream) {
     allocate_extent(transport, peer, 1);
+}
+
+pub(super) fn upload_maximum(
+    transport: &mut ShellTransportConnection<'_>,
+    peer: &mut UnixStream,
+    id: u64,
+) -> ContentResourceLease {
+    let grant = transport.content_grant().unwrap();
+    let description = ContentResourceBegin {
+        grant,
+        resource: ContentResourceId { id, generation: 1 },
+        width_px: 1024,
+        height_px: 1024,
+        rendered_scale_numerator: 1,
+        rendered_scale_denominator: 1,
+        pixel_format: 1,
+        chunk_count: 69,
+        total_bytes: 4 * 1024 * 1024,
+    };
+    let layout = description
+        .layout(transport.content_limits().unwrap())
+        .unwrap();
+    send(peer, ShellContentRecord::ResourceBegin(description.clone()));
+    transport.service_content_resources(0).unwrap();
+    transport.poll_io().unwrap();
+    let (_, ShellContentRecord::ResourceStatus(status)) =
+        decode_shell_content_frame(&read(peer)).unwrap()
+    else {
+        panic!("begin status")
+    };
+    assert_eq!(status.status, 1);
+    let mut offset = 0;
+    for ordinal in 0..layout.chunk_count {
+        let bytes = (layout.total_bytes - offset)
+            .min(u64::from(layout.row_bytes) * u64::from(layout.rows_per_chunk));
+        send(
+            peer,
+            ShellContentRecord::ResourceChunk(ContentResourceChunk {
+                grant,
+                resource: description.resource,
+                ordinal,
+                offset,
+                bytes: vec![0; bytes as usize],
+            }),
+        );
+        transport.service_content_resources(0).unwrap();
+        transport.poll_io().unwrap();
+        offset += bytes;
+    }
+    send(
+        peer,
+        ShellContentRecord::ResourceEnd(ContentResourceEnd {
+            grant,
+            resource: description.resource,
+            total_bytes: description.total_bytes,
+            chunk_count: layout.chunk_count,
+        }),
+    );
+    transport.service_content_resources(0).unwrap();
+    transport.poll_io().unwrap();
+    let (_, ShellContentRecord::ResourceStatus(status)) =
+        decode_shell_content_frame(&read(peer)).unwrap()
+    else {
+        panic!("end status")
+    };
+    assert_eq!(status.status, 2);
+    transport
+        .lease_content_resource(grant, description.resource)
+        .unwrap()
 }
 
 pub(super) fn allocate_extent(
