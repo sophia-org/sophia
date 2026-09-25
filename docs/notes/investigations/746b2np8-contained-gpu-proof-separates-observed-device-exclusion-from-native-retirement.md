@@ -161,8 +161,17 @@ claim that kernel/VRAM resources were forcibly freed. Keep the process identitie
 and logs for operator inspection. No main compositor, TTY, KMS card or input
 seat takeover is part of this command.
 
-A pinned execution script/manifest will be supplied for review, not executed.
-It clears live-display and smoke variables, redirects stdin to null and both
+Signed candidate `ff2cb23857c413cd87000da346a4d5f65e03fd4e` supplies the reviewed,
+unexecuted script at
+`~/.local/state/sophia/development-evidence/t097-ff2cb238/run-proof.sh`.
+That immutable 58-file bundle's `SHA256SUMS` digest is
+`3e7e9ce4e1cadede868dc86144a25dfb2a537b1ec24b67d643be67a08388bf6d`;
+the integration review independently verified every entry. It pins CLI SHA256
+`4271958561552deefe89f3c09c2cd4f2a4ed8f4c19267121876ce2175480535c`,
+Lom `ad349869a8ce3f9eff77c6b91465b80cb54198b6` executable
+`f071f8be5ab426c907bca99a2d99ad90ff2198b06bc46a7b611c5ac80ed9be73`,
+the Minimal config above, kernel `6.18.52_1` and bubblewrap `0.13.0`.
+The script clears live-display and smoke variables, redirects stdin to null and both
 stdout/stderr to the evidence log (never a terminal), uses the
 explicit device expectation, pins both binaries and the Minimal config, and
 requires the domain-aware verifier. Physical execution still requires separate

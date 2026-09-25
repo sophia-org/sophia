@@ -166,3 +166,44 @@ topology and workload phases, distinguish maximums from distributions, and show
 the applicable content/native inventories drain after replacement and logout.
 No arbitrary number of clean days replaces those observations, and no milestone
 completion is recorded by this audit.
+
+## Joined development gate, September 25
+
+Signed candidate `7c607975515551986da97f52792341d2b80433bd` joins the t069
+startup-bundle lifetime correction, the t097 proof-only observer, and this
+evidence review. The frontend now transfers its configured device bundle to the
+registry once; real connection leases still retain old generations, and the
+registry collects an unleased superseded generation on the next install.
+The [contained-proof note](746b2np8-contained-gpu-proof-separates-observed-device-exclusion-from-native-retirement.md)
+records the observer and its separate, unexecuted hardware command. No normal
+session GPU permission or device-loss admission semantics changed.
+
+The candidate includes niltempus's documentation commit
+`0e06505b0dd55086972153d766aac8c391207e2c` unchanged. The initial clean-tree
+check detected that commit before any stash or checkout; no stash was made.
+Its protocol-frontend and 9P documents are preserved independently of this work.
+
+All main-tree checks ran with devices and live sockets hidden, two build jobs,
+and exclusive disk caches. Formatting, whitespace, metadata and layout passed.
+The default workspace suite passed 4,497 tests, with zero failures and 37
+ignored, in 200.835 seconds. The real protected harmless-child CLI fixture and
+the proof-verifier corpus passed. The native protocol-family gate passed all
+eight phases in 345.769 seconds, including the two pinned Lom lifecycle tests
+and `lom_content=complete`.
+
+The frozen peers were Hagia `97ed593e7b6829054f7143cf621ae5fd789bded6`, Narthex
+`50b9014d96f675f515b5e092c071427fb8e34423`, and the Lom diagnostic at
+`97b6f6345176841ebf0398df468015febe59fd6c`, binary SHA256
+`bf32e46e5955131c41aac60f942ce7df69e9ae29c612b18beb4bc6efd2948b04`.
+Every repository stayed clean at its signed identity; start and end identities
+and the Lom binary hash are identical. This family diagnostic is distinct from
+the newer Lom executable pinned for the unexecuted GPU proof.
+
+The 37-file gate bundle is checksum-verified at
+`~/.local/state/sophia/development-evidence/critical-sub100-7c607975-main`;
+its `SHA256SUMS` digest is
+`44cf1f4726e2de3498769b1155f49656c35e1be1b6edf6f1d8dfdad8dcad409d`.
+It retains commands, logs, exits, family report, source and peer identities,
+cache allocation and the user-document preservation record. These are
+development integration results. No GPU proof, live install, reload or physical
+acceptance occurred, and no task is closed by this gate.

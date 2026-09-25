@@ -195,6 +195,13 @@ desktop or a later device-hidden family pass. No hardware proof was rerun in
 this review. Reconnect settlement can develop against simulated completion
 without granting GPU acceptance or waiving the integration prerequisites.
 
+The subsequent [contained-proof investigation](../investigations/746b2np8-contained-gpu-proof-separates-observed-device-exclusion-from-native-retirement.md)
+revalidates the narrower September 18 Vulkan/resource-credit evidence and
+records signed `ff2cb238`'s proof-only pre-exec observer, metadata-only parent
+inventory, protected-child controls and pinned execution command. The command
+has not been executed. Its observed namespace checks and synthetic completion
+do not replace the outstanding native-retirement evidence.
+
 ### t098
 
 Carry content target tables through production projection to the exact native
