@@ -19,8 +19,7 @@ fn read_frame(stream: &mut UnixStream) -> Vec<u8> {
     frame
 }
 
-#[test]
-fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
+fn transport_peer() -> (ShellSessionTransport, UnixStream, ContentLimits) {
     let directory = std::env::temp_dir().join(format!(
         "sophia-action-expiry-{}-{}",
         std::process::id(),
@@ -75,6 +74,13 @@ fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
     else {
         panic!("limits")
     };
+    (transport, peer, limits)
+}
+
+#[test]
+fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
+    let (mut transport, mut peer, limits) = transport_peer();
+    let directory = transport.socket_path().parent().unwrap().to_path_buf();
     let mut target = super::tests::target();
     target.grant = limits.grant;
     let mut ledger = ContentActionLedger::default();
@@ -143,4 +149,107 @@ fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
         !directory.exists(),
         "transport teardown removes its private endpoint"
     );
+}
+
+#[test]
+fn dismissal_wire_identity_has_no_coordinates_and_ack_cannot_renew_its_deadline() {
+    let (mut transport, mut peer, limits) = transport_peer();
+    let target = super::tests::target();
+    let popout = sophia_engine::PresentedContentDismissal {
+        grant: limits.grant,
+        output: target.output,
+        candidate_generation: target.candidate_generation,
+        presentation_epoch: target.presentation_epoch,
+        interaction_generation: target.interaction_generation,
+        allocation: target.allocation,
+    };
+    let mut ledger = ContentActionLedger::default();
+    let id = ledger
+        .issue_dismissal(
+            popout.clone(),
+            10,
+            &limits,
+            TransactionId::from_raw(1),
+            &mut transport.connection(),
+        )
+        .unwrap()
+        .unwrap();
+    transport.poll_io().unwrap();
+    let (_, ShellContentRecord::Action(action)) =
+        decode_shell_content_frame(&read_frame(&mut peer)).unwrap()
+    else {
+        panic!("outside-dismiss action");
+    };
+    assert_eq!(
+        (
+            action.kind,
+            action.target_id,
+            action.target_generation,
+            action.action_id
+        ),
+        (2, 0, 0, 0)
+    );
+    assert_eq!(
+        (
+            action.grant,
+            action.output,
+            action.allocation,
+            action.presentation_epoch
+        ),
+        (
+            popout.grant,
+            popout.output,
+            popout.allocation,
+            popout.presentation_epoch
+        )
+    );
+    let deadline = 10 + u64::from(limits.action_ack_timeout_ms);
+    assert_eq!(
+        ledger
+            .issue_dismissal(
+                popout,
+                20,
+                &limits,
+                TransactionId::from_raw(2),
+                &mut transport.connection()
+            )
+            .unwrap(),
+        Some(id)
+    );
+    assert_eq!(ledger.dismissals.len(), 1);
+    let mut ack = ContentActionAck {
+        grant: action.grant,
+        output: action.output,
+        candidate_generation: action.candidate_generation,
+        presentation_epoch: action.presentation_epoch,
+        interaction_generation: action.interaction_generation,
+        allocation: action.allocation,
+        target_id: 0,
+        target_generation: 0,
+        action_id: 0,
+        event_id: id,
+        disposition: 1,
+    };
+    ack.presentation_epoch += 1;
+    ledger.acknowledge(&ack, 21).unwrap();
+    assert!(!ledger.dismissals[0].acknowledged);
+    ack.presentation_epoch -= 1;
+    peer.write_all(
+        &encode_shell_content_frame(
+            TransactionId::from_raw(3),
+            &ShellContentRecord::ActionAck(ack),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        ledger
+            .service_acks(&mut transport.connection(), 22, 1)
+            .unwrap(),
+        1
+    );
+    assert!(ledger.dismissals[0].acknowledged);
+    assert!(!ledger.dismissal_expired(action.allocation, deadline - 1));
+    assert!(ledger.dismissal_expired(action.allocation, deadline));
+    assert_eq!(ledger.dismissals[0].deadline_msec, deadline);
 }

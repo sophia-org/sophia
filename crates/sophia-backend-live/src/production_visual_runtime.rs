@@ -297,6 +297,9 @@ type ShellContentKey = (OutputId, LiveShellContentLayer);
 #[derive(Clone, Debug, PartialEq)]
 struct AdmittedShellContent {
     frame: LiveShellContentFrame,
+    /// Engine may subtract a withdrawn popout without reissuing the remaining
+    /// candidate's protocol Presented receipt or changing its parent identity.
+    retained_content_epoch: Option<u64>,
     interaction_revoked: bool,
     transform: sophia_engine::PresentedContentTransform,
 }

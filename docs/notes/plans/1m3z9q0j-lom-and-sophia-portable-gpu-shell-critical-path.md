@@ -271,6 +271,30 @@ explicitly unfinished: the Session report still needs delivery to the action
 owner, deadline-driven coherent withdrawal, stale-candidate rejection and
 retained-source retirement controls. It is not an acceptance or merge candidate.
 
+The next slice wires that report to the real action FIFO. An outside dismissal
+has zero target/action fields and no coordinates, and repeated presses retain
+one event and deadline. A matching ACK records receipt; it cannot prove that the
+popout disappeared or renew the withdrawal deadline. Expiry subtracts the
+popout's images, targets and allocation from the owned content frame. The parent
+keeps its original protocol Presented identity; the replacement still needs
+actual native presentation before parent input becomes current again. A refused
+queue restores the frame, keeps input revoked and retains the withdrawal for a
+later owner turn. Expired replacement proposals and candidates naming an
+invalidated allocation cannot resurrect the popout.
+
+The private-socket action suite passes 21 controls with one existing ignored
+case. Backend lifecycle controls pass 38 tests, including withdrawal before first
+presentation, queue refusal/retry, parent preservation, delayed replacement and
+final resource-credit collection after an independent lease ends. The full
+device-hidden native-session library passes 586 tests with 18 ignored; the
+retained Hagia t080 binary exercises real pregraphics policy rejection. That
+optional fixture now explicitly admits its terminal/browser bindings so it
+reaches policy validation. Strict session Clippy and workspace checks pass.
+Logs are in the development worktree's `.artifacts/t099-*` files. These are
+deterministic controls with simulated device completion, not native acceptance.
+The independent C/Lom full popout lifecycle and fractional placement controls
+remain required before closing t099, as do the final signed-candidate gates.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,

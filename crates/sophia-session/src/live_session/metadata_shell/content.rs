@@ -196,6 +196,8 @@ impl LiveContentSession {
             return Ok(());
         }
         let now = self.now_msec();
+        let mut native_scanout = native_scanout;
+        while self.observe_presentation(transport, runtime)? {}
         let presented_allocations = self
             .presented
             .values()
@@ -212,6 +214,13 @@ impl LiveContentSession {
                 transport.release_content_allocation(request.allocation_request_id)?;
                 continue;
             }
+            if self.actions.dismissal_expired(request.prior, now) {
+                transport.reject_content_allocation(
+                    request.allocation_request_id,
+                    sophia_runtime::ContentAllocationError::AllocationLost,
+                )?;
+                continue;
+            }
             let active_allocations = transport.content_allocation_snapshots();
             match self.resolve_allocation(&request, outputs, &active_allocations) {
                 Ok(snapshot) => transport.grant_content_allocation(
@@ -224,6 +233,14 @@ impl LiveContentSession {
                 }
             }
         }
+        self.service_dismissals(
+            transport,
+            runtime,
+            scene,
+            native_scanout.as_deref_mut(),
+            now,
+            transaction,
+        )?;
         let allocations = transport.content_allocation_snapshots();
         let content_outputs = self
             .published_facts
@@ -254,7 +271,6 @@ impl LiveContentSession {
         } else {
             transport.service_content_candidates(&contexts, now)?;
         }
-        let mut native_scanout = native_scanout;
         while let Some((output, generation)) = transport.next_content_submission_for(|output| {
             !self.pending.iter().any(|pending| pending.output == output)
         }) {
@@ -269,6 +285,15 @@ impl LiveContentSession {
             } else {
                 transport.begin_content_submission(output, generation, now)?
             };
+            if bundle.surfaces.iter().any(|surface| {
+                self.actions.dismissal_expired(surface.allocation, now)
+                    || !allocations
+                        .iter()
+                        .any(|allocation| allocation.allocation == surface.allocation)
+            }) {
+                transport.content_renderer_failed(bundle.grant, output, generation)?;
+                continue;
+            }
             self.submit_bundle(
                 transport,
                 runtime,

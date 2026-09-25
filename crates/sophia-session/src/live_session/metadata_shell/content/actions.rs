@@ -1,5 +1,7 @@
 #[path = "actions/catalog.rs"]
 mod catalog;
+#[path = "actions/dismissal.rs"]
+mod dismissal;
 #[path = "actions/native_launcher.rs"]
 mod native_launcher;
 pub use native_launcher::NativeLauncherActionService;
@@ -51,6 +53,7 @@ pub(super) struct ContentActionLedger {
     next_event_id: u64,
     issued_high_water: u64,
     live: Vec<PendingAction>,
+    dismissals: Vec<dismissal::PendingDismissal>,
 }
 
 // r5 advertises at most sixteen actions. Reserve once before a connection
@@ -63,6 +66,7 @@ impl Default for ContentActionLedger {
             next_event_id: 1,
             issued_high_water: 0,
             live: Vec::with_capacity(ACTION_CAPACITY),
+            dismissals: Vec::with_capacity(ACTION_CAPACITY),
         }
     }
 }
@@ -75,6 +79,7 @@ impl Clone for ContentActionLedger {
             ..Self::default()
         };
         copy.live.extend(self.live.iter().cloned());
+        copy.dismissals.extend(self.dismissals.iter().cloned());
         copy
     }
 }
@@ -90,6 +95,7 @@ impl ContentActionLedger {
         self.next_event_id = 1;
         self.issued_high_water = 0;
         self.live.clear();
+        self.dismissals.clear();
     }
 
     pub(super) fn issue(
@@ -120,7 +126,7 @@ impl ContentActionLedger {
         transport: &mut ShellTransportConnection<'_>,
         authority: ActionAuthority,
     ) -> Result<Option<u64>, ShellTransportError> {
-        if self.live.len() >= limits.max_pending_actions as usize
+        if self.live.len() + self.dismissals.len() >= limits.max_pending_actions as usize
             || self.live.len() >= self.live.capacity()
             || !transport.content_action_capacity_available()
         {
@@ -175,6 +181,10 @@ impl ContentActionLedger {
             self.live
                 .iter()
                 .any(|pending| pending.action.event_id == event)
+                || self
+                    .dismissals
+                    .iter()
+                    .any(|pending| pending.action.event_id == event)
         });
         Ok(processed)
     }
@@ -184,6 +194,16 @@ impl ContentActionLedger {
         ack: &ContentActionAck,
         now_msec: u64,
     ) -> Result<(), ShellTransportError> {
+        if let Some(pending) = self
+            .dismissals
+            .iter_mut()
+            .find(|p| p.action.event_id == ack.event_id)
+        {
+            if ack_matches(ack, &pending.action) && now_msec <= pending.deadline_msec {
+                pending.acknowledged = true;
+            }
+            return Ok(());
+        }
         let Some(pending) = self
             .live
             .iter_mut()
@@ -569,6 +589,11 @@ impl super::LiveContentSession {
                 .live
                 .iter()
                 .any(|pending| pending.action.event_id == event)
+                || self
+                    .actions
+                    .dismissals
+                    .iter()
+                    .any(|pending| pending.action.event_id == event)
         });
         Ok(processed)
     }

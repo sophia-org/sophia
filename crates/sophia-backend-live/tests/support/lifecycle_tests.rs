@@ -7,6 +7,8 @@ mod component_identity;
 mod component_removal;
 #[path = "lifecycle_tests/policy_composition.rs"]
 mod policy_composition;
+#[path = "lifecycle_tests/popout_removal.rs"]
+mod popout_removal;
 #[path = "lifecycle_tests/resources.rs"]
 mod resources;
 #[path = "lifecycle_tests/target.rs"]

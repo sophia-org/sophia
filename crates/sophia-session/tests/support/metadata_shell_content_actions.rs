@@ -64,6 +64,7 @@ fn ledger(ack: AckState) -> ContentActionLedger {
     let target = target();
     let action = action_from_target(&target, 14, ACTION_ACTIVATE);
     ContentActionLedger {
+        dismissals: Vec::new(),
         next_event_id: 15,
         issued_high_water: 14,
         live: [PendingAction {

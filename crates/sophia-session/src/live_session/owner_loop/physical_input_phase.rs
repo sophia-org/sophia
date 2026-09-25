@@ -487,6 +487,11 @@ macro_rules! drain_physical_input {
                 }
             }
             if let Some(shell) = metadata_shell.as_mut() {
+                if let Some(runtime) = runtime.as_ref() {
+                    for popout in report.content_dismissals.iter().cloned() {
+                        shell.issue_content_dismissal(popout, runtime)?;
+                    }
+                }
                 for target in report.content_activations.iter().cloned() {
                     if runtime.as_ref().is_none() || shell.issue_content_activation(
                         target, runtime.as_ref().expect("runtime was checked above")
