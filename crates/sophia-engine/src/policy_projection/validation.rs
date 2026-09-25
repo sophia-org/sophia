@@ -229,7 +229,21 @@ pub(super) fn validate_request_cause(
 ) -> Result<(), PolicyProjectionError> {
     let live = |target: SurfaceId| surfaces.iter().any(|surface| surface.surface == target);
     match cause {
-        PolicyRequestCause::SceneChanged => Ok(()),
+        PolicyRequestCause::SceneChanged | PolicyRequestCause::OverviewQuery => Ok(()),
+        PolicyRequestCause::OverviewSelection {
+            activation_serial,
+            output,
+            output_generation,
+            workspace,
+            target,
+        } if activation_serial != 0
+            && output.is_valid()
+            && output_generation != 0
+            && workspace != 0
+            && target.is_none_or(live) =>
+        {
+            Ok(())
+        }
         PolicyRequestCause::Action {
             activation_serial,
             action,

@@ -111,9 +111,21 @@ pub struct CompositorIndicatorStrip {
 mod content_identity;
 pub use content_identity::*;
 
+/// Engine-only sampling of a retained scene image. Target geometry changes
+/// neither the application's allocation nor its input transform.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorSurfacePreview {
+    pub node: CompositorNodeId,
+    pub generation: u64,
+    pub surface: SurfaceId,
+    pub geometry: Rect,
+    pub clip: Rect,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompositorDisplayCommand<C = CompositorContentImage> {
     Surface { surface: SurfaceId },
+    SurfacePreview(CompositorSurfacePreview),
     Border(CompositorBorder),
     Rect(CompositorRect),
     Text(CompositorText),
@@ -128,6 +140,12 @@ pub struct CompositorDisplayList<C = CompositorContentImage> {
 }
 
 impl<C> CompositorDisplayList<C> {
+    pub fn surface_previews(&self) -> impl Iterator<Item = CompositorSurfacePreview> + '_ {
+        self.commands.iter().filter_map(|command| match command {
+            CompositorDisplayCommand::SurfacePreview(preview) => Some(*preview),
+            _ => None,
+        })
+    }
     pub fn empty(output: OutputId) -> Self {
         Self {
             output,
@@ -139,6 +157,7 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Border(border) => Some(*border),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfacePreview(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -150,6 +169,7 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Rect(rect) => Some(*rect),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfacePreview(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -161,6 +181,7 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Text(text) => Some(text),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfacePreview(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -172,6 +193,7 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfacePreview(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
@@ -196,6 +218,13 @@ pub(crate) fn compositor_display_list_structure_is_valid<C: CompositorContentMet
     let mut nodes = BTreeSet::new();
     display_list.commands.iter().all(|command| match command {
         CompositorDisplayCommand::Surface { .. } => true,
+        CompositorDisplayCommand::SurfacePreview(preview) => {
+            preview.generation != 0
+                && preview.surface.is_valid()
+                && !preview.geometry.is_empty()
+                && !preview.clip.is_empty()
+                && nodes.insert(preview.node)
+        }
         CompositorDisplayCommand::Border(border) => nodes.insert(border.node),
         CompositorDisplayCommand::Rect(rect) => {
             rect.generation != 0 && !rect.geometry.is_empty() && nodes.insert(rect.node)
@@ -431,6 +460,25 @@ pub fn compositor_display_list_damage<
         .map(|border| (border.node, border))
         .collect::<BTreeMap<_, _>>();
     let mut damage = Region::empty();
+    let before_previews: BTreeMap<_, _> =
+        previous.surface_previews().map(|p| (p.node, p)).collect();
+    let after_previews: BTreeMap<_, _> = current.surface_previews().map(|p| (p.node, p)).collect();
+    for node in before_previews
+        .keys()
+        .chain(after_previews.keys())
+        .copied()
+        .collect::<BTreeSet<_>>()
+    {
+        if before_previews.get(&node) != after_previews.get(&node) {
+            for preview in [before_previews.get(&node), after_previews.get(&node)]
+                .into_iter()
+                .flatten()
+            {
+                // Damage is bounded by the same clip used for pixel sampling.
+                damage.push(preview.clip);
+            }
+        }
+    }
     for node in previous_borders
         .keys()
         .chain(current_borders.keys())

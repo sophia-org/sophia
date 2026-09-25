@@ -17,6 +17,7 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
     capability "output_actions" bit=15
     capability "output_policy_keys" bit=16
     capability "output_launch_context" bit=17
+    capability "overview" bit=18
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
@@ -143,6 +144,28 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "generation" type="u64" sample=1
         field "epoch" type="u64" sample=1
         field "token" type="u64" sample=1
+    }
+    extension-record "ProjectionOverviewWorkspace" transfer="projection" kind=65289 gate="overview" max=1008 {
+        field "output" type="u64" sample=1
+        field "workspace" type="u64" sample=17
+        field "x" type="i32" sample=0
+        field "y" type="i32" sample=0
+        field "width" type="i32" sample=1600
+        field "height" type="i32" sample=1000
+        field "focus_index" type="u32" sample=0
+        field "focus_generation" type="u32" sample=1
+        field "placement_count" type="u32" sample=1
+        field "active" type="u32" sample=1
+    }
+    extension-record "ProjectionOverviewPlacement" transfer="projection" kind=65290 gate="overview" max=64512 {
+        field "output" type="u64" sample=1
+        field "workspace" type="u64" sample=17
+        field "surface_index" type="u32" sample=0
+        field "surface_generation" type="u32" sample=1
+        field "x" type="i32" sample=8
+        field "y" type="i32" sample=8
+        field "width" type="i32" sample=800
+        field "height" type="i32" sample=984
     }
     extension-record "SnapshotLaunchOrigin" transfer="snapshot" kind=65286 gate="launch_origin" max=1024 {
         field "surface_index" type="u32" sample=3
@@ -364,6 +387,24 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "profile_digest" type="u8" count=32 sample="00112233445566778899aabbccddeeff102132435465768798a9bacbdcedfe0f"
         field "outcome" type="u16" sample=1
         field "reserved" type="u16" reserved=#true sample=0
+    }
+    // Requires overview. Operation 0 requests previews without changing policy;
+    // operation 1 confirms an exact workspace and optional window selection.
+    message "OverviewRequest" kind=54 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "request_id" type="u64" sample=17
+        field "scene_generation" type="u64" sample=41
+        field "policy_generation" type="u64" sample=3
+        field "activation_serial" type="u64" sample=23
+        field "output" type="u64" sample=1
+        field "output_generation" type="u64" sample=1
+        field "workspace" type="u64" sample=17
+        field "target_index" type="u32" sample=0
+        field "target_generation" type="u32" sample=1
+        field "operation" type="u16" sample=1
+        field "affected_output_count" type="u16" sample=2
+        field "reserved" type="u32" reserved=#true sample=0
+        field "affected_outputs" type="bytes" max=128 sample="01000000000000000200000000000000"
     }
     // Requires output_actions. Coverage is not the action target. Existing
     // ProjectionRequest bytes and legacy Action semantics stay frozen.

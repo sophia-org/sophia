@@ -26,6 +26,7 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | `ProfileActive` | 50 | policy-to-session | must be nonzero | 52 |
 | `ProfileRollback` | 51 | session-to-policy | must be nonzero | 48 |
 | `ProfileRolledBack` | 52 | policy-to-session | must be nonzero | 52 |
+| `OverviewRequest` | 54 | session-to-policy | must be nonzero | ..208 |
 | `OutputActionRequest` | 53 | session-to-policy | must be nonzero | ..196 |
 
 ## `ClientHello`
@@ -256,6 +257,25 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 48 | `outcome` | `u16` | little-endian |
 | 50 | `reserved` | `u16` | must be zero |
 
+## `OverviewRequest`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `request_id` | `u64` | little-endian |
+| 16 | `scene_generation` | `u64` | little-endian |
+| 24 | `policy_generation` | `u64` | little-endian |
+| 32 | `activation_serial` | `u64` | little-endian |
+| 40 | `output` | `u64` | little-endian |
+| 48 | `output_generation` | `u64` | little-endian |
+| 56 | `workspace` | `u64` | little-endian |
+| 64 | `target_index` | `u32` | little-endian |
+| 68 | `target_generation` | `u32` | little-endian |
+| 72 | `operation` | `u16` | little-endian |
+| 74 | `affected_output_count` | `u16` | little-endian |
+| 76 | `reserved` | `u32` | must be zero |
+| 80 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
+
 ## `OutputActionRequest`
 
 | Offset | Field | Type | Rule |
@@ -436,6 +456,38 @@ Transfer: `projection`; record kind: 0xFF08; gated on capability `output_launch_
 | 8 | `generation` | `u64` | little-endian |
 | 16 | `epoch` | `u64` | little-endian |
 | 24 | `token` | `u64` | little-endian |
+
+## `ProjectionOverviewWorkspace` extension record
+
+Transfer: `projection`; record kind: 0xFF09; gated on capability `overview`; maximum records: 1008; fixed size: 48 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `workspace` | `u64` | little-endian |
+| 16 | `x` | `i32` | little-endian |
+| 20 | `y` | `i32` | little-endian |
+| 24 | `width` | `i32` | little-endian |
+| 28 | `height` | `i32` | little-endian |
+| 32 | `focus_index` | `u32` | little-endian |
+| 36 | `focus_generation` | `u32` | little-endian |
+| 40 | `placement_count` | `u32` | little-endian |
+| 44 | `active` | `u32` | little-endian |
+
+## `ProjectionOverviewPlacement` extension record
+
+Transfer: `projection`; record kind: 0xFF0A; gated on capability `overview`; maximum records: 64512; fixed size: 40 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `workspace` | `u64` | little-endian |
+| 16 | `surface_index` | `u32` | little-endian |
+| 20 | `surface_generation` | `u32` | little-endian |
+| 24 | `x` | `i32` | little-endian |
+| 28 | `y` | `i32` | little-endian |
+| 32 | `width` | `i32` | little-endian |
+| 36 | `height` | `i32` | little-endian |
 
 ## `SnapshotLaunchOrigin` extension record
 

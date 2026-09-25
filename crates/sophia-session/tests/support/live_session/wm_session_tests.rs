@@ -272,6 +272,7 @@ fn public_policy_admission_reconciles_to_the_engine_safe_extent_before_staging()
     layout.layout_epochs.set_recovery_extent(surface, safe);
     let proposal = sophia_protocol::PolicyProjectionProposal {
         launch_contexts: Vec::new(),
+        overview_workspaces: Vec::new(),
         output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),
         tab_groups: Vec::new(),
@@ -364,6 +365,7 @@ fn public_policy_reconciliation_keeps_policy_omission_but_drives_changed_content
     };
     let proposal = sophia_protocol::PolicyProjectionProposal {
         launch_contexts: Vec::new(),
+        overview_workspaces: Vec::new(),
         output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),
         tab_groups: Vec::new(),
@@ -461,6 +463,7 @@ fn public_policy_fullscreen_reconciliation_preserves_the_full_output() {
     };
     let proposal = sophia_protocol::PolicyProjectionProposal {
         launch_contexts: Vec::new(),
+        overview_workspaces: Vec::new(),
         output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),
         tab_groups: Vec::new(),
@@ -561,6 +564,7 @@ fn public_policy_materializes_reconciled_content_without_committing_content_to_t
     layout.layers.insert(surface, test_layer(surface, outer));
     let proposal = sophia_protocol::PolicyProjectionProposal {
         launch_contexts: Vec::new(),
+        overview_workspaces: Vec::new(),
         output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),
         tab_groups: Vec::new(),

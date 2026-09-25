@@ -87,6 +87,7 @@ fn empty_active_output_releases_previous_keyboard_focus_only_after_commit() {
                     },
                 ],
                 launch_contexts: Vec::new(),
+            overview_workspaces: Vec::new(),
             output_launch_contexts: Vec::new(),
                 translation_groups: vec![],
                 tab_groups: vec![],

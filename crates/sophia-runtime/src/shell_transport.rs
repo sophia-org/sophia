@@ -438,6 +438,10 @@ impl ShellComponentTransport {
         self.capabilities & mask == mask
     }
 
+    pub const fn supports_overview(&self) -> bool {
+        self.capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_OVERVIEW != 0
+    }
+
     pub const fn supports_launcher(&self) -> bool {
         let mask = sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
             | sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER;

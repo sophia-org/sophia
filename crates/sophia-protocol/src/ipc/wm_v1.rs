@@ -30,6 +30,7 @@ pub const SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN: u64 = 1 << 14;
 pub const SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS: u64 = 1 << 15;
 pub const SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS: u64 = 1 << 16;
 pub const SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT: u64 = 1 << 17;
+pub const SOPHIA_WM_CAPABILITY_OVERVIEW: u64 = 1 << 18;
 
 pub const SOPHIA_WM_OUTCOME_COMMITTED: u16 = 1;
 pub const SOPHIA_WM_OUTCOME_REJECTED_STALE: u16 = 2;
@@ -2056,6 +2057,113 @@ pub fn decode_wm_v1_profile_rolled_back_frame(
         profile_generation,
         profile_digest,
         outcome,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1OverviewRequest {
+    pub connection_epoch: u64,
+    pub request_id: u64,
+    pub scene_generation: u64,
+    pub policy_generation: u64,
+    pub activation_serial: u64,
+    pub output: u64,
+    pub output_generation: u64,
+    pub workspace: u64,
+    pub target_index: u32,
+    pub target_generation: u32,
+    pub operation: u16,
+    pub affected_output_count: u16,
+    pub affected_outputs: Vec<u8>,
+}
+
+pub fn encode_wm_v1_overview_request_frame(
+    transaction: TransactionId,
+    message: &WmV1OverviewRequest,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    if message.affected_outputs.len() > 128 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "affected_outputs",
+            len: message.affected_outputs.len(),
+            max: 128,
+        });
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.request_id);
+    push_u64(&mut payload, message.scene_generation);
+    push_u64(&mut payload, message.policy_generation);
+    push_u64(&mut payload, message.activation_serial);
+    push_u64(&mut payload, message.output);
+    push_u64(&mut payload, message.output_generation);
+    push_u64(&mut payload, message.workspace);
+    push_u32(&mut payload, message.target_index);
+    push_u32(&mut payload, message.target_generation);
+    push_u16(&mut payload, message.operation);
+    push_u16(&mut payload, message.affected_output_count);
+    push_u32(&mut payload, 0);
+    payload.extend_from_slice(&message.affected_outputs);
+    encode_frame(IpcMessageKind::WmV1OverviewRequest, transaction, &payload)
+}
+
+pub fn decode_wm_v1_overview_request_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1OverviewRequest), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1OverviewRequest {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let request_id = cursor.u64()?;
+    let scene_generation = cursor.u64()?;
+    let policy_generation = cursor.u64()?;
+    let activation_serial = cursor.u64()?;
+    let output = cursor.u64()?;
+    let output_generation = cursor.u64()?;
+    let workspace = cursor.u64()?;
+    let target_index = cursor.u32()?;
+    let target_generation = cursor.u32()?;
+    let operation = cursor.u16()?;
+    let affected_output_count = cursor.u16()?;
+    let reserved = cursor.u32()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    let len = payload.len().saturating_sub(80);
+    if len > 128 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "affected_outputs",
+            len,
+            max: 128,
+        });
+    }
+    let affected_outputs = cursor.slice(len)?.to_vec();
+    cursor.finish()?;
+    let message = WmV1OverviewRequest {
+        connection_epoch,
+        request_id,
+        scene_generation,
+        policy_generation,
+        activation_serial,
+        output,
+        output_generation,
+        workspace,
+        target_index,
+        target_generation,
+        operation,
+        affected_output_count,
+        affected_outputs,
     };
     Ok((header.transaction, message))
 }

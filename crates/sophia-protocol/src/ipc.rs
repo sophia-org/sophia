@@ -9,6 +9,7 @@ mod primitives;
 mod shell_tabs;
 mod shell_v1;
 mod types;
+mod wm_overview;
 mod wm_tab_groups;
 mod wm_v1;
 mod wm_v1_profile;
@@ -27,6 +28,7 @@ pub use portal::{
 pub use shell_tabs::*;
 pub use shell_v1::*;
 pub use types::*;
+pub use wm_overview::*;
 pub use wm_tab_groups::*;
 pub use wm_v1::*;
 pub use wm_v1_profile::*;
@@ -43,6 +45,8 @@ pub use shell_content::*;
 
 mod shell_reference;
 pub use shell_reference::*;
+mod shell_overview;
+pub use shell_overview::*;
 
 mod shell_launcher;
 pub use shell_launcher::*;

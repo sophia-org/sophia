@@ -21,7 +21,7 @@ impl ShellComponentTransport {
         }
         if hello.minimum_revision == 0
             || hello.minimum_revision > hello.maximum_revision
-            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION
+            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_OVERVIEW_REVISION
         {
             return Err(ShellTransportError::UnsupportedRevision);
         }
@@ -30,7 +30,7 @@ impl ShellComponentTransport {
         }
         let revision = hello
             .maximum_revision
-            .min(sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION);
+            .min(sophia_protocol::SOPHIA_SHELL_OVERVIEW_REVISION);
         let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
             | sophia_protocol::SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | if revision >= 2 {
@@ -43,6 +43,12 @@ impl ShellComponentTransport {
                 hello.required_capabilities
                     & (sophia_protocol::SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG
                         | sophia_protocol::SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET)
+            } else {
+                0
+            };
+        let capabilities = capabilities
+            | if revision >= sophia_protocol::SOPHIA_SHELL_OVERVIEW_REVISION {
+                hello.required_capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_OVERVIEW
             } else {
                 0
             };

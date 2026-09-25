@@ -175,6 +175,25 @@ pub fn lower_head_composition_plan_with_caches(
     let mut emitted_surfaces = std::collections::BTreeSet::new();
     for command in &plan.compositor {
         match command {
+            HeadCompositorCommand::SurfacePreview(preview) => {
+                let mut binding = plan
+                    .layers
+                    .iter()
+                    .find(|b| b.surface == preview.surface)
+                    .ok_or(LiveHeadCompositionLoweringError::MissingPlannedSurface)?
+                    .clone();
+                binding.native_geometry = preview.geometry;
+                binding.native_clip = preview.clip;
+                let source = sources
+                    .iter()
+                    .find(|source| {
+                        source.surface == preview.surface && source.source == binding.source
+                    })
+                    .ok_or(LiveHeadCompositionLoweringError::MissingSource(
+                        binding.source,
+                    ))?;
+                layers.push(lower_surface_source(&binding, source)?);
+            }
             HeadCompositorCommand::Background(background) => {
                 layers.push(LiveOwnedMixedCompositionLayer::Solid {
                     geometry: background.geometry,

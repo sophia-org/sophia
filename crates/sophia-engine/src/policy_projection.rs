@@ -85,6 +85,7 @@ pub struct PolicyProjectionReducer {
     output_statuses: BTreeMap<OutputId, PolicyProjectionOutputStatus>,
     indicator_publication_generation: u64,
     tab_groups: Vec<sophia_protocol::PolicyTabGroup>,
+    overview: crate::PolicyOverviewPublication,
 }
 
 /// What the indicator chrome renders, and the identity consumers compare it by.
@@ -148,6 +149,7 @@ impl PolicyProjectionReducer {
             commit_serial: 0,
             indicators: BTreeMap::new(),
             tab_groups: Vec::new(),
+            overview: crate::PolicyOverviewPublication::default(),
             output_statuses: BTreeMap::new(),
             indicator_publication_generation: 0,
         })
@@ -218,7 +220,27 @@ impl PolicyProjectionReducer {
         {
             return Err(PolicyProjectionError::InvalidRequestCause);
         }
+        if let PolicyRequestCause::OverviewSelection {
+            output,
+            workspace,
+            target,
+            ..
+        } = cause
+            && !self.overview.workspaces.iter().any(|entry| {
+                entry.output == output
+                    && entry.workspace == workspace
+                    && target
+                        .is_none_or(|surface| entry.placements.iter().any(|p| p.surface == surface))
+            })
+        {
+            return Err(PolicyProjectionError::InvalidRequestCause);
+        }
         if let PolicyRequestCause::OutputAction {
+            output,
+            output_generation,
+            ..
+        }
+        | PolicyRequestCause::OverviewSelection {
             output,
             output_generation,
             ..
@@ -286,6 +308,16 @@ impl PolicyProjectionReducer {
         else {
             return PolicyProjectionOutcome::RejectedInvalid;
         };
+        if !crate::overview::overview_matches_scene(&proposal.overview_workspaces, &self.scene) {
+            return PolicyProjectionOutcome::RejectedInvalid;
+        }
+        if self.overview.workspaces != proposal.overview_workspaces
+            || self.overview.connection_epoch != self.active_epoch
+        {
+            self.overview.workspaces = proposal.overview_workspaces.clone();
+            self.overview.connection_epoch = self.active_epoch;
+            self.overview.generation = self.overview.generation.saturating_add(1);
+        }
         let tabs_changed = self.tab_groups != tab_groups;
         self.tab_groups = tab_groups;
         // The commit serial advances unconditionally: it guards settlement
@@ -462,6 +494,10 @@ impl PolicyProjectionReducer {
             output_ids.contains(&g.output) && g.members.iter().all(|s| surfaces.contains_key(s))
         });
         self.scene = scene;
+        if !crate::overview::overview_matches_scene(&self.overview.workspaces, &self.scene) {
+            self.overview.workspaces.clear();
+            self.overview.generation = self.overview.generation.saturating_add(1);
+        }
         self.committed = committed;
         let before = (self.indicators.len(), self.output_statuses.len());
         self.indicators
@@ -517,7 +553,14 @@ impl PolicyProjectionReducer {
         }
     }
 
+    pub fn overview_publication(&self) -> crate::PolicyOverviewPublication {
+        self.overview.clone()
+    }
+
     fn clear_indicator_publication(&mut self) {
+        self.overview.workspaces.clear();
+        self.overview.connection_epoch = None;
+        self.overview.generation = self.overview.generation.saturating_add(1);
         self.tab_groups.clear();
         self.indicators.clear();
         self.output_statuses.clear();

@@ -5,6 +5,7 @@ mod input;
 mod namespace;
 mod output;
 mod output_configuration;
+mod overview;
 mod policy;
 mod portal;
 mod shell_tabs;
@@ -20,6 +21,7 @@ pub use input::*;
 pub use namespace::*;
 pub use output::*;
 pub use output_configuration::*;
+pub use overview::*;
 pub use policy::*;
 pub use portal::*;
 pub use shell_tabs::*;
@@ -36,6 +38,8 @@ pub use shell_indicators::*;
 
 mod shell_reference;
 pub use shell_reference::*;
+mod shell_overview;
+pub use shell_overview::*;
 
 mod shell_launcher;
 pub use shell_launcher::*;

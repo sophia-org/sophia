@@ -29,6 +29,7 @@
 #define SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS (UINT64_C(1) << 15)
 #define SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS (UINT64_C(1) << 16)
 #define SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT (UINT64_C(1) << 17)
+#define SOPHIA_WM_CAPABILITY_OVERVIEW (UINT64_C(1) << 18)
 
 #define SOPHIA_WM_OUTCOME_COMMITTED 1u
 #define SOPHIA_WM_OUTCOME_REJECTED_STALE 2u
@@ -406,6 +407,25 @@ struct sophia_wm_v1_profile_rolled_back {
 };
 enum sophia_wm_v1_status sophia_wm_v1_encode_profile_rolled_back(uint64_t transaction, const struct sophia_wm_v1_profile_rolled_back *message, uint8_t *out, size_t capacity, size_t *written);
 enum sophia_wm_v1_status sophia_wm_v1_decode_profile_rolled_back(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_profile_rolled_back *message);
+
+struct sophia_wm_v1_overview_request {
+    uint64_t connection_epoch;
+    uint64_t request_id;
+    uint64_t scene_generation;
+    uint64_t policy_generation;
+    uint64_t activation_serial;
+    uint64_t output;
+    uint64_t output_generation;
+    uint64_t workspace;
+    uint32_t target_index;
+    uint32_t target_generation;
+    uint16_t operation;
+    uint16_t affected_output_count;
+    const uint8_t *affected_outputs;
+    size_t affected_outputs_len;
+};
+enum sophia_wm_v1_status sophia_wm_v1_encode_overview_request(uint64_t transaction, const struct sophia_wm_v1_overview_request *message, uint8_t *out, size_t capacity, size_t *written);
+enum sophia_wm_v1_status sophia_wm_v1_decode_overview_request(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_overview_request *message);
 
 struct sophia_wm_v1_output_action_request {
     uint64_t connection_epoch;

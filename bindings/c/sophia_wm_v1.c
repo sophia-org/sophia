@@ -1051,6 +1051,59 @@ enum sophia_wm_v1_status sophia_wm_v1_decode_profile_rolled_back(const uint8_t *
     return SOPHIA_WM_V1_OK;
 }
 
+enum sophia_wm_v1_status sophia_wm_v1_encode_overview_request(uint64_t transaction, const struct sophia_wm_v1_overview_request *message, uint8_t *out, size_t capacity, size_t *written) {
+    if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    if (message->affected_outputs_len > 128u) return SOPHIA_WM_V1_FIELD_TOO_LARGE;
+    size_t payload_len = 80u + message->affected_outputs_len;
+    enum sophia_wm_v1_status status = write_header(54u, transaction, payload_len, out, capacity, written);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    uint8_t *cursor = out + SOPHIA_IPC_HEADER_LEN;
+    put_u64(cursor + 0, message->connection_epoch);
+    put_u64(cursor + 8, message->request_id);
+    put_u64(cursor + 16, message->scene_generation);
+    put_u64(cursor + 24, message->policy_generation);
+    put_u64(cursor + 32, message->activation_serial);
+    put_u64(cursor + 40, message->output);
+    put_u64(cursor + 48, message->output_generation);
+    put_u64(cursor + 56, message->workspace);
+    put_u32(cursor + 64, message->target_index);
+    put_u32(cursor + 68, message->target_generation);
+    put_u16(cursor + 72, message->operation);
+    put_u16(cursor + 74, message->affected_output_count);
+    put_u32(cursor + 76, 0);
+    for (size_t index = 0; index < message->affected_outputs_len; ++index) cursor[80u + index] = message->affected_outputs[index];
+    return SOPHIA_WM_V1_OK;
+}
+
+enum sophia_wm_v1_status sophia_wm_v1_decode_overview_request(const uint8_t *frame, size_t frame_len, uint64_t *transaction, struct sophia_wm_v1_overview_request *message) {
+    uint64_t frame_transaction = 0;
+    size_t payload_len = 0;
+    enum sophia_wm_v1_status status = read_header(frame, frame_len, 54u, &frame_transaction, &payload_len);
+    if (status != SOPHIA_WM_V1_OK) return status;
+    if (frame_transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
+    *transaction = frame_transaction;
+    if (payload_len < 80u) return SOPHIA_WM_V1_TRUNCATED;
+    size_t bytes_len = payload_len - 80u;
+    if (bytes_len > 128u) return SOPHIA_WM_V1_FIELD_TOO_LARGE;
+    const uint8_t *cursor = frame + SOPHIA_IPC_HEADER_LEN;
+    message->connection_epoch = get_u64(cursor + 0);
+    message->request_id = get_u64(cursor + 8);
+    message->scene_generation = get_u64(cursor + 16);
+    message->policy_generation = get_u64(cursor + 24);
+    message->activation_serial = get_u64(cursor + 32);
+    message->output = get_u64(cursor + 40);
+    message->output_generation = get_u64(cursor + 48);
+    message->workspace = get_u64(cursor + 56);
+    message->target_index = get_u32(cursor + 64);
+    message->target_generation = get_u32(cursor + 68);
+    message->operation = get_u16(cursor + 72);
+    message->affected_output_count = get_u16(cursor + 74);
+    if (get_u32(cursor + 76) != 0) return SOPHIA_WM_V1_RESERVED_NONZERO;
+    message->affected_outputs = cursor + 80;
+    message->affected_outputs_len = bytes_len;
+    return SOPHIA_WM_V1_OK;
+}
+
 enum sophia_wm_v1_status sophia_wm_v1_encode_output_action_request(uint64_t transaction, const struct sophia_wm_v1_output_action_request *message, uint8_t *out, size_t capacity, size_t *written) {
     if (transaction == 0) return SOPHIA_WM_V1_INVALID_TRANSACTION;
     if (message->affected_outputs_len > 128u) return SOPHIA_WM_V1_FIELD_TOO_LARGE;

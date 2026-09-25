@@ -170,6 +170,7 @@ pub struct HeadCompositorContentImage {
 pub enum HeadCompositorCommand {
     Background(CompositorSolidRect),
     Surface { surface: SurfaceId },
+    SurfacePreview(crate::CompositorSurfacePreview),
     Border(HeadCompositorBorder),
     Rect(HeadCompositorRect),
     Text(HeadCompositorText),
@@ -312,11 +313,14 @@ pub fn output_scene_snapshot_from_committed_in_view(
         return Err(HeadCompositionPlanError::InvalidSnapshot);
     }
     display_list.output = output;
+    let preview_surfaces: BTreeSet<_> =
+        display_list.surface_previews().map(|p| p.surface).collect();
     let displayed_surfaces = display_list
         .commands
         .iter()
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
+            CompositorDisplayCommand::SurfacePreview(preview) => Some(preview.surface),
             CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
@@ -331,7 +335,11 @@ pub fn output_scene_snapshot_from_committed_in_view(
             if !displayed_surfaces.contains(&state.surface) {
                 return None;
             }
-            let clip = intersect_rect(state.geometry, logical_viewport);
+            let clip = if preview_surfaces.contains(&state.surface) {
+                state.geometry
+            } else {
+                intersect_rect(state.geometry, logical_viewport)
+            };
             if clip.is_empty() {
                 return None;
             }
@@ -355,6 +363,10 @@ pub fn output_scene_snapshot_from_committed_in_view(
         .collect::<BTreeSet<_>>();
     display_list.commands.retain(|command| match command {
         CompositorDisplayCommand::Surface { surface } => visible_surfaces.contains(surface),
+        CompositorDisplayCommand::SurfacePreview(preview) => {
+            visible_surfaces.contains(&preview.surface)
+                && !intersect_rect(preview.clip, logical_viewport).is_empty()
+        }
         CompositorDisplayCommand::Border(border) => {
             !intersect_rect(border.outer, logical_viewport).is_empty()
         }
@@ -500,6 +512,17 @@ pub fn build_head_composition_plan(
             CompositorDisplayCommand::Surface { surface } => {
                 HeadCompositorCommand::Surface { surface: *surface }
             }
+            CompositorDisplayCommand::SurfacePreview(preview) => {
+                HeadCompositorCommand::SurfacePreview(crate::CompositorSurfacePreview {
+                    geometry: transform
+                        .project_root_rect(snapshot.logical_viewport, preview.geometry),
+                    clip: intersect_rect(
+                        transform.project_root_rect(snapshot.logical_viewport, preview.clip),
+                        painted,
+                    ),
+                    ..*preview
+                })
+            }
             CompositorDisplayCommand::Border(border) => HeadCompositorCommand::Border(
                 project_border(*border, snapshot.logical_viewport, transform, painted),
             ),
@@ -601,6 +624,11 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
     for command in &plan.compositor {
         match command {
             HeadCompositorCommand::Background(_) => {}
+            HeadCompositorCommand::SurfacePreview(preview) => {
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::SurfacePreview(*preview));
+            }
             HeadCompositorCommand::Surface { surface } => {
                 display_list
                     .commands
@@ -708,6 +736,11 @@ fn validate_snapshot(snapshot: &OutputSceneSnapshot) -> Result<(), HeadCompositi
     let mut displayed = BTreeSet::new();
     for command in &snapshot.display_list.commands {
         match command {
+            CompositorDisplayCommand::SurfacePreview(preview) => {
+                if !surfaces.contains(&preview.surface) {
+                    return Err(HeadCompositionPlanError::MissingDisplaySurface);
+                }
+            }
             CompositorDisplayCommand::Surface { surface } => {
                 if !surfaces.contains(surface) {
                     return Err(HeadCompositionPlanError::MissingDisplaySurface);

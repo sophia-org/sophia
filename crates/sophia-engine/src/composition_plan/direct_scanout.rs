@@ -148,6 +148,7 @@ fn command_requires_composition(command: &HeadCompositorCommand) -> Option<&'sta
         }
         // The client's own content, which the plane will scan out directly.
         HeadCompositorCommand::Surface { .. } => None,
+        HeadCompositorCommand::SurfacePreview(_) => Some("surface_preview"),
         HeadCompositorCommand::Border(_) => Some("border"),
         HeadCompositorCommand::Rect(_) => Some("rect"),
         HeadCompositorCommand::Text(_) => Some("text"),

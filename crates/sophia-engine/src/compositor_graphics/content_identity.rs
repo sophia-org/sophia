@@ -100,6 +100,9 @@ impl From<CompositorDisplayList> for CompositorDamageList {
                     CompositorDisplayCommand::Surface { surface } => {
                         CompositorDisplayCommand::Surface { surface }
                     }
+                    CompositorDisplayCommand::SurfacePreview(preview) => {
+                        CompositorDisplayCommand::SurfacePreview(preview)
+                    }
                     CompositorDisplayCommand::Border(value) => {
                         CompositorDisplayCommand::Border(value)
                     }

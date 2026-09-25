@@ -35,7 +35,8 @@ const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
     | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS
     | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
+    | sophia_protocol::SOPHIA_WM_CAPABILITY_OVERVIEW;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -329,10 +330,19 @@ impl PolicyConnectionState {
         if chunk.item_count == 0 || chunk.data.is_empty() {
             return Err(PolicyTransferError::InvalidCount);
         }
+        let overview_budget =
+            if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_OVERVIEW != 0 {
+                sophia_protocol::POLICY_MAX_OVERVIEW_WORKSPACES
+                    * sophia_protocol::PROJECTION_OVERVIEW_WORKSPACE_RECORD_LEN
+                    + sophia_protocol::POLICY_MAX_OVERVIEW_PLACEMENTS
+                        * sophia_protocol::PROJECTION_OVERVIEW_PLACEMENT_RECORD_LEN
+            } else {
+                0
+            };
         let next_bytes = transfer
             .bytes
             .checked_add(chunk.data.len())
-            .filter(|bytes| *bytes <= POLICY_MAX_TRANSFER_BYTES)
+            .filter(|bytes| *bytes <= POLICY_MAX_TRANSFER_BYTES + overview_budget)
             .ok_or(PolicyTransferError::ExcessiveBytes)?;
         let count = chunk.item_count as usize;
         if matches!(
@@ -343,6 +353,8 @@ impl PolicyConnectionState {
                 | sophia_protocol::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
                 | sophia_protocol::PROJECTION_LAUNCH_CONTEXT_RECORD_KIND
                 | sophia_protocol::PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND
+                | sophia_protocol::PROJECTION_OVERVIEW_WORKSPACE_RECORD_KIND
+                | sophia_protocol::PROJECTION_OVERVIEW_PLACEMENT_RECORD_KIND
         ) {
             let translation = matches!(
                 chunk.record_kind,
@@ -353,7 +365,14 @@ impl PolicyConnectionState {
                 chunk.record_kind == sophia_protocol::PROJECTION_LAUNCH_CONTEXT_RECORD_KIND;
             let output_context =
                 chunk.record_kind == sophia_protocol::PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND;
-            let capability = if output_context {
+            let overview = matches!(
+                chunk.record_kind,
+                sophia_protocol::PROJECTION_OVERVIEW_WORKSPACE_RECORD_KIND
+                    | sophia_protocol::PROJECTION_OVERVIEW_PLACEMENT_RECORD_KIND
+            );
+            let capability = if overview {
+                sophia_protocol::SOPHIA_WM_CAPABILITY_OVERVIEW
+            } else if output_context {
                 sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
             } else if launch_context {
                 sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
@@ -370,7 +389,19 @@ impl PolicyConnectionState {
             {
                 return Err(PolicyTransferError::RecordCountMismatch);
             }
-            let (size, maximum) = if output_context {
+            let (size, maximum) = if overview {
+                if chunk.record_kind == sophia_protocol::PROJECTION_OVERVIEW_WORKSPACE_RECORD_KIND {
+                    (
+                        sophia_protocol::PROJECTION_OVERVIEW_WORKSPACE_RECORD_LEN,
+                        sophia_protocol::POLICY_MAX_OVERVIEW_WORKSPACES,
+                    )
+                } else {
+                    (
+                        sophia_protocol::PROJECTION_OVERVIEW_PLACEMENT_RECORD_LEN,
+                        sophia_protocol::POLICY_MAX_OVERVIEW_PLACEMENTS,
+                    )
+                }
+            } else if output_context {
                 (
                     sophia_protocol::OUTPUT_LAUNCH_CONTEXT_RECORD_LEN,
                     sophia_protocol::POLICY_MAX_OUTPUTS,

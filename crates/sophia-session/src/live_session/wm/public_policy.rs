@@ -17,6 +17,9 @@ fn policy_cause_subject_is_live(
 ) -> bool {
     let live = |target| scene.surfaces.iter().any(|surface| surface.surface == target);
     match cause {
+        sophia_protocol::PolicyRequestCause::OverviewSelection { output, output_generation, target, .. } => {
+            target.is_none_or(live) && scene.outputs.iter().any(|entry| entry.output == output && entry.generation == output_generation)
+        }
         sophia_protocol::PolicyRequestCause::OutputAction { output, output_generation, .. } => {
             scene.outputs.iter().any(|o| o.output == output && o.generation == output_generation)
         }

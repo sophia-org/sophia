@@ -164,6 +164,14 @@ pub enum PolicyInteractionAxis {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum PolicyRequestCause {
+    OverviewQuery,
+    OverviewSelection {
+        activation_serial: u64,
+        output: OutputId,
+        output_generation: u64,
+        workspace: u64,
+        target: Option<SurfaceId>,
+    },
     #[default]
     SceneChanged,
     Action {
@@ -283,6 +291,7 @@ pub struct PolicyProjectionOutputStatus {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyProjectionProposal {
+    pub overview_workspaces: Vec<crate::PolicyOverviewWorkspace>,
     pub output_launch_contexts: Vec<PolicyOutputLaunchContext>,
     pub launch_contexts: Vec<PolicyLaunchContext>,
     pub translation_groups: Vec<crate::PolicyTranslationGroup>,

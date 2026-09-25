@@ -134,6 +134,10 @@ macro_rules! transport_facade {
                 self.state.supports_reference()
             }
 
+            pub const fn supports_overview(&self) -> bool {
+                self.state.supports_overview()
+            }
+
             pub const fn supports_launcher(&self) -> bool {
                 self.state.supports_launcher()
             }

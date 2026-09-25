@@ -483,6 +483,7 @@ pub fn tile_policy_scene(
     }
     Ok(PolicyProjectionProposal {
         launch_contexts: Vec::new(),
+        overview_workspaces: Vec::new(),
         output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),
         tab_groups: Vec::new(),
