@@ -166,57 +166,6 @@ fn partial_opacity_over_a_translucent_source_is_applied_once() {
     assert_eq!(pixel(&report.frame.bytes, 6, 1), [200, 200, 200, 255]);
 }
 
-#[test]
-fn an_instance_scales_its_whole_source_into_its_destination_and_clips() {
-    // A 2x1 source, left black, right white, doubled into 4x2 and clipped
-    // to its right half.
-    let bytes = [0, 0, 0, 0, 255, 255, 255, 0];
-    let report = compose_live_cpu_display_list_frame(
-        FRAME,
-        &[
-            background(),
-            LiveCpuCompositionElementRef::ScaledLayer {
-                layer: layer(
-                    &bytes,
-                    Size {
-                        width: 2,
-                        height: 1,
-                    },
-                    LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
-                    Rect {
-                        x: 1,
-                        y: 1,
-                        width: 4,
-                        height: 2,
-                    },
-                ),
-                clip: Rect {
-                    x: 3,
-                    y: 1,
-                    width: 2,
-                    height: 2,
-                },
-                opacity_millis: 1_000,
-            },
-        ],
-        None,
-    )
-    .unwrap();
-    assert_eq!(
-        pixel(&report.frame.bytes, 1, 1),
-        [200, 200, 200, 255],
-        "clipped away"
-    );
-    // XRGB: the padding byte is the source's, as an ordinary layer copies it.
-    assert_eq!(pixel(&report.frame.bytes, 3, 1)[..3], [255, 255, 255]);
-    assert_eq!(pixel(&report.frame.bytes, 4, 2)[..3], [255, 255, 255]);
-    assert_eq!(
-        pixel(&report.frame.bytes, 5, 1),
-        [200, 200, 200, 255],
-        "outside the destination"
-    );
-}
-
 /// The CPU instance path against the native path's headless reference
 /// model: the expected values of `finish_sample` in
 /// sophia-renderer-native-egl/tests/sampling.rs, which mirrors

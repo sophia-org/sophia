@@ -253,39 +253,58 @@ covers a 1.5 scale head. Mirrored heads settle ownership in the
 preview-only production test, which flips the sibling head before the
 primary.
 
-## Scaled sampling: what is controlled headlessly and what is not
+## Scaled sampling: aligned with the native contract
 
-The native renderer already has a headless reference model.
-`crates/sophia-renderer-native-egl/tests/sampling.rs` reads
-`composition.frag` and `sharp_reconstruction.frag` as text, mirrors them
-in Rust (`finish_sample`, Catmull-Rom reconstruction in linear light,
-unfiltered texel fetches), and pins which sampling each source-to-target
-size selects (`native_composition_sampling`: exact nearest at identity,
-sharp reconstruction when scaled). `tools/check_shaders.sh` compiles the
-same GLSL. None of this needs a GPU.
+The native renderer's sampling contract is `sharp_reconstruction.frag`
+and `composition.frag`, selected by source-to-target size (exact nearest
+at identity, sharp reconstruction when scaled). Its headless reference
+model now lives in
+`crates/sophia-renderer-native-egl/tests/support/reference_sampling.rs`.
+It was moved unchanged out of that crate's `tests/sampling.rs`, which
+still runs its shader-text contracts against it, and it remains test
+code.
 
-- **Opacity.** The CPU instance path is cross-checked against that model.
-  `identity_scale_opacity_matches_the_native_reference_model` composes the
-  model's own `finish_sample` cases (opaque XRGB, clamped premultiplied
-  ARGB, zero alpha) and matches its values to within one step of byte
-  rounding. At identity scale and full opacity the CPU instance is also
-  byte-identical to an ordinary CPU layer.
-- **Scaled sampling.** Not equivalent. At any scale other than identity,
-  native reconstructs with Catmull-Rom in linear light, while the CPU
-  instance path takes the nearest texel in gamma space. CPU and native
-  pixels of a scaled instance differ by design today. This is a known
-  divergence, not an accepted or untested equivalence. Closing it headlessly means porting the reference reconstruction into
-  the CPU scaled draw and testing it against the model, a t244 follow-up
-  not yet admitted. Until then, the CPU path, the software fallback and
-  the mirror bootstrap, draws scaled previews coarser than native.
-- **Physical limit.** Whether the GPU's output on real hardware matches
-  the reference model is a physical question. The model, the shader text
-  contracts and shader compilation constrain it without proving it. No
-  physical run is claimed here.
+The CPU instance path (`cpu_composition/scaled.rs`) now follows that
+contract:
+- **Selection.** It uses the Engine's `head_sampling_class`, the same
+  classification the head plan uses. Identity takes exact texels, and at
+  full opacity XRGB texels are copied verbatim.
+- **Reconstruction.** At any other scale it runs a CPU port of
+  `sharp_reconstruction.frag`: a 4x4 Catmull-Rom over pixel centres with
+  clamp-to-edge taps, gamma-2 light conversion (unpremultiplied for
+  premultiplied sources), alpha clamped before the encode, premultiplied
+  colour clamped to alpha, then opacity on colour and alpha.
+- **Why a port.** No production Rust implementation existed to reuse; the
+  GLSL was the only one.
+
+`crates/sophia-renderer-live/tests/cpu_instance_sampling.rs` includes the
+native reference model as test code. It compares every frame pixel
+(inside the clipped destination, untouched black outside) to within one
+byte step for upscale, downscale, fractional, mixed, a hard luminance
+edge, a clipped offset destination, translucent premultiplied at partial
+opacity, and opaque at partial opacity. It also checks identity-scale
+exact texels, and a hard alpha edge over a grey backdrop within 1.5
+steps.
+`identity_scale_opacity_matches_the_native_reference_model` keeps the
+opacity cross-check.
+
+| Control on the CPU port | Result |
+|---|---|
+| sampling-in-gamma: taps filtered without light conversion | fails 7 of 9 (worst 83 steps) |
+| sampling-nearest: nearest texel instead of reconstruction | fails 8 of 9 (worst 124 steps) |
+| opacity-twice: opacity applied twice | fails 2 of 9 (worst 57 steps) |
+| no-encode-clamp: alpha not clamped before the encode | passes: equivalent at byte precision, since the final byte encode clamps to [0, 255]; kept to mirror the shader |
+
+Physical limit: these controls compare the CPU port with the reference
+model, and the native tests compare the model with the shader text.
+Neither establishes what a particular GPU and driver produce. No physical
+run is claimed, and none was made for this work.
 
 A source commit damages each instance's whole visible rectangle rather
 than the source's damage scaled into the destination. That is the same
-whole-placement policy ordinary surfaces follow in the snapshot.
+whole-placement policy ordinary surfaces follow in the snapshot. With
+reconstruction, one changed texel affects up to two texels around it, so
+whole-rectangle damage stays conservative.
 
 ## Incident: the real-card smoke ran during a suite
 
