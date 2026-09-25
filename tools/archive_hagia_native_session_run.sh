@@ -29,6 +29,11 @@ if [[ "$kind" == reference ]]; then
     result_line='sophia_hagia_reference_capture schema=1 status=captured native_acceptance=false'
     record_schema=1
     observations="${SOPHIA_HAGIA_REFERENCE_OBSERVATIONS:-}"
+    reference_capture_root_allowed "$run_root" "$state_home/sophia/promotion" \
+        "${SOPHIA_HAGIA_NATIVE_RUN_ROOT:-$state_home/sophia/promotion/hagia-native-runs}" || {
+        echo "The reference run root may not be, contain or sit inside promotion storage: $run_root" >&2
+        exit 2
+    }
 else
     run_root="${SOPHIA_HAGIA_NATIVE_RUN_ROOT:-$state_home/sophia/promotion/hagia-native-runs}"
     record_kind=hagia_native_session
@@ -45,11 +50,19 @@ narthex_root="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 if [[ "$kind" == reference ]]; then
     reference_capture_validate "$evidence" "$proof_text" || exit 1
     # Operator observations are retained with their digest and stay unverified.
-    # A bounded regular file only: a link would retain bytes it does not own.
+    # A regular file only: a link would retain bytes it does not own. At most
+    # limit+1 bytes are ever read, so a source still growing cannot make the
+    # copy unbounded; the retained copy itself is what must fit the limit.
     if [[ -n "$observations" ]]; then
-        [[ -f "$observations" && ! -L "$observations" ]] \
-            && (( $(stat -c %s "$observations") <= 262144 )) || {
-            echo "Reference observations must be a regular file of at most 256 KiB: $observations" >&2
+        [[ -f "$observations" && ! -L "$observations" ]] || {
+            echo "Reference observations must be a regular file: $observations" >&2
+            exit 1
+        }
+        observations_copy="$(mktemp "${TMPDIR:-/tmp}/sophia-reference-observations.XXXXXX")"
+        trap 'rm -f -- "$observations_copy"' EXIT
+        head -c "$((REFERENCE_CAPTURE_OBSERVATIONS_LIMIT + 1))" -- "$observations" >"$observations_copy"
+        (( $(stat -c %s "$observations_copy") <= REFERENCE_CAPTURE_OBSERVATIONS_LIMIT )) || {
+            echo "Reference observations exceed $REFERENCE_CAPTURE_OBSERVATIONS_LIMIT bytes: $observations" >&2
             exit 1
         }
     fi
@@ -143,7 +156,7 @@ printf 'record_schema=%s\nrecord_kind=%s\nrecorded_at_utc=%s\nsource_commit=%s\n
     >"$run_dir/manifest"
 retained=(manifest result.kdl session.log)
 if [[ -n "$observations" ]]; then
-    install -m 600 "$observations" "$run_dir/observations.txt"
+    install -m 600 "$observations_copy" "$run_dir/observations.txt"
     printf 'observations_sha256=%s\nobservations=unverified\n' \
         "$(sha256sum "$run_dir/observations.txt" | awk '{ print $1 }')" >>"$run_dir/manifest"
     retained+=(observations.txt)

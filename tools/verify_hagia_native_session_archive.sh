@@ -160,6 +160,7 @@ if [[ "$expected_kind" == reference ]]; then
     observation_keys="$(grep -c '^observations_sha256=' "$run/manifest" || true)"
     if [[ -e "$run/observations.txt" || "$observation_keys" != 0 ]]; then
         [[ "$observation_keys" == 1 && -f "$run/observations.txt" && ! -L "$run/observations.txt" \
+            && "$(stat -c %s "$run/observations.txt")" -le "$REFERENCE_CAPTURE_OBSERVATIONS_LIMIT" \
             && "$(sed -n 's/^observations_sha256=//p' "$run/manifest")" \
                 == "$(sha256sum "$run/observations.txt" | awk '{ print $1 }')" \
             && "$(grep -c '^observations=unverified$' "$run/manifest")" == 1 \

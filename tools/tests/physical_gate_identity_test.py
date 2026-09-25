@@ -603,7 +603,10 @@ class ReferenceCaptureDryRun(NativeReferenceDryRun):
         for attempt in (1, 2):
             with self.subTest(capture=attempt):
                 (self.directory / "capture.log").unlink(missing_ok=True)
-                result = self.capture()
+                # Distinct sessions; identical evidence is refused as a
+                # duplicate archive, which is the archive's own guard.
+                result = self.capture(session=self.INPUT + self.CURSOR
+                                      + f"sophia_session_benchmark schema=1 attempt={attempt}\n")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(len(self.captures()), attempt)
 
@@ -636,6 +639,34 @@ class ReferenceCaptureDryRun(NativeReferenceDryRun):
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertIn("reference run root", result.stderr)
                 self.assertFalse(any(promotion.parent.rglob("manifest")))
+
+    def test_observations_are_bounded_at_retention_and_re_verification(self):
+        limit = 262144
+        notes = self.directory / "observations.txt"
+        notes.write_bytes(b"x" * limit)
+        self.assertEqual(self.capture(SOPHIA_HAGIA_REFERENCE_OBSERVATIONS=str(notes)).returncode, 0)
+        [run] = self.captures()
+        self.assertEqual((run / "observations.txt").stat().st_size, limit)
+        self.assertEqual(self.read_archive(run, "reference").returncode, 0)
+        # A retained copy past the limit fails re-verification even with every
+        # digest updated to match it.
+        (run / "observations.txt").write_bytes(b"x" * (limit + 1))
+        digest = __import__("hashlib").sha256((run / "observations.txt").read_bytes()).hexdigest()
+        manifest = (run / "manifest").read_text().splitlines()
+        (run / "manifest").write_text("\n".join(
+            f"observations_sha256={digest}" if line.startswith("observations_sha256=") else line
+            for line in manifest) + "\n")
+        subprocess.run(["bash", "-c", "sha256sum manifest result.kdl session.log observations.txt"
+                        " >SHA256SUMS"], cwd=run, check=True)
+        self.assertEqual(self.read_archive(run, "reference").returncode, 1)
+        for size in (limit + 1, 16 * limit):
+            with self.subTest(size=size):
+                (self.directory / "capture.log").unlink(missing_ok=True)
+                notes.write_bytes(b"y" * size)
+                result = self.capture(SOPHIA_HAGIA_REFERENCE_OBSERVATIONS=str(notes))
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(f"exceed {limit} bytes", result.stderr)
+                self.assertEqual(len(self.captures()), 1)
 
     def test_capture_mode_refuses_before_any_build(self):
         default = self.hagia / "examples/config/default.kdl"

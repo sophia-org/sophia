@@ -215,11 +215,19 @@ guide_claim_dir="$(mktemp -d "${TMPDIR:-/tmp}/sophia-hagia-native-guide.XXXXXX")
 trap 'rm -rf -- "$guide_claim_dir"' EXIT HUP INT TERM
 guide_claim="$guide_claim_dir/startup.claim"
 
-# The recovery log is append-only across sessions. A capture takes only what
-# this invocation appended, so an earlier session's record can never stand in.
-recovery_offset=0
-if [[ -f "$recovery_log" ]]; then
-    recovery_offset="$(stat -c %s "$recovery_log")"
+# The runner rotates its session and recovery logs once per run. A capture
+# binds each to this invocation by requiring exactly that one rotation, so an
+# earlier or later session's files can never stand in; prior files are kept.
+if [[ "$capture_mode" == reference ]]; then
+    reference_capture_root_allowed \
+        "${SOPHIA_HAGIA_REFERENCE_RUN_ROOT:-$state_home/sophia/reference/hagia-tab-captures}" \
+        "$state_home/sophia/promotion" \
+        "${SOPHIA_HAGIA_NATIVE_RUN_ROOT:-$state_home/sophia/promotion/hagia-native-runs}" || {
+        echo "The reference run root may not be, contain or sit inside promotion storage." >&2
+        exit 2
+    }
+    recovery_before="$(reference_capture_log_state "$recovery_log")"
+    session_before="$(reference_capture_log_state "$session_log")"
 fi
 
 status=0
@@ -271,14 +279,14 @@ verify_bound_identity
 # than left for the verifier to correlate across the filesystem.
 install -m 600 "$session_log" "$evidence"
 if [[ "$capture_mode" == reference ]]; then
-    [[ -f "$recovery_log" ]] && (( $(stat -c %s "$recovery_log") >= recovery_offset )) || {
-        echo "The runner's recovery log was removed or truncated during the capture: $recovery_log" >&2
+    if ! reference_capture_rotated_once "$recovery_log" "$recovery_before" \
+        || ! reference_capture_rotated_once "$session_log" "$session_before"; then
+        echo "The runner logs were not rotated exactly once by this invocation." >&2
         exit 1
-    }
-    # Every recovery record this invocation appended is carried; the shared
-    # validation below requires exactly one, of the exact passing form.
-    tail -c +"$((recovery_offset + 1))" "$recovery_log" \
-        | grep -E '^sophia_tty_recovery ' >>"$evidence" || true
+    fi
+    # Every recovery record of this invocation's fresh log is carried; the
+    # shared validation below requires exactly one, of the exact passing form.
+    grep -E '^sophia_tty_recovery ' "$recovery_log" >>"$evidence" || true
 else
     recovery_record="$(grep -E '^sophia_tty_recovery schema=3 profile=hagia ' "$recovery_log" | tail -n 1 || true)"
     [[ -n "$recovery_record" ]] || {

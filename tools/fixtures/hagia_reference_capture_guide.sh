@@ -74,11 +74,20 @@ Keys: Super+Return terminal   Super+q close   Super+Ctrl+Alt+1/2/3 frame-tree/no
     split-tree is Hagia's alias for i3, not a separate action.
  4. Both outputs, at different scales where available: bar geometry and
     pointer targets match the presented allocation.
- 5. Title change: labels update. Shell recovery: from this terminal run
-    `pkill -x narthex`; old tab actions stop at once, neutral bars acquire
-    no authority, fresh actions follow the replacement.
+ 5. Title change: labels update. Shell recovery: stop this capture's own
+    Narthex peer (below), never a process matched by name; old tab actions
+    stop at once, neutral bars acquire no authority, fresh actions follow
+    the replacement.
  6. Fullscreen suppresses bars; a floating window over a tab prevents
     activating the covered target; restoring needs the current state.
  7. Press Ctrl+Alt+Delete once to log out normally.
 MATRIX
+# The shell peer is the one this session recorded; there is no restart
+# command, so the operator stops exactly that process after checking it.
+printf '\nShell recovery, this capture only:\n'
+printf '  peer=$(grep -E %s %s | tail -n 1 | sed -n %s)\n' \
+    "'^sophia_live_metadata_shell schema=1 status=ready '" "'$evidence'" \
+    "'s/.* peer_pid=\\([0-9]*\\) .*/\\1/p'"
+printf '  ps -o pid,comm -p "$peer"    # confirm it is this session'"'"'s narthex\n'
+printf '  kill "$peer"\n'
 exec "${SHELL:-/bin/sh}"
