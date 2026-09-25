@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/proof_checkout.sh
+source "$ROOT_DIR/tools/lib/proof_checkout.sh"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 NARTHEX_ROOT="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 
@@ -10,12 +12,12 @@ if [[ ! -t 0 || "$(tty)" != /dev/tty4 ]]; then
     echo "  $ROOT_DIR/tools/run_current_hagia_policy_gate_tty4.sh" >&2
     exit 1
 fi
-if [[ ! -d "$HAGIA_ROOT/.git" ]]; then
+if ! proof_checkout_root "$HAGIA_ROOT"; then
     echo "Hagia checkout not found at $HAGIA_ROOT" >&2
     echo "Set SOPHIA_HAGIA_ROOT to its checkout path." >&2
     exit 1
 fi
-if [[ ! -d "$NARTHEX_ROOT/.git" ]]; then
+if ! proof_checkout_root "$NARTHEX_ROOT"; then
     echo "Narthex checkout not found at $NARTHEX_ROOT" >&2
     echo "Set SOPHIA_NARTHEX_ROOT to its checkout path." >&2
     exit 1

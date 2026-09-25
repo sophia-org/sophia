@@ -14,6 +14,8 @@ set -euo pipefail
 # instead of standing up a second session lifecycle beside it.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/proof_checkout.sh
+source "$ROOT_DIR/tools/lib/proof_checkout.sh"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
 hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v narthex || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
@@ -31,6 +33,7 @@ evidence="${SOPHIA_HAGIA_NATIVE_EVIDENCE:-/tmp/sophia-hagia-native-session.log}"
 proof_text="${SOPHIA_HAGIA_NATIVE_TEXT:-hagianativeproof}"
 guide="${SOPHIA_HAGIA_NATIVE_GUIDE:-$ROOT_DIR/tools/fixtures/hagia_native_session_guide.sh}"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
+narthex_root="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 desktop_profile="${SOPHIA_DESKTOP_PROFILE:-}"
 source_commit="${SOPHIA_HAGIA_NATIVE_SOURCE_COMMIT:-}"
 hagia_commit="${SOPHIA_HAGIA_NATIVE_HAGIA_COMMIT:-}"
@@ -93,8 +96,12 @@ if [[ "$(sha256sum "$desktop_profile" | awk '{ print $1 }')" != "$recorded_profi
     echo "The desktop profile does not match its bound digest." >&2
     exit 2
 fi
-if [[ ! -d "$hagia_root/.git" ]]; then
+if ! proof_checkout_root "$hagia_root"; then
     echo "Hagia checkout not found at $hagia_root" >&2
+    exit 2
+fi
+if ! proof_checkout_root "$narthex_root"; then
+    echo "Narthex checkout not found at $narthex_root" >&2
     exit 2
 fi
 if [[ ! "$sequence_timeout_msec" =~ ^[0-9]+$ ]] \
@@ -118,9 +125,11 @@ fi
 verify_bound_identity() {
     if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
         || -n "$(git -C "$hagia_root" status --short)" \
+        || -n "$(git -C "$narthex_root" status --short)" \
         || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$source_commit" \
-        || "$(git -C "$hagia_root" rev-parse HEAD)" != "$hagia_commit" ]]; then
-        echo "Sophia or Hagia source identity changed during the physical proof." >&2
+        || "$(git -C "$hagia_root" rev-parse HEAD)" != "$hagia_commit" \
+        || "$(git -C "$narthex_root" rev-parse HEAD)" != "$narthex_commit" ]]; then
+        echo "Sophia, Hagia, or Narthex source identity changed during the physical proof." >&2
         exit 1
     fi
     git -C "$ROOT_DIR" verify-commit "$source_commit" >/dev/null 2>&1 || {
@@ -129,6 +138,10 @@ verify_bound_identity() {
     }
     git -C "$hagia_root" verify-commit "$hagia_commit" >/dev/null 2>&1 || {
         echo "Hagia physical-proof commit does not have a valid signature." >&2
+        exit 1
+    }
+    git -C "$narthex_root" verify-commit "$narthex_commit" >/dev/null 2>&1 || {
+        echo "Narthex physical-proof commit does not have a valid signature." >&2
         exit 1
     }
     sophia_sha256="$(sha256sum "$ROOT_DIR/target/release/sophia" | awk '{ print $1 }')"
