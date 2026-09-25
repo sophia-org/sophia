@@ -2321,11 +2321,66 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 Ordering::Release,
                             );
                         }
+                        // Read from the runtime before the selection lock: the
+                        // input writer holds the input authority while it
+                        // takes the selections, and the runtime's pointer
+                        // query takes the authority.
+                        // A selection on another client's window: the table
+                        // learns the window's parent and geometry, so its
+                        // writer can tell inside from outside (LeaveNotify 2).
+                        let foreign_window = event_selection.and_then(|(window, _, _)| {
+                            // The root is every table's ceiling, never a
+                            // registered window: a selection on it (as an
+                            // observer's on the root's substructure) must
+                            // not give it a parent.
+                            let (parent, _) = runtime.window_parent_and_children(namespace, window).ok()?;
+                            if parent == XResourceId::NONE {
+                                return None;
+                            }
+                            let geometry = runtime.drawable_facts(namespace, window).ok()?.geometry;
+                            Some((window, parent, geometry))
+                        });
+                        const POINTER_CROSSING_OR_MOTION: u32 = (1 << 4) | (1 << 5) | (1 << 6) | (0x3f << 8);
+                        let pointer_seed = event_selection
+                            .filter(|(_, event_mask, _)| {
+                                event_mask.is_some_and(|mask| mask & POINTER_CROSSING_OR_MOTION != 0)
+                            })
+                            .and_then(|_| runtime.pointer_query_position(namespace))
+                            .and_then(|(root_x, root_y)| {
+                                let toplevel = runtime.client_placed_toplevel_at(
+                                    namespace,
+                                    i32::from(root_x),
+                                    i32::from(root_y),
+                                )?;
+                                let (origin_x, origin_y) =
+                                    runtime.window_root_position(toplevel).unwrap_or((0, 0));
+                                Some((
+                                    toplevel,
+                                    root_x,
+                                    root_y,
+                                    clamp_engine_i16(i32::from(root_x) - origin_x),
+                                    clamp_engine_i16(i32::from(root_y) - origin_y),
+                                ))
+                            });
                         let mut selections = core_event_selections.lock().map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
                         })?;
                         if let Some((window, event_mask, do_not_propagate_mask)) = event_selection {
                             selections.update(window, event_mask, do_not_propagate_mask);
+                            // A selection of crossings or motion on a window
+                            // the pointer is already in: the table learns
+                            // where the pointer is, so the writer can cross
+                            // out of it (XTS Xlib11 LeaveNotify 2).
+                            if let Some((window, parent, geometry)) = foreign_window
+                                && !selections.registered(window)
+                            {
+                                selections.register(window, parent, geometry);
+                            }
+                            if let Some((toplevel, root_x, root_y, event_x, event_y)) = pointer_seed
+                                && selections.pointer_window().is_none()
+                            {
+                                selections.seed_pointer_window(toplevel, root_x, root_y, event_x, event_y);
+                            }
                             if let Some(mask) = event_mask
                                 && let Some(routing) = protocol_routing.as_ref()
                             {

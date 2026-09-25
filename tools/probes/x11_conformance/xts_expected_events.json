@@ -265,9 +265,7 @@
   },
   {
     "case": "/Xlib11/EnterNotify",
-    "purpose": 12,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery was not as expected'"
+    "purpose": 12
   },
   {
     "case": "/Xlib11/EnterNotify",
@@ -617,9 +615,7 @@
   },
   {
     "case": "/Xlib11/LeaveNotify",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc FAIL): 'Expected LeaveNotify event not delivered.'"
+    "purpose": 2
   },
   {
     "case": "/Xlib11/LeaveNotify",
@@ -679,9 +675,7 @@
   },
   {
     "case": "/Xlib11/LeaveNotify",
-    "purpose": 14,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery was not as expected'"
+    "purpose": 14
   },
   {
     "case": "/Xlib11/LeaveNotify",
@@ -901,9 +895,7 @@
   },
   {
     "case": "/Xlib11/VisibilityNotify",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery was not as expected'"
+    "purpose": 3
   },
   {
     "case": "/Xlib11/VisibilityNotify",

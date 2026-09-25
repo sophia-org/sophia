@@ -571,15 +571,15 @@ mod event_delivery_socket {
         set_focus(&mut client, first);
         client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
         let entered = client.next_event(7);
-        assert_eq!((entered[1], entered[31] & 2), (0, 2), "enter of the focus window, detail Ancestor, focus set");
+        assert_eq!((entered[1], entered[31] & 1), (0, 1), "enter of the focus window, detail Ancestor, focus set");
         // The focus on the second window: leaving the first is leaving a
         // window outside the focus, and entering the second is entering it.
         set_focus(&mut client, second);
         client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 5);
         let left = client.next_event(8);
-        assert_eq!((left[1], left[31] & 2), (3, 0), "leave of the first window, Nonlinear, focus clear");
+        assert_eq!((left[1], left[31] & 1), (3, 0), "leave of the first window, Nonlinear, focus clear");
         let entered = client.next_event(7);
-        assert_eq!((entered[1], entered[31] & 2), (3, 2), "enter of the second window, Nonlinear, focus set");
+        assert_eq!((entered[1], entered[31] & 1), (3, 1), "enter of the second window, Nonlinear, focus set");
 
         // The second window is destroyed under the pointer, and a third
         // takes its place: the pointer comes from the root, and the map
@@ -611,6 +611,156 @@ mod event_delivery_socket {
             (third, 0),
             "enter of the third window from the root, detail Ancestor"
         );
+    }
+
+    /// The focus flag of a crossing says whether the event window is the
+    /// focus window or one of its inferiors, for the subwindows of one
+    /// toplevel as for toplevels: with the focus on a sibling subwindow
+    /// the flag is clear on the enter and on the leave (XTS Xlib11
+    /// EnterNotify 12, LeaveNotify 14).
+    #[test]
+    fn a_crossings_focus_flag_is_clear_when_the_focus_is_a_sibling_subwindow() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let guardian = client.next;
+        let first = client.next + 2;
+        let second = client.next + 4;
+        client.next += 6;
+        client.stream
+            .write_all(&create_window_request(client.order, guardian, 20, 20, 100, 40))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, guardian)).unwrap();
+        for (window, x) in [(first, 10), (second, 50)] {
+            client.stream
+                .write_all(&create_window_request_with_parent(client.order, window, guardian, x, 0, 20, 20))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, first, (1 << 4) | (1 << 5)))
+            .unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let set_focus = |client: &mut XtestClient, window: u32| {
+            let mut request = vec![42, 0];
+            push_u16(&mut request, client.order, 3);
+            push_u32(&mut request, client.order, window);
+            push_u32(&mut request, client.order, 0);
+            client.stream.write_all(&request).unwrap();
+            client.settle();
+        };
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+
+        set_focus(&mut client, first);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 25);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 1), "enter of the focus subwindow, focus set");
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 0, 0);
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[31] & 1), (first, 1), "leave of the focus subwindow, focus set");
+
+        set_focus(&mut client, second);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 25);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 0), "enter of the sibling of the focus, focus clear");
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 0, 0);
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[31] & 1), (first, 0), "leave of the sibling of the focus, focus clear");
+    }
+
+    /// The same through WarpPointer, as the suite moves the pointer: an
+    /// admitted client's warp becomes a motion, and the enter it generates
+    /// carries the focus flag of the focus at that moment.
+    #[test]
+    fn a_warps_enter_carries_the_focus_flag_of_the_focus_at_the_time() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let guardian = client.next;
+        let first = client.next + 2;
+        let second = client.next + 4;
+        client.next += 6;
+        client.stream
+            .write_all(&create_window_request(client.order, guardian, 2, 2, 400, 300))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, guardian)).unwrap();
+        for (window, x) in [(first, 2), (second, 60)] {
+            client.stream
+                .write_all(&create_window_request_with_parent(client.order, window, guardian, x, 2, 50, 50))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.stream.write_all(&change_window_event_mask_request(client.order, first, 1 << 4)).unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let set_focus = |client: &mut XtestClient, window: u32| {
+            let mut request = vec![42, 1];
+            push_u16(&mut request, client.order, 3);
+            push_u32(&mut request, client.order, window);
+            push_u32(&mut request, client.order, 0);
+            client.stream.write_all(&request).unwrap();
+            client.settle();
+        };
+        let warp_to = |client: &mut XtestClient, window: u32| {
+            let mut request = vec![41, 0];
+            push_u16(&mut request, client.order, 6);
+            push_u32(&mut request, client.order, 0);
+            push_u32(&mut request, client.order, window);
+            request.extend_from_slice(&[0; 12]);
+            // No barrier: the connection does not read its next request
+            // until the warp's motion has been routed, and a barrier here
+            // would read past the enter.
+            client.stream.write_all(&request).unwrap();
+        };
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+
+        set_focus(&mut client, first);
+        warp_to(&mut client, 0x20);
+        warp_to(&mut client, first);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 1), "enter of the focus subwindow, focus set");
+        warp_to(&mut client, 0x20);
+        set_focus(&mut client, second);
+        warp_to(&mut client, first);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 0), "enter of the sibling of the focus, focus clear");
+    }
+
+    /// A client that selects LeaveWindow on a window the pointer is already
+    /// in is told when the pointer leaves, as the owner is, and a client
+    /// that selected nothing is not (XTS Xlib11 LeaveNotify 2).
+    #[test]
+    fn a_peer_that_selects_leave_while_the_pointer_is_inside_is_told_of_the_leave() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let mut bystander = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        for client in [&mut owner, &mut peer, &mut bystander] {
+            client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        }
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.settle();
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        owner.settle();
+        for (client, mask) in [(&mut owner, 1 << 5), (&mut peer, 1 << 5), (&mut bystander, 0)] {
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, mask))
+                .unwrap();
+            client.settle();
+        }
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 0, 0);
+        let left = owner.next_event(8);
+        assert_eq!((window_of(&left), left[1]), (window, 0), "the owner's leave, detail Ancestor");
+        let left = peer.next_event(8);
+        assert_eq!((window_of(&left), left[1]), (window, 0), "the peer's leave, detail Ancestor");
+        owner.assert_quiet("the owner after the leave");
+        peer.assert_quiet("the peer after the leave");
+        bystander.assert_quiet("a client that selected nothing");
     }
 
     /// A peer that selected EnterWindow and KeymapState on the owner's window
@@ -718,6 +868,96 @@ mod event_delivery_socket {
     /// Unobscured again; a window mapped under a cover reports the cover
     /// from the start (XTS Xlib11 VisibilityNotify 2, 3, 7 to 9). The
     /// state was Unobscured on map and never changed. Red before the fix.
+    /// A selection on the root, as a window manager or an observer makes,
+    /// leaves the root where it is in the connection's tree: a key still
+    /// reaches the focused window afterwards. The selection-time
+    /// registration of a foreign window gave the root a parent of None,
+    /// and the session's departure witness lost its keys.
+    #[test]
+    fn a_selection_on_the_root_leaves_keys_reaching_the_focused_window() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let window = client.next;
+        client.next += 2;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, (1 << 0) | (1 << 1)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        // SubstructureNotify and PointerMotion on the root.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, 0x20, (1 << 19) | (1 << 6)))
+            .unwrap();
+        client.settle();
+        let mut focus = vec![42, 0];
+        push_u16(&mut focus, client.order, 3);
+        push_u32(&mut focus, client.order, window);
+        push_u32(&mut focus, client.order, 0);
+        client.stream.write_all(&focus).unwrap();
+        client.settle();
+        client.fake_input(2, 38);
+        let pressed = client.next_event(2);
+        assert_eq!(
+            (u32::from_le_bytes([pressed[12], pressed[13], pressed[14], pressed[15]]), pressed[1]),
+            (window, 38),
+            "the key on the focused window"
+        );
+        client.fake_input(3, 38);
+        let _released = client.next_event(3);
+    }
+
+    /// Remapping a window reports VisibilityNotify and Expose on every
+    /// mapped inferior that becomes viewable with it, the VisibilityNotify
+    /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the
+    /// remapped window was reported; its children were not.
+    #[test]
+    fn remapping_a_window_reports_visibility_and_exposure_on_its_viewable_inferiors() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let parent = client.next;
+        let child = client.next + 2;
+        let grandchild = client.next + 4;
+        client.next += 6;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, parent, 20, 0, 40, 40))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, parent)).unwrap();
+        // VisibilityChange and Exposure on the two below it.
+        for (window, above, x) in [(child, parent, 2), (grandchild, child, 1)] {
+            client.stream
+                .write_all(&create_window_request_with_parent(client.order, window, above, x, x, 10, 10))
+                .unwrap();
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 15) | (1 << 16)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+
+        let mut unmap = vec![10, 0];
+        push_u16(&mut unmap, client.order, 2);
+        push_u32(&mut unmap, client.order, child);
+        client.stream.write_all(&unmap).unwrap();
+        client.settle();
+        client.stream.write_all(&map_window_request(client.order, child)).unwrap();
+        let mut order = std::collections::BTreeMap::<u32, Vec<u8>>::new();
+        for _ in 0..4 {
+            let record = read_x_record(&mut client.stream);
+            let window = u32::from_le_bytes([record[4], record[5], record[6], record[7]]);
+            order.entry(window).or_default().push(record[0] & 0x7f);
+        }
+        assert_eq!(
+            order,
+            [(child, vec![15, 12]), (grandchild, vec![15, 12])].into_iter().collect(),
+            "VisibilityNotify then Expose on the remapped window and on its viewable child"
+        );
+        client.assert_quiet("nothing else on the remap");
+    }
+
     #[test]
     fn visibility_follows_what_covers_a_window() {
         let mut fixture = XtestFixture::sharing_a_namespace();
