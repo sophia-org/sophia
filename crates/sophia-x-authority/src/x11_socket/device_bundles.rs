@@ -82,6 +82,21 @@ impl X11CoreSocketServerState {
         Ok(())
     }
 
+    /// Install a configuration's first generation and release the
+    /// configuration's reference, so that both construction paths leave only
+    /// the registry and real leases holding it.
+    pub(crate) fn install_configured_device_bundle(
+        &self,
+        config: &mut crate::XServerFrontendConfig,
+    ) -> Result<(), X11SetupSocketError> {
+        match config.take_device_bundle() {
+            Some(bundle) => self
+                .install_device_bundle(bundle)
+                .map_err(|error| X11SetupSocketError::new(error.to_string())),
+            None => Ok(()),
+        }
+    }
+
     pub fn mark_device_generation_unavailable(
         &self,
         generation: u64,

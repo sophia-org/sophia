@@ -94,7 +94,7 @@ pub fn run_x11_core_socket_server_once_traced_with_idle_timeout(
 /// inject backend-owned capabilities such as the DRI3 render-device provider.
 #[cfg(unix)]
 pub fn run_x11_core_socket_server_once_config_traced_with_idle_timeout(
-    config: XServerFrontendConfig,
+    mut config: XServerFrontendConfig,
     idle_timeout: Duration,
     observer: impl FnMut(X11DispatchObservation) -> Result<(), X11SetupSocketError>,
 ) -> Result<(), X11SetupSocketError> {
@@ -106,9 +106,7 @@ pub fn run_x11_core_socket_server_once_config_traced_with_idle_timeout(
     )?
     .with_optional_render_device_provider(config.render_device_provider())
         .with_optional_pixmap_allocator(config.pixmap_allocator());
-    if let Some(bundle) = config.device_bundle() {
-        state.install_device_bundle(bundle).map_err(|error| X11SetupSocketError::new(error.to_string()))?;
-    }
+    state.install_configured_device_bundle(&mut config)?;
     state.latch_pixmap_texture_support()?;
     serve_x11_core_socket_listener_once_with_setup_authorization(
         &listener,
