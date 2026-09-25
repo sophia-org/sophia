@@ -1,13 +1,138 @@
 sophia_qemu_recovery schema=1 status=starting isolation=headless control=qmp-unix host_drm=none host_vt=none keyboard=virtio chord=ctrl-alt-backspace
-sophia_qemu_guest_recovery schema=1 status=running chord=ctrl-alt-backspace
-sophia_session_input_guard schema=1 status=ready devices=6
+fe78b4f63717556855b3858162dc9d9fe69f57e5ceedc1538fa248bf16f4b1fb  /usr/bin/sophia
+f8b665684ea04e5b126f11c480b874c8fc15c4da92bca96651d3baf47e3a309c  /usr/bin/sophia-qemu-init-original
+sophia_qemu_guest schema=1 status=booting gpu=virtio-gpu scenario=emergency-recovery
+sophia_qemu_topology schema=1 status=observed requested_heads=2 connectors=2 connected=2
+sophia_session_input_guard schema=2 status=ready source=paths seat=explicit devices=6 keyboards=3
 sophia_session_input_guard schema=1 status=armed
+sophia_qemu_guest_recovery schema=1 status=running chord=ctrl-alt-backspace
 sophia_qemu_recovery_input schema=1 status=sent phase=arm source=qmp device=virtio-keyboard chord=ctrl-alt-backspace events=6
-sophia_live_session_input_pipeline schema=2 status=poller_ready devices=6 tap_capable=0 tap_enabled=0
+sophia_session_profile schema=1 status=loaded role=desktop generation=1 digest=a4f05594db0630ab72ef031ef492ff10e154f2cc3cbbe6069bb7d7b913484ea7
+sophia_session_profile schema=1 status=loaded role=core generation=1 digest=e0e85ca44f4071ccc0841669f606ce4edc3ae6cf0b7ebe49c6fb778da7acb69a
+sophia_live_seat schema=1 status=active seat=seat0
+sophia_live_native_head schema=2 status=ready output=1 head=1 connector=Virtual-1 connector_id=38 mode=1280x800 refresh_millihz=75000 mirrored=false
+sophia_live_native_head schema=2 status=ready output=2 head=1 connector=Virtual-2 connector_id=38 mode=1280x800 refresh_millihz=75000 mirrored=false
+[2m2026-09-25T11:19:30.484841Z[0m [32m INFO[0m [2msophia_session::live_session[0m[2m:[0m native desktop output candidate admitted [3mschema[0m[2m=[0m1 [3mstatus[0m[2m=[0m"prepared_not_applied" [3mphase[0m[2m=[0m"rejected" [3mcause[0m[2m=[0m"would_block" [3mexecutor[0m[2m=[0m"multi_device_unvalidatable" [3mvalidation[0m[2m=[0m"not_attempted" [3mgeneration[0m[2m=[0m1 [3moutputs[0m[2m=[0m2 [3mrollback_targets[0m[2m=[0m2 [3mfocused[0m[2m=[0mfalse
+[2m2026-09-25T11:19:30.485440Z[0m [33m WARN[0m [2msophia_session::desktop_output_heads[0m[2m:[0m sophia_native_output_mode_blob release failed [3mschema[0m[2m=[0m1 [3mblob[0m[2m=[0m45 [3merror[0m[2m=[0mNo such file or directory (os error 2)
+sophia_live_session_input_pipeline schema=4 status=poller_ready source=paths seat=explicit devices=6 active=6 keyboards=3 pointers=3 touch=0 tap_capable=0 tap_enabled=0 pointer_configured=0 settings_unsupported=0
+KMS: DRM_IOCTL_MODE_CREATE_DUMB failed: Permission denied
+[2m2026-09-25T11:19:30.518544Z[0m [33m WARN[0m [2msophia_session::live_session::x_frontend[0m[2m:[0m pixmap texture export capability unavailable [3mreason[0m[2m=[0mDeviceRejected
+sophia_live_x11_route_capacity schema=1 input=64 control=32 protocol=512 presentations=64
+sophia_live_session_mode schema=1 mode=proof configured_apps=0 startup_apps=0
+sophia_live_session schema=7 status=running display=:181 terminal=xterm runtime=persistent authority_capacity=256 input_capacity=64 control_capacity=32 native_presentation=enabled physical_input=enabled pointer_proof=disabled secondary_terminal=disabled wm_policy=disabled namespace_profile=classic_shared namespace_request_capabilities=0 namespace_publish_capabilities=0
+sophia_live_session_input_proof schema=1 status=disabled
+sophia_live_session_xtest schema=1 status=absent group=1
+sophia_live_outputs schema=2 status=ready discovered=2 presentation=2 native_owned=2 multi_output_scanout=enabled layout=extended_horizontal
+sophia_live_cursor_asset schema=1 requested_theme=x11-core effective_theme=x11-core requested_size=16 effective_size=16 requested_shape=left_ptr effective_shape=left_ptr width=10 height=16 hotspot_x=1 hotspot_y=1 digest=94158445512d4df12e981db23ba2a6bdb33b03a63f7160bd69216e28eecae4b0 animation_frames_ignored=0 fallback="none"
+xkbcommon: ERROR: [XKB-679] No Compose file for locale "en_US.UTF-8": locale is either invalid or not installed
+xkbcommon: ERROR: [XKB-679] couldn't find a Compose file for locale "C" (mapped to "C")
+sophia_live_native_owner schema=1 status=opened epoch=1 reason=startup
+sophia_live_session_input_device schema=1 status=added device=256 keyboard=true pointer=false touch=false virtual=false source=paths
+sophia_live_session_input_device schema=1 status=added device=257 keyboard=true pointer=false touch=false virtual=true source=paths
+sophia_live_session_input_device schema=1 status=added device=258 keyboard=false pointer=true touch=false virtual=true source=paths
+sophia_live_session_input_device schema=1 status=added device=259 keyboard=true pointer=false touch=false virtual=false source=paths
+sophia_live_session_input_device schema=1 status=added device=260 keyboard=false pointer=true touch=false virtual=false source=paths
+sophia_live_session_input_device schema=1 status=added device=261 keyboard=false pointer=true touch=false virtual=false source=paths
+Warning: locale not supported by Xlib, locale set to C
+Warning: X locale modifiers not supported, using default
+[2m2026-09-25T11:19:30.562332Z[0m [32m INFO[0m [2msophia_x_authority::dispatch[0m[2m:[0m sophia_x11_authority_extension schema=1 status=absent client=1 name="XFree86-Bigfont"
+xterm: Failed to open input method
+[2m2026-09-25T11:19:30.629103Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::renderer_images[0m[2m:[0m sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=1 scene_generation=1 target_generation=1 mapping=fit width=1280 height=800 logical_content_checksum=14695981039346656037 source=head_plan
+[2m2026-09-25T11:19:30.633816Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::topology[0m[2m:[0m sophia_live_head_bootstrap schema=1 status=worker_ready output=1 head=1 workers=1
+[2m2026-09-25T11:19:30.672616Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::topology[0m[2m:[0m sophia_live_head_bootstrap schema=1 status=worker_composed output=1 head=1 frame=1 scene_generation=1 target_generation=1 mapping=fit exports=1
+[2m2026-09-25T11:19:30.675644Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::renderer_images[0m[2m:[0m sophia_live_head_composition_queue schema=1 status=queued output=2 head=2 frame=2 scene_generation=1 target_generation=1 mapping=fit width=1280 height=800 logical_content_checksum=14695981039346656037 source=head_plan
+[2m2026-09-25T11:19:30.675867Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::topology[0m[2m:[0m sophia_live_head_bootstrap schema=1 status=worker_ready output=2 head=2 workers=1
+[2m2026-09-25T11:19:30.699388Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::topology[0m[2m:[0m sophia_live_head_bootstrap schema=1 status=worker_composed output=2 head=2 frame=2 scene_generation=1 target_generation=1 mapping=fit exports=1
+sophia_live_compositor_chrome_set schema=1 status=composed generation=14695981039346656037 eligible_surfaces=0 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=0 primitives=0 clearance=0
+[2m2026-09-25T11:19:30.702745Z[0m [32m INFO[0m [2msophia_backend_live::hardware_validation::atomic_scanout_card::session[0m[2m:[0m sophia_live_cursor_plane schema=1 status=refused
+[2m2026-09-25T11:19:30.702971Z[0m [32m INFO[0m [2msophia_backend_live::hardware_validation::atomic_scanout_card::session[0m[2m:[0m sophia_live_cursor_plane schema=1 status=refused
+sophia_live_session_pointer schema=2 status=visible source=hardware_cursor
+sophia_live_native_startup_output schema=1 status=presented output=1 proof=synchronous_modeset submission=1
+sophia_live_native_startup_output schema=1 status=presented output=2 proof=synchronous_modeset submission=1
+sophia_live_session_startup schema=2 status=output_baseline_ready outputs=2/2
+sophia_live_native_topology_apply schema=2 status=owned_by_output_authority
+[2m2026-09-25T11:19:30.747515Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::composition_admission[0m[2m:[0m sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=3 scene_generation=5 target_generation=1 mapping=fit width=1280 height=800 logical_content_checksum=14135373277366769207 source=head_plan
+[2m2026-09-25T11:19:30.748024Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::renderer_images[0m[2m:[0m sophia_live_mirror_generation schema=2 status=installed output=1 frame=3 source=head_composition logical_content_checksum=14135373277366769207
+[2m2026-09-25T11:19:30.748421Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::composition_admission[0m[2m:[0m sophia_live_head_composition_queue schema=1 status=queued output=2 head=2 frame=4 scene_generation=5 target_generation=1 mapping=fit width=1280 height=800 logical_content_checksum=14695981039346656037 source=head_plan
+[2m2026-09-25T11:19:30.748505Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::renderer_images[0m[2m:[0m sophia_live_mirror_generation schema=2 status=installed output=2 frame=4 source=head_composition logical_content_checksum=14695981039346656037
+sophia_live_compositor_chrome_set schema=1 status=composed generation=14695981039346656037 eligible_surfaces=1 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=0 primitives=0 clearance=0
 sophia_live_session_input_pipeline schema=1 status=focus_ready
-sophia_qemu_recovery_input schema=1 status=sent phase=trigger source=qmp device=virtio-keyboard chord=ctrl-alt-backspace events=6
+sophia_live_session_startup schema=1 status=content_ready source=cpu_visual_detail
+sophia_live_session_input_pipeline schema=2 status=content_ready source=cpu_visual_detail
+[2m2026-09-25T11:19:30.768710Z[0m [32m INFO[0m [2msophia_x_authority::x11_socket[0m[2m:[0m sophia_x11_focus_delivery schema=1 client=1 window=32 focused=false core_selected=false xi2_selected=false content=redacted
+[2m2026-09-25T11:19:30.768990Z[0m [32m INFO[0m [2msophia_renderer_native_egl::gl[0m[2m:[0m sophia_native_composition_sampling schema=3 status=active output=1 head=1 scene_generation=5 requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=724x472 target=724x472 frame=1280x800
+[2m2026-09-25T11:19:30.771360Z[0m [32m INFO[0m [2msophia_x_authority::x11_socket[0m[2m:[0m sophia_x11_focus_delivery schema=1 client=1 window=2097164 focused=true core_selected=true xi2_selected=false content=redacted
+sophia_live_session_input_pipeline schema=1 status=focus_applied source=x11-control surface=2097164 generation=1 transaction=1000000
+[2m2026-09-25T11:19:30.822216Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::composition_admission[0m[2m:[0m sophia_live_head_composition_queue schema=1 status=queued output=1 head=1 frame=5 scene_generation=6 target_generation=1 mapping=fit width=1280 height=800 logical_content_checksum=16606882499394242066 source=head_plan
+[2m2026-09-25T11:19:30.827018Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::renderer_images[0m[2m:[0m sophia_live_mirror_generation schema=2 status=installed output=1 frame=5 source=head_composition logical_content_checksum=16606882499394242066
+[2m2026-09-25T11:19:30.831019Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::composition_admission[0m[2m:[0m sophia_live_head_composition_queue schema=1 status=queued output=2 head=2 frame=6 scene_generation=6 target_generation=1 mapping=fit width=1280 height=800 logical_content_checksum=14695981039346656037 source=head_plan
+[2m2026-09-25T11:19:30.835702Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout::renderer_images[0m[2m:[0m sophia_live_mirror_generation schema=2 status=installed output=2 frame=6 source=head_composition logical_content_checksum=14695981039346656037
+sophia_live_compositor_chrome schema=2 status=focus_ring_composed surface=2097164 generation=7003935076092637722 primitives=4
+sophia_live_compositor_chrome_set schema=1 status=composed generation=2325636612743101445 eligible_surfaces=1 frames=0 focused_frames=0 unfocused_frames=0 focus_rings=1 primitives=4 clearance=2
+[2m2026-09-25T11:19:30.848510Z[0m [33m WARN[0m [2msophia_backend_live::scanout::rendered_scanout::exporter::discovery::worker_export[0m[2m:[0m sophia_renderer_worker schema=1 status=soft_stall age_ms=100
+[2m2026-09-25T11:19:30.850086Z[0m [32m INFO[0m [2msophia_renderer_native_egl::gbm_platform::scanout[0m[2m:[0m sophia_native_composition_frame schema=2 status=verified width=1280 height=800 pixels=1024000 nonzero_rgb_pixels=341674 luminance_sum=87126870 luminance_mean_millis=85084 checksum=5627220548518913581
+[2m2026-09-25T11:19:30.857494Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout[0m[2m:[0m sophia_live_native_completion schema=1 status=accepted output=1 head=1 callbacks=1 completion_source=out_fence completion_serial=1
+[2m2026-09-25T11:19:30.873321Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout[0m[2m:[0m sophia_live_native_completion schema=1 status=accepted output=2 head=2 callbacks=1 completion_source=out_fence completion_serial=2
+[2m2026-09-25T11:19:30.897031Z[0m [32m INFO[0m [2msophia_renderer_native_egl::gl[0m[2m:[0m sophia_native_composition_sampling schema=3 status=active output=1 head=1 scene_generation=6 requested=exact_nearest effective=exact_nearest alpha_mode=opaque source=724x472 target=724x472 frame=1280x800
+[2m2026-09-25T11:19:30.903464Z[0m [32m INFO[0m [2msophia_backend_live::production_session::native_scanout::persistent_native_scanout[0m[2m:[0m sophia_live_native_completion schema=1 status=accepted output=1 head=1 callbacks=1 completion_source=out_fence completion_serial=2
+sophia_live_session_startup schema=2 status=ready elapsed_msec=375 surface=true visual_detail=true presented=true outputs_ready=2/2 recovery_attempts=0
+sophia_live_cursor_path schema=2 status=selected requested=atomic_plane path=legacy_ioctl
+sophia_live_session_input_device schema=1 status=key_observed device=257
 sophia_live_session_input_pipeline schema=1 status=key_observed
+sophia_live_session_input_pipeline schema=1 status=key_routed
+sophia_qemu_recovery_input schema=1 status=sent phase=trigger source=qmp device=virtio-keyboard chord=ctrl-alt-backspace events=6
 sophia_live_session_input_pipeline schema=1 status=emergency_exit
-sophia_live_session schema=7 status=bounded_complete physical_input=enabled native_in_flight=false native_cleanup_pending=false
+sophia_live_session_input_routing schema=1 key_observed_count=6 key_routed_count=4 key_no_focus_count=0 key_stale_focus_count=0 wm_action_count=0 pointer_button_count=0 pointer_routed_count=0 chrome_event_count=0 lease_wait_count=0 lease_rejected_count=0
+sophia_live_session_input_pipeline schema=2 status=key_flushed source=emergency expected=4 flushed=4
+sophia_live_session_native_suspend schema=2 outcome=drained drained=true abandoned_scanouts=0 skipped_present=none
+sophia_live_renderer_images schema=1 status=cleared evicted=0
+sophia_live_native_owner schema=1 status=closed epoch=1 reason=completion settled=true submissions=6 retirements=4 submit_failures=0 retire_failures=0 in_flight=false cleanup_pending=false settlement_failures=0
+sophia_session_launches schema=2 status=complete peak_depth=0 rejected=0 admission_timeouts=0 withdrawn=0
+sophia_live_session_input_devices schema=1 source=paths added=6 removed=0 active=6 keyboards=3 pointers=3 touch=0
+sophia_live_session_input_device schema=1 status=summary fallbacks=0
+sophia_live_native_resources schema=12 status=complete target_creations=6 pipeline_creations=6 frame_surface_creations=6 cpu_target_creations=0 dmabuf_target_creations=0 composition_target_creations=6 composition_target_reuses=0 generation_replacements=0 recovery_replacements=0 snapshot_captures=0 snapshot_promotions=0 snapshot_rollbacks=0 snapshot_evictions=0 snapshot_live_entries=0 snapshot_live_bytes=0 import_cache_imports=0 import_cache_hits=0 import_cache_evictions=0 import_cache_live_entries=0 import_cache_descriptor_mismatches=0 import_cache_capacity_rejections=0 exact_nearest_draws=2 sharp_downscale_draws=0 sharp_upscale_draws=0 linear_fallback_draws=0 worker_requests=6 worker_completions=6 worker_failures=0 worker_soft_stalls=1 worker_hard_stalls=0 worker_release_enqueue_failures=0 frame_slot_acquisitions=6 frame_slot_reuses=0 frame_slot_deferrals=0 frame_slot_stale_releases=0 frame_slots_leased=0 frame_slots_high_watermark=4 max_in_flight_per_output=1 pending_frame_supersessions=0 frame_slot_partial_repaints=0 frame_slot_full_repaints=0 frame_slot_history_invalidations=0 frame_slot_history_records=6 max_worker_request_msec=108 renderer_workers=2 worker_result_misroutes=0 worker_max_service_skew=1 direct_scanout_attempts=0 direct_scanout_flips=0 direct_scanout_tests=0 direct_scanout_test_rejections=0 direct_scanout_refusals=0 direct_scanout_unsupported=0 direct_scanout_fallbacks=0
+sophia_live_direct_scanout_verdicts schema=2 status=head output=1 head=1 eligible=0 layer_count=1 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=2 layer_translucent=0 composition_required=0 composed_cursor=0
+sophia_live_direct_scanout_verdicts schema=2 status=head output=2 head=2 eligible=0 layer_count=3 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=0 layer_translucent=0 composition_required=0 composed_cursor=0
+sophia_live_direct_scanout_verdicts schema=2 status=complete eligible=0 layer_count=4 layer_not_active=0 layer_resampled=0 layer_offset=0 layer_not_head_sized=0 layer_clipped=0 layer_not_dma_buf=2 layer_translucent=0 composition_required=0 composed_cursor=0
+sophia_live_direct_scanout_cost schema=1 population=composed frames=6 offer_submit_us_min=151 offer_submit_us_p50=512 offer_submit_us_p99=3886 offer_submit_us_max=3886 submit_flip_frames=4 submit_flip_us_min=6010 submit_flip_us_p50=6051 submit_flip_us_p99=6686 submit_flip_us_max=6686 saturated=false
+sophia_live_page_flip_clock schema=1 status=complete source=kernel_monotonic timestamps=1 fallbacks=0 pending=0
+sophia_live_resource_steady_state schema=1 status=complete samples=0 saturated=false interval_msec=5000
+sophia_live_rendering_efficiency schema=2 status=complete cpu_updates=47 cpu_replacements=1 cpu_patch_updates=46 cpu_patch_rects=46 cpu_payload_bytes=4084472 exact_pixel_metric_frames=3 damage_scoped_metric_frames=0 composition_target_reuses=0 cpu_cow_splits=2 cpu_resident_buffers_peak=1 cpu_resident_bytes_peak=1366912
+sophia_live_cpu_visual_progress schema=3 status=complete post_startup_updates=0 compositions=0 native_target_bindings=0 primary_retirements=0 changed_primary_retirements=0 presented_updates=0 superseded_updates=0 lifecycle_superseded_updates=0 pending_updates=0 discarded_updates=0 accounted_updates=0 startup_ready_msec=375 observed_msec=58 first_update_after_ready_msec=none last_update_after_ready_msec=none last_source_to_completion_msec=none source_max_gap_msec=0 source_max_gap_usec=0 first_retirement_after_ready_msec=none last_retirement_after_ready_msec=none display_max_gap_msec=0 display_max_gap_usec=0 max_update_to_retirement_usec=0 refresh_millihz=75000
+sophia_live_session_scheduler schema=2 authority_batches=51 cpu_compositions=3 coalesced_batches=3 cadence_deferred_batches=4 cadence_repaints=0 frame_interval_usec=13333 merged_batches=45 max_merge_run=46
+sophia_live_owner_timing schema=2 status=complete max_child_reap_msec=0 max_input_phase_msec=1
+sophia_live_session_cursor schema=7 path=legacy_ioctl plane=refused moves_coalesced=0 max_motion_to_submit_msec=174 initialization_max_msec=0 initialization_deferrals=0 max_update_msec=8 legacy_updates_primary_in_flight=0 buttons_routed=0 hardware_updates=1 hidden_updates=0 hardware_failures=0 queued=0 backend_coalesced=0 rides=0 cursor_only=0 cursor_only_max_msec=0 cursor_only_total_msec=0 combined_drops=0 fallbacks=0 pending=0
+sophia_live_session_health schema=1 status=clean protocol_errors=0 pending_wm=0 pending_actions=0 pending_input=0 wm_degraded=false
+sophia_live_output_topology_monitor schema=1 source=kernel_and_udev status=complete observed=0 coalesced=0 delivered=0
+sophia_live_output_topology_health schema=1 status=clean quarantined=false
+sophia_live_layout_health schema=2 status=clean recovery_extents=0 standing_targets=0 constraint_relayout_pending=false
+sophia_live_layout_authority schema=1 status=clean hidden_surface_commands=0
+sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
+sophia_live_selection schema=1 status=complete owner_changes=0 conversions=0 content=redacted
+sophia_live_present_scheduler schema=2 status=complete surface_content_capacity=256 pending_limit=1 in_flight_limit=1 pending_supersessions=0 surface_content_supersessions=0 scheduler_supersessions=0 max_surface_content_deferred=0 max_latest_deferred_per_surface=0 max_pending_queued=0 max_total_queued=0 max_live_sources=0 max_live_fences=0 max_live_presentations=0 present_rejections=0 native_suspend_present_rejections=0 shutdown_present_rejections=0 other_present_rejections=0 paced_skips=0 max_frame_tick_parked=0 frame_tick_overflows=0
+sophia_live_present_dispositions schema=1 status=complete complete_copy=0 complete_flip=0 complete_direct=0 complete_skip=0 idle=0
+sophia_live_present_cadence schema=1 status=unavailable samples=0 advancing_intervals=0 nonadvancing=0 overflowed=false evicted=0
+sophia_live_session schema=18 status=bounded_complete display=:181 elapsed_msec=480 startup_ready_msec=375 session_ticks=100 authority_batches=51 authority_transactions=47 authority_queue_capacity=256 authority_batches_dropped=0 backend_ticks=54 runtime_committed=47 runtime_surfaces=1 runtime_max_surfaces=1 cpu_layers=5 cpu_max_layers=5 cpu_nonzero_pixel_bytes=1044090 cpu_max_nonzero_pixel_bytes=1044090 cpu_nonzero_frames=2 cpu_checksum=10941245964235081952 cpu_max_compose_msec=62 injected_input=false input_events_expected=4 input_events_flushed=4 input_flush_latency_msec=8 input_pixel_change=false input_text_match=false input_presented_latency_msec=none input_dispatch_max_gap_msec=24 input_queue_max_depth=6 input_queue_dwell_max_msec=36 physical_events=12 physical_keys_routed=4 pointer_pixel_change=false physical_pointer_events=0 physical_pointer_routed=0 pointer_proof=disabled native_presentation=enabled native_submissions=6 native_submit_deferred=98 native_submit_failures=0 native_retirements=4 native_retire_failures=0 native_max_in_flight_ticks=0 native_max_submit_to_page_flip_msec=6 native_max_upload_msec=0 native_max_target_create_msec=33 native_max_frame_surface_create_msec=0 native_max_render_msec=89 native_target_creations=6 native_target_recreations=0 native_pipeline_creations=6 native_frame_surface_creations=6 native_frame_uploads=0 native_callback_accepted=4 native_callback_rejected=0 native_callback_queue_saturated=0 native_nonzero_exports=2 native_mixed_exports=6 native_export_attempts=6 native_in_flight=false native_cleanup_pending=false physical_input=enabled wm_policy=disabled wm_requests=0 wm_committed=0 wm_restarts=0 wm_degraded=false namespace_profile=classic_shared output_update=disabled output_notifications=0 surface_resize=disabled present_complete_copy=0 present_complete_flip=0 present_complete_skip=0 present_idle=0 present_complete_routed=0 present_idle_routed=0 present_route_failures=0 present_idle_fence_triggers=0 present_disconnect_sources=0 present_disconnect_fences=0 present_disconnect_failures=0 present_live_sources=0 present_live_fences=0 present_live_transactions=0 present_acquire_waits=0 present_controlled_rejections=0
+sophia_live_vsync schema=1 status=complete outputs=2 overlap_rejections=0 phase_rejections=0 policy=page_flip_paced
+sophia_live_output schema=1 status=complete output=1 checksum=16606882499394242066 submissions=3 retirements=2 callbacks=2 nonzero_exports=2
+sophia_live_native_head schema=3 status=complete output=1 head=1 scene_generation=5 logical_content_checksum=16606882499394242066 head_pixel_checksum=unavailable submissions=3 retirements=2 callbacks=2 nonzero_exports=2
+sophia_live_output schema=1 status=complete output=2 checksum=14695981039346656037 submissions=3 retirements=2 callbacks=2 nonzero_exports=0
+sophia_live_native_head schema=3 status=complete output=2 head=2 scene_generation=6 logical_content_checksum=14695981039346656037 head_pixel_checksum=unavailable submissions=3 retirements=2 callbacks=2 nonzero_exports=0
+sophia_live_native_completion schema=1 status=verified profile=steady publication_generation=1 initial_generation=1 heads=2
+sophia_live_session_control schema=2 status=complete enqueued=1 dispatched=1 delivered=1 stale_retired=0 rejected=0 timed_out=0 unexpected=0 pending=0 peak_depth=1 max_queue_dwell_msec=0 max_ack_msec=31
+sophia_live_session_shortcuts schema=1 status=complete profile=compiled dropped=0 targets=none shell=kept
+sophia_live_session_keys schema=2 status=complete pending=0 release_barrier_pending=0 peak_pressed=2 synthetic_releases=0 state_only_releases=0 orphan_releases_suppressed=1 removed_surface_keys=0 repeat_active_seats=0 repeat_armed=0 repeat_routed=0 repeat_pulses=0 repeat_coalesced=0 repeat_cancelled=0 repeat_capacity_exhausted=0
+sophia_live_keyboard_coverage schema=1 status=complete shifted_positions=0 shifted_positions_required=21 virtual_terminals=0 virtual_terminals_required=12 content=redacted
+sophia_live_session_protocol_error_tally schema=3 status=clean major=0 minor=0 code=0 count=0 distinct=0 discarded=0 total=0
+sophia_live_session_lifecycle schema=1 status=stopping_frontend
+sophia_live_session_lifecycle schema=1 status=frontend_intake_stop command=requested
+sophia_live_session_lifecycle schema=1 status=stopping_clients
+sophia_live_session_lifecycle schema=1 status=frontend_cancellation command=requested
+sophia_live_session_lifecycle schema=1 status=joining_frontend
+[2m2026-09-25T11:19:31.103230Z[0m [32m INFO[0m [2msophia_x_authority::x11_socket[0m[2m:[0m sophia_x11_authority_backpressure schema=1 status=shutdown client=1 client_known=true transaction=431 waited_msec=0 failure=cancelled
+[2m2026-09-25T11:19:31.106134Z[0m [32m INFO[0m [2msophia_x_authority::x11_socket[0m[2m:[0m sophia_x11_authority_egress schema=1 status=cancelled tickets_advanced=430 batches_delivered=55 peak_waiting_producers=0 wait_episodes=0 resumed=0 cancelled=1
+sophia_live_session_lifecycle schema=1 status=frontend_joined
+sophia_live_session_cleanup schema=1 status=clean app_groups=0 frontend_workers=0 namespace=revoked xauthority=removed
 sophia_qemu_guest_recovery schema=1 status=complete exit_status=0 guard_exit_status=0
+[    5.316015] reboot: Power down
 sophia_qemu_recovery schema=1 status=complete qemu_exit=0
