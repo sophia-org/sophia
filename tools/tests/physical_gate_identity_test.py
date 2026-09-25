@@ -425,8 +425,11 @@ chmod 755 "$out/release/sophia"
         result = self.run_script("run_current_hagia_native_gate_tty4.sh", self.environment(
             SOPHIA_HAGIA_NATIVE_PROFILE=str(profile), **self.inherited_alternatives()))
         self.assertEqual(result.returncode, 3, result.stderr)
-        self.assertEqual(self.mark("sophia-invoked").split(), ["fresh", "runner"],
-                         "the runner must execute the freshly built, hashed Sophia only")
+        invoked = self.mark("sophia-invoked").splitlines()
+        # The wrapper's config check and the runner both run Sophia; every run
+        # must be the fresh, hashed build, never the stale or inherited binary.
+        self.assertEqual({line.split()[0] for line in invoked}, {"fresh"}, invoked)
+        self.assertEqual(invoked[-1], "fresh runner", invoked)
 
     def test_the_policy_wrapper_binds_the_binary_it_built(self):
         result = self.run_script("run_current_hagia_policy_gate_tty4.sh",

@@ -198,6 +198,7 @@ status=0
 # `bash -n` accepts without complaint.
 SOPHIA_ENABLE_SHARED_RENDERER_WORKER=1 \
 SOPHIA_TTY_PROFILE=hagia \
+SOPHIA_BIN="$ROOT_DIR/target/release/sophia" \
 SOPHIA_HAGIA_BIN="$hagia_bin" \
 SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
 SOPHIA_TERMINAL_BIN="$kitty_bin" \
@@ -259,5 +260,6 @@ SOPHIA_HAGIA_BIN="$hagia_bin" \
 SOPHIA_HAGIA_SHELL_BIN="$hagia_shell_bin" \
 SOPHIA_HAGIA_ROOT="$hagia_root" \
 SOPHIA_HAGIA_NATIVE_GUIDE="$guide" \
+SOPHIA_HAGIA_NATIVE_SOPHIA_BIN="$ROOT_DIR/target/release/sophia" \
     "$ROOT_DIR/tools/archive_hagia_native_session_run.sh" "$evidence" "$proof_text"
 echo "Hagia native session gate passed"

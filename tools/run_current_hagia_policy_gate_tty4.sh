@@ -53,6 +53,13 @@ hagia_shell_bin="${TMPDIR:-/tmp}/narthex-${narthex_commit:0:12}"
 hagia_nimcache="${TMPDIR:-/tmp}/hagia-policy-nimcache-${hagia_commit:0:12}"
 hagia_shell_nimcache="${TMPDIR:-/tmp}/narthex-nimcache-${narthex_commit:0:12}"
 
+# These proofs build, hash and run the host executable at
+# ROOT_DIR/target/release/sophia. A cross-compilation target would put the
+# build elsewhere and leave that path bound to whatever was there before.
+if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
+    echo "Unset CARGO_BUILD_TARGET: this physical proof builds the host Sophia binary it binds." >&2
+    exit 1
+fi
 echo "Building exact physical-proof binaries before DRM takeover..."
 echo "Sophia: $sophia_commit"
 echo "Hagia:  $hagia_commit"
@@ -69,8 +76,9 @@ echo "Narthex: $narthex_commit"
 )
 (
     cd "$ROOT_DIR"
+    # The executable hashed and run below, whatever CARGO_TARGET_DIR says.
     cargo build --quiet --release --offline -p sophia-cli \
-        --features native-session
+        --features native-session --target-dir "$ROOT_DIR/target"
 )
 desktop_profile="$HAGIA_ROOT/examples/config/default.kdl"
 [[ -f "$desktop_profile" ]] || {
