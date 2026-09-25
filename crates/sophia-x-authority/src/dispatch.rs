@@ -488,6 +488,7 @@ pub fn dispatch_x11_parse_error(
 
 fn outputs_from_authority_response(
     context: XDispatchContext,
+    runtime: &mut XAuthorityRuntime,
     kind: &XAuthorityRequestKind,
     response: &XAuthorityResponsePacket,
 ) -> Vec<XClientOutput> {
@@ -578,7 +579,7 @@ fn outputs_from_authority_response(
             outputs.push(XClientOutput::Event(XClientEvent::VisibilityNotify {
                 sequence: context.sequence,
                 window: *window,
-                state: 0,
+                state: runtime.window_visibility(context.namespace, *window),
             }));
             if let Some(surface) = response.surfaces.iter().find(|surface| surface.mapped) {
                 outputs.push(XClientOutput::Event(XClientEvent::Expose {

@@ -619,6 +619,133 @@ impl XWindowTable {
     /// the whole difference between this and `presentation_root_and_offset`
     /// -- that one measures a descendant's offset *within* its toplevel and
     /// therefore stops before adding it.
+    /// The visibility of each viewable window among `candidates`, as the
+    /// protocol reports it: Unobscured (0), PartiallyObscured (1) or
+    /// FullyObscured (2), from the viewable siblings stacked above it and
+    /// above each of its ancestors, each clipped to its own ancestors.
+    /// Inferiors never obscure their ancestors, an InputOnly window obscures
+    /// nothing and is never reported, and the root is never reported. Only
+    /// the candidates are computed: a namespace may hold hundreds of
+    /// viewable windows while a handful selected VisibilityChange, and the
+    /// stacking index is built once per call.
+    pub fn visibility_states(
+        &self,
+        namespace: NamespaceId,
+        input_only: &std::collections::BTreeSet<XResourceId>,
+        candidates: &[XResourceId],
+    ) -> Vec<(XResourceId, u8)> {
+        let root = u64::from(crate::X_SETUP_DEFAULT_ROOT);
+        let is_root = |id: XResourceId| id.local.raw() == root;
+        // Viewable, pixel-bearing children of each parent, bottom to top.
+        let mut children: BTreeMap<XResourceId, Vec<(u32, XResourceId)>> = BTreeMap::new();
+        for record in self.windows.values() {
+            if record.namespace == namespace
+                && record.map_state == XMapState::Viewable
+                && !is_root(record.id)
+                && !input_only.contains(&record.id)
+            {
+                children
+                    .entry(record.parent)
+                    .or_default()
+                    .push((record.stack_rank, record.id));
+            }
+        }
+        for stack in children.values_mut() {
+            stack.sort_unstable();
+        }
+        let root_rect = |id: XResourceId| -> Option<Rect> {
+            let record = self.windows.get(&id)?;
+            let (x, y) = self.root_position(id).ok()?;
+            Some(Rect {
+                x,
+                y,
+                width: record.geometry.width,
+                height: record.geometry.height,
+            })
+        };
+        let chain = |id: XResourceId| {
+            let mut chain = vec![id];
+            let mut current = id;
+            while let Some(record) = self.windows.get(&current) {
+                if is_root(record.parent) || chain.len() > 64 {
+                    break;
+                }
+                chain.push(record.parent);
+                current = record.parent;
+            }
+            chain
+        };
+        let clip_to_ancestors = |ancestors: &[XResourceId], rect: Rect| -> Option<Rect> {
+            ancestors.iter().try_fold(rect, |rect, ancestor| {
+                visibility_clip(rect, root_rect(*ancestor)?)
+            })
+        };
+        let mut states = Vec::new();
+        for candidate in candidates {
+            let Some(record) = self.windows.get(candidate) else {
+                continue;
+            };
+            if record.namespace != namespace
+                || record.map_state != XMapState::Viewable
+                || is_root(record.id)
+                || input_only.contains(&record.id)
+            {
+                continue;
+            }
+            let chain = chain(record.id);
+            let Some(own) =
+                root_rect(record.id).and_then(|rect| clip_to_ancestors(&chain[1..], rect))
+            else {
+                states.push((record.id, 2));
+                continue;
+            };
+            let own_area = visibility_area(own);
+            if own_area == 0 {
+                states.push((record.id, 0));
+                continue;
+            }
+            let mut pieces = vec![own];
+            'levels: for (depth, element) in chain.iter().enumerate() {
+                let Some(element_record) = self.windows.get(element) else {
+                    continue;
+                };
+                let ancestors = &chain[depth + 1..];
+                let Some(stack) = children.get(&element_record.parent) else {
+                    continue;
+                };
+                let above = stack
+                    .iter()
+                    .filter(|(rank, id)| *rank > element_record.stack_rank && *id != *element);
+                for (_, sibling) in above {
+                    let Some(rect) =
+                        root_rect(*sibling).and_then(|rect| clip_to_ancestors(ancestors, rect))
+                    else {
+                        continue;
+                    };
+                    pieces = visibility_subtract(pieces, rect);
+                    if pieces.is_empty() {
+                        break 'levels;
+                    }
+                }
+            }
+            let visible = pieces
+                .iter()
+                .map(|rect| visibility_area(*rect))
+                .sum::<i64>();
+            states.push((
+                record.id,
+                if visible == 0 {
+                    2
+                } else if visible == own_area {
+                    0
+                } else {
+                    1
+                },
+            ));
+        }
+        states
+    }
+
     pub fn root_position(&self, id: XResourceId) -> Result<(i32, i32), XAuthorityAccessError> {
         if id.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
             return Ok((0, 0));
@@ -695,4 +822,77 @@ impl XWindowTable {
     pub fn is_empty(&self) -> bool {
         self.windows.is_empty()
     }
+}
+
+fn visibility_area(rect: Rect) -> i64 {
+    i64::from(rect.width.max(0)) * i64::from(rect.height.max(0))
+}
+
+fn visibility_clip(rect: Rect, by: Rect) -> Option<Rect> {
+    let left = rect.x.max(by.x);
+    let top = rect.y.max(by.y);
+    let right = rect
+        .x
+        .saturating_add(rect.width)
+        .min(by.x.saturating_add(by.width));
+    let bottom = rect
+        .y
+        .saturating_add(rect.height)
+        .min(by.y.saturating_add(by.height));
+    (right > left && bottom > top).then(|| Rect {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    })
+}
+
+/// The pieces of `pieces` outside `cut`: each piece that meets the cut is
+/// replaced by the up to four strips around it, so the pieces stay disjoint
+/// and their areas add up to the visible area.
+fn visibility_subtract(pieces: Vec<Rect>, cut: Rect) -> Vec<Rect> {
+    let mut out = Vec::with_capacity(pieces.len() + 3);
+    for piece in pieces {
+        let Some(hit) = visibility_clip(piece, cut) else {
+            out.push(piece);
+            continue;
+        };
+        let piece_right = piece.x.saturating_add(piece.width);
+        let piece_bottom = piece.y.saturating_add(piece.height);
+        let hit_right = hit.x.saturating_add(hit.width);
+        let hit_bottom = hit.y.saturating_add(hit.height);
+        if hit.y > piece.y {
+            out.push(Rect {
+                x: piece.x,
+                y: piece.y,
+                width: piece.width,
+                height: hit.y - piece.y,
+            });
+        }
+        if hit_bottom < piece_bottom {
+            out.push(Rect {
+                x: piece.x,
+                y: hit_bottom,
+                width: piece.width,
+                height: piece_bottom - hit_bottom,
+            });
+        }
+        if hit.x > piece.x {
+            out.push(Rect {
+                x: piece.x,
+                y: hit.y,
+                width: hit.x - piece.x,
+                height: hit.height,
+            });
+        }
+        if hit_right < piece_right {
+            out.push(Rect {
+                x: hit_right,
+                y: hit.y,
+                width: piece_right - hit_right,
+                height: hit.height,
+            });
+        }
+    }
+    out
 }

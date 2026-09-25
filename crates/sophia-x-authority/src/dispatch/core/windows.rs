@@ -25,7 +25,7 @@ fn dispatch_core_window_request(
     ) {
         return Unhandled(request);
     }
-    Handled(match request {
+    let mut result = match request {
                 request @ (XWireRequest::CreateWindow { .. } | XWireRequest::Authority(..) | XWireRequest::ChangeWindowAttributes { .. } | XWireRequest::GetWindowAttributes { .. }) => dispatch_window_creation_request(context, request, runtime, atoms, properties),
                 request @ (XWireRequest::DestroyWindow { .. } | XWireRequest::ReparentWindow { .. } | XWireRequest::DestroySubwindows { .. } | XWireRequest::MapSubwindows { .. } | XWireRequest::UnmapSubwindows { .. } | XWireRequest::CirculateWindow { .. } | XWireRequest::UnmapWindow { .. }) => dispatch_window_hierarchy_request(context, request, runtime, atoms, properties),
                 XWireRequest::ConfigureWindow {
@@ -361,7 +361,22 @@ fn dispatch_core_window_request(
                     }
                 }
         _ => unreachable!("request family checked before dispatch"),
-    })
+    };
+    // A window request may cover or uncover any viewable window of the
+    // namespace: every one whose visibility changed is told, after the
+    // request's own events (VisibilityNotify after UnmapNotify, XTS Xlib11
+    // VisibilityNotify 2; the map's own report is already in place before
+    // its Expose, VisibilityNotify 3).
+    result.outputs.extend(runtime.visibility_changes(context.namespace).into_iter().map(
+        |(window, state)| {
+            XClientOutput::Event(XClientEvent::VisibilityNotify {
+                sequence: context.sequence,
+                window,
+                state,
+            })
+        },
+    ));
+    Handled(result)
 }
 
 fn resolve_window_visual(
@@ -433,6 +448,7 @@ fn outputs_from_map_response(
     map_state: Option<crate::XMapState>,
     override_redirect: bool,
     input_only: bool,
+    visibility: u8,
     response: &XAuthorityResponsePacket,
 ) -> Vec<XClientOutput> {
     if let XAuthorityResponseOutcome::Rejected(error) = response.outcome {
@@ -462,10 +478,13 @@ fn outputs_from_map_response(
     // specified as InputOnly", nor VisibilityNotify: such a window has no
     // contents to show or hide, only a map state.
     if map_state == Some(crate::XMapState::Viewable) && !input_only {
+        // What the map makes visible: a window mapped under another is
+        // partially or fully obscured from its first report (XTS Xlib11
+        // VisibilityNotify 8 and 9).
         outputs.push(XClientOutput::Event(XClientEvent::VisibilityNotify {
             sequence: context.sequence,
             window,
-            state: 0,
+            state: visibility,
         }));
         if let Some(surface) = response.surfaces.first() {
             outputs.push(XClientOutput::Event(XClientEvent::Expose {
