@@ -1396,6 +1396,74 @@ mod xtest_admission_socket {
         owner.assert_quiet("the owner selected nothing");
     }
 
+    /// An event routed to a client before it sends a request is written
+    /// before that request's reply. The protocol writer and the request
+    /// loop were two threads with nothing between them, so a PropertyNotify
+    /// queued for a watching peer could follow the reply to the peer's next
+    /// request, and the peer, having synced, found nothing pending (the
+    /// peer-side half of t229; XTS Xlib4 XMapWindow 6 under load). The race
+    /// needs the writer descheduled, which an idle machine does not do: on
+    /// the tree before the fix this read green here and red under the
+    /// gate's load. The watermark's own wait is red-then-green in
+    /// x11_socket/tests/protocol_watermark.rs; this stands as the guard.
+    #[test]
+    fn an_event_routed_before_a_request_precedes_its_reply() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.barrier();
+        // PropertyChange on the owner's window.
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 1 << 22))
+            .unwrap();
+        peer.barrier();
+        peer.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+
+        // A burst of changes to WM_NAME as STRING: the owner's round trip
+        // proves every PropertyNotify is queued for the peer before the peer
+        // asks anything, and the peer's writer is still writing them when
+        // the reply is due.
+        // Under the fixture's queue capacity of sixteen, which a stalled
+        // recipient would otherwise fall to.
+        const BURST: usize = 12;
+        let mut overtaken = Vec::new();
+        for round in 0..8_u8 {
+            for step in 0..BURST as u8 {
+                owner.stream
+                    .write_all(&change_property_request(owner.order, XPropertyMode::Replace, window, 39, 31, 8, &[round, step]))
+                    .unwrap();
+            }
+            owner.barrier();
+            let mut request = vec![43, 0];
+            push_u16(&mut request, peer.order, 1);
+            peer.stream.write_all(&request).unwrap();
+            let mut before = 0;
+            loop {
+                let record = read_x_record(&mut peer.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                assert_eq!(record[0] & 0x7f, 28, "only PropertyNotify was selected: {record:?}");
+                before += 1;
+            }
+            if before < BURST {
+                overtaken.push((round, before));
+                for _ in before..BURST {
+                    let _ = peer.next_event(28);
+                }
+            }
+        }
+        assert!(
+            overtaken.is_empty(),
+            "the reply overtook queued PropertyNotify events in (round, written before it): {overtaken:?}"
+        );
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,

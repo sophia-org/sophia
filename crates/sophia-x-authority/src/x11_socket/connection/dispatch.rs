@@ -612,7 +612,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // discovered it.
     let output_wire = Arc::new(X11WirePermission::open());
     let protocol_routing = client_routing.clone();
-    let (route_registration, input_receiver, control_channels, protocol_receiver, input_watermark) =
+    let (route_registration, input_receiver, control_channels, protocol_receiver, input_watermark, protocol_watermark) =
         if let Some(routing) = client_routing {
             if let Err(error) = routing.bind_runtime(&state.runtime) {
                 let _ = state.release_client(client);
@@ -750,6 +750,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 });
             }
             let input_watermark = channels.input_watermark.clone();
+            let protocol_watermark = channels.protocol_watermark.clone();
             (
                 Some(registration),
                 Some(X11InputEventReceiver::Routed {
@@ -767,9 +768,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 }),
                 Some(channels.protocol),
                 Some(input_watermark),
+                Some(protocol_watermark),
             )
         } else {
-            (None, input_receiver, control_channels, None, None)
+            (None, input_receiver, control_channels, None, None, None)
         };
     let control_cleanup_source = match (protocol_routing.as_ref(), route_registration.as_ref()) {
         (Some(routing), Some(registration)) => routing.prepare_control_source(registration, state, resource_id_range, PrivateControlClientTables {
@@ -946,6 +948,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             let major_opcode = received.major_opcode;
             let request = received.bytes;
             let framing = received.framing;
+            // Events queued for this client before this request was read are
+            // written before its reply (t229).
+            let protocol_mark = protocol_watermark.as_ref().map(|watermark| watermark.mark());
             if major_opcode == crate::X_BIG_REQUESTS_MAJOR_OPCODE
                 && request.get(1) == Some(&crate::X_BIG_REQUESTS_ENABLE_MINOR_OPCODE)
             {
@@ -3205,6 +3210,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 // is nothing for it to observe being told by, so the wait
                 // stays uncancellable here and is bounded instead by control
                 // output finishing.
+                if let (Some(watermark), Some(mark)) = (protocol_watermark.as_ref(), protocol_mark)
+                    && (!encoded_outputs.is_empty() || !server_reply_fds.is_empty())
+                {
+                    // Bounded: the writer may be stalled on a peer that is not
+                    // reading, which is its own failure and not this reply's.
+                    watermark.wait_drained(mark, std::time::Duration::from_millis(250));
+                }
                 let mut output_stream = lock_x11_non_control_output(
                     &output_stream,
                     &output_wire,

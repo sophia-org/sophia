@@ -367,6 +367,8 @@ fn spawn_x11_protocol_event_writer(
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Ok(()),
             };
+            // Counted as drained on every way out of this iteration.
+            let _drained = X11ProtocolDrainGuard(&receiver);
             receiver.validate(&envelope)?;
             let mut event = envelope.event;
             let Some(mut stream) =

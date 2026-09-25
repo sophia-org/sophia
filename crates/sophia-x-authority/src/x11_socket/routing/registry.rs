@@ -197,6 +197,7 @@ struct XServerFrontendClientRouteSenders {
 struct XServerFrontendClientRouteChannels {
     input: Receiver<XAuthorityClientInputEvent>,
     input_watermark: Arc<X11InputWatermark>,
+    protocol_watermark: Arc<X11ProtocolWatermark>,
     control: Receiver<X11RoutedControl>,
     protocol: X11ProtocolReceiver,
     #[allow(dead_code)]
@@ -502,12 +503,16 @@ impl XServerFrontendRouteRegistry {
         let connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>> =
             Arc::new(std::sync::OnceLock::new());
         let input_watermark = Arc::new(X11InputWatermark::default());
+        let protocol_watermark = Arc::new(X11ProtocolWatermark::default());
         let senders = XServerFrontendClientRouteSenders {
             connection_state: connection_state.clone(),
             input: input_sender,
             input_watermark: input_watermark.clone(),
             control: control_sender,
-            protocol: X11ProtocolSender(protocol_sender),
+            protocol: X11ProtocolSender {
+                sender: protocol_sender,
+                watermark: protocol_watermark.clone(),
+            },
             admission,
                 namespace,
             ordered: ordered_sender,
@@ -617,7 +622,12 @@ impl XServerFrontendRouteRegistry {
                 input,
                 input_watermark,
                 control,
-                protocol: X11ProtocolReceiver::Tracked { receiver: protocol, registration: connection_state.clone() },
+                protocol: X11ProtocolReceiver::Tracked {
+                    receiver: protocol,
+                    registration: connection_state.clone(),
+                    watermark: protocol_watermark.clone(),
+                },
+                protocol_watermark,
                 ordered: XAuthorityOrderedReceiver {
                     receiver: ordered,
                     registration: connection_state,

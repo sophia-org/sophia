@@ -12,6 +12,7 @@ include!(concat!(
 
 include!("tests/socket_core.rs");
 include!("tests/socket_present.rs");
+include!("tests/protocol_watermark.rs");
 include!("tests/review_private_deadline.rs");
 include!("tests/private_lifecycle_integration.rs");
 include!("tests/stalled_recipients.rs");
