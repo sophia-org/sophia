@@ -235,6 +235,11 @@ fn spawn_x11_input_event_writer(
                         .map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
                         })?;
+                    // A table seeded at selection time knows where the
+                    // pointer was before this writer sent anything.
+                    if pointer_sent_to.is_none() {
+                        pointer_sent_to = selections.pointer_window();
+                    }
                     // Outside the surface window the pointer is in the root,
                     // as far as this table can see: what it left is told by
                     // the crossing events, and nothing under the surface

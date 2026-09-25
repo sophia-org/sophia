@@ -725,6 +725,44 @@ mod event_delivery_socket {
         assert_eq!((window_of(&entered), entered[31] & 1), (first, 0), "enter of the sibling of the focus, focus clear");
     }
 
+    /// A client that selects LeaveWindow on a window the pointer is already
+    /// in is told when the pointer leaves, as the owner is, and a client
+    /// that selected nothing is not (XTS Xlib11 LeaveNotify 2).
+    #[test]
+    fn a_peer_that_selects_leave_while_the_pointer_is_inside_is_told_of_the_leave() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let mut bystander = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        for client in [&mut owner, &mut peer, &mut bystander] {
+            client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        }
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.settle();
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        owner.settle();
+        for (client, mask) in [(&mut owner, 1 << 5), (&mut peer, 1 << 5), (&mut bystander, 0)] {
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, mask))
+                .unwrap();
+            client.settle();
+        }
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 0, 0);
+        let left = owner.next_event(8);
+        assert_eq!((window_of(&left), left[1]), (window, 0), "the owner's leave, detail Ancestor");
+        let left = peer.next_event(8);
+        assert_eq!((window_of(&left), left[1]), (window, 0), "the peer's leave, detail Ancestor");
+        owner.assert_quiet("the owner after the leave");
+        peer.assert_quiet("the peer after the leave");
+        bystander.assert_quiet("a client that selected nothing");
+    }
+
     /// A peer that selected EnterWindow and KeymapState on the owner's window
     /// and nothing else is told of the pointer entering it, with the
     /// KeymapNotify after (XTS Xlib11 KeymapNotify 3). The fan-out carried

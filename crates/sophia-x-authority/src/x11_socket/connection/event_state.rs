@@ -286,6 +286,13 @@ impl XCoreEventSelectionState {
         self.finish_applied_mutation(revision);
     }
 
+    /// Whether the table holds the window's place in the tree, as it does
+    /// for every window this client created; a window only selected on is
+    /// known by id alone until registered.
+    pub(crate) fn registered(&self, window: XResourceId) -> bool {
+        self.parents.contains_key(&window)
+    }
+
     fn register(&mut self, window: XResourceId, parent: XResourceId, geometry: Rect) {
         let revision = self.begin_applied_mutation();
         self.parents.insert(window, parent);
@@ -661,7 +668,31 @@ impl XCoreEventSelectionState {
     /// the pointer's chain owes that chain its own events. With no observation
     /// yet the caller falls back to the root, which is where the pointer is
     /// when it is in no other window.
-    fn pointer_window(&self) -> Option<XResourceId> {
+    /// The pointer window from the server's account, for a table that has
+    /// not seen a pointer event: a client that selects a crossing on a
+    /// window the pointer is already in is owed the leave, and its writer
+    /// crosses from what is seeded here (XTS Xlib11 LeaveNotify 2). A table
+    /// that has observed the pointer keeps its own account.
+    pub(crate) fn seed_pointer_window(
+        &mut self,
+        surface_window: XResourceId,
+        root_x: i16,
+        root_y: i16,
+        event_x: i16,
+        event_y: i16,
+    ) {
+        if self.pointer.is_some() {
+            return;
+        }
+        let pointer_window = if self.surface_contains(surface_window, event_x, event_y) {
+            self.pointer_event_target(surface_window, event_x, event_y)
+        } else {
+            surface_window
+        };
+        self.observe_pointer(surface_window, pointer_window, root_x, root_y, event_x, event_y, 0);
+    }
+
+    pub(crate) fn pointer_window(&self) -> Option<XResourceId> {
         self.pointer.map(|pointer| pointer.pointer_window)
     }
 
