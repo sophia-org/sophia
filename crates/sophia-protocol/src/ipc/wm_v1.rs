@@ -30,6 +30,8 @@ pub const SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN: u64 = 1 << 14;
 pub const SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS: u64 = 1 << 15;
 pub const SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS: u64 = 1 << 16;
 pub const SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT: u64 = 1 << 17;
+pub const SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES: u64 = 1 << 18;
+pub const SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS: u64 = 1 << 19;
 
 pub const SOPHIA_WM_OUTCOME_COMMITTED: u16 = 1;
 pub const SOPHIA_WM_OUTCOME_REJECTED_STALE: u16 = 2;
@@ -2155,6 +2157,189 @@ pub fn decode_wm_v1_output_action_request_frame(
         output_generation,
         affected_output_count,
         affected_outputs,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1PresentationActionRequest {
+    pub connection_epoch: u64,
+    pub request_id: u64,
+    pub scene_generation: u64,
+    pub policy_generation: u64,
+    pub activation_serial: u64,
+    pub action: u64,
+    pub output: u64,
+    pub output_generation: u64,
+    pub publication_generation: u64,
+    pub presentation_epoch: u64,
+    pub target_id: u64,
+    pub target_generation: u64,
+    pub affected_output_count: u16,
+    pub affected_outputs: Vec<u8>,
+}
+
+pub fn encode_wm_v1_presentation_action_request_frame(
+    transaction: TransactionId,
+    message: &WmV1PresentationActionRequest,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    if message.affected_outputs.len() > 128 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "affected_outputs",
+            len: message.affected_outputs.len(),
+            max: 128,
+        });
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.request_id);
+    push_u64(&mut payload, message.scene_generation);
+    push_u64(&mut payload, message.policy_generation);
+    push_u64(&mut payload, message.activation_serial);
+    push_u64(&mut payload, message.action);
+    push_u64(&mut payload, message.output);
+    push_u64(&mut payload, message.output_generation);
+    push_u64(&mut payload, message.publication_generation);
+    push_u64(&mut payload, message.presentation_epoch);
+    push_u64(&mut payload, message.target_id);
+    push_u64(&mut payload, message.target_generation);
+    push_u16(&mut payload, message.affected_output_count);
+    push_u16(&mut payload, 0);
+    payload.extend_from_slice(&message.affected_outputs);
+    encode_frame(
+        IpcMessageKind::WmV1PresentationActionRequest,
+        transaction,
+        &payload,
+    )
+}
+
+pub fn decode_wm_v1_presentation_action_request_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1PresentationActionRequest), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1PresentationActionRequest {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let request_id = cursor.u64()?;
+    let scene_generation = cursor.u64()?;
+    let policy_generation = cursor.u64()?;
+    let activation_serial = cursor.u64()?;
+    let action = cursor.u64()?;
+    let output = cursor.u64()?;
+    let output_generation = cursor.u64()?;
+    let publication_generation = cursor.u64()?;
+    let presentation_epoch = cursor.u64()?;
+    let target_id = cursor.u64()?;
+    let target_generation = cursor.u64()?;
+    let affected_output_count = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    let len = payload.len().saturating_sub(100);
+    if len > 128 {
+        return Err(IpcCodecError::FieldTooLarge {
+            field: "affected_outputs",
+            len,
+            max: 128,
+        });
+    }
+    let affected_outputs = cursor.slice(len)?.to_vec();
+    cursor.finish()?;
+    let message = WmV1PresentationActionRequest {
+        connection_epoch,
+        request_id,
+        scene_generation,
+        policy_generation,
+        activation_serial,
+        action,
+        output,
+        output_generation,
+        publication_generation,
+        presentation_epoch,
+        target_id,
+        target_generation,
+        affected_output_count,
+        affected_outputs,
+    };
+    Ok((header.transaction, message))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmV1PresentationOutcome {
+    pub connection_epoch: u64,
+    pub publication_generation: u64,
+    pub output: u64,
+    pub output_generation: u64,
+    pub presentation_epoch: u64,
+    pub outcome: u16,
+}
+
+pub fn encode_wm_v1_presentation_outcome_frame(
+    transaction: TransactionId,
+    message: &WmV1PresentationOutcome,
+) -> Result<Vec<u8>, IpcCodecError> {
+    if !transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut payload = Vec::new();
+    push_u64(&mut payload, message.connection_epoch);
+    push_u64(&mut payload, message.publication_generation);
+    push_u64(&mut payload, message.output);
+    push_u64(&mut payload, message.output_generation);
+    push_u64(&mut payload, message.presentation_epoch);
+    push_u16(&mut payload, message.outcome);
+    push_u16(&mut payload, 0);
+    encode_frame(
+        IpcMessageKind::WmV1PresentationOutcome,
+        transaction,
+        &payload,
+    )
+}
+
+pub fn decode_wm_v1_presentation_outcome_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, WmV1PresentationOutcome), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    if header.message_kind != IpcMessageKind::WmV1PresentationOutcome {
+        return Err(IpcCodecError::InvalidEnum {
+            field: "message_kind",
+            value: header.message_kind as u32,
+        });
+    }
+    if !header.transaction.is_valid() {
+        return Err(IpcCodecError::InvalidTransaction(0));
+    }
+    let mut cursor = Cursor::new(payload);
+    let connection_epoch = cursor.u64()?;
+    let publication_generation = cursor.u64()?;
+    let output = cursor.u64()?;
+    let output_generation = cursor.u64()?;
+    let presentation_epoch = cursor.u64()?;
+    let outcome = cursor.u16()?;
+    let reserved = cursor.u16()?;
+    if reserved != 0 {
+        return Err(IpcCodecError::ReservedNonZero(reserved as u32));
+    }
+    cursor.finish()?;
+    let message = WmV1PresentationOutcome {
+        connection_epoch,
+        publication_generation,
+        output,
+        output_generation,
+        presentation_epoch,
+        outcome,
     };
     Ok((header.transaction, message))
 }

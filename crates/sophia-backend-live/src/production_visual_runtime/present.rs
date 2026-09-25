@@ -259,7 +259,7 @@ impl LiveProductionVisualRuntime {
         // never from a set captured when it was enqueued. A Present held behind a
         // layout epoch plans a scene that moved on while it waited.
         let cpu_layers =
-            scene.presentation_variant_layers(prepared.candidate(), &self.presentation_order);
+            scene.presentation_variant_layers(prepared.candidate(), &self.sampled_surface_order());
         let head_sources = live_present_head_composition_sources(
             queued_surface,
             current_source,

@@ -21,7 +21,12 @@ mod compositor_graphics;
 mod lifecycle_tests;
 mod ordinary_repaint;
 mod output_composition;
+mod policy_presentation;
 use composition_target::NativeCompositionTarget;
+pub use policy_presentation::{
+    LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,
+    LivePresentedPolicyPublication,
+};
 mod native;
 mod ownership;
 mod present;
@@ -260,6 +265,12 @@ pub struct LiveFloatingOutline {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LivePresentedInputProjection {
     pub output: OutputId,
+    /// Exact completed-frame stamp, absent from committed-only projections.
+    pub policy_publication: Option<LivePresentedPolicyPublication>,
+    /// Distinguishes a completed withdrawal from an output with no frame yet.
+    pub frame_completed: bool,
+    /// Some head still shows policy pixels, including a mixed-head transition.
+    pub policy_visible: bool,
     pub epoch: u64,
     pub layers: Vec<LayerSnapshot>,
     pub chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,
@@ -396,6 +407,8 @@ pub struct LiveProductionVisualRuntime {
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
+    policy_presentation: Option<LivePolicyPresentation>,
+    policy_presentation_revocation: Option<LivePolicyPresentationRevocation>,
     shell_content: BTreeMap<ShellContentKey, AdmittedShellContent>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
     tab_frames: BTreeMap<OutputId, sophia_engine::CompositorDamageList>,

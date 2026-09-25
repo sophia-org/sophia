@@ -228,6 +228,7 @@ fn output_local_interaction_epochs_retire_independently() {
 
     runtime.replace_presented_input_projection(
         0,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         vec![layer_for(surface(40, 1), 1)],
         Vec::new(),
         None,
@@ -240,6 +241,7 @@ fn output_local_interaction_epochs_retire_independently() {
 
     runtime.replace_presented_input_projection(
         1,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         vec![layer_for(surface(41, 1), 2)],
         Vec::new(),
         None,
@@ -253,6 +255,7 @@ fn output_local_interaction_epochs_retire_independently() {
     // A buffer-only presentation is visual, not a lease-identity change.
     runtime.replace_presented_input_projection(
         0,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         vec![layer_for(surface(40, 1), 99)],
         Vec::new(),
         None,
@@ -265,6 +268,7 @@ fn output_local_interaction_epochs_retire_independently() {
 
     runtime.replace_presented_input_projection(
         0,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         Vec::new(),
         Vec::new(),
         None,
@@ -309,6 +313,7 @@ fn descriptor_interaction_revokes_without_withdrawing_presented_occlusion() {
     let mut runtime = LiveProductionVisualRuntime::new(&[output], None).unwrap();
     runtime.replace_presented_input_projection(
         0,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         Vec::new(),
         Vec::new(),
         None,

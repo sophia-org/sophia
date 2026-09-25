@@ -22,7 +22,7 @@
                     }
                     let(consumed,input)=capture.route(&event,None,pointer.position(),false,false);
                     report.launcher_events.extend(input);
-                    if consumed{continue;}
+                    if consumed{discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;}
                 }
                 if !control_plane_applied && let Some(capture)=reference_capture.as_deref_mut() {
                     let (consumed,operation)=capture.route(&event);
@@ -33,7 +33,7 @@
                             let (_, placement)=place_pointer_event_for_routing(&mut event,focused,input_layers,pointer,false);
                             record_pointer_boundary_placement(&mut report, kind, placement);
                         }
-                        continue;
+                        discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
                 }
                 if matches!(
@@ -45,7 +45,7 @@
                             .pointer_buttons_suppressed_by_policy
                             .saturating_add(1);
                     }
-                    continue;
+                    discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                 }
                 if matches!(
                     routing_mode,
@@ -68,7 +68,7 @@
                         );
                         record_pointer_boundary_placement(&mut report, kind, placement);
                     }
-                    continue;
+                    discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                 }
                 let focused_surface = focus.focused_surface(event.seat);
                 let (route_event, placement) = place_pointer_event_for_routing(
@@ -80,7 +80,7 @@
                 );
                 record_pointer_boundary_placement(&mut report, kind, placement);
                 if !route_event {
-                    continue;
+                    discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                 }
                 let output_index = placement
                     .and_then(|placement| placement.output_index)
@@ -124,7 +124,18 @@
                     || pointer_focus_handoff
                         .as_deref()
                         .and_then(PointerFocusHandoffState::target)
-                        .is_some();
+                    .is_some();
+                if let Some(policy) = policy_presentation.as_mut()
+                    && (native_focus.is_some()
+                        || sophia_engine::content_binding_at_point(content_binding, event.global_position).is_some()
+                        || [chrome_occlusion, descriptor_occlusion].into_iter().flatten().any(|rect|
+                            event.global_position.is_some_and(|point| point.x >= f64::from(rect.x)
+                                && point.y >= f64::from(rect.y)
+                                && point.x < f64::from(rect.x) + f64::from(rect.width)
+                                && point.y < f64::from(rect.y) + f64::from(rect.height))))
+                {
+                    policy.capture.revoke();
+                }
                 if pointer_routing_enabled && native_focus.is_none()
                     && let Some(state) = descriptor_captures.as_deref_mut()
                 {
@@ -150,7 +161,7 @@
                                 report.chrome_captures_started.saturating_add(1);
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::PresentedChromePointerDisposition::Activated {
                             action,
@@ -161,19 +172,19 @@
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
                             report.descriptor_activations.push((action, activation));
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::PresentedChromePointerDisposition::Cancelled => {
                             report.chrome_captures_cancelled =
                                 report.chrome_captures_cancelled.saturating_add(1);
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::PresentedChromePointerDisposition::Consumed => {
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                     }
                 }
@@ -200,7 +211,7 @@
                                 report.chrome_captures_started.saturating_add(1);
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::ChromePointerDisposition::Activated { output, action } => {
                             report.chrome_actions_activated =
@@ -208,19 +219,19 @@
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
                             report.chrome_activations.push((output, action));
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::ChromePointerDisposition::Cancelled => {
                             report.chrome_captures_cancelled =
                                 report.chrome_captures_cancelled.saturating_add(1);
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::ChromePointerDisposition::Consumed => {
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                     }
                 }
@@ -258,7 +269,7 @@
                         sophia_engine::ContentPointerDisposition::OutsideDismiss(popout) => {
                             report.content_dismissals.push(popout);
                             report.chrome_events_consumed = report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::ContentPointerDisposition::Activated(target) => {
                             report.content_activations.push(target);
@@ -266,20 +277,20 @@
                                 report.chrome_actions_activated.saturating_add(1);
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::ContentPointerDisposition::Captured => {
                             report.chrome_captures_started =
                                 report.chrome_captures_started.saturating_add(1);
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                         sophia_engine::ContentPointerDisposition::Cancelled
                         | sophia_engine::ContentPointerDisposition::Consumed => {
                             report.chrome_events_consumed =
                                 report.chrome_events_consumed.saturating_add(1);
-                            continue;
+                            discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                         }
                     }
                 }
@@ -288,8 +299,17 @@
                     report.launcher_events.extend(input);
                     if consumed {
                         report.chrome_events_consumed = report.chrome_events_consumed.saturating_add(1);
-                        continue;
+                        discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
+                }
+                if !control_plane_applied && let Some(policy) = policy_presentation.as_mut() {
+                    let hit = policy.pointer_hit(input_output, event.global_position, input_projections);
+                    let disposition = if let sophia_protocol::InputEventKind::PointerButton { button, pressed } = kind {
+                        policy.capture.pointer(policy.state, event.seat, event.device, button, pressed, hit, application_owned)
+                    } else if !application_owned && hit != sophia_engine::PolicyPointerHit::Pass {
+                        sophia_engine::PolicyInputDisposition::Consumed
+                    } else { sophia_engine::PolicyInputDisposition::Pass };
+                    if record_policy_input(disposition, &mut report) { continue; }
                 }
                 if let Some(gesture) = floating_gesture.as_deref_mut() {
                     let position = event.global_position.map(|global| {

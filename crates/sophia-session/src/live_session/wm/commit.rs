@@ -152,6 +152,11 @@ impl LiveWmSession {
             let timeout = public.reducer.timeout(settlement.request_id);
             if stale { sophia_protocol::PolicyProjectionOutcome::RejectedStale } else { timeout }
         };
+        if outcome != sophia_protocol::PolicyProjectionOutcome::Committed
+            && public.in_flight_request.as_ref().is_some_and(|request|
+                matches!(request.cause, sophia_protocol::PolicyRequestCause::PresentationAction { .. })) {
+            public.revoke_live_presentation();
+        }
         let proof_restart_action = if outcome
             == sophia_protocol::PolicyProjectionOutcome::Committed
         {

@@ -50,6 +50,7 @@ impl LiveWmSession {
         let output_service = public.output_service.take();
         let endpoint = public.directory.endpoint_path();
         let profile_key = public.profile_key;
+        let native_presentation_capable = public.native_presentation_capable;
         let (state, command) = update_supervisor(
             self.supervisor_state.clone(),
             SupervisorEvent::ProcessExited,
@@ -81,7 +82,7 @@ impl LiveWmSession {
                 if let Some(service) = &output_service {
                     service.command(sophia_runtime::OutputTransportServiceCommand::ReplaceSupervisedPid { pid }).map_err(|_| "output service unavailable")?;
                 }
-                let worker = start_public_policy_worker(transport, epoch, profile_key).map_err(|e| e.to_string())?;
+                let worker = start_public_policy_worker(transport, epoch, profile_key, native_presentation_capable).map_err(|e| e.to_string())?;
                 Ok((worker, started))
             })();
             if result.is_err() { let _ = supervisor.terminate(); }

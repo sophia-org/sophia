@@ -16,6 +16,9 @@ mod component_launch_reload;
 #[path = "default_policy_catalog.rs"]
 mod default_policy_catalog;
 
+#[path = "policy_presentation_lifecycle.rs"]
+mod policy_presentation_lifecycle;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -117,6 +120,13 @@ impl ReloadFixture {
             in_flight_source: None,
             in_flight_request: None,
             staged: None,
+            presentation_input: Default::default(),
+            presentation_capture: Default::default(),
+            presentation_receipts: VecDeque::new(),
+            presentation_withdrawals: VecDeque::new(),
+            presentation_withdrawal_pending: false,
+            presentation_scene_dirty: false,
+            native_presentation_capable: config.native_scanout,
             prepared: None,
             shortcut_profile_slot,
             actions: Vec::new(),

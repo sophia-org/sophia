@@ -185,21 +185,29 @@ pub fn lower_head_composition_plan_with_caches(
                 if !emitted_surfaces.insert(*surface) {
                     return Err(LiveHeadCompositionLoweringError::DuplicateSurface);
                 }
-                let binding = plan
-                    .layers
-                    .iter()
-                    .find(|binding| binding.surface == *surface)
-                    .ok_or(LiveHeadCompositionLoweringError::MissingPlannedSurface)?;
-                let source = sources
-                    .iter()
-                    .find(|source| source.surface == *surface && source.source == binding.source)
-                    .ok_or(match binding.source {
-                        BufferSource::CpuBuffer { handle } => {
-                            LiveHeadCompositionLoweringError::MissingCpuSource(handle)
-                        }
-                        source => LiveHeadCompositionLoweringError::MissingSource(source),
-                    })?;
+                let (binding, source) = planned_source(plan, sources, *surface)?;
                 layers.push(lower_surface_source(binding, source)?);
+            }
+            // The source's one binding and one owned source, drawn again at
+            // the instance's own destination, clip and opacity. Repeated
+            // instances share the source; none of them is the surface.
+            HeadCompositorCommand::PresentationStamp(_) => {}
+            HeadCompositorCommand::SurfaceInstance(instance) => {
+                let (binding, source) = planned_source(plan, sources, instance.source)?;
+                let placed = sophia_engine::HeadLayerBinding {
+                    native_geometry: instance.destination,
+                    native_clip: instance.clip,
+                    opacity_millis: instance.opacity_millis,
+                    requested_sampling: sophia_engine::head_sampling_class(
+                        binding.source_pixel_size,
+                        Size {
+                            width: instance.destination.width,
+                            height: instance.destination.height,
+                        },
+                    ),
+                    ..binding.clone()
+                };
+                layers.push(lower_surface_source(&placed, source)?);
             }
             HeadCompositorCommand::Border(border) => {
                 for band in compositor_border_bands(sophia_engine::CompositorBorder {
@@ -386,6 +394,35 @@ fn intersect_rect(first: Rect, second: Rect) -> Rect {
         width: right.saturating_sub(left).max(0),
         height: bottom.saturating_sub(top).max(0),
     }
+}
+
+/// The plan's binding for a source and the owned source it names.
+fn planned_source<'a>(
+    plan: &'a HeadCompositionPlan,
+    sources: &'a [LiveOwnedHeadCompositionSource],
+    surface: SurfaceId,
+) -> Result<
+    (
+        &'a sophia_engine::HeadLayerBinding,
+        &'a LiveOwnedHeadCompositionSource,
+    ),
+    LiveHeadCompositionLoweringError,
+> {
+    let binding = plan
+        .layers
+        .iter()
+        .find(|binding| binding.surface == surface)
+        .ok_or(LiveHeadCompositionLoweringError::MissingPlannedSurface)?;
+    let source = sources
+        .iter()
+        .find(|source| source.surface == surface && source.source == binding.source)
+        .ok_or(match binding.source {
+            BufferSource::CpuBuffer { handle } => {
+                LiveHeadCompositionLoweringError::MissingCpuSource(handle)
+            }
+            source => LiveHeadCompositionLoweringError::MissingSource(source),
+        })?;
+    Ok((binding, source))
 }
 
 fn lower_surface_source(

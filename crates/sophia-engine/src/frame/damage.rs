@@ -66,6 +66,17 @@ pub fn output_frame_damage_snapshot(
     if !compositor_display_list_structure_is_valid(&compositor_display_list) {
         return Err(OutputFrameDamageError::InvalidCompositorDisplayList);
     }
+    // An instance's source generation must be the one this frame samples:
+    // it is what repaints the instance when only the source's content
+    // changed. Instances are not frame surfaces and never input layers.
+    if compositor_display_list.surface_instances().any(|instance| {
+        committed_surfaces
+            .iter()
+            .find(|state| state.surface == instance.source)
+            .is_none_or(|state| state.committed_generation != instance.source_generation)
+    }) {
+        return Err(OutputFrameDamageError::InvalidCompositorDisplayList);
+    }
     let mut surfaces = Vec::new();
     let mut seen = BTreeSet::new();
     for surface in compositor_display_list
@@ -73,7 +84,9 @@ pub fn output_frame_damage_snapshot(
         .iter()
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
-            CompositorDisplayCommand::Border(_)
+            CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
+            | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -196,6 +209,8 @@ fn validate_snapshot(snapshot: &OutputFrameDamageSnapshot) -> Result<(), OutputF
                 Some(*surface)
             }
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)

@@ -80,9 +80,66 @@ pub struct HeadLogicalTransform {
     pub projected_scene: Rect,
 }
 
+fn localize(viewport: Rect, rect: Rect) -> Rect {
+    Rect {
+        x: rect.x.saturating_sub(viewport.x),
+        y: rect.y.saturating_sub(viewport.y),
+        width: rect.width,
+        height: rect.height,
+    }
+}
+
 impl HeadLogicalTransform {
     pub fn project_local_rect(self, rect: Rect) -> Rect {
         project_child_rect(rect, self.source, self.projected_scene)
+    }
+
+    /// Conservative raster projection for WM policy targets, in this
+    /// transform's local (source) coordinates: left and top edges round
+    /// down, right and bottom up, so a non-empty rectangle stays at least one
+    /// native pixel on any head and, when it lies inside the source, inside
+    /// the projected scene (whose own edges project exactly). The one owner
+    /// of this arithmetic: the head plan draws with it and mirror damage
+    /// projects with it, so they cannot drift (t244).
+    pub fn project_local_rect_outward(self, rect: Rect) -> Rect {
+        project_child_rect_outward(rect, self.source, self.projected_scene)
+    }
+
+    /// The inward counterpart, for a policy border's inner edge.
+    pub fn project_local_rect_inward(self, rect: Rect) -> Rect {
+        project_child_rect_inward(rect, self.source, self.projected_scene)
+    }
+
+    /// A WM policy region's stroke, in local coordinates: the outer edge
+    /// rounds outward and the inner edge inward, so a ring with a logical
+    /// pixel keeps a native one; a stroke with no hole left on this head is
+    /// solid (an empty inner edge at the outer's bottom makes the top band
+    /// the whole region). The one owner of policy border geometry: the head
+    /// plan draws with it and mirror damage projects with it (t244).
+    pub fn project_local_policy_border(self, outer: Rect, inner: Rect) -> (Rect, Rect) {
+        let outer = self.project_local_rect_outward(outer);
+        let inner = self.project_local_rect_inward(inner);
+        let inner = if inner.is_empty() {
+            Rect {
+                x: outer.x,
+                y: outer.y.saturating_add(outer.height),
+                width: 0,
+                height: 0,
+            }
+        } else {
+            inner
+        };
+        (outer, inner)
+    }
+
+    /// [`Self::project_local_rect_outward`] for a root-space rectangle.
+    pub fn project_root_rect_outward(self, viewport: Rect, rect: Rect) -> Rect {
+        self.project_local_rect_outward(localize(viewport, rect))
+    }
+
+    /// [`Self::project_local_rect_inward`] for a root-space rectangle.
+    pub fn project_root_rect_inward(self, viewport: Rect, rect: Rect) -> Rect {
+        self.project_local_rect_inward(localize(viewport, rect))
     }
 
     pub fn project_root_rect(self, viewport: Rect, rect: Rect) -> Rect {
@@ -169,7 +226,14 @@ pub struct HeadCompositorContentImage {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HeadCompositorCommand {
     Background(CompositorSolidRect),
-    Surface { surface: SurfaceId },
+    Surface {
+        surface: SurfaceId,
+    },
+    /// An instance in head-native coordinates: destination and clip are
+    /// projected, the clip bounded by the painted scene.
+    SurfaceInstance(crate::CompositorSurfaceInstance),
+    /// Carried unchanged into the head frame; draws nothing.
+    PresentationStamp(crate::CompositorPresentationStamp),
     Border(HeadCompositorBorder),
     Rect(HeadCompositorRect),
     Text(HeadCompositorText),
@@ -234,6 +298,9 @@ pub enum HeadCompositionPlanError {
     DuplicateSurface,
     MissingDisplaySurface,
     EmptyProjection,
+    /// An instance's resolved source generation is not its source's
+    /// committed generation in this snapshot.
+    StaleInstanceSource,
 }
 
 impl fmt::Display for HeadCompositionPlanError {
@@ -317,27 +384,42 @@ pub fn output_scene_snapshot_from_committed_in_view(
         .iter()
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
-            CompositorDisplayCommand::Border(_)
+            CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
+            | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
             | CompositorDisplayCommand::ContentImage(_) => None,
         })
         .collect::<BTreeSet<_>>();
+    // Sources an instance samples on this output, whether or not the source
+    // is itself presented here: a preview-only source is sampled all the
+    // same, and its own placement is not drawn.
+    let instance_sources = display_list
+        .surface_instances()
+        .filter(|instance| !intersect_rect(instance.visible(), logical_viewport).is_empty())
+        .map(|instance| instance.source)
+        .collect::<BTreeSet<_>>();
     let mut logical_damage = Region::empty();
+    let mut visible_surfaces = BTreeSet::new();
     let surfaces = committed
         .iter()
         .filter_map(|state| {
-            if !displayed_surfaces.contains(&state.surface) {
+            let own = intersect_rect(state.geometry, logical_viewport);
+            let shown = displayed_surfaces.contains(&state.surface) && !own.is_empty();
+            if !shown && !instance_sources.contains(&state.surface) {
                 return None;
             }
-            let clip = intersect_rect(state.geometry, logical_viewport);
-            if clip.is_empty() {
-                return None;
-            }
-            if !state.damage.is_empty() {
-                logical_damage.rects.push(clip);
-            }
+            let clip = if shown {
+                visible_surfaces.insert(state.surface);
+                if !state.damage.is_empty() {
+                    logical_damage.rects.push(own);
+                }
+                own
+            } else {
+                state.geometry
+            };
             Some(OutputSceneSurface {
                 surface: state.surface,
                 committed_generation: state.committed_generation,
@@ -349,12 +431,26 @@ pub fn output_scene_snapshot_from_committed_in_view(
             })
         })
         .collect::<Vec<_>>();
-    let visible_surfaces = surfaces
+    let sampled_sources = surfaces
         .iter()
+        .filter(|surface| !surface.damage.is_empty())
         .map(|surface| surface.surface)
         .collect::<BTreeSet<_>>();
+    // A source's content change repaints every instance of it here, while
+    // the instance's own interaction generation stays as it was.
+    for instance in display_list.surface_instances() {
+        let visible = intersect_rect(instance.visible(), logical_viewport);
+        if !visible.is_empty() && sampled_sources.contains(&instance.source) {
+            logical_damage.rects.push(visible);
+        }
+    }
     display_list.commands.retain(|command| match command {
         CompositorDisplayCommand::Surface { surface } => visible_surfaces.contains(surface),
+        CompositorDisplayCommand::PresentationStamp(_) => true,
+        CompositorDisplayCommand::SurfaceInstance(instance) => {
+            instance_sources.contains(&instance.source)
+                && !intersect_rect(instance.visible(), logical_viewport).is_empty()
+        }
         CompositorDisplayCommand::Border(border) => {
             !intersect_rect(border.outer, logical_viewport).is_empty()
         }
@@ -442,21 +538,10 @@ pub fn build_head_composition_plan(
         return Err(HeadCompositionPlanError::WrongOutput);
     }
 
-    let source = Size {
-        width: snapshot.logical_viewport.width,
-        height: snapshot.logical_viewport.height,
-    };
-    let projected_scene = project_scene(source, target.native_size, target.mapping);
-    if projected_scene.is_empty() {
-        return Err(HeadCompositionPlanError::EmptyProjection);
-    }
-    let transform = HeadLogicalTransform {
-        source,
-        projected_scene,
-    };
+    let (transform, painted) = head_transform(snapshot.logical_viewport, target)
+        .ok_or(HeadCompositionPlanError::EmptyProjection)?;
+    let projected_scene = transform.projected_scene;
     let target_density = projected_density_millis(transform);
-    // Everything the scene draws is bounded by this, not by the framebuffer.
-    let painted = scene_clip(projected_scene, target.native_size);
     let mut layers = Vec::with_capacity(snapshot.surfaces.len());
     for surface in &snapshot.surfaces {
         let variant = select_variant(&surface.content, target_density)
@@ -495,20 +580,71 @@ pub fn build_head_composition_plan(
     }
 
     let mut compositor = background_commands(projected_scene, target.native_size);
+    let mut instance_sampled = false;
     for command in &snapshot.display_list.commands {
         compositor.push(match command {
             CompositorDisplayCommand::Surface { surface } => {
                 HeadCompositorCommand::Surface { surface: *surface }
             }
-            CompositorDisplayCommand::Border(border) => HeadCompositorCommand::Border(
-                project_border(*border, snapshot.logical_viewport, transform, painted),
-            ),
-            CompositorDisplayCommand::Rect(rect) => HeadCompositorCommand::Rect(project_rect(
-                *rect,
-                snapshot.logical_viewport,
-                transform,
-                painted,
-            )),
+            CompositorDisplayCommand::PresentationStamp(stamp) => {
+                HeadCompositorCommand::PresentationStamp(crate::CompositorPresentationStamp {
+                    // Outward like the targets it covers, so the coverage
+                    // damage always encloses what the tier draws.
+                    coverage: intersect_rect(
+                        transform
+                            .project_root_rect_outward(snapshot.logical_viewport, stamp.coverage),
+                        painted,
+                    ),
+                    ..*stamp
+                })
+            }
+            CompositorDisplayCommand::SurfaceInstance(instance) => {
+                // Cropped away on this head: nothing to draw, damage or list.
+                let Some(projected) = project_policy_instance(
+                    *instance,
+                    snapshot.logical_viewport,
+                    transform,
+                    painted,
+                ) else {
+                    continue;
+                };
+                let (destination, clip) = (projected.destination, projected.clip);
+                if let Some(layer) = layers.iter().find(|layer| layer.surface == instance.source) {
+                    instance_sampled |= head_sampling_class(
+                        layer.source_pixel_size,
+                        Size {
+                            width: destination.width,
+                            height: destination.height,
+                        },
+                    ) != HeadSamplingClass::Exact;
+                }
+                HeadCompositorCommand::SurfaceInstance(crate::CompositorSurfaceInstance {
+                    destination,
+                    clip,
+                    ..*instance
+                })
+            }
+            CompositorDisplayCommand::Border(border) => {
+                let projected =
+                    project_border(*border, snapshot.logical_viewport, transform, painted);
+                // A WM region this head crops away entirely is not drawn
+                // here, so it is not listed as drawn either (t244).
+                if matches!(border.node, CompositorNodeId::PolicyRegion { .. })
+                    && !policy_border_draws(&projected)
+                {
+                    continue;
+                }
+                HeadCompositorCommand::Border(projected)
+            }
+            CompositorDisplayCommand::Rect(rect) => {
+                let projected = project_rect(*rect, snapshot.logical_viewport, transform, painted);
+                if matches!(rect.node, CompositorNodeId::PolicyRegion { .. })
+                    && projected.geometry.is_empty()
+                {
+                    continue;
+                }
+                HeadCompositorCommand::Rect(projected)
+            }
             CompositorDisplayCommand::Text(text) => HeadCompositorCommand::Text(project_text(
                 text,
                 snapshot.logical_viewport,
@@ -545,9 +681,10 @@ pub fn build_head_composition_plan(
         ),
         ..cursor
     });
-    let sampled = layers
-        .iter()
-        .any(|layer| layer.requested_sampling != HeadSamplingClass::Exact);
+    let sampled = instance_sampled
+        || layers
+            .iter()
+            .any(|layer| layer.requested_sampling != HeadSamplingClass::Exact);
     let mut repaint = Region::empty();
     for rect in &snapshot.logical_damage.rects {
         let projected = transform.project_root_rect(snapshot.logical_viewport, *rect);
@@ -601,6 +738,19 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
     for command in &plan.compositor {
         match command {
             HeadCompositorCommand::Background(_) => {}
+            // An instance is compositor content keyed by its own node. It
+            // never becomes a frame surface, so it can never become an
+            // application input layer when this frame retires.
+            HeadCompositorCommand::SurfaceInstance(instance) => {
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::SurfaceInstance(*instance));
+            }
+            HeadCompositorCommand::PresentationStamp(stamp) => {
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::PresentationStamp(*stamp));
+            }
             HeadCompositorCommand::Surface { surface } => {
                 display_list
                     .commands
@@ -684,7 +834,11 @@ fn validate_snapshot(snapshot: &OutputSceneSnapshot) -> Result<(), HeadCompositi
         || snapshot.scene_generation == 0
         || snapshot.logical_viewport.is_empty()
         || snapshot.display_list.output != snapshot.output
-        || snapshot.surfaces.len() > MAX_HEAD_COMPOSITION_LAYERS
+        || snapshot
+            .surfaces
+            .len()
+            .saturating_add(snapshot.display_list.surface_instances().count())
+            > MAX_HEAD_COMPOSITION_LAYERS
         || !compositor_display_list_structure_is_valid(&snapshot.display_list)
     {
         return Err(HeadCompositionPlanError::InvalidSnapshot);
@@ -716,7 +870,21 @@ fn validate_snapshot(snapshot: &OutputSceneSnapshot) -> Result<(), HeadCompositi
                     return Err(HeadCompositionPlanError::DuplicateSurface);
                 }
             }
-            CompositorDisplayCommand::Border(_)
+            // Repeated sources are expected; each instance names its own.
+            CompositorDisplayCommand::SurfaceInstance(instance) => {
+                let Some(source) = snapshot
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.surface == instance.source)
+                else {
+                    return Err(HeadCompositionPlanError::MissingDisplaySurface);
+                };
+                if source.committed_generation != instance.source_generation {
+                    return Err(HeadCompositionPlanError::StaleInstanceSource);
+                }
+            }
+            CompositorDisplayCommand::PresentationStamp(_)
+            | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -789,3 +957,4 @@ pub const fn head_sampling_class(source: Size, target: Size) -> HeadSamplingClas
 }
 
 include!("composition_plan/projection_geometry.rs");
+include!("composition_plan/policy_geometry.rs");

@@ -14,14 +14,19 @@ impl LiveWmSession {
             return Ok(true);
         }
         let public = self.public.as_mut().ok_or("public settlement lost its session")?;
-        if public.prepared == Some(identity) {
-            return Ok(true);
-        }
         let staged = public
             .staged
             .as_ref()
             .ok_or("ready public layout lost its staged reducer successor")?;
         let outcome = public.reducer.revalidate_staged(staged);
+        if public.in_flight_request.as_ref().is_some_and(|request| !public.presented_cause_is_current(request.cause)) {
+            return Ok(false);
+        }
+        if staged.presentation_publication().is_some_and(|(_, presentation)| {
+            sophia_protocol::validate_policy_presentation_actions(presentation, &public.actions).is_err()
+        }) {
+            return Ok(false);
+        }
         if outcome == sophia_protocol::PolicyProjectionOutcome::RejectedStale {
             return Ok(false);
         }
@@ -30,6 +35,9 @@ impl LiveWmSession {
                 "ready public layout failed canonical revalidation: {outcome:?}"
             )
             .into());
+        }
+        if public.prepared == Some(identity) {
+            return Ok(true);
         }
         public.prepared = Some(identity);
         crate::session_println!(

@@ -85,6 +85,9 @@ pub struct PolicyProjectionReducer {
     output_statuses: BTreeMap<OutputId, PolicyProjectionOutputStatus>,
     indicator_publication_generation: u64,
     tab_groups: Vec<sophia_protocol::PolicyTabGroup>,
+    presentation: Option<sophia_protocol::PolicyPresentation>,
+    greatest_presentation_generation: u64,
+    greatest_presentation_target: u64,
 }
 
 /// What the indicator chrome renders, and the identity consumers compare it by.
@@ -116,6 +119,12 @@ pub struct StagedPolicyProjection {
 }
 
 impl StagedPolicyProjection {
+    /// Immutable publication for session admission before ordinary layout or
+    /// reducer state becomes authoritative.
+    pub fn presentation_publication(&self) -> Option<(u64, &sophia_protocol::PolicyPresentation)> {
+        self.candidate.presentation_publication()
+    }
+
     pub fn projections(&self) -> Vec<PolicyOutputProjection> {
         self.candidate.committed()
     }
@@ -148,6 +157,9 @@ impl PolicyProjectionReducer {
             commit_serial: 0,
             indicators: BTreeMap::new(),
             tab_groups: Vec::new(),
+            presentation: None,
+            greatest_presentation_generation: 0,
+            greatest_presentation_target: 0,
             output_statuses: BTreeMap::new(),
             indicator_publication_generation: 0,
         })
@@ -163,6 +175,9 @@ impl PolicyProjectionReducer {
         self.active_epoch = Some(connection_epoch);
         self.greatest_epoch = connection_epoch;
         self.clear_indicator_publication();
+        self.presentation = None;
+        self.greatest_presentation_generation = 0;
+        self.greatest_presentation_target = 0;
         Ok(())
     }
 
@@ -173,6 +188,7 @@ impl PolicyProjectionReducer {
         self.active_epoch = None;
         self.outstanding = None;
         self.clear_indicator_publication();
+        self.presentation = None;
         PolicyProjectionOutcome::Disconnected
     }
 
@@ -237,6 +253,12 @@ impl PolicyProjectionReducer {
             .next_request_id
             .checked_add(1)
             .ok_or(PolicyProjectionError::RequestIdExhausted)?;
+        if !self.presentation_cause_is_current(cause)
+            || matches!(cause, PolicyRequestCause::PresentationAction { identity, .. }
+                if !affected_outputs.contains(&identity.output))
+        {
+            return Err(PolicyProjectionError::InvalidRequestCause);
+        }
         let request = PolicyProjectionRequest {
             connection_epoch,
             request_id,
@@ -268,6 +290,7 @@ impl PolicyProjectionReducer {
         if proposal.request_id != request.request_id
             || proposal.base_generation != request.scene_generation
             || request.scene_generation != self.scene.generation
+            || !self.presentation_cause_is_current(request.cause)
         {
             return PolicyProjectionOutcome::RejectedStale;
         }
@@ -287,6 +310,23 @@ impl PolicyProjectionReducer {
             return PolicyProjectionOutcome::RejectedInvalid;
         };
         let tabs_changed = self.tab_groups != tab_groups;
+        if self
+            .validate_presentation(proposal.presentation.as_ref())
+            .is_err()
+        {
+            return PolicyProjectionOutcome::RejectedInvalid;
+        }
+        if self.presentation != proposal.presentation
+            && self
+                .presentation
+                .iter()
+                .chain(proposal.presentation.iter())
+                .flat_map(|p| &p.outputs)
+                .any(|o| !request.affected_outputs.contains(&o.output))
+        {
+            return PolicyProjectionOutcome::RejectedInvalid;
+        }
+        self.commit_presentation(proposal.presentation.clone());
         self.tab_groups = tab_groups;
         // The commit serial advances unconditionally: it guards settlement
         // staleness and must count every commit. The publication generation
@@ -461,6 +501,7 @@ impl PolicyProjectionReducer {
         self.tab_groups.retain(|g| {
             output_ids.contains(&g.output) && g.members.iter().all(|s| surfaces.contains_key(s))
         });
+        self.revalidate_presentation_scene(&scene);
         self.scene = scene;
         self.committed = committed;
         let before = (self.indicators.len(), self.output_statuses.len());
@@ -664,6 +705,7 @@ impl PolicyProjectionReducer {
     }
 }
 
+mod presentation;
 mod validation;
 
 use validation::*;

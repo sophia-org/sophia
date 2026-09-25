@@ -43,12 +43,14 @@ fn route_input_events_with_launcher(
     repaint_due: bool,
     motion_held_since: &mut Option<std::time::Instant>,
     frame_interval: std::time::Duration,
+    mut policy_presentation: Option<PolicyPresentedInputRouting<'_>>,
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let mut report = PhysicalInputRouteReport {
         ingress_saturation: RoutedInputIngressSaturation::default(),
         events: events.len(),
         wm_actions: Vec::new(),
         policy_inputs: Vec::new(),
+        presentation_capacity_exceeded: false,
         reference_operations: Vec::new(),
         launcher_events: Vec::new(),
         chrome_activations: Vec::new(),
@@ -226,6 +228,7 @@ fn route_input_events_with_launcher(
                 });
             }
             sophia_protocol::InputEventKind::DeviceRemoved => {
+                if let Some(policy) = policy_presentation.as_mut() { policy.capture.remove_device(event.device); }
                 let removal = release_departed_device(
                     event.device,
                     client_keys,

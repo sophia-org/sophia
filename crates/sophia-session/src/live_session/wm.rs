@@ -3,6 +3,7 @@ include!("wm/policy_session_directory.rs");
 include!("wm/application_commands.rs");
 include!("wm/shortcut_resolution.rs");
 include!("wm/public_policy.rs");
+include!("wm/presentation.rs");
 include!("wm/profile_preparation.rs");
 include!("wm/indicator_admission.rs");
 include!("wm/output_policy_keys.rs");

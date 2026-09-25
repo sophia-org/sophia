@@ -63,6 +63,8 @@ static int roundtrip(const char *name, uint64_t transaction, const uint8_t *fram
     else if (strcmp(name, "snapshot_chunk") == 0) ROUNDTRIP_REQUIRED(snapshot_chunk);
     else if (strcmp(name, "snapshot_end") == 0) ROUNDTRIP_REQUIRED(snapshot_end);
     else if (strcmp(name, "output_action_request") == 0) ROUNDTRIP_REQUIRED(output_action_request);
+    else if (strcmp(name, "presentation_action_request") == 0) ROUNDTRIP_REQUIRED(presentation_action_request);
+    else if (strcmp(name, "presentation_outcome") == 0) ROUNDTRIP_REQUIRED(presentation_outcome);
     else if (strcmp(name, "projection_request") == 0) ROUNDTRIP_REQUIRED(projection_request);
     else if (strcmp(name, "projection_begin") == 0) ROUNDTRIP_REQUIRED(projection_begin);
     else if (strcmp(name, "projection_chunk") == 0) ROUNDTRIP_REQUIRED(projection_chunk);
@@ -143,7 +145,7 @@ static int check_valid(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 22;
+    return checked == 24;
 }
 
 static int check_malformed(const char *path) {
@@ -180,6 +182,52 @@ static int check_malformed(const char *path) {
         status = sophia_wm_v1_encode_##name##_record(&record, encoded, sizeof(encoded)); \
     encoded_len = constant; \
 } while (0)
+
+struct presentation_field {
+    size_t width;
+    uint64_t value;
+};
+
+/* Independent extension layout: field widths and corpus values are reviewed
+ * here rather than imported from the Rust extension codec. */
+static int presentation_record(const char *name, const uint8_t *data, size_t length) {
+    static const struct presentation_field header[] = {
+        {8,1}, {8,1}, {2,1}, {2,1}, {4,1}, {4,1}, {4,0}
+    };
+    static const struct presentation_field output[] = {
+        {8,1}, {8,1}, {4,0}, {4,0}, {4,1280}, {4,720}, {2,2}, {2,0}, {4,0}
+    };
+    static const struct presentation_field instance[] = {
+        {8,2}, {8,1}, {8,1}, {4,1}, {4,1},
+        {4,100}, {4,100}, {4,320}, {4,180},
+        {4,100}, {4,100}, {4,320}, {4,180}, {2,1000}, {2,1}, {4,0}, {8,5}
+    };
+    static const struct presentation_field region[] = {
+        {8,1}, {8,1}, {8,1}, {4,0}, {4,0}, {4,1280}, {4,720},
+        {4,0}, {4,0}, {4,1280}, {4,720}, {2,0}, {2,1}, {4,0}, {8,0}
+    };
+    static const struct presentation_field binding[] = { {8,5}, {4,28}, {4,0} };
+    const struct presentation_field *fields;
+    size_t count;
+#define FIELDS(value) do { fields = value; count = sizeof(value) / sizeof(value[0]); } while (0)
+    if (strcmp(name, "projection_presentation") == 0) FIELDS(header);
+    else if (strcmp(name, "projection_presentation_output") == 0) FIELDS(output);
+    else if (strcmp(name, "projection_surface_instance") == 0) FIELDS(instance);
+    else if (strcmp(name, "projection_presentation_region") == 0) FIELDS(region);
+    else if (strcmp(name, "projection_presentation_binding") == 0) FIELDS(binding);
+    else return 0;
+#undef FIELDS
+    size_t offset = 0;
+    for (size_t field = 0; field < count; ++field) {
+        if (offset + fields[field].width > length) return 0;
+        uint64_t value = 0;
+        for (size_t i = 0; i < fields[field].width; ++i)
+            value |= (uint64_t)data[offset + i] << (8 * i);
+        if (value != fields[field].value) return 0;
+        offset += fields[field].width;
+    }
+    return offset == length;
+}
 
 static int record_roundtrip(const char *name, const uint8_t *data, size_t data_len) {
     uint8_t encoded[256];
@@ -263,7 +311,7 @@ static int record_roundtrip(const char *name, const uint8_t *data, size_t data_l
         encoded_len = expected;
         status = SOPHIA_WM_V1_OK;
     }
-    else return 0;
+    else return presentation_record(name, data, data_len);
     return status == SOPHIA_WM_V1_OK && encoded_len == data_len &&
         memcmp(encoded, data, data_len) == 0;
 }
@@ -286,7 +334,7 @@ static int check_records(const char *path) {
         ++checked;
     }
     fclose(input);
-    return checked == 17;
+    return checked == 22;
 }
 
 int main(int argc, char **argv) {

@@ -120,6 +120,7 @@ pub struct PolicyWmSessionTransport {
     read_buffer: Vec<u8>,
     peer: Option<PolicyPeerIdentity>,
     profile_activation: bool,
+    capability_limit: u64,
 }
 
 impl PolicyWmSessionTransport {
@@ -131,6 +132,7 @@ impl PolicyWmSessionTransport {
             read_buffer: Vec::new(),
             peer: None,
             profile_activation,
+            capability_limit: u64::MAX,
         }
     }
 
@@ -196,6 +198,17 @@ impl PolicyWmSessionTransport {
         self.connection.selected_capabilities()
     }
 
+    /// Narrow mechanisms before negotiation to those this session can execute.
+    /// A negotiated connection cannot change its advertised authority in place.
+    /// Repeated calls only narrow the ceiling, including across disconnects.
+    pub fn limit_capabilities(&mut self, supported: u64) -> Result<(), PolicyTransportError> {
+        if self.stream.is_some() {
+            return Err(PolicyTransferError::AlreadyConnected.into());
+        }
+        self.capability_limit &= supported;
+        Ok(())
+    }
+
     pub fn accept_and_negotiate(
         &mut self,
         connection_epoch: u64,
@@ -219,7 +232,8 @@ impl PolicyWmSessionTransport {
                 .set_write_timeout(Some(timeout))
                 .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
             let frame = read_policy_frame(&mut stream)?;
-            let hello = decode_wm_v1_client_hello_frame(&frame)?;
+            let mut hello = decode_wm_v1_client_hello_frame(&frame)?;
+            hello.capabilities &= self.capability_limit;
             let mut connection = self.connection.clone();
             connection.connect(connection_epoch)?;
             let welcome =
@@ -600,6 +614,17 @@ impl PolicyWmSessionTransport {
         }
         let frame = if matches!(
             request.cause,
+            sophia_protocol::PolicyRequestCause::PresentationAction { .. }
+        ) {
+            let required = sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
+                | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
+            if self.connection.selected_capabilities() & required != required {
+                return Err(PolicyTransferError::UnsupportedCapability.into());
+            }
+            let wire = sophia_protocol::encode_wm_presentation_action_request(request)?;
+            sophia_protocol::encode_wm_v1_presentation_action_request_frame(transaction, &wire)?
+        } else if matches!(
+            request.cause,
             sophia_protocol::PolicyRequestCause::OutputAction { .. }
         ) {
             if self.connection.selected_capabilities()
@@ -638,6 +663,30 @@ impl PolicyWmSessionTransport {
             outcome,
         )?;
         let frame = encode_wm_v1_projection_outcome_frame(transaction, &outcome)?;
+        stream
+            .write_all(&frame)
+            .and_then(|()| stream.flush())
+            .map_err(|error| PolicyTransportError::Io(error.to_string()))
+    }
+
+    pub fn send_presentation_receipt(
+        &mut self,
+        transaction: TransactionId,
+        receipt: sophia_protocol::PolicyPresentationReceipt,
+    ) -> Result<(), PolicyTransportError> {
+        if receipt.connection_epoch != self.connection.connection_epoch()
+            || self.connection.selected_capabilities()
+                & sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
+                == 0
+        {
+            return Err(PolicyTransferError::UnsupportedCapability.into());
+        }
+        let wire = sophia_protocol::encode_wm_presentation_receipt(receipt)?;
+        let frame = sophia_protocol::encode_wm_v1_presentation_outcome_frame(transaction, &wire)?;
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or(PolicyTransportError::NotConnected)?;
         stream
             .write_all(&frame)
             .and_then(|()| stream.flush())

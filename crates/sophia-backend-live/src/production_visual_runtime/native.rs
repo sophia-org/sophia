@@ -327,6 +327,9 @@ impl LiveProductionVisualRuntime {
         self.input_projections = (0..self.outputs.output_count())
             .filter_map(|index| self.outputs.output_id(index))
             .map(|output| LivePresentedInputProjection {
+                policy_publication: None,
+                frame_completed: false,
+                policy_visible: false,
                 output,
                 epoch: invalidation_epoch,
                 layers: Vec::new(),
@@ -509,6 +512,9 @@ impl LiveProductionVisualRuntime {
         let input_projections = outputs
             .iter()
             .map(|output| LivePresentedInputProjection {
+                policy_publication: None,
+                frame_completed: false,
+                policy_visible: false,
                 output: output.id,
                 epoch: input_epoch,
                 layers: Vec::new(),

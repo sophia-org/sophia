@@ -482,6 +482,7 @@ pub fn tile_policy_scene(
         });
     }
     Ok(PolicyProjectionProposal {
+        presentation: None,
         launch_contexts: Vec::new(),
         output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),

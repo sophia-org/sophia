@@ -303,6 +303,7 @@ fn advance_application_input_security_epoch(
 }
 
 struct PhysicalInputRoutingContext<'a> {
+    policy_presentation: Option<PolicyPresentedInputRouting<'a>>,
     focus: &'a InputFocusState,
     committed_surfaces: &'a [CommittedSurfaceState],
     input_layers: &'a [LayerSnapshot],
@@ -369,6 +370,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
 ) -> Result<PhysicalInputRouteReport, Box<dyn std::error::Error>> {
     let events = poller.poll_ready()?;
     let PhysicalInputRoutingContext {
+        policy_presentation,
         focus,
         committed_surfaces,
         input_layers,
@@ -458,6 +460,7 @@ fn route_physical_input<P: NonBlockingInputPoller>(
         repaint_due,
         motion_held_since,
         frame_interval,
+        policy_presentation,
     )
 }
 
@@ -615,10 +618,12 @@ fn route_input_events_with_pointer_focus(
         true,
         &mut None,
         std::time::Duration::ZERO,
+        None,
     )
 }
 
 include!("input/routing.rs");
+include!("input/policy_presentation.rs");
 
 /// Deliver, in order, the inputs a coalescer released.
 ///

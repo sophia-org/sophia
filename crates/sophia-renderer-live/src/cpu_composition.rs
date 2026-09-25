@@ -1,6 +1,8 @@
 mod pixel_storage;
+mod scaled;
 mod solid;
 pub use pixel_storage::LiveCpuPixelStorage;
+use scaled::compose_scaled_layer;
 pub use solid::solid_color_buffer;
 use solid::{compose_solid_rect, compose_solid_rect_clipped};
 use std::sync::{Arc, OnceLock};
@@ -87,6 +89,16 @@ pub struct LiveCpuCompositionLayerRef<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveCpuCompositionElementRef<'a> {
     Layer(LiveCpuCompositionLayerRef<'a>),
+    /// A surface instance: the whole source scaled into `layer.geometry`,
+    /// clipped to `clip`, at `opacity_millis`. Opacity multiplies the
+    /// premultiplied source as the native path's layer alpha does, so a
+    /// translucent source at partial opacity is attenuated once, and at
+    /// 1000 the pixels are exactly an unscaled layer's.
+    ScaledLayer {
+        layer: LiveCpuCompositionLayerRef<'a>,
+        clip: Rect,
+        opacity_millis: u16,
+    },
     Solid {
         opacity: u8,
         geometry: Rect,
@@ -483,6 +495,13 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_curso
                     LiveCpuCompositionElementRef::Layer(layer) => {
                         compose_layer_clipped(&mut frame, layer, clip)
                     }
+                    LiveCpuCompositionElementRef::ScaledLayer {
+                        layer,
+                        clip: bounds,
+                        opacity_millis,
+                    } => clip_rect(clip, *bounds).is_some_and(|clip| {
+                        compose_scaled_layer(&mut frame, layer, clip, *opacity_millis)
+                    }),
                     LiveCpuCompositionElementRef::Solid {
                         opacity,
                         geometry,
@@ -510,6 +529,11 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_curso
             for element in elements {
                 let composed = match element {
                     LiveCpuCompositionElementRef::Layer(layer) => compose_layer(&mut frame, layer),
+                    LiveCpuCompositionElementRef::ScaledLayer {
+                        layer,
+                        clip,
+                        opacity_millis,
+                    } => compose_scaled_layer(&mut frame, layer, *clip, *opacity_millis),
                     LiveCpuCompositionElementRef::Solid {
                         opacity,
                         geometry,
@@ -576,8 +600,20 @@ fn composition_evidence_metrics(
     }
     let mut nonzero_evidence = 0usize;
     for element in elements {
+        if let LiveCpuCompositionElementRef::ScaledLayer {
+            clip,
+            opacity_millis,
+            ..
+        } = element
+        {
+            for value in [clip.x, clip.y, clip.width, clip.height] {
+                checksum = evidence_hash(checksum, value as u32 as u64);
+            }
+            checksum = evidence_hash(checksum, u64::from(*opacity_millis));
+        }
         match element {
-            LiveCpuCompositionElementRef::Layer(layer) => {
+            LiveCpuCompositionElementRef::Layer(layer)
+            | LiveCpuCompositionElementRef::ScaledLayer { layer, .. } => {
                 for value in [
                     layer.buffer.handle,
                     layer.buffer.generation,

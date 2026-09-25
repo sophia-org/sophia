@@ -27,6 +27,8 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | `ProfileRollback` | 51 | session-to-policy | must be nonzero | 48 |
 | `ProfileRolledBack` | 52 | policy-to-session | must be nonzero | 52 |
 | `OutputActionRequest` | 53 | session-to-policy | must be nonzero | ..196 |
+| `PresentationActionRequest` | 54 | session-to-policy | must be nonzero | ..228 |
+| `PresentationOutcome` | 55 | session-to-policy | must be nonzero | 44 |
 
 ## `ClientHello`
 
@@ -272,6 +274,38 @@ The common frame is 24-byte, little-endian Sophia IPC frame version 1. The inter
 | 66 | `reserved` | `u16` | must be zero |
 | 68 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
 
+## `PresentationActionRequest`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `request_id` | `u64` | little-endian |
+| 16 | `scene_generation` | `u64` | little-endian |
+| 24 | `policy_generation` | `u64` | little-endian |
+| 32 | `activation_serial` | `u64` | little-endian |
+| 40 | `action` | `u64` | little-endian |
+| 48 | `output` | `u64` | little-endian |
+| 56 | `output_generation` | `u64` | little-endian |
+| 64 | `publication_generation` | `u64` | little-endian |
+| 72 | `presentation_epoch` | `u64` | little-endian |
+| 80 | `target_id` | `u64` | little-endian |
+| 88 | `target_generation` | `u64` | little-endian |
+| 96 | `affected_output_count` | `u16` | little-endian |
+| 98 | `reserved` | `u16` | must be zero |
+| 100 | `affected_outputs` | `bytes` | at most 128 bytes; consumes payload tail |
+
+## `PresentationOutcome`
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `connection_epoch` | `u64` | little-endian |
+| 8 | `publication_generation` | `u64` | little-endian |
+| 16 | `output` | `u64` | little-endian |
+| 24 | `output_generation` | `u64` | little-endian |
+| 32 | `presentation_epoch` | `u64` | little-endian |
+| 40 | `outcome` | `u16` | little-endian |
+| 42 | `reserved` | `u16` | must be zero |
+
 # Transfer Records
 
 ## `SnapshotOutput` record
@@ -509,3 +543,89 @@ Transfer: `projection`; record kind: 0xFF04; gated on capability `translation_gr
 | 8 | `group` | `u64` | little-endian |
 | 16 | `surface_index` | `u32` | little-endian |
 | 20 | `surface_generation` | `u32` | little-endian |
+
+## `ProjectionPresentation` extension record
+
+Transfer: `projection`; record kind: 0xFF09; gated on capability `surface_instances`; maximum records: 1; fixed size: 32 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `generation` | `u64` | little-endian |
+| 8 | `keyboard_output` | `u64` | little-endian |
+| 16 | `output_count` | `u16` | little-endian |
+| 18 | `binding_count` | `u16` | little-endian |
+| 20 | `instance_count` | `u32` | little-endian |
+| 24 | `region_count` | `u32` | little-endian |
+| 28 | `reserved` | `u32` | little-endian |
+
+## `ProjectionPresentationOutput` extension record
+
+Transfer: `projection`; record kind: 0xFF0A; gated on capability `surface_instances`; maximum records: 16; fixed size: 40 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `output` | `u64` | little-endian |
+| 8 | `generation` | `u64` | little-endian |
+| 16 | `x` | `i32` | little-endian |
+| 20 | `y` | `i32` | little-endian |
+| 24 | `width` | `i32` | little-endian |
+| 28 | `height` | `i32` | little-endian |
+| 32 | `mode` | `u16` | little-endian |
+| 34 | `reserved` | `u16` | little-endian |
+| 36 | `reserved_tail` | `u32` | little-endian |
+
+## `ProjectionSurfaceInstance` extension record
+
+Transfer: `projection`; record kind: 0xFF0B; gated on capability `surface_instances`; maximum records: 1024; fixed size: 80 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `id` | `u64` | little-endian |
+| 8 | `generation` | `u64` | little-endian |
+| 16 | `output` | `u64` | little-endian |
+| 24 | `source_index` | `u32` | little-endian |
+| 28 | `source_generation` | `u32` | little-endian |
+| 32 | `x` | `i32` | little-endian |
+| 36 | `y` | `i32` | little-endian |
+| 40 | `width` | `i32` | little-endian |
+| 44 | `height` | `i32` | little-endian |
+| 48 | `clip_x` | `i32` | little-endian |
+| 52 | `clip_y` | `i32` | little-endian |
+| 56 | `clip_width` | `i32` | little-endian |
+| 60 | `clip_height` | `i32` | little-endian |
+| 64 | `opacity_millis` | `u16` | little-endian |
+| 66 | `z_index` | `u16` | little-endian |
+| 68 | `reserved` | `u32` | little-endian |
+| 72 | `action` | `u64` | little-endian |
+
+## `ProjectionPresentationRegion` extension record
+
+Transfer: `projection`; record kind: 0xFF0C; gated on capability `surface_instances`; maximum records: 1024; fixed size: 72 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `id` | `u64` | little-endian |
+| 8 | `generation` | `u64` | little-endian |
+| 16 | `output` | `u64` | little-endian |
+| 24 | `x` | `i32` | little-endian |
+| 28 | `y` | `i32` | little-endian |
+| 32 | `width` | `i32` | little-endian |
+| 36 | `height` | `i32` | little-endian |
+| 40 | `clip_x` | `i32` | little-endian |
+| 44 | `clip_y` | `i32` | little-endian |
+| 48 | `clip_width` | `i32` | little-endian |
+| 52 | `clip_height` | `i32` | little-endian |
+| 56 | `z_index` | `u16` | little-endian |
+| 58 | `role` | `u16` | little-endian |
+| 60 | `reserved` | `u32` | little-endian |
+| 64 | `action` | `u64` | little-endian |
+
+## `ProjectionPresentationBinding` extension record
+
+Transfer: `projection`; record kind: 0xFF0D; gated on capability `presentation_actions`; maximum records: 256; fixed size: 16 bytes.
+
+| Offset | Field | Type | Rule |
+| ---: | --- | --- | --- |
+| 0 | `action` | `u64` | little-endian |
+| 8 | `keycode` | `u32` | little-endian |
+| 12 | `modifiers` | `u32` | little-endian |

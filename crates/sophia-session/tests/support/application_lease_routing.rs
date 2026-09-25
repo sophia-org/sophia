@@ -107,6 +107,9 @@ fn event(serial: u64, kind: InputEventKind, x: f64) -> InputEventPacket {
 
 fn projection(layers: Vec<LayerSnapshot>) -> sophia_backend_live::LivePresentedInputProjection {
     sophia_backend_live::LivePresentedInputProjection {
+        policy_publication: None,
+        frame_completed: false,
+        policy_visible: false,
         output: OutputId::from_raw(1),
         epoch: 5,
         layers,
@@ -592,7 +595,60 @@ fn a_bound_grab_routes_physical_motion_and_release_after_a_scene_change() {
         target,
         sophia_protocol::SurfacePresentationRole::PolicyManaged,
     );
-    let scene = projection(vec![layer, unrelated]);
+    let mut scene = projection(vec![layer, unrelated]);
+    let mut policy = sophia_engine::PresentedPolicyState::default();
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 100,
+    };
+    policy
+        .admit(
+            1,
+            sophia_protocol::PolicyPresentation {
+                generation: 1,
+                keyboard_output: Some(scene.output),
+                outputs: vec![sophia_protocol::PolicyPresentationOutput {
+                    output: scene.output,
+                    generation: 1,
+                    coverage: bounds,
+                    mode: sophia_protocol::PolicyPresentationMode::Overlay,
+                }],
+                instances: vec![],
+                bindings: vec![],
+                regions: vec![sophia_protocol::PolicyPresentationRegion {
+                    id: 1,
+                    generation: 1,
+                    output: scene.output,
+                    geometry: bounds,
+                    clip: bounds,
+                    z_index: 1,
+                    role: sophia_protocol::PolicyPresentationRegionRole::Backdrop,
+                    action: Some(WmActionId::from_raw(77)),
+                }],
+            },
+        )
+        .unwrap();
+    policy
+        .complete(sophia_engine::PolicyPresentationCompletion {
+            owner_epoch: 1,
+            publication_generation: 1,
+            output: scene.output,
+            output_generation: 1,
+        })
+        .unwrap();
+    scene.frame_completed = true;
+    scene.policy_visible = true;
+    scene.policy_publication = Some(sophia_backend_live::LivePresentedPolicyPublication {
+        owner_epoch: 1,
+        generation: 1,
+        output: scene.output,
+        output_generation: 1,
+        instances: vec![],
+        regions: vec![(1, 1)],
+    });
+    let mut policy_capture = sophia_engine::PolicyInputCapture::default();
     let mut state = ApplicationRouteLeaseState::default();
     let lease = bound_lease(&mut state, target, own);
     let (sender, receiver) = sync_channel(8);
@@ -649,7 +705,7 @@ fn a_bound_grab_routes_physical_motion_and_release_after_a_scene_change() {
         Some(&release_sender),
         Some(scene.output),
         scene.epoch,
-        None,
+        Some(std::slice::from_ref(&scene)),
         None,
         None,
         None,
@@ -658,6 +714,11 @@ fn a_bound_grab_routes_physical_motion_and_release_after_a_scene_change() {
         true,
         &mut None,
         std::time::Duration::ZERO,
+        Some(PolicyPresentedInputRouting {
+            state: &policy,
+            capture: &mut policy_capture,
+            protected_actions: vec![],
+        }),
     )
     .unwrap();
     assert!(
@@ -824,6 +885,7 @@ fn route_pointer_batch_paced(
         repaint_due,
         held_since,
         frame_interval,
+        None,
     )
     .unwrap();
     let delivered = receiver

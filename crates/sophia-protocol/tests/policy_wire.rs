@@ -207,6 +207,58 @@ fn generated_rust_record_codec_matches_every_golden_record() {
                 }
                 encoded
             }
+            "projection_presentation"
+            | "projection_presentation_output"
+            | "projection_surface_instance"
+            | "projection_presentation_region"
+            | "projection_presentation_binding" => {
+                let records = [
+                    (
+                        "projection_presentation",
+                        PROJECTION_PRESENTATION_RECORD_KIND,
+                    ),
+                    (
+                        "projection_presentation_output",
+                        PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND,
+                    ),
+                    (
+                        "projection_surface_instance",
+                        PROJECTION_SURFACE_INSTANCE_RECORD_KIND,
+                    ),
+                    (
+                        "projection_presentation_region",
+                        PROJECTION_PRESENTATION_REGION_RECORD_KIND,
+                    ),
+                    (
+                        "projection_presentation_binding",
+                        PROJECTION_PRESENTATION_BINDING_RECORD_KIND,
+                    ),
+                ];
+                let chunks = records
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, (label, kind))| WmV1ProjectionChunk {
+                        connection_epoch: 1,
+                        ordinal: ordinal as u16,
+                        record_kind: *kind,
+                        item_count: 1,
+                        data: RECORD_CORPUS
+                            .lines()
+                            .find_map(|line| line.strip_prefix(&format!("{label}|")))
+                            .map(decode_hex)
+                            .unwrap(),
+                    })
+                    .collect::<Vec<_>>();
+                let presentation = decode_wm_presentation(&chunks).unwrap().unwrap();
+                assert_eq!(presentation.instances[0].id, 2);
+                let index = records
+                    .iter()
+                    .position(|(label, _)| *label == name)
+                    .unwrap();
+                encode_wm_presentation(Some(&presentation), 1, 0).unwrap()[index]
+                    .data
+                    .clone()
+            }
             other => panic!("unknown record `{other}`"),
         };
         assert_eq!(encoded, data, "golden mismatch for {name}");
@@ -373,6 +425,16 @@ fn roundtrip(name: &str, transaction: u64, frame: &[u8]) -> Vec<u8> {
             let (actual, message) = decode_wm_v1_profile_rolled_back_frame(frame).unwrap();
             assert_eq!(actual, expected_transaction);
             encode_wm_v1_profile_rolled_back_frame(actual, &message).unwrap()
+        }
+        "presentation_action_request" => {
+            let (actual, message) = decode_wm_v1_presentation_action_request_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_presentation_action_request_frame(actual, &message).unwrap()
+        }
+        "presentation_outcome" => {
+            let (actual, message) = decode_wm_v1_presentation_outcome_frame(frame).unwrap();
+            assert_eq!(actual, expected_transaction);
+            encode_wm_v1_presentation_outcome_frame(actual, &message).unwrap()
         }
         other => panic!("unknown golden message `{other}`"),
     }

@@ -36,6 +36,8 @@ pub enum IpcMessageKind {
     WmV1ProfileRollback = 51,
     WmV1ProfileRolledBack = 52,
     WmV1OutputActionRequest = 53,
+    WmV1PresentationActionRequest = 54,
+    WmV1PresentationOutcome = 55,
     OutputV1ClientHello = 64,
     OutputV1ServerWelcome = 65,
     OutputV1Snapshot = 66,

@@ -7,6 +7,253 @@ use sophia_protocol::{
     PolicyTransform, Rect, SurfaceConstraints, SurfaceId, TransactionId, WmActionId,
 };
 
+fn instance_presentation() -> sophia_protocol::PolicyPresentation {
+    use sophia_protocol::*;
+    PolicyPresentation {
+        generation: 1,
+        keyboard_output: None,
+        outputs: vec![PolicyPresentationOutput {
+            output: output(1),
+            generation: 1,
+            coverage: rect(0, 0),
+            mode: PolicyPresentationMode::Overlay,
+        }],
+        instances: vec![PolicySurfaceInstance {
+            id: 1,
+            generation: 1,
+            output: output(1),
+            source: surface_id(1),
+            destination: rect(0, 0),
+            clip: rect(0, 0),
+            opacity_millis: 1000,
+            z_index: 0,
+            action: None,
+        }],
+        regions: Vec::new(),
+        bindings: Vec::new(),
+    }
+}
+
+#[test]
+fn presentation_action_membership_and_local_revocation_reject_late_successors() {
+    use sophia_protocol::PolicyPresentationIdentity;
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut initial = proposal(&request, 1, vec![projected(output(1), vec![], None)]);
+    let mut p = instance_presentation();
+    p.instances[0].action = Some(WmActionId::from_raw(10));
+    initial.presentation = Some(p);
+    assert_eq!(
+        reducer.apply_proposal(&initial),
+        PolicyProjectionOutcome::Committed
+    );
+    let action = PolicyRequestCause::PresentationAction {
+        activation_serial: 1,
+        action: WmActionId::from_raw(10),
+        identity: PolicyPresentationIdentity {
+            publication_generation: 1,
+            output: output(1),
+            output_generation: 1,
+            presentation_epoch: 17,
+            target_id: 1,
+            target_generation: 1,
+        },
+    };
+    for case in 0..6 {
+        let PolicyRequestCause::PresentationAction {
+            activation_serial,
+            mut action,
+            mut identity,
+        } = action
+        else {
+            unreachable!()
+        };
+        match case {
+            0 => identity.publication_generation += 1,
+            1 => identity.target_generation += 1,
+            2 => identity.output_generation += 1,
+            3 => identity.target_id += 1,
+            4 => action = WmActionId::from_raw(11),
+            _ => {
+                identity.target_id = 0;
+                identity.target_generation = 0;
+            }
+        }
+        assert!(
+            reducer
+                .issue_request_with_cause(
+                    vec![output(1)],
+                    PolicyRequestCause::PresentationAction {
+                        activation_serial,
+                        action,
+                        identity
+                    }
+                )
+                .is_err()
+        );
+    }
+    assert!(
+        reducer
+            .issue_request_with_cause(vec![output(2)], action)
+            .is_err()
+    );
+    let request = reducer
+        .issue_request_with_cause(vec![output(1)], action)
+        .unwrap();
+    let mut reply = proposal(&request, 2, vec![projected(output(1), vec![], None)]);
+    reply.presentation = initial.presentation;
+    let staged = reducer.stage_proposal(&reply).unwrap();
+    reducer.revoke_presentation();
+    assert!(!reducer.presentation_cause_is_current(action));
+    assert_eq!(
+        reducer.revalidate_staged(&staged),
+        PolicyProjectionOutcome::RejectedStale
+    );
+    let mut late = reducer.clone();
+    assert_eq!(
+        late.apply_proposal(&reply),
+        PolicyProjectionOutcome::RejectedStale
+    );
+    assert_eq!(
+        reducer.commit_staged(staged),
+        PolicyProjectionOutcome::RejectedStale
+    );
+    assert!(reducer.presentation_publication().is_none());
+}
+
+#[test]
+fn presentation_requires_current_sources_output_generations_and_affected_scope() {
+    for case in 0..4 {
+        let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+        reducer.connect(1).unwrap();
+        let request = reducer.issue_request(vec![output(1)]).unwrap();
+        let mut candidate = proposal(&request, 1, vec![projected(output(1), vec![], None)]);
+        let mut p = instance_presentation();
+        match case {
+            0 => p.instances[0].source = surface_id(99),
+            1 => p.outputs[0].generation += 1,
+            2 => p.outputs[0].coverage.width = i32::MAX,
+            _ => {
+                p.outputs[0].output = output(2);
+                p.instances[0].output = output(2);
+                p.outputs[0].coverage.x = 1000;
+                p.instances[0].destination.x = 1000;
+                p.instances[0].clip.x = 1000;
+            }
+        }
+        candidate.presentation = Some(p);
+        assert_eq!(
+            reducer.apply_proposal(&candidate),
+            PolicyProjectionOutcome::RejectedInvalid,
+            "case {case}"
+        );
+        assert!(reducer.presentation_publication().is_none());
+        assert_eq!(reducer.commit_serial(), 0);
+    }
+}
+
+#[test]
+fn presentation_is_staged_atomically_and_content_changes_preserve_target_identity() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut proposal = proposal(&request, 1, vec![projected(output(1), vec![], None)]);
+    proposal.presentation = Some(instance_presentation());
+    let staged = reducer.stage_proposal(&proposal).unwrap();
+    assert!(reducer.presentation_publication().is_none());
+    assert_eq!(
+        reducer.commit_staged(staged),
+        PolicyProjectionOutcome::Committed
+    );
+    let before = reducer.presentation_publication().unwrap().1.clone();
+    let mut updated_source = surface(1);
+    updated_source.generation += 1;
+    reducer.observe_scene(scene(2, &[updated_source])).unwrap();
+    assert_eq!(reducer.presentation_publication().unwrap().1, &before);
+    assert!(
+        reducer.committed()[0].placements.is_empty(),
+        "preview-only source must stay unplaced"
+    );
+}
+
+#[test]
+fn target_mutation_and_retired_identity_reuse_cannot_replace_committed_presentation() {
+    let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+    reducer.connect(1).unwrap();
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut initial = proposal(&request, 1, vec![projected(output(1), vec![], None)]);
+    initial.presentation = Some(instance_presentation());
+    assert_eq!(
+        reducer.apply_proposal(&initial),
+        PolicyProjectionOutcome::Committed
+    );
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut changed = proposal(&request, 2, vec![projected(output(1), vec![], None)]);
+    let mut p = instance_presentation();
+    p.generation = 2;
+    p.instances[0].opacity_millis = 500;
+    changed.presentation = Some(p);
+    assert_eq!(
+        reducer.apply_proposal(&changed),
+        PolicyProjectionOutcome::RejectedInvalid
+    );
+    assert_eq!(
+        reducer.presentation_publication().unwrap().1,
+        initial.presentation.as_ref().unwrap()
+    );
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let closed = proposal(&request, 3, vec![projected(output(1), vec![], None)]);
+    assert_eq!(
+        reducer.apply_proposal(&closed),
+        PolicyProjectionOutcome::Committed
+    );
+    assert!(reducer.presentation_publication().is_none());
+    let request = reducer.issue_request(vec![output(1)]).unwrap();
+    let mut reused = proposal(&request, 4, vec![projected(output(1), vec![], None)]);
+    let mut p = instance_presentation();
+    p.generation = 3;
+    p.instances[0].generation = 3;
+    reused.presentation = Some(p);
+    assert_eq!(
+        reducer.apply_proposal(&reused),
+        PolicyProjectionOutcome::RejectedInvalid
+    );
+    assert!(reducer.presentation_publication().is_none());
+}
+
+#[test]
+fn source_loss_topology_change_and_reconnect_revoke_presentation() {
+    for cause in 0..3 {
+        let mut reducer = PolicyProjectionReducer::new(scene(1, &[surface(1)])).unwrap();
+        reducer.connect(1).unwrap();
+        let request = reducer.issue_request(vec![output(1)]).unwrap();
+        let mut p = proposal(&request, 1, vec![projected(output(1), vec![], None)]);
+        p.presentation = Some(instance_presentation());
+        assert_eq!(
+            reducer.apply_proposal(&p),
+            PolicyProjectionOutcome::Committed
+        );
+        match cause {
+            0 => reducer.observe_scene(scene(2, &[])).unwrap(),
+            1 => {
+                let mut next = scene(2, &[surface(1)]);
+                next.outputs[1].generation += 1;
+                reducer.observe_scene(next).unwrap();
+            }
+            _ => {
+                reducer.disconnect(1);
+                reducer.connect(2).unwrap();
+            }
+        }
+        assert!(reducer.presentation_publication().is_none());
+        assert_ne!(
+            reducer.apply_proposal(&p),
+            PolicyProjectionOutcome::Committed
+        );
+    }
+}
+
 #[test]
 fn translation_groups_cannot_duplicate_members_or_cross_affected_outputs() {
     for invalid_case in 0..4 {
@@ -640,6 +887,7 @@ fn proposal(
     outputs: Vec<PolicyOutputProjection>,
 ) -> PolicyProjectionProposal {
     PolicyProjectionProposal {
+        presentation: None,
         launch_contexts: Vec::new(),
         output_launch_contexts: Vec::new(),
         translation_groups: Vec::new(),

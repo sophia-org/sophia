@@ -20,6 +20,15 @@ pub(crate) trait NativeCompositionTarget {
     ) -> Result<BTreeMap<OutputId, crate::LiveProductionNativeFrameId>, Box<dyn std::error::Error>>;
     fn retained_repaint_deferred(&self) -> bool;
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot>;
+    /// The frame each of this output's heads last retired, one entry per
+    /// head, primary first. A mirror head that has retired nothing yet is
+    /// None. What a whole output has presented is only what every head has.
+    /// Consumed by t245's presented-input publish path; until that joins, only
+    /// the lifecycle tests read it.
+    #[allow(dead_code)]
+    fn presented_head_frames(&self, output: OutputId) -> Vec<Option<&OutputFrameDamageSnapshot>> {
+        vec![self.presented_frame(output)]
+    }
 }
 
 impl NativeCompositionTarget for LiveProductionNativeScanout {
@@ -58,5 +67,8 @@ impl NativeCompositionTarget for LiveProductionNativeScanout {
     }
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot> {
         self.presented_output_frame(output)
+    }
+    fn presented_head_frames(&self, output: OutputId) -> Vec<Option<&OutputFrameDamageSnapshot>> {
+        self.presented_output_head_frames(output)
     }
 }

@@ -432,8 +432,18 @@ impl NativeCompositionTarget for MirroredTarget {
     fn presented_frame(&self, output: OutputId) -> Option<&OutputFrameDamageSnapshot> {
         self.heads[self.outputs[&output][0]].frames.presented()
     }
+    fn presented_head_frames(&self, output: OutputId) -> Vec<Option<&OutputFrameDamageSnapshot>> {
+        self.outputs[&output]
+            .iter()
+            .map(|index| self.heads[*index].frames.presented())
+            .collect()
+    }
 }
 
+#[path = "presentation_geometry.rs"]
+mod presentation_geometry;
+#[path = "presentation_instances.rs"]
+mod presentation_instances;
 #[path = "mirrored_intake_tests.rs"]
 mod tests;
 

@@ -8,6 +8,7 @@ pub(super) struct PhysicalInputRouteReport {
     pub(super) events: usize,
     pub(super) wm_actions: Vec<WmActionId>,
     pub(super) policy_inputs: Vec<PhysicalPolicyInput>,
+    pub(super) presentation_capacity_exceeded: bool,
     pub(super) launcher_events: Vec<sophia_engine::LauncherInputEvent>,
     pub(super) reference_operations: Vec<(sophia_protocol::OutputId,u64,sophia_protocol::ShellReferenceOperation)>,
     pub(super) chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,

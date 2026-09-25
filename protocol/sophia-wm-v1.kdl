@@ -17,6 +17,8 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
     capability "output_actions" bit=15
     capability "output_policy_keys" bit=16
     capability "output_launch_context" bit=17
+    capability "surface_instances" bit=18
+    capability "presentation_actions" bit=19
 
     outcome "committed" value=1
     outcome "rejected_stale" value=2
@@ -193,6 +195,68 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "group" type="u64" sample=1
         field "surface_index" type="u32" sample=1
         field "surface_generation" type="u32" sample=1
+    }
+
+    extension-record "ProjectionPresentation" transfer="projection" kind=65289 gate="surface_instances" max=1 {
+        field "generation" type="u64" sample=1
+        field "keyboard_output" type="u64" sample=1
+        field "output_count" type="u16" sample=1
+        field "binding_count" type="u16" sample=1
+        field "instance_count" type="u32" sample=1
+        field "region_count" type="u32" sample=1
+        field "reserved" type="u32" sample=0
+    }
+    extension-record "ProjectionPresentationOutput" transfer="projection" kind=65290 gate="surface_instances" max=16 {
+        field "output" type="u64" sample=1
+        field "generation" type="u64" sample=1
+        field "x" type="i32" sample=0
+        field "y" type="i32" sample=0
+        field "width" type="i32" sample=1280
+        field "height" type="i32" sample=720
+        field "mode" type="u16" sample=2
+        field "reserved" type="u16" sample=0
+        field "reserved_tail" type="u32" sample=0
+    }
+    extension-record "ProjectionSurfaceInstance" transfer="projection" kind=65291 gate="surface_instances" max=1024 {
+        field "id" type="u64" sample=2
+        field "generation" type="u64" sample=1
+        field "output" type="u64" sample=1
+        field "source_index" type="u32" sample=1
+        field "source_generation" type="u32" sample=1
+        field "x" type="i32" sample=100
+        field "y" type="i32" sample=100
+        field "width" type="i32" sample=320
+        field "height" type="i32" sample=180
+        field "clip_x" type="i32" sample=100
+        field "clip_y" type="i32" sample=100
+        field "clip_width" type="i32" sample=320
+        field "clip_height" type="i32" sample=180
+        field "opacity_millis" type="u16" sample=1000
+        field "z_index" type="u16" sample=1
+        field "reserved" type="u32" sample=0
+        field "action" type="u64" sample=5
+    }
+    extension-record "ProjectionPresentationRegion" transfer="projection" kind=65292 gate="surface_instances" max=1024 {
+        field "id" type="u64" sample=1
+        field "generation" type="u64" sample=1
+        field "output" type="u64" sample=1
+        field "x" type="i32" sample=0
+        field "y" type="i32" sample=0
+        field "width" type="i32" sample=1280
+        field "height" type="i32" sample=720
+        field "clip_x" type="i32" sample=0
+        field "clip_y" type="i32" sample=0
+        field "clip_width" type="i32" sample=1280
+        field "clip_height" type="i32" sample=720
+        field "z_index" type="u16" sample=0
+        field "role" type="u16" sample=1
+        field "reserved" type="u32" sample=0
+        field "action" type="u64" sample=0
+    }
+    extension-record "ProjectionPresentationBinding" transfer="projection" kind=65293 gate="presentation_actions" max=256 {
+        field "action" type="u64" sample=5
+        field "keycode" type="u32" sample=28
+        field "modifiers" type="u32" sample=0
     }
 
     message "ClientHello" kind=32 direction="policy-to-session" transaction="zero" {
@@ -379,5 +443,31 @@ protocol "sophia_wm_v1" frame-version=1 interface-major=1 interface-revision=3 m
         field "affected_output_count" type="u16" sample=2
         field "reserved" type="u16" reserved=#true sample=0
         field "affected_outputs" type="bytes" max=128 sample="01000000000000000200000000000000"
+    }
+    message "PresentationActionRequest" kind=54 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "request_id" type="u64" sample=17
+        field "scene_generation" type="u64" sample=41
+        field "policy_generation" type="u64" sample=3
+        field "activation_serial" type="u64" sample=23
+        field "action" type="u64" sample=5
+        field "output" type="u64" sample=1
+        field "output_generation" type="u64" sample=1
+        field "publication_generation" type="u64" sample=1
+        field "presentation_epoch" type="u64" sample=7
+        field "target_id" type="u64" sample=2
+        field "target_generation" type="u64" sample=1
+        field "affected_output_count" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
+        field "affected_outputs" type="bytes" max=128 sample="0100000000000000"
+    }
+    message "PresentationOutcome" kind=55 direction="session-to-policy" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "publication_generation" type="u64" sample=1
+        field "output" type="u64" sample=1
+        field "output_generation" type="u64" sample=1
+        field "presentation_epoch" type="u64" sample=7
+        field "outcome" type="u16" sample=1
+        field "reserved" type="u16" reserved=#true sample=0
     }
 }

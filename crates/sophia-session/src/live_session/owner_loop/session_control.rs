@@ -688,7 +688,8 @@ macro_rules! service_layout_progress {
         }
         if pending_wm_update.is_none() && layout.pending_is_ready() {
             if let Some(wm) = wm_session.as_mut() {
-                if !wm.prepare_public_layout_commit(&layout)? {
+                if !wm.preflight_staged_presentation(runtime.as_ref(), native_scanout.as_ref())
+                    || !wm.prepare_public_layout_commit(&layout)? {
                     // Reservations can advance the canonical scene while a client
                     // answers a resize. Retire the old epoch through normal recovery
                     // before asking policy for a projection against the new work area.
@@ -752,5 +753,5 @@ macro_rules! service_layout_progress {
     }};
 }
 
-include!("physical_input_phase.rs")
+include!("policy_input_phase.rs")
 }

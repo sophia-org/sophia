@@ -304,6 +304,8 @@ impl LiveProductionCpuScene {
             .filter_map(|command| match command {
                 CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
                 CompositorDisplayCommand::Surface { .. }
+                | CompositorDisplayCommand::SurfaceInstance(_)
+                | CompositorDisplayCommand::PresentationStamp(_)
                 | CompositorDisplayCommand::Border(_)
                 | CompositorDisplayCommand::Rect(_)
                 | CompositorDisplayCommand::Text(_)
@@ -325,6 +327,8 @@ impl LiveProductionCpuScene {
             .filter_map(|command| match command {
                 CompositorDisplayCommand::Text(text) => Some(text),
                 CompositorDisplayCommand::Surface { .. }
+                | CompositorDisplayCommand::SurfaceInstance(_)
+                | CompositorDisplayCommand::PresentationStamp(_)
                 | CompositorDisplayCommand::Border(_)
                 | CompositorDisplayCommand::Rect(_)
                 | CompositorDisplayCommand::IndicatorStrip(_)
@@ -373,6 +377,36 @@ impl LiveProductionCpuScene {
                             },
                         },
                     ));
+                }
+                CompositorDisplayCommand::PresentationStamp(_) => {}
+                CompositorDisplayCommand::SurfaceInstance(instance) => {
+                    let Some(committed) = committed_surfaces
+                        .iter()
+                        .find(|committed| committed.surface == instance.source)
+                    else {
+                        continue;
+                    };
+                    let BufferSource::CpuBuffer { handle } = committed.buffer() else {
+                        continue;
+                    };
+                    let Some(buffer) = self.buffers.get(handle) else {
+                        continue;
+                    };
+                    elements.push(LiveCpuCompositionElementRef::ScaledLayer {
+                        layer: LiveCpuCompositionLayerRef {
+                            geometry: instance.destination,
+                            buffer: LiveCpuBufferSourceRef {
+                                handle: buffer.handle,
+                                size: buffer.size,
+                                stride: buffer.stride,
+                                format: buffer.format,
+                                generation: buffer.generation,
+                                bytes: &buffer.bytes,
+                            },
+                        },
+                        clip: instance.clip,
+                        opacity_millis: instance.opacity_millis,
+                    });
                 }
                 CompositorDisplayCommand::Border(border) => {
                     for band in sophia_engine::compositor_border_bands(*border) {

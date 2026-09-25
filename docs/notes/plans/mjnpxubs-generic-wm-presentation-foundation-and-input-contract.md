@@ -36,6 +36,14 @@ or the current X11 propagation work. No live installation or reload is authorize
 
 ### Required contract
 
+The implementation contract is [WM presentation and input](../../wm-presentation.md).
+niltempus approved execution of the paired implementation plan on 2026-09-25.
+The director owns the schema and WM integration, the renderer owner owns source
+instances/composition, and the session owner takes generic input after completing
+t099. The completed t220 propagation slice is the starting baseline `3b61790f`;
+its remaining unrelated exits stay queued. Archived overview WIP is signed
+`914858fa`, retained separately from the generic implementation.
+
 The reviewed contract must specify:
 
 1. The passive instance proposal: authorized source, distinct instance identity,
@@ -63,9 +71,8 @@ The reviewed contract must specify:
 The document must explain how generic mechanisms cover the use case without
 embedding a particular reference client's overview or shell vocabulary in Engine.
 No new toolkit, shader-upload interface, GPU negotiation policy, or unrelated
-desktop feature is implied. Acceptance of the contract and implementation
-admission remain explicit follow-up decisions; writing this plan does not close
-t242 or t241.
+desktop feature is implied. The subsequent authorization above admits the
+implementation; writing the contract alone does not close t242 or t241.
 
 ## Proposed queue handoff
 
@@ -81,6 +88,54 @@ text, not a second queue; active state and ordering belong exclusively to
 `todo.md`. t241 owns paired Sophia overview acceptance; Hagia h002 retains feature
 ownership. t099 owns the separate shell-popout allocation/dismissal seam and must
 be coordinated before shared input changes.
+
+## Implementation tracks
+
+These scopes describe the admitted breakdown; status and ordering remain in the
+queue. Existing work on t099 finishes before its owner moves to the foundation.
+
+### t243: Protocol and admission
+
+The protocol owner implements capability-gated fixed records, independent codec
+corpora, complete-set validation and atomic projection settlement. The exit is
+an independently decoded proposal accepted through the production policy reducer,
+with stale, malformed, unauthorized and legacy-client controls. The WM side stays
+in Hagia h002; protocol code never interprets overview action names.
+
+### t244: Composition and source ownership
+
+The renderer owner threads the passive instance/region records through immutable
+snapshots, CPU/native planning and rendering, per-instance damage, source lookup
+and retirement. The exit includes two instances of one source, a preview-only
+source, content-only updates, independent source/backing lifetime and the retained
+negative controls. Instance rendering never manufactures application input layers.
+
+### t245: Presented input and session lifecycle
+
+After t099 releases shared paths, the session owner joins admitted publications
+to actual presentation receipts, modal action delivery, retirement-bound input,
+local revocation, timeout and reconnect. The exit includes queue saturation,
+unsent-action refusal, stale/late replies, source/topology loss, capture continuity
+across content-only repaint and retained swallowed-release obligations. It depends
+on the protocol and composition records; t241 accepts the complete Hagia feature.
+
+## Accepted implementation evidence
+
+Signed Sophia source `6251aa79` and Hagia source `12d3142` satisfy the admitted
+headless exits. The [paired acceptance record](../investigations/ufhp04gq-workspace-overview-joins-policy-presentation-and-modal-input.md#final-joined-source)
+records exact identities, durable logs and limits. Independent C/Nim/Rust wire
+controls and legacy-client compatibility pass. Production rendering controls
+cover preview-only and repeated sources, content-only damage, source/backing
+retirement, CPU/native sampling models, mirrors and clipped target membership.
+Session controls cover actual retired projections, capture deferral, exact
+receipt/connection epochs, queue saturation, local revocation and release debt.
+
+The default workspace suite, affected native suites, strict Clippy, layout and
+the complete eight-phase family gate pass. These results close the implementation
+exits for t242–t245 and paired t241; active state remains solely in the queue.
+Narthex requires no overview service or source change. No live install/reload was
+performed. Physical display acceptance remains separate, and the renderer
+investigation retains the earlier unintended smoke attempts and their limits.
 
 ## Connections
 

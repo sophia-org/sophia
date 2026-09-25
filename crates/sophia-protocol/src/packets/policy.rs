@@ -177,6 +177,11 @@ pub enum PolicyRequestCause {
         output: OutputId,
         output_generation: u64,
     },
+    PresentationAction {
+        activation_serial: u64,
+        action: WmActionId,
+        identity: crate::PolicyPresentationIdentity,
+    },
     Focus {
         target: SurfaceId,
     },
@@ -283,6 +288,7 @@ pub struct PolicyProjectionOutputStatus {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyProjectionProposal {
+    pub presentation: Option<crate::PolicyPresentation>,
     pub output_launch_contexts: Vec<PolicyOutputLaunchContext>,
     pub launch_contexts: Vec<PolicyLaunchContext>,
     pub translation_groups: Vec<crate::PolicyTranslationGroup>,

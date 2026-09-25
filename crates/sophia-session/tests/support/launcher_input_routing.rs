@@ -54,6 +54,7 @@ fn route_overlay_input(
         true,
         &mut None,
         std::time::Duration::ZERO,
+        None,
     )
     .unwrap();
     assert_eq!(receiver.try_iter().count(), 0);

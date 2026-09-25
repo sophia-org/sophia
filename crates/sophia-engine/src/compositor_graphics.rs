@@ -57,6 +57,20 @@ pub enum CompositorNodeId {
         surface: u16,
         placement: u16,
     },
+    /// A WM surface instance: the admitted WM connection epoch qualifies the
+    /// WM's opaque id, so an id of an old connection cannot alias a new one.
+    /// Distinct from the source surface, which keeps its own identity.
+    PolicyInstance {
+        owner_epoch: u64,
+        id: u64,
+    },
+    /// A WM presentation region, drawn by Engine in its chrome palette.
+    /// Ids share the publication's namespace with instances; the variant
+    /// keeps a region distinct from an instance in every table.
+    PolicyRegion {
+        owner_epoch: u64,
+        id: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,9 +125,141 @@ pub struct CompositorIndicatorStrip {
 mod content_identity;
 pub use content_identity::*;
 
+/// A second presentation of a committed source surface, proposed by the WM
+/// and drawn by Engine: the source's committed content scaled into
+/// `destination` and clipped to `clip`. It changes neither the source's
+/// allocation nor its input geometry, and it is never an application input
+/// target. `generation` is the WM's interaction generation; the source's
+/// committed generation is resolved by Engine at frame capture
+/// ([`resolve_surface_instance_sources`]) and drives repaint without
+/// changing the interaction generation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorSurfaceInstance {
+    pub owner_epoch: u64,
+    pub id: u64,
+    pub generation: u64,
+    pub source: SurfaceId,
+    pub source_generation: u64,
+    pub destination: Rect,
+    pub clip: Rect,
+    pub opacity_millis: u16,
+}
+
+impl CompositorSurfaceInstance {
+    pub const fn node(&self) -> CompositorNodeId {
+        CompositorNodeId::PolicyInstance {
+            owner_epoch: self.owner_epoch,
+            id: self.id,
+        }
+    }
+
+    /// The pixels this instance can change: its destination within its clip.
+    pub fn visible(&self) -> Rect {
+        rect_intersection(self.destination, self.clip)
+    }
+
+    fn is_valid(&self) -> bool {
+        self.owner_epoch != 0
+            && self.id != 0
+            && self.generation != 0
+            && self.source.is_valid()
+            && self.source_generation != 0
+            && !self.destination.is_empty()
+            && !self.clip.is_empty()
+            && !self.visible().is_empty()
+            && (1..=1_000).contains(&self.opacity_millis)
+    }
+}
+
+fn rect_intersection(first: Rect, second: Rect) -> Rect {
+    let left = first.x.max(second.x);
+    let top = first.y.max(second.y);
+    let right = first
+        .x
+        .saturating_add(first.width)
+        .min(second.x.saturating_add(second.width));
+    let bottom = first
+        .y
+        .saturating_add(first.height)
+        .min(second.y.saturating_add(second.height));
+    Rect {
+        x: left,
+        y: top,
+        width: right.saturating_sub(left).max(0),
+        height: bottom.saturating_sub(top).max(0),
+    }
+}
+
+/// An instance names a source with no committed content.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorMissingInstanceSource {
+    pub source: SurfaceId,
+}
+
+impl fmt::Display for CompositorMissingInstanceSource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "surface instance source {:?} has no committed content",
+            self.source
+        )
+    }
+}
+
+impl std::error::Error for CompositorMissingInstanceSource {}
+
+/// Resolves every instance's source generation from the committed table at
+/// frame capture. The WM never supplies it. A source with no committed
+/// content refuses the whole list, unchanged: a presentation is drawn
+/// complete or not at all, and one instance is never silently dropped.
+pub fn resolve_surface_instance_sources<C>(
+    display_list: &mut CompositorDisplayList<C>,
+    committed: &[CommittedSurfaceState],
+) -> Result<(), CompositorMissingInstanceSource> {
+    let mut resolved = Vec::new();
+    for (index, command) in display_list.commands.iter().enumerate() {
+        let CompositorDisplayCommand::SurfaceInstance(instance) = command else {
+            continue;
+        };
+        let state = committed
+            .iter()
+            .find(|state| state.surface == instance.source)
+            .ok_or(CompositorMissingInstanceSource {
+                source: instance.source,
+            })?;
+        resolved.push((index, state.committed_generation));
+    }
+    for (index, generation) in resolved {
+        if let CompositorDisplayCommand::SurfaceInstance(instance) =
+            &mut display_list.commands[index]
+        {
+            instance.source_generation = generation;
+        }
+    }
+    Ok(())
+}
+
+/// Which admitted WM publication an output frame presents. It draws nothing;
+/// it travels with the frame so the frame that retires names exactly the
+/// publication its pixels show, distinct from whatever publication is
+/// requested by then. A change of stamp, including a binding-only
+/// publication with identical pixels and a withdrawal, damages the old and
+/// new coverage, so a frame carrying the change is presented and retires.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorPresentationStamp {
+    pub owner_epoch: u64,
+    pub publication_generation: u64,
+    pub output: OutputId,
+    pub output_generation: u64,
+    /// The output's presentation coverage, in this list's coordinates.
+    pub coverage: Rect,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompositorDisplayCommand<C = CompositorContentImage> {
     Surface { surface: SurfaceId },
+    SurfaceInstance(CompositorSurfaceInstance),
+    PresentationStamp(CompositorPresentationStamp),
     Border(CompositorBorder),
     Rect(CompositorRect),
     Text(CompositorText),
@@ -128,6 +274,20 @@ pub struct CompositorDisplayList<C = CompositorContentImage> {
 }
 
 impl<C> CompositorDisplayList<C> {
+    pub fn presentation_stamp(&self) -> Option<CompositorPresentationStamp> {
+        self.commands.iter().find_map(|command| match command {
+            CompositorDisplayCommand::PresentationStamp(stamp) => Some(*stamp),
+            _ => None,
+        })
+    }
+
+    pub fn surface_instances(&self) -> impl Iterator<Item = CompositorSurfaceInstance> + '_ {
+        self.commands.iter().filter_map(|command| match command {
+            CompositorDisplayCommand::SurfaceInstance(instance) => Some(*instance),
+            _ => None,
+        })
+    }
+
     pub fn empty(output: OutputId) -> Self {
         Self {
             output,
@@ -139,6 +299,8 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Border(border) => Some(*border),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -150,6 +312,8 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Rect(rect) => Some(*rect),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -161,6 +325,8 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::Text(text) => Some(text),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -172,6 +338,8 @@ impl<C> CompositorDisplayList<C> {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
             CompositorDisplayCommand::Surface { .. }
+            | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
@@ -194,8 +362,20 @@ pub(crate) fn compositor_display_list_structure_is_valid<C: CompositorContentMet
         return false;
     }
     let mut nodes = BTreeSet::new();
+    let mut stamped = false;
     display_list.commands.iter().all(|command| match command {
         CompositorDisplayCommand::Surface { .. } => true,
+        // At most one, for this list's output.
+        CompositorDisplayCommand::PresentationStamp(stamp) => {
+            !std::mem::replace(&mut stamped, true)
+                && stamp.owner_epoch != 0
+                && stamp.publication_generation != 0
+                && stamp.output_generation != 0
+                && stamp.output == display_list.output
+        }
+        CompositorDisplayCommand::SurfaceInstance(instance) => {
+            instance.is_valid() && nodes.insert(instance.node())
+        }
         CompositorDisplayCommand::Border(border) => nodes.insert(border.node),
         CompositorDisplayCommand::Rect(rect) => {
             rect.generation != 0 && !rect.geometry.is_empty() && nodes.insert(rect.node)
@@ -410,6 +590,48 @@ pub fn surface_chrome_display_list_for_surfaces(
     Ok(CompositorDisplayList { output, commands })
 }
 
+/// Instance damage is keyed by instance, never by source: a changed
+/// placement, opacity, interaction generation or resolved source generation
+/// damages the visible rectangle it had and has, and a changed stacking
+/// order among instances damages every instance in both lists. Repeated
+/// sources therefore keep distinct damage.
+fn push_surface_instance_damage<A, B>(
+    damage: &mut Region,
+    previous: &CompositorDisplayList<A>,
+    current: &CompositorDisplayList<B>,
+) {
+    let before = previous
+        .surface_instances()
+        .map(|instance| (instance.node(), instance))
+        .collect::<BTreeMap<_, _>>();
+    let after = current
+        .surface_instances()
+        .map(|instance| (instance.node(), instance))
+        .collect::<BTreeMap<_, _>>();
+    let order_changed = previous
+        .surface_instances()
+        .map(|instance| instance.node())
+        .filter(|node| after.contains_key(node))
+        .ne(current
+            .surface_instances()
+            .map(|instance| instance.node())
+            .filter(|node| before.contains_key(node)));
+    for node in before.keys().chain(after.keys()).collect::<BTreeSet<_>>() {
+        let (old, new) = (before.get(node), after.get(node));
+        if old == new && !order_changed {
+            continue;
+        }
+        let old = old.map(CompositorSurfaceInstance::visible);
+        let new = new.map(CompositorSurfaceInstance::visible);
+        if let Some(old) = old {
+            damage.push(old);
+        }
+        if let Some(new) = new.filter(|new| Some(*new) != old) {
+            damage.push(new);
+        }
+    }
+}
+
 /// Computes compositor-owned damage between two immutable display lists.
 ///
 /// Stable nodes with an unchanged generation, geometry, and color contribute
@@ -431,6 +653,22 @@ pub fn compositor_display_list_damage<
         .map(|border| (border.node, border))
         .collect::<BTreeMap<_, _>>();
     let mut damage = Region::empty();
+    push_surface_instance_damage(&mut damage, previous, current);
+    let (before, after) = (previous.presentation_stamp(), current.presentation_stamp());
+    if before != after {
+        let old = before
+            .map(|stamp| stamp.coverage)
+            .filter(|coverage| !coverage.is_empty());
+        let new = after
+            .map(|stamp| stamp.coverage)
+            .filter(|coverage| !coverage.is_empty());
+        if let Some(old) = old {
+            damage.push(old);
+        }
+        if let Some(new) = new.filter(|new| Some(*new) != old) {
+            damage.push(new);
+        }
+    }
     for node in previous_borders
         .keys()
         .chain(current_borders.keys())

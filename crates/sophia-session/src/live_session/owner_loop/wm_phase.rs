@@ -852,7 +852,9 @@
             let public_projection = proposal
                 .policy_settlement
                 .is_some_and(|settlement| !settlement.session_operation);
-            if public_projection
+            if public_projection && !wm.preflight_staged_presentation(runtime.as_ref(), native_scanout.as_ref()) {
+                wm.reject_staged_presentation(proposal.policy_settlement.expect("public projection has settlement"))?;
+            } else if public_projection
                 && wm.trigger_public_proof_fault(PublicPolicyFaultPoint::ProposalStaged)
             {
                 let _ = wm.poll_restart(&mut layout, output)?;

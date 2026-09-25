@@ -139,8 +139,14 @@ impl LiveWmSession {
             transport,
             next_epoch,
             public.profile_key,
+            public.native_presentation_capable,
         )?);
         public.connection_epoch = next_epoch;
+        public.presentation_capture.revoke();
+        public.presentation_input.revoke();
+        public.presentation_receipts.clear();
+        public.presentation_withdrawals.clear();
+        public.presentation_withdrawal_pending = true;
         public.configured = false;
         public.negotiated = false;
         public.cycle_submitted = false;
