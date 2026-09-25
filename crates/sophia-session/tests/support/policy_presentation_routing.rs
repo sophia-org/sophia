@@ -18,12 +18,19 @@ fn presented(
 ) -> Vec<sophia_backend_live::LivePresentedInputProjection> {
     let mut p = publication(public);
     let output = p.outputs[0];
+    p.outputs[0].mode = PolicyPresentationMode::ReplaceApplications;
+    let mut target = p.regions[0];
+    p.regions[0].action = None;
+    target.id = 2;
+    target.z_index = 1;
+    p.regions.push(target);
     p.keyboard_output = Some(output.output);
     p.bindings.push(sophia_protocol::PolicyPresentationBinding {
         keycode: 28,
         modifiers: sophia_protocol::WmModifierMask { bits: 0 },
         action: WmActionId::from_raw(77),
     });
+    sophia_protocol::validate_policy_presentation_shape(&p).unwrap();
     public
         .actions
         .push(sophia_protocol::PolicyActionRegistration {
@@ -42,7 +49,7 @@ fn presented(
         output: output.output,
         output_generation: output.generation,
         instances: vec![],
-        regions: vec![(1, 1)],
+        regions: vec![(1, 1), (2, 1)],
     });
     public.observe_presented_policy(&projections);
     assert!(public.presentation_input.modal_ready(false));
@@ -196,7 +203,7 @@ fn physical_policy_routing_emits_exact_targets_and_swallows_unbound_modal_keys()
             actions[1].identity.target_id,
             actions[1].identity.target_generation
         ),
-        (1, 1)
+        (2, 1)
     );
     assert_eq!(
         report.keys_suppressed_no_focus, 0,
@@ -285,4 +292,25 @@ fn physical_policy_routing_yields_to_launcher_and_virtual_terminal() {
     );
     assert_eq!(report.virtual_terminal, Some(2));
     assert!(actions(&report).is_empty());
+}
+
+#[test]
+fn physical_policy_routing_revokes_keys_when_a_completed_frame_loses_its_stamp() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut projections = presented(public);
+    projections[0].policy_publication = None;
+    projections[0].policy_visible = false;
+    public.observe_presented_policy(&projections);
+    assert!(public.presentation_input.publication().is_none());
+    assert!(!public.presentation_input.modal_ready(false));
+    let report = route(public, &projections, &[key(28, true), key(28, false)], None);
+    assert!(actions(&report).is_empty());
+    assert_eq!(report.keys_suppressed_no_focus, 2);
+    assert!(
+        public
+            .presentation_receipts
+            .iter()
+            .any(|receipt| receipt.outcome == PolicyPresentationOutcome::Revoked)
+    );
 }

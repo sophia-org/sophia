@@ -316,3 +316,119 @@ fn policy_presentation_reconnect_rejects_old_identity_at_enqueue_and_settlement(
     assert!(public.presented_cause_is_current(public.queue[0].cause));
     assert_eq!(public.queue[0].affected_outputs, vec![output.output]);
 }
+
+#[test]
+fn policy_replacement_install_waits_for_application_capture_to_settle() {
+    check_deferred_replacement(false);
+    check_deferred_replacement(true);
+}
+
+fn check_deferred_replacement(remove_action_while_deferred: bool) {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    let mut p = publication(public);
+    p.outputs[0].mode = PolicyPresentationMode::ReplaceApplications;
+    p.regions[0].action = None;
+    let output = p.outputs[0].output;
+    p.keyboard_output = Some(output);
+    p.bindings.push(sophia_protocol::PolicyPresentationBinding {
+        action: WmActionId::from_raw(77),
+        keycode: 28,
+        modifiers: sophia_protocol::WmModifierMask { bits: 0 },
+    });
+    public
+        .actions
+        .push(sophia_protocol::PolicyActionRegistration {
+            action: WmActionId::from_raw(77),
+            name: "opaque-policy-action".into(),
+            session_operation_slot: None,
+        });
+    let request = public
+        .reducer
+        .issue_request_with_cause(
+            vec![output],
+            sophia_protocol::PolicyRequestCause::SceneChanged,
+        )
+        .unwrap();
+    let proposal = sophia_protocol::PolicyProjectionProposal {
+        transaction: TransactionId::from_raw(701),
+        connection_epoch: 1,
+        request_id: request.request_id,
+        base_generation: request.scene_generation,
+        active_output: output,
+        presentation: Some(p),
+        outputs: vec![sophia_protocol::PolicyOutputProjection {
+            output,
+            placements: vec![],
+            focus: None,
+        }],
+        launch_contexts: vec![],
+        output_launch_contexts: vec![],
+        translation_groups: vec![],
+        tab_groups: vec![],
+        indicators: vec![],
+        output_statuses: vec![],
+    };
+    let staged = public.reducer.stage_proposal(&proposal).unwrap();
+    public.reducer.commit_staged(staged);
+    let committed_serial = public.reducer.commit_serial();
+    let mut runtime = LiveProductionVisualRuntime::new(&public.outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(Size {
+        width: 100,
+        height: 100,
+    });
+    fixture
+        .wm
+        .install_committed_policy_presentation(&mut runtime, &scene, true, true, None)
+        .unwrap();
+    assert!(
+        runtime.policy_presentation().is_none(),
+        "replacement must not remove the captured application's hit layers"
+    );
+    assert!(
+        fixture
+            .wm
+            .public
+            .as_ref()
+            .unwrap()
+            .presentation_input
+            .publication()
+            .is_none()
+    );
+    assert!(
+        fixture
+            .wm
+            .public
+            .as_ref()
+            .unwrap()
+            .presentation_receipts
+            .is_empty()
+    );
+    if remove_action_while_deferred {
+        fixture.wm.public.as_mut().unwrap().actions.clear();
+    }
+    fixture
+        .wm
+        .install_committed_policy_presentation(&mut runtime, &scene, true, false, None)
+        .unwrap();
+    if remove_action_while_deferred {
+        let public = fixture.wm.public.as_ref().unwrap();
+        assert!(runtime.policy_presentation().is_none());
+        assert!(public.reducer.presentation_publication().is_none());
+        assert!(public.presentation_input.publication().is_none());
+        assert!(public.presentation_receipts.is_empty());
+        return;
+    }
+    assert!(runtime.policy_presentation().is_some());
+    let public = fixture.wm.public.as_ref().unwrap();
+    assert_eq!(
+        public.reducer.commit_serial(),
+        committed_serial,
+        "capture settlement retries the existing candidate without a new proposal"
+    );
+    assert!(public.presentation_input.publication().is_some());
+    assert!(
+        public.presentation_input.output_receipt(output).is_none(),
+        "installation alone is not presentation"
+    );
+}

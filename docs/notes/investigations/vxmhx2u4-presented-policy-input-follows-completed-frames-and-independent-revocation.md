@@ -101,6 +101,39 @@ owns actual retirement production. Independent Hagia transport is validated on
 the director's joined branch and is not duplicated here. Final joined candidate
 gates and physical acceptance remain separate.
 
+## Review corrections before joined gates
+
+Review found that the grab-continuity control used Overlay. A retired
+ReplaceApplications frame removes application hit layers, which would make
+the normal lease eligibility check cancel an existing capture. Session now
+defers installing a changed replacement while application keys, leases or
+keyboard/pointer handoffs remain. The regular presented-policy service retries
+the committed candidate after settlement without a new WM proposal and queues
+it through native composition. Until then it creates no completion receipt or
+modal input authority. Installation revalidates registered actions and backend
+source availability after the wait; loss revokes rather than installing stale
+records. The conservative wait covers all outputs.
+
+The session install-boundary control checks deferral, retry with unchanged
+reducer commit serial, no fabricated receipt, and catalog loss during the wait.
+A separate backend control retires a real application frame through the mirrored
+target and evaluates `scene_contains_input_surface`, the lease eligibility
+predicate, from its production input projection. Eligibility survives the
+deferred interval and changes only when the replacement actually retires.
+These are joined ownership controls, not a live hardware run.
+
+A completed stamp-free projection now revokes any held output receipt before
+keyboard routing. Enqueue also explicitly checks the current connection epoch.
+The routing fixture now validates its publication shape, with a required passive
+backdrop and an independent actionable region under ReplaceApplications.
+
+Evidence: `t245-review-session-lib.log` passed 600 tests, 18 ignored;
+`t245-review-deferred.log` includes the added catalog-loss branch;
+`t245-review-retired-lease.log` passed the retired eligibility control.
+`t245-review-clippy.log` and `t245-review-layout.log` retain final affected-crate
+strict Clippy and worktree layout results. Final joined gates remain with the
+director.
+
 ## Connections
 
 The [presentation contract](../../wm-presentation.md) defines the authority and

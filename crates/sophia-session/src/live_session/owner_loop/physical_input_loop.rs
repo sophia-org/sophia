@@ -182,7 +182,11 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
         if let Some(wm) = wm_session.as_mut()
             && let Some(runtime) = runtime.as_mut()
         {
-            wm.service_presented_policy(runtime, scene, native_scanout.as_mut(), shell_presentation_available)?;
+            let application_capture_active = client_keys.pending_len() != 0
+                || application_route_leases.leases().next().is_some()
+                || pointer_focus_handoff.target().is_some()
+                || keyboard_focus_handoff.target().is_some();
+            wm.service_presented_policy(runtime, scene, native_scanout.as_mut(), shell_presentation_available, application_capture_active)?;
         }
         // Reconcile against current topology as well as the last committed policy.
         // A stale publication cannot reopen a removed/replaced output.

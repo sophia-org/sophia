@@ -116,7 +116,11 @@
                     .and_then(LiveWmSession::indicator_publication);
                 visual_progress.observe_intake(&production_batch);
                 if let Some(wm) = wm_session.as_mut() {
-                    wm.install_committed_policy_presentation(runtime, scene, native_scanout.is_some())?;
+                    let application_capture_active = client_keys.pending_len() != 0
+                        || application_route_leases.leases().next().is_some()
+                        || pointer_focus_handoff.target().is_some()
+                        || keyboard_focus_handoff.target().is_some();
+                    wm.install_committed_policy_presentation(runtime, scene, native_scanout.is_some(), application_capture_active, None)?;
                 }
                 let (_tick, report, committed_surfaces, composed, compose_elapsed, cpu_progress) =
                     if !production_batch.has_dma_buf_present_submissions()

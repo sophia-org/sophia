@@ -1,6 +1,79 @@
 use super::*;
 
 #[test]
+fn deferred_replacement_keeps_retired_application_lease_eligibility_until_install() {
+    let outputs = outputs();
+    let output = outputs[0].id;
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(outputs[0].size);
+    let surface = SurfaceId::new(91, 1);
+    commit_cpu_surface(&mut runtime, &mut scene, surface, 91, 1, rect(0, 0, 32, 16));
+    runtime.presentation_order = vec![surface];
+    runtime.surface_outputs.insert(surface, output);
+    let mut target = MirroredTarget::new(&outputs);
+    let retire = |runtime: &mut LiveProductionVisualRuntime, target: &mut MirroredTarget| {
+        let frames = runtime
+            .retained_output_head_composition_frames(&scene, &*target)
+            .unwrap();
+        target
+            .queue_retained_batch(frames, &BTreeSet::new())
+            .unwrap();
+        target.install(output).unwrap();
+        target.prepare(output);
+        target.flip(output, 0);
+        target.flip(output, 1);
+        runtime.publish_presented_input_layers(target);
+    };
+    retire(&mut runtime, &mut target);
+    // This is the same eligibility predicate used by the session's lease
+    // recheck, fed by the real retired production projection rather than a
+    // manually retained application layer.
+    assert!(sophia_engine::scene_contains_input_surface(
+        &runtime.input_projections()[0].layers,
+        surface
+    ));
+    let replacement = published(
+        1,
+        vec![presentation_output(
+            output,
+            PolicyPresentationMode::ReplaceApplications,
+        )],
+        vec![],
+        vec![region(
+            output,
+            1,
+            0,
+            PolicyPresentationRegionRole::Backdrop,
+            rect(0, 0, 64, 32),
+            rect(0, 0, 64, 32),
+        )],
+    );
+    // Session owns the deferral (covered by its install-boundary control).
+    // Other frame service while a capture is held must keep the old eligibility.
+    runtime.validate_policy_presentation(&replacement).unwrap();
+    runtime.publish_presented_input_layers(&target);
+    assert!(sophia_engine::scene_contains_input_surface(
+        &runtime.input_projections()[0].layers,
+        surface
+    ));
+    assert!(runtime.input_projections()[0].policy_publication.is_none());
+    runtime
+        .set_policy_presentation(Some(replacement), &scene, None)
+        .unwrap();
+    assert!(sophia_engine::scene_contains_input_surface(
+        &runtime.input_projections()[0].layers,
+        surface
+    ));
+    retire(&mut runtime, &mut target);
+    assert!(!sophia_engine::scene_contains_input_surface(
+        &runtime.input_projections()[0].layers,
+        surface
+    ));
+    assert!(runtime.input_projections()[0].policy_publication.is_some());
+    target.teardown();
+}
+
+#[test]
 fn input_publication_comes_from_all_completed_heads_not_the_requested_getter() {
     let outputs = outputs();
     let output = outputs[0].id;

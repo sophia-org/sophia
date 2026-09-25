@@ -11,13 +11,16 @@ impl LiveWmSession {
         let Some(public) = self.public.as_mut() else {
             return Ok(());
         };
-        if !public.presentation_input.action_is_current(
-            action.connection_epoch,
-            action.action,
-            action.identity,
-        ) || !public.actions.iter().any(|registered| {
-            registered.action == action.action && registered.session_operation_slot.is_none()
-        }) {
+        if action.connection_epoch != public.connection_epoch
+            || !public.presentation_input.action_is_current(
+                action.connection_epoch,
+                action.action,
+                action.identity,
+            )
+            || !public.actions.iter().any(|registered| {
+                registered.action == action.action && registered.session_operation_slot.is_none()
+            })
+        {
             return Ok(());
         }
         let affected_outputs = public
@@ -48,6 +51,8 @@ impl LiveWmSession {
         runtime: &mut LiveProductionVisualRuntime,
         scene: &LiveProductionCpuScene,
         native_retirement: bool,
+        application_capture_active: bool,
+        native: Option<&mut LiveProductionNativeScanout>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(public) = self.public.as_mut() else {
             return Ok(());
@@ -65,8 +70,33 @@ impl LiveWmSession {
                         presentation: presentation.clone(),
                     },
                 );
+        // Replacement removes application hit layers on retirement. Keep the
+        // currently installed scene until existing application sequences settle;
+        // their lease eligibility must not be weakened to admit hidden pixels.
+        if application_capture_active
+            && desired.as_ref().is_some_and(|desired| {
+                desired.presentation.outputs.iter().any(|output| {
+                    output.mode == sophia_protocol::PolicyPresentationMode::ReplaceApplications
+                })
+            })
+            && desired.as_ref() != runtime.policy_presentation()
+        {
+            return Ok(());
+        }
         if desired.as_ref() != runtime.policy_presentation() {
-            runtime.set_policy_presentation(desired.clone(), scene, None)?;
+            if desired.as_ref().is_some_and(|desired| {
+                sophia_protocol::validate_policy_presentation_actions(
+                    &desired.presentation,
+                    &public.actions,
+                )
+                .is_err()
+                    || runtime.validate_policy_presentation(desired).is_err()
+            }) {
+                public.revoke_live_presentation();
+                runtime.set_policy_presentation(None, scene, native)?;
+                return Ok(());
+            }
+            runtime.set_policy_presentation(desired.clone(), scene, native)?;
         }
         if let Some(desired) = desired {
             let receipts = public
@@ -85,8 +115,9 @@ impl LiveWmSession {
         &mut self,
         runtime: &mut LiveProductionVisualRuntime,
         scene: &LiveProductionCpuScene,
-        native: Option<&mut LiveProductionNativeScanout>,
+        mut native: Option<&mut LiveProductionNativeScanout>,
         available: bool,
+        application_capture_active: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let stopping = self.control_restart.is_some() || self.degraded;
         let Some(public) = self.public.as_mut() else {
@@ -110,13 +141,26 @@ impl LiveWmSession {
             public.revoke_live_presentation();
         }
         if public.presentation_withdrawal_pending {
-            runtime.set_policy_presentation(None, scene, native)?;
+            runtime.set_policy_presentation(None, scene, native.as_deref_mut())?;
             public.presentation_withdrawal_pending = false;
         }
         if available {
             public.settle_presented_withdrawals(runtime.input_projections());
         }
         public.observe_presented_policy(runtime.input_projections());
+        // Capture completion need not produce another WM proposal or authority
+        // batch. Retry at this regular frame/input service boundary and queue
+        // the retained replacement through the existing native owner.
+        if available && !stopping {
+            let native_retirement = native.is_some();
+            self.install_committed_policy_presentation(
+                runtime,
+                scene,
+                native_retirement,
+                application_capture_active,
+                native,
+            )?;
+        }
         Ok(())
     }
 
@@ -194,6 +238,13 @@ impl LivePublicPolicyState {
                 continue;
             }
             let Some(stamp) = &projection.policy_publication else {
+                if self
+                    .presentation_input
+                    .output_receipt(projection.output)
+                    .is_some()
+                {
+                    self.revoke_live_presentation();
+                }
                 continue;
             };
             let Some((owner, publication)) = self.presentation_input.publication() else {
