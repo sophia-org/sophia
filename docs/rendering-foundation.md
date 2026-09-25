@@ -5,6 +5,9 @@
 does not claim that the complete diagram is implemented or supersede the current
 wire contracts.
 
+The [WM presentation contract](wm-presentation.md) defines the admitted first
+implementation, including passive identities, frame ownership and presented input.
+
 The window manager owns layout, overview arrangement, navigation, and
 workspace/window selection. Shells own their interface and content. Sophia
 supplies validated composition, source ownership, presentation, and physical

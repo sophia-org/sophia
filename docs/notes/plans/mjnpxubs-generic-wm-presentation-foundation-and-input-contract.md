@@ -36,6 +36,14 @@ or the current X11 propagation work. No live installation or reload is authorize
 
 ### Required contract
 
+The implementation contract is [WM presentation and input](../../wm-presentation.md).
+niltempus approved execution of the paired implementation plan on 2026-09-25.
+The director owns the schema and WM integration, the renderer owner owns source
+instances/composition, and the session owner takes generic input after completing
+t099. The completed t220 propagation slice is the starting baseline `3b61790f`;
+its remaining unrelated exits stay queued. Archived overview WIP is signed
+`914858fa`, retained separately from the generic implementation.
+
 The reviewed contract must specify:
 
 1. The passive instance proposal: authorized source, distinct instance identity,
@@ -81,6 +89,36 @@ text, not a second queue; active state and ordering belong exclusively to
 `todo.md`. t241 owns paired Sophia overview acceptance; Hagia h002 retains feature
 ownership. t099 owns the separate shell-popout allocation/dismissal seam and must
 be coordinated before shared input changes.
+
+## Implementation tracks
+
+These scopes describe the admitted breakdown; status and ordering remain in the
+queue. Existing work on t099 finishes before its owner moves to the foundation.
+
+### t243: Protocol and admission
+
+The protocol owner implements capability-gated fixed records, independent codec
+corpora, complete-set validation and atomic projection settlement. The exit is
+an independently decoded proposal accepted through the production policy reducer,
+with stale, malformed, unauthorized and legacy-client controls. The WM side stays
+in Hagia h002; protocol code never interprets overview action names.
+
+### t244: Composition and source ownership
+
+The renderer owner threads the passive instance/region records through immutable
+snapshots, CPU/native planning and rendering, per-instance damage, source lookup
+and retirement. The exit includes two instances of one source, a preview-only
+source, content-only updates, independent source/backing lifetime and the retained
+negative controls. Instance rendering never manufactures application input layers.
+
+### t245: Presented input and session lifecycle
+
+After t099 releases shared paths, the session owner joins admitted publications
+to actual presentation receipts, modal action delivery, retirement-bound input,
+local revocation, timeout and reconnect. The exit includes queue saturation,
+unsent-action refusal, stale/late replies, source/topology loss, capture continuity
+across content-only repaint and retained swallowed-release obligations. It depends
+on the protocol and composition records; t241 accepts the complete Hagia feature.
 
 ## Connections
 
