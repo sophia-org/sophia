@@ -98,6 +98,11 @@ candidates that role may exchange.
 - [Sophia and Wayland](sophia-vs-wayland.md) compares protocol boundaries,
   failure domains, input disclosure, and evolution policy without treating a
   typical implementation as universal or target Sophia behavior as shipped.
+- [Protocol Frontend Candidates and Display Models](protocol-frontend-candidates.md)
+  evaluates alternative display paradigms (including Arcan SHMIF) and outlines
+  future protocol authority candidates (native GPU surface, 9P synthetic
+  filesystem, and remote streaming) sitting alongside `sophia-x-authority`,
+  while analyzing terminal-emulator integration as a monolithic anti-pattern.
 - [State and Transition Discipline](state-and-transition-discipline.md)
   explains how transition systems, I/O automata, single-writer authority, and
   CALM make Sophia's separated authorities manageable. It also records the
@@ -118,6 +123,9 @@ candidates that role may exchange.
   preparation evidence, not an implemented content protocol.
 - [Sophia X Server Frontend](sophia-x-authority.md) records the native X11
   frontend boundary, implemented surface, and remaining production gaps.
+- [Sophia 9P Filesystem Frontend](sophia-9p-authority.md) defines the synthetic
+  filesystem display frontend architecture, Plan 9 draw(3) mapping, zero-disk-write
+  RAM model, and mount-namespace confinement boundary.
 - [Sophia Window Manager API](sophia-wm-api.md) defines the native,
   language-neutral spatial-policy protocol. Legacy X11 WMs are porting
   references, not supported Sophia policy clients.
