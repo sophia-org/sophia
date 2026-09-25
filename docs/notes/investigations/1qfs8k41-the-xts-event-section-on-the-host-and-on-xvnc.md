@@ -485,6 +485,42 @@ dispatch of two connections' requests, where an event a peer's request
 queues after this connection read its own is legitimately either side
 of the reply.
 
+## The ordering contract t229 closes on
+
+The contract: an event queued for a connection before one of its
+requests is read is on the wire before that request's reply, on both of
+the connection's writers, for every connection. Its parts and where
+they live:
+
+- The injecting connection does not read its next request until its own
+  input writer has drained everything routed to it, through the
+  per-client input watermark (`X11InputWatermark`, raised by the
+  registry's `route_input` and lowered by the writer), bounded at one
+  second: `connection/xtest.rs` (`await_drain`), merged as add24421.
+  Guard: `an_injections_events_precede_the_reply_to_the_next_request`.
+- Every connection's request thread takes the protocol watermark's mark
+  (`X11ProtocolWatermark`) when it reads a request and waits, bounded at
+  a quarter second, before the outputs are written: `connection/dispatch.rs`,
+  merged as 63cf47e8. Guards: `x11_socket/tests/protocol_watermark.rs`
+  and `an_event_routed_before_a_request_precedes_its_reply`.
+- Every connection's request thread takes the input watermark's mark
+  beside it and waits the same way, and the registry queues peers'
+  copies before the recipient's own (`registry/delivery.rs`), merged as
+  48d2f54c. Guard: `a_peers_reply_follows_the_event_fanned_out_before_its_request`,
+  which holds the order twenty times over once the injector has synced.
+
+What the row still named after that, two connections' requests dispatched
+in parallel so that an event a peer's request queues after this
+connection read its own may land either side of the reply, is the
+reference server's behaviour too: no server orders a request against an
+event that did not exist when the request was read. The three purposes
+the events gate had read out of order under load (ButtonPress 5 and 10,
+ButtonRelease 7) have not recurred across the day's runs
+(`.artifacts/xts-events/run-drain2`, `run-implicit`, `run-grabwindow`,
+`run-grabcross`, each 123 passed, 72 declared, and the gated runs on
+4629cca8, 17c0adf2, b6fc3365). The row closes on 2026-09-25 without a
+further ordering change.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
