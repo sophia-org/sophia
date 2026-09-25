@@ -342,6 +342,18 @@ impl XServerFrontendRouteRegistry {
                         });
                     }
                 }
+                // A grab's activation or end replayed the pointer with the
+                // crossing it owes: every selecting client is told, grab or
+                // no grab, as the reference's DoEnterLeaveEvents does.
+                if let Some(crossing) = self
+                    .pending_grab_crossing
+                    .lock()
+                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                    .remove(&surface_route.namespace)
+                {
+                    grab_crossing = Some(crossing);
+                    fan_out_confined = false;
+                }
                 XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                     kind: XAuthorityPointerEventKind::Motion,
                     surface: route.request.target_surface,
@@ -688,6 +700,7 @@ impl XServerFrontendRouteRegistry {
             target_window,
             event,
             fan_out_confined,
+            grab_crossing,
         ) {
             tracing::warn!("sophia_x11_input_route status=peer_fanout_failed reason={error:?} content=redacted");
         }

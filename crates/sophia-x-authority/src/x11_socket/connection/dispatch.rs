@@ -1182,6 +1182,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // that may have moved a window from under it, routed again once
             // the request's own events are out (t211).
             let mut pointer_replay: Option<(SurfaceId, sophia_protocol::Point, sophia_protocol::Point)> = None;
+            let mut grab_window_before: Option<XResourceId> = None;
+            let mut grab_crossing_replay: Option<crate::XPointerGrabCrossing> = None;
             // A lifetime request acts on the leases this layer owns, once
             // the dispatcher has validated it (t166).
             let mut lifetime_request: Option<crate::XWireRequest> = None;
@@ -1625,6 +1627,15 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // nothing and reports nothing.
                     if warp_pointer {
                         pointer_before_warp = runtime.pointer_query_position(namespace);
+                    }
+                    // UngrabPointer clears the grab, so the window it ends
+                    // on is read here, before the request runs (t220).
+                    if major_opcode == 27 {
+                        grab_window_before = runtime
+                            .input_authority_mut()
+                            .explicit_pointer_grab(namespace)
+                            .filter(|grab| grab.owner == client.raw())
+                            .map(|grab| grab.window);
                     }
                     let mut atoms = state
                         .atoms
@@ -2968,18 +2979,35 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             // subwindow forms): take the position and the surface under
             // it now, under the same lock, and route them again after
             // the outputs, so the crossings follow the hierarchy events.
-            if protocol_routing.is_some() && matches!(major_opcode, 4 | 5 | 7 | 8 | 9 | 10 | 11 | 12 | 13) {
+            if protocol_routing.is_some() && matches!(major_opcode, 4 | 5 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 26 | 27) {
                 let runtime = lock_x11_request_runtime(
                     &state.runtime,
                     &state.control_runtime_pending,
                 )?;
-                pointer_replay = runtime.pointer_query_position(namespace).and_then(|(x, y)| {
-                    let (x, y) = (i32::from(x), i32::from(y));
-                    let toplevel = runtime.client_placed_toplevel_at(namespace, x, y)?;
-                    let surface = runtime.window_surface(namespace, toplevel)?;
-                    let (global, local) = pointer_points(&runtime, toplevel, x, y);
-                    Some((surface, global, local))
-                });
+                // A GrabPointer that took the grab owes the crossing into
+                // the grab window with NotifyGrab; an UngrabPointer that
+                // ended one owes the crossing back with NotifyUngrab. A
+                // grab request that changed nothing replays nothing (t220).
+                let explicit = runtime
+                    .input_authority_mut()
+                    .explicit_pointer_grab(namespace)
+                    .filter(|grab| grab.owner == client.raw());
+                grab_crossing_replay = match major_opcode {
+                    26 => explicit.map(|grab| crate::XPointerGrabCrossing { window: grab.window, mode: 1 }),
+                    27 => grab_window_before
+                        .filter(|_| explicit.is_none())
+                        .map(|window| crate::XPointerGrabCrossing { window, mode: 2 }),
+                    _ => None,
+                };
+                if !matches!(major_opcode, 26 | 27) || grab_crossing_replay.is_some() {
+                    pointer_replay = runtime.pointer_query_position(namespace).and_then(|(x, y)| {
+                        let (x, y) = (i32::from(x), i32::from(y));
+                        let toplevel = runtime.client_placed_toplevel_at(namespace, x, y)?;
+                        let surface = runtime.window_surface(namespace, toplevel)?;
+                        let (global, local) = pointer_points(&runtime, toplevel, x, y);
+                        Some((surface, global, local))
+                    });
+                }
             }
             // Validation is complete; opening the pinned device must not hold
             // the authority lock or substitute a newer connection generation.
@@ -3300,6 +3328,20 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // reading, which is its own failure and not this reply's.
                     watermark.wait_drained(mark, std::time::Duration::from_millis(250));
                 }
+                // A grab's crossings precede its reply: the reference
+                // generates them as the grab activates, before answering.
+                // Routed here, before the outputs, and drained (t220).
+                if let (Some(routing), Some(crossing), Some((surface, global, local))) =
+                    (protocol_routing.as_ref(), grab_crossing_replay, pointer_replay)
+                {
+                    if let Err(error) = routing.replay_grab_crossing(namespace, surface, global, local, crossing) {
+                        tracing::warn!("sophia_x11_pointer_replay status=failed reason={error:?} content=redacted");
+                    }
+                    if let Some(watermark) = input_watermark.as_ref() {
+                        watermark.wait_drained(watermark.mark(), std::time::Duration::from_millis(250));
+                    }
+                    pointer_replay = None;
+                }
                 if let (Some(watermark), Some(mark)) = (input_watermark.as_ref(), input_mark)
                     && (!encoded_outputs.is_empty() || !server_reply_fds.is_empty())
                 {
@@ -3348,7 +3390,11 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                 }
             }
             if let (Some(routing), Some((surface, global, local))) = (protocol_routing.as_ref(), pointer_replay) {
-                if let Err(error) = routing.replay_pointer(namespace, surface, global, local) {
+                let replayed = match grab_crossing_replay {
+                    Some(crossing) => routing.replay_grab_crossing(namespace, surface, global, local, crossing),
+                    None => routing.replay_pointer(namespace, surface, global, local),
+                };
+                if let Err(error) = replayed {
                     tracing::warn!("sophia_x11_pointer_replay status=failed reason={error:?} content=redacted");
                 }
                 // Routed on this thread, so the crossings this client is owed
