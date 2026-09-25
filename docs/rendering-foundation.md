@@ -1,9 +1,9 @@
 # Rendering foundation for window managers and shells
 
-**Role:** rendering architecture and candidate implementation inventory, updated
-2026-09-25. The generic WM extension is implemented on isolated feature branches;
-joined session acceptance and integration remain pending. This document does not
-supersede the wire contracts or claim physical display acceptance.
+**Role:** rendering architecture and implementation inventory, updated
+2026-09-25. The generic WM extension and paired Hagia overview pass joined
+headless acceptance. This document does not supersede the wire contracts or
+claim physical display acceptance.
 
 The [WM presentation contract](wm-presentation.md) defines the admitted first
 implementation, including passive identities, frame ownership and presented input.
@@ -96,22 +96,29 @@ control of protected layers, clipping, admission, and resource limits.
 ## What exists
 
 The original inventory inspected Sophia checkpoint `ba42f97e`. The table below
-records the generic candidate on `rendering/foundation` through `9a8318ad`,
-including protocol, composition and paired WM controls. Session/input work is
-being joined from `rendering/input`; it is identified separately below.
+records the accepted source `6251aa79`, including protocol,
+composition, session input and paired Hagia controls. Hagia's paired source is
+`12d3142`; Narthex requires no overview changes.
 Implementation presence is separate from integration and hardware acceptance.
 
-| Mechanism | Candidate implementation | Acceptance boundary |
+| Mechanism | Implementation | Acceptance boundary |
 | --- | --- | --- |
 | Application content and ownership | Engine resolves each authorized instance source to committed content; missing sources refuse the whole candidate, and source removal revokes the whole publication. | Preview-only sources and content-only updates have production-path controls. |
-| WM boundary | Capability-gated complete presentation records accompany ordinary projections; fixed wire layouts, bounds and generation rules are validated before commit. | Independent Nim/Rust codecs and real Hagia transport controls pass; final joined gates remain. |
+| WM boundary | Capability-gated complete presentation records accompany ordinary projections; fixed wire layouts, bounds and generation rules are validated before commit. | Independent C/Nim/Rust codecs, real Hagia transport controls and all eight family gate phases pass. |
 | Shell boundary | Existing content grants, allocations and action identities remain separate. Popout dismissal landed in accepted `aff26bac`. | No new shell authority or protocol is needed for WM presentation. |
 | Compositor representation | Independently placed `SurfaceInstance` and Engine-owned regions share a bounded presentation tier. Instances never become application input layers. | Repeated sources retain separate node geometry and damage. |
 | Frame planning and rendering | Immutable snapshots, head transforms, clipped instance drawing, opacity and CPU/native sampling models include the tier. | Fractional and cross-output controls pass; model equivalence does not establish physical GPU output. |
 | Retention and retirement | Source collection includes ordinary and instance-only references, deduplicates leases and preserves separate copied backing ownership. Every mirror contributes completion evidence. | Source removal, copy completion, close and lagging-head controls pass under simulated device completion. |
-| Presented input | The session candidate joins completed stamps to receipts, modal admission, exact actions, local revocation and release debt. | t245 owns joined input, reconnect, queue and protected-routing acceptance before integration. |
+| Presented input | Session joins completed stamps to receipts, modal admission, exact actions, local revocation and release debt. | Production routing, reconnect, queue saturation, protected precedence and retained application captures have deterministic controls. |
 
-The existing compositor supplies this foundation. The candidate adds records and
+Admission checks every current physical head before both preparation and final
+settlement. A target with no clipped pixels on any head refuses the whole
+candidate and preserves the prior publication. Tiny targets round outward;
+border checks use their clipped bands. Retired target membership is intersected
+across all heads as a separate completion check. Replacement waits for existing
+application captures to settle, then revalidates before installation.
+
+The existing compositor supplies this foundation. The implementation adds records and
 joins to its owners, without adding a renderer or a parallel frame scheduler.
 
 ## Evidence boundary
@@ -163,8 +170,8 @@ policy actions, without interpreting an overview workspace catalog or choosing
 its selected window. Shells remain responsible for their own shell features.
 
 The prototype's overview-specific WM messages and shell revision-9 exchange are
-unreleased experiments. Preserve their checkpoints as evidence, then replace
-them with the reviewed generic WM contract. They do not establish a stable wire
+unreleased experiments. Their checkpoints remain as evidence; the generic WM
+contract supersedes them. They do not establish a stable wire
 obligation. Negotiate the new capability explicitly: existing clients without it
 retain their existing behavior, and an explicitly requested unsupported feature
 must fail clearly. Any shell protocol change needs its own demonstrated shell
@@ -172,7 +179,8 @@ requirement; the WM overview alone does not justify one.
 
 The contract defines bounds, source eligibility, instance/action identities,
 presentation settlement, damage propagation, revocation and restart behavior.
-Joined implementation gates must establish those guarantees before integration. The
+Joined implementation gates establish those guarantees within the documented
+headless evidence boundary. The
 [foundation plan](notes/plans/mjnpxubs-generic-wm-presentation-foundation-and-input-contract.md)
 holds the measurable exit; task state belongs in `todo.md`.
 

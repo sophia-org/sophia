@@ -2,7 +2,7 @@
 id: ufhp04gq
 date: 2026-09-25
 kind: investigation
-status: investigating
+status: resolved
 tags: [policy, shell, validation]
 ---
 # Workspace overview joins policy presentation and modal input
@@ -108,3 +108,43 @@ completion and mirrored visibility evidence is in
 [vxmhx2u4](vxmhx2u4-presented-policy-input-follows-completed-frames-and-independent-revocation.md).
 Joined production-routing controls, review fixes and the final family gate remain
 required before source acceptance. No physical display acceptance is claimed.
+
+## Final joined source
+
+Signed Sophia `6251aa7915266f79e700c0997267f4361d46d70d` joins the final
+renderer review `a529b2c4` and session caller `fffc8b6e`. The paired Hagia source
+is signed `12d314290ce441c853cb8cd7502c367685a15f1f`. Narthex remains the
+accepted `50b9014d96f675f515b5e092c071427fb8e34423`; overview requires no
+Narthex change. The shell compatibility gate also retains Lom diagnostic
+`97b6f63`, whose separate t005 remains open.
+
+The final reviews closed three production gaps: replacement now waits for
+existing application captures; a completed stamp-free frame revokes the old
+input receipt; and admission requires a clipped draw for every target on every
+current head. Tiny targets use outward raster geometry. Border admission uses
+clipped bands, and retired target membership intersects every head. Revalidation
+at settlement and deferred installation prevents stale topology from installing
+a candidate that cannot present.
+
+The default workspace suite passed 3,781 tests with no failures and 33 ignored.
+The native backend/session suites passed 1,741 with no failures and 39 ignored.
+Engine, renderer and native sampling-model suites passed 651 with no failures;
+their crate trees are unchanged between the tested `58354e10` and the joined
+source. Strict affected-crate all-target Clippy passed, and three shader sources
+compiled. Main-tree formatting, metadata and layout checks passed.
+
+Durable owner logs, the original negative controls and source/binary identities
+are retained under
+`~/.local/state/sophia/development-evidence/rendering-6251aa79/`.
+Main gate logs are under
+`sophia/.artifacts/integration-6251aa79-DBHFkhEI/`.
+All eight native-protocol-family phases passed with unchanged clean source
+identities at entry and exit. The WM phase includes 320 Nim checks, both
+eleven-scenario policy corpora and all five real-Hagia presentation controls.
+The shell phase includes retained Rust/C/Nim clients and the independent C/Lom
+popout lifecycle controls. This accepts the implementation exits for t241 and
+t242–t245, paired with Hagia h002. The queue records their closure.
+
+No live installation or reload has occurred; physical GPU/KMS acceptance remains
+separate. The earlier unintended hardware-smoke attempts remain recorded in the
+renderer investigation.

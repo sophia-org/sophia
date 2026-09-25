@@ -2,7 +2,7 @@
 id: 3w01aui8
 date: 2026-09-25
 kind: investigation
-status: investigating
+status: resolved
 tags: [investigation, rendering, protocol]
 ---
 # Generic WM presentation admission and codec checkpoint
@@ -59,6 +59,14 @@ session lifecycle remain t245. The complete Hagia overview remains t241/h002.
 No live installation, reload, GPU device acquisition or physical acceptance was
 performed. The inherited t220 layout overflows are being repaired separately as
 signed `c528f4b1`; they are unchanged by this protocol checkpoint.
+
+## Joined acceptance
+
+The checkpoint's remaining joins are implemented in signed Sophia `6251aa79`
+and Hagia `12d3142`. The complete device-hidden native-protocol-family gate
+passes all eight phases, including independent Nim/C/Rust wire and real-Hagia
+controls. The [paired acceptance record](ufhp04gq-workspace-overview-joins-policy-presentation-and-modal-input.md#final-joined-source)
+owns final evidence and physical limits; the foundation plan records t243's exit.
 
 ## Connections
 

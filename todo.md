@@ -1,15 +1,5 @@
 # One task per line, a blank line between tasks: keep it that way so the file reads as a list. A row is `(priority) date text ... @context id:tNNN order:NNN [details](note)`; closed rows move to done-YYYY-MM.md.
 
-(A) 2026-09-25 Define generic WM presentation and input contract +critical @planning id:t242 order:000.00001 [plan](docs/notes/plans/mjnpxubs-generic-wm-presentation-foundation-and-input-contract.md)
-
-(A) 2026-09-25 Implement generic WM presentation protocol and atomic admission +critical @development id:t243 depends:t242 order:000.000011 [plan](docs/notes/plans/mjnpxubs-generic-wm-presentation-foundation-and-input-contract.md#t243-protocol-and-admission)
-
-(A) 2026-09-25 Render generic surface instances with per-instance damage and retained sources +critical @development id:t244 depends:t242,t243 order:000.000012 [plan](docs/notes/plans/mjnpxubs-generic-wm-presentation-foundation-and-input-contract.md#t244-composition-and-source-ownership)
-
-(A) 2026-09-25 Join generic presented WM input with revocation and session lifecycle +critical @development id:t245 depends:t242,t243,t244 order:000.000013 [plan](docs/notes/plans/mjnpxubs-generic-wm-presentation-foundation-and-input-contract.md#t245-presented-input-and-session-lifecycle)
-
-(A) 2026-09-25 Accept WM-owned overview through generic Sophia presentation and input +critical @development id:t241 depends:t242,t243,t244,t245 order:000.000014 peer:hagia/h002 [acceptance](docs/notes/investigations/ufhp04gq-workspace-overview-joins-policy-presentation-and-modal-input.md)
-
 (B) 2026-09-20 Replace the remaining wall-clock waits outside the private-input controls with progress-bounded ones and generated failure text: x11_socket/tests/routing.rs (12), tests/support/m3_acceptance_c.rs (9), tests/connection_wait.rs (6), the desktop comparison workload.rs (6), the xterm command (6) and the shell launcher (5), plus the fixed-step class such as state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw, which pumps a fixed count and cannot say whether it waited long enough. +development @development id:t131 order:000.00022 [details](docs/notes/investigations/yo5l2jui-private-input-controls-fail-on-a-wall-clock-deadline-under-load.md)
 
 (B) 2026-09-20 Find why rejected_profile_admission_fails_before_negotiated saw a second event after Failed under load: it asserts try_event() is Err once the failure event is read, and one run in six under 64 spinners found another event there; establish what the worker emits after a rejected admission and whether the control or the worker is wrong. +development @development id:t132 order:000.00023 [details](docs/notes/investigations/yo5l2jui-private-input-controls-fail-on-a-wall-clock-deadline-under-load.md)

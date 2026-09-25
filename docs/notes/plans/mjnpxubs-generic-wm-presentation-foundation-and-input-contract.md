@@ -71,9 +71,8 @@ The reviewed contract must specify:
 The document must explain how generic mechanisms cover the use case without
 embedding a particular reference client's overview or shell vocabulary in Engine.
 No new toolkit, shader-upload interface, GPU negotiation policy, or unrelated
-desktop feature is implied. Acceptance of the contract and implementation
-admission remain explicit follow-up decisions; writing this plan does not close
-t242 or t241.
+desktop feature is implied. The subsequent authorization above admits the
+implementation; writing the contract alone does not close t242 or t241.
 
 ## Proposed queue handoff
 
@@ -119,6 +118,24 @@ local revocation, timeout and reconnect. The exit includes queue saturation,
 unsent-action refusal, stale/late replies, source/topology loss, capture continuity
 across content-only repaint and retained swallowed-release obligations. It depends
 on the protocol and composition records; t241 accepts the complete Hagia feature.
+
+## Accepted implementation evidence
+
+Signed Sophia source `6251aa79` and Hagia source `12d3142` satisfy the admitted
+headless exits. The [paired acceptance record](../investigations/ufhp04gq-workspace-overview-joins-policy-presentation-and-modal-input.md#final-joined-source)
+records exact identities, durable logs and limits. Independent C/Nim/Rust wire
+controls and legacy-client compatibility pass. Production rendering controls
+cover preview-only and repeated sources, content-only damage, source/backing
+retirement, CPU/native sampling models, mirrors and clipped target membership.
+Session controls cover actual retired projections, capture deferral, exact
+receipt/connection epochs, queue saturation, local revocation and release debt.
+
+The default workspace suite, affected native suites, strict Clippy, layout and
+the complete eight-phase family gate pass. These results close the implementation
+exits for t242–t245 and paired t241; active state remains solely in the queue.
+Narthex requires no overview service or source change. No live install/reload was
+performed. Physical display acceptance remains separate, and the renderer
+investigation retains the earlier unintended smoke attempts and their limits.
 
 ## Connections
 

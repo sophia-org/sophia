@@ -1,8 +1,9 @@
 # WM presentation and input contract
 
-**Role:** implementation contract for t242 and its dependent work. The generic
-extension is under implementation on an isolated branch; it is not yet an
-accepted, integrated public feature.
+**Role:** implementation contract for the capability-gated generic WM extension.
+The [paired acceptance record](notes/investigations/ufhp04gq-workspace-overview-joins-policy-presentation-and-modal-input.md)
+records the accepted source and headless gates for t242–t245 and t241.
+Physical display acceptance remains separate.
 niltempus approved this plan on 2026-09-25. Overview remains WM policy.
 
 ## Authorities and passive values

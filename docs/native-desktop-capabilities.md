@@ -26,9 +26,9 @@ and constrained by operator policy. The stable WM interface remains revision 3
 with explicitly gated extensions. No toolkit types or Rust dependency are
 required on the wire. Optional Rust and C helpers cover different subsets.
 
-The generic WM presentation candidate is newer than the baseline audit above.
+The generic WM presentation extension is newer than the baseline audit above.
 Its [contract](wm-presentation.md) and [foundation inventory](rendering-foundation.md)
-record the current branch evidence and pending joined acceptance. It grants no
+record joined headless acceptance of source `6251aa79`. It grants no
 additional shell source access.
 
 ## What a developer can use
@@ -48,7 +48,7 @@ additional shell source access.
 | Search a launcher using keyboard/text | Connected r7 semantic launcher input | Exact opening/edit revision and revocable presented focus; no ambient key feed | t106/t107 acceptance; general text/IME t111 |
 | Implement richer drag/resize/scroll interaction | Partial target-resolved input machinery; discrete shell actions are not a general toolkit event stream | Engine/input authority; target scope and revocation must survive the entire gesture | t040; text/IME remains t111 |
 | Publish/work with workspaces | Connected r6 indicators and gated WM output launch contexts | WM owns workspace policy; Session publishes committed facts; actions and tokens are opaque | t043 must not duplicate indicators; placement t041/t108 |
-| Present application content at independent geometry | Candidate generic WM instances, regions and exact presented actions | WM proposes opaque spatial records; Engine owns sources, rendering, completion and input. Requires a native retirement owner, including for CPU composition | t242–t245 foundation; t241 paired Hagia acceptance |
+| Present application content at independent geometry | Connected generic WM instances, regions and exact presented actions | WM proposes opaque spatial records; Engine owns sources, rendering, completion and input. Requires a native retirement owner, including for CPU composition | Physical display acceptance; [headless t241 evidence](notes/investigations/ufhp04gq-workspace-overview-joins-policy-presentation-and-modal-input.md) |
 | List and activate windows | Connected bounded sanitized descriptors/tabs and issuer-scoped actions; richer dock feed is partial | Metadata broker, Session and WM; recipient-scoped generations/redaction; no raw application identity by default | t043/t038 |
 | Launch catalog applications | Connected r4 descriptors, r7 native launcher, r8 persistent catalog | Session supplies authorized catalog and supervises execution; clicked output/workspace captured as WM token | t105–t108, physical clean-exit acceptance remains |
 | Bind shortcuts and request session actions | Connected WM-owned bindings, advertised operation catalog, separate control service | WM/Session; existing operations only; no arbitrary command authority from content | Missing system-service grants t113; t037 remains separate reload work |
