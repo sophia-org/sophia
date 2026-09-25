@@ -169,3 +169,26 @@ test Clippy passed. Formatting and diff checks passed; no broad owner suite or
 main/native-family gate was run in this slice. Evidence names:
 `preflight-restored.log`, `session-corrected.log`, `clippy-corrected.log`,
 `clippy-session.log`, and `layout-corrected.log`.
+
+## Broader worktree validation
+
+On exact signed source `d1f6bfa97daf3fb18fc3778e37cff04f8aa202cb`, the allocated
+serial device-hidden `cargo test --offline -p sophia-cli --all-features` passed
+89 tests, failed0, ignored4 across18 test binaries. Strict
+`cargo clippy --offline -p sophia-cli --all-features --all-targets -- -D warnings`
+also passed (15.40s). Both used jobs2/nice19 and the exclusive disk-backed
+`t027/.artifacts/t026-target`; source was clean and unchanged at end capture.
+No additional full Session suite was requested: its focused native controls
+and strict test compilation remain separate evidence.
+
+Durable bundle:
+`~/.local/state/sophia/development-evidence/t101-preflight-d1f6bfa9`.
+Its23 files include start/end source identities, hashes of18 executed test
+binaries plus the CLI, wrapper identity, source controls, all initial/expanded/
+mutation red logs, restored green and broad logs. `SHA256SUMS` was verified;
+its own SHA256 is
+`ea995202f131fe448b6f48f5f489112182fed290ad6d080cfa8da05836c4951f`.
+The source snippets in this bundle record the compiled mutation and accepted
+loop independently. No main, installed-session, hardware or attended acceptance
+run occurred. t101/t081 remain open. The cache is released after these checks;
+any joined gate must pin its own source identity.
