@@ -51,6 +51,7 @@ include!("runtime/window_gravity.rs");
 include!("runtime/glx_resources.rs");
 include!("runtime/pointer_query.rs");
 include!("runtime/input_focus.rs");
+include!("runtime/visibility.rs");
 
 /// Effects of releasing every currently supported resource allocated from one
 /// X11 client connection's setup range.
@@ -186,6 +187,12 @@ enum XGlxDrawableBacking {
 pub struct XAuthorityRuntime {
     resources: XResourceTable,
     windows: XWindowTable,
+    /// The visibility each viewable window was last reported with, so a
+    /// hierarchy change reports only what changed (VisibilityNotify).
+    visibility_reported: BTreeMap<crate::XResourceId, u8>,
+    /// Windows some client selected VisibilityChange on: the only ones
+    /// whose occlusion is computed after a hierarchy change.
+    visibility_interest: BTreeSet<crate::XResourceId>,
     shm_segments: XShmSegmentTable,
     selections: XSelectionMonitor,
     clipboard: ClipboardPortal,
@@ -331,6 +338,8 @@ impl Default for XAuthorityRuntime {
         Self {
             resources: Default::default(),
             windows: Default::default(),
+            visibility_reported: BTreeMap::new(),
+            visibility_interest: BTreeSet::new(),
             shm_segments: Default::default(),
             selections: Default::default(),
             clipboard: Default::default(),

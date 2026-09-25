@@ -28,6 +28,7 @@ include!("x11_wire/shape_dispatch.rs");
 include!("x11_wire/render_sampling_dispatch.rs");
 include!("x11_wire/xtest_decode.rs");
 include!("x11_wire/xtest_admission_socket.rs");
+include!("x11_wire/event_delivery_socket.rs");
 include!("x11_wire/active_window_socket.rs");
 include!("x11_wire/render_picture_lifetime.rs");
 include!("x11_wire/render_clip_reset.rs");

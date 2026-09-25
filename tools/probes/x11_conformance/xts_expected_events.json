@@ -901,9 +901,7 @@
   },
   {
     "case": "/Xlib11/VisibilityNotify",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event ordering could not be compared due to missing events'"
+    "purpose": 2
   },
   {
     "case": "/Xlib11/VisibilityNotify",
@@ -929,20 +927,14 @@
   },
   {
     "case": "/Xlib11/VisibilityNotify",
-    "purpose": 7,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Expected VisibilityNotify event, got none (partially obscured test)'"
+    "purpose": 7
   },
   {
     "case": "/Xlib11/VisibilityNotify",
-    "purpose": 8,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event (viewable & completely unobscured test)'"
+    "purpose": 8
   },
   {
     "case": "/Xlib11/VisibilityNotify",
-    "purpose": 9,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event (viewable and partially obscured test)'"
+    "purpose": 9
   }
 ]

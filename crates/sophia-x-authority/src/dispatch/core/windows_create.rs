@@ -12,6 +12,7 @@ fn dispatch_window_creation_request(
     match request {
                 XWireRequest::CreateWindow {
                     packet,
+                    event_mask,
                     parent,
                     background_pixmap,
                     background_pixel,
@@ -34,6 +35,11 @@ fn dispatch_window_creation_request(
                     let XAuthorityRequestKind::CreateWindow { window, .. } = &kind else {
                         unreachable!("CreateWindow wire requests carry CreateWindow authority packets")
                     };
+                    // VisibilityChange selected at creation: the window's
+                    // occlusion is computed from now on.
+                    if event_mask.is_some_and(|mask| mask & (1 << 16) != 0) {
+                        runtime.note_visibility_interest(*window);
+                    }
                     if runtime.resource_id_in_use(*window) {
                         return XDispatchResult {
                             response: None,
@@ -166,7 +172,7 @@ fn dispatch_window_creation_request(
                             runtime.set_window_bit_gravity(*window, gravity);
                         }
                     }
-                    let mut outputs = outputs_from_authority_response(context, &kind, &response);
+                    let mut outputs = outputs_from_authority_response(context, runtime, &kind, &response);
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow {
                             window, geometry, ..
@@ -271,10 +277,11 @@ fn dispatch_window_creation_request(
                                 .window_override_redirect(context.namespace, window)
                                 .unwrap_or(false),
                             runtime.window_is_input_only(window),
+                            runtime.window_visibility(context.namespace, window),
                             &response,
                         )
                     } else {
-                        outputs_from_authority_response(context, &kind, &response)
+                        outputs_from_authority_response(context, runtime, &kind, &response)
                     };
                     XDispatchResult {
                         response: Some(response),
@@ -284,6 +291,7 @@ fn dispatch_window_creation_request(
                 }
                 XWireRequest::ChangeWindowAttributes {
                     window,
+                    event_mask,
                     background_pixmap,
                     background_pixel,
                     override_redirect,
@@ -295,6 +303,9 @@ fn dispatch_window_creation_request(
                     colormap,
                     ..
                 } => {
+                    if event_mask.is_some_and(|mask| mask & (1 << 16) != 0) {
+                        runtime.note_visibility_interest(window);
+                    }
                     if runtime.validate_drawable_access(context.namespace, window).is_ok()
                         && let Ok((parent, _)) =
                             runtime.window_parent_and_children(context.namespace, window)
