@@ -180,6 +180,25 @@ impl LiveProductionNativeScanout {
                 .presented()
         }
 
+        /// The scene snapshot each head of this output retired last, primary
+        /// first; a mirror head that has retired nothing is None. A mirrored
+        /// output has presented a frame only once every head has.
+        pub fn presented_output_head_frames(
+            &self,
+            output: OutputId,
+        ) -> Vec<Option<&sophia_engine::OutputFrameDamageSnapshot>> {
+            let primary = self.primary_head_index(output);
+            primary
+                .into_iter()
+                .chain(
+                    self.head_indices(output)
+                        .into_iter()
+                        .filter(|index| Some(*index) != primary),
+                )
+                .map(|index| self.heads[index].output_frames.presented())
+                .collect()
+        }
+
         pub fn presented_frame(&self, output: OutputId) -> Option<LiveProductionNativeFrameId> {
             self.heads[self.primary_head_index(output)?]
                 .presented_content

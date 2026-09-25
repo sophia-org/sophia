@@ -306,6 +306,58 @@ whole-placement policy ordinary surfaces follow in the snapshot. With
 reconstruction, one changed texel affects up to two texels around it, so
 whole-rectangle damage stays conservative.
 
+## Boundary review: stamps, mirrors, revocation, withdrawal
+
+A focused review of the joined contract and renderer boundary found the
+following.
+
+- **Mirrored completion (fixed).** The native target reported only the
+  primary head's retired frame, so a publication read as presented while
+  a mirror head still showed the previous one. `presented_head_frames`
+  now reports each head's retired frame, primary first
+  (`presented_output_head_frames` in the native target).
+  `LivePresentedPolicyPublication::from_presented_heads` yields the
+  primary's publication only once every head has retired a frame with the
+  same stamp identity (owner epoch, publication generation, output,
+  output generation). Guard:
+  `a_mirrored_output_presents_a_publication_only_once_every_head_has`.
+  Control primary-head-only fails.
+- **Mirror damage (fixed).** The mirror-copy damage projection rescaled
+  surfaces and borders only. It now also rescales instance destinations
+  and clips, rects (region backdrops) and stamp coverage. A rect or
+  instance that projects to nothing on a head is dropped from that head's
+  damage record, since the damage ledger would refuse it; borders keep
+  their established rounding. Guard:
+  `mirror_damage_projection_places_instances_regions_and_stamp_coverage`.
+- **Source revocation (fixed).** The batch paths revoked a presentation
+  whose source was removed, but the public prepare paths
+  (`prepare_authority_transactions`, `prepare_authority_groups`, and
+  `run_authority_transactions` through them) committed removals without
+  revoking. Both now revoke. Guard:
+  `a_prepared_removal_of_a_sampled_source_revokes_the_presentation`.
+- **ReplaceApplications withdrawal (verified).** Withdrawing damages the
+  stamp's coverage and the restored application's placement, and the
+  application is a frame surface, and so a hit target, again. This is
+  asserted in
+  `replace_applications_substitutes_the_tier_for_that_outputs_applications_only`.
+- **Absent stamps.**
+  - Every native path builds its lists through the output composition, so
+    it carries the stamp. That covers retained, ordinary, Present,
+    translation and configuration repaints.
+  - A head's frame record is queued from the lowered frame's snapshot,
+    which direct scanout does not replace. This is established by code
+    reading and not separately tested.
+  - An output without an output record, or a tier withheld for a missing
+    source, has no stamp, which reads as not presented.
+  - Open, for a decision: the software-only composition path
+    (`production_cpu_cycle.rs`, used without native scanout) draws
+    application surfaces and chrome only. It never draws the tier or a
+    stamp, and the committed-fallback input projection still lists
+    application layers under ReplaceApplications. The failure is safe, since
+    no stamp means no receipt, but a presentation there never completes.
+    Refusing the capability without native scanout, or drawing the tier on
+    that path, is the director's choice.
+
 ## Incident: the real-card smoke ran during a suite
 
 On 2026-09-25, two `cargo test --offline -p sophia-backend-live

@@ -334,13 +334,37 @@ fn replace_applications_substitutes_the_tier_for_that_outputs_applications_only(
         "its allocation is untouched"
     );
 
+    let replaced_frame = output_frame_damage_snapshot(
+        outputs[0],
+        output_list(&runtime, output),
+        runtime.committed_surfaces(),
+        None,
+    )
+    .unwrap();
     runtime.set_policy_presentation(None, &scene, None).unwrap();
+    let restored = output_list(&runtime, output);
     assert!(
-        output_list(&runtime, output)
-            .commands
-            .iter()
-            .any(is_application),
+        restored.commands.iter().any(is_application),
         "withdrawal restores it"
+    );
+    // Withdrawal repaints what the tier covered and what it restores: the
+    // stamp's coverage and the application's own placement.
+    let restored_frame =
+        output_frame_damage_snapshot(outputs[0], restored, runtime.committed_surfaces(), None)
+            .unwrap();
+    assert_eq!(
+        restored_frame.surfaces.len(),
+        1,
+        "the application is a hit target again"
+    );
+    let damage = output_frame_damage(Some(&replaced_frame), &restored_frame).unwrap();
+    assert!(
+        damage.rects.contains(&rect(0, 0, 64, 32)),
+        "the coverage is repainted"
+    );
+    assert!(
+        damage.rects.contains(&rect(0, 0, 16, 16)),
+        "the restored application is repainted"
     );
 }
 
@@ -993,4 +1017,150 @@ fn an_instance_samples_a_source_that_another_output_presents() {
         assert_eq!(cpu_layers, 1, "one draw of the source on {output:?}");
     }
     assert_eq!(frames.len(), 2);
+}
+
+/// A mirrored output has presented a publication only once every head has
+/// retired a frame carrying it: a lagging head, still showing the previous
+/// publication or none, leaves the output without a completed publication
+/// whichever head flips first.
+#[test]
+fn a_mirrored_output_presents_a_publication_only_once_every_head_has() {
+    let outputs = outputs();
+    let output = outputs[0].id;
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(outputs[0].size);
+    let mut target = MirroredTarget::new(&outputs);
+    assert_eq!(
+        target.presented_head_frames(output).len(),
+        2,
+        "a mirrored output"
+    );
+    let source = SurfaceId::new(5, 1);
+    commit_cpu_surface(
+        &mut runtime,
+        &mut scene,
+        source,
+        55,
+        1,
+        rect(-100, -100, 8, 8),
+    );
+    let backdrop = region(
+        output,
+        1,
+        0,
+        PolicyPresentationRegionRole::Backdrop,
+        rect(0, 0, 64, 32),
+        rect(0, 0, 64, 32),
+    );
+    let preview = shown_instance(output, 2, 1, source, rect(4, 4, 8, 8));
+    let publish = |runtime: &mut LiveProductionVisualRuntime,
+                   scene: &LiveProductionCpuScene,
+                   generation: u64| {
+        runtime
+            .set_policy_presentation(
+                Some(published(
+                    generation,
+                    vec![presentation_output(
+                        output,
+                        PolicyPresentationMode::ReplaceApplications,
+                    )],
+                    vec![preview],
+                    vec![backdrop],
+                )),
+                scene,
+                None,
+            )
+            .unwrap();
+    };
+    let queue = |runtime: &LiveProductionVisualRuntime,
+                 scene: &LiveProductionCpuScene,
+                 target: &mut MirroredTarget| {
+        let frames = runtime
+            .retained_output_head_composition_frames(scene, &*target)
+            .unwrap();
+        target
+            .queue_retained_batch(frames, &BTreeSet::new())
+            .unwrap();
+        target.install(output).unwrap();
+        target.prepare(output);
+    };
+    let whole = |target: &MirroredTarget| {
+        LivePresentedPolicyPublication::from_presented_heads(&target.presented_head_frames(output))
+            .map(|publication| publication.generation)
+    };
+
+    publish(&mut runtime, &scene, 1);
+    queue(&runtime, &scene, &mut target);
+    target.flip(output, 1);
+    assert_eq!(
+        whole(&target),
+        None,
+        "the primary head has not presented it"
+    );
+    target.flip(output, 0);
+    assert_eq!(whole(&target), Some(1));
+
+    publish(&mut runtime, &scene, 2);
+    queue(&runtime, &scene, &mut target);
+    target.flip(output, 0);
+    assert_eq!(
+        LivePresentedPolicyPublication::from_presented_frame(
+            target.presented_frame(output).unwrap()
+        )
+        .unwrap()
+        .generation,
+        2,
+        "the primary head shows the new publication"
+    );
+    assert_eq!(
+        whole(&target),
+        None,
+        "the mirror head still shows the previous one"
+    );
+    target.flip(output, 1);
+    assert_eq!(whole(&target), Some(2));
+    target.teardown();
+}
+
+/// Every path that commits a removal revokes a presentation sampling the
+/// removed source, not only the batch path: here the prepared commit.
+#[test]
+fn a_prepared_removal_of_a_sampled_source_revokes_the_presentation() {
+    let outputs = outputs();
+    let output = outputs[0].id;
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(outputs[0].size);
+    let source = SurfaceId::new(5, 1);
+    commit_cpu_surface(
+        &mut runtime,
+        &mut scene,
+        source,
+        55,
+        1,
+        rect(-100, -100, 8, 8),
+    );
+    runtime
+        .set_policy_presentation(
+            Some(published(
+                1,
+                vec![presentation_output(output, PolicyPresentationMode::Overlay)],
+                vec![shown_instance(output, 2, 1, source, rect(4, 4, 8, 8))],
+                vec![],
+            )),
+            &scene,
+            None,
+        )
+        .unwrap();
+    runtime
+        .prepare_authority_transactions(TransactionId::from_raw(99), &[], &[source])
+        .unwrap();
+    assert!(runtime.committed_surfaces().is_empty());
+    assert_eq!(runtime.policy_presentation(), None);
+    assert_eq!(
+        runtime
+            .take_policy_presentation_revocation()
+            .map(|revocation| revocation.source),
+        Some(source)
+    );
+    assert!(output_list(&runtime, output).presentation_stamp().is_none());
 }

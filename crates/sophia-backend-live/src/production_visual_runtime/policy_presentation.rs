@@ -53,6 +53,34 @@ pub struct LivePresentedPolicyPublication {
 }
 
 impl LivePresentedPolicyPublication {
+    /// What a whole output presents, from the frame each of its heads last
+    /// retired (primary first, as the native target reports them): the
+    /// primary head's publication, only once every head has retired a frame
+    /// with the same stamp identity (owner epoch, publication generation,
+    /// output, output generation). A lagging mirror head, or one still
+    /// showing an earlier publication or none, leaves the output without a
+    /// completed publication. Target lists come from the primary head; a
+    /// head where a target rounds to nothing does not draw it.
+    pub fn from_presented_heads(frames: &[Option<&OutputFrameDamageSnapshot>]) -> Option<Self> {
+        let mut heads = frames.iter();
+        let primary = Self::from_presented_frame((*heads.next()?)?)?;
+        let identity = |publication: &Self| {
+            (
+                publication.owner_epoch,
+                publication.generation,
+                publication.output,
+                publication.output_generation,
+            )
+        };
+        heads
+            .all(|frame| {
+                frame
+                    .and_then(Self::from_presented_frame)
+                    .is_some_and(|head| identity(&head) == identity(&primary))
+            })
+            .then_some(primary)
+    }
+
     /// None when the frame presents no WM publication.
     pub fn from_presented_frame(frame: &OutputFrameDamageSnapshot) -> Option<Self> {
         let list = &frame.compositor_display_list;

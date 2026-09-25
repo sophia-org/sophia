@@ -38,12 +38,41 @@ pub fn project_mirror_output_damage_snapshot(
     for surface in &mut projected.surfaces {
         surface.geometry = crate::project_mirror_child_rect(surface.geometry, source, target);
     }
+    let child = |rect| crate::project_mirror_child_rect(rect, source, target);
     for command in &mut projected.compositor_display_list.commands {
-        if let sophia_engine::CompositorDisplayCommand::Border(border) = command {
-            border.outer = crate::project_mirror_child_rect(border.outer, source, target);
-            border.inner = crate::project_mirror_child_rect(border.inner, source, target);
+        match command {
+            sophia_engine::CompositorDisplayCommand::Border(border) => {
+                border.outer = child(border.outer);
+                border.inner = child(border.inner);
+            }
+            // Region backdrops and other rectangles, surface instances and
+            // the presentation stamp's coverage damage the mirror head where
+            // it draws them, not where the primary head does (t244).
+            sophia_engine::CompositorDisplayCommand::Rect(rect) => {
+                rect.geometry = child(rect.geometry);
+            }
+            sophia_engine::CompositorDisplayCommand::SurfaceInstance(instance) => {
+                instance.destination = child(instance.destination);
+                instance.clip = child(instance.clip);
+            }
+            sophia_engine::CompositorDisplayCommand::PresentationStamp(stamp) => {
+                stamp.coverage = child(stamp.coverage);
+            }
+            _ => {}
         }
     }
+    // What projects to nothing on this head draws and damages nothing there;
+    // it cannot stay as a record the damage ledger would refuse.
+    projected
+        .compositor_display_list
+        .commands
+        .retain(|command| match command {
+            sophia_engine::CompositorDisplayCommand::Rect(rect) => !rect.geometry.is_empty(),
+            sophia_engine::CompositorDisplayCommand::SurfaceInstance(instance) => {
+                !instance.visible().is_empty()
+            }
+            _ => true,
+        });
     projected.software_cursor = projected
         .software_cursor
         .map(|cursor| crate::project_mirror_child_rect(cursor, source, target));

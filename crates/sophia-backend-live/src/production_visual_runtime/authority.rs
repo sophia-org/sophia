@@ -547,6 +547,9 @@ impl LiveProductionVisualRuntime {
         transactions: &[SurfaceTransaction],
         removed_surfaces: &[SurfaceId],
     ) -> Result<LiveProductionPreparedAuthorityBatch, Box<dyn std::error::Error>> {
+        // Any commit that removes a sampled source revokes the presentation,
+        // on every path that commits removals (t244).
+        self.revoke_policy_presentation_for_removed(removed_surfaces);
         self.observe_surface_metadata(transactions, removed_surfaces);
         let intake = AuthorityTransactionIntake::new(transaction_id, transactions.to_vec())
             .with_surface_removals(removed_surfaces.to_vec());
@@ -566,6 +569,7 @@ impl LiveProductionVisualRuntime {
         let mut intakes = Vec::with_capacity(groups.len());
         for group in groups {
             group.validate()?;
+            self.revoke_policy_presentation_for_removed(&group.removed_surfaces);
             self.observe_surface_metadata(&group.transactions, &group.removed_surfaces);
             intakes.push(
                 AuthorityTransactionIntake::new(group.transaction, group.transactions.clone())

@@ -1296,3 +1296,108 @@ fn mixed_layers_and_clips_follow_the_projected_scene() {
         Some((96, 114))
     );
 }
+
+/// t244: a mirror head's damage for WM presentation content is where that
+/// head draws it. Surface instances, region backdrops (rects) and the
+/// presentation stamp's coverage project with the scene, as borders do.
+#[test]
+fn mirror_damage_projection_places_instances_regions_and_stamp_coverage() {
+    use sophia_engine::{
+        CompositorContentImage, CompositorDisplayCommand, CompositorDisplayList, CompositorNodeId,
+        CompositorPresentationStamp, CompositorRect, CompositorRgb8, CompositorSurfaceInstance,
+        HeadlessOutput, OutputFrameDamageSnapshot,
+    };
+    use sophia_protocol::{OutputId, Size};
+    let output = OutputId::from_raw(3);
+    let source = Size {
+        width: 2560,
+        height: 1440,
+    };
+    let destination = HeadlessOutput {
+        id: output,
+        size: Size {
+            width: 1280,
+            height: 720,
+        },
+        scale: 1,
+    };
+    let whole = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let preview = Rect {
+        x: 200,
+        y: 100,
+        width: 400,
+        height: 300,
+    };
+    let snapshot = OutputFrameDamageSnapshot {
+        output: HeadlessOutput {
+            id: output,
+            size: source,
+            scale: 1,
+        },
+        surfaces: Vec::new(),
+        compositor_display_list: CompositorDisplayList::<CompositorContentImage> {
+            output,
+            commands: vec![
+                CompositorDisplayCommand::PresentationStamp(CompositorPresentationStamp {
+                    owner_epoch: 7,
+                    publication_generation: 2,
+                    output,
+                    output_generation: 1,
+                    coverage: whole,
+                }),
+                CompositorDisplayCommand::Rect(CompositorRect {
+                    opacity: 255,
+                    node: CompositorNodeId::PolicyRegion {
+                        owner_epoch: 7,
+                        id: 1,
+                    },
+                    generation: 2,
+                    geometry: whole,
+                    color: CompositorRgb8 {
+                        red: 1,
+                        green: 2,
+                        blue: 3,
+                    },
+                }),
+                CompositorDisplayCommand::SurfaceInstance(CompositorSurfaceInstance {
+                    owner_epoch: 7,
+                    id: 2,
+                    generation: 3,
+                    source: SurfaceId::new(9, 1),
+                    source_generation: 4,
+                    destination: preview,
+                    clip: preview,
+                    opacity_millis: 1_000,
+                }),
+            ],
+        }
+        .into(),
+        software_cursor: None,
+    };
+    let projected =
+        project_mirror_output_damage_snapshot(&snapshot, source, destination, NativeMirrorFit::Fit)
+            .expect("presentation damage projects");
+    let half = Rect {
+        x: 100,
+        y: 50,
+        width: 200,
+        height: 150,
+    };
+    let screen = Rect {
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+    };
+    let list = &projected.compositor_display_list;
+    assert_eq!(list.presentation_stamp().unwrap().coverage, screen);
+    assert!(matches!(&list.commands[1], CompositorDisplayCommand::Rect(rect) if rect.geometry == screen));
+    let instance = list.surface_instances().next().unwrap();
+    assert_eq!((instance.destination, instance.clip), (half, half));
+    assert_eq!((instance.id, instance.generation, instance.source_generation), (2, 3, 4));
+}
