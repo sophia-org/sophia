@@ -53,7 +53,6 @@ shortcut {
   bind "Super+Return" "session:spawn-terminal"
   bind "Super+b" "session:spawn-browser"
   bind "Super+p" "session:window-switcher"
-  bind "Super+o" "policy:toggle-overview"
   bind "Super+q" "session:close-window"
   bind "Super+h" "policy:focus-prev"
   bind "Super+j" "policy:focus-next"
