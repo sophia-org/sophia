@@ -2,7 +2,7 @@
 id: 0t19mi7j
 date: 2026-09-25
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, x11, colormap]
 ---
 # Installed colormaps replace the namespace screen map and notify its windows
@@ -46,10 +46,27 @@ XUninstallColormap-2; their stale declarations are removed, for 43 passed and
 59 declared outcomes. The colors scenario does not include XInstallColormap,
 so a separate six-purpose manifest is retained for that scenario.
 
-Full suites, layout, Clippy, the core probe and the formal main-tree chain
-(selected-core all profiles, xproto, colors, XInstallColormap and events with
-XTEST) remain to be recorded against the final candidate. No live installation
-or physical acceptance is part of this task.
+Signed candidate `b8203dc77ad0b1abe1fe1d42198d5890a07b93be`, rebased onto
+`ca4dd912`, passed the main-tree layout gate and full X11 chain:
+
+- selected-core, all profiles: 76 passed, 23 declared outcomes;
+- xproto: 339 passed, 50 declared outcomes;
+- colors, all profiles: 43 passed, 59 declared outcomes;
+- XInstallColormap: 3 passed, 3 suite-declared UNTESTED purposes;
+- events with XTEST: 123 passed, 72 declared outcomes.
+
+All profile reports name the clean candidate and confirm unchanged source
+afterward. Native-input passed 40/40 where selected; XTEST passed 44/44 on
+every scenario. The independent core probe passed 162/162. Rebased all-feature
+authority/session suites passed 2,976 tests across 74 groups, with 39 existing
+ignores. Workspace all-target Clippy, formatting and diff checks passed.
+
+Reports, XTS journals and suite/probe logs are retained at
+`~/.local/state/sophia/development-evidence/t213-b8203dc7`, with verified
+`SHA256SUMS`. Main-tree artifacts are also under
+`.artifacts/x11-profile-b8203dc7-xts-{selected-core,xproto,colors,XInstallColormap,events}`.
+This closes t213. No live installation or physical acceptance was part of it;
+legacy writable palettes and physical color management remain outside scope.
 
 ## Connections
 
