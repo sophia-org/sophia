@@ -345,6 +345,16 @@ chord to rehearse. If rendering and routed input become unusable, press
 compositor, WM, and shell; the supervisor ends the session process group,
 restores keyboard/KD/termios state, and returns control to greetd.
 
+Launch preparation runs in the packaged Sophia binary: controls, executable
+discovery, argument/environment vectors, private proof inputs and exact command
+acceptance. Installed startup requires no Cargo or xtask. Preparation refuses
+an unsupported binary instead of treating a zero exit as acceptance. The
+Kitty override parser and final session argument parser have ten-second
+deadlines and process-group cleanup; neither starts a graphical session.
+The shell adapters retain TTY/display-manager handoff, the independent input
+guard, watchdog and restoration. Development builds supply the matching
+validator before controls are checked; installed startup forbids builds.
+
 Development launchers and installed proof or promotion sessions retain manual
 arming: press and release the chord when prompted, then use it again if recovery
 is needed. Set `SOPHIA_INPUT_GUARD_ARMING=manual` to request this check for an

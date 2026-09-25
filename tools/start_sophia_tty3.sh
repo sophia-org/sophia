@@ -49,13 +49,19 @@ if [[ ! -t 0 || "$(tty)" != "$TARGET_TTY" ]]; then
 fi
 # Validate this selected candidate before any display-manager handoff. Builds
 # belong here too: checking yesterday's executable would not admit today's run.
-if [[ "$SESSION_PROFILE" == hagia ]]; then
+if [[ "$SESSION_PROFILE" == hagia || "$SESSION_PROFILE" == native
+    || "$SESSION_PROFILE" == kitty || "$SESSION_PROFILE" == standalone ]]; then
     if [[ "${SOPHIA_BUILD_SESSION:-true}" == true ]]; then
         cargo build --offline --release --manifest-path "$ROOT_DIR/Cargo.toml" \
             -p sophia-cli --features native-session
+        if [[ "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone ]]; then
+            cargo build --offline --release --manifest-path "$ROOT_DIR/Cargo.toml" -p sophia-wm-demo
+        fi
         "$ROOT_DIR/tools/atomic_scanout_preflight.sh"
         export SOPHIA_BUILD_SESSION=false
     fi
+fi
+if [[ "$SESSION_PROFILE" == hagia ]]; then
     source "$ROOT_DIR/tools/lib/session_profile.sh"
     sophia_check_hagia_profile \
         "${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}" \
@@ -65,6 +71,13 @@ if [[ "$SESSION_PROFILE" == hagia ]]; then
         "${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}" config check \
             "--config=$SOPHIA_CORE_CONFIG"
     fi
+fi
+if [[ "$SESSION_PROFILE" == hagia || "$SESSION_PROFILE" == native
+    || "$SESSION_PROFILE" == kitty || "$SESSION_PROFILE" == standalone ]]; then
+    source "$ROOT_DIR/tools/lib/session_preparation.sh"
+    SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
+    sophia_load_preparation 'sophia_session_controls schema=1 status=prepared' prepare-controls
+    [[ "${#prepared_vector[@]}" == 9 ]] || { echo "Incomplete session controls." >&2; exit 1; }
 fi
 origin_tty="$(tty)"
 origin_vt="${origin_tty#/dev/tty}"

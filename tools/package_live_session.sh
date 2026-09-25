@@ -204,6 +204,8 @@ install -m 644 tools/lib/session_lifecycle.sh \
     "$artifact/tools/lib/session_lifecycle.sh"
 install -m 644 tools/lib/session_terminal.sh \
     "$artifact/tools/lib/session_terminal.sh"
+install -m 644 tools/lib/session_preparation.sh \
+    "$artifact/tools/lib/session_preparation.sh"
 install -m 644 tools/lib/installed_attempt_ledger.sh \
     "$artifact/tools/lib/installed_attempt_ledger.sh"
 install -m 644 tools/lib/installed_hagia_evidence.sh \

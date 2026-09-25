@@ -1,7 +1,12 @@
 //! Installed launch argument preparation. This command never starts a session.
 use std::{collections::BTreeMap, io::Write, path::Path};
 
+mod acceptance;
+mod bounded;
+mod controls;
+mod discovery;
 mod environment;
+mod proofs;
 mod standalone;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -10,12 +15,31 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool> {
     if args.first().map(String::as_str) != Some("session")
         || !matches!(
             args.get(1).map(String::as_str),
-            Some("prepare-arguments" | "prepare-environment")
+            Some(
+                "prepare-arguments"
+                    | "prepare-environment"
+                    | "prepare-inputs"
+                    | "stage-proofs"
+                    | "check-launch"
+                    | "prepare-controls"
+            )
         )
     {
         return Ok(false);
     }
     let (options, extra) = parse(&args[2..])?;
+    if args[1] == "prepare-controls" {
+        return controls::run(&options, extra).map(|()| true);
+    }
+    if args[1] == "check-launch" {
+        return acceptance::run(&options, extra).map(|()| true);
+    }
+    if args[1] == "prepare-inputs" {
+        return discovery::run(&options, extra).map(|()| true);
+    }
+    if args[1] == "stage-proofs" {
+        return proofs::run(&options, extra).map(|()| true);
+    }
     if args[1] == "prepare-environment" {
         return environment::run(&options, extra).map(|()| true);
     }

@@ -33,7 +33,7 @@ const OWNER_FILE_MODE: u32 = 0o600;
 pub(crate) const STACKS: [&str; 3] = ["sophia", "xlibre-xmonad", "niri"];
 pub(crate) const SHORT_WORKLOADS: [&str; 4] =
     ["kitty-60s", "firefox-local", "resize", "kitty-burst-16"];
-pub(crate) const CONFIGS: [&str; 15] = [
+pub(crate) const CONFIGS: [&str; 16] = [
     "validation/desktop-comparison/config/sophia.kdl",
     "validation/desktop-comparison/config/xlibre-xmonad.kdl",
     "validation/desktop-comparison/config/niri.kdl",
@@ -45,6 +45,7 @@ pub(crate) const CONFIGS: [&str; 15] = [
     "tools/run_sophia_session.sh",
     "tools/sophia_tty_mode.py",
     "tools/lib/session_terminal.sh",
+    "tools/lib/session_preparation.sh",
     "validation/desktop-comparison/profiles/core.kdl",
     "validation/desktop-comparison/profiles/hagia.kdl",
     "validation/desktop-comparison/profiles/niri.kdl",

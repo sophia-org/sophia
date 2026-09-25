@@ -133,3 +133,43 @@ The [Session source split](izw9opes-private-session-tests-can-move-without-widen
 keeps argument parsing and startup profile evidence behind their existing
 private facade. That refactoring supplies a clearer owner for preparation but
 does not itself migrate the launcher or satisfy t027.
+
+## Remaining preparation moved to the installed binary
+
+The final preparation slice adds `prepare-controls`, `prepare-inputs`,
+`stage-proofs` and `check-launch` under `sophia session`. Controls are checked
+before the wrapper creates session state, and before the outer ordinary-profile
+TTY adapter queries modes or begins privileged handoff. Development startup
+builds the matching validator first; installed startup forbids that bootstrap.
+Executable discovery preserves optional normal-Hagia defaults, explicit proof
+adapters and standalone workload choices. A retained Bash oracle compares those
+results, including absent defaults, invalid paths and literal shell syntax.
+
+Proof staging requires an absolute private owner directory, creates Firefox
+profiles with 0700 directories/0600 files, and reclaims only real stale profile
+directories. Failed preparation removes the new profile before reporting failure;
+only a complete acceptance record transfers cleanup ownership to the adapter.
+Direct-scanout fixture copies replace destination links atomically. The Kitty
+parser and exact session parser each have a ten-second process-group deadline.
+The latter executes the same binary with the actual prepared environment and
+argument vector, captures private diagnostics, and requires parser acceptance.
+It preserves the existing parser's vocabulary and handling of unknown switches;
+it does not introduce a new argument grammar.
+
+The wrapper is now 542 lines, down from 1,180 at the audit. Its remaining work
+is TTY ownership, independent guard/watchdog custody, bounded session shutdown,
+bus lifetime and recovery logging. The outer adapter retains display-manager
+handoff and dispatch to ordinary or explicit physical-proof entry points; its
+profile check already delegates to Rust/xtask. Archive verification remains in
+the existing Rust tooling. None of these preparation commands opens devices,
+starts a bus, installs a release or reloads a running desktop.
+
+The native-feature CLI suite, executable discovery/argument/environment
+comparisons, private proof and exact-parser tests pass. Disposable PTY tests
+show guard death and early emergency recovery prevent graphics takeover and
+invalid controls stop before TTY-mode queries or privileged handoff. The external
+watchdog regression, lifecycle diagnostics, Hagia preflight refusal fixture and
+terminal checks pass. Clippy, formatting and the layout gate pass. One new PTY
+fixture initially allowed stdin EOF to hang up its shell before exec; retaining
+the input pipe until exit fixes the harness and tests the intended refusal.
+The complete native-family gate and source-bound final acceptance remain pending.

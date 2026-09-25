@@ -3,99 +3,35 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/tools/lib/session_lifecycle.sh"
-source "$ROOT_DIR/tools/lib/session_terminal.sh"
+source "$ROOT_DIR/tools/lib/session_preparation.sh"
 SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
-SOPHIA_HAGIA_BIN="${SOPHIA_HAGIA_BIN:-$(command -v hagia 2>/dev/null || true)}"
 TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
 BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
 MANAGE_KEYD="${SOPHIA_MANAGE_KEYD:-true}"
 INSTALLED_SESSION="${SOPHIA_INSTALLED_SESSION:-false}"
-INSTALLED_VERSION="${SOPHIA_INSTALLED_VERSION:-unknown}"
-INSTALLED_COMMIT="${SOPHIA_INSTALLED_COMMIT:-unknown}"
-[[ "$INSTALLED_VERSION" =~ ^[0-9A-Za-z._-]+$ ]] || INSTALLED_VERSION=unknown
-[[ "$INSTALLED_COMMIT" =~ ^[0-9A-Za-z._-]+$ ]] || INSTALLED_COMMIT=unknown
 REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
 REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
 DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
-SESSION_PROFILE="${SOPHIA_TTY_PROFILE:-}"
-SESSION_STARTUP="${SOPHIA_SESSION_STARTUP:-terminal}"
-SESSION_WATCHDOG_SECONDS="${SOPHIA_SESSION_WATCHDOG_SECONDS:-}"
-INPUT_GUARD_ARM_TIMEOUT_SECONDS="${SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS:-30}"
-INPUT_GUARD_ARMING="${SOPHIA_INPUT_GUARD_ARMING:-manual}"
-SESSION_HANDOFF="${SOPHIA_SESSION_HANDOFF:-display_manager}"
-TRUECOLOR_PROOF="${SOPHIA_TRUECOLOR_PROOF:-false}"
-FIREFOX_M10_PROOF=false
-FIREFOX_M10_RENDERING_PROOF=false
-FIREFOX_M10_DIALOG_PROOF=false
-FIREFOX_M10_PRIMARY_PROOF=false
-FIREFOX_M10_SELECTION_PROOF=false
-FIREFOX_M10_LIFECYCLE_PROOF=false
-for argument in "$@"; do
-    case "$argument" in
-        --firefox-m10-proof) FIREFOX_M10_PROOF=true ;;
-        --firefox-m10-rendering-proof) FIREFOX_M10_RENDERING_PROOF=true ;;
-        --firefox-m10-dialog-proof) FIREFOX_M10_DIALOG_PROOF=true ;;
-        --firefox-m10-primary-proof) FIREFOX_M10_PRIMARY_PROOF=true ;;
-        --firefox-m10-selection-proof) FIREFOX_M10_SELECTION_PROOF=true ;;
-        --firefox-m10-lifecycle-proof) FIREFOX_M10_LIFECYCLE_PROOF=true ;;
-    esac
-done
-FIREFOX_M10_ANY_PROOF=false
-if [[ "$FIREFOX_M10_PROOF" == true
-    || "$FIREFOX_M10_RENDERING_PROOF" == true
-    || "$FIREFOX_M10_DIALOG_PROOF" == true
-    || "$FIREFOX_M10_PRIMARY_PROOF" == true
-    || "$FIREFOX_M10_SELECTION_PROOF" == true
-    || "$FIREFOX_M10_LIFECYCLE_PROOF" == true ]]; then
-    FIREFOX_M10_ANY_PROOF=true
-fi
-if [[ "$SESSION_PROFILE" != standalone
-    && "$SESSION_PROFILE" != native
-    && "$SESSION_PROFILE" != hagia
-    && "$SESSION_PROFILE" != kitty ]]; then
-    echo "SOPHIA_TTY_PROFILE must be standalone, native, hagia, or kitty." >&2
+# The development bootstrap supplies the validator. Installed startup must use
+# its packaged executable and can never enter Cargo or service management here.
+if [[ "$INSTALLED_SESSION" == true
+    && ( "$BUILD_SESSION" != false || "$MANAGE_KEYD" != false ) ]]; then
+    echo "Installed Sophia forbids source builds and manual service control." >&2
     exit 1
 fi
-if [[ "$SESSION_STARTUP" != terminal && "$SESSION_STARTUP" != none ]]; then
-    echo "SOPHIA_SESSION_STARTUP must be terminal or none." >&2
-    exit 1
+if [[ "$BUILD_SESSION" == true ]]; then
+    cargo build --manifest-path "$ROOT_DIR/Cargo.toml" --offline --release -p sophia-cli --features native-session
 fi
-if [[ "$SESSION_STARTUP" == none && "$SESSION_PROFILE" != hagia ]]; then
-    echo "A terminal-free normal session is supported only by the Hagia profile." >&2
-    exit 1
-fi
-if [[ -n "$SESSION_WATCHDOG_SECONDS"
-    && ! "$SESSION_WATCHDOG_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "SOPHIA_SESSION_WATCHDOG_SECONDS must be a positive integer when set." >&2
-    exit 1
-fi
-if [[ ! "$INPUT_GUARD_ARM_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$
-    || "$INPUT_GUARD_ARM_TIMEOUT_SECONDS" -gt 300 ]]; then
-    echo "SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS must be an integer from 1 through 300." >&2
-    exit 1
-fi
-INPUT_GUARD_ARM_WAIT_TICKS=$((INPUT_GUARD_ARM_TIMEOUT_SECONDS * 20))
-if [[ "$INPUT_GUARD_ARMING" != manual && "$INPUT_GUARD_ARMING" != automatic ]]; then
-    echo "SOPHIA_INPUT_GUARD_ARMING must be manual or automatic." >&2
-    exit 1
-fi
-if [[ "$SESSION_HANDOFF" != display_manager && "$SESSION_HANDOFF" != cycle_runner ]]; then
-    echo "SOPHIA_SESSION_HANDOFF must be display_manager or cycle_runner." >&2
-    exit 1
-fi
-if [[ "$TRUECOLOR_PROOF" != true && "$TRUECOLOR_PROOF" != false ]]; then
-    echo "SOPHIA_TRUECOLOR_PROOF must be true or false." >&2
-    exit 1
-fi
-if [[ "$TRUECOLOR_PROOF" == true && "$SESSION_PROFILE" != hagia ]]; then
-    echo "The TrueColor proof requires the Hagia session profile." >&2
-    exit 1
-fi
-normal_application_defaults=false
-if sophia_session_uses_application_defaults \
-    "$SESSION_PROFILE" "$FIREFOX_M10_ANY_PROOF" "$TRUECOLOR_PROOF"; then
-    normal_application_defaults=true
-fi
+sophia_load_preparation 'sophia_session_controls schema=1 status=prepared' prepare-controls
+[[ "${#prepared_vector[@]}" == 9 ]] || { echo "Incomplete session controls." >&2; exit 1; }
+SESSION_PROFILE="${prepared_vector[1]}"
+SESSION_WATCHDOG_SECONDS="${prepared_vector[2]}"
+INPUT_GUARD_ARM_TIMEOUT_SECONDS="${prepared_vector[3]}"
+INPUT_GUARD_ARM_WAIT_TICKS="${prepared_vector[4]}"
+INPUT_GUARD_ARMING="${prepared_vector[5]}"
+SESSION_HANDOFF="${prepared_vector[6]}"
+INSTALLED_VERSION="${prepared_vector[7]}"
+INSTALLED_COMMIT="${prepared_vector[8]}"
 SESSION_LABEL="Sophia $SESSION_PROFILE session"
 runtime_root="${XDG_RUNTIME_DIR:-/tmp}"
 tty_name="$(tty 2>/dev/null || true)"
@@ -184,11 +120,6 @@ if [[ "$REQUIRE_LOCAL_VT" == true && ! "$tty_name" =~ ^/dev/tty[0-9]+$ ]]; then
     echo "Installed Sophia requires a local Linux VT; observed: $tty_name" >&2
     exit 1
 fi
-if [[ "$INSTALLED_SESSION" == true
-    && ( "$BUILD_SESSION" != false || "$MANAGE_KEYD" != false ) ]]; then
-    echo "Installed Sophia forbids source builds and manual service control." >&2
-    exit 1
-fi
 
 live_named_processes() {
     local name pid state
@@ -223,7 +154,6 @@ fi
 
 cd "$ROOT_DIR"
 if [[ "$BUILD_SESSION" == true ]]; then
-    cargo build --offline --release -p sophia-cli --features native-session
     if [[ "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone ]]; then
         cargo build --offline --release -p sophia-wm-demo
     fi
@@ -233,23 +163,15 @@ fi
     echo "Sophia session binary is not executable: $SOPHIA_BIN" >&2
     exit 1
 }
-hagia_browser_bin=""
-if [[ "$SESSION_PROFILE" == hagia ]]; then
-    if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
-        hagia_browser_bin="${SOPHIA_FIREFOX_BIN:-$(command -v firefox || true)}"
-    else
-        hagia_browser_bin="${SOPHIA_HAGIA_BROWSER_BIN:-$(command -v helium || command -v firefox || true)}"
-    fi
-    if [[ "$normal_application_defaults" == true ]]; then
-        if [[ -n "$hagia_browser_bin" && ! -x "$hagia_browser_bin" ]]; then
-            echo "The default browser is not executable: $hagia_browser_bin" >&2
-            exit 1
-        fi
-    elif [[ -z "$hagia_browser_bin" || ! -x "$hagia_browser_bin" ]]; then
-        echo "The Hagia profile requires Helium, Firefox, or SOPHIA_HAGIA_BROWSER_BIN." >&2
-        exit 1
-    fi
-fi
+sophia_load_preparation 'sophia_session_inputs schema=1 status=prepared' prepare-inputs \
+    "--profile=$SESSION_PROFILE" "--root=$ROOT_DIR" -- "$@"
+[[ "${#prepared_vector[@]}" == 7 ]] || { echo "Incomplete session inputs." >&2; exit 1; }
+terminal_bin="${prepared_vector[1]}"
+terminal_kind="${prepared_vector[2]}"
+hagia_browser_bin="${prepared_vector[3]}"
+standalone_bin="${prepared_vector[4]}"
+SOPHIA_HAGIA_BIN="${prepared_vector[5]}"
+session_benchmark="${prepared_vector[6]}"
 lifecycle_phase complete preflight
 
 keyd_was_running=false
@@ -386,24 +308,12 @@ trap 'stop_from_signal 130' INT
 trap 'stop_from_signal 143' TERM
 printf '%s\n' "$$" >"$PID_FILE"
 
-if [[ "$FIREFOX_M10_ANY_PROOF" == true ]]; then
-    # Proof profiles can exceed 100 MiB. They are session resources, not
-    # retained evidence, so reclaim prior profiles before allocating this one.
-    find "$STATE_DIR" -mindepth 1 -maxdepth 1 -type d -name 'firefox-m10.*' \
-        -exec rm -rf -- {} +
-    firefox_m10_probe_dir="$(mktemp -d "$STATE_DIR/firefox-m10.XXXXXX")"
-    firefox_m10_profile_dir="$firefox_m10_probe_dir/firefox-profile"
-    mkdir -p "$firefox_m10_profile_dir"
-    chmod 700 "$firefox_m10_profile_dir"
-    printf '%s\n' \
-        'user_pref("browser.tabs.remote.autostart", false);' \
-        'user_pref("browser.tabs.remote.autostart.2", false);' \
-        'user_pref("fission.autostart", false);' \
-        'user_pref("middlemouse.paste", true);' \
-        'user_pref("middlemouse.contentLoadURL", false);' \
-        >"$firefox_m10_profile_dir/user.js"
-    chmod 600 "$firefox_m10_profile_dir/user.js"
-fi
+sophia_load_preparation 'sophia_session_proofs schema=1 status=prepared' stage-proofs \
+    "--profile=$SESSION_PROFILE" "--root=$ROOT_DIR" "--state-dir=$STATE_DIR" \
+    "--standalone=$standalone_bin" -- "$@"
+[[ "${#prepared_vector[@]}" == 3 ]] || { echo "Incomplete proof staging." >&2; exit 1; }
+firefox_m10_probe_dir="${prepared_vector[1]}"
+firefox_m10_profile_dir="${prepared_vector[2]}"
 
 tty_state="$(stty -g)"
 kd_mode="$(python3 "$TTY_MODE_HELPER" get)"
@@ -469,152 +379,6 @@ else
 fi
 echo "Press Ctrl-Alt-Backspace for local emergency recovery."
 echo "The outside control plane may also run tools/stop_sophia_${SESSION_PROFILE}_session.sh."
-terminal_bin=""
-standalone_bin=""
-standalone_workload=""
-glxgears_duration=""
-glxgears_width=""
-glxgears_height=""
-xterm_duration=""
-xterm_width=""
-xterm_height=""
-xterm_lines=""
-xterm_interval_msec=""
-if [[ "$SESSION_PROFILE" == standalone ]]; then
-    standalone_workload="${SOPHIA_STANDALONE_WORKLOAD:-vkcube}"
-    case "$standalone_workload" in
-        glxgears)
-            standalone_default_bin="$(command -v glxgears || true)"
-            standalone_requirement=glxgears
-            glxgears_duration="${SOPHIA_GLXGEARS_DURATION_SECONDS:-20}"
-            glxgears_width="${SOPHIA_GLXGEARS_WIDTH:-500}"
-            glxgears_height="${SOPHIA_GLXGEARS_HEIGHT:-500}"
-            [[ "$glxgears_duration" =~ ^[1-9][0-9]*$ ]] || {
-                echo "SOPHIA_GLXGEARS_DURATION_SECONDS must be a positive integer." >&2
-                exit 1
-            }
-            [[ "$glxgears_width" =~ ^[1-9][0-9]*$
-                && "$glxgears_height" =~ ^[1-9][0-9]*$ ]] || {
-                echo "SOPHIA_GLXGEARS_WIDTH and SOPHIA_GLXGEARS_HEIGHT must be positive integers." >&2
-                exit 1
-            }
-            ;;
-        kitty)
-            # The client this stack is known to hand DMA-BUFs. vkcube
-            # presents through the software path here -- 389 Presents,
-            # every one a CPU layer -- while Kitty produced DMA-BUF
-            # content in every promoted Hagia archive. Direct scanout
-            # needs a client buffer, so the probe uses the one that
-            # provides one.
-            standalone_default_bin="$(command -v kitty || true)"
-            standalone_requirement=kitty
-            ;;
-        vkcube)
-            standalone_default_bin="$(command -v vkcube || true)"
-            standalone_requirement=vkcube
-            ;;
-        xterm)
-            standalone_default_bin="$(command -v xterm || true)"
-            standalone_requirement=xterm
-            xterm_duration="${SOPHIA_XTERM_DURATION_SECONDS:-20}"
-            xterm_width="${SOPHIA_XTERM_WIDTH:-500}"
-            xterm_height="${SOPHIA_XTERM_HEIGHT:-500}"
-            xterm_lines="${SOPHIA_XTERM_LINES:-1}"
-            xterm_interval_msec="${SOPHIA_XTERM_INTERVAL_MSEC:-16}"
-            [[ "$xterm_duration" =~ ^[1-9][0-9]*$ ]] || {
-                echo "SOPHIA_XTERM_DURATION_SECONDS must be a positive integer." >&2
-                exit 1
-            }
-            [[ "$xterm_width" =~ ^[1-9][0-9]*$
-                && "$xterm_height" =~ ^[1-9][0-9]*$ ]] || {
-                echo "SOPHIA_XTERM_WIDTH and SOPHIA_XTERM_HEIGHT must be positive integers." >&2
-                exit 1
-            }
-            [[ "$xterm_lines" =~ ^[1-9][0-9]*$ ]] || {
-                echo "SOPHIA_XTERM_LINES must be a positive integer." >&2
-                exit 1
-            }
-            [[ "$xterm_interval_msec" =~ ^[1-9][0-9]*$
-                && "$xterm_interval_msec" -le 1000 ]] || {
-                echo "SOPHIA_XTERM_INTERVAL_MSEC must be an integer from 1 through 1000." >&2
-                exit 1
-            }
-            ;;
-        *)
-            echo "SOPHIA_STANDALONE_WORKLOAD must be glxgears, kitty, vkcube, or xterm." >&2
-            exit 1
-            ;;
-    esac
-    standalone_bin="${SOPHIA_STANDALONE_APP_BIN:-$standalone_default_bin}"
-    if [[ -z "$standalone_bin" || ! -x "$standalone_bin" ]]; then
-        echo "The standalone $standalone_workload proof requires $standalone_requirement; set SOPHIA_STANDALONE_APP_BIN to override it." >&2
-        exit 1
-    fi
-else
-    terminal_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
-    terminal_kind=""
-    if [[ "$normal_application_defaults" == true ]]; then
-        if [[ -n "$terminal_bin" && ! -x "$terminal_bin" ]]; then
-            echo "The default terminal is not executable: $terminal_bin" >&2
-            exit 1
-        fi
-    elif [[ -z "$terminal_bin" || ! -x "$terminal_bin" ]]; then
-        echo "The graphical session requires Kitty or xterm; set SOPHIA_TERMINAL_BIN if it is installed elsewhere." >&2
-        exit 1
-    fi
-    if [[ "$normal_application_defaults" != true ]]; then
-        terminal_kind="$(
-            sophia_resolve_session_terminal_kind \
-                "$terminal_bin" "${SOPHIA_TERMINAL_KIND:-}"
-        )"
-    fi
-    if [[ "$FIREFOX_M10_ANY_PROOF" == true && "$terminal_kind" != kitty ]]; then
-        echo "The Firefox proof profiles require the Kitty terminal adapter." >&2
-        exit 1
-    fi
-    if [[ "$TRUECOLOR_PROOF" == true && "$terminal_kind" != kitty ]]; then
-        echo "The TrueColor proof requires the Kitty terminal adapter." >&2
-        exit 1
-    fi
-fi
-# Prepare private proof inputs before asking the installed binary for the
-# argument vector. Preparation never enters session run or acquires devices.
-if [[ "$SESSION_PROFILE" == standalone ]]; then
-    if [[ "${SOPHIA_ENABLE_DIRECT_SCANOUT:-0}" == 1 ]]; then
-        install -m 600 "$ROOT_DIR/tools/fixtures/direct_scanout_core.kdl" \
-            "$STATE_DIR/standalone-core.kdl"
-        install -m 600 "$ROOT_DIR/tools/fixtures/direct_scanout_desktop.kdl" \
-            "$STATE_DIR/standalone-desktop.kdl"
-        if [[ "$standalone_workload" == vkcube ]]; then
-            : "${SOPHIA_STANDALONE_FRAME_COUNT:=600}"
-            : "${SOPHIA_STANDALONE_WIDTH:=2560}"
-            : "${SOPHIA_STANDALONE_HEIGHT:=1440}"
-        fi
-    fi
-    if [[ "$standalone_workload" == kitty ]]; then
-        # Ask Kitty's own parser before graphics takeover. These are the same
-        # overrides whose complete vector is checked against Rust in tests.
-        kitty_override_check=(
-            'linux_display_server x11' 'background_opacity 1'
-            'remember_window_size no'
-            "initial_window_width ${SOPHIA_STANDALONE_WIDTH:-2560}"
-            "initial_window_height ${SOPHIA_STANDALONE_HEIGHT:-1440}"
-            'confirm_os_window_close 0'
-        )
-        if ! timeout --kill-after=2s 10s "$standalone_bin" +runpy 'import sys
-from kitty.config import parse_config
-for spec in sys.argv[1:]:
-    parse_config([spec])
-' "${kitty_override_check[@]}" >/dev/null 2>"$STATE_DIR/kitty-override-check.log"; then
-            echo "Kitty refused one of the probe overrides or exceeded its deadline." >&2
-            cat "$STATE_DIR/kitty-override-check.log" >&2
-            exit 1
-        fi
-    fi
-    standalone_width="${SOPHIA_STANDALONE_WIDTH:-500}"
-    standalone_height="${SOPHIA_STANDALONE_HEIGHT:-500}"
-    standalone_present_mode="${SOPHIA_STANDALONE_PRESENT_MODE:-2}"
-fi
 prepared_arguments="$STATE_DIR/session-arguments.bin"
 if ! "$SOPHIA_BIN" session prepare-arguments \
     "--profile=$SESSION_PROFILE" "--root=$ROOT_DIR" "--state-dir=$STATE_DIR" \
@@ -676,44 +440,20 @@ session_launch=(
     "${session_command[@]}"
 )
 
-# Ask the session whether it would accept this exact command.
-#
-# The command itself, not a reconstruction of it: the first attempt rebuilt the
-# vector without the environment the session runs under and was refused for
-# missing a variable that was always going to be there. Validating anything but
-# what actually runs answers a question nobody asked.
-#
-# The accepted record must appear, not merely a zero exit. A binary from before
-# the flag existed ignores it and starts a real session instead -- which here,
-# with the display manager already down, means taking DRM at the validation
-# step. A validation that might not be one is worse than none.
-if ! "${session_command[@]}" --validate-session-args \
-    >"$STATE_DIR/session-args-check.log" 2>"$STATE_DIR/session-args-check.err"; then
+# Use the exact launch environment and vector. The installed binary bounds the
+# parser child, owns private diagnostics, and requires its acceptance record.
+if ! launch_acceptance="$(env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET \
+    "${session_environment[@]}" "$SOPHIA_BIN" session check-launch \
+    "--state-dir=$STATE_DIR" -- "${session_args[@]}")"; then
     echo "The assembled session arguments would be refused:" >&2
     cat "$STATE_DIR/session-args-check.err" >&2
     exit 1
 fi
-if ! grep -q '^sophia_live_session_args schema=1 status=accepted' \
-    "$STATE_DIR/session-args-check.log"; then
-    echo "This sophia binary does not support --validate-session-args; rebuild it." >&2
+if [[ "$launch_acceptance" != 'sophia_session_launch schema=1 status=accepted' ]]; then
+    echo "Missing session launch acceptance record; rebuild Sophia." >&2
     exit 1
 fi
-if [[ "$SESSION_PROFILE" == standalone
-    && "$standalone_workload" == vkcube
-    && -n "${SOPHIA_STANDALONE_FRAME_COUNT:-}" ]]; then
-    printf 'sophia_rendering_benchmark schema=1 workload=vkcube-xcb requested_frames=%s surface_width=%s surface_height=%s vulkan_present_mode=%s\n' \
-        "$SOPHIA_STANDALONE_FRAME_COUNT" "$standalone_width" "$standalone_height" \
-        "$standalone_present_mode" >>"$SESSION_LOG"
-elif [[ "$SESSION_PROFILE" == standalone
-    && "$standalone_workload" == glxgears ]]; then
-    printf 'sophia_glxgears_benchmark schema=1 duration_seconds=%s surface_width=%s surface_height=%s swap_interval=1\n' \
-        "$glxgears_duration" "$glxgears_width" "$glxgears_height" >>"$SESSION_LOG"
-elif [[ "$SESSION_PROFILE" == standalone
-    && "$standalone_workload" == xterm ]]; then
-    printf 'sophia_terminal_benchmark schema=2 workload=xterm-cpu duration_seconds=%s surface_width=%s surface_height=%s lines_per_iteration=%s interval_msec=%s\n' \
-        "$xterm_duration" "$xterm_width" "$xterm_height" \
-        "$xterm_lines" "$xterm_interval_msec" >>"$SESSION_LOG"
-fi
+[[ -z "$session_benchmark" ]] || printf '%s\n' "$session_benchmark" >>"$SESSION_LOG"
 # Preparation can outlive guard readiness. Never take over after recovery was
 # requested or after the independent reader failed while we were preparing.
 if [[ -s "$GUARD_TRIGGERED_FILE" ]]; then

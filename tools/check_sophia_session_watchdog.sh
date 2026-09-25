@@ -9,6 +9,11 @@ mkdir -p "$TEST_ROOT/runtime" "$TEST_ROOT/state"
 export XDG_RUNTIME_DIR="$TEST_ROOT/runtime"
 export XDG_STATE_HOME="$TEST_ROOT/state"
 export SOPHIA_BIN="$ROOT_DIR/tools/fixtures/fake_sophia_session_watchdog.sh"
+export SOPHIA_TEST_PREPARER_BIN="${SOPHIA_TEST_PREPARER_BIN:-${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/sophia}"
+[[ -x "$SOPHIA_TEST_PREPARER_BIN" ]] || {
+    echo "Build sophia-cli with native-session or set SOPHIA_TEST_PREPARER_BIN." >&2
+    exit 1
+}
 export SOPHIA_NATIVE_WM_BIN=/bin/true
 export SOPHIA_TTY_MODE_HELPER="$ROOT_DIR/tools/fixtures/fake_sophia_tty_mode.py"
 export SOPHIA_STANDALONE_APP_BIN=/bin/true
@@ -16,6 +21,9 @@ export SOPHIA_TTY_PROFILE=standalone
 export SOPHIA_STANDALONE_WORKLOAD=vkcube
 export SOPHIA_BUILD_SESSION=false
 export SOPHIA_MANAGE_KEYD=false
+export SOPHIA_INSTALLED_SESSION=false
+export SOPHIA_REQUIRE_LOCAL_VT=false
+export SOPHIA_REQUIRE_RUNTIME_DIR=false
 export SOPHIA_SESSION_WATCHDOG_SECONDS=1
 
 set +e

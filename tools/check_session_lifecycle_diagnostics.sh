@@ -28,6 +28,7 @@ env \
     SOPHIA_BUILD_SESSION=false \
     SOPHIA_MANAGE_KEYD=false \
     SOPHIA_TTY_PROFILE=native \
+    SOPHIA_BIN="${SOPHIA_BIN:-${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/sophia}" \
     "$ROOT_DIR/tools/run_sophia_session.sh" \
     </dev/null >"$TEMP_DIR/runner.out" 2>"$TEMP_DIR/runner.err"
 runner_status=$?
