@@ -23,6 +23,14 @@ tools/audit_source_layout.sh
 cargo test --workspace --offline
 ```
 
+The broader development gate, `cargo xtask check`, runs workspace tests with
+`--all-features`, including the `sophia-session` library's `native-session`
+controls and socket-directory tests. It therefore needs the native development
+libraries at build time. Tests use an isolated configuration directory and
+the gate clears the inherited destructive scanout-smoke opt-in. Explicitly
+ignored hardware and component-acceptance tests remain separate; enabling
+the feature is not permission to access live input or display devices.
+
 ### Shader Sources
 
 The renderer's GLSL lives in its own files under
