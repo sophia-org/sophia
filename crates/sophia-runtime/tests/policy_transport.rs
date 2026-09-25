@@ -496,3 +496,5 @@ fn pointer_focus_is_sent_only_to_a_peer_that_negotiated_it() {
 
 #[path = "support/pointer_focus_hagia.rs"]
 mod pointer_focus_hagia;
+#[path = "support/presentation_hagia.rs"]
+mod presentation_hagia;
