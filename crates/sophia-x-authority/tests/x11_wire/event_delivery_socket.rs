@@ -1262,6 +1262,95 @@ mod event_delivery_socket {
         peer.assert_quiet("nothing else for the peer");
     }
 
+    /// One propagation walk for every recipient: a press propagates from
+    /// the source window up to the first window any client selected it on,
+    /// and only clients selecting there are told. A peer selecting
+    /// ButtonPress on the child under the pointer stops the press there, so
+    /// the owner, selecting only on the toplevel above, hears nothing
+    /// (t220; the reference's DeliverDeviceEvents). Red before the fix: the
+    /// owner's writer walked its own table and delivered at the toplevel.
+    #[test]
+    fn a_peers_nearer_selection_stops_the_owners_delivery_farther_up() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let shell = owner.next;
+        let child = owner.next + 2;
+        owner.next += 4;
+        for client in [&mut owner, &mut peer] {
+            client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        }
+        owner.stream
+            .write_all(&create_window_request(owner.order, shell, 20, 0, 60, 60))
+            .unwrap();
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, shell, (1 << 2) | (1 << 3)))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, shell)).unwrap();
+        owner.stream
+            .write_all(&create_window_request_with_parent(owner.order, child, shell, 10, 10, 20, 20))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, child)).unwrap();
+        owner.settle();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, child, 1 << 2))
+            .unwrap();
+        peer.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        // Into the child, whose root origin is (30, 10).
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 15);
+        owner.settle();
+        owner.fake_input(4, 1);
+        let pressed = peer.next_event(4);
+        assert_eq!(window_of(&pressed), child, "the peer's press on the child that stopped it");
+        owner.assert_quiet("the owner, selecting only above the stop, hears nothing");
+        // The press was delivered to the peer, so the implicit grab is the
+        // peer's, with the peer's press-only selection as its mask: the
+        // release reaches nobody, neither the owner above the stop nor the
+        // peer that did not select it (t230).
+        owner.fake_input(5, 1);
+        owner.assert_quiet("the owner, not the grab's client, hears no release");
+        peer.assert_quiet("the peer did not select the release");
+    }
+
+    /// Both selecting on the same window are both told there, as before.
+    #[test]
+    fn selectors_on_the_same_window_are_all_told_there() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let shell = owner.next;
+        let child = owner.next + 2;
+        owner.next += 4;
+        for client in [&mut owner, &mut peer] {
+            client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        }
+        owner.stream
+            .write_all(&create_window_request(owner.order, shell, 20, 0, 60, 60))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, shell)).unwrap();
+        owner.stream
+            .write_all(&create_window_request_with_parent(owner.order, child, shell, 10, 10, 20, 20))
+            .unwrap();
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, child, 1 << 2))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, child)).unwrap();
+        owner.settle();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, child, 1 << 2))
+            .unwrap();
+        peer.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 15);
+        owner.settle();
+        owner.fake_input(4, 1);
+        for (name, client) in [("owner", &mut owner), ("peer", &mut peer)] {
+            let pressed = client.next_event(4);
+            assert_eq!(window_of(&pressed), child, "{name}: the press on the child");
+        }
+    }
+
     /// Remapping a window reports VisibilityNotify and Expose on every
     /// mapped inferior that becomes viewable with it, the VisibilityNotify
     /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the

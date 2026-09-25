@@ -73,6 +73,7 @@ fn spawn_x11_input_event_writer(
                 xi_pointer_crossing_mask,
                 grab_crossing,
                 grab_target,
+                propagation_stop,
                 delivery,
             ) =
                 match receiver.recv_timeout(client) {
@@ -252,13 +253,20 @@ fn spawn_x11_input_event_writer(
                         XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1)
                     };
                     let event_ancestry = selections.ancestry_including(event_window);
-                    let selected = selections.selected_pointer_target(
-                        surface_window,
-                        pointer_selection(pointer.kind),
-                        pointer.state,
-                        pointer.event_x,
-                        pointer.event_y,
-                    );
+                    // One propagation for every recipient: the registry's
+                    // stop is the first window up from the pointer window
+                    // any client selected the event on, and this client is
+                    // told only where its selection is that window or
+                    // nearer (t220).
+                    let selected = selections
+                        .selected_pointer_target(
+                            surface_window,
+                            pointer_selection(pointer.kind),
+                            pointer.state,
+                            pointer.event_x,
+                            pointer.event_y,
+                        )
+                        .filter(|target| within_propagation_stop(&event_ancestry, propagation_stop, *target));
                     // Under a grab of this client's the grab window takes
                     // the event, relative to itself wherever the pointer is,
                     // when owner events are off or none of the client's own
@@ -613,13 +621,15 @@ fn spawn_x11_input_event_writer(
                 let core_target = if grab_delivered {
                     Some(delivered_window)
                 } else {
-                    selections.selected_pointer_target(
-                        surface_window,
-                        pointer_selection(pointer.kind),
-                        pointer.state,
-                        pointer.event_x,
-                        pointer.event_y,
-                    )
+                    selections
+                        .selected_pointer_target(
+                            surface_window,
+                            pointer_selection(pointer.kind),
+                            pointer.state,
+                            pointer.event_x,
+                            pointer.event_y,
+                        )
+                        .filter(|target| within_propagation_stop(ancestry, propagation_stop, *target))
                 };
                 let core_depth = core_target.and_then(|target| ancestry.iter().position(|window| *window == target));
                 let xi_depth = [xi_delivery, xi_emulated_button_delivery].into_iter().flatten()
@@ -971,6 +981,28 @@ fn key_pointer_coordinates(
 }
 
 /// The selection half a core pointer event answers to.
+/// Whether this client's selection at `target` is told a button event the
+/// registry stopped at `stop`: at the stop, or nearer the pointer than it.
+/// The stop is decided from the pointer window the owner's writer last
+/// resolved, so a press routed before the motion that moved the pointer
+/// was resolved carries a stop from higher up, or off the path; a nearer
+/// selection of this client's is still nearer, and a stop off the path
+/// decides nothing (t220).
+fn within_propagation_stop(
+    ancestry: &[XResourceId],
+    stop: Option<XResourceId>,
+    target: XResourceId,
+) -> bool {
+    let Some(stop_depth) = stop.and_then(|stop| ancestry.iter().position(|window| *window == stop))
+    else {
+        return true;
+    };
+    ancestry
+        .iter()
+        .position(|window| *window == target)
+        .is_none_or(|depth| depth <= stop_depth)
+}
+
 fn pointer_selection(kind: XAuthorityPointerEventKind) -> XPointerSelection {
     match kind {
         XAuthorityPointerEventKind::Motion => XPointerSelection::Motion,

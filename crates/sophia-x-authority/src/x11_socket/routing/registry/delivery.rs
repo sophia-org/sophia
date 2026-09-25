@@ -273,6 +273,8 @@ impl XServerFrontendRouteRegistry {
         let mut grab_crossing: Option<crate::XPointerGrabCrossing> = None;
         let mut fan_out_confined = false;
         let mut grab_target: Option<crate::XPointerGrabTarget> = None;
+        let mut propagation_stop: Option<XResourceId> = None;
+        let mut source_window: Option<XResourceId> = None;
         // Engine already selected the committed target surface. Preserve its
         // owning window as the start of core propagation; X grabs may replace
         // it below, but event-mask update order must never choose the target.
@@ -549,6 +551,29 @@ impl XServerFrontendRouteRegistry {
                         button_lease_update = Some(XAuthorityRouteLeaseUpdateKind::Released);
                     }
                 }
+                // One propagation for every recipient of a button event: it
+                // happened where the last motion left the pointer, the
+                // window the surface owner's writer resolved for it, and
+                // the registry decides from there up where any client
+                // selected it (t220). A grab that took the writer's base
+                // from the surface decides delivery by its own rule; a
+                // motion keeps each writer's walk, as the pointer window
+                // it changes is resolved after it is routed.
+                if target_window == Some(surface_route.window) {
+                    let source = self
+                        .input_authority
+                        .lock()
+                        .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+                        .pointer_window(surface_route.namespace)
+                        .unwrap_or(surface_route.window);
+                    source_window = Some(source);
+                    propagation_stop = self.pointer_propagation_stop(
+                        surface_route.client,
+                        source,
+                        surface_route.window,
+                        if pressed { 1 << 2 } else { 1 << 3 },
+                    )?;
+                }
                 XAuthorityInputEvent::Pointer(XAuthorityPointerEvent {
                     kind: XAuthorityPointerEventKind::Button { button, pressed },
                     surface: route.request.target_surface,
@@ -651,6 +676,7 @@ impl XServerFrontendRouteRegistry {
                     None,
                     None,
                     grab_target,
+                    None,
                 ) {
                     self.send_input_delivery(
                         client,
@@ -668,6 +694,7 @@ impl XServerFrontendRouteRegistry {
                     route.delivery,
                     None,
                     grab_target,
+                    None,
                 );
             }
             // A device announcement is consumed on the session's physical
@@ -701,6 +728,7 @@ impl XServerFrontendRouteRegistry {
             event,
             fan_out_confined,
             grab_crossing,
+            source_window,
         ) {
             tracing::warn!("sophia_x11_input_route status=peer_fanout_failed reason={error:?} content=redacted");
         }
@@ -713,6 +741,7 @@ impl XServerFrontendRouteRegistry {
             route.delivery,
             grab_crossing,
             grab_target,
+            propagation_stop,
         );
         if let Some((identity, kind, admission)) = lease_update {
             let reported_kind = if result.is_ok() {
