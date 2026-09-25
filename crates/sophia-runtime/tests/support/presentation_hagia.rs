@@ -603,15 +603,21 @@ fn hagia_overview_reconnect_starts_closed_and_reuses_no_authority() {
     let _ = stale_cause;
 }
 
-/// Red on the joined foundation (87ce4acb) with Hagia d3920d4, so ignored:
-/// the restarted WM's counters begin again at 1, the reopened publication
-/// has the same generation, output and output generation as the old one,
-/// and `PolicyPresentationIdentity` carries no connection epoch. The reducer
-/// compares only publication membership and never the presentation epoch,
-/// so a keyboard identity captured under epoch 1 is current for epoch 2.
-/// Un-ignore once the identity or the reducer distinguishes epochs.
+/// Boundary-only, and red by design at this layer, so ignored: the
+/// reducer alone checks publication membership, not epochs. After a
+/// reconnect the restarted WM's counters begin again at 1, the reopened
+/// publication has the same generation, output and output generation as the
+/// old one, and `PolicyPresentationIdentity` carries no connection epoch, so
+/// a keyboard identity captured under epoch 1 is current for epoch 2 in the
+/// reducer. The joined session admission closes it: `PresentedPolicyState`
+/// keeps `next_presentation_epoch` across revocation and reconnect, so the
+/// reopened publication gets a fresh presentation epoch, and
+/// `PresentedPolicyAction` carries the authenticated connection epoch,
+/// checked before queueing and again against the receipt epoch (t245, with
+/// its own Engine control). This test documents the reducer boundary; it is
+/// not a claim about the joined session, and must not be un-ignored as one.
 #[test]
-#[ignore = "open gap: presentation identities carry no connection epoch (t243/t245)"]
+#[ignore = "boundary-only: the reducer alone does not distinguish epochs; joined session admission (t245) is required and closes it"]
 fn hagia_overview_old_epoch_identity_is_refused_after_reconnect() {
     let Some(binary) = std::env::var_os("SOPHIA_HAGIA_BIN") else {
         return;
