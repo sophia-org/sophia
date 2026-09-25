@@ -11,21 +11,24 @@ mod presentation_timing;
 #[cfg(test)]
 pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing};
 mod settled_mirror;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use composition_admission::{NativeCompositionOutput, prepare_native_composition_batch};
 #[cfg(test)]
 pub(crate) use composition_installation::{
-    CompositionInstallation, CompositionInstaller, NativeCompositionInstallationHead,
-    install_composition_generation, reserve_composition_lifecycle,
-    validate_composition_installation,
+    CompositionInstallation, CompositionInstaller, install_composition_generation,
+    reserve_composition_lifecycle,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use composition_installation::{
+    NativeCompositionInstallationHead, validate_composition_installation,
+};
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use composition_queue::DeferredNativeCompositions;
 #[cfg(test)]
-pub(crate) use composition_queue::{
-    DeferredNativeCompositions, LiveProductionQueuedMirrorHeadFrame,
-};
+pub(crate) use composition_queue::LiveProductionQueuedMirrorHeadFrame;
 #[cfg(test)]
 pub(crate) use mirror_completion::{MirrorCompletionWitness, complete_mirror_head};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use renderer_images::LiveProductionHeadCompositionContent;
 #[cfg(test)]
 pub(crate) use settled_mirror::{SettledMirrorHead, settled_mirror_checksum};

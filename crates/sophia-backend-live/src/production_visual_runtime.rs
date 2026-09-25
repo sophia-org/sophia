@@ -15,6 +15,10 @@ type CpuCycleOutcome = (
 
 mod authority;
 mod composition_target;
+#[cfg(any(test, feature = "test-support"))]
+#[allow(dead_code)]
+#[path = "../tests/support/composition_target.rs"]
+mod composition_test_target;
 mod compositor_graphics;
 #[cfg(test)]
 #[path = "../tests/support/lifecycle_tests.rs"]
@@ -22,6 +26,10 @@ mod lifecycle_tests;
 mod ordinary_repaint;
 mod output_composition;
 mod policy_presentation;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+#[path = "../tests/support/session_content_fixture.rs"]
+pub mod session_content_fixture;
 use composition_target::NativeCompositionTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,

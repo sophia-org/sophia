@@ -394,6 +394,15 @@ release obligations and independent source/backing retirement.
 
 ### t100
 
+The [2026-09-25 reconnect investigation](../investigations/vup982br-retained-panel-pixels-can-block-fresh-component-admission-after-disconnect.md)
+adds production component-service/private-transport/backend settlement controls,
+with supplied initial pending state and simulated native completion. It also
+pins an unresolved admission circular wait: retained old panel pixels prevent
+a fresh grant in the full two-role budget. Positive replacement uses a configured
+but unopened dock; it does not prove fully opened three-role recovery. This
+test-only checkpoint neither repairs that defect nor closes t100 or physical
+acceptance.
+
 Complete production topology/output-fact publication, fresh reconnect grants,
 pending and submitted retirement, reservation/work-area coherence, and bounded
 failure recovery. Exercise rapid output removal/addition, scale/allocation

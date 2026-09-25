@@ -5,6 +5,10 @@ use sophia_runtime::*;
 use std::path::Path;
 use std::time::Duration;
 
+#[cfg(all(test, feature = "native-session"))]
+#[path = "../tests/support/component_reconnect/connection.rs"]
+pub(crate) mod reconnect_fixture;
+
 #[derive(Default)]
 struct ProcessSlot {
     key: Option<ComponentConnectionKey>,

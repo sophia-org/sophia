@@ -25,6 +25,8 @@ sophia-xshmfence = { path = "../sophia-xshmfence" }
 
 [features]
 default = []
+# Deterministic cross-crate owner fixtures; never enabled by native-session.
+test-support = ["gbm-probe", "libdrm-events"]
 gbm-probe = ["sophia-renderer-live/gbm-probe"]
 egl-probe = ["sophia-renderer-live/egl-probe"]
 libdrm-events = ["dep:drm", "dep:rustix", "dep:sophia-drm-out-fence"]

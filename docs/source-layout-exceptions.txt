@@ -24,6 +24,10 @@ inline-tests crates/sophia-runtime/src/shell_transport/catalog_responses.rs
 
 # External initial/reconnect negotiation fixture; no inline test bodies.
 inline-tests crates/sophia-session/src/live_session/metadata_shell/launch.rs
+# External component reconnect/private transport fixtures; no test bodies in src.
+inline-tests crates/sophia-session/src/live_session/metadata_shell/component_session.rs
+inline-tests crates/sophia-session/src/live_session/metadata_shell/content.rs
+inline-tests crates/sophia-session/src/shell_component_processes.rs
 inline-tests crates/sophia-session/src/live_session/native_owner_retirement.rs
 inline-tests crates/sophia-backend-live/src/seat.rs
 

@@ -478,6 +478,7 @@ fn live_runtime_tick_reads_native_page_flip_events_before_rendered_scanout() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
+#[cfg(feature = "libinput-events")]
 #[test]
 fn live_runtime_tick_polls_libinput_shaped_input_while_retiring_and_submitting_scanout() {
     let root = ready_drm_sysfs_fixture("runtime-input-native-page-flip-rendered-scanout");
@@ -567,6 +568,7 @@ fn live_runtime_tick_polls_libinput_shaped_input_while_retiring_and_submitting_s
 
     std::fs::remove_dir_all(root).unwrap();
 }
+#[cfg(feature = "libinput-events")]
 #[test]
 fn live_session_loop_tick_leaves_input_idle_until_reduced_readiness() {
     let root = ready_drm_sysfs_fixture("session-loop-idle-input-rendered-scanout");

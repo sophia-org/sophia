@@ -43,12 +43,21 @@ pub(crate) use persistent_native_scanout::LiveProductionNativeRetirementContent;
 
 #[cfg(all(test, feature = "libdrm-events", feature = "gbm-probe"))]
 pub(crate) use persistent_native_scanout::{
-    CompositionInstallation, CompositionInstaller, DeferredNativeCompositions,
-    LiveProductionHeadCompositionContent, LiveProductionQueuedMirrorHeadFrame,
-    MirrorCompletionWitness, NativeCompositionInstallationHead, NativeCompositionOutput,
-    PresentedTimingHead, SettledMirrorHead, complete_mirror_head, completed_timing,
-    install_composition_generation, prepare_native_composition_batch,
-    reserve_composition_lifecycle, settled_mirror_checksum, validate_composition_installation,
+    CompositionInstallation, CompositionInstaller, LiveProductionQueuedMirrorHeadFrame,
+    MirrorCompletionWitness, PresentedTimingHead, SettledMirrorHead, complete_mirror_head,
+    completed_timing, install_composition_generation, reserve_composition_lifecycle,
+    settled_mirror_checksum,
+};
+
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "libdrm-events",
+    feature = "gbm-probe"
+))]
+pub(crate) use persistent_native_scanout::{
+    DeferredNativeCompositions, LiveProductionHeadCompositionContent,
+    NativeCompositionInstallationHead, NativeCompositionOutput, prepare_native_composition_batch,
+    validate_composition_installation,
 };
 
 #[derive(Debug)]
