@@ -1,10 +1,12 @@
 // t018 tab reference profile for the separate Hagia/Narthex test session.
 //
-// Hagia owns every setting below. The shell process (Narthex) is selected by
-// the gate's --shell-process, not here. The session starts in the default
-// profile's scroller so the native workflow keys behave as they do there; the
-// tab layouts are reached with the layout keys. Action names are Hagia's
-// (docs/tabbed-layouts.md); `split-tree` is Hagia's alias for `i3`.
+// This is a Sophia desktop profile. Only the policy block and the policy:*
+// actions it binds are Hagia's (docs/tabbed-layouts.md; `split-tree` is Hagia's
+// alias for `i3`). The shell, shortcut, session, input, output and broker
+// sections are the profile envelope Sophia validates and applies. The shell
+// process (Narthex) is selected by the gate's --shell-process, not here. The
+// session starts in the default profile's scroller so the native workflow keys
+// behave as they do there; the tab layouts are reached with the layout keys.
 schema 1
 
 policy {
