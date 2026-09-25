@@ -120,7 +120,11 @@
                         || application_route_leases.leases().next().is_some()
                         || pointer_focus_handoff.target().is_some()
                         || keyboard_focus_handoff.target().is_some();
-                    wm.install_committed_policy_presentation(runtime, scene, native_scanout.is_some(), application_capture_active, None)?;
+                    let heads = policy_presentation_heads(
+                        wm.public.as_ref().and_then(|public| public.reducer.presentation_publication().map(|(_, p)| p)),
+                        native_scanout.as_ref(),
+                    );
+                    wm.install_committed_policy_presentation(runtime, scene, native_scanout.is_some(), application_capture_active, None, &heads)?;
                 }
                 let (_tick, report, committed_surfaces, composed, compose_elapsed, cpu_progress) =
                     if !production_batch.has_dma_buf_present_submissions()

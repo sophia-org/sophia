@@ -3,6 +3,21 @@
 const MAX_POLICY_PRESENTATION_RECEIPTS: usize =
     4 * sophia_protocol::POLICY_MAX_PRESENTATION_OUTPUTS;
 
+fn policy_presentation_heads(
+    presentation: Option<&sophia_protocol::PolicyPresentation>,
+    native: Option<&LiveProductionNativeScanout>,
+) -> Vec<sophia_engine::HeadRenderTarget> {
+    presentation
+        .into_iter()
+        .flat_map(|publication| &publication.outputs)
+        .flat_map(|output| {
+            native
+                .into_iter()
+                .flat_map(move |native| native.head_render_targets(output.output))
+        })
+        .collect()
+}
+
 impl LiveWmSession {
     fn enqueue_presented_action(
         &mut self,
@@ -53,6 +68,7 @@ impl LiveWmSession {
         native_retirement: bool,
         application_capture_active: bool,
         native: Option<&mut LiveProductionNativeScanout>,
+        heads: &[sophia_engine::HeadRenderTarget],
     ) -> Result<(), Box<dyn std::error::Error>> {
         let Some(public) = self.public.as_mut() else {
             return Ok(());
@@ -90,7 +106,9 @@ impl LiveWmSession {
                     &public.actions,
                 )
                 .is_err()
-                    || runtime.validate_policy_presentation(desired).is_err()
+                    || runtime
+                        .validate_policy_presentation_on_heads(desired, heads)
+                        .is_err()
             }) {
                 public.revoke_live_presentation();
                 runtime.set_policy_presentation(None, scene, native)?;
@@ -153,12 +171,19 @@ impl LiveWmSession {
         // the retained replacement through the existing native owner.
         if available && !stopping {
             let native_retirement = native.is_some();
+            let heads = policy_presentation_heads(
+                self.public
+                    .as_ref()
+                    .and_then(|public| public.reducer.presentation_publication().map(|(_, p)| p)),
+                native.as_deref(),
+            );
             self.install_committed_policy_presentation(
                 runtime,
                 scene,
                 native_retirement,
                 application_capture_active,
                 native,
+                &heads,
             )?;
         }
         Ok(())
@@ -167,7 +192,22 @@ impl LiveWmSession {
     fn preflight_staged_presentation(
         &self,
         runtime: Option<&LiveProductionVisualRuntime>,
-        native_retirement: bool,
+        native: Option<&LiveProductionNativeScanout>,
+    ) -> bool {
+        let heads = policy_presentation_heads(
+            self.public
+                .as_ref()
+                .and_then(|public| public.staged.as_ref())
+                .and_then(|staged| staged.presentation_publication().map(|(_, p)| p)),
+            native,
+        );
+        self.preflight_staged_presentation_on_heads(runtime, &heads)
+    }
+
+    fn preflight_staged_presentation_on_heads(
+        &self,
+        runtime: Option<&LiveProductionVisualRuntime>,
+        heads: &[sophia_engine::HeadRenderTarget],
     ) -> bool {
         let Some(public) = &self.public else {
             return true;
@@ -178,8 +218,7 @@ impl LiveWmSession {
         let Some((owner_epoch, presentation)) = staged.presentation_publication() else {
             return true;
         };
-        native_retirement
-            && public.native_presentation_capable
+        public.native_presentation_capable
             && sophia_protocol::validate_policy_presentation_actions(presentation, &public.actions)
                 .is_ok()
             && public.presentation_receipts.len()
@@ -188,10 +227,13 @@ impl LiveWmSession {
                 <= MAX_POLICY_PRESENTATION_RECEIPTS
             && runtime.is_some_and(|runtime| {
                 runtime
-                    .validate_policy_presentation(&sophia_backend_live::LivePolicyPresentation {
-                        owner_epoch,
-                        presentation: presentation.clone(),
-                    })
+                    .validate_policy_presentation_on_heads(
+                        &sophia_backend_live::LivePolicyPresentation {
+                            owner_epoch,
+                            presentation: presentation.clone(),
+                        },
+                        heads,
+                    )
                     .is_ok()
             })
     }

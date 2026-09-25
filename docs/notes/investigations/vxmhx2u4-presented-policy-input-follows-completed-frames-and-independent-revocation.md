@@ -134,6 +134,34 @@ Evidence: `t245-review-session-lib.log` passed 600 tests, 18 ignored;
 strict Clippy and worktree layout results. Final joined gates remain with the
 director.
 
+## Native-head geometry admission
+
+The staged-publication preflight collects every current native head for every
+covered output and calls the renderer owner's read-only
+`validate_policy_presentation_on_heads`. Both initial staging and final pending
+settlement perform this check. Deferred replacement installation collects and
+checks current heads again when the capture settles. No additional wire record,
+identity or cached topology is introduced.
+
+Missing heads or a target with no clipped draw on any head refuse the whole
+candidate before commit. This preserves the previous reducer publication and
+backend presentation instead of accepting a permanently unpresentable target
+and repeatedly revoking it. All-head retired membership remains an independent
+completion defense against later topology changes.
+
+The session control stages a tiny target against an existing publication,
+accepts it on the primary, and refuses it when a Cover mirror crops it away.
+It checks that the prior committed publication, backend getter and commit serial
+remain unchanged, and that no receipt appears. The deferred-install control also
+checks that losing all heads while waiting cannot install the candidate.
+
+Renderer API `a529b2c4` is incorporated as signed `3f55da53`, retaining both the
+session's `presentation_input` module and the renderer's shared fixture helper.
+`t245-heads-session-lib.log` records 601 passed, 18 intentional ignores, in the
+device-hidden native-session suite. `t245-heads-clippy.log` records strict session
+all-target Clippy; `t245-heads-layout.log` records the worktree layout audit.
+The director's exact joined candidate and main-tree gates are still separate.
+
 ## Connections
 
 The [presentation contract](../../wm-presentation.md) defines the authority and

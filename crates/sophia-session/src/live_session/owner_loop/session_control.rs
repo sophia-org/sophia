@@ -688,7 +688,7 @@ macro_rules! service_layout_progress {
         }
         if pending_wm_update.is_none() && layout.pending_is_ready() {
             if let Some(wm) = wm_session.as_mut() {
-                if !wm.preflight_staged_presentation(runtime.as_ref(), native_scanout.is_some())
+                if !wm.preflight_staged_presentation(runtime.as_ref(), native_scanout.as_ref())
                     || !wm.prepare_public_layout_commit(&layout)? {
                     // Reservations can advance the canonical scene while a client
                     // answers a resize. Retire the old epoch through normal recovery

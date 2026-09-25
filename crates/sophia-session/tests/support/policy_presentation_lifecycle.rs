@@ -47,6 +47,23 @@ fn complete(public: &mut LivePublicPolicyState) -> sophia_protocol::PolicyPresen
         .unwrap()
 }
 
+fn presentation_head(public: &LivePublicPolicyState) -> sophia_engine::HeadRenderTarget {
+    let output = &public.reducer.scene().outputs[0];
+    sophia_engine::HeadRenderTarget {
+        head: sophia_engine::RenderHeadId::from_raw(1),
+        output: output.output,
+        target_generation: 1,
+        native_size: Size {
+            width: output.bounds.width,
+            height: output.bounds.height,
+        },
+        scale: 1,
+        refresh_millihz: 60_000,
+        transform: sophia_protocol::OutputTransform::Normal,
+        mapping: sophia_protocol::OutputHeadMapping::Fit,
+    }
+}
+
 #[test]
 fn policy_presentation_revocation_survives_full_lifecycle_delivery_queue() {
     let mut fixture = ReloadFixture::new();
@@ -139,21 +156,22 @@ fn policy_presentation_catalog_refusal_leaves_both_owners_unchanged() {
     let previous = public.reducer.committed();
     let serial = public.reducer.commit_serial();
     let runtime = LiveProductionVisualRuntime::new(&public.outputs, None).unwrap();
+    let heads = [presentation_head(public)];
     assert!(
         !fixture
             .wm
-            .preflight_staged_presentation(Some(&runtime), false)
+            .preflight_staged_presentation(Some(&runtime), None)
     );
     assert!(
         fixture
             .wm
-            .preflight_staged_presentation(Some(&runtime), true)
+            .preflight_staged_presentation_on_heads(Some(&runtime), &heads)
     );
     fixture.wm.public.as_mut().unwrap().actions.clear();
     assert!(
         !fixture
             .wm
-            .preflight_staged_presentation(Some(&runtime), true)
+            .preflight_staged_presentation_on_heads(Some(&runtime), &heads)
     );
     let public = fixture.wm.public.as_ref().unwrap();
     assert_eq!(public.reducer.committed(), previous);
@@ -319,11 +337,15 @@ fn policy_presentation_reconnect_rejects_old_identity_at_enqueue_and_settlement(
 
 #[test]
 fn policy_replacement_install_waits_for_application_capture_to_settle() {
-    check_deferred_replacement(false);
-    check_deferred_replacement(true);
+    check_deferred_replacement(false, false);
+    check_deferred_replacement(true, false);
+    check_deferred_replacement(false, true);
 }
 
-fn check_deferred_replacement(remove_action_while_deferred: bool) {
+fn check_deferred_replacement(
+    remove_action_while_deferred: bool,
+    remove_heads_while_deferred: bool,
+) {
     let mut fixture = ReloadFixture::new();
     let public = fixture.wm.public.as_mut().unwrap();
     let mut p = publication(public);
@@ -373,13 +395,14 @@ fn check_deferred_replacement(remove_action_while_deferred: bool) {
     public.reducer.commit_staged(staged);
     let committed_serial = public.reducer.commit_serial();
     let mut runtime = LiveProductionVisualRuntime::new(&public.outputs, None).unwrap();
+    let heads = [presentation_head(public)];
     let scene = LiveProductionCpuScene::new(Size {
         width: 100,
         height: 100,
     });
     fixture
         .wm
-        .install_committed_policy_presentation(&mut runtime, &scene, true, true, None)
+        .install_committed_policy_presentation(&mut runtime, &scene, true, true, None, &heads)
         .unwrap();
     assert!(
         runtime.policy_presentation().is_none(),
@@ -409,9 +432,20 @@ fn check_deferred_replacement(remove_action_while_deferred: bool) {
     }
     fixture
         .wm
-        .install_committed_policy_presentation(&mut runtime, &scene, true, false, None)
+        .install_committed_policy_presentation(
+            &mut runtime,
+            &scene,
+            true,
+            false,
+            None,
+            if remove_heads_while_deferred {
+                &[]
+            } else {
+                &heads
+            },
+        )
         .unwrap();
-    if remove_action_while_deferred {
+    if remove_action_while_deferred || remove_heads_while_deferred {
         let public = fixture.wm.public.as_ref().unwrap();
         assert!(runtime.policy_presentation().is_none());
         assert!(public.reducer.presentation_publication().is_none());
@@ -431,4 +465,110 @@ fn check_deferred_replacement(remove_action_while_deferred: bool) {
         public.presentation_input.output_receipt(output).is_none(),
         "installation alone is not presentation"
     );
+}
+
+#[test]
+fn policy_head_preflight_refuses_cropped_mirror_without_changing_previous_publication() {
+    let mut fixture = ReloadFixture::new();
+    let public = fixture.wm.public.as_mut().unwrap();
+    public.native_presentation_capable = true;
+    public
+        .actions
+        .push(sophia_protocol::PolicyActionRegistration {
+            action: WmActionId::from_raw(77),
+            name: "opaque-policy-action".into(),
+            session_operation_slot: None,
+        });
+    let previous = publication(public);
+    let output = previous.outputs[0].output;
+    let stage = |public: &mut LivePublicPolicyState, presentation, transaction| {
+        let request = public
+            .reducer
+            .issue_request_with_cause(
+                vec![output],
+                sophia_protocol::PolicyRequestCause::SceneChanged,
+            )
+            .unwrap();
+        public
+            .reducer
+            .stage_proposal(&sophia_protocol::PolicyProjectionProposal {
+                transaction: TransactionId::from_raw(transaction),
+                connection_epoch: 1,
+                request_id: request.request_id,
+                base_generation: request.scene_generation,
+                active_output: output,
+                presentation: Some(presentation),
+                outputs: vec![sophia_protocol::PolicyOutputProjection {
+                    output,
+                    placements: vec![],
+                    focus: None,
+                }],
+                launch_contexts: vec![],
+                output_launch_contexts: vec![],
+                translation_groups: vec![],
+                tab_groups: vec![],
+                indicators: vec![],
+                output_statuses: vec![],
+            })
+            .unwrap()
+    };
+    let staged = stage(public, previous.clone(), 801);
+    public.reducer.commit_staged(staged);
+    let mut runtime = LiveProductionVisualRuntime::new(&public.outputs, None).unwrap();
+    let scene = LiveProductionCpuScene::new(public.outputs[0].size);
+    let old = sophia_backend_live::LivePolicyPresentation {
+        owner_epoch: 1,
+        presentation: previous.clone(),
+    };
+    runtime
+        .set_policy_presentation(Some(old.clone()), &scene, None)
+        .unwrap();
+    let mut candidate = previous;
+    candidate.generation = 2;
+    let bounds = candidate.outputs[0].coverage;
+    candidate.regions[0].generation = 2;
+    candidate.regions[0].geometry = Rect {
+        x: bounds.x + 2,
+        y: bounds.y + 2,
+        width: 1,
+        height: 1,
+    };
+    candidate.regions[0].clip = candidate.regions[0].geometry;
+    public.staged = Some(stage(public, candidate, 802));
+    let primary = presentation_head(public);
+    let mirror = sophia_engine::HeadRenderTarget {
+        head: sophia_engine::RenderHeadId::from_raw(2),
+        // A tall Cover mirror crops the left and right of the logical output.
+        native_size: Size {
+            width: 1,
+            height: bounds.height,
+        },
+        mapping: sophia_protocol::OutputHeadMapping::Cover,
+        ..primary
+    };
+    let serial = public.reducer.commit_serial();
+    assert!(
+        fixture
+            .wm
+            .preflight_staged_presentation_on_heads(Some(&runtime), &[primary])
+    );
+    // Final-settlement check sees a newly added/corrected head and refuses.
+    assert!(
+        !fixture
+            .wm
+            .preflight_staged_presentation_on_heads(Some(&runtime), &[primary, mirror])
+    );
+    assert!(
+        !fixture
+            .wm
+            .preflight_staged_presentation_on_heads(Some(&runtime), &[])
+    );
+    let public = fixture.wm.public.as_ref().unwrap();
+    assert_eq!(public.reducer.commit_serial(), serial);
+    assert_eq!(
+        public.reducer.presentation_publication(),
+        Some((1, &old.presentation))
+    );
+    assert_eq!(runtime.policy_presentation(), Some(&old));
+    assert!(public.presentation_receipts.is_empty());
 }
