@@ -81,6 +81,35 @@ The live argument/environment builder, remaining profile/gate dispatch and
 their exact-vector verification are still outstanding. This first slice does
 not close t027 and does not install or launch a live session.
 
+## Argument and environment preparation
+
+The second slice moves the live argument vector for Hagia, native, Kitty and
+standalone profiles into `sophia session prepare-arguments`. The installed
+binary also owns trace/proof environment entries and bus selection through
+`session prepare-environment`. Both commands emit a versioned NUL-delimited
+record only after preparation succeeds. The adapter loads arrays without
+evaluation and refuses missing acceptance records or failed preparation.
+No Cargo dependency enters installed startup. The standalone Kitty override
+checker now has a ten-second deadline and a two-second forced-kill backstop.
+
+Retained pre-migration Bash builders are test fixtures, not production paths.
+Thirty-five argument comparisons cover all profiles, terminal adapters,
+standalone workloads, TrueColor and Firefox slices, explicit requested flags,
+and literal metacharacters/newlines. Fifty-six environment comparisons cover
+proof priority, explicit empty trace values and all four bus modes. An adapter
+test rejects old binaries and verifies literal argument boundaries. Five Rust
+application-selection tests replace the Python extraction suite, preserving
+its missing-default and invalid-explicit-path cases. Source-text assertions
+for moved behavior were replaced by these executable comparisons.
+
+Affected CLI tests, the native-feature normal-session lifecycle, Hagia
+preflight including its disposable PTY refusal, terminal checks, lifecycle
+diagnostics, and default/all-feature Clippy pass. The live wrapper is reduced
+from 1,180 to roughly 800 lines. Remaining preparation includes executable
+discovery, private proof staging, control validation and the exact command
+validation call; those still prevent calling the wrapper a minimal adapter.
+t027 remains open. No live installation or physical session was run.
+
 ## Connections
 
 The [Session source split](izw9opes-private-session-tests-can-move-without-widening-the-production-api.md)

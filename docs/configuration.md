@@ -205,6 +205,17 @@ boolean and defaults to `#true` when omitted. Local navigation and explicit
 output switching remain available with it disabled. Sophia preserves this
 WM-owned setting in policy export; Hagia validates its type and rejects duplicates.
 
+The installed launcher delegates argument construction to
+`sophia session prepare-arguments` and environment construction to
+`sophia session prepare-environment`. These commands prepare data without
+starting a session, acquiring devices, or starting a session bus. Their output
+starts with a versioned preparation record and contains NUL-delimited fields;
+the adapter loads arrays without evaluating shell text and refuses binaries
+that do not return the expected record. Preparation preserves the distinction
+between application defaults for ordinary Hagia desktops and explicit adapters
+for proofs. The launcher still validates the exact assembled command with
+`--validate-session-args` before graphics takeover.
+
 The trusted session coordinator validates and partitions all seven desktop
 authorities before constructing the graphical session. It stages owner-only
 fragments with one generation and digest in the private policy runtime

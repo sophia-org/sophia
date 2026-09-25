@@ -22,7 +22,7 @@ FRAME = "run_frame_fed_output_gate_tty4.sh"
 POLICY = "run_current_hagia_policy_gate_tty4.sh"
 CRITICAL = "run_current_critical_path_tty4.sh"
 
-# Like session_application_arguments_test.py, extract the production sections
+# Like the Rust session_application_arguments tests, extract production sections
 # rather than copy their decisions. No hardware or build section is evaluated.
 PREFLIGHTS = {
     "frame": "\n".join([

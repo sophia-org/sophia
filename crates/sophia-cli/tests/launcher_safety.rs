@@ -94,13 +94,6 @@ fn detached_graphical_owner_does_not_attempt_direct_vt_activation() {
 }
 
 #[test]
-fn verbose_trace_defaults_to_one_shot_without_overriding_an_explicit_mode() {
-    assert!(SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE-1"));
-    assert!(!SESSION_LAUNCHER.contains("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE=continuous"));
-    assert!(SESSION_LAUNCHER.contains("SOPHIA_SESSION_VERBOSE_TRACE:-false"));
-}
-
-#[test]
 fn visual_proofs_opt_in_to_repeated_final_region_readback() {
     assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_INSTALLED_ATTEMPT_MODE=truecolor"));
     assert!(INSTALLED_TRUECOLOR.contains("SOPHIA_TRUECOLOR_PROOF=true"));
@@ -110,52 +103,14 @@ fn visual_proofs_opt_in_to_repeated_final_region_readback() {
 }
 
 #[test]
-fn launcher_trace_mode_precedence_is_preserved_when_verbose_and_proof_overlap() {
-    let begin = offset("if [[ \"${SOPHIA_SESSION_VERBOSE_TRACE:-false}\" == true ]]");
-    let end = offset("session_bus_launcher=()");
-    let block = &SESSION_LAUNCHER[begin..end];
-    for (verbose, proof, explicit, expected) in [
-        ("true", "false", None, Some("1")),
-        (
-            "true",
-            "false",
-            Some("final-regions"),
-            Some("final-regions"),
-        ),
-        ("true", "true", Some("continuous"), Some("continuous")),
-        ("true", "true", None, Some("final-regions")),
-        ("false", "false", None, None),
-    ] {
-        let mut command = std::process::Command::new("bash");
-        command.args(["-eu", "-c", &format!("session_environment=(); {block}\nfor entry in \"${{session_environment[@]}}\"; do export \"$entry\"; done\nprintf '%s' \"${{SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE-unset}}\"")]);
-        command
-            .env("SOPHIA_SESSION_VERBOSE_TRACE", verbose)
-            .env("FIREFOX_M10_RENDERING_PROOF", proof);
-        command.env_remove("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE");
-        if let Some(value) = explicit {
-            command.env("SOPHIA_NATIVE_COMPOSITION_PIXEL_TRACE", value);
-        }
-        let output = command.output().unwrap();
-        assert!(output.status.success());
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap(),
-            expected.unwrap_or("unset")
-        );
-    }
-}
-
-#[test]
 fn firefox_m10_gate_uses_the_proven_isolated_native_x_configuration() {
     assert!(SESSION_LAUNCHER.contains("firefox_m10_profile_dir=\"\""));
     assert!(SESSION_LAUNCHER.contains("$firefox_m10_profile_dir/user.js"));
     assert!(SESSION_LAUNCHER.contains("browser.tabs.remote.autostart"));
     assert!(SESSION_LAUNCHER.contains("fission.autostart"));
-    assert!(SESSION_LAUNCHER.contains("--session-app-arg=browser=--profile"));
-    assert!(SESSION_LAUNCHER.contains("--session-app-arg=browser=$firefox_m10_profile_dir"));
-    assert!(SESSION_LAUNCHER.contains("GDK_BACKEND=x11"));
-    assert!(SESSION_LAUNCHER.contains("MOZ_ENABLE_WAYLAND=0"));
-    assert!(SESSION_LAUNCHER.contains("MOZ_FORCE_DISABLE_E10S=1"));
-    assert!(SESSION_LAUNCHER.contains("MOZ_USE_XINPUT2=1"));
+    assert!(SESSION_LAUNCHER.contains("--firefox-profile=$firefox_m10_profile_dir"));
+    assert!(SESSION_LAUNCHER.contains("session prepare-environment"));
+    assert!(SESSION_LAUNCHER.contains("--firefox-probe=$firefox_m10_probe_dir"));
 }
 
 #[test]
@@ -277,8 +232,8 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(!DESKTOP_COMPARISON_GATE.contains("/tmp/crtc"));
     assert!(!DESKTOP_COMPARISON_GATE.to_ascii_lowercase().contains("ssh"));
     assert!(SESSION_LAUNCHER.contains("SESSION_STARTUP"));
-    assert!(SESSION_LAUNCHER.contains("--config=$SOPHIA_CORE_CONFIG"));
-    assert!(SESSION_LAUNCHER.contains("sophia_append_session_terminal_registration_args"));
+    assert!(SESSION_LAUNCHER.contains("session prepare-arguments"));
+    assert!(SESSION_LAUNCHER.contains("sophia_session_arguments schema=1 status=prepared"));
 }
 
 #[test]
@@ -337,49 +292,8 @@ fn installed_hagia_separates_personal_and_packaged_promotion_profiles() {
     assert!(INSTALLED_HAGIA.contains("packaged-fallback"));
     assert!(INSTALLED_HAGIA_PROMOTION.contains("packaged-promotion"));
     assert!(INSTALLED_HAGIA_PROMOTION.contains("unset SOPHIA_DESKTOP_PROFILE"));
-    assert!(SESSION_LAUNCHER.contains("--desktop-profile=$desktop_profile"));
+    assert!(SESSION_LAUNCHER.contains("session prepare-arguments"));
     assert!(SESSION_LAUNCHER.contains("Ctrl+Alt+Delete to log out"));
-}
-
-#[test]
-fn desktop_startup_does_not_require_a_focused_app_but_proofs_do() {
-    let start = offset("# A user-composed desktop may start only panels");
-    let end = start
-        + SESSION_LAUNCHER[start..]
-            .find("if [[ \"$SESSION_PROFILE\" == standalone ]]; then")
-            .unwrap();
-    let block = &SESSION_LAUNCHER[start..end];
-    for (profile, startup, firefox, truecolor, expected) in [
-        ("hagia", "terminal", "false", "false", false),
-        ("hagia", "none", "false", "false", false),
-        ("hagia", "terminal", "true", "false", true),
-        ("hagia", "terminal", "false", "true", true),
-        ("standalone", "terminal", "false", "false", true),
-        ("native", "terminal", "false", "false", true),
-        ("kitty", "terminal", "false", "false", true),
-    ] {
-        // Execute only argument assembly; never enter the live launcher.
-        let output = std::process::Command::new("bash")
-            .args([
-                "-eu",
-                "-c",
-                &format!("session_args=(); {block}\nprintf '%s' \"${{session_args[*]}}\""),
-            ])
-            .env("SESSION_PROFILE", profile)
-            .env("SESSION_STARTUP", startup)
-            .env("FIREFOX_M10_ANY_PROOF", firefox)
-            .env("TRUECOLOR_PROOF", truecolor)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        assert_eq!(
-            String::from_utf8(output.stdout)
-                .unwrap()
-                .contains("--startup-ready-timeout-ms=8000"),
-            expected,
-            "profile={profile} startup={startup} firefox={firefox} truecolor={truecolor}"
-        );
-    }
 }
 
 #[test]
