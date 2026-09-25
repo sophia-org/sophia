@@ -491,6 +491,36 @@ fn spawn_x11_input_event_writer(
                     },
                 },
             );
+            // The record's child: the child of the event window toward the
+            // source, None when the source is the event window or not an
+            // inferior of it. The encoders put None; the writer is the one
+            // that knows the source's ancestry (XTS Xlib11 ButtonPress 8 to
+            // 10, KeyPress 5 to 7, MotionNotify 15 and 16).
+            let subwindow = match event {
+                XAuthorityInputEvent::Pointer(_) => pointer_event_ancestry
+                    .as_deref()
+                    .map_or(XResourceId::NONE, |ancestry| {
+                        x11_event_subwindow(ancestry, delivered_window)
+                    }),
+                XAuthorityInputEvent::Key(_) => {
+                    let selections = core_event_selections.lock().map_err(|_| {
+                        X11SetupSocketError::new("X11 core event selection lock poisoned")
+                    })?;
+                    selections
+                        .pointer_window()
+                        .map_or(XResourceId::NONE, |pointer| {
+                            x11_event_subwindow(
+                                &selections.ancestry_including(pointer),
+                                delivered_window,
+                            )
+                        })
+                }
+            };
+            write_xi_u32(
+                byte_order,
+                &mut record[16..20],
+                u32::try_from(subwindow.local.raw()).unwrap_or(0),
+            );
             // Whether this client holds an explicit pointer grab: that grab's
             // mask decides delivery instead of the windows' selections. The
             // implicit grab a press activates is not one: its mask is the
@@ -973,5 +1003,15 @@ fn pointer_selection(kind: XAuthorityPointerEventKind) -> XPointerSelection {
         | XAuthorityPointerEventKind::Axis { pressed: true, .. } => XPointerSelection::Press,
         XAuthorityPointerEventKind::Button { pressed: false, .. }
         | XAuthorityPointerEventKind::Axis { pressed: false, .. } => XPointerSelection::Release,
+    }
+}
+
+/// The `child` of a core event: the element of the source window's ancestry
+/// (source first, then up) directly below the event window, or None when the
+/// source is the event window itself or not an inferior of it.
+fn x11_event_subwindow(source_ancestry: &[XResourceId], event_window: XResourceId) -> XResourceId {
+    match source_ancestry.iter().position(|window| *window == event_window) {
+        Some(0) | None => XResourceId::NONE,
+        Some(depth) => source_ancestry[depth - 1],
     }
 }

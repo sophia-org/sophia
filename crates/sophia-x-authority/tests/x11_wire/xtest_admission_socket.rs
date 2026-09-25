@@ -982,6 +982,73 @@ mod xtest_admission_socket {
         );
     }
 
+    /// A core event's `child` names the child of the event window on the
+    /// way to the source: the source itself when it is a child, the ancestor
+    /// of the source that is a child of the event window when it is deeper,
+    /// and None when the source is the event window (XTS Xlib11 ButtonPress
+    /// 8 to 10, KeyPress 5 to 7, MotionNotify 15 and 16). It was always
+    /// None. Red before the fix: the press in the grandchild names no child.
+    #[test]
+    fn a_core_events_child_is_the_event_windows_child_toward_the_source() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let toplevel = client.next;
+        let child = client.next + 2;
+        let grandchild = client.next + 4;
+        client.next += 6;
+        // Keys, ButtonPress and ButtonRelease on the toplevel only.
+        client.stream
+            .write_all(&create_window_request(client.order, toplevel, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, toplevel, 3 | (1 << 2) | (1 << 3)))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, child, toplevel, 4, 4, 8, 8))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, grandchild, child, 2, 2, 4, 4))
+            .unwrap();
+        for window in [toplevel, child, grandchild] {
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let field = |event: &[u8; 32], at: usize| u32::from_le_bytes([event[at], event[at + 1], event[at + 2], event[at + 3]]);
+
+        // In the grandchild (root 26..30, 6..10): the event window is the
+        // toplevel and its child toward the source is the child.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!((field(&press, 12), field(&press, 16)), (toplevel, child), "press in the grandchild");
+        client.fake_input(5, 1);
+        let _ = client.next_event(5);
+        client.fake_input(2, 38);
+        let key = client.next_event(2);
+        assert_eq!((field(&key, 12), field(&key, 16)), (toplevel, child), "key with the pointer in the grandchild");
+        client.fake_input(3, 38);
+        let _ = client.next_event(3);
+
+        // In the child (root 24..32, 4..12) outside the grandchild: the child
+        // is the source and the subwindow.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!((field(&press, 12), field(&press, 16)), (toplevel, child), "press in the child");
+        client.fake_input(5, 1);
+        let _ = client.next_event(5);
+
+        // In the toplevel itself: no subwindow.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 21, 1);
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!((field(&press, 12), field(&press, 16)), (toplevel, 0), "press in the toplevel");
+        client.fake_input(5, 1);
+        let _ = client.next_event(5);
+        client.barrier();
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,
