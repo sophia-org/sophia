@@ -42,6 +42,21 @@ fn logical_scene_checksum(
                 mix(u64::from(surface.index()));
                 mix(u64::from(surface.generation()));
             }
+            CompositorDisplayCommand::PresentationStamp(stamp) => {
+                mix(10);
+                mix(stamp.owner_epoch);
+                mix(stamp.publication_generation);
+                mix(stamp.output.raw());
+                mix(stamp.output_generation);
+                for value in [
+                    stamp.coverage.x,
+                    stamp.coverage.y,
+                    stamp.coverage.width,
+                    stamp.coverage.height,
+                ] {
+                    mix(value as u32 as u64);
+                }
+            }
             CompositorDisplayCommand::SurfaceInstance(instance) => {
                 mix(9);
                 mix(instance.owner_epoch);

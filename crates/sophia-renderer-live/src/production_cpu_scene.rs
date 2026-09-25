@@ -305,6 +305,7 @@ impl LiveProductionCpuScene {
                 CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
                 CompositorDisplayCommand::Surface { .. }
                 | CompositorDisplayCommand::SurfaceInstance(_)
+                | CompositorDisplayCommand::PresentationStamp(_)
                 | CompositorDisplayCommand::Border(_)
                 | CompositorDisplayCommand::Rect(_)
                 | CompositorDisplayCommand::Text(_)
@@ -327,6 +328,7 @@ impl LiveProductionCpuScene {
                 CompositorDisplayCommand::Text(text) => Some(text),
                 CompositorDisplayCommand::Surface { .. }
                 | CompositorDisplayCommand::SurfaceInstance(_)
+                | CompositorDisplayCommand::PresentationStamp(_)
                 | CompositorDisplayCommand::Border(_)
                 | CompositorDisplayCommand::Rect(_)
                 | CompositorDisplayCommand::IndicatorStrip(_)
@@ -376,6 +378,7 @@ impl LiveProductionCpuScene {
                         },
                     ));
                 }
+                CompositorDisplayCommand::PresentationStamp(_) => {}
                 CompositorDisplayCommand::SurfaceInstance(instance) => {
                     let Some(committed) = committed_surfaces
                         .iter()

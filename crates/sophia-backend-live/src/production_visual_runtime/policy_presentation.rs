@@ -35,21 +35,105 @@ pub struct LivePolicyPresentationRevocation {
     pub source: SurfaceId,
 }
 
+/// The publication an output's retired frame actually presents, read from
+/// that frame alone: distinct from the requested [`LivePolicyPresentation`],
+/// which may have moved on. A presented `(id, generation)` fixes the admitted
+/// record's geometry, clip, z order and action, since any change to those
+/// takes a new target generation; a source repaint changes neither.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LivePresentedPolicyPublication {
+    pub owner_epoch: u64,
+    pub generation: u64,
+    pub output: OutputId,
+    pub output_generation: u64,
+    /// `(id, generation)` of each instance drawn, back to front.
+    pub instances: Vec<(u64, u64)>,
+    /// `(id, generation)` of each region drawn, back to front.
+    pub regions: Vec<(u64, u64)>,
+}
+
+impl LivePresentedPolicyPublication {
+    /// None when the frame presents no WM publication.
+    pub fn from_presented_frame(frame: &OutputFrameDamageSnapshot) -> Option<Self> {
+        let list = &frame.compositor_display_list;
+        let stamp = list.presentation_stamp()?;
+        let owned = |node: CompositorNodeId| match node {
+            CompositorNodeId::PolicyRegion { owner_epoch, id }
+                if owner_epoch == stamp.owner_epoch =>
+            {
+                Some(id)
+            }
+            _ => None,
+        };
+        let mut regions = Vec::new();
+        for command in &list.commands {
+            let region = match command {
+                CompositorDisplayCommand::Rect(rect) => {
+                    owned(rect.node).map(|id| (id, rect.generation))
+                }
+                CompositorDisplayCommand::Border(border) => {
+                    owned(border.node).map(|id| (id, border.generation))
+                }
+                _ => None,
+            };
+            if let Some(region) = region {
+                regions.push(region);
+            }
+        }
+        Some(Self {
+            owner_epoch: stamp.owner_epoch,
+            generation: stamp.publication_generation,
+            output: stamp.output,
+            output_generation: stamp.output_generation,
+            instances: list
+                .surface_instances()
+                .filter(|instance| instance.owner_epoch == stamp.owner_epoch)
+                .map(|instance| (instance.id, instance.generation))
+                .collect(),
+            regions,
+        })
+    }
+}
+
 impl LivePolicyPresentation {
-    /// This output's instances as display commands in z order. The source
-    /// generation is left for [`resolve_surface_instance_sources`], so a
-    /// value the WM could influence never reaches a frame.
-    pub(super) fn instance_commands(&self, output: OutputId) -> Vec<CompositorDisplayCommand> {
-        let mut instances = self
+    /// Whether this output shows the presentation in place of its ordinary
+    /// application presentation.
+    pub(super) fn replaces_applications(&self, output: OutputId) -> bool {
+        self.presentation.outputs.iter().any(|record| {
+            record.output == output && record.mode == PolicyPresentationMode::ReplaceApplications
+        })
+    }
+
+    /// This output's tier: the stamp naming the publication, then regions
+    /// and instances in their one z order. Regions are Engine chrome in its
+    /// own palette: Backdrop the frame colour fully opaque, Frame the frame
+    /// stroke, Emphasis the focus-ring stroke, all within the region's
+    /// clipped allocation. An instance's source generation is left for
+    /// [`resolve_surface_instance_sources`], so a value the WM could
+    /// influence never reaches a frame. Nothing when this output has no
+    /// output record.
+    pub(super) fn tier_commands(
+        &self,
+        output: OutputId,
+        style: SurfaceChromeStyle,
+    ) -> Vec<CompositorDisplayCommand> {
+        let Some(record) = self
+            .presentation
+            .outputs
+            .iter()
+            .find(|record| record.output == output)
+        else {
+            return Vec::new();
+        };
+        let mut layered = Vec::new();
+        for instance in self
             .presentation
             .instances
             .iter()
             .filter(|instance| instance.output == output)
-            .collect::<Vec<_>>();
-        instances.sort_by_key(|instance| instance.z_index);
-        instances
-            .into_iter()
-            .map(|instance| {
+        {
+            layered.push((
+                instance.z_index,
                 CompositorDisplayCommand::SurfaceInstance(CompositorSurfaceInstance {
                     owner_epoch: self.owner_epoch,
                     id: instance.id,
@@ -59,9 +143,31 @@ impl LivePolicyPresentation {
                     destination: instance.destination,
                     clip: instance.clip,
                     opacity_millis: instance.opacity_millis,
-                })
-            })
-            .collect()
+                }),
+            ));
+        }
+        for region in self
+            .presentation
+            .regions
+            .iter()
+            .filter(|region| region.output == output)
+        {
+            if let Some(command) = region_command(self.owner_epoch, region, style) {
+                layered.push((region.z_index, command));
+            }
+        }
+        layered.sort_by_key(|(z_index, _)| *z_index);
+        std::iter::once(CompositorDisplayCommand::PresentationStamp(
+            CompositorPresentationStamp {
+                owner_epoch: self.owner_epoch,
+                publication_generation: self.presentation.generation,
+                output,
+                output_generation: record.generation,
+                coverage: record.coverage,
+            },
+        ))
+        .chain(layered.into_iter().map(|(_, command)| command))
+        .collect()
     }
 
     fn sources(&self) -> impl Iterator<Item = SurfaceId> + '_ {
@@ -72,7 +178,96 @@ impl LivePolicyPresentation {
     }
 }
 
+/// One region as Engine chrome within its clipped allocation.
+fn region_command(
+    owner_epoch: u64,
+    region: &PolicyPresentationRegion,
+    style: SurfaceChromeStyle,
+) -> Option<CompositorDisplayCommand> {
+    let allocation = clipped(region.geometry, region.clip)?;
+    let node = CompositorNodeId::PolicyRegion {
+        owner_epoch,
+        id: region.id,
+    };
+    let stroke = |width: i32, color: CompositorRgb8| {
+        let width = width.max(1);
+        CompositorDisplayCommand::Border(CompositorBorder {
+            node,
+            generation: region.generation,
+            outer: allocation,
+            inner: Rect {
+                x: allocation.x.saturating_add(width),
+                y: allocation.y.saturating_add(width),
+                width: allocation
+                    .width
+                    .saturating_sub(width.saturating_mul(2))
+                    .max(0),
+                height: allocation
+                    .height
+                    .saturating_sub(width.saturating_mul(2))
+                    .max(0),
+            },
+            color,
+        })
+    };
+    Some(match region.role {
+        PolicyPresentationRegionRole::Backdrop => CompositorDisplayCommand::Rect(CompositorRect {
+            opacity: u8::MAX,
+            node,
+            generation: region.generation,
+            geometry: allocation,
+            color: style.frame.unfocused_color,
+        }),
+        PolicyPresentationRegionRole::Frame => {
+            stroke(style.frame.width, style.frame.unfocused_color)
+        }
+        PolicyPresentationRegionRole::Emphasis => {
+            stroke(style.focus_ring.width, style.focus_ring.color)
+        }
+    })
+}
+
+fn clipped(geometry: Rect, clip: Rect) -> Option<Rect> {
+    let x = geometry.x.max(clip.x);
+    let y = geometry.y.max(clip.y);
+    let right = geometry
+        .x
+        .saturating_add(geometry.width)
+        .min(clip.x.saturating_add(clip.width));
+    let bottom = geometry
+        .y
+        .saturating_add(geometry.height)
+        .min(clip.y.saturating_add(clip.height));
+    (right > x && bottom > y).then_some(Rect {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+    })
+}
+
 impl LiveProductionVisualRuntime {
+    /// Read-only: whether `candidate` could be installed now. Every source
+    /// must have committed content both in the scene now displayed and in
+    /// the committed set the next frame draws; otherwise the whole
+    /// candidate is refused, and the installed presentation and layout stay
+    /// valid. The session checks this before preparing a proposal and
+    /// installs with [`Self::set_policy_presentation`] at commit, which
+    /// checks again.
+    pub fn validate_policy_presentation(
+        &self,
+        candidate: &LivePolicyPresentation,
+    ) -> Result<(), LivePolicyPresentationRefusal> {
+        match candidate.sources().find(|source| {
+            ![self.displayed_surface_view(), self.committed_surfaces()]
+                .iter()
+                .all(|scene| scene.iter().any(|state| state.surface == *source))
+        }) {
+            Some(source) => Err(LivePolicyPresentationRefusal::MissingSource { source }),
+            None => Ok(()),
+        }
+    }
+
     /// Installs or withdraws the admitted WM presentation and queues a
     /// retained repaint when native scanout owns presentation. The source
     /// surfaces keep their allocation, placement and output ownership.
@@ -85,19 +280,8 @@ impl LiveProductionVisualRuntime {
         if self.policy_presentation == presentation {
             return Ok(false);
         }
-        // Every source must be committed both in the scene now displayed and
-        // in the committed set the next frame draws; otherwise the whole
-        // candidate is refused and the last valid presentation stays.
-        if let Some(candidate) = &presentation
-            && let Some(source) = candidate.sources().find(|source| {
-                ![self.displayed_surface_view(), self.committed_surfaces()]
-                    .iter()
-                    .all(|scene| scene.iter().any(|state| state.surface == *source))
-            })
-        {
-            return Err(Box::new(LivePolicyPresentationRefusal::MissingSource {
-                source,
-            }));
+        if let Some(candidate) = &presentation {
+            self.validate_policy_presentation(candidate)?;
         }
         let previous = std::mem::replace(&mut self.policy_presentation, presentation);
         if let Some(native_scanout) = native_scanout

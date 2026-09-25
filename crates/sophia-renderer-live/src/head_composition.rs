@@ -191,6 +191,7 @@ pub fn lower_head_composition_plan_with_caches(
             // The source's one binding and one owned source, drawn again at
             // the instance's own destination, clip and opacity. Repeated
             // instances share the source; none of them is the surface.
+            HeadCompositorCommand::PresentationStamp(_) => {}
             HeadCompositorCommand::SurfaceInstance(instance) => {
                 let (binding, source) = planned_source(plan, sources, instance.source)?;
                 let placed = sophia_engine::HeadLayerBinding {

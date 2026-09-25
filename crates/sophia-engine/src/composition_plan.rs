@@ -175,6 +175,8 @@ pub enum HeadCompositorCommand {
     /// An instance in head-native coordinates: destination and clip are
     /// projected, the clip bounded by the painted scene.
     SurfaceInstance(crate::CompositorSurfaceInstance),
+    /// Carried unchanged into the head frame; draws nothing.
+    PresentationStamp(crate::CompositorPresentationStamp),
     Border(HeadCompositorBorder),
     Rect(HeadCompositorRect),
     Text(HeadCompositorText),
@@ -326,6 +328,7 @@ pub fn output_scene_snapshot_from_committed_in_view(
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
             CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
@@ -386,6 +389,7 @@ pub fn output_scene_snapshot_from_committed_in_view(
     }
     display_list.commands.retain(|command| match command {
         CompositorDisplayCommand::Surface { surface } => visible_surfaces.contains(surface),
+        CompositorDisplayCommand::PresentationStamp(_) => true,
         CompositorDisplayCommand::SurfaceInstance(instance) => {
             instance_sources.contains(&instance.source)
                 && !intersect_rect(instance.visible(), logical_viewport).is_empty()
@@ -536,6 +540,15 @@ pub fn build_head_composition_plan(
             CompositorDisplayCommand::Surface { surface } => {
                 HeadCompositorCommand::Surface { surface: *surface }
             }
+            CompositorDisplayCommand::PresentationStamp(stamp) => {
+                HeadCompositorCommand::PresentationStamp(crate::CompositorPresentationStamp {
+                    coverage: intersect_rect(
+                        transform.project_root_rect(snapshot.logical_viewport, stamp.coverage),
+                        painted,
+                    ),
+                    ..*stamp
+                })
+            }
             CompositorDisplayCommand::SurfaceInstance(instance) => {
                 let destination =
                     transform.project_root_rect(snapshot.logical_viewport, instance.destination);
@@ -672,6 +685,11 @@ pub fn head_output_damage_snapshot(plan: &HeadCompositionPlan) -> OutputFrameDam
                     .commands
                     .push(CompositorDisplayCommand::SurfaceInstance(*instance));
             }
+            HeadCompositorCommand::PresentationStamp(stamp) => {
+                display_list
+                    .commands
+                    .push(CompositorDisplayCommand::PresentationStamp(*stamp));
+            }
             HeadCompositorCommand::Surface { surface } => {
                 display_list
                     .commands
@@ -804,7 +822,8 @@ fn validate_snapshot(snapshot: &OutputSceneSnapshot) -> Result<(), HeadCompositi
                     return Err(HeadCompositionPlanError::StaleInstanceSource);
                 }
             }
-            CompositorDisplayCommand::Border(_)
+            CompositorDisplayCommand::PresentationStamp(_)
+            | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)

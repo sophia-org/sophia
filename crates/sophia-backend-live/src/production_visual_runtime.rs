@@ -25,6 +25,7 @@ mod policy_presentation;
 use composition_target::NativeCompositionTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,
+    LivePresentedPolicyPublication,
 };
 mod native;
 mod ownership;

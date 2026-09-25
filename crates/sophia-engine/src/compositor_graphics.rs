@@ -64,6 +64,13 @@ pub enum CompositorNodeId {
         owner_epoch: u64,
         id: u64,
     },
+    /// A WM presentation region, drawn by Engine in its chrome palette.
+    /// Ids share the publication's namespace with instances; the variant
+    /// keeps a region distinct from an instance in every table.
+    PolicyRegion {
+        owner_epoch: u64,
+        id: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,10 +239,27 @@ pub fn resolve_surface_instance_sources<C>(
     Ok(())
 }
 
+/// Which admitted WM publication an output frame presents. It draws nothing;
+/// it travels with the frame so the frame that retires names exactly the
+/// publication its pixels show, distinct from whatever publication is
+/// requested by then. A change of stamp, including a binding-only
+/// publication with identical pixels and a withdrawal, damages the old and
+/// new coverage, so a frame carrying the change is presented and retires.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompositorPresentationStamp {
+    pub owner_epoch: u64,
+    pub publication_generation: u64,
+    pub output: OutputId,
+    pub output_generation: u64,
+    /// The output's presentation coverage, in this list's coordinates.
+    pub coverage: Rect,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompositorDisplayCommand<C = CompositorContentImage> {
     Surface { surface: SurfaceId },
     SurfaceInstance(CompositorSurfaceInstance),
+    PresentationStamp(CompositorPresentationStamp),
     Border(CompositorBorder),
     Rect(CompositorRect),
     Text(CompositorText),
@@ -250,6 +274,13 @@ pub struct CompositorDisplayList<C = CompositorContentImage> {
 }
 
 impl<C> CompositorDisplayList<C> {
+    pub fn presentation_stamp(&self) -> Option<CompositorPresentationStamp> {
+        self.commands.iter().find_map(|command| match command {
+            CompositorDisplayCommand::PresentationStamp(stamp) => Some(*stamp),
+            _ => None,
+        })
+    }
+
     pub fn surface_instances(&self) -> impl Iterator<Item = CompositorSurfaceInstance> + '_ {
         self.commands.iter().filter_map(|command| match command {
             CompositorDisplayCommand::SurfaceInstance(instance) => Some(*instance),
@@ -269,6 +300,7 @@ impl<C> CompositorDisplayList<C> {
             CompositorDisplayCommand::Border(border) => Some(*border),
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -281,6 +313,7 @@ impl<C> CompositorDisplayList<C> {
             CompositorDisplayCommand::Rect(rect) => Some(*rect),
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Text(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -293,6 +326,7 @@ impl<C> CompositorDisplayList<C> {
             CompositorDisplayCommand::Text(text) => Some(text),
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::IndicatorStrip(_)
@@ -305,6 +339,7 @@ impl<C> CompositorDisplayList<C> {
             CompositorDisplayCommand::IndicatorStrip(strip) => Some(strip),
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
@@ -327,8 +362,17 @@ pub(crate) fn compositor_display_list_structure_is_valid<C: CompositorContentMet
         return false;
     }
     let mut nodes = BTreeSet::new();
+    let mut stamped = false;
     display_list.commands.iter().all(|command| match command {
         CompositorDisplayCommand::Surface { .. } => true,
+        // At most one, for this list's output.
+        CompositorDisplayCommand::PresentationStamp(stamp) => {
+            !std::mem::replace(&mut stamped, true)
+                && stamp.owner_epoch != 0
+                && stamp.publication_generation != 0
+                && stamp.output_generation != 0
+                && stamp.output == display_list.output
+        }
         CompositorDisplayCommand::SurfaceInstance(instance) => {
             instance.is_valid() && nodes.insert(instance.node())
         }
@@ -610,6 +654,21 @@ pub fn compositor_display_list_damage<
         .collect::<BTreeMap<_, _>>();
     let mut damage = Region::empty();
     push_surface_instance_damage(&mut damage, previous, current);
+    let (before, after) = (previous.presentation_stamp(), current.presentation_stamp());
+    if before != after {
+        let old = before
+            .map(|stamp| stamp.coverage)
+            .filter(|coverage| !coverage.is_empty());
+        let new = after
+            .map(|stamp| stamp.coverage)
+            .filter(|coverage| !coverage.is_empty());
+        if let Some(old) = old {
+            damage.push(old);
+        }
+        if let Some(new) = new.filter(|new| Some(*new) != old) {
+            damage.push(new);
+        }
+    }
     for node in previous_borders
         .keys()
         .chain(current_borders.keys())

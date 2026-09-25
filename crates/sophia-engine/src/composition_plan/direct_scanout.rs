@@ -150,6 +150,8 @@ fn command_requires_composition(command: &HeadCompositorCommand) -> Option<&'sta
         HeadCompositorCommand::Surface { .. } => None,
         // A second, scaled presentation of a source is composition.
         HeadCompositorCommand::SurfaceInstance(_) => Some("surface_instance"),
+        // Names the publication; draws nothing.
+        HeadCompositorCommand::PresentationStamp(_) => None,
         HeadCompositorCommand::Border(_) => Some("border"),
         HeadCompositorCommand::Rect(_) => Some("rect"),
         HeadCompositorCommand::Text(_) => Some("text"),

@@ -85,6 +85,7 @@ pub fn output_frame_damage_snapshot(
         .filter_map(|command| match command {
             CompositorDisplayCommand::Surface { surface } => Some(*surface),
             CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)
@@ -209,6 +210,7 @@ fn validate_snapshot(snapshot: &OutputFrameDamageSnapshot) -> Result<(), OutputF
             }
             CompositorDisplayCommand::Surface { .. }
             | CompositorDisplayCommand::SurfaceInstance(_)
+            | CompositorDisplayCommand::PresentationStamp(_)
             | CompositorDisplayCommand::Border(_)
             | CompositorDisplayCommand::Rect(_)
             | CompositorDisplayCommand::Text(_)

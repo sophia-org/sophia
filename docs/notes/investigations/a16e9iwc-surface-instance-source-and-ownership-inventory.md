@@ -200,12 +200,51 @@ the archived prototype's controls (overview 914858fa):
 | admits-missing-source | admission skips the missing-source refusal | fails: the refused candidate is installed |
 | removal-not-revoked | removal skips revocation | fails: the presentation outlives its source |
 
-Remaining for t244: Engine chrome regions (Backdrop, Frame, Emphasis),
-ReplaceApplications suppression of that output's application surfaces,
-chrome, tab bars and floating outline, a test of an instance on one output
-whose source another output owns (the source union and snapshot
-sampling do not consult `surface_outputs`, which stays unchanged), source damage scaled into the destination (a source commit
-now damages each instance's whole visible rectangle), fractional scale,
-mirrored-head and direct-scanout fallback cases, and CPU and native
-sampling equivalence under scaling (the CPU path samples the nearest
-texel).
+## Second checkpoint: regions, replacement and the presented stamp
+
+- **Regions.** Regions are `CompositorNodeId::PolicyRegion { owner_epoch,
+  id }`, drawn with the existing commands inside the region's clipped
+  allocation. Backdrop is a `Rect` in the frame colour at full opacity.
+  Frame is a `Border` with the frame stroke. Emphasis is a `Border` with
+  the focus-ring stroke. Regions and instances on an output are merged in
+  one z order.
+- **ReplaceApplications.** On an output in that mode, the tier replaces
+  that output's application surfaces, their chrome, tab bars and the
+  floating outline. They leave the frame's surfaces, so they are not hit
+  targets there. Clients keep their allocations and content, a preview
+  still samples them, and withdrawal restores them. The mode applies
+  only while the tier is drawn.
+- **Stamp.** Each output list with an output record starts its tier with
+  a pixel-less `PresentationStamp`. It carries the owner epoch,
+  publication generation, output, output generation and coverage, and it
+  flows through the snapshot, the head plan (coverage projected) and the
+  head damage snapshot. The frame that retires therefore names the
+  publication it presents.
+  `LivePresentedPolicyPublication::from_presented_frame` reads that
+  publication, with each drawn instance's and region's `(id, generation)`,
+  from a completed frame only. It is separate from the requested
+  `policy_presentation()`. A change of stamp damages the old and new
+  coverage. A binding-only publication with identical pixels therefore
+  still presents and retires, and a withdrawal presents a frame without a
+  stamp. A source repaint changes no presented identity.
+
+Tests: `presentation_instances.rs` holds the two earlier production tests
+and three new ones:
+`regions_and_instances_share_one_z_order_under_one_stamp`,
+`replace_applications_substitutes_the_tier_for_that_outputs_applications_only`
+and
+`a_retired_frame_names_the_publication_it_presents_and_a_repaint_keeps_its_identities`.
+
+| Control | Change | Result |
+|---|---|---|
+| replacement-not-suppressed | the mode is ignored | fails: the application is drawn on the replaced output |
+| stamp-missing | the tier omits its stamp | fails: the retired frame names no publication |
+| stamp-change-undamaged | a stamp change damages nothing | fails: a binding-only change has no damage |
+
+Remaining for t244: a test of an instance on one output whose source
+another output owns (the source union and snapshot sampling do not
+consult `surface_outputs`, which stays unchanged), source damage scaled
+into the destination (a source commit now damages each instance's whole
+visible rectangle), fractional scale, mirrored-head and direct-scanout
+fallback cases, and CPU and native sampling equivalence under scaling
+(the CPU path samples the nearest texel).
