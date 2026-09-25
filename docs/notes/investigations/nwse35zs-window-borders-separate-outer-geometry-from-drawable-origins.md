@@ -40,6 +40,22 @@ and republishes the top-level raster from its existing drawable buffers.
 Borders reserve space but do not paint pixels. Border pixel/pixmap painting
 remains outside Sophia's compatibility contract; this seam does not claim it.
 
+The first draft XTS windows run moved XTranslateCoordinates 1 to PASS. Purpose
+3 exposed a separate stub: the reply always named no child. It now resolves
+the supplied point against mapped direct children, including their borders,
+without reading or moving the pointer. XQueryPointer 3 exposed an unanchored
+root warp in the conformance host: only its client-placed mode may resolve a
+top-level without an Engine target. The desktop mode still refuses to invent
+Engine hit testing, and a regression exercises both modes.
+
+Pixel-reference failures remain distinct. XCreateSimpleWindow 4 creates a
+three-pixel border and compares the clipped result with a painted-border image;
+the draft reports 111 differing pixels. The win-gravity purposes explicitly
+set contrasting child borders before their pixel checks. SetWindowBorder,
+SetWindowBorderPixmap and SetWindowBorderWidth likewise check painted borders.
+Their declarations must describe this retained limit instead of claiming that
+interiors still use outer-corner coordinates.
+
 ## Validation and remaining work
 
 Worktree: `sophia-borders`, branch `raster/t214-t227-borders`, based on

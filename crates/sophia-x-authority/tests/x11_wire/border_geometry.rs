@@ -63,6 +63,10 @@ mod border_geometry {
         f.send(ns, 8, map_window_request(order, child));
         let translated = f.send(ns, 40, translate_coordinates_request(order, top, top, 4, 5));
         assert!(matches!(translated.outputs.as_slice(), [XClientOutput::Reply(XClientReply::TranslateCoordinates { child: Some(found), .. })] if *found == XResourceId::new(u64::from(child), 1)), "the border belongs to the mapped child, even before the top maps");
+        f.gc(ns, 0x700004, top, 0x00ff_0000, false);
+        let draw = f.send(ns, 70, poly_fill_rectangle_request(order, top, 0x700004, &[(0, 0, 80, 80)]));
+        let geometry = draw.response.unwrap().transactions[0].target_geometry;
+        assert_eq!((geometry.x, geometry.y), (11, 21), "the raster transaction agrees with the admitted surface origin");
         let configured = f.runtime.configure_window_from_engine(ns, XResourceId::new(u64::from(top), 1), sophia_protocol::Rect { x: 50, y: 60, width: 80, height: 80 }).unwrap();
         assert_eq!((configured.x, configured.y), (49, 59), "X reports the outer corner");
         assert_eq!(f.runtime.window_root_position(id), Some((62, 74)));
