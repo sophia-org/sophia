@@ -2,7 +2,7 @@
 id: dvvnlqq2
 date: 2026-09-24
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation]
 ---
 # TTY launch preparation still has a second argument builder outside Rust
@@ -173,3 +173,22 @@ terminal checks pass. Clippy, formatting and the layout gate pass. One new PTY
 fixture initially allowed stdin EOF to hang up its shell before exec; retaining
 the input pipe until exit fixes the harness and tests the intended refusal.
 The complete native-family gate and source-bound final acceptance remain pending.
+
+## Accepted completion
+
+Signed candidate `dd2caf20b4aba35180613cd8b197b248c65fb9ed` passes all eight
+device-hidden native-family phases. Sophia, Hagia `ad3a738d` and Narthex
+`50b9014d` were clean and their identities were unchanged at completion. The
+retained evidence directory is
+`~/.local/state/sophia/development-evidence/t027-completion-dd2caf20`:
+20 files, including the family report and each phase log, have verified SHA-256
+checksums. Additional acceptance includes 83 CLI tests (four pre-existing
+ignored cases), two disposable-PTY tests, 82 conformance tests, the discovery
+and retained-vector comparisons, watchdog recovery, lifecycle diagnostics,
+preflight refusal, Clippy, formatting and layout.
+
+This closes t027's preparation/adapter boundary. The independent input guard,
+watchdog, TTY/display-manager restoration and explicit physical-proof dispatch
+remain deliberate adapter responsibilities. No installed-session or physical
+acceptance is claimed. The family gate reports Lom content unavailable when no
+Lom client is supplied; that optional branch does not satisfy or close t099.

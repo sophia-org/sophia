@@ -38,8 +38,6 @@
 
 (A) Record the concise result with zk milestone, link it from the milestone map in docs/notes/indexes/milestones.md, and update current product statements only after the development-session target is… +critical +cp14-3 @development id:t021 order:021 [details](docs/notes/plans/queue-07-5-close-milestone-14.md#t021)
 
-(B) Reduce tools/start_sophia_tty3.sh to the minimum TTY/display-manager adapter around sophia session run. +parallel @development id:t027 order:027 [details](docs/notes/plans/queue-11-parallel-production-readiness.md#t027)
-
 (B) Accept namespace-scoped QueryPointer menu placement and drag behavior in the installed session. +parallel @physical id:t060 order:060 [details](docs/notes/plans/queue-11-parallel-production-readiness.md#t060)
 
 Stamp geometry, interaction, pointer-handoff, and WM-policy work queued across an output-topology transition; revalidate it against typed authority epochs. +candidate @planning id:t031 order:031 [details](docs/notes/plans/queue-13-authority-and-lifecycle-hardening.md#t031)
