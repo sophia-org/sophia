@@ -213,3 +213,53 @@ It retains commands, logs, exits, family report, source and peer identities,
 cache allocation and the user-document preservation record. These are
 development integration results. No GPU proof, live install, reload or physical
 acceptance occurred, and no task is closed by this gate.
+
+## Desktop preparation integration, September 25
+
+Signed candidate `5c2dcfeb5707802fe2bc2b4b36f28203a16e6abf` joins the
+[t101 component preflight correction](v45ldzp0-two-component-desktop-acceptance-separates-package-preparation-from-attended-retirement.md)
+and the [t018 launcher identity repairs](4z5k4d2u-t018-reference-gate-identity-and-tab-profile.md).
+CLI preflight now checks each selected component executable and resolves its
+optional private config before either WM policy outcome. Private config contents
+remain client-owned. The Hagia proof wrappers now bind Narthex correctly,
+accept actual checkout roots including worktrees, reject mutable symlink
+profiles, pin Cargo's output directory, and pass the hashed Sophia executable
+to the native runner. These changes prepare acceptance; they do not execute it.
+
+The candidate preserves niltempus's strategic-roadmap commit `2d654992` and
+control-bus documentation commit `97ced0f6` unchanged. Initial main preconditions
+stopped when uncommitted documentation appeared; no stash or overwrite occurred.
+The inherited 9P crate needed rustfmt only, recorded separately as `93d2b627`.
+No 9P behavior was changed by this preparation work.
+
+The main-tree `cargo xtask check` passed in 190.260 seconds with devices and live
+sockets hidden, two build jobs and nice level 19. Its all-features workspace
+suite passed 5,552 tests with zero failures and 61 ignored; strict workspace
+Clippy, formatting, metadata, layout, C wire controls, profile validation,
+launcher controls and offline verifier checks passed. It also reverified five
+native-session, nine mirror-group and six direct-scanout archives under their
+original identities. The hardware pixel proofs explicitly remained unproved
+because devices were hidden.
+
+The default workspace suite passed 4,503 tests with zero failures and 37 ignored
+in 208.890 seconds on isolated candidate `93d2b62732191efe31ac874396bde905162a42a7`.
+All 2,209 Rust workspace/configuration entries are mode/type/blob-identical to
+the main candidate; intervening changes are documentation and gate scripts.
+The two new native-session preparation controls passed again on the exact main
+candidate, as did the separate policy matcher. All repository identities and
+the frozen peer binary stayed unchanged through the run.
+
+The earlier isolated canonical attempt passed its all-features tests and
+Clippy but stopped at profile binary discovery: the exclusive Cargo target
+needed an explicit `SOPHIA_BIN`. The main run supplied that exact built binary.
+This setup failure and the earlier formatting failure remain in the evidence;
+neither is counted as a full passing gate.
+
+The checksum-verified 51-file bundle is
+`~/.local/state/sophia/development-evidence/desktop-preparation-5c2dcfeb`.
+Its `SHA256SUMS` digest is
+`318ae08636bd5894bfe06c13f7aab3395a691282bee27831d3e47b6457684133`.
+It retains command vectors, logs, exits, source/peer identities, the explicit
+profile-check binary hash, and the default-suite reuse proof. The t018
+reference-capture mode is a separate, unmerged follow-up. No GPU proof, live
+install, reload, TTY takeover or task closure occurred.

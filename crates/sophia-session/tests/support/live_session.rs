@@ -36,6 +36,8 @@ mod glx_pixmap_export;
 #[path = "live_session_shutdown.rs"]
 mod live_session_shutdown;
 
+#[path = "component_desktop_preparation.rs"]
+mod component_desktop_preparation;
 #[path = "component_execution.rs"]
 mod component_execution;
 #[path = "component_prepare_refusal.rs"]

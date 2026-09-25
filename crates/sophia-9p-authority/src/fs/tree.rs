@@ -217,7 +217,8 @@ impl SyntheticTree {
                     }
                     match parts[0] {
                         "size" if parts.len() >= 3 => {
-                            if let (Ok(w), Ok(h)) = (parts[1].parse::<i32>(), parts[2].parse::<i32>())
+                            if let (Ok(w), Ok(h)) =
+                                (parts[1].parse::<i32>(), parts[2].parse::<i32>())
                             {
                                 win.size = Size {
                                     width: w,

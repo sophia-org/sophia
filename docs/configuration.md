@@ -188,8 +188,12 @@ Use `sophia config print-policy --desktop-profile=...` to export a policy-only
 profile for `hagia config check --config=...`. The Hagia TTY adapter calls
 `sophia config check-session-profile --desktop-profile=... --default-wm=/path/to/hagia`
 before display-manager takeover. This installed-runtime command checks the
-envelope and selected executables, stages only the policy in a private temporary
-directory, and gives Hagia ten seconds to validate it. Rejection or timeout
+envelope and selected executables, including every independent shell component.
+It resolves each component's optional private config path without parsing its
+contents. These path checks precede both validated and deferred WM policy
+outcomes; they neither launch components nor authenticate artifact hashes.
+The command stages only the policy in a private temporary directory and gives
+Hagia ten seconds to validate it. Rejection or timeout
 refuses the handoff and removes the staged policy. An explicitly selected different WM validates its
 own vocabulary during protocol activation. Packaging also checks both.
 Runtime still gives Hagia only its private

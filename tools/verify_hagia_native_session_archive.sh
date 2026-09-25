@@ -6,6 +6,8 @@ set -euo pipefail
 # itself through the same verifier the gate used.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/proof_checkout.sh
+source "$ROOT_DIR/tools/lib/proof_checkout.sh"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 run_root="${SOPHIA_HAGIA_NATIVE_RUN_ROOT:-$state_home/sophia/promotion/hagia-native-runs}"
@@ -17,7 +19,7 @@ fi
     echo "Hagia native session archive is missing: ${run:-$run_root}" >&2
     exit 1
 }
-[[ -d "$hagia_root/.git" ]] || {
+proof_checkout_root "$hagia_root" || {
     echo "Hagia checkout is unavailable: $hagia_root" >&2
     exit 1
 }
@@ -104,7 +106,7 @@ if [[ "$record_schema" == 2 ]]; then
         echo "Hagia native session evidence and manifest have different Narthex identities: $run" >&2
         exit 1
     }
-    [[ -d "$narthex_root/.git" ]] || {
+    proof_checkout_root "$narthex_root" || {
         echo "Narthex checkout is unavailable: $narthex_root" >&2
         exit 1
     }

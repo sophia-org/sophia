@@ -82,41 +82,18 @@ pub enum TMessage {
 /// Outgoing server responses (R-messages).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RMessage {
-    Version {
-        msize: u32,
-        version: String,
-    },
-    Auth {
-        aqid: Qid,
-    },
-    Attach {
-        qid: Qid,
-    },
-    Error {
-        ename: String,
-    },
+    Version { msize: u32, version: String },
+    Auth { aqid: Qid },
+    Attach { qid: Qid },
+    Error { ename: String },
     Flush,
-    Walk {
-        wqids: Vec<Qid>,
-    },
-    Open {
-        qid: Qid,
-        iounit: u32,
-    },
-    Create {
-        qid: Qid,
-        iounit: u32,
-    },
-    Read {
-        data: Vec<u8>,
-    },
-    Write {
-        count: u32,
-    },
+    Walk { wqids: Vec<Qid> },
+    Open { qid: Qid, iounit: u32 },
+    Create { qid: Qid, iounit: u32 },
+    Read { data: Vec<u8> },
+    Write { count: u32 },
     Clunk,
     Remove,
-    Stat {
-        stat_bytes: Vec<u8>,
-    },
+    Stat { stat_bytes: Vec<u8> },
     Wstat,
 }

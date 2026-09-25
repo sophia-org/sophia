@@ -1,0 +1,75 @@
+// t018 tab reference profile for the separate Hagia/Narthex test session.
+//
+// This is a Sophia desktop profile. Only the policy block and the policy:*
+// actions it binds are Hagia's (docs/tabbed-layouts.md; `split-tree` is Hagia's
+// alias for `i3`). The shell, shortcut, session, input, output and broker
+// sections are the profile envelope Sophia validates and applies. The shell
+// process (Narthex) is selected by the gate's --shell-process, not here. The
+// session starts in the default profile's scroller so the native workflow keys
+// behave as they do there; the tab layouts are reached with the layout keys.
+schema 1
+
+policy {
+  layout "scroller"
+  layout-cycle "scroller" "frame-tree" "notion" "i3"
+}
+
+shell {
+  enabled #true
+  panel 28
+}
+
+shortcut {
+  profile "t018-tab-reference"
+  // The native workflow (verified by the existing native gate).
+  bind "Ctrl+Alt+Delete" "session:logout"
+  bind "Super+Return" "session:spawn-terminal"
+  bind "Super+q" "session:close-window"
+  bind "Super+j" "policy:focus-window-below"
+  // Layout selection.
+  bind "Super+n" "policy:switch-layout"
+  bind "Super+Ctrl+Alt+1" "policy:layout-frame-tree"
+  bind "Super+Ctrl+Alt+2" "policy:layout-notion"
+  bind "Super+Ctrl+Alt+3" "policy:layout-i3"
+  // Tree navigation and movement, shared by the three tree layouts.
+  bind "Super+Left" "policy:focus-left"
+  bind "Super+Right" "policy:focus-right"
+  bind "Super+Up" "policy:focus-up"
+  bind "Super+Down" "policy:focus-down"
+  bind "Super+Shift+Left" "policy:move-window-left"
+  bind "Super+Shift+Right" "policy:move-window-right"
+  bind "Super+Shift+Up" "policy:move-window-up"
+  bind "Super+Shift+Down" "policy:move-window-down"
+  bind "Super+y" "policy:group-windows"
+  bind "Super+Shift+y" "policy:ungroup-window"
+  // Frame-tree and Notion cells and tabs.
+  bind "Super+s" "policy:frame-split-horizontal"
+  bind "Super+v" "policy:frame-split-vertical"
+  bind "Super+u" "policy:frame-unsplit"
+  bind "Super+Tab" "policy:frame-tab-next"
+  bind "Super+Shift+Tab" "policy:frame-tab-prev"
+  bind "Super+a" "policy:frame-focus-parent"
+  bind "Super+z" "policy:frame-focus-child"
+  // i3 containers.
+  bind "Super+Shift+s" "policy:split-tree-split-horizontal"
+  bind "Super+Shift+v" "policy:split-tree-split-vertical"
+  bind "Super+w" "policy:split-tree-layout-tabbed"
+  bind "Super+e" "policy:split-tree-layout-stacking"
+  bind "Super+Shift+e" "policy:split-tree-layout-toggle-split"
+  bind "Super+Shift+a" "policy:split-tree-focus-parent"
+  bind "Super+Shift+z" "policy:split-tree-focus-child"
+  // Fullscreen and floating occlusion.
+  bind "Super+Shift+f" "policy:toggle-fullscreen"
+  bind "Super+t" "policy:toggle-floating"
+  pointer-bind "Super+left" "policy:move"
+  pointer-bind "Super+right" "policy:resize"
+}
+
+session {
+  terminal "terminal"
+  browser "browser"
+}
+
+input { inherit-sophia #true; }
+output { inherit-sophia #true; }
+broker { enabled #false; }

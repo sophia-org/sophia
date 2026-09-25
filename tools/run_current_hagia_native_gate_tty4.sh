@@ -7,6 +7,8 @@ set -euo pipefail
 # identity bound here.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/proof_checkout.sh
+source "$ROOT_DIR/tools/lib/proof_checkout.sh"
 HAGIA_ROOT="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 NARTHEX_ROOT="${SOPHIA_NARTHEX_ROOT:-$ROOT_DIR/../narthex}"
 
@@ -15,12 +17,12 @@ if [[ ! -t 0 || "$(tty)" != /dev/tty4 ]]; then
     echo "  $ROOT_DIR/tools/run_current_hagia_native_gate_tty4.sh" >&2
     exit 1
 fi
-if [[ ! -d "$HAGIA_ROOT/.git" ]]; then
+if ! proof_checkout_root "$HAGIA_ROOT"; then
     echo "Hagia checkout not found at $HAGIA_ROOT" >&2
     echo "Set SOPHIA_HAGIA_ROOT to its checkout path." >&2
     exit 1
 fi
-if [[ ! -d "$NARTHEX_ROOT/.git" ]]; then
+if ! proof_checkout_root "$NARTHEX_ROOT"; then
     echo "Narthex checkout not found at $NARTHEX_ROOT" >&2
     echo "Set SOPHIA_NARTHEX_ROOT to its checkout path." >&2
     exit 1
@@ -57,11 +59,25 @@ done
 # the commit is signed, and re-verification checks both against these
 # repositories, none of which involves a remote. Where a commit has been pushed
 # is a publishing question, not an evidence one.
+# Hagia's canonical default profile, unless a reference run names another one
+# (t018). Either way it is chosen and checked before anything is built.
+desktop_profile="${SOPHIA_HAGIA_NATIVE_PROFILE:-$HAGIA_ROOT/examples/config/default.kdl}"
+proof_tracked_file "$desktop_profile" "$ROOT_DIR" "$HAGIA_ROOT" || {
+    echo "The desktop profile must be an absolute, tracked, unmodified file of the Sophia or Hagia checkout: $desktop_profile" >&2
+    exit 1
+}
 hagia_bin="${TMPDIR:-/tmp}/hagia-native-${hagia_commit:0:12}"
 hagia_shell_bin="${TMPDIR:-/tmp}/narthex-native-${narthex_commit:0:12}"
 hagia_nimcache="${TMPDIR:-/tmp}/hagia-native-nimcache-${hagia_commit:0:12}"
 hagia_shell_nimcache="${TMPDIR:-/tmp}/narthex-native-nimcache-${narthex_commit:0:12}"
 
+# These proofs build, hash and run the host executable at
+# ROOT_DIR/target/release/sophia. A cross-compilation target would put the
+# build elsewhere and leave that path bound to whatever was there before.
+if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
+    echo "Unset CARGO_BUILD_TARGET: this physical proof builds the host Sophia binary it binds." >&2
+    exit 1
+fi
 echo "Building exact physical-proof binaries before DRM takeover..."
 echo "Sophia: $sophia_commit"
 echo "Hagia:  $hagia_commit"
@@ -78,23 +94,21 @@ echo "Narthex: $narthex_commit"
 )
 (
     cd "$ROOT_DIR"
+    # The executable hashed and run below, whatever CARGO_TARGET_DIR says.
     cargo build --quiet --release --offline -p sophia-cli \
-        --features native-session
+        --features native-session --target-dir "$ROOT_DIR/target"
 )
-desktop_profile="$HAGIA_ROOT/examples/config/default.kdl"
-[[ -f "$desktop_profile" ]] || {
-    echo "Hagia's canonical default profile is missing: $desktop_profile" >&2
-    exit 1
-}
 "$hagia_bin" config check --config="$desktop_profile"
 "$ROOT_DIR/target/release/sophia" config check \
     --desktop-profile="$desktop_profile"
 
 if [[ -n "$(git -C "$ROOT_DIR" status --short)" \
     || -n "$(git -C "$HAGIA_ROOT" status --short)" \
+    || -n "$(git -C "$NARTHEX_ROOT" status --short)" \
     || "$(git -C "$ROOT_DIR" rev-parse HEAD)" != "$sophia_commit" \
-    || "$(git -C "$HAGIA_ROOT" rev-parse HEAD)" != "$hagia_commit" ]]; then
-    echo "Sophia or Hagia source identity changed during the physical-proof build." >&2
+    || "$(git -C "$HAGIA_ROOT" rev-parse HEAD)" != "$hagia_commit" \
+    || "$(git -C "$NARTHEX_ROOT" rev-parse HEAD)" != "$narthex_commit" ]]; then
+    echo "Sophia, Hagia, or Narthex source identity changed during the physical-proof build." >&2
     exit 1
 fi
 git -C "$ROOT_DIR" verify-commit "$sophia_commit" >/dev/null 2>&1 || {
@@ -103,6 +117,10 @@ git -C "$ROOT_DIR" verify-commit "$sophia_commit" >/dev/null 2>&1 || {
 }
 git -C "$HAGIA_ROOT" verify-commit "$hagia_commit" >/dev/null 2>&1 || {
     echo "Hagia signature no longer verifies after the build." >&2
+    exit 1
+}
+git -C "$NARTHEX_ROOT" verify-commit "$narthex_commit" >/dev/null 2>&1 || {
+    echo "Narthex signature no longer verifies after the build." >&2
     exit 1
 }
 
@@ -131,5 +149,7 @@ export SOPHIA_HAGIA_NATIVE_SOURCE_COMMIT="$sophia_commit"
 export SOPHIA_HAGIA_NATIVE_HAGIA_COMMIT="$hagia_commit"
 export SOPHIA_HAGIA_NATIVE_SOPHIA_SHA256="$sophia_sha256"
 export SOPHIA_HAGIA_NATIVE_HAGIA_SHA256="$hagia_sha256"
-export SOPHIA_HAGIA_NATIVE_HAGIA_SHELL_SHA256="$hagia_shell_sha256"
+export SOPHIA_HAGIA_NATIVE_NARTHEX_SHA256="$hagia_shell_sha256"
+export SOPHIA_HAGIA_NATIVE_NARTHEX_COMMIT="$narthex_commit"
+export SOPHIA_NARTHEX_ROOT="$NARTHEX_ROOT"
 exec "$ROOT_DIR/tools/hagia_native_session_gate.sh"

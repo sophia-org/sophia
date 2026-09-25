@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/proof_checkout.sh
+source "$ROOT_DIR/tools/lib/proof_checkout.sh"
 hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
 state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 run_root="${SOPHIA_HAGIA_POLICY_RUN_ROOT:-$state_home/sophia/promotion/hagia-policy-runs}"
@@ -13,7 +15,7 @@ fi
     echo "Hagia physical policy archive is missing: ${run:-$run_root}" >&2
     exit 1
 }
-[[ -d "$hagia_root/.git" ]] || {
+proof_checkout_root "$hagia_root" || {
     echo "Hagia checkout is unavailable: $hagia_root" >&2
     exit 1
 }

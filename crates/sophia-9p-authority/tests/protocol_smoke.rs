@@ -1,6 +1,6 @@
+use sophia_9p_authority::NinePAuthority;
 use sophia_9p_authority::protocol::{decode_t_message, encode_r_message};
 use sophia_9p_authority::types::{Fid, RMessage, TMessage, Tag};
-use sophia_9p_authority::NinePAuthority;
 
 #[test]
 fn test_version_handshake() {

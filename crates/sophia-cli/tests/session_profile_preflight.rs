@@ -65,6 +65,7 @@ exit "${SOPHIA_TEST_STATUS:-0}"
             .env("XDG_CONFIG_HOME", self.0.join("config"))
             .env("TMPDIR", &self.0)
             .env("SOPHIA_TEST_CAPTURE", self.0.join("captured.kdl"))
+            .env("SOPHIA_TEST_SHELL_RAN", self.0.join("shell-ran"))
             .env("SOPHIA_TEST_POLICY_PATH", self.0.join("policy-path"));
         command
     }
@@ -73,6 +74,33 @@ exit "${SOPHIA_TEST_STATUS:-0}"
         let path = fs::read_to_string(self.0.join("policy-path")).unwrap();
         assert!(!Path::new(&path).exists());
         assert!(!Path::new(&path).parent().unwrap().exists());
+    }
+
+    fn component_profile(&self, deferred: bool) {
+        for name in ["lom", "bemenu"] {
+            self.executable(
+                name,
+                "#!/bin/sh\ntouch \"$SOPHIA_TEST_SHELL_RAN\"\nexit 99\n",
+            );
+        }
+        fs::write(self.0.join("lom.kdl"), "opaque private asset\n").unwrap();
+        let wm = if deferred {
+            let path = self.executable("different wm", "#!/bin/sh\nexit 99\n");
+            format!("window-manager {:?};", path.to_str().unwrap())
+        } else {
+            String::new()
+        };
+        self.profile(&format!(
+            r#"schema 1
+shell {{ enabled #true; content #true; content-input #true; panel 24; }}
+session {{
+    {wm}
+    shell-component "panel" "bar" {{ executable "{0}/lom"; config "{0}/lom.kdl"; gpu "direct"; reservation "top" 24; }}
+    shell-component "menu" "application-launcher" {{ executable "{0}/bemenu"; gpu "denied"; }}
+}}
+"#,
+            self.0.display()
+        ));
     }
 }
 
@@ -134,6 +162,82 @@ fn missing_selected_shell_or_window_manager_is_refused_before_hagia() {
         ));
         assert!(!fixture.command().output().unwrap().status.success());
         assert!(!fixture.0.join("policy-path").exists());
+    }
+}
+
+#[test]
+fn missing_two_component_artifacts_must_not_pass_package_preflight() {
+    let mut incorrectly_accepted = vec![];
+    for deferred in [false, true] {
+        for role in ["lom", "bemenu"] {
+            for missing in [false, true] {
+                let fixture = Fixture::new();
+                fixture.component_profile(deferred);
+                let victim = fixture.0.join(role);
+                if missing {
+                    fs::remove_file(victim).unwrap();
+                } else {
+                    fs::set_permissions(victim, fs::Permissions::from_mode(0o600)).unwrap();
+                }
+                let output = fixture.command().output().unwrap();
+                if output.status.success() {
+                    incorrectly_accepted.push(format!(
+                        "deferred={deferred} role={role} missing={missing}: {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    ));
+                } else {
+                    assert!(
+                        String::from_utf8_lossy(&output.stderr)
+                            .contains("selected shell component")
+                    );
+                    assert!(!fixture.0.join("policy-path").exists());
+                }
+            }
+        }
+    }
+    assert!(
+        incorrectly_accepted.is_empty(),
+        "invalid component artifacts were accepted: {incorrectly_accepted:#?}"
+    );
+}
+
+#[test]
+fn component_config_resolution_is_opaque_and_never_executes_components() {
+    for deferred in [false, true] {
+        for symlink in [false, true] {
+            let fixture = Fixture::new();
+            fixture.component_profile(deferred);
+            if symlink {
+                fs::rename(fixture.0.join("lom.kdl"), fixture.0.join("opaque")).unwrap();
+                std::os::unix::fs::symlink("opaque", fixture.0.join("lom.kdl")).unwrap();
+            }
+            let output = fixture.command().output().unwrap();
+            assert_success(output);
+            assert!(!fixture.0.join("shell-ran").exists());
+            assert_eq!(fixture.0.join("policy-path").exists(), !deferred);
+            if !deferred {
+                let policy = fs::read_to_string(fixture.0.join("captured.kdl")).unwrap();
+                assert!(!policy.contains("shell-component"));
+                assert!(!policy.contains("lom.kdl"));
+                fixture.assert_cleaned_policy();
+            }
+        }
+    }
+}
+
+#[test]
+fn unresolved_component_config_refuses_before_policy_validation() {
+    for deferred in [false, true] {
+        let fixture = Fixture::new();
+        fixture.component_profile(deferred);
+        fs::remove_file(fixture.0.join("lom.kdl")).unwrap();
+        let output = fixture.command().output().unwrap();
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("private config cannot be resolved")
+        );
+        assert!(!fixture.0.join("policy-path").exists());
+        assert!(!fixture.0.join("shell-ran").exists());
     }
 }
 
