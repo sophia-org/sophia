@@ -2,7 +2,7 @@
 id: v2yrv8je
 date: 2026-09-24
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation]
 ---
 # Native family audit makes output layouts explicit without changing frozen WM bytes
@@ -69,6 +69,14 @@ installed configuration or live session changed. Physical acceptance remains
 separate from deterministic evidence.
 
 ## Contracts
+
+Final acceptance: schema/audit commit `76e51913` rebased on `bf968409`, then
+validated with family candidate `60fb80e9`. The corrected full family gate
+passes, including 437 protocol/runtime tests and all nine live output-owner
+tests with `native-session` enabled. The rebased layout gate, fmt, diff checks
+and protocol/generator/xtask clippy pass. Evidence is retained at
+`~/.local/state/sophia/development-evidence/native-family-60fb80e9`.
+All t022 audit exits are met without changing production wire semantics.
 
 - [Native family](../../sophia-policy-ipc.md): common lifecycle and audit map.
 - [WM](../../sophia-wm-api.md): stable r3 negotiation and transactions.

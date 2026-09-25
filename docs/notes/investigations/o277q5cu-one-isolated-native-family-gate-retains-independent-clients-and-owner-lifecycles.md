@@ -2,7 +2,7 @@
 id: o277q5cu
 date: 2026-09-24
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation]
 ---
 # One isolated native family gate retains independent clients and owner lifecycles
@@ -59,3 +59,18 @@ not native display/input, GPU-permission or installed-session acceptance.
 See the [conformance guide](../../native-protocol-conformance.md) for invocation
 and evidence classification, and the [t022 audit](v2yrv8je-native-family-audit-makes-output-layouts-explicit-without-changing-frozen-wm-bytes.md)
 for the schema and lifecycle contracts this entry checks.
+
+## Accepted run
+
+Candidate `60fb80e9f473954f9513b09c051c03120d272a62` passes every phase in
+`.artifacts/t023-full-2`, with clean immutable Hagia `50336ce6` and Narthex
+`50b9014d` clones. Retained evidence is copied to
+`~/.local/state/sophia/development-evidence/native-family-60fb80e9`.
+The corrected output owner runs nine tests. Protocol/runtime runs 437,
+Engine 422, output client eight and control service 23, all passing; C/Nim
+clients and immutable archived WM lifecycle/reconnect proofs also pass.
+The WM matrix's one existing ignored native test is explicitly separate from
+the mandatory executed independent-client proofs. Clippy, fmt, layout and
+diff checks pass. The zero-test regression and deadline negative control pass.
+This meets t023's deterministic exits without declaring experimental roles
+stable or claiming physical acceptance.
