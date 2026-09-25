@@ -22,6 +22,20 @@ Previously completed evidence: [Shell reference preparation: generic boundary do
 Previously completed evidence: [Document descriptor and content shell models and the proposed content-shell behavioral contract: explicit operator admission, panel/popout lifecycle, input and visual trust boundaries, and…](../sources/2026-09/todo-cutover-completed.md#legacy-done-016).
 
 
+## t080
+
+Make Hagia's directional arrow handoff across outputs configurable with
+`policy { arrow-crosses-outputs #false }`, defaulting to true when omitted.
+Opting out must retain local navigation and explicit output switching.
+Require exact boolean validation, duplicate rejection, checkpoint persistence
+with older checkpoints migrating to true, and reloads that retain focus and
+workspaces. Acceptance is deterministic: navigation/model regressions, Sophia
+policy export into Hagia validation, launch preflight positive and negative
+controls, and the native protocol family gate. No live installation is required.
+
+The [paired acceptance investigation](../investigations/tsaiaoyx-arrow-output-handoff-survives-sophia-export-and-hagia-preflight.md)
+records the implementation identity, cross-repository checks, and their limits.
+
 ## t024
 
 Repair current native-session readers and guard them against schema drift.

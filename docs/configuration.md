@@ -196,6 +196,12 @@ Sophia's graphical gate closed through the existing rejection/rollback path.
 WM settings never grant renderer, scanout, input-admission, or session authority;
 Sophia continues to validate the resulting proposals against Engine constraints.
 
+Hagia's `policy { arrow-crosses-outputs #false }` disables directional arrow
+handoff at a column edge or from an empty output. The setting accepts an exact
+boolean and defaults to `#true` when omitted. Local navigation and explicit
+output switching remain available with it disabled. Sophia preserves this
+WM-owned setting in policy export; Hagia validates its type and rejects duplicates.
+
 The trusted session coordinator validates and partitions all seven desktop
 authorities before constructing the graphical session. It stages owner-only
 fragments with one generation and digest in the private policy runtime
