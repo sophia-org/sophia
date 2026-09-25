@@ -571,15 +571,15 @@ mod event_delivery_socket {
         set_focus(&mut client, first);
         client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
         let entered = client.next_event(7);
-        assert_eq!((entered[1], entered[31] & 2), (0, 2), "enter of the focus window, detail Ancestor, focus set");
+        assert_eq!((entered[1], entered[31] & 1), (0, 1), "enter of the focus window, detail Ancestor, focus set");
         // The focus on the second window: leaving the first is leaving a
         // window outside the focus, and entering the second is entering it.
         set_focus(&mut client, second);
         client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 5);
         let left = client.next_event(8);
-        assert_eq!((left[1], left[31] & 2), (3, 0), "leave of the first window, Nonlinear, focus clear");
+        assert_eq!((left[1], left[31] & 1), (3, 0), "leave of the first window, Nonlinear, focus clear");
         let entered = client.next_event(7);
-        assert_eq!((entered[1], entered[31] & 2), (3, 2), "enter of the second window, Nonlinear, focus set");
+        assert_eq!((entered[1], entered[31] & 1), (3, 1), "enter of the second window, Nonlinear, focus set");
 
         // The second window is destroyed under the pointer, and a third
         // takes its place: the pointer comes from the root, and the map
@@ -611,6 +611,118 @@ mod event_delivery_socket {
             (third, 0),
             "enter of the third window from the root, detail Ancestor"
         );
+    }
+
+    /// The focus flag of a crossing says whether the event window is the
+    /// focus window or one of its inferiors, for the subwindows of one
+    /// toplevel as for toplevels: with the focus on a sibling subwindow
+    /// the flag is clear on the enter and on the leave (XTS Xlib11
+    /// EnterNotify 12, LeaveNotify 14).
+    #[test]
+    fn a_crossings_focus_flag_is_clear_when_the_focus_is_a_sibling_subwindow() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let guardian = client.next;
+        let first = client.next + 2;
+        let second = client.next + 4;
+        client.next += 6;
+        client.stream
+            .write_all(&create_window_request(client.order, guardian, 20, 20, 100, 40))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, guardian)).unwrap();
+        for (window, x) in [(first, 10), (second, 50)] {
+            client.stream
+                .write_all(&create_window_request_with_parent(client.order, window, guardian, x, 0, 20, 20))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, first, (1 << 4) | (1 << 5)))
+            .unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let set_focus = |client: &mut XtestClient, window: u32| {
+            let mut request = vec![42, 0];
+            push_u16(&mut request, client.order, 3);
+            push_u32(&mut request, client.order, window);
+            push_u32(&mut request, client.order, 0);
+            client.stream.write_all(&request).unwrap();
+            client.settle();
+        };
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+
+        set_focus(&mut client, first);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 25);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 1), "enter of the focus subwindow, focus set");
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 0, 0);
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[31] & 1), (first, 1), "leave of the focus subwindow, focus set");
+
+        set_focus(&mut client, second);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 25);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 0), "enter of the sibling of the focus, focus clear");
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 0, 0);
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[31] & 1), (first, 0), "leave of the sibling of the focus, focus clear");
+    }
+
+    /// The same through WarpPointer, as the suite moves the pointer: an
+    /// admitted client's warp becomes a motion, and the enter it generates
+    /// carries the focus flag of the focus at that moment.
+    #[test]
+    fn a_warps_enter_carries_the_focus_flag_of_the_focus_at_the_time() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let guardian = client.next;
+        let first = client.next + 2;
+        let second = client.next + 4;
+        client.next += 6;
+        client.stream
+            .write_all(&create_window_request(client.order, guardian, 2, 2, 400, 300))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, guardian)).unwrap();
+        for (window, x) in [(first, 2), (second, 60)] {
+            client.stream
+                .write_all(&create_window_request_with_parent(client.order, window, guardian, x, 2, 50, 50))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.stream.write_all(&change_window_event_mask_request(client.order, first, 1 << 4)).unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let set_focus = |client: &mut XtestClient, window: u32| {
+            let mut request = vec![42, 1];
+            push_u16(&mut request, client.order, 3);
+            push_u32(&mut request, client.order, window);
+            push_u32(&mut request, client.order, 0);
+            client.stream.write_all(&request).unwrap();
+            client.settle();
+        };
+        let warp_to = |client: &mut XtestClient, window: u32| {
+            let mut request = vec![41, 0];
+            push_u16(&mut request, client.order, 6);
+            push_u32(&mut request, client.order, 0);
+            push_u32(&mut request, client.order, window);
+            request.extend_from_slice(&[0; 12]);
+            // No barrier: the connection does not read its next request
+            // until the warp's motion has been routed, and a barrier here
+            // would read past the enter.
+            client.stream.write_all(&request).unwrap();
+        };
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+
+        set_focus(&mut client, first);
+        warp_to(&mut client, 0x20);
+        warp_to(&mut client, first);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 1), "enter of the focus subwindow, focus set");
+        warp_to(&mut client, 0x20);
+        set_focus(&mut client, second);
+        warp_to(&mut client, first);
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[31] & 1), (first, 0), "enter of the sibling of the focus, focus clear");
     }
 
     /// A peer that selected EnterWindow and KeymapState on the owner's window

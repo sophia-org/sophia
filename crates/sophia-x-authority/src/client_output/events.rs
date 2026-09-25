@@ -165,7 +165,11 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
                 state,
             );
             out[30] = mode;
-            out[31] = 1 | (u8::from(focus) << 1);
+            // The encoding's flags byte: 0x01 is focus, 0x02 is same-screen.
+            // Xlib reads them so; the two were swapped here, and every
+            // crossing read as focus set whenever it was on the same screen
+            // (XTS Xlib11 EnterNotify 12, LeaveNotify 14).
+            out[31] = 2 | u8::from(focus);
         }
         XClientEvent::Expose {
             sequence,
