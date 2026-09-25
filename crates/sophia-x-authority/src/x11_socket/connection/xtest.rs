@@ -356,7 +356,12 @@ impl XTestConnection {
             self.last_pointer_target.set(placed);
         }
         placed
-            .or_else(|| self.last_pointer_target.get())
+            .or_else(|| {
+                // A toplevel destroyed since is nobody's to be told.
+                self.last_pointer_target
+                    .get()
+                    .filter(|(_, anchor)| runtime.window_geometry(namespace, *anchor).is_ok())
+            })
             .or_else(|| focused_target.map(|target| (target, focused_window)))
     }
 

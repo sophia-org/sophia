@@ -501,6 +501,8 @@ impl XServerFrontendRouteRegistry {
         const KEY_RELEASE: u32 = 1 << 1;
         const BUTTON_PRESS: u32 = 1 << 2;
         const BUTTON_RELEASE: u32 = 1 << 3;
+        const ENTER_WINDOW: u32 = 1 << 4;
+        const LEAVE_WINDOW: u32 = 1 << 5;
         const POINTER_MOTION: u32 = 1 << 6;
         const BUTTON_MOTION: u32 = (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
         let (mask, pointer) = match event {
@@ -510,7 +512,13 @@ impl XServerFrontendRouteRegistry {
                 | XAuthorityPointerEventKind::Axis { pressed, .. } => {
                     (if pressed { BUTTON_PRESS } else { BUTTON_RELEASE }, true)
                 }
-                XAuthorityPointerEventKind::Motion => (POINTER_MOTION | BUTTON_MOTION, true),
+                // A motion is also what a crossing rides on: a peer that
+                // selected EnterWindow or LeaveWindow on the path is told of
+                // the motion so its writer can generate the crossings it
+                // selected (XTS Xlib11 KeymapNotify 3).
+                XAuthorityPointerEventKind::Motion => {
+                    (POINTER_MOTION | BUTTON_MOTION | ENTER_WINDOW | LEAVE_WINDOW, true)
+                }
             },
         };
         {

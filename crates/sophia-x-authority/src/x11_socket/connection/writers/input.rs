@@ -692,11 +692,25 @@ fn spawn_x11_input_event_writer(
                         // window; a KeymapNotify follows each EnterNotify for a
                         // KeymapState selector (XTS Xlib11 EnterNotify,
                         // LeaveNotify, KeymapNotify 1).
-                        let from = previous.unwrap_or(root);
+                        // A window this table no longer knows (destroyed since)
+                        // was left for its parent when it went; the move is
+                        // from the root, the nearest thing still standing.
+                        let from = previous
+                            .filter(|window| selections.knows_window(*window))
+                            .unwrap_or(root);
+                        // The focus flag: whether the event window is the focus
+                        // window or one of its inferiors. The root stands for
+                        // PointerRoot and an unset focus, so everything is its
+                        // inferior; a focus of None makes nothing so.
+                        let focus_raw = focused_surface_window.load(Ordering::Acquire);
                         for step in selections.pointer_crossings(from, to) {
                             if !selections.crossing_selected(step.window, step.entered) {
                                 continue;
                             }
+                            let focus = focus_raw != u64::from(crate::X_FOCUS_NONE)
+                                && selections
+                                    .ancestry_including(step.window)
+                                    .contains(&XResourceId::new(focus_raw, 1));
                             let (event_x, event_y) = selections
                                 .root_origin(step.window)
                                 .map_or((pointer.root_x, pointer.root_y), |(origin_x, origin_y)| {
@@ -720,7 +734,7 @@ fn spawn_x11_input_event_writer(
                                     event_y,
                                     state: pointer.state,
                                     mode: 0,
-                                    focus: true,
+                                    focus,
                                 },
                             );
                             write_xi_u32(

@@ -710,6 +710,12 @@ impl XCoreEventSelectionState {
         )
     }
 
+    /// Whether this table still knows the window: registered with a parent
+    /// or selected on, and not removed since.
+    pub(crate) fn knows_window(&self, window: XResourceId) -> bool {
+        self.parents.contains_key(&window) || self.windows.contains_key(&window)
+    }
+
     /// Whether a surface-relative point lies inside the surface window's
     /// own extent; a surface whose geometry is unknown is taken to contain
     /// it. Outside it the pointer is in the root (or another client's
