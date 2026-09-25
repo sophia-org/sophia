@@ -1131,6 +1131,44 @@ mod xtest_admission_socket {
         client.assert_quiet("the toplevel heard nothing");
     }
 
+    /// An injected wheel button is a button to the core protocol: its press
+    /// and release are ButtonPress and ButtonRelease with its detail, and
+    /// motion while it is held carries Button4Mask and answers to
+    /// Button4Motion (XTS Xlib11 MotionNotify 6 and 7). XTEST dropped it
+    /// as a wheel step it could not carry. Red before the fix: no press
+    /// arrives.
+    #[test]
+    fn an_injected_wheel_button_is_held_like_any_button() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let window = client.next;
+        client.next += 2;
+        // ButtonPress, ButtonRelease and Button4Motion.
+        client.stream
+            .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, (1 << 2) | (1 << 3) | (1 << 11)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let state = |event: &[u8; 32]| u16::from_le_bytes([event[28], event[29]]);
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        client.fake_input(4, 4);
+        let press = client.next_event(4);
+        assert_eq!((press[1], state(&press)), (4, 0), "button 4 pressed with nothing held");
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 26, 6);
+        let motion = client.next_event(6);
+        assert_eq!(state(&motion), 1 << 11, "motion with button 4 held carries Button4Mask");
+        client.fake_input(5, 4);
+        let release = client.next_event(5);
+        assert_eq!((release[1], state(&release)), (4, 1 << 11), "button 4 released, still in the state");
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        client.assert_quiet("plain motion is not selected");
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,

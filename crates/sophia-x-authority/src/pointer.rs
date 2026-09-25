@@ -124,6 +124,11 @@ pub struct XScrollAxisUpdate {
     pub vertical_position_v120: Option<i32>,
 }
 
+/// The evdev code space an injected wheel button travels in: no device
+/// button has a code this high, so a press of button 4 to 7 through XTEST
+/// reaches the mapper as a button and not as an axis step.
+pub const XTEST_WHEEL_BUTTON_EVDEV_BASE: u32 = 0x1_0000;
+
 impl XCorePointerMapper {
     const fn core_button_mask(button: u8) -> u16 {
         if button <= 5 { 1u16 << (button + 7) } else { 0 }
@@ -195,6 +200,17 @@ impl XCorePointerMapper {
             273 => 3,
             275 => 8,
             276 => 9,
+            // The wheel buttons an injector presses as buttons (XTEST
+            // FakeInput with detail 4 to 7): held like any other, so a
+            // motion under them carries Button4Mask or Button5Mask and
+            // answers to Button4Motion and Button5Motion, as the protocol
+            // has it (XTS Xlib11 MotionNotify 6 and 7). A device's wheel
+            // is an axis and never arrives here.
+            code if (XTEST_WHEEL_BUTTON_EVDEV_BASE + 4..=XTEST_WHEEL_BUTTON_EVDEV_BASE + 7)
+                .contains(&code) =>
+            {
+                (code - XTEST_WHEEL_BUTTON_EVDEV_BASE) as u8
+            }
             _ => return None,
         };
         let logical = mapping.logical(physical);
