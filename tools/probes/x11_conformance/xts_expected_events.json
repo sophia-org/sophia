@@ -5,9 +5,7 @@
   },
   {
     "case": "/Xlib11/ButtonPress",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'No event was activated on the oldest ancestor window.'"
+    "purpose": 2
   },
   {
     "case": "/Xlib11/ButtonPress",
