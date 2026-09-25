@@ -11,10 +11,11 @@ tags: [investigation, session, shell, lifecycle]
 
 Does the production Session component service settle a disconnected content
 grant against the actual backend without losing retained pixels, a neighbor,
-or the previous work-area reservation? The source baseline is accepted Sophia
-`9ee301e74ef22a065dcb112dc1873c7e458dfec4`. This is a test/fixture checkpoint for
-[t100](../plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t100),
-not a task closure or a production repair.
+or the previous work-area reservation? The initial test/fixture checkpoint used
+accepted Sophia `9ee301e74ef22a065dcb112dc1873c7e458dfec4`. This note preserves
+that investigation, then records the bounded admission repair and its fresh
+integration gate below. Neither closes
+[t100](../plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t100).
 
 The primary fixture calls unchanged `component_service::service_components`.
 It uses actual private Unix sockets, negotiation, resource uploads, candidate
@@ -128,7 +129,7 @@ an option. The director owns the next repair decision and gate allocation.
 ## Fresh-grant budget design on accepted 69e16358
 
 Signed `4d8d7966` is the design/control checkpoint, without production changes. The
-director's [bounded admission brief](../../../validation/specula/shell-reconnect-budget-modeling-brief.md)
+director's <a href="../../../validation/specula/shell-reconnect-budget-modeling-brief.md">bounded admission brief</a>
 defines the joint review. No production semantics, queues or live session have
 changed. The prototype selector is confined to
 `sophia-runtime/tests/shell_content_reconnect_budget.rs`; eventual acceptance
@@ -449,3 +450,36 @@ VT resume, all topology/scale/revocation transitions, a complete Session/WM/Lom
 causal workload, real resource residency/latency, or attended normal exit. Those
 remaining [t100 exits](../plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t100)
 and the t069/t097 prerequisites remain open.
+
+## Fresh repair integration gate on 2026-09-25
+
+The exact signed repair candidate
+`e77db791e57371cc254e0c88a2a2d0e4ad2a3252` passed a fresh main-tree gate:
+formatting, whitespace, metadata and layout; the default workspace suite with
+4,495 passes, zero failures and 37 ignored; and all eight native-protocol-family
+phases. The workspace suite took 180.653 seconds and the family 378.581 seconds.
+Execution used two build jobs, reduced priority, hidden devices, private runtime
+and disk-backed temporary directories, with inherited session endpoints cleared.
+
+The family used clean fixed Hagia `97ed593e7b6829054f7143cf621ae5fd789bded6`
+and Narthex `50b9014d96f675f515b5e092c071427fb8e34423` checkouts, plus Lom's
+diagnostic `97b6f6345176841ebf0398df468015febe59fd6c` binary with SHA256
+`bf32e46e5955131c41aac60f942ce7df69e9ae29c612b18beb4bc6efd2948b04`.
+The protected shell phase reports `lom_content=complete`, including its two
+lifecycle controls. Start and end identities match; the main candidate stayed
+clean throughout. These are the family gate's fixed clients, distinct from the
+source comparisons and supplied reduced-limit peers documented above.
+
+Reports, logs, identity captures and the final Markdown-only tree comparison are
+retained with checksums under
+`~/.local/state/sophia/development-evidence/t100-budget-e77db791-main`.
+The worktree repair and independent Rust/C mutation bundles remain separate;
+the original failing reconnect control is retained as historical evidence.
+
+The tested repair admits useful fresh grants around retained sources while
+preserving the nominal role envelopes, existing consumers and exact epoch
+authority. Genuine useful-floor or shared epoch saturation still refuses.
+This gate does not establish physical KMS completion, installed recovery or
+arbitrary multi-output client capacity. The broader t100 exits and t069/t097
+prerequisites remain open. No installation or live reload accompanies this
+integration.
