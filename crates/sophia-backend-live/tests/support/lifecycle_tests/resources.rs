@@ -70,6 +70,7 @@ pub(super) fn shell_frame(
         grant,
         candidate_generation: candidate,
         interaction_generation: candidate,
+        popouts: Vec::new(),
         images: vec![CompositorContentImage {
             node: CompositorNodeId::ShellContent {
                 grant,

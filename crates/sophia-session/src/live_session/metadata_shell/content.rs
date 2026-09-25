@@ -877,6 +877,26 @@ pub(super) fn project_render_bundle(
             bounds_px: target.bounds_px,
         });
     }
+    let mut popouts = Vec::new();
+    for (index, surface) in bundle.surfaces.iter().enumerate() {
+        if surface.role != 2
+            || !allocation_rows
+                .iter()
+                .any(|row| row.0 == surface.allocation)
+        {
+            continue;
+        }
+        let parent = bundle
+            .surfaces
+            .get(usize::from(surface.parent_surface_index))
+            .filter(|parent| parent.role == 1)
+            .ok_or("content popout has no parent panel")?;
+        popouts.push(sophia_engine::PresentedContentPopout {
+            allocation: surface.allocation,
+            parent: parent.allocation,
+            surface_index: u16::try_from(index).map_err(|_| "content surface index overflow")?,
+        });
+    }
     Ok(LiveShellContentFrame {
         output: OutputId::from_raw(output_identity.id),
         content_output: output_identity,
@@ -885,6 +905,7 @@ pub(super) fn project_render_bundle(
         interaction_generation: bundle.interaction_generation,
         images,
         targets,
+        popouts,
         allocations: allocation_rows,
     })
 }

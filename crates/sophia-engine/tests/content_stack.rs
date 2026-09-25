@@ -65,6 +65,7 @@ fn component(epoch: u64, x: i32) -> PresentedContentBinding {
             action_id: 1,
             bounds_px: pixel,
         }],
+        popouts: Vec::new(),
         allocations: vec![(allocation, logical, pixel)],
     };
     reconcile_content_continuity(None, &mut binding);
@@ -92,6 +93,81 @@ fn pointer(
         stack,
         false,
     )
+}
+
+#[test]
+fn outside_popout_press_is_consumed_and_its_release_survives_withdrawal() {
+    let mut binding = component(1, 0);
+    binding.popouts.push(sophia_engine::PresentedContentPopout {
+        allocation: binding.allocations[0].0,
+        parent: ContentAllocationId {
+            id: 9,
+            generation: 1,
+        },
+        surface_index: 1,
+    });
+    let mut state = ContentCaptureState::default();
+    let outcome = pointer(&mut state, &[binding.clone()], 150.0, true);
+    assert_eq!(
+        outcome,
+        Outcome::OutsideDismiss(sophia_engine::PresentedContentDismissal {
+            grant: binding.grant,
+            output: binding.output,
+            candidate_generation: binding.candidate_generation,
+            presentation_epoch: binding.presentation_epoch,
+            interaction_generation: binding.interaction_generation,
+            allocation: binding.allocations[0].0,
+        })
+    );
+    assert_eq!(pointer(&mut state, &[], 150.0, false), Outcome::Consumed);
+    assert_eq!(pointer(&mut state, &[], 150.0, true), Outcome::Pass);
+}
+
+#[test]
+fn a_revoked_or_unpresented_popout_cannot_issue_a_dismissal() {
+    for (authority_current, presentation_epoch) in [(false, 1), (true, 0)] {
+        let mut binding = component(1, 0);
+        binding.popouts.push(sophia_engine::PresentedContentPopout {
+            allocation: binding.allocations[0].0,
+            parent: ContentAllocationId {
+                id: 9,
+                generation: 1,
+            },
+            surface_index: 1,
+        });
+        binding.authority_current = authority_current;
+        binding.presentation_epoch = presentation_epoch;
+        let mut state = ContentCaptureState::default();
+        assert_eq!(
+            pointer(&mut state, &[binding], 150.0, true),
+            Outcome::Consumed
+        );
+        assert_eq!(pointer(&mut state, &[], 150.0, false), Outcome::Consumed);
+    }
+}
+
+#[test]
+fn outside_press_dismisses_the_top_popout_without_activating_a_lower_component() {
+    let lower = component(1, 100);
+    let mut upper = component(2, 0);
+    upper.popouts.push(sophia_engine::PresentedContentPopout {
+        allocation: upper.allocations[0].0,
+        parent: ContentAllocationId {
+            id: 9,
+            generation: 1,
+        },
+        surface_index: 1,
+    });
+    let grant = upper.grant;
+    let mut state = ContentCaptureState::default();
+    assert!(
+        matches!(pointer(&mut state, &[lower.clone(), upper], 150.0, true),
+        Outcome::OutsideDismiss(dismissal) if dismissal.grant == grant)
+    );
+    assert_eq!(
+        pointer(&mut state, &[lower], 150.0, false),
+        Outcome::Consumed
+    );
 }
 
 #[test]

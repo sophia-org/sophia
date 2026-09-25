@@ -54,6 +54,7 @@ fn route_input_events_with_launcher(
         chrome_activations: Vec::new(),
         descriptor_activations: Vec::new(),
         content_activations: Vec::new(),
+        content_dismissals: Vec::new(),
         chrome_captures_started: 0,
         chrome_actions_activated: 0,
         chrome_captures_cancelled: 0,

@@ -339,6 +339,7 @@ pub struct LiveShellContentFrame {
     pub interaction_generation: u64,
     pub images: Vec<sophia_engine::CompositorContentImage>,
     pub targets: Vec<sophia_engine::PresentedContentTarget>,
+    pub popouts: Vec<sophia_engine::PresentedContentPopout>,
     pub allocations: Vec<(
         sophia_protocol::ContentAllocationId,
         sophia_protocol::ContentLogicalRect,

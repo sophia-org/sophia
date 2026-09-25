@@ -54,6 +54,24 @@ impl PresentedContentTransform {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresentedContentPopout {
+    pub allocation: ContentAllocationId,
+    pub parent: ContentAllocationId,
+    pub surface_index: u16,
+}
+
+/// An outside press names presented authority, never client coordinates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PresentedContentDismissal {
+    pub grant: ContentGrant,
+    pub output: ContentOutputId,
+    pub candidate_generation: u64,
+    pub presentation_epoch: u64,
+    pub interaction_generation: u64,
+    pub allocation: ContentAllocationId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentedContentBinding {
     pub grant: ContentGrant,
     pub output: ContentOutputId,
@@ -65,6 +83,7 @@ pub struct PresentedContentBinding {
     /// empty content. Such a projection consumes new presses until replaced.
     pub authority_current: bool,
     pub targets: Vec<PresentedContentTarget>,
+    pub popouts: Vec<PresentedContentPopout>,
     pub allocations: Vec<(ContentAllocationId, ContentLogicalRect, ContentPixelRect)>,
 }
 
@@ -122,6 +141,7 @@ pub enum ContentPointerDisposition {
     Captured,
     Cancelled,
     Activated(PresentedContentTarget),
+    OutsideDismiss(PresentedContentDismissal),
 }
 
 impl ContentCaptureState {
@@ -267,10 +287,11 @@ pub fn content_binding_at_point(
     bindings.iter().rev().find(|binding| {
         !binding.authority_current
             || binding.transform.local(position).is_some_and(|local| {
-                binding
-                    .allocations
-                    .iter()
-                    .any(|(_, rect, _)| logical_contains(*rect, local))
+                !binding.popouts.is_empty()
+                    || binding
+                        .allocations
+                        .iter()
+                        .any(|(_, rect, _)| logical_contains(*rect, local))
                     || binding
                         .targets
                         .iter()
@@ -385,6 +406,31 @@ pub fn resolve_content_pointer_event(
     let Some(position) = position.and_then(|point| binding.transform.local(point)) else {
         return ContentPointerDisposition::Pass;
     };
+    if let Some(popout) = binding.popouts.last()
+        && !binding.allocations.iter().any(|(allocation, logical, _)| {
+            *allocation == popout.allocation && logical_contains(*logical, position)
+        })
+        && let InputEventKind::PointerButton {
+            button,
+            pressed: true,
+        } = kind
+    {
+        // Retain the release debt before asking Session to notify the peer.
+        // Withdrawal, failed enqueue and reconnect cannot turn this click into
+        // an application press or an unmatched application release.
+        state.remember_suppressed(seat, device, button);
+        if binding.presentation_epoch == 0 || binding.candidate_generation == 0 {
+            return ContentPointerDisposition::Consumed;
+        }
+        return ContentPointerDisposition::OutsideDismiss(PresentedContentDismissal {
+            grant: binding.grant,
+            output: binding.output,
+            candidate_generation: binding.candidate_generation,
+            presentation_epoch: binding.presentation_epoch,
+            interaction_generation: binding.interaction_generation,
+            allocation: popout.allocation,
+        });
+    }
     let target = binding.targets.iter().find(|target| {
         target.grant == binding.grant
             && target.output == binding.output

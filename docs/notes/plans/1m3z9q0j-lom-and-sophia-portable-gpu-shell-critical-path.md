@@ -260,6 +260,17 @@ resource release. It does not present a panel/popout pair or exercise dismissal.
 Both are useful existing checks, but neither satisfies this row's joined
 cross-language lifecycle exit. t099 remains open.
 
+The subsequent development checkpoint adds passive presented-popout metadata,
+threads it through content projection, and reports an outside press with exact
+grant/output/candidate/presentation/allocation identity. A red Engine control
+returned `Pass` for that press. The capture repair consumes the press, retains
+its release debt after withdrawal, refuses dismissal from revoked or
+unpresented bindings, and prevents activation of a lower component. Engine
+capture/stack tests and native-session all-target compilation pass. This is
+explicitly unfinished: the Session report still needs delivery to the action
+owner, deadline-driven coherent withdrawal, stale-candidate rejection and
+retained-source retirement controls. It is not an acceptance or merge candidate.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,
