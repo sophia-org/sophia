@@ -351,6 +351,32 @@ exact older feature configuration is checked with hidden devices; this changes
 the fixture, not the desktop default. The failed family report remains at
 `/home/niltempus/dev/sophia/.artifacts/native-family-t099-8ce095a1/report.json`.
 
+#### 2026-09-25 accepted t099 integration
+
+The director reviewed the complete exit against signed candidate
+`7116ad7de1a8f9d2c1fc15a53cf2a895e66d5bb8`, merged and pushed as signed
+`aff26bac8180932b88430dab8139f6d9e423545f`. The merge tree is identical to the
+gated candidate. Main returned clean to master and the exclusive gate window
+was released.
+
+Layout and all eight device-hidden native-family phases passed. The report is
+`/home/niltempus/dev/sophia/.artifacts/native-family-t099-7116ad7d/report.json`;
+the adjacent `t099-7116ad7d-paired-identities.json` records the four repositories
+and binary hashes. Frozen Hagia `50336ce6` and Narthex `50b9014` isolate this
+acceptance from rendering-foundation development. Signed Lom diagnostic
+`97b6f63` supplied the protected independent lifecycle peer. Affected authority
+library/wire suites passed 1,242/548 tests. The inherited t220 layout extraction
+and explicit normal-mode fixture correction are included; the original
+`8ce095a1` red reports remain retained under their actual identity.
+
+These results satisfy Sophia t099's deterministic production-owner and paired
+client exit. Lom t005 remains open for its own service/native criteria; its
+diagnostic branch was not promoted to Lom master. Native input/presentation
+acceptance remains separate. No live installation or reload occurred. Shared
+source ownership is released to t245, whose generic presentation lifecycle must
+preserve local withdrawal, parent receipts, stale-allocation refusal, consumed
+release obligations and independent source/backing retirement.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,
