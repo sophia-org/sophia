@@ -501,6 +501,7 @@ impl XServerFrontendRouteBroker {
                 last_pointer_route: Arc::new(Mutex::new(BTreeMap::new())),
                 pointer_replay: Arc::new(std::sync::OnceLock::new()),
                 replay_serial: Arc::new(AtomicU64::new(1)),
+                pending_grab_crossing: Arc::new(Mutex::new(BTreeMap::new())),
                 private_applied: Arc::new(std::sync::OnceLock::new()),
                 continuation_owner: Arc::new(std::sync::OnceLock::new()),
                 custody_keeper: Arc::new(std::sync::OnceLock::new()),

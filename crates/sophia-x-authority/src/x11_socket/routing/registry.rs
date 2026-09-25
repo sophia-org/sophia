@@ -61,6 +61,9 @@ struct XServerFrontendRouteRegistry {
     /// ordinary route to every writer. None in a registry without one.
     pointer_replay: Arc<std::sync::OnceLock<XAuthorityRoutedInputSender>>,
     replay_serial: Arc<std::sync::atomic::AtomicU64>,
+    /// The crossing a grab's activation or end owes, attached to the next
+    /// replayed motion of the namespace and told to every selecting client.
+    pending_grab_crossing: Arc<Mutex<BTreeMap<NamespaceId, crate::XPointerGrabCrossing>>>,
     input_authority: Arc<Mutex<crate::XInputAuthorityState>>,
     frozen_input: Arc<Mutex<VecDeque<XDeferredRoutedInput>>>,
     xkb_config: crate::XkbRmlvoConfig,

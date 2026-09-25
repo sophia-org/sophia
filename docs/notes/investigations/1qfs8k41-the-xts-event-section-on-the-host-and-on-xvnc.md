@@ -405,10 +405,18 @@ would otherwise cross on the pointer window's own moves. The scenario
 reads 123 passed, 72 declared. Red before the fix:
 `a_press_activates_the_ancestor_most_passive_grab_with_grab_crossings`.
 
-What the seam leaves: GrabPointer's activation and UngrabPointer owe the
-same crossings on the request path and do not generate them; under the
-grab no peer selecting crossings on the path is told, as the fan-out is
-confined by an explicit grab.
+What the seam left, GrabPointer's own crossings, landed the same day:
+after a GrabPointer that took the grab, or an UngrabPointer that ended
+one, the request path replays the pointer's position with the crossing
+the grab owes, NotifyGrab into the grab window and NotifyUngrab back to
+the pointer's window, through the registry's pending grab crossing that
+the replayed motion carries to the recipient and, unconfined for that
+one motion, to every peer selecting crossings on the path; it is routed
+and drained before the request's outputs, so the crossings precede the
+grab's reply as the reference has them. The wire guards are
+`a_pointer_grab_crosses_into_the_grab_window_and_back_when_it_ends` and
+`a_peer_selecting_on_the_grab_window_is_told_of_the_grab_crossing`, red
+on master 97a6b6f6.
 
 ## The implicit grab's client
 

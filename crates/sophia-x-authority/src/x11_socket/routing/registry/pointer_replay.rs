@@ -4,6 +4,31 @@
 
 #[cfg(unix)]
 impl XServerFrontendRouteRegistry {
+    /// The pointer's position routed again with the crossing a grab owes:
+    /// its activation crosses from the pointer window to the grab window
+    /// with NotifyGrab, its end back with NotifyUngrab, and every client
+    /// selecting crossings on the path is told, as the reference's
+    /// DoEnterLeaveEvents has it. A crossing no motion consumed is dropped.
+    pub(crate) fn replay_grab_crossing(
+        &self,
+        namespace: NamespaceId,
+        target_surface: SurfaceId,
+        global: sophia_protocol::Point,
+        local: sophia_protocol::Point,
+        crossing: crate::XPointerGrabCrossing,
+    ) -> Result<(), XServerFrontendRouteError> {
+        self.pending_grab_crossing
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .insert(namespace, crossing);
+        let result = self.replay_pointer(namespace, target_surface, global, local);
+        self.pending_grab_crossing
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .remove(&namespace);
+        result
+    }
+
     /// Route a motion of no distance at the pointer's position, to the
     /// surface now under it: each writer re-derives the window the pointer
     /// is in and writes the crossings from where it was, and a motion that

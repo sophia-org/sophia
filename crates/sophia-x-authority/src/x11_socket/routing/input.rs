@@ -507,6 +507,7 @@ impl XServerFrontendRouteRegistry {
         target_window: Option<XResourceId>,
         event: XAuthorityInputEvent,
         confined_by_pointer_grab: bool,
+        grab_crossing: Option<crate::XPointerGrabCrossing>,
     ) -> Result<(), XServerFrontendRouteError> {
         const KEY_PRESS: u32 = 1 << 0;
         const KEY_RELEASE: u32 = 1 << 1;
@@ -576,7 +577,7 @@ impl XServerFrontendRouteRegistry {
                 xi_emulated_button_type: None,
                 xi_emulated_button_window: None,
                 xi_pointer_crossing_mask: 0,
-                grab_crossing: None,
+                grab_crossing,
                 grab_target: None,
                 delivery: None,
             };

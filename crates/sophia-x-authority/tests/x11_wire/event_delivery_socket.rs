@@ -1163,6 +1163,105 @@ mod event_delivery_socket {
         client.assert_quiet("nothing else");
     }
 
+    /// GrabPointer's activation crosses the pointer from the window it is
+    /// in to the grab window with mode NotifyGrab, and UngrabPointer back
+    /// with NotifyUngrab, both before the request's reply (t220; the
+    /// protocol's "as if the pointer were to suddenly warp"). Red before
+    /// the fix: a grab across sibling toplevels crossed nothing.
+    #[test]
+    fn a_pointer_grab_crosses_into_the_grab_window_and_back_when_it_ends() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let first = client.next;
+        let second = client.next + 2;
+        client.next += 4;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        for (window, x) in [(first, 20), (second, 60)] {
+            client.stream
+                .write_all(&create_window_request(client.order, window, x, 0, 16, 16))
+                .unwrap();
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 5)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let entered = client.next_event(7);
+        assert_eq!(window_of(&entered), first, "the pointer in the first window");
+
+        // GrabPointer on the second: owner_events False, no mask, async.
+        let mut grab = vec![26, 0];
+        push_u16(&mut grab, client.order, 6);
+        push_u32(&mut grab, client.order, second);
+        push_u16(&mut grab, client.order, 0);
+        grab.extend_from_slice(&[1, 1]);
+        push_u32(&mut grab, client.order, 0);
+        push_u32(&mut grab, client.order, 0);
+        push_u32(&mut grab, client.order, 0);
+        client.stream.write_all(&grab).unwrap();
+        let left = read_x_record(&mut client.stream);
+        assert_eq!((left[0] & 0x7f, window_of(&left), left[30]), (8, first, 1), "leave of the first window, NotifyGrab: {left:?}");
+        let entered = read_x_record(&mut client.stream);
+        assert_eq!((entered[0] & 0x7f, window_of(&entered), entered[30]), (7, second, 1), "enter of the grab window, NotifyGrab: {entered:?}");
+        let reply = read_x_record(&mut client.stream);
+        assert_eq!((reply[0], reply[1]), (1, 0), "the grab's Success reply after its crossings: {reply:?}");
+
+        let mut ungrab = vec![27, 0];
+        push_u16(&mut ungrab, client.order, 2);
+        push_u32(&mut ungrab, client.order, 0);
+        client.stream.write_all(&ungrab).unwrap();
+        let left = client.next_event(8);
+        assert_eq!((window_of(&left), left[30]), (second, 2), "leave of the grab window, NotifyUngrab: {left:?}");
+        let entered = client.next_event(7);
+        assert_eq!((window_of(&entered), entered[30]), (first, 2), "enter of the pointer's window, NotifyUngrab: {entered:?}");
+        client.assert_quiet("nothing else on the ungrab");
+    }
+
+    /// A peer that selected EnterWindow on the grab window is told of the
+    /// grab's activation crossing as of any other: the crossings a grab
+    /// owes go to every selecting client, grab or no grab (t220).
+    #[test]
+    fn a_peer_selecting_on_the_grab_window_is_told_of_the_grab_crossing() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let first = owner.next;
+        let second = owner.next + 2;
+        owner.next += 4;
+        for client in [&mut owner, &mut peer] {
+            client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        }
+        for (window, x) in [(first, 20), (second, 60)] {
+            owner.stream
+                .write_all(&create_window_request(owner.order, window, x, 0, 16, 16))
+                .unwrap();
+            owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        }
+        owner.settle();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, second, 1 << 4))
+            .unwrap();
+        peer.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        owner.settle();
+        let mut grab = vec![26, 0];
+        push_u16(&mut grab, owner.order, 6);
+        push_u32(&mut grab, owner.order, second);
+        push_u16(&mut grab, owner.order, 0);
+        grab.extend_from_slice(&[1, 1]);
+        push_u32(&mut grab, owner.order, 0);
+        push_u32(&mut grab, owner.order, 0);
+        push_u32(&mut grab, owner.order, 0);
+        owner.stream.write_all(&grab).unwrap();
+        owner.settle();
+        let entered = peer.next_event(7);
+        assert_eq!((window_of(&entered), entered[30]), (second, 1), "the peer's enter of the grab window, NotifyGrab: {entered:?}");
+        peer.assert_quiet("nothing else for the peer");
+    }
+
     /// Remapping a window reports VisibilityNotify and Expose on every
     /// mapped inferior that becomes viewable with it, the VisibilityNotify
     /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the
