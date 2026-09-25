@@ -343,6 +343,14 @@ passes 589 controls with 18 existing ignored cases. This is deterministic
 paired acceptance; device completion remains simulated and Lom's real calendar
 service and attended native acceptance remain separate peer exits.
 
+The first native-family run on `8ce095a1` retained a real fixture failure:
+Hagia's matrix builds the session with `atomic-scanout-live`, whose default
+session mode differs from `native-session`. The policy-rejection fixture now
+explicitly selects normal mode before admitting its launcher bindings. The
+exact older feature configuration is checked with hidden devices; this changes
+the fixture, not the desktop default. The failed family report remains at
+`/home/niltempus/dev/sophia/.artifacts/native-family-t099-8ce095a1/report.json`.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,

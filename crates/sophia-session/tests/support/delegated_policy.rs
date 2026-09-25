@@ -22,6 +22,7 @@ fn hagia_pregraphics_profile_admission_rejects_invalid_policy_values() {
             .unwrap();
         let socket_path = config.wm_socket_path.clone();
         config = PersistentXtermSessionConfig::from_args(&[
+            "--session-mode=normal".to_owned(),
             format!("--wm-process={}", hagia_bin.to_string_lossy()),
             "--wm-interface=sophia_wm_v1".to_owned(),
             // This is an explicit profile: its launcher bindings must be
