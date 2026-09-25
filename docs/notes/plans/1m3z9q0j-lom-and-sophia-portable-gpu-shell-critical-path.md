@@ -260,6 +260,97 @@ resource release. It does not present a panel/popout pair or exercise dismissal.
 Both are useful existing checks, but neither satisfies this row's joined
 cross-language lifecycle exit. t099 remains open.
 
+The subsequent development checkpoint adds passive presented-popout metadata,
+threads it through content projection, and reports an outside press with exact
+grant/output/candidate/presentation/allocation identity. A red Engine control
+returned `Pass` for that press. The capture repair consumes the press, retains
+its release debt after withdrawal, refuses dismissal from revoked or
+unpresented bindings, and prevents activation of a lower component. Engine
+capture/stack tests and native-session all-target compilation pass. This is
+explicitly unfinished: the Session report still needs delivery to the action
+owner, deadline-driven coherent withdrawal, stale-candidate rejection and
+retained-source retirement controls. It is not an acceptance or merge candidate.
+
+The next slice wires that report to the real action FIFO. An outside dismissal
+has zero target/action fields and no coordinates, and repeated presses retain
+one event and deadline. A matching ACK records receipt; it cannot prove that the
+popout disappeared or renew the withdrawal deadline. Expiry subtracts the
+popout's images, targets and allocation from the owned content frame. The parent
+keeps its original protocol Presented identity; the replacement still needs
+actual native presentation before parent input becomes current again. A refused
+queue restores the frame, keeps input revoked and retains the withdrawal for a
+later owner turn. Expired replacement proposals and candidates naming an
+invalidated allocation cannot resurrect the popout.
+
+The private-socket action suite passes 21 controls with one existing ignored
+case. Backend lifecycle controls pass 38 tests, including withdrawal before first
+presentation, queue refusal/retry, parent preservation, delayed replacement and
+final resource-credit collection after an independent lease ends. The full
+device-hidden native-session library passes 586 tests with 18 ignored; the
+retained Hagia t080 binary exercises real pregraphics policy rejection. That
+optional fixture now explicitly admits its terminal/browser bindings so it
+reaches policy validation. Strict session Clippy and workspace checks pass.
+Logs are in the development worktree's `.artifacts/t099-*` files. These are
+deterministic controls with simulated device completion, not native acceptance.
+The independent C/Lom full popout lifecycle and the final signed-candidate gates
+remain required before closing t099.
+
+The fractional placement follow-up found a second rounding step in allocation
+validation: a popout at exact physical x=4 with logical width=2 and scale=5/4
+was rejected because its rounded logical placeholder x=3 implied width=4,
+instead of the required three pixels from the exact physical origin. The
+runtime regression failed with `Malformed` before the repair. Popout extent
+validation now quantizes from a zero local origin; panel endpoint quantization
+is unchanged. The owner uses the acknowledged parent's scale and generation,
+including signed margins, rather than a newer output descriptor's scale.
+The production resolver's fractional result is accepted by the real allocation
+store, and negative margins at 3/2 and 7/4 retain their physical anchors.
+Runtime allocation tests pass 11 controls, owner tests pass 13, and strict
+native-session Clippy passes. Evidence is in
+`.artifacts/t099-fractional-{red,runtime,owner,clippy}.log` in the development
+worktree. These supplied rational parent facts do not establish live fractional
+output admission or hardware presentation.
+
+A further bounded-queue control filled all sixteen action slots before an
+outside press. It failed because no withdrawal deadline survived notification
+refusal. The ledger now reserves local dismissal obligations independently of
+wire action capacity; repeated presses keep the first deadline. If no action
+was emitted, no event number is consumed and no cancellation is owed. The local
+obligation still reaches the existing withdrawal path at expiry. Its storage is
+bounded by the sixteen-allocation ceiling; exhausting that storage reports an
+error instead of silently forgetting a withdrawal. The private-socket action
+suite passes 22 controls with one existing ignored case. Red and green evidence
+is in `.artifacts/t099-dismiss-capacity-{red,green}.log`. These controls establish
+deadline retention and wire admission, not a new native presentation result.
+
+The independent live C client now speaks content records over the protected
+socket without Sophia headers or codec libraries. The joined backend fixture
+compiles the session's exact `project_render_bundle` source, rather than a
+second mapping, and uses production intake, composition, queue and retirement
+owners with the existing supplied device-completion target. Both C and Lom's
+`content-lifecycle` diagnostic pass four complete candidates: panel, anchored
+popout, action replacement and the surviving panel after dismissal. Actual
+Engine pointer capture chooses the popup action and outside-dismiss identity;
+the release remains consumed after removal. A stale parent epoch is refused,
+queued content has no Presented receipt, parent loss revokes input, and the
+last independent lease must end before resource release. Both peers close
+without acknowledging a deliberately wrong action epoch. The guarded tests
+require an explicitly supplied executable and are wired into
+`tools/check_shell_protocol.sh`; the old corpus reader remains a separate check.
+Evidence: `.artifacts/t099-{c,lom}-lifecycle.log` and
+`.artifacts/t099-c-content-host.log`. The complete device-hidden session library
+passes 589 controls with 18 existing ignored cases. This is deterministic
+paired acceptance; device completion remains simulated and Lom's real calendar
+service and attended native acceptance remain separate peer exits.
+
+The first native-family run on `8ce095a1` retained a real fixture failure:
+Hagia's matrix builds the session with `atomic-scanout-live`, whose default
+session mode differs from `native-session`. The policy-rejection fixture now
+explicitly selects normal mode before admitting its launcher bindings. The
+exact older feature configuration is checked with hidden devices; this changes
+the fixture, not the desktop default. The failed family report remains at
+`/home/niltempus/dev/sophia/.artifacts/native-family-t099-8ce095a1/report.json`.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,

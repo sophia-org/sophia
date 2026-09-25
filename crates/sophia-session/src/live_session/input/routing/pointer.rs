@@ -255,6 +255,11 @@
                     }
                     match disposition {
                         sophia_engine::ContentPointerDisposition::Pass => {}
+                        sophia_engine::ContentPointerDisposition::OutsideDismiss(popout) => {
+                            report.content_dismissals.push(popout);
+                            report.chrome_events_consumed = report.chrome_events_consumed.saturating_add(1);
+                            continue;
+                        }
                         sophia_engine::ContentPointerDisposition::Activated(target) => {
                             report.content_activations.push(target);
                             report.chrome_actions_activated =

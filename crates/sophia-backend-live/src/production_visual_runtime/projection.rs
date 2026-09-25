@@ -310,6 +310,17 @@ impl LiveProductionVisualRuntime {
             binding.presentation_epoch = previous
                 .filter(|old| same_content_binding(Some(old), Some(binding)))
                 .map_or(projection.epoch.max(1), |old| old.presentation_epoch);
+            if binding.authority_current
+                && let Some(epoch) = self.shell_content.values().find_map(|owned| {
+                    (owned.frame.content_output == binding.output
+                        && owned.frame.grant == binding.grant
+                        && owned.frame.candidate_generation == binding.candidate_generation)
+                        .then_some(owned.retained_content_epoch)
+                        .flatten()
+                })
+            {
+                binding.presentation_epoch = epoch;
+            }
             for target in &mut binding.targets {
                 target.presentation_epoch = binding.presentation_epoch;
             }

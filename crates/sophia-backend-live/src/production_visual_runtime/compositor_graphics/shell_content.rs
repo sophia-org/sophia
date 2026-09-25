@@ -120,6 +120,7 @@ impl LiveProductionVisualRuntime {
             key,
             AdmittedShellContent {
                 frame,
+                retained_content_epoch: None,
                 transform,
                 interaction_revoked: false,
             },

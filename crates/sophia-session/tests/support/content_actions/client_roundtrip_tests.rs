@@ -255,6 +255,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             },
             authority_current: true,
             targets: vec![h.target.clone()],
+            popouts: Vec::new(),
             allocations: vec![(
                 h.target.allocation,
                 h.target.allocation_logical,
