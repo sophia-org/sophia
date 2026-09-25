@@ -417,6 +417,24 @@ impl LiveProductionVisualRuntime {
         }
     }
 
+    /// Whether a WM presentation hides `surface` on `output`: it replaces
+    /// applications there and draws no preview of the surface. A first
+    /// Present parked outside the head frames is not released by the
+    /// surface's own geometry on such an output, or it would be released and
+    /// re-parked every service pass without its budget ever expiring (t246).
+    pub(super) fn surface_hidden_by_policy(&self, surface: SurfaceId, output: OutputId) -> bool {
+        self.policy_presentation
+            .as_ref()
+            .is_some_and(|presentation| {
+                presentation.replaces_applications(output)
+                    && !presentation
+                        .presentation
+                        .instances
+                        .iter()
+                        .any(|instance| instance.output == output && instance.source == surface)
+            })
+    }
+
     pub fn policy_presentation(&self) -> Option<&LivePolicyPresentation> {
         self.policy_presentation.as_ref()
     }

@@ -10,16 +10,31 @@
 //! repaint. A sampled source that cannot be resolved, or a Present whose own
 //! output was omitted, still refuses the frame.
 //!
-//! Fixture limit: these tests run the driver's composition steps (display
-//! lists, source collection, head frames, the capture check) against the
-//! lifecycle target. They do not execute the driver's settlement branch
-//! (defer_first_visibility / skip_unpresentable / the clearing repaint queue),
-//! because drive_gpu_presentation takes the concrete native scanout, which
-//! needs a device.
+//! The driver's settlement of an uncaptured Present is the shared runtime
+//! helper `settle_uncaptured_present`, which these tests execute against the
+//! lifecycle target with a Present queued through the runtime's own
+//! scheduler and feedback coordinator: the clearing repaint, frame-tick
+//! parking, first-visibility parking, the runtime service's release and
+//! expiry, and the Skipped completion, Idle and retirement the client is told.
+//!
+//! Known limit, not broadened without a reproduction: while a presentation
+//! withholds its whole tier for a missing source, the ordinary draw returns
+//! and samples the surface, but `present_sampling` and
+//! `surface_hidden_by_policy` still see a replacing presentation. The
+//! collection then consumes the sampled Present as usual. A first Present
+//! parked in that window waits for its budget rather than being released
+//! early; admission refuses and removal revokes such a presentation.
+//!
+//! Fixture limit: drive_gpu_presentation itself, which takes the concrete
+//! native scanout, is not executed. Its DMA-BUF import and mixed-frame build,
+//! its gate and busy-output checks, and its computation of first_presentation
+//! run only on a device; the tests pass first_presentation as the driver
+//! computes it (a committed surface, or a spent budget, is not first).
 use super::presentation_instances::{
     commit_cpu_surface, presentation_output, published, rect, region, shown_instance,
 };
 use super::*;
+use std::time::{Duration, Instant};
 
 const PRESENT_IMAGE: u64 = 437;
 
@@ -162,6 +177,26 @@ impl PresentScene {
         ),
         Box<dyn std::error::Error>,
     > {
+        let (sources, frames) = self.compose_present_frames()?;
+        let captured = crate::live_present_head_frames_capture_image(
+            &frames,
+            sophia_renderer_live::LiveRendererImageId::from_raw(PRESENT_IMAGE),
+        );
+        Ok((sources, captured))
+    }
+
+    /// The Present's sources and head frames, per output, as the driver
+    /// builds them before its capture check.
+    #[allow(clippy::type_complexity)]
+    fn compose_present_frames(
+        &self,
+    ) -> Result<
+        (
+            Vec<sophia_renderer_live::LiveOwnedHeadCompositionSource>,
+            Vec<(OutputId, Vec<crate::LiveProductionHeadCompositionFrame>)>,
+        ),
+        Box<dyn std::error::Error>,
+    > {
         let viewport = self.runtime.outputs.logical_viewport(self.output).unwrap();
         let committed = self.runtime.committed_surfaces().to_vec();
         let list = self.runtime.display_list_for_output(
@@ -191,11 +226,7 @@ impl PresentScene {
             1,
             &sources,
         )?;
-        let captured = crate::live_present_head_frames_capture_image(
-            &[(self.output, frames)],
-            sophia_renderer_live::LiveRendererImageId::from_raw(PRESENT_IMAGE),
-        );
-        Ok((sources, captured))
+        Ok((sources, vec![(self.output, frames)]))
     }
 }
 
@@ -339,4 +370,337 @@ fn an_overlay_presentation_keeps_the_present_required_and_captured() {
     );
     let (_, captured) = scene.compose_present().unwrap();
     assert!(captured);
+}
+
+impl PresentScene {
+    /// Queue this application's Present through the runtime's own scheduler
+    /// and take it to the head of the runnable queue, as the driver finds it.
+    fn queue_present(
+        &mut self,
+        id: u64,
+        now: Instant,
+    ) -> (TransactionId, sophia_protocol::SurfaceTransactionKey) {
+        let handle = BufferHandle::from_raw(id);
+        let transaction = TransactionId::from_raw(id);
+        self.runtime
+            .presentation_feedback
+            .resources_mut()
+            .register_source(
+                present_descriptor(handle),
+                vec![std::fs::File::open("/dev/null").unwrap().into()],
+            )
+            .unwrap();
+        let group = present_group(transaction, self.application, handle);
+        self.runtime
+            .present_scheduler
+            .enqueue_group(
+                &group,
+                &[],
+                self.runtime.presentation_feedback.resources_mut(),
+                now,
+            )
+            .unwrap();
+        assert_eq!(
+            self.runtime
+                .present_scheduler
+                .poll_gate(self.runtime.presentation_feedback.resources_mut(), now)
+                .unwrap(),
+            crate::LiveProductionPresentGate::Ready(transaction)
+        );
+        (
+            transaction,
+            self.runtime
+                .present_scheduler
+                .front()
+                .unwrap()
+                .candidate
+                .key(),
+        )
+    }
+
+    /// The driver's settlement of this Present, which no frame captures.
+    fn settle(
+        &mut self,
+        transaction: TransactionId,
+        candidate: sophia_protocol::SurfaceTransactionKey,
+        first_presentation: bool,
+        now: Instant,
+    ) {
+        let (_, frames) = self.compose_present_frames().unwrap();
+        assert!(!crate::live_present_head_frames_capture_image(
+            &frames,
+            sophia_renderer_live::LiveRendererImageId::from_raw(PRESENT_IMAGE),
+        ));
+        let committed = self.runtime.committed_surfaces().to_vec();
+        self.runtime
+            .settle_uncaptured_present(
+                &mut self.target,
+                crate::production_visual_runtime::present::UncapturedPresent {
+                    transaction,
+                    candidate,
+                    surface: self.application,
+                    image: sophia_renderer_live::LiveRendererImageId::from_raw(PRESENT_IMAGE),
+                    first_presentation,
+                    paced_interval: Duration::from_millis(16),
+                },
+                &committed,
+                frames,
+                now,
+            )
+            .unwrap();
+    }
+}
+
+fn present_descriptor(handle: BufferHandle) -> DmaBufDescriptor {
+    DmaBufDescriptor {
+        handle,
+        size: Size {
+            width: 16,
+            height: 16,
+        },
+        format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+        modifier: DRM_FORMAT_MOD_INVALID,
+        plane_count: 1,
+        planes: [
+            Some(DmaBufPlaneDescriptor {
+                offset: 0,
+                stride: 64,
+            }),
+            None,
+            None,
+            None,
+        ],
+    }
+}
+
+fn present_group(
+    transaction: TransactionId,
+    surface: SurfaceId,
+    handle: BufferHandle,
+) -> crate::LiveProductionAuthorityGroup {
+    let size = Size {
+        width: 16,
+        height: 16,
+    };
+    crate::LiveProductionAuthorityGroup {
+        transaction,
+        transactions: vec![SurfaceTransaction {
+            input_region: None,
+            transaction,
+            authority: AuthorityKind::SophiaX,
+            surface,
+            namespace: None,
+            target_geometry: rect(0, 0, 16, 16),
+            presentation_extent: size,
+            content: SurfaceContentSet::singleton(
+                BufferSource::DmaBuf {
+                    handle: handle.raw(),
+                },
+                size,
+            ),
+            damage: Region::single(rect(0, 0, 16, 16)),
+            readiness: SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: 0,
+        }],
+        cpu_buffer_updates: Vec::new(),
+        removed_surfaces: Vec::new(),
+        present_submissions: vec![crate::LiveProductionPresentSubmission {
+            transaction,
+            surface,
+            buffer: handle,
+            x_offset: 0,
+            y_offset: 0,
+            acquire_fence: None,
+            idle_fence: None,
+            layout_disposition: crate::LiveProductionPresentDisposition::Immediate,
+        }],
+        software_present_submissions: Vec::new(),
+    }
+}
+
+/// The Present's settlement as the client is told it: Complete with the
+/// Skipped disposition, then Idle, and no presentation or source still held
+/// for it.
+fn assert_skipped_and_released(scene: &mut PresentScene, transaction: TransactionId) {
+    let mut feedback = Vec::new();
+    scene
+        .runtime
+        .drain_present_feedback_into(&mut feedback)
+        .unwrap();
+    assert_eq!(feedback.len(), 1, "one settlement for {transaction:?}");
+    assert_eq!(
+        feedback[0].feedback,
+        vec![
+            LivePresentProtocolFeedback::Complete {
+                transaction,
+                ust: 0,
+                msc: 0,
+                disposition: LivePresentBufferDisposition::Skipped,
+            },
+            LivePresentProtocolFeedback::Idle { transaction },
+        ]
+    );
+    assert_eq!(
+        scene
+            .runtime
+            .presentation_feedback
+            .resources()
+            .state(transaction),
+        None,
+        "the presentation is retired"
+    );
+    assert_eq!(scene.runtime.diagnostics().live_presentations, 0);
+}
+
+/// Production owner path, existing visible surface: a displayed application
+/// whose output a presentation replaces, without a preview of it, Presents.
+/// The driver's settlement queues the clearing repaint on the target and
+/// parks the Present to the next frame tick, where the runtime's service
+/// rejects it as Skipped and retires it; each repeated hidden Present takes
+/// the same one-frame path; withdrawal restores capture.
+#[test]
+fn a_hidden_present_of_a_visible_surface_repaints_parks_and_retires_until_restored() {
+    let mut scene = present_scene();
+    let start = Instant::now();
+    let preview = shown_instance(scene.output, 2, 1, scene.previewed, rect(40, 4, 8, 8));
+    scene.replace_with(vec![preview]);
+    for (round, id) in [900_u64, 901].into_iter().enumerate() {
+        let now = start + Duration::from_millis(40 * round as u64);
+        let (transaction, candidate) = scene.queue_present(id, now);
+        scene.settle(transaction, candidate, false, now);
+        if round == 0 {
+            assert!(
+                scene.target.queue.get(scene.output).is_some(),
+                "the clearing repaint reaches the heads"
+            );
+        }
+        assert_eq!(
+            scene.runtime.present_scheduler.paced_skips(),
+            round + 1,
+            "round {round}: parked to the frame tick, not lost or failed"
+        );
+        scene.target.drain();
+        scene
+            .runtime
+            .service_first_visibility_presentations(now + Duration::from_millis(20));
+        assert_skipped_and_released(&mut scene, transaction);
+    }
+    scene
+        .runtime
+        .set_policy_presentation(None, &scene.scene, None)
+        .unwrap();
+    let (_, restored) = scene.compose_present().unwrap();
+    assert!(
+        restored,
+        "withdrawn, the application's Present is captured again"
+    );
+}
+
+/// Production owner path, first Present: an application whose first
+/// Present finds its output replaced, without a preview, is parked for
+/// first visibility with no repaint; the runtime's service expires that
+/// budget, the driver no longer parks it, and the settlement rejects it as
+/// Skipped and retires it rather than letting it wait forever.
+#[test]
+fn a_hidden_first_present_waits_within_its_budget_then_is_skipped_and_retired() {
+    let mut scene = present_scene();
+    let start = Instant::now();
+    let preview = shown_instance(scene.output, 2, 1, scene.previewed, rect(40, 4, 8, 8));
+    scene.replace_with(vec![preview]);
+    let (transaction, candidate) = scene.queue_present(910, start);
+    scene.settle(transaction, candidate, true, start);
+    assert!(
+        scene.target.queue.get(scene.output).is_none(),
+        "a first Present parks without a repaint"
+    );
+    assert!(
+        scene
+            .runtime
+            .present_scheduler
+            .awaiting_first_visibility()
+            .any(|(surface, _, reason)| surface == scene.application
+                && reason == crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames),
+        "it waits for first visibility"
+    );
+    // Hidden by the presentation, it is not released by its own geometry
+    // while it waits: it stays parked under its first deadline.
+    let within = start + Duration::from_millis(1_000);
+    scene.runtime.service_first_visibility_presentations(within);
+    assert!(
+        scene
+            .runtime
+            .present_scheduler
+            .awaiting_first_visibility()
+            .any(|(surface, _, _)| surface == scene.application),
+        "a surface the presentation hides is not released as visible"
+    );
+    let later = start + Duration::from_millis(2_100);
+    scene.runtime.service_first_visibility_presentations(later);
+    assert!(
+        scene
+            .runtime
+            .present_scheduler
+            .front_first_visibility_exhausted(),
+        "the service expires the budget and returns it for ordinary rejection"
+    );
+    assert_eq!(
+        scene
+            .runtime
+            .present_scheduler
+            .front()
+            .unwrap()
+            .candidate
+            .key(),
+        candidate
+    );
+    // The driver's first_presentation is false once the budget is spent.
+    scene.settle(transaction, candidate, false, later);
+    assert!(scene.runtime.present_scheduler.front().is_none());
+    assert_skipped_and_released(&mut scene, transaction);
+}
+
+/// Recovery: a hidden first Present parked outside the head frames is
+/// released as soon as the presentation stops hiding it, within its budget.
+#[test]
+fn a_hidden_first_present_is_released_when_the_presentation_withdraws() {
+    let mut scene = present_scene();
+    let start = Instant::now();
+    let preview = shown_instance(scene.output, 2, 1, scene.previewed, rect(40, 4, 8, 8));
+    scene.replace_with(vec![preview]);
+    let (transaction, candidate) = scene.queue_present(920, start);
+    scene.settle(transaction, candidate, true, start);
+    scene
+        .runtime
+        .set_policy_presentation(None, &scene.scene, None)
+        .unwrap();
+    scene
+        .runtime
+        .service_first_visibility_presentations(start + Duration::from_millis(100));
+    assert!(
+        !scene
+            .runtime
+            .present_scheduler
+            .awaiting_first_visibility()
+            .any(|(surface, _, _)| surface == scene.application),
+        "no longer hidden, it is released to present"
+    );
+    let released = scene
+        .runtime
+        .present_scheduler
+        .front()
+        .expect("released to the queue's head");
+    assert_eq!(
+        (released.submission.transaction, released.candidate.key()),
+        (transaction, candidate),
+        "the parked Present itself is released, without a fresh Present from anyone"
+    );
+    assert!(
+        !scene
+            .runtime
+            .present_scheduler
+            .front_first_visibility_exhausted()
+    );
+    let (_, captured) = scene.compose_present().unwrap();
+    assert!(captured, "and its next composition captures it");
 }

@@ -302,38 +302,20 @@ impl LiveProductionVisualRuntime {
         // for this Present, so it cannot own its copy-completion retirement.
         // Keep the clearing repaint, but settle the invisible client as Skipped.
         if !live_present_head_frames_capture_image(&output_head_frames, current_layer.image_id) {
-            if first_presentation {
-                // The settled column can be onscreen while its animated
-                // position is still outside the head. Keep its first buffer
-                // and admission debt; other surfaces may run while it waits.
-                self.present_scheduler.defer_first_visibility(
-                    queued_candidate,
-                    crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames,
-                    std::time::Instant::now(),
-                );
-                return self.run_observation_tick();
-            }
-            tracing::debug!(
-                transaction = transaction.raw(),
-                surface = queued_surface.index(),
-                image = current_layer.image_id.raw(),
-                "skipped Present absent from lowered physical head frames"
-            );
-            // The clearing repaint reaches the heads, so its chrome is observed
-            // as the Present turn's view of the scene.
-            self.record_focus_ring_observation(
+            self.settle_uncaptured_present(
+                native_scanout,
+                UncapturedPresent {
+                    transaction,
+                    candidate: queued_candidate,
+                    surface: queued_surface,
+                    image: current_layer.image_id,
+                    first_presentation,
+                    paced_interval,
+                },
                 prepared.candidate(),
-                LiveChromeObservationSource::Present,
-                false,
+                output_head_frames,
+                std::time::Instant::now(),
             )?;
-            native_scanout.queue_retained_output_head_composition_frames(output_head_frames)?;
-            self.skip_unpresentable(
-                transaction,
-                queued_candidate,
-                queued_surface,
-                crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames,
-                paced_interval,
-            );
             return self.run_observation_tick();
         }
         if self.present_scheduler.take_diagnose_first_mixed_export() {
@@ -521,6 +503,52 @@ impl LiveProductionVisualRuntime {
         self.reject_gpu_presentation(transaction);
     }
 
+    /// Settle a Present no composed head frame captures: its surface scrolled
+    /// out of every head, or a WM presentation replaced it on every
+    /// applicable output without a preview of it (t246). A first Present is
+    /// parked for first visibility, within that budget; any other takes the
+    /// clearing repaint to the heads and is skipped, parked to the next frame
+    /// tick while the pacing allows, else rejected. The driver's own branch,
+    /// moved here unchanged so the lifecycle target can execute it.
+    pub(super) fn settle_uncaptured_present<T: NativeCompositionTarget>(
+        &mut self,
+        native_scanout: &mut T,
+        present: UncapturedPresent,
+        candidate: &[CommittedSurfaceState],
+        output_head_frames: Vec<(OutputId, Vec<LiveProductionHeadCompositionFrame>)>,
+        now: Instant,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if present.first_presentation {
+            // The settled column can be onscreen while its animated
+            // position is still outside the head. Keep its first buffer
+            // and admission debt; other surfaces may run while it waits.
+            self.present_scheduler.defer_first_visibility(
+                present.candidate,
+                crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames,
+                now,
+            );
+            return Ok(());
+        }
+        tracing::debug!(
+            transaction = present.transaction.raw(),
+            surface = present.surface.index(),
+            image = present.image.raw(),
+            "skipped Present absent from lowered physical head frames"
+        );
+        // The clearing repaint reaches the heads, so its chrome is observed
+        // as the Present turn's view of the scene.
+        self.record_focus_ring_observation(candidate, LiveChromeObservationSource::Present, false)?;
+        native_scanout.queue_retained_batch(output_head_frames, &BTreeSet::new())?;
+        self.skip_unpresentable(
+            present.transaction,
+            present.candidate,
+            present.surface,
+            crate::LiveProductionFirstVisibilityReason::OutsideHeadFrames,
+            present.paced_interval,
+        );
+        Ok(())
+    }
+
     /// Idle the client buffer a successor flip has just replaced on `output`.
     ///
     /// Does nothing unless a direct frame is recorded as displayed there. The
@@ -596,6 +624,17 @@ impl LiveProductionVisualRuntime {
 /// A copy Present requires a capture of its exact image in at least one
 /// physical head frame. Geometry overlap before clipping or animation is not
 /// proof that a renderer will consume the candidate pixels.
+/// A Present the driver composed but no head frame captures.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct UncapturedPresent {
+    pub transaction: TransactionId,
+    pub candidate: sophia_protocol::SurfaceTransactionKey,
+    pub surface: SurfaceId,
+    pub image: LiveRendererImageId,
+    pub first_presentation: bool,
+    pub paced_interval: std::time::Duration,
+}
+
 pub fn live_present_head_frames_capture_image(
     frames: &[(OutputId, Vec<LiveProductionHeadCompositionFrame>)],
     image: LiveRendererImageId,
