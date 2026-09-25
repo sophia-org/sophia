@@ -64,3 +64,72 @@ impl Drop for X11InputDrainGuard<'_> {
         self.0.drained();
     }
 }
+
+/// How far a client's protocol event writer has caught up with what was
+/// routed to it, the reply side of the same ordering: a request read after
+/// an event was queued for the client has its reply written after that
+/// event. The connection takes the queued count as a mark when it reads a
+/// request and waits, bounded, for the drained count to reach it before
+/// writing the request's outputs. Without this a MapRequest routed to a
+/// redirecting client could be written after the reply to that client's
+/// next request, and the client, having synced, found nothing pending
+/// (t229; XTS Xlib4 XMapWindow 6 under load).
+#[cfg(unix)]
+#[derive(Debug, Default)]
+pub(crate) struct X11ProtocolWatermark {
+    counts: std::sync::Mutex<(u64, u64)>,
+    changed: std::sync::Condvar,
+}
+
+#[cfg(unix)]
+impl X11ProtocolWatermark {
+    /// One more event queued for the client's protocol writer.
+    pub(crate) fn queued(&self) {
+        if let Ok(mut counts) = self.counts.lock() {
+            counts.0 += 1;
+        }
+    }
+
+    /// The writer has finished with one more event, written or not.
+    pub(crate) fn drained(&self) {
+        if let Ok(mut counts) = self.counts.lock() {
+            counts.1 += 1;
+            self.changed.notify_all();
+        }
+    }
+
+    /// Everything queued so far.
+    pub(crate) fn mark(&self) -> u64 {
+        self.counts.lock().map_or(0, |counts| counts.0)
+    }
+
+    /// Wait until the writer has drained to `mark`, or the bound passes.
+    pub(crate) fn wait_drained(&self, mark: u64, bound: std::time::Duration) {
+        let deadline = std::time::Instant::now() + bound;
+        let Ok(mut counts) = self.counts.lock() else {
+            return;
+        };
+        while counts.1 < mark {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return;
+            }
+            let Ok((guard, _)) = self.changed.wait_timeout(counts, deadline - now) else {
+                return;
+            };
+            counts = guard;
+        }
+    }
+}
+
+/// Counts one event drained when dropped, so every way out of the protocol
+/// writer's iteration counts it.
+#[cfg(unix)]
+pub(crate) struct X11ProtocolDrainGuard<'a>(&'a X11ProtocolReceiver);
+
+#[cfg(unix)]
+impl Drop for X11ProtocolDrainGuard<'_> {
+    fn drop(&mut self) {
+        self.0.drained();
+    }
+}

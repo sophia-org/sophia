@@ -41,17 +41,24 @@ impl PrivateControlProtocolReceipt {
 
 #[cfg(unix)]
 #[derive(Clone)]
-struct X11ProtocolSender(SyncSender<X11ProtocolEvent>);
+struct X11ProtocolSender {
+    sender: SyncSender<X11ProtocolEvent>,
+    /// Raised as an event is queued; the connection's reply ordering reads
+    /// it.
+    watermark: Arc<X11ProtocolWatermark>,
+}
 
 #[cfg(unix)]
 impl X11ProtocolSender {
     fn try_send(&self, event: XClientEvent) -> Result<(), TrySendError<XClientEvent>> {
-        self.0
+        self.sender
             .try_send(X11ProtocolEvent::untracked(event))
             .map_err(|error| match error {
                 TrySendError::Full(event) => TrySendError::Full(event.event),
                 TrySendError::Disconnected(event) => TrySendError::Disconnected(event.event),
-            })
+            })?;
+        self.watermark.queued();
+        Ok(())
     }
 }
 
@@ -79,6 +86,7 @@ enum X11ProtocolReceiver {
     Tracked {
         receiver: Receiver<X11ProtocolEvent>,
         registration: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
+        watermark: Arc<X11ProtocolWatermark>,
     },
     #[cfg(all(test, unix))]
     Ordinary(Receiver<XClientEvent>),
@@ -93,6 +101,15 @@ impl From<Receiver<XClientEvent>> for X11ProtocolReceiver {
 
 #[cfg(unix)]
 impl X11ProtocolReceiver {
+    /// The writer has finished with one event, whatever became of it.
+    fn drained(&self) {
+        match self {
+            Self::Tracked { watermark, .. } => watermark.drained(),
+            #[cfg(all(test, unix))]
+            Self::Ordinary(_) => {}
+        }
+    }
+
     fn receive(&self, timeout: Duration) -> Result<X11ProtocolEvent, RecvTimeoutError> {
         match self {
             Self::Tracked { receiver, .. } => receiver.recv_timeout(timeout),
@@ -245,10 +262,11 @@ impl XServerFrontendRouteRegistry {
         let dependent = completion.track_dependent(token).map_err(|refusal| {
             XServerFrontendRouteError::DependentNotTracked { client, refusal }
         })?;
-        self.route_to_client(
+        let X11ProtocolSender { sender, watermark } = senders.protocol;
+        let result = self.route_to_client(
             client,
             &recipient,
-            senders.protocol.0,
+            sender,
             X11ProtocolEvent {
                 event,
                 control: Some(PrivateControlProtocolOutput {
@@ -256,7 +274,11 @@ impl XServerFrontendRouteRegistry {
                     _dependent: dependent,
                 }),
             },
-        )
+        );
+        if result.is_ok() {
+            watermark.queued();
+        }
+        result
     }
 }
 

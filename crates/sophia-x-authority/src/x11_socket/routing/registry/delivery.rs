@@ -812,7 +812,11 @@ impl XServerFrontendRouteRegistry {
             }
             Err(error) => return Err(XServerFrontendWatcherRefusal::Route(error)),
         };
-        let result = self.route_to_client(client, &incarnation, sender.0, X11ProtocolEvent::untracked(event));
+        let X11ProtocolSender { sender, watermark } = sender;
+        let result = self.route_to_client(client, &incarnation, sender, X11ProtocolEvent::untracked(event));
+        if result.is_ok() {
+            watermark.queued();
+        }
         let status = match &result {
             Ok(()) => "queued",
             Err(
