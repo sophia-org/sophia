@@ -734,19 +734,24 @@ with SHA-256 values under `.artifacts/t069-upstream-proposal/` in the t069
 worktree.
 
 The selection is unchanged in substance:
-- `VADisplayStateSingleton::PreSandboxInitialization` in
-  `media/gpu/vaapi/vaapi_wrapper.cc` (lines 1618-1682) honours the two device
-  switches.
+- [`VADisplayStateSingleton::PreSandboxInitialization`](https://chromium.googlesource.com/chromium/src/+/92802374ec246ea2c764a47c0f09d7893c56c029/media/gpu/vaapi/vaapi_wrapper.cc#1618)
+  in `media/gpu/vaapi/vaapi_wrapper.cc` (lines 1618-1682) honours the two
+  device switches.
 - Without them, it keeps the `drmGetDevices2` entry whose PCI identity matches
-  `GPUInfo`'s active GPU.
-- `ui/gfx/linux/gbm_support_x11.cc` is byte-identical to the measured
-  `79460ebe` copy. Its `dri3.Open` descriptor stays inside its `GbmDevice`.
-- Wayland's `WaylandConnection::SetRenderNodePath` (lines 820-833) still
-  appends `--render-node-override` from the compositor's validated device.
-- `GpuProcessHost` still copies that switch to the GPU process.
+  `GPUInfo`'s [active GPU](https://chromium.googlesource.com/chromium/src/+/92802374ec246ea2c764a47c0f09d7893c56c029/media/gpu/vaapi/vaapi_wrapper.cc#1679).
+- [`ui/gfx/linux/gbm_support_x11.cc`](https://chromium.googlesource.com/chromium/src/+/92802374ec246ea2c764a47c0f09d7893c56c029/ui/gfx/linux/gbm_support_x11.cc#33) is
+  byte-identical to the measured `79460ebe` copy. Its
+  [`dri3.Open`](https://chromium.googlesource.com/chromium/src/+/92802374ec246ea2c764a47c0f09d7893c56c029/ui/gfx/linux/gbm_support_x11.cc#53) descriptor stays inside
+  its `GbmDevice`.
+- Wayland's [`WaylandConnection::SetRenderNodePath`](https://chromium.googlesource.com/chromium/src/+/92802374ec246ea2c764a47c0f09d7893c56c029/ui/ozone/platform/wayland/host/wayland_connection.cc#820)
+  (lines 820-833) still appends `--render-node-override` from the
+  compositor's validated device.
+- `GpuProcessHost` still [copies that switch](https://chromium.googlesource.com/chromium/src/+/92802374ec246ea2c764a47c0f09d7893c56c029/content/browser/gpu/gpu_process_host.cc#322)
+  to the GPU process.
 
 The draft proposal (`proposal.md`, not filed) mirrors the Wayland behaviour in
-the X11 platform's browser-side `InitializeUI`:
+the X11 platform's browser-side
+[`InitializeUI`](https://chromium.googlesource.com/chromium/src/+/92802374ec246ea2c764a47c0f09d7893c56c029/ui/ozone/platform/x11/ozone_platform_x11.cc#247):
 1. DRI3 Open on the root.
 2. Name the render node with `drmGetRenderDeviceNameFromFd`.
 3. Validate it with `gbm_create_device`.
