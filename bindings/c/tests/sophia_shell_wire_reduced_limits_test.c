@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #define MIB (UINT64_C(1024)*1024)
@@ -24,6 +25,14 @@ static struct sophia_shell_upload *owner;
 static int sockets[2];
 static uint64_t next_tx;
 
+/* A named failure instead of a parked suite: every blocking peer socket call
+ * is bounded by a fixture-local timeout, and progress loops by finite counts. */
+static void fail(const char *phase, size_t have, size_t want)
+{
+    fprintf(stderr,"sophia_shell_reduced_limits status=failed phase=%s have=%zu want=%zu errno=%d\n",
+        phase,have,want,errno);
+    exit(1);
+}
 static unsigned nibble(char c)
 {
     if (c>='0' && c<='9') return (unsigned)(c-'0');
@@ -46,6 +55,11 @@ static struct sophia_shell_upload_snapshot inspect(unsigned slot)
 static void setup(void)
 {
     assert(socketpair(AF_UNIX,SOCK_STREAM,0,sockets)==0);
+    struct timeval deadline={5,0};
+    for (unsigned i=0; i<2; ++i) {
+        assert(setsockopt(sockets[i],SOL_SOCKET,SO_RCVTIMEO,&deadline,sizeof(deadline))==0);
+        assert(setsockopt(sockets[i],SOL_SOCKET,SO_SNDTIMEO,&deadline,sizeof(deadline))==0);
+    }
     assert(sophia_shell_wire_init(&wire,sockets[0],rx,sizeof(rx),tx_bytes,sizeof(tx_bytes))==SOPHIA_SHELL_OK);
     assert(sophia_shell_outbox_init(&outbox,131072,8,1024,4)==SOPHIA_SHELL_OK);
     assert(sophia_shell_upload_new(&limits,&owner)==SOPHIA_SHELL_OK); next_tx=1;
@@ -59,7 +73,7 @@ static struct sophia_shell_frame drain(void)
 {
     size_t used=0; unsigned visits=0;
     while (outbox.count) {
-        assert(++visits<100000);
+        if (++visits>=100000) fail("drain_outbox_visits",used,outbox.count);
         int r=sophia_shell_outbox_flush(&outbox,sockets[0],65536);
         assert(r==SOPHIA_SHELL_OK || r==SOPHIA_SHELL_AGAIN);
         ssize_t n=recv(sockets[1],peer_bytes+used,sizeof(peer_bytes)-used,MSG_DONTWAIT);
@@ -67,7 +81,10 @@ static struct sophia_shell_frame drain(void)
     }
     size_t total=used>=24 ? 24+shell_get32(peer_bytes+16) : 24;
     while (used<total) {
-        ssize_t n=recv(sockets[1],peer_bytes+used,sizeof(peer_bytes)-used,0); assert(n>0); used+=(size_t)n;
+        /* Bounded by SO_RCVTIMEO: an incomplete frame fails by name. */
+        ssize_t n=recv(sockets[1],peer_bytes+used,sizeof(peer_bytes)-used,0);
+        if (n<=0) fail("drain_incomplete_frame",used,total);
+        used+=(size_t)n;
         if (used>=24) total=24+shell_get32(peer_bytes+16);
     }
     struct sophia_shell_frame f;
@@ -88,7 +105,7 @@ static int reply(struct sophia_shell_resource_key key, uint64_t transaction,
     shell_put16(p+32,status?status:reason);
     if (status) {shell_put16(p+34,reason); shell_put64(p+40,admitted);}
     assert(sophia_shell_frame_encode(bytes,sizeof(bytes),status?166:171,transaction,p,status?48:34,&n)==SOPHIA_SHELL_OK);
-    assert(send(sockets[1],bytes,n,MSG_NOSIGNAL)==(ssize_t)n);
+    if (send(sockets[1],bytes,n,MSG_NOSIGNAL)!=(ssize_t)n) fail("reply_send",0,n);
     struct sophia_shell_frame f;
     assert(sophia_shell_wire_receive(&wire,sizeof(rx),&f)==SOPHIA_SHELL_FRAME);
     int r=sophia_shell_upload_reply(owner,&f);

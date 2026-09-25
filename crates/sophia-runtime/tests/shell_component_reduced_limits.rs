@@ -69,10 +69,17 @@ impl Drop for Directory {
 fn next_record(client: &mut ShellConnection) -> ShellContentRecord {
     let start = Instant::now();
     loop {
-        if let Some((_, record)) = client.poll_content().unwrap() {
+        if let Some((_, record)) = client
+            .poll_content()
+            .unwrap_or_else(|error| panic!("welcome phase: client poll failed: {error:?}"))
+        {
             return record;
         }
-        assert!(start.elapsed() < Duration::from_secs(5));
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "welcome phase: no content record after {elapsed:?}"
+        );
         std::thread::yield_now();
     }
 }
@@ -213,6 +220,7 @@ fn floor_limits_hold_two_full_size_resources_resident() {
             .collect();
         let mut statuses = Vec::new();
         let start = Instant::now();
+        let mut last_progress = (Duration::ZERO, String::from("none"));
         while !pending.is_empty() || statuses.len() != 4 {
             // A saturated outbox is the client's own backpressure: service
             // the socket and offer the same record again, as Lom does on its
@@ -220,32 +228,95 @@ fn floor_limits_hold_two_full_size_resources_resident() {
             if let Some((transaction, record)) = pending.front() {
                 match client.enqueue_content(*transaction, record) {
                     Ok(()) => {
+                        last_progress = (
+                            start.elapsed(),
+                            format!("enqueued a record of transaction {transaction:?}"),
+                        );
                         pending.pop_front();
                     }
                     Err(sophia_shell_client::ShellClientError::QueueSaturated) => {}
-                    Err(error) => panic!("enqueue: {error:?}"),
+                    Err(error) => panic!(
+                        "upload phase: enqueue failed with {error:?}; {} records left; statuses {statuses:?}",
+                        pending.len()
+                    ),
                 }
             }
-            client.poll_io().unwrap();
-            if let Some((_, record)) = client.poll_content().unwrap() {
+            client.poll_io().unwrap_or_else(|error| {
+                panic!(
+                    "upload phase: client I/O failed with {error:?}; {} records left; statuses {statuses:?}",
+                    pending.len()
+                )
+            });
+            let polled = client.poll_content().unwrap_or_else(|error| {
+                panic!(
+                    "upload phase: client poll failed with {error:?}; {} records left; statuses {statuses:?}",
+                    pending.len()
+                )
+            });
+            if let Some((_, record)) = polled {
                 let ShellContentRecord::ResourceStatus(status) = record else {
-                    panic!("resource status");
+                    panic!("upload phase: expected a resource status, got {record:?}");
                 };
+                // Status 1 is begun and 2 accepted; anything else is a
+                // terminal refusal, reported at once rather than waited out.
+                assert!(
+                    matches!(status.status, 1 | 2),
+                    "upload phase: resource {} refused with status {} reason {}; {} records left; statuses {statuses:?}",
+                    status.resource.id,
+                    status.status,
+                    status.reason,
+                    pending.len()
+                );
                 statuses.push((status.resource.id, status.status));
+                last_progress = (
+                    start.elapsed(),
+                    format!(
+                        "status {} for resource {}",
+                        status.status, status.resource.id
+                    ),
+                );
             }
-            assert!(start.elapsed() < Duration::from_secs(20));
+            let elapsed = start.elapsed();
+            assert!(
+                elapsed < Duration::from_secs(15),
+                "upload phase: deadline after {elapsed:?}; {} records left to enqueue; statuses {statuses:?}; last progress '{}' at {:?}",
+                pending.len(),
+                last_progress.1,
+                last_progress.0
+            );
         }
         (client, statuses)
     });
     let start = Instant::now();
+    let mut serviced = 0;
+    let mut owner_error = None;
     while !peer.is_finished() {
-        transport
-            .service_content_resources(&mut registry, 0)
-            .unwrap();
-        assert!(start.elapsed() < Duration::from_secs(20));
+        match transport.service_content_resources(&mut registry, 0) {
+            Ok(count) => serviced += count,
+            // A peer that failed closes its socket; its own diagnostic, not
+            // the resulting broken pipe, is the cause to report.
+            Err(error) => {
+                owner_error = Some(error);
+                break;
+            }
+        }
+        let elapsed = start.elapsed();
+        // Longer than the peer's own bound, so the peer's diagnostic wins.
+        assert!(
+            elapsed < Duration::from_secs(20),
+            "owner service phase: peer still running after {elapsed:?}; {serviced} records serviced"
+        );
         std::thread::yield_now();
     }
-    let (client, statuses) = peer.join().unwrap();
+    // Re-raise the peer's own diagnostic rather than an opaque join error.
+    let (client, statuses) = peer
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    if let Some(error) = owner_error {
+        panic!(
+            "owner service phase: {error:?} after {serviced} records; peer statuses {statuses:?}"
+        );
+    }
     assert_eq!(statuses, [(1, 1), (1, 2), (2, 1), (2, 2)]);
     let first = transport
         .lease_content_resource(
