@@ -37,6 +37,9 @@ const PASS_LINE: &str = "sophia_xtest_selection schema=1 status=pass owner_in_a=
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Variant {
     Pass,
+    /// The pass with the release past xterm A's right edge: the implicit
+    /// grab must deliver it to the widget that took the press (t158).
+    Overshoot,
     BlankRow,
     NoAdmission,
     NoPaste,
@@ -46,6 +49,7 @@ impl Variant {
     fn name(self) -> &'static str {
         match self {
             Self::Pass => "pass",
+            Self::Overshoot => "overshoot",
             Self::BlankRow => "blank-row",
             Self::NoAdmission => "no-admission",
             Self::NoPaste => "no-paste",
@@ -54,15 +58,16 @@ impl Variant {
 }
 
 pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
-    let self_test = match arguments {
-        [] => false,
-        [flag] if flag == "--self-test" => true,
+    let (self_test, pass_variant) = match arguments {
+        [] => (false, Variant::Pass),
+        [flag] if flag == "--self-test" => (true, Variant::Pass),
+        [flag] if flag == "--overshoot" => (false, Variant::Overshoot),
         [help] if help == "--help" => {
             return Ok(vec![
-                "cargo xtask check xtest-selection [--self-test]".into(),
+                "cargo xtask check xtest-selection [--self-test | --overshoot]".into(),
             ]);
         }
-        _ => return Err("xtest-selection accepts only --self-test".into()),
+        _ => return Err("xtest-selection accepts only --self-test or --overshoot".into()),
     };
     build(repo, EXAMPLE)?;
     let output = evidence_directory(repo, "xtest-selection", self_test)?;
@@ -84,9 +89,17 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
         }
         lines.push("xtest-selection self-test: every mutation failed".into());
     } else {
-        match run_variant(repo, &output, Variant::Pass)? {
-            Ok(summary) => lines.push(format!("xtest-selection: pass ({summary})")),
-            Err(reason) => return Err(format!("xtest-selection failed: {reason}")),
+        match run_variant(repo, &output, pass_variant)? {
+            Ok(summary) => lines.push(format!(
+                "xtest-selection: {} ({summary})",
+                pass_variant.name()
+            )),
+            Err(reason) => {
+                return Err(format!(
+                    "xtest-selection {} failed: {reason}",
+                    pass_variant.name()
+                ));
+            }
         }
     }
     Ok(lines)
@@ -102,6 +115,7 @@ fn run_variant(
     let client_args: Vec<String> = match variant {
         Variant::BlankRow => vec!["--row=5".into()],
         Variant::NoPaste => vec!["--no-paste".into()],
+        Variant::Overshoot => vec!["--overshoot".into()],
         Variant::Pass | Variant::NoAdmission => Vec::new(),
     };
     let log_path = output.join(format!("{}.log", variant.name()));
