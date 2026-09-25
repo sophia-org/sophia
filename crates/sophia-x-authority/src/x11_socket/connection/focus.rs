@@ -540,7 +540,7 @@ fn x11_selected_focus_records(
         core_selected,
         xi_selected,
     );
-    let mut records = Vec::with_capacity(2);
+    let mut records = Vec::with_capacity(3);
     if core_selected {
         records.push(x11_focus_event_record(
             context.byte_order,
@@ -549,6 +549,19 @@ fn x11_selected_focus_records(
             focused,
             detail,
             mode,
+        ));
+    }
+    // A KeymapNotify follows every FocusIn for the clients that selected
+    // KeymapState on the window, whether or not they selected the FocusIn
+    // itself (XTS Xlib11 KeymapNotify 2).
+    if focused && context.selections.keymap_state_selected(window) {
+        records.push(encode_x_client_event(
+            context.byte_order,
+            keymap_notify_event(
+                context.input_authority.map_or([0; 32], |authority| {
+                    authority.pressed_keys(context.namespace)
+                }),
+            ),
         ));
     }
     if xi_selected {
@@ -824,4 +837,13 @@ fn x11_dispatch_private_focus(
         ),
         pending,
     ))
+}
+
+/// The KeymapNotify for a bitmap QueryKeymap would report: the protocol
+/// drops the bitmap's first byte, keycodes 0 to 7 never being keys.
+#[cfg(unix)]
+pub(in crate::x11_socket) fn keymap_notify_event(pressed_keys: [u8; 32]) -> XClientEvent {
+    let mut keys = [0u8; 31];
+    keys.copy_from_slice(&pressed_keys[1..]);
+    XClientEvent::KeymapNotify { keys }
 }

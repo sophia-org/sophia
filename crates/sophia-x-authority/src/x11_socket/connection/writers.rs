@@ -511,6 +511,9 @@ fn set_x11_protocol_event_sequence(event: &mut XClientEvent, value: u16) {
         | XClientEvent::PresentCompleteNotify { sequence, .. }
         | XClientEvent::PresentIdleNotify { sequence, .. }
         | XClientEvent::XfixesSelectionNotify { sequence, .. } => *sequence = value,
+        // KeymapNotify carries no sequence number: its bytes 1 to 31 are the
+        // key bitmap.
+        XClientEvent::KeymapNotify { .. } => {}
         _ => unreachable!("protocol routing received a non-routable event"),
     }
 }

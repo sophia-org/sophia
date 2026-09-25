@@ -110,6 +110,22 @@ mod xtest_admission_socket {
                 .write_all(&xtest_request(self.order, X_TEST_FAKE_INPUT_MINOR_OPCODE, &body))
                 .unwrap();
         }
+
+        /// A round trip that must find nothing queued ahead of its reply.
+        fn assert_quiet(&mut self, label: &str) {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, self.order, 1);
+            self.stream.write_all(&request).unwrap();
+            let mut stray = Vec::new();
+            loop {
+                let record = read_x_record(&mut self.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                stray.push(record);
+            }
+            assert!(stray.is_empty(), "{label}: {stray:?}");
+        }
     }
 
     pub(super) struct XtestFixture {
@@ -130,9 +146,14 @@ mod xtest_admission_socket {
         }
 
         /// Every client in the one namespace, each with an injector, and
-        /// clients placing their own toplevels: two peers of one window.
+        /// clients placing their own toplevels: peers of one window.
         pub(super) fn sharing_a_namespace() -> Self {
-            Self::with_namespaces([901, 901], true)
+            Self::with_namespaces([901, 901, 901], true)
+        }
+
+        /// A further client of the shared namespace.
+        pub(super) fn connect_into_namespace_of_owner(&mut self) -> XtestClient {
+            self.connect()
         }
 
         /// The conformance host's posture: clients place their own
@@ -142,10 +163,10 @@ mod xtest_admission_socket {
         }
 
         fn with_client_toplevel_placement(client_places: bool) -> Self {
-            Self::with_namespaces([901, 902], client_places)
+            Self::with_namespaces([901, 902, 902], client_places)
         }
 
-        fn with_namespaces(namespace_ids: [u64; 2], client_places: bool) -> Self {
+        fn with_namespaces(namespace_ids: [u64; 3], client_places: bool) -> Self {
             let path = std::env::temp_dir().join(format!(
                 "sophia-xtest-admission-{}-{}.sock",
                 std::process::id(),
@@ -179,7 +200,7 @@ mod xtest_admission_socket {
                 .with_client_toplevel_placement(client_places)
                 .with_max_concurrent_clients(NonZeroUsize::new(4).unwrap())
                 .with_admission_policy(Arc::new(SequencedXAdmissionPolicy {
-                    namespaces,
+                    namespaces: namespaces.to_vec(),
                     next_client: std::sync::atomic::AtomicU64::new(0),
                     revoked: std::sync::Mutex::new(Vec::new()),
                 }))
@@ -419,8 +440,7 @@ mod xtest_admission_socket {
             .unwrap();
         client.settle();
 
-        // Core motion reaches the surface's client whatever its windows
-        // selected; which window it is reported on is the question here, so
+        // Which window a motion is reported on is the question here, so
         // records are read past until the drag's own motion arrives.
         let motion_at = |client: &mut XtestClient, x: i16| -> [u8; 32] {
             for _ in 0..16 {
@@ -454,7 +474,12 @@ mod xtest_admission_socket {
         let release = client.next_event(5);
         assert_eq!(release[1], 1);
         // With the button up the child asked for no motion, so plain motion
-        // falls back to the shell.
+        // propagates to the shell once the shell selects it; nobody
+        // selecting it would mean no event at all.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, shell, 3 | (1 << 21) | (1 << 6)))
+            .unwrap();
+        client.settle();
         client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 12, 4);
         let plain = motion_at(&mut client, 12);
         assert_eq!(event_window(&plain), shell, "plain motion is not the child's");
@@ -685,6 +710,276 @@ mod xtest_admission_socket {
         // is quiet now.
         peer.barrier();
         owner.barrier();
+
+        // Propagation is decided once for everyone: a third client that
+        // selected motion only on the root hears nothing while the window
+        // itself has selectors, and everything once the owner and the peer
+        // stop selecting there.
+        let mut above = fixture.connect_into_namespace_of_owner();
+        above.stream
+            .write_all(&change_window_event_mask_request(above.order, X_SETUP_DEFAULT_ROOT, 1 << 6))
+            .unwrap();
+        // A new selector of root motion may be told where the pointer is.
+        above.settle();
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 26, 6);
+        let _ = next_motion(&mut owner);
+        let _ = next_motion(&mut peer);
+        {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, above.order, 1);
+            above.stream.write_all(&request).unwrap();
+            let mut stray = Vec::new();
+            loop {
+                let record = read_x_record(&mut above.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                stray.push(record);
+            }
+            assert!(stray.is_empty(), "a client selecting only on the root hears nothing while the window has selectors: {stray:?}");
+        }
+        let quiet = |client: &mut XtestClient, label: &str| {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, client.order, 1);
+            client.stream.write_all(&request).unwrap();
+            let mut stray = Vec::new();
+            loop {
+                let record = read_x_record(&mut client.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                stray.push(record);
+            }
+            assert!(stray.is_empty(), "{label}: {stray:?}");
+        };
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, 3 | (1 << 2) | (1 << 3)))
+            .unwrap();
+        quiet(&mut owner, "owner after dropping motion");
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 3 | (1 << 3)))
+            .unwrap();
+        quiet(&mut peer, "peer after dropping motion");
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        let motion = next_motion(&mut above);
+        assert_eq!(event_window(&motion), X_SETUP_DEFAULT_ROOT, "with nobody selecting on the window, motion propagates to the root's selector");
+        assert_eq!((at(&motion, 20), at(&motion, 22)), (27, 7), "root coordinates");
+        quiet(&mut owner, "owner, motion no longer selected");
+        quiet(&mut peer, "peer, motion no longer selected");
+    }
+
+    /// A press nobody selected on the event window or above it is no event
+    /// at all (XTS Xlib11 ButtonPress 4), and a client that did not select
+    /// it hears nothing when another client did (ButtonPress 6). The press
+    /// used to be written to the surface's owner regardless: the implicit
+    /// grab a press activates was taken for the owner's own grab, whose mask
+    /// admits everything. Red on the tree before the fix: the owner reads a
+    /// ButtonPress ahead of its barrier's reply.
+    #[test]
+    fn a_press_the_owner_did_not_select_is_not_written_to_it() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        // Keys, ButtonRelease, motion of every kind and FocusChange: what a
+        // client may select on a window but ButtonPress, less the crossing
+        // masks, whose EnterNotify the motion below would have to read past.
+        let all_but_press = 3 | (1 << 3) | (1 << 6) | (1 << 8) | (1 << 13) | (1 << 21);
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, all_but_press))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.settle();
+        let event_window = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let motion = owner.next_event(6);
+        assert_eq!(event_window(&motion), window, "motion was selected");
+        owner.fake_input(4, 1);
+        owner.assert_quiet("a press nobody selected is discarded");
+        owner.fake_input(5, 1);
+        let release = owner.next_event(5);
+        assert_eq!(event_window(&release), window, "the release was selected");
+
+        // A peer selecting the press hears it; the owner still does not.
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 1 << 2))
+            .unwrap();
+        peer.barrier();
+        owner.fake_input(4, 1);
+        let press = peer.next_event(4);
+        assert_eq!(event_window(&press), window, "the peer's press");
+        owner.assert_quiet("the owner did not select the press");
+        owner.fake_input(5, 1);
+        let release = owner.next_event(5);
+        assert_eq!(event_window(&release), window, "the owner's release");
+        peer.assert_quiet("the peer did not select the release");
+    }
+
+    /// A key is selected by direction: a client that selected KeyRelease and
+    /// not KeyPress is written the release and not the press (XTS Xlib11
+    /// KeyPress 3). The delivery rule checked one combined mask, so a press
+    /// reached every client that had selected either. Red on the tree before
+    /// the fix: the owner reads a KeyPress ahead of its barrier's reply.
+    #[test]
+    fn a_key_press_reaches_only_the_clients_that_selected_presses() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = fixture.focused_window(&mut owner);
+        // KeyRelease, ButtonPress, ButtonRelease and the fixture's FocusChange.
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, (1 << 1) | (1 << 2) | (1 << 3) | (1 << 21)))
+            .unwrap();
+        owner.settle();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 1 << 0))
+            .unwrap();
+        peer.barrier();
+
+        owner.fake_input(2, 38);
+        let press = peer.next_event(2);
+        assert_eq!(u32::from_le_bytes([press[12], press[13], press[14], press[15]]), window, "the peer's press");
+        assert_eq!(press[1], 38);
+        owner.assert_quiet("the owner selected releases, not presses");
+        owner.fake_input(3, 38);
+        let release = owner.next_event(3);
+        assert_eq!(release[1], 38, "the owner's release");
+        peer.assert_quiet("the peer selected presses, not releases");
+    }
+
+    /// A KeymapNotify follows every EnterNotify and FocusIn for a client
+    /// that selected KeymapState on the window entered or focused, carrying
+    /// the keys down (XTS Xlib11 KeymapNotify 1 and 2). None was written,
+    /// and the suite's KeymapNotify 1 binary then crashed on its own
+    /// "Missing %s event" report once no stray motion followed the
+    /// EnterNotify. Red on the tree before the fix: the record after the
+    /// EnterNotify is not a KeymapNotify.
+    ///
+    /// The pointer moves between two windows of the one client: a motion
+    /// onto the root reaches no client's writer, so the return from it
+    /// crosses nothing this layer can see (t211).
+    #[test]
+    fn a_keymap_notify_follows_an_enter_notify_and_a_focus_in() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let first = client.next;
+        let second = client.next + 2;
+        client.next += 4;
+        // KeyPress, KeyRelease, EnterWindow, KeymapState and FocusChange on
+        // both windows.
+        for (window, x) in [(first, 20), (second, 40)] {
+            client.stream
+                .write_all(&create_window_request(client.order, window, x, 0, 16, 16))
+                .unwrap();
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, 3 | (1 << 4) | (1 << 14) | (1 << 21)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        // A read that starves is a failure here, not a hang.
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let event_window = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+        let event_window_of_focus = |event: &[u8; 32]| u32::from_le_bytes([event[4], event[5], event[6], event[7]]);
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let entered = client.next_event(7);
+        assert_eq!(event_window(&entered), first, "EnterNotify on the first window");
+        let keymap = read_x_record(&mut client.stream);
+        assert_eq!(keymap[0], 11, "a KeymapNotify follows the EnterNotify: {keymap:?}");
+        assert_eq!(keymap[4] & 0x40, 0, "no key is down yet");
+
+        // Keycode 38 held: bit 38 of the bitmap is byte 4, bit 6, and the
+        // KeymapNotify carries bytes 1 to 31 of the bitmap at 1 to 31.
+        client.fake_input(2, 38);
+        let _ = client.next_event(2);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 5);
+        let entered = client.next_event(7);
+        assert_eq!(event_window(&entered), second, "EnterNotify on the second window");
+        let keymap = read_x_record(&mut client.stream);
+        assert_eq!(keymap[0], 11, "a KeymapNotify follows the second EnterNotify: {keymap:?}");
+        assert_eq!(keymap[4] & 0x40, 0x40, "keycode 38 is down in the bitmap: {keymap:?}");
+
+        // FocusIn on the first window, then its KeymapNotify. The focus was
+        // at the root with the pointer in the second window, so a FocusOut
+        // with detail Pointer on the second window comes first.
+        let mut request = vec![42, 0];
+        push_u16(&mut request, client.order, 3);
+        push_u32(&mut request, client.order, first);
+        push_u32(&mut request, client.order, 0);
+        client.stream.write_all(&request).unwrap();
+        let focus = loop {
+            let record = read_x_record(&mut client.stream);
+            match record[0] & 0x7f {
+                9 => break record,
+                10 => assert_eq!((event_window_of_focus(&record), record[1]), (second, 5), "the pointer window's FocusOut"),
+                other => panic!("expected a focus event, got record {other}: {record:?}"),
+            }
+        };
+        assert_eq!(event_window_of_focus(&focus), first, "FocusIn on the first window");
+        let keymap = read_x_record(&mut client.stream);
+        assert_eq!(keymap[0], 11, "a KeymapNotify follows the FocusIn: {keymap:?}");
+        assert_eq!(keymap[4] & 0x40, 0x40, "keycode 38 is still down: {keymap:?}");
+        client.fake_input(3, 38);
+        let _ = client.next_event(3);
+        client.barrier();
+    }
+
+    /// What an injection owes the injecting client reaches its socket before
+    /// the reply to its next request. FakeInput's barrier ended at routing,
+    /// with the event still in the writer's queue, so a client that injected
+    /// a motion and then asked anything saw the reply first and, reading
+    /// what was pending after it, nothing (t229; XTS Xlib11 KeymapNotify 1
+    /// on a loaded machine). Red on the tree before the fix, on a fraction
+    /// of the rounds; the fraction is what a race gives, so the test rounds.
+    #[test]
+    fn an_injections_events_precede_the_reply_to_the_next_request() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let window = client.next;
+        client.next += 2;
+        // PointerMotion and EnterWindow.
+        client.stream
+            .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 6)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+
+        let mut replies_first = Vec::new();
+        for round in 0..40 {
+            let x = 25 + (round % 2) as i16;
+            client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, x, 5);
+            let mut request = vec![43, 0];
+            push_u16(&mut request, client.order, 1);
+            client.stream.write_all(&request).unwrap();
+            // Everything up to the reply, then whatever the motion still
+            // owes if it came after the reply.
+            let mut before = Vec::new();
+            loop {
+                let record = read_x_record(&mut client.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                before.push(record[0] & 0x7f);
+            }
+            if !before.contains(&6) {
+                replies_first.push(round);
+                let _ = client.next_event(6);
+            }
+        }
+        assert!(
+            replies_first.is_empty(),
+            "the reply overtook the injected motion in rounds {replies_first:?}"
+        );
     }
 
     fn warp_pointer_request(

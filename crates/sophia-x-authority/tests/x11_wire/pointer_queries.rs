@@ -71,7 +71,7 @@ mod pointer_queries {
                     .unwrap()
                 });
                 config = config.with_admission_policy(Arc::new(SequencedXAdmissionPolicy {
-                    namespaces,
+                    namespaces: namespaces.to_vec(),
                     next_client: std::sync::atomic::AtomicU64::new(0),
                     revoked: std::sync::Mutex::new(Vec::new()),
                 }));

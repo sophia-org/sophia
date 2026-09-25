@@ -119,6 +119,77 @@ followed on the same branch: ConfigureRequest to the client managing the
 parent, ResizeRequest to a ResizeRedirect selector, as MapRequest already
 was.
 
+## Selected by direction
+
+The next rerun after the fan-out stood still at 78: the purposes that
+wanted an event withheld (ButtonPress 4 and 6, ButtonRelease 3, KeyPress 3,
+KeyRelease 3, each reporting `Got 1 unexpected events`) were still fed.
+Two rules in the connection's selection table looked at one combined mask
+where the protocol has two: `keyboard_delivery` asked for KeyPress or
+KeyRelease together, so a client that had selected releases alone was
+written the press, and `selected_pointer_target` did the same for buttons.
+And the implicit grab a press activates was recorded for the surface's
+owner with a mask of every event, so the input writer took it for the
+owner's own grab and let the press through on the grab's terms instead of
+the window's; only an explicit grab's mask decides delivery now. The
+readiness wait that holds a key for a client still installing its masks
+asks whether any keyboard selection decides the path, not the direction's
+own, so a client that chose one direction is not held five seconds on the
+other. The rerun read 83 passed; the five moved and nothing else did. Red
+before the fix: `a_press_the_owner_did_not_select_is_not_written_to_it`
+and `a_key_press_reaches_only_the_clients_that_selected_presses` in
+`tests/x11_wire/xtest_admission_socket.rs`.
+
+What the implicit grab is still not is the reference's: it belongs there
+to the client the press was delivered to, with that client's selection as
+its mask, and other clients hear nothing while it lasts (t230).
+
+## KeymapNotify, and a crash the stray motion had hidden
+
+The rerun without the stray motion read KeymapNotify 1 UNRESOLVED where it
+had read FAIL: the suite's binary died of a SIGSEGV. Its check walks the
+events after each warp expecting an EnterNotify then a KeymapNotify, and
+when the EnterNotify is the last event it reports `Missing %s event` with
+the event's type number as the string, which is the crash. Before, a
+MotionNotify nobody had selected followed every EnterNotify and the branch
+was never reached. A KeymapNotify is owed after every EnterNotify and
+FocusIn to the clients that selected KeymapState on the window (t211's
+item), and it is written now on both paths: the input writer's crossing,
+and the FocusIn of the focus records and of the protocol routing pass,
+which is the path a client's own SetInputFocus takes. It carries the keys
+down as QueryKeymap reports them, less the bitmap's first byte. Red before
+the fix: `a_keymap_notify_follows_an_enter_notify_and_a_focus_in`, which
+crosses between two windows of one client, because a motion onto the root
+reaches no writer of the client the pointer left and the return then
+crosses nothing this layer can see; that gap stays with t211. The rerun,
+made beside the full test suites, read 84 passed: KeymapNotify 2 moved and
+KeymapNotify 1 read FAIL instead of a crash, `No events received` on four
+of its five warps. The gate's own run on a quiet machine then passed it,
+every warp answered with its EnterNotify and KeymapNotify before the XSync
+reply: the load-only miss is the ordering race of t229, and the scenario is
+declared from the gate's journal at 85 passed.
+
+## The barrier that ended too early
+
+KeymapNotify 1 then read PASS under one gate and FAIL under the next, on
+one host build, `No events received` on some or all of its five warps. A
+stderr trace in the host showed the order: the connection's FakeInput
+wait printed `settled` before the input writer printed its write of the
+EnterNotify. The barrier a FakeInput (and a WarpPointer from a client that
+may inject, which becomes one) waits on is raised by the broker when the
+routing is done, with the event queued for the writers and not yet
+written; the next request, the XSync's GetInputFocus, was then read and
+answered, and the suite found nothing pending after the reply. Loaded or
+not decides only how often. This is t229's race with a face: the
+injecting connection now takes a mark of what the registry has queued for
+it once the routing is done and does not read on until its own writer has
+drained to the mark (a watermark shared by the registry's senders and the
+connection's writer, bounded at one second because the writer may be
+parked on the keyboard readiness wait). A reply on any other connection,
+and any physical event, is still unordered against the writer; that is
+the general seam and stays with t229. Red before the fix, on a fraction
+of its rounds: `an_injections_events_precede_the_reply_to_the_next_request`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -146,6 +217,7 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(60 passed, 135 declared) from `xts_reasons_events.json`, every
-authority row naming its task, run under the gate with
+(85 passed, 110 declared after the selection-by-direction and KeymapNotify
+reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
+every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.

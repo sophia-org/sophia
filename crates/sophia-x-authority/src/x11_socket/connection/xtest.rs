@@ -196,6 +196,11 @@ struct XTestConnection {
     injector: Box<dyn crate::XTestInjector>,
     notifier: crate::ConnectionNotifier,
     barrier: crate::PrivateRequestBarrier,
+    /// This connection's own input writer's progress, so an injection is
+    /// not followed by the next request's reply before what it owed this
+    /// client has reached the socket. `None` where the connection has no
+    /// routed writer, in which case nothing of the kind can be queued.
+    watermark: Option<Arc<X11InputWatermark>>,
     /// This connection's revocation witness. `None` when the connection has
     /// no private lifecycle, in which case nothing can revoke it and every
     /// wait ends only on its own condition or on departure.
@@ -217,6 +222,7 @@ impl XTestConnection {
     fn new(
         injector: Box<dyn crate::XTestInjector>,
         gate: Option<PrivateLifecycleGate>,
+        watermark: Option<Arc<X11InputWatermark>>,
     ) -> std::io::Result<Self> {
         let notifier = crate::ConnectionNotifier::new()?;
         let barrier = crate::PrivateRequestBarrier::over(&notifier);
@@ -228,10 +234,14 @@ impl XTestConnection {
         if let Some(gate) = &gate {
             gate.wake_on_close(&notifier);
         }
+        if let Some(watermark) = &watermark {
+            watermark.wake_on_drain(&notifier);
+        }
         Ok(Self {
             injector,
             notifier,
             barrier,
+            watermark,
             gate,
             impervious: false,
         })
@@ -312,6 +322,38 @@ impl XTestConnection {
             }
             match self.wait_once(stream, None)? {
                 crate::ConnectionWake::Notified | crate::ConnectionWake::Deadline => continue,
+                crate::ConnectionWake::Departed => return Ok(XTestWaitEnd::Departed),
+            }
+        }
+    }
+
+    /// Park until this connection's own input writer has finished with
+    /// everything routed to it so far.
+    ///
+    /// Processing ends at routing: the event is queued for the writers, and
+    /// this connection's next request would otherwise be read, and its
+    /// reply written, while the event the injection owed this same client
+    /// was still in its queue (t229). The mark is taken after processing,
+    /// so it covers what this injection queued. Bounded, because the writer
+    /// may be parked on the keyboard readiness wait, which is up to five
+    /// seconds long and not this request's to serve out; the bound is far
+    /// beyond the microseconds an ordinary write takes.
+    fn await_drain(&self, stream: &UnixStream) -> Result<XTestWaitEnd, X11SetupSocketError> {
+        let Some(watermark) = self.watermark.as_deref() else {
+            return Ok(XTestWaitEnd::Settled);
+        };
+        let mark = watermark.mark();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            if watermark.reached(mark) {
+                return Ok(XTestWaitEnd::Settled);
+            }
+            if !self.gate_open() {
+                return Ok(XTestWaitEnd::Cancelled);
+            }
+            match self.wait_once(stream, Some(deadline))? {
+                crate::ConnectionWake::Deadline => return Ok(XTestWaitEnd::Settled),
+                crate::ConnectionWake::Notified => continue,
                 crate::ConnectionWake::Departed => return Ok(XTestWaitEnd::Departed),
             }
         }
@@ -493,7 +535,12 @@ impl XTestConnection {
     ) -> Result<XTestWaitEnd, X11SetupSocketError> {
         loop {
             match self.submit(plan) {
-                Ok(_accepted) => return self.await_processing(stream),
+                Ok(_accepted) => {
+                    return match self.await_processing(stream)? {
+                        XTestWaitEnd::Settled => self.await_drain(stream),
+                        end => Ok(end),
+                    };
+                }
                 Err(crate::XTestInjectionRefusal::Saturated) => {
                     if !self.gate_open() {
                         return Ok(XTestWaitEnd::Cancelled);

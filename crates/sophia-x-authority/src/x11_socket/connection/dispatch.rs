@@ -612,7 +612,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // discovered it.
     let output_wire = Arc::new(X11WirePermission::open());
     let protocol_routing = client_routing.clone();
-    let (route_registration, input_receiver, control_channels, protocol_receiver) =
+    let (route_registration, input_receiver, control_channels, protocol_receiver, input_watermark) =
         if let Some(routing) = client_routing {
             if let Err(error) = routing.bind_runtime(&state.runtime) {
                 let _ = state.release_client(client);
@@ -749,6 +749,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     interrupt,
                 });
             }
+            let input_watermark = channels.input_watermark.clone();
             (
                 Some(registration),
                 Some(X11InputEventReceiver::Routed {
@@ -765,9 +766,10 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     completion: routing.control_completion(),
                 }),
                 Some(channels.protocol),
+                Some(input_watermark),
             )
         } else {
-            (None, input_receiver, control_channels, None)
+            (None, input_receiver, control_channels, None, None)
         };
     let control_cleanup_source = match (protocol_routing.as_ref(), route_registration.as_ref()) {
         (Some(routing), Some(registration)) => routing.prepare_control_source(registration, state, resource_id_range, PrivateControlClientTables {
@@ -819,8 +821,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     let mut xtest: Option<XTestConnection> = injector
         .take()
         .and_then(|injector| {
-            XTestConnection::new(injector, private_query.as_ref().map(|(_, gate)| gate.clone()))
-                .ok()
+            XTestConnection::new(
+                injector,
+                private_query.as_ref().map(|(_, gate)| gate.clone()),
+                input_watermark.clone(),
+            )
+            .ok()
         });
     let mut owned = X11ClientLifetime {
         // Registered only once the handle that can end a stalled write is in
@@ -834,6 +840,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
         .map(|receiver| {
             spawn_x11_input_event_writer(
                 X11InputWriterState {
+                    input_watermark: input_watermark.clone(),
                     stream: output_stream.clone(),
                     output_control_pending: output_control_pending.clone(),
                     output_wire: output_wire.clone(),

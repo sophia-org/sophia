@@ -35,6 +35,7 @@ fn peer_failure_writer(
     let (deliveries, receipts) = channel();
     let writer = spawn_x11_input_event_writer(
         X11InputWriterState {
+            input_watermark: None,
             stream: X11ClientOutput::shared(socket, 0),
             output_control_pending: Arc::new(AtomicUsize::new(0)),
             output_wire: Arc::new(X11WirePermission::open()),

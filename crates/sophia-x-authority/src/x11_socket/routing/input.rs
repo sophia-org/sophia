@@ -527,20 +527,31 @@ impl XServerFrontendRouteRegistry {
                 return Ok(());
             }
         }
+        // Propagation is one decision for every client: the event goes to
+        // the first window up from the source where any client selected
+        // it, and to every client that selected it there; a client that
+        // selected only higher up hears nothing.
         let event_window = target_window.unwrap_or(surface_window);
-        let mut peers = std::collections::BTreeSet::new();
+        let mut propagated_to = None;
+        let mut peers = Vec::new();
         for window in self.window_ancestry(owner, event_window)? {
-            for peer in self.core_event_subscribers(window, mask)? {
-                if peer != owner {
-                    peers.insert(peer);
-                }
+            let subscribers = self.core_event_subscribers(window, mask)?;
+            if !subscribers.is_empty() {
+                propagated_to = Some(window);
+                peers = subscribers.into_iter().filter(|peer| *peer != owner).collect();
+                break;
             }
         }
+        let Some(propagated_to) = propagated_to else {
+            return Ok(());
+        };
+        peers.sort_unstable();
+        peers.dedup();
         for peer in peers {
             let route = XAuthorityClientInputEvent {
                 client: peer,
                 event,
-                target_window: Some(event_window),
+                target_window: Some(propagated_to),
                 xi_event_type: None,
                 xi_event_window: None,
                 xi_emulated_button_type: None,

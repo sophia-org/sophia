@@ -39,7 +39,7 @@ fn cross_namespace_executor_installs_property_and_notifies_requestor_for(selecti
     )
     .unwrap();
     let policy = Arc::new(SequencedXAdmissionPolicy {
-        namespaces: [source, target],
+        namespaces: vec![source, target],
         next_client: std::sync::atomic::AtomicU64::new(0),
         revoked: std::sync::Mutex::new(Vec::new()),
     });

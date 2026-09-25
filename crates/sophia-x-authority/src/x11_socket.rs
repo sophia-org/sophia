@@ -154,6 +154,7 @@ include!("x11_socket/routing/recovery_connection.rs");
 include!("x11_socket/routing/focus.rs");
 include!("x11_socket/routing/registry.rs");
 include!("x11_socket/routing/subscriptions.rs");
+include!("x11_socket/routing/input_watermark.rs");
 include!("x11_socket/routing/selection_subscriptions.rs");
 include!("x11_socket/routing/keyboard.rs");
 include!("x11_socket/routing/ordered_codec.rs");
