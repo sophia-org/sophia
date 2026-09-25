@@ -87,9 +87,6 @@ enum XTestUnplanned {
     /// A key or a button with focus on the root, or on a window this
     /// namespace cannot see: there is no client to receive it.
     NoTarget,
-    /// A wheel button. It has no evdev button and becomes an axis step on
-    /// press; a release of one is nothing at all.
-    WheelRelease,
     /// The root's geometry could not be read, so nothing can be clipped
     /// against it.
     NoRoot,
@@ -167,20 +164,13 @@ fn xtest_evdev_button(button: u8) -> Option<u32> {
         3 => Some(273),
         8 => Some(275),
         9 => Some(276),
+        // A wheel button is a button to the core protocol: pressed and held
+        // until released, with its own state bit and motion mask.
+        4..=7 => Some(crate::pointer::XTEST_WHEEL_BUTTON_EVDEV_BASE + u32::from(button)),
         _ => None,
     }
 }
 
-/// The axis step a wheel button press is.
-fn xtest_wheel_axis(button: u8) -> Option<(i32, i32)> {
-    match button {
-        4 => Some((0, -120)),
-        5 => Some((0, 120)),
-        6 => Some((-120, 0)),
-        7 => Some((120, 0)),
-        _ => None,
-    }
-}
 
 /// The connection's injection state.
 ///
@@ -440,13 +430,9 @@ impl XTestConnection {
                         local,
                     });
                 }
-                // A wheel button: an axis step on press, nothing on release.
-                // Carried as motion of no distance with the axis attached is
-                // how the executor spells it, but the injector trait has no
-                // axis method yet, so the press is dropped and recorded for
-                // now rather than misreported as a button.
-                let _ = xtest_wheel_axis(request.detail);
-                Err(XTestUnplanned::WheelRelease)
+                // Buttons the pointer mapping does not know: nothing to
+                // press.
+                Err(XTestUnplanned::NoTarget)
             }
             _ => {
                 let root = runtime

@@ -529,13 +529,17 @@ impl XCoreEventSelectionState {
             XPointerSelection::Press => Self::BUTTON_PRESS_MASK,
             XPointerSelection::Release => Self::BUTTON_RELEASE_MASK,
         };
+        // The walk goes on past the surface window to the root: a client's
+        // selection on the root, or on a parent it reparented its toplevel
+        // under, is as good as one on the toplevel (XTS Xlib11 ButtonPress
+        // 7). What stops it is a do-not-propagate mask, or a selector.
         let event_window = self.pointer_event_target(surface_window, event_x, event_y);
         for candidate in self.ancestry_including(event_window) {
             let selection = self.windows.get(&candidate).copied().unwrap_or_default();
             if selection.mask & selected_mask != 0 {
                 return Some(candidate);
             }
-            if candidate == surface_window || selection.do_not_propagate_mask & selected_mask != 0 {
+            if selection.do_not_propagate_mask & selected_mask != 0 {
                 break;
             }
         }

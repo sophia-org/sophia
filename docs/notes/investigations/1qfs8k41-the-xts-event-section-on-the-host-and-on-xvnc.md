@@ -206,6 +206,35 @@ to 20 after encoding, as it does the sequence. Ten purposes moved
 else changed. Red before the fix:
 `a_core_events_child_is_the_event_windows_child_toward_the_source`.
 
+## Propagation past the surface window
+
+The owner's walk from the source window up stopped at its own toplevel,
+the surface window, so a client that had selected a press on the root and
+nothing on its windows heard nothing from a press in them, while a peer
+that selected on the root did (the fan-out walks the registry's ancestry
+to the root). The walk now goes on to the root through the connection's
+own table, stopped by a do-not-propagate mask or a selector, as the
+protocol has it; ButtonPress 7 and ButtonRelease 4 pass and the scenario
+reads 97. What stays open on t220 is that the owner's walk and the
+fan-out decide separately: a peer selecting on the toplevel should stop
+the owner's own delivery on the root, and does not yet. Red before the
+fix: `a_press_propagates_to_the_root_and_stops_at_do_not_propagate`.
+
+## Wheel buttons are buttons
+
+XTEST dropped a FakeInput press of button 4 to 7 as a wheel step the
+injector had no way to carry, so a motion with button 4 held never carried
+Button4Mask and never reached a Button4Motion selector (MotionNotify 6
+and 7). To the core protocol a wheel button is a button: pressed and held
+until released, with its own state bit and motion mask. The XTEST plan now
+gives buttons 4 to 7 evdev codes of their own above the device space, and
+the pointer mapper holds them like any button; a device's wheel is an axis
+and never arrives that way. The scenario reads 99. MotionNotify 13 is the
+suite's own: purposes 10 and 11 end unresolved with Button1 pressed and
+never released, so 13 finds Button1Mask where it expects nothing held, on
+Xvnc as on the host. Red before the fix:
+`an_injected_wheel_button_is_held_like_any_button`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -233,7 +262,8 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(95 passed, 100 declared after the selection-by-direction, KeymapNotify
-and subwindow reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
+(99 passed, 96 declared after the selection-by-direction, KeymapNotify,
+subwindow, propagation and wheel-button reruns; 60 and 135 at the
+section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.
