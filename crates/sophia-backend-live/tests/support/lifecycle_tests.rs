@@ -5,6 +5,8 @@ use super::*;
 mod component_identity;
 #[path = "lifecycle_tests/component_removal.rs"]
 mod component_removal;
+#[path = "lifecycle_tests/content_peer.rs"]
+mod content_peer;
 #[path = "lifecycle_tests/policy_composition.rs"]
 mod policy_composition;
 #[path = "lifecycle_tests/popout_removal.rs"]

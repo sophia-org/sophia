@@ -323,6 +323,26 @@ suite passes 22 controls with one existing ignored case. Red and green evidence
 is in `.artifacts/t099-dismiss-capacity-{red,green}.log`. These controls establish
 deadline retention and wire admission, not a new native presentation result.
 
+The independent live C client now speaks content records over the protected
+socket without Sophia headers or codec libraries. The joined backend fixture
+compiles the session's exact `project_render_bundle` source, rather than a
+second mapping, and uses production intake, composition, queue and retirement
+owners with the existing supplied device-completion target. Both C and Lom's
+`content-lifecycle` diagnostic pass four complete candidates: panel, anchored
+popout, action replacement and the surviving panel after dismissal. Actual
+Engine pointer capture chooses the popup action and outside-dismiss identity;
+the release remains consumed after removal. A stale parent epoch is refused,
+queued content has no Presented receipt, parent loss revokes input, and the
+last independent lease must end before resource release. Both peers close
+without acknowledging a deliberately wrong action epoch. The guarded tests
+require an explicitly supplied executable and are wired into
+`tools/check_shell_protocol.sh`; the old corpus reader remains a separate check.
+Evidence: `.artifacts/t099-{c,lom}-lifecycle.log` and
+`.artifacts/t099-c-content-host.log`. The complete device-hidden session library
+passes 589 controls with 18 existing ignored cases. This is deterministic
+paired acceptance; device completion remains simulated and Lom's real calendar
+service and attended native acceptance remain separate peer exits.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,

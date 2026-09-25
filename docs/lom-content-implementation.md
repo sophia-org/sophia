@@ -61,6 +61,19 @@ permit, receives a complete candidate from Lom, verifies its immutable pixels
 and tables, and deliberately reports renderer failure because the host has no
 native output. That is a real terminal path and explicitly not presentation.
 
+The t099 deterministic lifecycle host additionally runs the independent C
+socket client and Lom's `content-lifecycle` diagnostic through protected
+processes. It feeds validated bundles through the session's production
+projection function and the backend composition/retirement owners. Supplied
+device completions drive the existing simulated target; no GPU or display is
+opened. Four complete candidates cover the panel, popout, action replacement
+and surviving parent after outside dismissal. Engine pointer capture supplies
+the action and consumes dismissal's press and later release. Both clients
+check stale-parent refusal and reject a deliberately wrong action receipt.
+Parent loss and final lease release are checked separately from candidate
+outcomes. This is deterministic cross-language acceptance, not native display
+acceptance or completion of Lom's calendar UI task.
+
 Frame demands now take the same bounded route. One standing demand per output
 coalesces until Engine grants it; withdrawal cannot be replaced by lower-priority
 dirty or animation work. The client may hold one new standing demand alongside
@@ -88,8 +101,9 @@ projects accepted pixels into Engine composition, retains immutable resource
 leases through renderer retirement, and reports Presented only after the exact
 native candidate retires. Panel reservation bands replace the presented work
 area at that same boundary. The content grant remains unreachable in production
-until the separately admitted GPU domain exists. Discrete actions and exact
-presented-target routing remain absent.
+until the separately admitted GPU domain exists. The subsequent t099 input
+path carries exact presented identities, with bounded Engine withdrawal even
+when a dismissal notification cannot fit in the peer's action queue.
 Event creation and output queueing are not proof of client receipt. Cancellation
 echoes its request transaction; timeout correlates to Begin. Peer loss accounts
 for undeliverable events without reporting delivery.

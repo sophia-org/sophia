@@ -80,6 +80,15 @@ cargo run --offline -q -p sophia-runtime \
     "$build_dir/sophia-shell-v1-c-client"
 
 ${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
+    bindings/c/tests/sophia_shell_content_live_client.c \
+    -o "$build_dir/sophia-shell-content-live-c-client"
+cargo run --offline -q -p sophia-runtime --example shell_content_conformance_host -- \
+    "$build_dir/sophia-shell-content-live-c-client"
+SOPHIA_CONTENT_LIFECYCLE_CLIENT="$build_dir/sophia-shell-content-live-c-client" \
+    cargo test --offline -q -p sophia-backend-live --all-features --lib \
+    protected_popout_client -- --ignored
+
+${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
     bindings/c/tests/sophia_shell_launcher_client.c -o "$build_dir/sophia-shell-launcher-c-client"
 cargo run --offline -q -p sophia-runtime --example shell_launcher_conformance_host -- "$build_dir/sophia-shell-launcher-c-client"
 
@@ -136,6 +145,9 @@ if [ -n "$lom_client" ]; then
     fi
     cargo run --offline -q -p sophia-runtime \
         --example shell_content_conformance_host -- "$lom_client"
+    SOPHIA_CONTENT_LIFECYCLE_CLIENT="$lom_client" \
+        cargo test --offline -q -p sophia-backend-live --all-features --lib \
+        protected_popout_client -- --ignored
     lom_content=complete
 else
     printf '%s\n' \
