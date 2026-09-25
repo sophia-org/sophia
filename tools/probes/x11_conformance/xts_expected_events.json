@@ -17,9 +17,7 @@
   },
   {
     "case": "/Xlib11/ButtonPress",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got 1 unexpected events.'"
+    "purpose": 4
   },
   {
     "case": "/Xlib11/ButtonPress",
@@ -27,9 +25,7 @@
   },
   {
     "case": "/Xlib11/ButtonPress",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got 1 unexpected events.'"
+    "purpose": 6
   },
   {
     "case": "/Xlib11/ButtonPress",
@@ -75,9 +71,7 @@
   },
   {
     "case": "/Xlib11/ButtonRelease",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got 1 unexpected events.'"
+    "purpose": 3
   },
   {
     "case": "/Xlib11/ButtonRelease",
@@ -555,9 +549,7 @@
   },
   {
     "case": "/Xlib11/KeyPress",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got 1 unexpected events.'"
+    "purpose": 3
   },
   {
     "case": "/Xlib11/KeyPress",
@@ -601,9 +593,7 @@
   },
   {
     "case": "/Xlib11/KeyRelease",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got 1 unexpected events.'"
+    "purpose": 3
   },
   {
     "case": "/Xlib11/KeyRelease",
@@ -645,9 +635,7 @@
   },
   {
     "case": "/Xlib11/KeymapNotify",
-    "purpose": 2,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got FocusIn, expected KeymapNotify'"
+    "purpose": 2
   },
   {
     "case": "/Xlib11/KeymapNotify",
