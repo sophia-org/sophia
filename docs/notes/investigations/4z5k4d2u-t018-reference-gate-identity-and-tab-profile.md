@@ -104,8 +104,9 @@ chain with the reference profile:
 Its verifier keeps its exact counts. A PASS proves that workflow and the
 bound identities only. It does not accept t018.
 
-**Session B.** The tab matrix remains prepared observations with no approved
-runnable capture path. The native verifier requires:
+**Session B.** The tab matrix is prepared as operator observations. Its
+reference capture path (\`f711f4e0\`, branch \`gate/t018-reference-capture\`, under
+review) is described below. The native verifier requires:
 - exactly three terminal launches;
 - one close and one logout;
 - one Hagia Shell admission at connection epoch 1.
@@ -124,3 +125,43 @@ SOPHIA_HAGIA_ROOT=$HOME/dev/hagia SOPHIA_NARTHEX_ROOT=$HOME/dev/narthex \
 SOPHIA_HAGIA_NATIVE_PROFILE=$HOME/dev/sophia/tools/fixtures/t018_tab_reference.kdl \
   $HOME/dev/sophia/tools/run_current_hagia_native_gate_tty4.sh
 ```
+
+## Reference capture (\`f711f4e0\`, under review)
+
+\`SOPHIA_HAGIA_NATIVE_CAPTURE=reference\` runs Session B through the same chain
+and owners. It retains a \`hagia_reference_capture\` record whose line reads
+\`native_acceptance=false tab_observations=unverified\`.
+
+What a capture claims:
+- the bound identity and profile;
+- an observed exit 0;
+- one validated TTY recovery record appended by this invocation;
+- the retained evidence.
+
+What it does not claim: any native workflow result, clean retirement, or tab
+observation. The native verifier never runs on a capture, and the guide
+automates no matrix action.
+
+Validation is shared by the gate, the archive and re-verification. Each
+required family must hold exactly one record of the exact form.
+
+Captures are stored under \`sophia/reference/hagia-tab-captures\`, never the
+promotion directory. Every existing reader keeps the native default and refuses
+a capture. Only an explicit \`--expected-kind=reference\` reads one.
+
+Operator observations may be retained as a bounded file with their digest.
+They stay unverified.
+
+Prepared command, not run: on tty4, with Sophia at the signed candidate and
+Hagia and Narthex at clean, signed HEADs:
+
+\`\`\`
+SOPHIA_HAGIA_ROOT=\$HOME/dev/hagia SOPHIA_NARTHEX_ROOT=\$HOME/dev/narthex \\
+SOPHIA_HAGIA_NATIVE_CAPTURE=reference \\
+SOPHIA_HAGIA_NATIVE_PROFILE=\$HOME/dev/sophia/tools/fixtures/t018_tab_reference.kdl \\
+SOPHIA_HAGIA_REFERENCE_OBSERVATIONS=\$HOME/t018-observations.txt \\
+  \$HOME/dev/sophia/tools/run_current_hagia_native_gate_tty4.sh
+\`\`\`
+
+The observations file is written by the operator during the session, from the
+guide's terminal or another one, and is copied at archive time.
