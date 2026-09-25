@@ -46,9 +46,9 @@ takeover:
 - **Reference profile.** `SOPHIA_HAGIA_NATIVE_PROFILE` may name a profile. It
   is chosen before any build and must be an absolute, tracked, unmodified
   regular file of the Sophia or Hagia checkout. A symlink is refused whatever
-  it targets (\`787e0f95\`): review showed that a tracked link to an external
+  it targets (`787e0f95`): review showed that a tracked link to an external
   file passed while the target's bytes changed, because git records the link
-  and not those bytes. The red control is \`fab01fa5\`. The default profile is unchanged.
+  and not those bytes. The red control is `fab01fa5`. The default profile is unchanged.
   `tools/fixtures/t018_tab_reference.kdl` holds only Hagia policy:
   - the native-workflow keys;
   - scroller at start;
@@ -85,10 +85,10 @@ control:
 
 The first runs of both Hagia verifier-matcher checks failed, and a first
 reading blamed signature verification in the device-hidden sandbox. That was
-wrong. Both runs, including the comparison run, checked HEAD \`1fbaf4cb\`, an
+wrong. Both runs, including the comparison run, checked HEAD `1fbaf4cb`, an
 unsigned documentation commit, so the matchers correctly refused an unsigned
-source. On signed \`1a9ab46c\`, in the same wrapper with frozen signed Hagia
-\`97ed593\` and Narthex \`7f51175\` roots, both matchers pass. The first
+source. On signed `1a9ab46c`, in the same wrapper with frozen signed Hagia
+`97ed593` and Narthex `7f51175` roots, both matchers pass. The first
 failing logs are retained with the passing ones.
 
 ## Sessions
@@ -105,7 +105,7 @@ Its verifier keeps its exact counts. A PASS proves that workflow and the
 bound identities only. It does not accept t018.
 
 **Session B.** The tab matrix is prepared as operator observations. Its
-reference capture path (\`f711f4e0\`, branch \`gate/t018-reference-capture\`, under
+reference capture path (`ff711f4e`, branch `gate/t018-reference-capture`, under
 review) is described below. The native verifier requires:
 - exactly three terminal launches;
 - one close and one logout;
@@ -126,11 +126,11 @@ SOPHIA_HAGIA_NATIVE_PROFILE=$HOME/dev/sophia/tools/fixtures/t018_tab_reference.k
   $HOME/dev/sophia/tools/run_current_hagia_native_gate_tty4.sh
 ```
 
-## Reference capture (\`f711f4e0\`, under review)
+## Reference capture (`ff711f4e`, under review)
 
-\`SOPHIA_HAGIA_NATIVE_CAPTURE=reference\` runs Session B through the same chain
-and owners. It retains a \`hagia_reference_capture\` record whose line reads
-\`native_acceptance=false tab_observations=unverified\`.
+`SOPHIA_HAGIA_NATIVE_CAPTURE=reference` runs Session B through the same chain
+and owners. It retains a `hagia_reference_capture` record whose line reads
+`native_acceptance=false tab_observations=unverified`.
 
 What a capture claims:
 - the bound identity and profile;
@@ -145,9 +145,9 @@ automates no matrix action.
 Validation is shared by the gate, the archive and re-verification. Each
 required family must hold exactly one record of the exact form.
 
-Captures are stored under \`sophia/reference/hagia-tab-captures\`, never the
+Captures are stored under `sophia/reference/hagia-tab-captures`, never the
 promotion directory. Every existing reader keeps the native default and refuses
-a capture. Only an explicit \`--expected-kind=reference\` reads one.
+a capture. Only an explicit `--expected-kind=reference` reads one.
 
 The runner rotates its session and recovery logs on every run, so a capture
 binds them by requiring exactly one rotation since the session started. An
@@ -159,27 +159,27 @@ plus one byte is ever read, the retained copy must fit 256 KiB, and they
 stay unverified.
 
 Shell recovery is an explicit operator step. The guide prints the lookup
-of this capture's newest shell record, \`status=ready\` for the first peer
-and \`status=reconnected\` for each replacement, and names only a positive
-numeric \`peer_pid\` from that record. The operator confirms it with \`ps\`
+of this capture's newest shell record, `status=ready` for the first peer
+and `status=reconnected` for each replacement, and names only a positive
+numeric `peer_pid` from that record. The operator confirms it with `ps`
 and then signals it. No process is matched by name, and no restart API is
 added. A ready-only lookup kept naming the first peer after a restart (red
 7c817ef9).
 
 The capture carries the built-binary identity repair (cherry-picked from
-\`gate/t018-sophia-bin-pin\`). The session and archive run the Sophia binary
+`gate/t018-sophia-bin-pin`). The session and archive run the Sophia binary
 the wrapper built and hashed.
 
 Prepared command, not run: on tty4, with Sophia at the signed candidate and
 Hagia and Narthex at clean, signed HEADs:
 
-\`\`\`
+```
 SOPHIA_HAGIA_ROOT=\$HOME/dev/hagia SOPHIA_NARTHEX_ROOT=\$HOME/dev/narthex \\
 SOPHIA_HAGIA_NATIVE_CAPTURE=reference \\
 SOPHIA_HAGIA_NATIVE_PROFILE=\$HOME/dev/sophia/tools/fixtures/t018_tab_reference.kdl \\
 SOPHIA_HAGIA_REFERENCE_OBSERVATIONS=\$HOME/t018-observations.txt \\
   \$HOME/dev/sophia/tools/run_current_hagia_native_gate_tty4.sh
-\`\`\`
+```
 
 The observations file is written by the operator during the session, from the
 guide's terminal or another one, and is copied at archive time.
