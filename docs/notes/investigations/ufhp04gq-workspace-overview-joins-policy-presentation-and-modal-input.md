@@ -17,7 +17,7 @@ The user authorized that feature across Hagia, Narthex and Sophia, and assigned
 coordination of the three Herdr agents to the director on 2026-09-25.
 
 Hagia owns overview layout, navigation and selection policy. On 2026-09-25 the
-implementation agent reported Mason's correction of the first checkpoint's
+implementation agent reported niltempus's correction of the first checkpoint's
 Narthex-owned navigation; that ownership is being moved to Hagia before further
 session integration. Narthex may present bounded remapped shell slots and forward
 input, but does not decide overview navigation or selection. Engine samples
