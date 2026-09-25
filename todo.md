@@ -40,10 +40,6 @@
 
 (A) Record the concise result with zk milestone, link it from the milestone map in docs/notes/indexes/milestones.md, and update current product statements only after the development-session target is… +critical +cp14-3 @development id:t021 order:021 [details](docs/notes/plans/queue-07-5-close-milestone-14.md#t021)
 
-(A) Complete the native protocol-family lifecycle audit after the source-backed desktop capability inventory; align role contracts and extract the missing output schema without building desktop UI. +critical +cp15-1 @development id:t022 order:022 [details](docs/notes/plans/queue-08-cp-15-1-native-protocol-family-lifecycle-audit.md#t022)
-
-(A) Add one canonical conformance entry point that invokes every role's retained valid, malformed, codec, and lifecycle corpus. +critical +cp15-2 @development id:t023 order:023 [details](docs/notes/plans/queue-09-cp-15-2-one-family-level-conformance-surface.md#t023)
-
 (B) Move remaining session-private test modules out of production src as visibility boundaries permit, and split the oversized cohesive units named in docs/source-layout-debt.txt. +parallel @development id:t026 order:026 [details](docs/notes/plans/queue-11-parallel-production-readiness.md#t026)
 
 (B) Reduce tools/start_sophia_tty3.sh to the minimum TTY/display-manager adapter around sophia session run. +parallel @development id:t027 order:027 [details](docs/notes/plans/queue-11-parallel-production-readiness.md#t027)

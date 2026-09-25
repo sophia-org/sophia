@@ -24,8 +24,8 @@ separate endpoints, capabilities, disclosure budgets, and protection domains.
 | Interface | Authorized role | Current status | Role specification |
 | --- | --- | --- | --- |
 | `sophia_wm_v1` major 1 revision 3 | metadata-blind spatial policy | stable | [Sophia Window Manager API](sophia-wm-api.md) |
-| `sophia_shell_v1` major 1 revision 6 | metadata-bearing shell | experimental descriptor, tab, reference, launcher and indicator workflows; revision-5 content vocabulary is specified but not granted by production | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
-| `sophia_output_v1` | exclusive output policy | experimental handwritten codec and authenticated transport; no public schema or stability promise | [Output Authority Interface](#output-authority-interface) |
+| `sophia_shell_v1` major 1 revision 8 | metadata-bearing shell | experimental descriptor and admitted content workflows; r7 native launcher and r8 persistent catalog are separate supervised profiles | [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) |
+| `sophia_output_v1` major 1 revision 1 | exclusive output policy | experimental schema, codec, authenticated transport and live output owner; no stability promise | [Output Authority v1](sophia-output-v1.md) |
 | `sophia_control_v1` major 1 revision 1 | explicitly admitted host administration; no role authority | experimental Linux endpoint; policy actions and confirmed restart | [Sophia Control v1](sophia-control-v1.md) |
 | later broker, portal, and session families | separately authorized services | not specified | future role specifications |
 
@@ -68,8 +68,9 @@ message names differ:
 1. The session creates the role-specific owner-only endpoint and supervises the
    separately authorized peer.
 2. The client sends `ClientHello` with its supported revision range and required
-   or requested capabilities. `ServerWelcome` selects the revision, capability
-   subset, connection epoch, and effective bounds.
+   or requested capabilities. `ServerWelcome` selects the revision, admitted
+   capabilities, connection epoch, and effective bounds. WM/output intersect
+   requests; shell requires its requested set and may add its documented baseline.
 3. The session sends one complete immutable fact set or snapshot for the
    transaction and applicable authority generations.
 4. The client returns one bounded complete candidate or proposal tied to those
@@ -148,8 +149,10 @@ u32 reserved           0
 
 The frame version describes only this envelope. Each role negotiates its own
 interface family and revision inside bounded handshake packets. Unknown frame
-versions, message kinds, enum values, nonzero reserved fields, excessive
-counts, truncated frames, and trailing bytes fail closed.
+versions, message kinds, closed enum values, nonzero reserved fields, excessive
+counts, truncated frames, and trailing bytes fail closed. A role must explicitly
+identify an open diagnostic field; output revision 1's reason code is one.
+The payload ceiling is 65,536 bytes, excluding the 24-byte header.
 
 Every published interface layout has one checked-in declarative schema.
 Repository tooling may generate Rust and C codecs, documentation tables, and
@@ -161,32 +164,55 @@ implicit defaults, or unbounded fields.
 
 The current public role schemas are:
 
-- `protocol/sophia-wm-v1.kdl` for stable `sophia_wm_v1` revision 3; and
+- `protocol/sophia-wm-v1.kdl` for stable `sophia_wm_v1` revision 3;
 - `protocol/sophia-shell-v1.kdl` for experimental `sophia_shell_v1`
 revision 8, retaining revisions 1–7 under their capability gates. Revision 7
 adds the native launcher and revision 8 the persistent catalog; neither grants
 arbitrary component roles or general service access. See the
-[capability map](native-desktop-capabilities.md) for source-backed scope.
+[capability map](native-desktop-capabilities.md) for source-backed scope; and
+- `protocol/sophia-output-v1.kdl` for experimental `sophia_output_v1` revision 1.
 
 The separate scripting service uses `protocol/sophia-control-v1.kdl` for
 experimental control major 1 revision 1. It shares this family's envelope but
 has its own host-admission, sequencing, and settlement contract; it is not a
 supervised role schema.
 
-`sophia_output_v1` does not yet have a checked-in declarative schema. Its
-handwritten experimental codec is implementation evidence, not a wire
-authority or compatibility promise. The family audit must extract and validate
-that role schema before output stabilization; until then, the output chapter
-below remains a target contract rather than an independently implementable
-public layout.
+Output's schema generates wire tables and valid/malformed samples independently
+of its handwritten codec. `output_schema` tests their equivalence. Extraction
+does not promote the experimental interface or supply independent lifecycle
+evidence by itself.
 
 The WM [wire tables](generated/sophia-wm-v1-wire.md), Rust and C99 codecs, and
-valid and malformed corpora are one generated unit. The shell schema has the
-same generated-codec and corpus discipline. `tools/check_policy_protocol.sh`
+valid and malformed corpora are one generated unit. The shell schema is checked
+against its maintained codecs, independent clients and corpora; it is not a
+second fully generated codec. `tools/check_policy_protocol.sh`
 and `tools/check_shell_protocol.sh` exercise the current role implementations
-against their shared bytes. A single family-level conformance entry point
-remains a roadmap gate; the separate scripts do not define separate protocol
-semantics.
+against their shared bytes. The canonical
+[family conformance command](native-protocol-conformance.md) runs them together
+with owner tests; separate scripts do not define separate protocol semantics.
+
+### Role lifecycle differences
+
+These are intentional specializations, not interchangeable packet layouts.
+The role contracts and schemas own the details; the table is an audit map.
+
+| Dimension | WM r3 | Shell r1–8 | Output r1 |
+| --- | --- | --- | --- |
+| Revision selection | Range must contain stable 3 | Descriptor selects 1–6; supervised launcher/catalog profiles select exactly 7/8 | Range must contain 1 |
+| Capabilities | Requested intersection; startup requires profile activation | Required set, dependencies and supervisor grant; descriptor baseline may add bits | Requested intersection, observe mandatory, configure optional |
+| Effective bounds | Welcome outputs/surfaces/bindings/chunk bytes | Welcome descriptors/labels/activations; separate content limits and fixed schema ceilings | Welcome heads/groups/modes/members; fixed label ceiling |
+| Epochs | Connection, snapshot and opaque object generations | Connection plus broker, grant, resource and presentation generations | Connection, topology, head and output generations |
+| Transaction identity | Exact request/snapshot/projection correlation; independent control namespaces | Operation-specific correlation plus exact candidate/action/resource identity | Publication and proposal IDs independent; proposal binds base topology epoch |
+| Complete transfers | Begin/chunk/end, exact counts and ordinal; capability-gated extension suffix | Whole descriptor frames; counted content/allocation transfers | Whole nested snapshot/proposal frames |
+| Outcomes | Committed/stale/invalid/timeout/disconnected; distinct control outcomes | Prepared and Presented distinct; resource and candidate outcomes separate | Validated/committed/stale/rejected/rolled-back/failed; open diagnostic reason |
+| Recovery | Reject incomplete/stale work, preserve committed layout, fresh snapshot after reconnect | Revoke interaction immediately, retain backing only through exact leases, fresh grants | Abandon old connection work; preserve or roll back coherent topology, fresh snapshot |
+| Evolution | Frozen r3, explicit outbound capability gates and uncounted extension records | Explicit experimental revisions and supervisor profiles; no WM extension area | No extension area; no silent additions to r1 |
+
+Welcome field order is role-specific: shell places connection epoch before
+capabilities, while WM and output place capabilities first. Their message kinds
+and schemas make this distinction explicit. Shared framing is not permission
+to decode every role with one handshake payload struct. None of these audited
+differences changes the frozen WM revision.
 
 `tools/check_control_protocol.sh` checks schema-derived control tables and
 vectors against an independent Python example. This is offline wire/client
@@ -369,12 +395,15 @@ rejection, timeout and connection replacement preserve the last committed state.
 
 ## Bounded Transfers
 
-One frame remains limited to 64 KiB. Complete role fact sets and candidates
+One frame's payload remains limited to 64 KiB. Complete role fact sets and candidates
 may therefore use strict begin/chunk/end transfers. A role specification maps
 its frozen message names onto those phases. Every chunk repeats the transaction
 and connection identity and carries an exact ordinal. The begin record declares
 all category counts; the end is accepted only after those counts and ordinals
-match exactly.
+match exactly. Output revision 1 and shell descriptor messages carry complete
+bounded values in single frames instead; socket fragmentation does not create
+begin/chunk/end messages. Shell content/allocation and WM transfers use their
+own schema-defined chunk headers and explicit totals.
 
 Each direction permits one transfer in flight and one coalesced latest pending
 fact set. Partial, duplicate, reordered, excessive, or timed-out transfers are
@@ -397,7 +426,7 @@ settlement, and recovery semantics live in the [Sophia Window Manager
 API](sophia-wm-api.md). Those rules are not common shell or output semantics and
 are not duplicated here.
 
-The production session, Rust reference client, generic X11 bridge, independent
+The production session, Rust reference client, independent
 Hagia implementation, and immutable archived C99 client all enter through the
 same revision-3 role socket and canonical Engine reducer. None is a privileged
 alternative to the public protocol.
@@ -431,9 +460,12 @@ rollback, never a degraded commit. The old policy-visible topology remains
 published until every new logical output has presented once. Outcomes are
 explicitly validated, committed, stale, rejected, rolled back, or failed.
 
-The Rust codec and authenticated transport are implemented. Live-session role
-assignment, native apply/rebuild, and generated C/golden conformance remain
-required before the interface revision can be called stable.
+The schema, Rust codec, authenticated transport, live-session role assignment
+and native apply/rebuild path are implemented. The
+[role contract](sophia-output-v1.md) specifies the intentional differences in
+transaction correlation, complete frames and open diagnostic reasons.
+Independent lifecycle and retained compatibility evidence remain necessary
+before the interface revision can be called stable.
 
 ## Shell Interfaces
 
@@ -443,8 +475,10 @@ provides the title-only descriptor switcher and bounded reservations; revision
 2 adds persistent tab descriptors, revision 3 adds reference sheets, revision
 4 adds the application catalog and launcher, revision 5 assigns the separately
 admitted content vocabulary, and revision 6 adds view indicators and their
-activations. Production currently grants the descriptor and indicator workflows,
-not content. Wire support is not a runtime grant, a rendering path or GPU access.
+activations. Revision 7 adds the native launcher and revision 8 the persistent
+catalog. Production can admit explicit content component profiles under their
+protected grants; the legacy descriptor entry point still denies content.
+Wire support alone is not a runtime grant, a rendering path or GPU access.
 The [content design](notes/decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md)
 and [implementation record](lom-content-implementation.md) name the remaining
 content lifecycle and admission gates.
@@ -487,8 +521,8 @@ minimum negotiate/facts/candidate/outcome/recovery lifecycle through the
 canonical owning authority. A stable role retains an immutable old client as a
 compatibility gate for every release.
 
-`sophia_wm_v1` revision 3 has met that gate. The Rust reference client, generic
-X11 WM bridge, standalone Nim Hagia client, and archived C99 client exercise
+`sophia_wm_v1` revision 3 has met that gate. The Rust reference client,
+standalone Nim Hagia client, and archived C99 client exercise
 the same role socket and reducer. Their retained coverage includes negotiation,
 capabilities, complete and chunked transfers, actions, interactions, geometry,
 constraints, visibility, multi-output moves, focus, stale rejection, atomic
@@ -503,10 +537,9 @@ shell or output roles.
 
 Every later stable role owes the same kind of independent full-lifecycle proof,
 adapted to that role's vocabulary and authority boundary. The repository's
-current per-role conformance scripts must converge behind one family-level
-entry point before shell stabilization so a contributor can validate the
-common contract and all stable role specializations without discovering a
-tool-specific protocol.
+per-role checks run behind `cargo xtask check native-protocol-family`, including
+the immutable archived WM client. A complete deterministic family run does not
+promote experimental shell/output or replace their remaining native acceptance.
 
 ## Optional child-launch origin
 

@@ -889,5 +889,5 @@ pub(super) fn project_render_bundle(
     })
 }
 
-#[path = "content/tests.rs"]
+#[path = "../../../tests/support/metadata_shell_content.rs"]
 mod tests;

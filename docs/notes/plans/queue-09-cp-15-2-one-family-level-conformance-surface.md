@@ -18,6 +18,9 @@ Historical candidate identities in the details require revalidation before use.
 
 ## t023
 
+The [family conformance guide](../../native-protocol-conformance.md) documents
+the canonical Rust entry, retained role phases and evidence limits.
+
 Add one canonical conformance entry point that invokes every role's
 retained valid, malformed, codec, and lifecycle corpus.
 

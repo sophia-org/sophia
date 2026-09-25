@@ -155,4 +155,5 @@ pub(crate) fn classify(message: &str) -> StartCause {
     StartCause::Other
 }
 
+#[path = "../tests/support/component_start_cause.rs"]
 mod tests;

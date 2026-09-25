@@ -264,7 +264,7 @@ fn renderer_start_refuses_missing_or_competing_content_identity() {
 
 #[test]
 fn native_renderer_ownership_transition_is_not_gated_by_a_submit_report() {
-    let source = include_str!("../../src/production_session/native_scanout.rs");
+    let source = include_str!("../../src/production_session/native_scanout/persistent_native_scanout/singleton_tick.rs");
     let singleton = source
         .split_once("            self.observe_callbacks(index, report.page_flip_callbacks.clone());\n")
         .expect("singleton scanout observes callbacks")
@@ -278,7 +278,7 @@ fn native_renderer_ownership_transition_is_not_gated_by_a_submit_report() {
 
 #[test]
 fn normal_mirror_retirement_cannot_reenter_scene_projection() {
-    let source = include_str!("../../src/production_session/native_scanout.rs");
+    let source = include_str!("../../src/production_session/native_scanout/persistent_native_scanout/frame_retirement.rs");
     let retirement = source
         .split_once("        pub fn retire_ready(\n")
         .expect("native scanout retains the normal retirement entry point")
@@ -300,7 +300,10 @@ fn native_head_identity_is_wired_from_sessions_to_engine_registry() {
     // reduced head targets into the Engine registry, and route callbacks by
     // head. Deleting any of the three ends unwires the boundary and fails
     // this test rather than leaving a dead record type behind.
-    let source = include_str!("../../src/production_session/native_scanout.rs");
+    let source = concat!(
+        include_str!("../../src/production_session/native_scanout/persistent_native_scanout/construction.rs"),
+        include_str!("../../src/production_session/native_scanout/persistent_native_scanout/completion_pump.rs"),
+    );
     assert!(source.contains("LiveProductionNativeHeadTable::from_records(sessions.head_records"));
     assert!(source.contains("presentation_outputs.admit(target)"));
     assert!(source.contains("head.head == callback.head"));

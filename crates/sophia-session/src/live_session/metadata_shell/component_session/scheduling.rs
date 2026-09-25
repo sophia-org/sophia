@@ -144,4 +144,5 @@ impl ShellComponentSession {
     }
 }
 
+#[path = "../../../../tests/support/metadata_shell_scheduling.rs"]
 mod tests;

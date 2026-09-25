@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 use kdl::{KdlDocument, KdlNode};
 
 mod control;
+mod output;
 
 const SCHEMA_PATH: &str = "protocol/sophia-wm-v1.kdl";
 const SHELL_SCHEMA_PATH: &str = "protocol/sophia-shell-v1.kdl";
@@ -139,6 +140,9 @@ fn run() -> Result<(), String> {
     let control_text = fs::read_to_string(root.join("protocol/sophia-control-v1.kdl"))
         .map_err(|error| format!("read control schema: {error}"))?;
     outputs.extend(control::outputs(&control_text)?);
+    let output_text = fs::read_to_string(root.join("protocol/sophia-output-v1.kdl"))
+        .map_err(|error| format!("read output schema: {error}"))?;
+    outputs.extend(output::outputs(&output_text)?);
 
     let mut stale = Vec::new();
     for (relative, content) in outputs {
