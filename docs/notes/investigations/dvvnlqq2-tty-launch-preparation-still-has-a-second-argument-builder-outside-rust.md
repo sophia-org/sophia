@@ -110,6 +110,23 @@ discovery, private proof staging, control validation and the exact command
 validation call; those still prevent calling the wrapper a minimal adapter.
 t027 remains open. No live installation or physical session was run.
 
+The full device-hidden native-family gate passed all eight phases on clean
+signed `3f446e046a8c28969cb6784ddd64ca8a2a06dcfe`, with Hagia `ad3a738d`
+and Narthex `50b9014d`. After the unrelated X input-writer source split landed
+as `6155d23a`, the unchanged preparation slice was rebased to signed
+`23ec8b3b623cf17c7f73e7ee83cf78245f2062bb`. The affected CLI tests,
+all-feature Clippy, formatting and layout gate passed again on that candidate.
+The initial layout failure concerned the inherited 1,017-line X input writer;
+the owner's split fixed it without adding a debt row.
+
+Checksummed evidence is retained at
+`~/.local/state/sophia/development-evidence/t027-preparation-3f446e04/`,
+including the native-family identities/report and logs before and after the
+rebase. This does not supply the optional Lom content-client acceptance needed
+by t099. The next control-validation migration must preserve rejection before
+state-directory creation, even though the development launcher currently builds
+its binary later; moving those checks past state creation would weaken refusal.
+
 ## Connections
 
 The [Session source split](izw9opes-private-session-tests-can-move-without-widening-the-production-api.md)
