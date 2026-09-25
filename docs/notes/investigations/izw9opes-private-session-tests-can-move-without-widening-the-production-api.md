@@ -77,6 +77,16 @@ extracted functions, with all assertions retained. The successful rerun is
 `t026-native-session-clippy-2.log` and `t026-native-layout.log` in the same
 directory. This does not claim physical scanout acceptance.
 
+The next backend/renderer slice separates topology planning, resource cohorts,
+apply coordination, semantic startup, preparation, installation and publication.
+Visual runtime CPU/GPU cycles and renderer CPU/DMA-BUF/mixed export paths keep
+their existing owner types in separate implementation files. Atomic validation
+tests move beside scanout submission tests, preserving their names and helpers.
+Four more size-debt rows retire. Device-hidden backend/renderer tests pass 928
+tests across 49 groups, with two existing ignores; all-feature/all-target Clippy,
+formatting and layout pass. Evidence is retained in
+`.artifacts/t026-topology-{tests,clippy-2,layout}.log`.
+
 The other Session/backend/renderer/Engine/protocol/conformance production
 source rows and the other agent's X-authority rows still require cohesive
 splits and their own validation. The task stays open until those portions
