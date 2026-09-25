@@ -751,5 +751,57 @@ class ReferenceCaptureDryRun(NativeReferenceDryRun):
                 self.assertEqual(self.mark("build"), "")
 
 
+class ReferenceCaptureGuide(unittest.TestCase):
+    """The printed shell-recovery lookup names this capture's current peer."""
+
+    def recovery_peer(self, shell_records):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            evidence = temp / "evidence.log"
+            evidence.write_text("".join([
+                "sophia_live_session_input schema=2 status=complete source=physical "
+                "text=hagianativeproof expected_events=16 matched_events=16 pixel_change=true\n",
+                *shell_records,
+            ]))
+            env = {
+                "PATH": os.environ["PATH"],
+                "SHELL": "/bin/true",
+                "SOPHIA_LIVE_SESSION_PERSISTENT_EVIDENCE": str(evidence),
+                "SOPHIA_INPUT_PROOF_RESULT": str(temp / "proof"),
+            }
+            guide = subprocess.run(
+                [ROOT / "tools/fixtures/hagia_reference_capture_guide.sh"],
+                input="hagianativeproof\n", env=env, text=True,
+                capture_output=True, timeout=30, check=True)
+            lookup = [line.strip() for line in guide.stdout.splitlines()
+                      if line.strip().startswith("peer=")]
+            self.assertEqual(len(lookup), 1, guide.stdout)
+            return subprocess.run(
+                ["sh", "-c", lookup[0] + '\nprintf "%s" "$peer"'], env=env,
+                text=True, capture_output=True, timeout=10, check=True).stdout
+
+    def test_the_first_peer_is_the_ready_record(self):
+        self.assertEqual(self.recovery_peer([
+            "sophia_live_metadata_shell schema=1 status=ready protected=true "
+            "peer_pid=4101 revision=1 connection_epoch=1\n",
+        ]), "4101")
+
+    def test_a_replacement_peer_is_the_reconnected_record(self):
+        self.assertEqual(self.recovery_peer([
+            "sophia_live_metadata_shell schema=1 status=ready protected=true "
+            "peer_pid=4101 revision=1 connection_epoch=1\n",
+            "sophia_live_metadata_shell schema=1 status=reconnected protected=true "
+            "peer_pid=4202 revision=1 connection_epoch=2 reason=peer_exited\n",
+        ]), "4202")
+
+    def test_a_non_positive_pid_names_no_peer(self):
+        self.assertEqual(self.recovery_peer([
+            "sophia_live_metadata_shell schema=1 status=ready protected=true "
+            "peer_pid=4101 revision=1 connection_epoch=1\n",
+            "sophia_live_metadata_shell schema=1 status=reconnected protected=true "
+            "peer_pid=0 revision=1 connection_epoch=2 reason=peer_exited\n",
+        ]), "")
+
+
 if __name__ == "__main__":
     unittest.main()
