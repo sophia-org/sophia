@@ -16,18 +16,17 @@ cross-repository plan at Hagia's
 The user authorized that feature across Hagia, Narthex and Sophia, and assigned
 coordination of the three Herdr agents to the director on 2026-09-25.
 
-Hagia owns overview layout, navigation and selection policy. On 2026-09-25 the
-implementation agent reported niltempus's correction of the first checkpoint's
-Narthex-owned navigation; that ownership is being moved to Hagia before further
-session integration. Narthex may present bounded remapped shell slots and forward
-input, but does not decide overview navigation or selection. Engine samples
-retained scene sources; the shell receives no surface IDs, buffers or application
-pixels. Only confirmed selection changes committed workspace/focus.
+Hagia owns overview layout, navigation and selection policy. On 2026-09-25
+niltempus corrected the first checkpoint's Narthex-owned navigation. The generic
+candidate now keeps these decisions entirely in Hagia; Narthex is not part of
+the overview path. Engine samples retained scene sources and publishes exact
+presented actions. Only confirmed selection changes committed workspace/focus.
 Client geometry and allocations do not become thumbnail-sized.
 
-The initial overview appears on the active monitor and preserves each output's
-workspace. Super+O toggles it; arrows, hjkl, Home/End navigate; Enter or a
-presented pointer target selects; Escape cancels. Hotcorners, dragging and
+The overview uses independent output-local strips and preserves each output's
+workspace. Super+O toggles it; arrows and hjkl navigate; Page Up/Down change the
+selected workspace; Enter or a presented pointer target selects; Escape cancels.
+Hotcorners, dragging and
 unrelated shell features are outside this scope. No installation or live reload
 is authorized by the development work.
 
@@ -49,16 +48,16 @@ are unfinished. These results do not close t241 or h002.
 
 The joined production path must prove:
 
-- Negotiated, bounded WM and shell records, independent Nim/Rust codec checks,
-  and unchanged behavior for peers without the overview capability.
+- Negotiated, bounded generic WM records, independent Nim/Rust codec checks,
+  and unchanged behavior for peers without the presentation capabilities.
 - A hidden surface referenced only by a preview is available to CPU and native
   frame construction. Its content updates repaint the thumbnail without
   changing client geometry, workspace or focus. Submitted frames retain their
   exact sources until retirement, including after overview close or withdrawal.
-- Slot mappings belong to the exact WM epoch, catalog generation, shell epoch
-  and output generation. Only an actually presented candidate admits selection;
-  a stale reply cannot install a new mapping or resurrect a closed overview.
-- Close, topology change, surface loss and either peer's reconnect revoke input
+- Target mappings belong to the exact WM connection, publication, target, output
+  and presentation generations. Only an actually presented candidate admits
+  selection; a stale reply cannot install a mapping or resurrect a closed overview.
+- Close, topology change, surface loss and WM reconnect revoke input
   authority immediately. Swallowed key/button releases remain accounted for
   after modal capture ends. Existing switcher, help and launcher paths retain
   their semantics.
@@ -76,3 +75,36 @@ control was requested from the implementation agent.
 This work extends the [WM contract](../../sophia-wm-api.md) and
 [native component contract](../../native-desktop-capabilities.md); those
 normative documents must be reconciled with the final implementation.
+
+## Generic joined candidate, 2026-09-25
+
+The preceding prototype checkpoint remains historical evidence. The generic
+implementation is now joined on Sophia `rendering/foundation` through
+`f677317d`: protocol `89f5edf4`, renderer/source work through `8329705b`, runtime
+capability ceiling `829cba99`, paired Hagia controls `af92d767`/`982ac6dd`, and
+session input `eaac9451` (cherry-picked as `f677317d`). Hagia `983dd83` includes
+the independent generic codec, WM-owned policy, adapter targets and receipt
+lifecycle, and the four paired controls in its contributor gate.
+
+The full Hagia `nimble verify` run passed: 319 Nim cases, both eleven-scenario
+policy corpora, profile admission, pointer focus, four real-Hagia presentation
+controls, launch origin, eight Alloy assertions, Z3 expectations, and four TLA+
+lifecycle checks. Its log is
+`~/.local/state/hagia/development-evidence/h002-joined-verify/verify.log`, SHA256
+`c29d48537bb1d5519ccc3f04161007bb2772573664234d6083c72a5214686ff1`.
+The earlier run stopped at a disk-capacity error during Rust compilation; its
+log remains under `h002-84e717d-verify`. The rerun uses a disk-backed Rust target.
+
+The four transport controls supply synthetic receipts. Their evidence covers
+real independent WM encoding and reducer settlement, not physical completion.
+The ignored reducer-only epoch-reuse probe records why membership alone cannot
+authenticate input. Session controls instead check the original connection and
+monotonic receipt epoch at enqueue and reply admission, rejecting an old identity
+even when relabeled with the new connection epoch.
+
+Renderer evidence is in
+[a16e9iwc](a16e9iwc-surface-instance-source-and-ownership-inventory.md); session
+completion and mirrored visibility evidence is in
+[vxmhx2u4](vxmhx2u4-presented-policy-input-follows-completed-frames-and-independent-revocation.md).
+Joined production-routing controls, review fixes and the final family gate remain
+required before source acceptance. No physical display acceptance is claimed.
