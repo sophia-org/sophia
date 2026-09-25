@@ -125,6 +125,148 @@ finite retained state, old reservations until actual replacement, and real sourc
 retirement. Raising aggregate quotas or forcibly freeing retained bytes is not
 an option. The director owns the next repair decision and gate allocation.
 
+## Fresh-grant budget design on accepted 69e16358
+
+This is the next design/control checkpoint, not an installed repair. The
+director's [bounded admission brief](../../../validation/specula/shell-reconnect-budget-modeling-brief.md)
+defines the joint review. No production semantics, queues or live session have
+changed. The prototype selector is confined to
+`sophia-runtime/tests/shell_content_reconnect_budget.rs`; eventual acceptance
+must call the production selector instead of retaining a parallel algorithm.
+
+### Inventory and ownership
+
+Active epochs reserve `S+R+T` source bytes and `R+T` backing credit.
+Resource Begin charges staging, reserved resident and backing; reserved resident
+overlaps the transfer's staging allocation and is not another source allocation.
+End moves staging into resident without increasing backing. Explicit Retire
+moves resident into retiring. On disconnect, `revoke` aborts every open transfer,
+returning staging, reserved-resident and the corresponding backing credit before
+the epoch enters the retired inventory. Remaining leased resources occupy both
+resident and retiring classes: `P = resident + retiring`, equal to remaining
+resource backing credit under the current implementation. Collection removes
+only resources whose last real consumer has ended. No accounting update claims
+that a submitted native frame completed.
+
+Source holders include installed `(output, layer)` shell images, retained
+projection frames, candidate references and queued/rendering native clones.
+The successor uses the same Session-assigned layer; replacement releases old
+source references per output, while independent consumers can retain them.
+Old work-area and input transitions still depend on actual presentation, not on
+successful negotiation. Native head targets and swapchain/copied buffers have
+separate owners and bounds. Registry backing credit is one credit per resource,
+not one per copy/head and not measured VRAM; this design does not charge those
+head buffers to the 64 MiB content cap. Source lease release and copied backing
+retirement remain separate assertions in the joined controls.
+
+### Exact proposed selection
+
+The runtime pure API is proposed as
+`select_reconnect_limits(nominal: &ContentLimits, budget: ContentReconnectBudget)
+-> Result<ContentLimits, ContentStoreError>`.
+The registry supplies read-only current source/backing totals and same-profile
+retired totals after real collection; the snapshot is not an independent ledger.
+The Session connection owner chooses the nominal role profile, calls selection,
+then calls the existing serialized reservation transaction without an intervening
+peer operation. Transport publishes only the successfully reserved limits.
+
+Keep `M = max_resource_bytes = 4 MiB`, all non-byte fields, grant identity and
+`limits_generation=1` unchanged. The useful floor is `S=M, R=2M, T=M`: one full
+staging resource, two resident resources and one retiring resource. For nominal
+`S0/R0/T0`, `Q=S0+R0+T0`, own-profile retired source `P`, global source reservation
+`U` and backing reservation `V`, use checked subtraction:
+
+```text
+A = floor4(min(Q-P, 64 MiB-U))
+B = floor4(min(R0+T0, 64 MiB-V))
+require A >= 4M and B >= 3M
+R = floor4(min(R0, A-2M, B-M))
+S = floor4(min(S0, A-R-M))
+T = floor4(min(T0, A-R-S, B-R))
+require S >= M, R >= 2M, T >= M
+validate the complete ContentLimits; reserve using unchanged registry checks
+```
+
+`floor4` rounds down to a multiple of four bytes. Cold profiles remain identical.
+Four retained bytes reduce the two-role bar from `8/16/16 MiB` to
+`8 MiB / 16 MiB / (16 MiB-4)`. Source and backing checks remain independent even
+though current resource accounting implies backing cannot exceed source.
+Every malformed limit, arithmetic underflow, useful-floor failure or epoch
+capacity refusal leaves the registry watermark and transport allowance unchanged.
+Session's already-minted attempt numbers remain burned as before.
+
+### Partition proof, repeated history and simultaneous reconnects
+
+Within the component registry, `add` refuses duplicate roles. Bar, launcher and
+dock map uniquely to Legacy, NativeLauncher and PersistentCatalog. Registration
+closes at the first reservation attempt, so `has_dock` and the role set are
+immutable. Nominal envelopes total at most 64 MiB: two-role `40+24`, dock profile
+`24+20+20`, and smaller subsets. The component registry is privately owned by
+`ShellComponentConnections`; its sole production admission path is
+`reserve_attempt`. Separate legacy registries keep their existing behavior.
+
+For each profile, the invariant is `active reservation + all retired P <= Q`.
+Admission uses at most `Q-P`; revoke substitutes at most the old `R+T` for its
+larger reservation; collection only decreases P. This induction includes every
+failed tightened successor. Q always comes from nominal role limits, never the
+last granted limits, so no additional allowance history is needed. An inactive
+profile's global source headroom is at least its `Q-P`: another profile cannot
+consume its envelope by reconnecting first. Both global checks remain defensive
+guards. All reconnect orders preserve the invariant without holding a second
+per-slot reservation. Three active epochs and sixteen total active/retired
+epochs remain the existing metadata bounds, including zero-byte candidates.
+
+### Refusal, diagnostics and client limits
+
+The useful floor is not universal output capacity. Lom can upload a replacement
+for one maximum-size resident image at `R=8 MiB`. Multiple outputs require
+`sum(image bytes)+max(image bytes) <= R`; larger resident workloads can stop
+updating. A retiring burst beyond T can hit Lom's five-second response timeout.
+An image larger than M was already unsupported. Grants stay fixed for that
+connection: no second Limits record, forced recycle or active-grant expansion.
+The live launcher's upload behavior still requires the independent client review.
+
+Refusal remains real when `Q-P < 16 MiB`: two-role bar P above 24 MiB, two-role
+launcher above 8 MiB, dock-profile bar above 8 MiB and dock/launcher above 4 MiB.
+Other global or epoch constraints also refuse. If only displayed predecessor
+pixels hold this residual, it can remain blocked because only a successor could
+replace them. No timeout frees that storage. Genuine independent consumer
+release can restore capacity; these cases must have explicit positive controls.
+Existing scheduling tries at most one slot per visit, rotates slots and backs
+off from one second to sixty seconds. Each refusal ends that attempt; retries
+bound the rate, not the number of attempts or time to recovery. No new scheduler
+or collection-triggered wakeup is proposed.
+
+The actual current error path is `ContentStoreError::Budget` through
+`ShellTransportError::ContentStore` and `ComponentConnectionError::Transport`,
+stringified by `ShellComponentProcesses::start` before reaching the service.
+`Transport(ContentStore(Budget))` matches no `component_start_cause` branch,
+therefore reduces to `cause=other`. The repair will add the exact safe
+`content_budget` cause via `StartCause::ALL`, which the existing diagnostic
+reducer already consults. Numeric evidence must be emitted at the reservation
+owner before stringification, not parsed back out of free text.
+
+Proposed records use the existing `sophia_shell_component schema=1` family:
+`status=admission_refused cause=content_budget` or `status=admitted_reduced`,
+with slot, role, exact fresh connection/content epochs, nominal/source/backing
+capacity, own retired bytes/epochs, global available bytes/backing, required
+floor bytes/backing and granted S/R/T for success. Add only those status/field
+tokens to the reducer; bound byte values by 64 MiB, epoch counts by sixteen,
+slot by two and identities by u64. Emit once per reservation outcome under the
+existing retry rate, not each idle service visit. These are diagnostics, not
+new wire records or mutable budget ownership.
+
+The design executable has seven passing controls: nominal and full-validation
+constraints (including protocol-valid but one-resource resident refusal),
+unaligned headroom without rounding up, real revocation of staging with both
+remaining source classes, both two-role orders, all six fully opened three-role
+orders, sixteen repeated reduced retained epochs and atomic count refusal, and
+28 MiB of actual pinned resources refusing until a real lease release lowers
+the residual to 24 MiB. It uses unchanged registry admission but supplies
+per-profile totals to a test-only selector; Session integration is not proven by
+these cases. Focused execution and strict Clippy pass; logs are in
+`sophia-borders/.artifacts/t100-budget/pure-final.log` and `pure-clippy.log`.
+
 ## Evidence and remaining exits
 
 Worktree logs are in `sophia-borders/.artifacts/t100/`. `joined-6.log` records
