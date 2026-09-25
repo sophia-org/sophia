@@ -132,26 +132,6 @@ fn pointer_points(
     )
 }
 
-/// Where a pointer event goes: the toplevel under the point when this
-/// instance is the one that placed the toplevels (the conformance host, where
-/// no Engine stacks them and a suite's window is a plain toplevel), else the
-/// focused surface the plan already resolved, which is the Engine's business
-/// to have put under the pointer. Returns the target surface and the window
-/// the local position is measured from.
-fn pointer_target(
-    runtime: &XAuthorityRuntime,
-    namespace: NamespaceId,
-    focused_window: crate::XResourceId,
-    focused_target: Option<SurfaceId>,
-    x: i32,
-    y: i32,
-) -> Option<(SurfaceId, crate::XResourceId)> {
-    runtime
-        .client_placed_toplevel_at(namespace, x, y)
-        .and_then(|toplevel| runtime.window_surface(namespace, toplevel).map(|surface| (surface, toplevel)))
-        .or_else(|| focused_target.map(|target| (target, focused_window)))
-}
-
 /// The evdev button an X button number names, where one exists.
 ///
 /// X numbers its buttons from one; the executor takes evdev codes and knows
@@ -199,6 +179,12 @@ struct XTestConnection {
     /// client clears it or departs.
     #[cfg_attr(not(test), allow(dead_code))] // Read by the pause loop next.
     impervious: bool,
+    /// The last toplevel a pointer injection resolved to, with its surface.
+    /// A motion over no toplevel goes there next, so the client whose
+    /// window the pointer left is told of the crossing; before this the
+    /// motion went to the focus or nowhere, and that client's pointer
+    /// stayed in its window for ever (t211).
+    last_pointer_target: std::cell::Cell<Option<(SurfaceId, crate::XResourceId)>>,
 }
 
 impl XTestConnection {
@@ -234,6 +220,7 @@ impl XTestConnection {
             watermark,
             gate,
             impervious: false,
+            last_pointer_target: std::cell::Cell::new(None),
         })
     }
 
@@ -349,6 +336,35 @@ impl XTestConnection {
         }
     }
 
+    /// Where a pointer injection at (x, y) goes: the client-placed toplevel
+    /// under it; else the toplevel the last one went to, so the client
+    /// whose window the pointer left is told of the crossing; else the
+    /// focus.
+    fn pointer_target(
+        &self,
+        runtime: &XAuthorityRuntime,
+        namespace: NamespaceId,
+        focused_window: crate::XResourceId,
+        focused_target: Option<SurfaceId>,
+        x: i32,
+        y: i32,
+    ) -> Option<(SurfaceId, crate::XResourceId)> {
+        let placed = runtime
+            .client_placed_toplevel_at(namespace, x, y)
+            .and_then(|toplevel| runtime.window_surface(namespace, toplevel).map(|surface| (surface, toplevel)));
+        if placed.is_some() {
+            self.last_pointer_target.set(placed);
+        }
+        placed
+            .or_else(|| {
+                // A toplevel destroyed since is nobody's to be told.
+                self.last_pointer_target
+                    .get()
+                    .filter(|(_, anchor)| runtime.window_geometry(namespace, *anchor).is_ok())
+            })
+            .or_else(|| focused_target.map(|target| (target, focused_window)))
+    }
+
     /// Resolve an accepted FakeInput against what the runtime knows, under a
     /// guard taken for this alone and released before anything is submitted.
     ///
@@ -418,9 +434,9 @@ impl XTestConnection {
                         .map_or((0, 0), |pointer| {
                             (i32::from(pointer.root_x), i32::from(pointer.root_y))
                         });
-                    let (target, anchor) =
-                        pointer_target(runtime, namespace, focused_window, focused_target, x, y)
-                            .ok_or(XTestUnplanned::NoTarget)?;
+                    let (target, anchor) = self
+                        .pointer_target(runtime, namespace, focused_window, focused_target, x, y)
+                        .ok_or(XTestUnplanned::NoTarget)?;
                     let (global, local) = pointer_points(runtime, anchor, x, y);
                     return Ok(XTestPlan::Button {
                         target,
@@ -463,9 +479,9 @@ impl XTestConnection {
                 // this instance has is zero.
                 let x = x.clamp(0, root.width.saturating_sub(1).max(0));
                 let y = y.clamp(0, root.height.saturating_sub(1).max(0));
-                let (target, anchor) =
-                    pointer_target(runtime, namespace, focused_window, focused_target, x, y)
-                        .ok_or(XTestUnplanned::NoTarget)?;
+                let (target, anchor) = self
+                    .pointer_target(runtime, namespace, focused_window, focused_target, x, y)
+                    .ok_or(XTestUnplanned::NoTarget)?;
                 let (global, local) = pointer_points(runtime, anchor, x, y);
                 Ok(XTestPlan::Motion {
                     target,

@@ -1169,6 +1169,233 @@ mod xtest_admission_socket {
         client.assert_quiet("plain motion is not selected");
     }
 
+    /// A pointer move generates the protocol's crossings: leaves from the
+    /// window left up to the common ancestor, then enters down to the
+    /// window entered, each with its detail (Ancestor, Virtual, Inferior,
+    /// Nonlinear, NonlinearVirtual), its child toward the pointer and
+    /// coordinates in its own window; a move out of every window of the
+    /// client is a move to the root (XTS Xlib11 EnterNotify 3, 4, 7 to 9,
+    /// 12, 13; LeaveNotify 4, 5, 8 to 10, 14, 15). The crossing was one
+    /// EnterNotify of detail Nonlinear on the window a motion was reported
+    /// on, and nothing when the pointer left. Red before the fix: the first
+    /// move into the grandchild produces one record where four are owed.
+    #[test]
+    fn a_pointer_move_generates_the_protocols_crossings() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let toplevel = client.next;
+        let child = client.next + 2;
+        let grandchild = client.next + 4;
+        let other = client.next + 6;
+        client.next += 8;
+        let root = X_SETUP_DEFAULT_ROOT;
+        // EnterWindow and LeaveWindow everywhere, the root included.
+        client.stream
+            .write_all(&create_window_request(client.order, toplevel, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, child, toplevel, 4, 4, 8, 8))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, grandchild, child, 2, 2, 4, 4))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, other, 40, 0, 16, 16))
+            .unwrap();
+        for window in [toplevel, child, grandchild, other, root] {
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 5)))
+                .unwrap();
+        }
+        for window in [toplevel, child, grandchild, other] {
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let field = |event: &[u8; 32], at: usize| u32::from_le_bytes([event[at], event[at + 1], event[at + 2], event[at + 3]]);
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        // (type, detail, window, child) of every crossing up to the barrier.
+        let crossings = |client: &mut XtestClient| {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, client.order, 1);
+            client.stream.write_all(&request).unwrap();
+            let mut seen = Vec::new();
+            loop {
+                let record = read_x_record(&mut client.stream);
+                match record[0] & 0x7f {
+                    1 => break seen,
+                    7 | 8 => seen.push((record[0] & 0x7f, record[1], field(&record, 12), field(&record, 16), at(&record, 24), at(&record, 26))),
+                    6 => {}
+                    other => panic!("unexpected record {other}: {record:?}"),
+                }
+            }
+        };
+        const ANCESTOR: u8 = 0;
+        const VIRTUAL: u8 = 1;
+        const INFERIOR: u8 = 2;
+        const NONLINEAR: u8 = 3;
+        const NONLINEAR_VIRTUAL: u8 = 4;
+
+        // From the root into the grandchild (root 26..30, 6..10): the root
+        // is left toward the toplevel, the windows between are entered
+        // virtually, the grandchild as Ancestor; coordinates in each window.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        assert_eq!(
+            crossings(&mut client),
+            vec![
+                (8, INFERIOR, root, toplevel, 27, 7),
+                (7, VIRTUAL, toplevel, child, 7, 7),
+                (7, VIRTUAL, child, grandchild, 3, 3),
+                (7, ANCESTOR, grandchild, 0, 1, 1),
+            ],
+            "root to grandchild"
+        );
+        // Up to the toplevel: the grandchild is left as Ancestor, the child
+        // virtually, the toplevel entered as Inferior toward the child.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 21, 1);
+        assert_eq!(
+            crossings(&mut client),
+            vec![
+                (8, ANCESTOR, grandchild, 0, -5, -5),
+                (8, VIRTUAL, child, grandchild, -3, -3),
+                (7, INFERIOR, toplevel, child, 1, 1),
+            ],
+            "grandchild to toplevel"
+        );
+        // Out to the root: no window of the client is under the pointer.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 5, 5);
+        assert_eq!(
+            crossings(&mut client),
+            vec![(8, ANCESTOR, toplevel, 0, -15, 5), (7, INFERIOR, root, toplevel, 5, 5)],
+            "toplevel to root"
+        );
+        // Into the other toplevel, then across to the grandchild: siblings
+        // under the root, so the root is the common ancestor and hears
+        // nothing, and the windows between are crossed as NonlinearVirtual.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 5);
+        assert_eq!(
+            crossings(&mut client),
+            vec![(8, INFERIOR, root, other, 45, 5), (7, ANCESTOR, other, 0, 5, 5)],
+            "root to the other toplevel"
+        );
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        assert_eq!(
+            crossings(&mut client),
+            vec![
+                (8, NONLINEAR, other, 0, -13, 7),
+                (7, NONLINEAR_VIRTUAL, toplevel, child, 7, 7),
+                (7, NONLINEAR_VIRTUAL, child, grandchild, 3, 3),
+                (7, NONLINEAR, grandchild, 0, 1, 1),
+            ],
+            "the other toplevel to the grandchild"
+        );
+    }
+
+    /// A crossing's focus flag says whether the event window is the focus
+    /// window or one of its inferiors (XTS Xlib11 EnterNotify 12, LeaveNotify
+    /// 14); it was always set. And a window destroyed while the pointer was
+    /// in it leaves the pointer in the root as far as its client's next
+    /// crossing is concerned, not in a window nobody knows: the enter of the
+    /// next window is Ancestor from the root, not Nonlinear from nowhere
+    /// (EnterNotify 3). Red before the fix on both counts.
+    #[test]
+    fn a_crossings_focus_flag_follows_the_focus_and_a_destroyed_window_leaves_the_pointer_in_the_root() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let first = client.next;
+        let second = client.next + 2;
+        client.next += 4;
+        for (window, x) in [(first, 20), (second, 40)] {
+            client.stream
+                .write_all(&create_window_request(client.order, window, x, 0, 16, 16))
+                .unwrap();
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 5) | (1 << 21)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let set_focus = |client: &mut XtestClient, window: u32| {
+            let mut request = vec![42, 0];
+            push_u16(&mut request, client.order, 3);
+            push_u32(&mut request, client.order, window);
+            push_u32(&mut request, client.order, 0);
+            client.stream.write_all(&request).unwrap();
+            // Read past the focus events to the barrier.
+            client.settle();
+        };
+
+        // The focus on the first window: entering it is entering the focus.
+        set_focus(&mut client, first);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let entered = client.next_event(7);
+        assert_eq!((entered[1], entered[31] & 2), (0, 2), "enter of the focus window, detail Ancestor, focus set");
+        // The focus on the second window: leaving the first is leaving a
+        // window outside the focus, and entering the second is entering it.
+        set_focus(&mut client, second);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 5);
+        let left = client.next_event(8);
+        assert_eq!((left[1], left[31] & 2), (3, 0), "leave of the first window, Nonlinear, focus clear");
+        let entered = client.next_event(7);
+        assert_eq!((entered[1], entered[31] & 2), (3, 2), "enter of the second window, Nonlinear, focus set");
+
+        // The second window is destroyed under the pointer, and a third
+        // takes its place: the pointer comes from the root.
+        let third = client.next;
+        client.next += 2;
+        let mut destroy = vec![4, 0];
+        push_u16(&mut destroy, client.order, 2);
+        push_u32(&mut destroy, client.order, second);
+        client.stream.write_all(&destroy).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, third, 40, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, third, (1 << 4) | (1 << 5)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, third)).unwrap();
+        client.settle();
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 46, 6);
+        let entered = client.next_event(7);
+        assert_eq!(
+            (u32::from_le_bytes([entered[12], entered[13], entered[14], entered[15]]), entered[1]),
+            (third, 0),
+            "enter of the third window from the root, detail Ancestor"
+        );
+    }
+
+    /// A peer that selected EnterWindow and KeymapState on the owner's window
+    /// and nothing else is told of the pointer entering it, with the
+    /// KeymapNotify after (XTS Xlib11 KeymapNotify 3). The fan-out carried
+    /// motion to motion selectors alone, so the peer never saw the pointer
+    /// arrive. Red before the fix: the peer reads nothing.
+    #[test]
+    fn a_peer_selecting_only_crossings_is_told_of_the_pointer_entering() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.barrier();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, (1 << 4) | (1 << 14)))
+            .unwrap();
+        peer.barrier();
+        peer.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let entered = peer.next_event(7);
+        assert_eq!(u32::from_le_bytes([entered[12], entered[13], entered[14], entered[15]]), window, "the peer's EnterNotify");
+        let keymap = read_x_record(&mut peer.stream);
+        assert_eq!(keymap[0], 11, "and its KeymapNotify: {keymap:?}");
+        owner.assert_quiet("the owner selected nothing");
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,
