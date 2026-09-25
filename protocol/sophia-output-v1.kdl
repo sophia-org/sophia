@@ -1,0 +1,143 @@
+// Layout authority for experimental output revision 1. Integers are little
+// endian and packed. Samples describe one connected 800x600 head and group.
+// Validation and recovery semantics: docs/sophia-output-v1.md.
+protocol "sophia_output_v1" frame-version=1 interface-major=1 interface-revision=1 max-payload=65536 {
+    limit "heads" value=16
+    limit "groups" value=16
+    limit "modes_per_head" value=128
+    limit "heads_per_group" value=4
+    limit "label_bytes" value=64
+    capability "observe" value=1
+    capability "configure" value=2
+    outcome "validated" value=1
+    outcome "committed" value=2
+    outcome "stale" value=3
+    outcome "rejected" value=4
+    outcome "rolled_back" value=5
+    outcome "failed" value=6
+    reason "none" value=0
+    reason "stale" value=1
+    reason "preparation" value=2
+    reason "apply" value=3
+    reason "head_lost" value=4
+    reason "first_presentation" value=5
+    reason "rollback" value=6
+    reason "invariant" value=7
+    intent "validate_only" value=1
+    intent "apply" value=2
+    transform "normal" value=1
+    transform "rotate90" value=2
+    transform "rotate180" value=3
+    transform "rotate270" value=4
+    transform "flipped" value=5
+    transform "flipped90" value=6
+    transform "flipped180" value=7
+    transform "flipped270" value=8
+    vrr "disabled" value=1
+    vrr "automatic" value=2
+    vrr "always" value=3
+    mapping "fit" value=1
+    mapping "cover" value=2
+    mapping "exact" value=3
+    head-flag "connected" value=1
+    head-flag "enabled" value=2
+    head-flag "vrr_capable" value=4
+
+    record "Mode" {
+        field "mode" type="u64" sample=101
+        field "width" type="i32" sample=800
+        field "height" type="i32" sample=600
+        field "refresh_millihz" type="u32" sample=60000
+        field "preferred" type="u16" sample=1 enum="bool"
+        field "reserved" type="u16" sample=0 reserved=#true
+    }
+    record "Member" {
+        field "head" type="u64" sample=11
+        field "mapping" type="u16" sample=3 enum="mapping"
+        field "reserved" type="u16" sample=0 reserved=#true
+    }
+    record "Head" {
+        field "head" type="u64" sample=11
+        field "generation" type="u64" sample=2
+        field "flags" type="u16" sample=7 flags="head-flag"
+        // Transform-set bits use bit (wire transform - 1), not the enum value.
+        field "transforms" type="u16" sample=255 flags="transform-set"
+        field "current_mode" type="u64" sample=101 zero="none"
+        field "label_len" type="u16" sample=7 max=64
+        field "mode_count" type="u16" sample=1 max=128
+        field "reserved" type="u32" sample=0 reserved=#true
+        field "label" type="utf8" length="label_len" sample="Display"
+        repeated "modes" count="mode_count" record="Mode"
+    }
+    record "GroupState" {
+        field "output" type="u64" sample=21
+        field "generation" type="u64" sample=3
+        field "x" type="i32" sample=800
+        field "y" type="i32" sample=0
+        field "width" type="i32" sample=800
+        field "height" type="i32" sample=600
+        field "member_count" type="u16" sample=1 max=4
+        field "reserved" type="u16" sample=0 reserved=#true
+        repeated "members" count="member_count" record="Member"
+    }
+    record "HeadTarget" {
+        field "head" type="u64" sample=11
+        field "head_generation" type="u64" sample=2
+        field "mode" type="u64" sample=101
+        field "transform" type="u16" sample=1 enum="transform"
+        field "vrr" type="u16" sample=2 enum="vrr"
+        field "reserved" type="u32" sample=0 reserved=#true
+    }
+    record "GroupProposal" {
+        field "output" type="u64" sample=21 zero="allocate"
+        field "x" type="i32" sample=800
+        field "y" type="i32" sample=0
+        field "width" type="i32" sample=800
+        field "height" type="i32" sample=600
+        field "member_count" type="u16" sample=1 max=4
+        field "reserved" type="u16" sample=0 reserved=#true
+        repeated "members" count="member_count" record="Member"
+    }
+    message "ClientHello" kind=64 direction="client-to-session" transaction="zero" {
+        field "minimum_revision" type="u16" sample=1
+        field "maximum_revision" type="u16" sample=1
+        field "capabilities" type="u64" sample=3
+    }
+    message "ServerWelcome" kind=65 direction="session-to-client" transaction="zero" {
+        field "selected_revision" type="u16" sample=1
+        field "reserved" type="u16" sample=0 reserved=#true
+        field "capabilities" type="u64" sample=3
+        field "connection_epoch" type="u64" sample=9
+        field "max_heads" type="u16" sample=16
+        field "max_groups" type="u16" sample=16
+        field "max_modes_per_head" type="u16" sample=128
+        field "max_heads_per_group" type="u16" sample=4
+    }
+    message "Snapshot" kind=66 direction="session-to-client" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "topology_epoch" type="u64" sample=7
+        field "primary_output" type="u64" sample=21
+        field "head_count" type="u16" sample=1 max=16
+        field "group_count" type="u16" sample=1 max=16
+        field "reserved" type="u32" sample=0 reserved=#true
+        repeated "heads" count="head_count" record="Head"
+        repeated "groups" count="group_count" record="GroupState"
+    }
+    message "Proposal" kind=67 direction="client-to-session" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "base_topology_epoch" type="u64" sample=7
+        field "intent" type="u16" sample=1 enum="intent"
+        field "primary_group_index" type="u16" sample=0
+        field "head_count" type="u16" sample=1 max=16
+        field "group_count" type="u16" sample=1 max=16
+        repeated "heads" count="head_count" record="HeadTarget"
+        repeated "groups" count="group_count" record="GroupProposal"
+    }
+    message "Outcome" kind=68 direction="session-to-client" transaction="required" {
+        field "connection_epoch" type="u64" sample=9
+        field "topology_epoch" type="u64" sample=7
+        field "outcome" type="u16" sample=1 enum="outcome"
+        // Unknown reason values are accepted; they never imply success.
+        field "reason" type="u16" sample=0
+    }
+}

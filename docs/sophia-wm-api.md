@@ -1,7 +1,7 @@
 # Sophia Window Manager API
 
 **Role:** normative native spatial-policy protocol.
-**Status:** `sophia_wm_v1` interface major 1 is in progress at wire revision 3.
+**Status:** `sophia_wm_v1` interface major 1 wire revision 3 is stable.
 
 The optional [window translation contract](window-transitions.md) adds generic
 shared positional targets without changing frozen revision-3 records. WMs own
@@ -66,10 +66,21 @@ workspace-policy transport.
 ## Public `sophia_wm_v1` Negotiation
 
 The Sophia session hosts an owner-only WM endpoint and admits one supervised
-client. `ClientHello` names `sophia_wm_v1`, the client's maximum revision, and
+client. The endpoint and message kind select `sophia_wm_v1`; `ClientHello`
+carries the client's minimum and maximum revisions and
 requested capabilities. `ServerWelcome` selects a supported revision and
 capability subset and supplies a server-owned connection epoch plus effective
 limits.
+
+The current server selects revision 3 only; the ordered nonzero range must
+include it. Revisions 1 and 2 were experimental development stages, not retained
+stable endpoints. Hello and welcome use transaction zero. Welcome advertises
+16 outputs, 1,024 surfaces, 256 bindings and 65,520 chunk-data bytes (the
+16-byte chunk prefix uses the remainder of the common payload ceiling).
+Unlike shell's required-capability negotiation, WM capabilities are requests.
+Snapshot/projection begin, chunk and end repeat the same nonzero transaction
+and connection epoch; candidate base-snapshot identity is separately validated.
+These frozen layouts do not inherit output's independently chosen proposal IDs.
 
 Capabilities are orthogonal and fail closed at the point of use. The initial
 set covers registered bindings, opaque session actions, reduced pointer
