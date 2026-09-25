@@ -158,10 +158,13 @@ Operator observations may be retained with their digest. At most 256 KiB
 plus one byte is ever read, the retained copy must fit 256 KiB, and they
 stay unverified.
 
-Shell recovery is an explicit operator step. The guide prints the exact
-\`peer_pid\` this capture's session recorded for its shell, to be confirmed
-with \`ps\` and then signalled. No process is matched by name, and no restart
-API is added.
+Shell recovery is an explicit operator step. The guide prints the lookup
+of this capture's newest shell record, \`status=ready\` for the first peer
+and \`status=reconnected\` for each replacement, and names only a positive
+numeric \`peer_pid\` from that record. The operator confirms it with \`ps\`
+and then signals it. No process is matched by name, and no restart API is
+added. A ready-only lookup kept naming the first peer after a restart (red
+7c817ef9).
 
 The capture carries the built-binary identity repair (cherry-picked from
 \`gate/t018-sophia-bin-pin\`). The session and archive run the Sophia binary

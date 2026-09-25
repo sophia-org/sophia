@@ -82,12 +82,15 @@ Keys: Super+Return terminal   Super+q close   Super+Ctrl+Alt+1/2/3 frame-tree/no
     activating the covered target; restoring needs the current state.
  7. Press Ctrl+Alt+Delete once to log out normally.
 MATRIX
-# The shell peer is the one this session recorded; there is no restart
-# command, so the operator stops exactly that process after checking it.
+# The shell peer is the newest this session recorded: status=ready for the
+# first and status=reconnected for each replacement (metadata_shell/launch.rs).
+# Only a positive numeric PID of that newest record is named, never an older
+# one. There is no restart command, so the operator stops exactly that process
+# after checking it.
 printf '\nShell recovery, this capture only:\n'
 printf '  peer=$(grep -E %s %s | tail -n 1 | sed -n %s)\n' \
-    "'^sophia_live_metadata_shell schema=1 status=ready '" "'$evidence'" \
-    "'s/.* peer_pid=\\([0-9]*\\) .*/\\1/p'"
-printf '  ps -o pid,comm -p "$peer"    # confirm it is this session'"'"'s narthex\n'
+    "'^sophia_live_metadata_shell schema=1 status=(ready|reconnected) '" "'$evidence'" \
+    "'s/.* peer_pid=\\([1-9][0-9]*\\) .*/\\1/p'"
+printf '  test -n "$peer" && ps -o pid,comm -p "$peer"    # confirm it is this session'"'"'s narthex\n'
 printf '  kill "$peer"\n'
 exec "${SHELL:-/bin/sh}"
