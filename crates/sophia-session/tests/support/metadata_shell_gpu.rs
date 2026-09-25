@@ -3,7 +3,7 @@
 use super::*;
 use sophia_runtime::{ProtectionDomainRole, ProtectionDomainSpec, ProtectionFilesystemManifest};
 
-#[path = "tests/sysfs.rs"]
+#[path = "metadata_shell_gpu/sysfs.rs"]
 mod sysfs_projection;
 
 fn identity(path: &Path) -> LiveRenderDeviceIdentitySnapshot {

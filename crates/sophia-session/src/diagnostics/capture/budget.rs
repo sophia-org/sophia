@@ -13,6 +13,7 @@
 
 use crate::diagnostics::SEGMENT_LIMIT;
 
+#[path = "../../../tests/support/diagnostic_capture_budget.rs"]
 mod tests;
 
 /// How much of one event segment a single record name may write.

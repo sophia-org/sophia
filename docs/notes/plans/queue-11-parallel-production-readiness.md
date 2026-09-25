@@ -74,6 +74,9 @@ acceptance was performed for this tooling change.
 
 ## t026
 
+The [Session private-test move](../investigations/izw9opes-private-session-tests-can-move-without-widening-the-production-api.md)
+records one validated portion; remaining production debt stays in the ledger.
+
 Move remaining session-private test modules out of production `src` as
 visibility boundaries permit, and split the oversized cohesive units named in
 `docs/source-layout-debt.txt`. Do not weaken privacy or add test-only

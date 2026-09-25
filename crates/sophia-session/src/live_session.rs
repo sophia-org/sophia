@@ -1334,6 +1334,7 @@ fn build_reloaded_output_topology_candidate(
     )?)
 }
 
+#[path = "../tests/support/live_session.rs"]
 mod tests;
 
 include!("live_session/cpu_surface_sample.rs");

@@ -420,7 +420,7 @@ fn profile_restart_reattaches_the_exact_key_under_a_fresh_epoch() {
     assert_eq!(restarted.profile_digest, initial.profile_digest);
 }
 
-#[path = "../../../tests/support/delegated_policy.rs"]
+#[path = "../delegated_policy.rs"]
 mod delegated_policy;
 
 #[test]

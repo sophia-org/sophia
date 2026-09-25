@@ -2,7 +2,7 @@ use super::*;
 use crate::live_session::PersistentLiveLayout;
 use sophia_protocol::{SurfaceConstraints, TransactionId};
 
-#[path = "../../../tests/support/presentation_owner_visibility.rs"]
+#[path = "../presentation_owner_visibility.rs"]
 mod presentation_owner_visibility;
 
 #[test]
