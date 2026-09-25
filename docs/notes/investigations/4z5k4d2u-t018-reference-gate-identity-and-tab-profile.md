@@ -174,11 +174,11 @@ Prepared command, not run: on tty4, with Sophia at the signed candidate and
 Hagia and Narthex at clean, signed HEADs:
 
 ```
-SOPHIA_HAGIA_ROOT=\$HOME/dev/hagia SOPHIA_NARTHEX_ROOT=\$HOME/dev/narthex \\
-SOPHIA_HAGIA_NATIVE_CAPTURE=reference \\
-SOPHIA_HAGIA_NATIVE_PROFILE=\$HOME/dev/sophia/tools/fixtures/t018_tab_reference.kdl \\
-SOPHIA_HAGIA_REFERENCE_OBSERVATIONS=\$HOME/t018-observations.txt \\
-  \$HOME/dev/sophia/tools/run_current_hagia_native_gate_tty4.sh
+SOPHIA_HAGIA_ROOT=$HOME/dev/hagia SOPHIA_NARTHEX_ROOT=$HOME/dev/narthex \
+SOPHIA_HAGIA_NATIVE_CAPTURE=reference \
+SOPHIA_HAGIA_NATIVE_PROFILE=$HOME/dev/sophia/tools/fixtures/t018_tab_reference.kdl \
+SOPHIA_HAGIA_REFERENCE_OBSERVATIONS=$HOME/t018-observations.txt \
+  $HOME/dev/sophia/tools/run_current_hagia_native_gate_tty4.sh
 ```
 
 The observations file is written by the operator during the session, from the
