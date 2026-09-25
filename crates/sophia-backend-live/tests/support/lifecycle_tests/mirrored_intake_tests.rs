@@ -1,5 +1,239 @@
 use super::*;
 
+/// t244: a WM presentation samples a source that is not presented anywhere,
+/// twice. Both instances share one source lease and keep their own geometry
+/// and damage; a content-only commit repaints them without changing their
+/// interaction generation; neither becomes an application input layer; the
+/// source stays owned through queued native heads and copies, and the
+/// copied backings through submission, display and retirement.
+#[test]
+fn preview_only_instances_share_a_source_until_copy_and_backings_until_retirement() {
+    use std::sync::Arc;
+    let outputs = outputs();
+    let output = outputs[0];
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(output.size);
+    let mut target = MirroredTarget::new(&outputs);
+    let surface = SurfaceId::new(5, 1);
+    let source_size = Size {
+        width: 8,
+        height: 8,
+    };
+    let source_geometry = Rect {
+        x: -100,
+        y: -100,
+        width: 8,
+        height: 8,
+    };
+    let first = Rect {
+        x: 4,
+        y: 4,
+        width: 4,
+        height: 4,
+    };
+    let second = Rect {
+        x: 20,
+        y: 4,
+        width: 8,
+        height: 8,
+    };
+    let instance = |id: u64, destination: Rect| PolicySurfaceInstance {
+        id,
+        generation: 3,
+        output: output.id,
+        source: surface,
+        destination,
+        clip: destination,
+        opacity_millis: 1_000,
+        z_index: u16::try_from(id).unwrap(),
+        action: None,
+    };
+    runtime
+        .set_policy_presentation(
+            Some(LivePolicyPresentation {
+                owner_epoch: 41,
+                presentation: PolicyPresentation {
+                    generation: 1,
+                    keyboard_output: None,
+                    outputs: vec![PolicyPresentationOutput {
+                        output: output.id,
+                        generation: 1,
+                        coverage: Rect {
+                            x: 0,
+                            y: 0,
+                            width: 64,
+                            height: 32,
+                        },
+                        mode: PolicyPresentationMode::Overlay,
+                    }],
+                    instances: vec![instance(1, first), instance(2, second)],
+                    regions: vec![],
+                    bindings: vec![],
+                },
+            }),
+            &scene,
+            None,
+        )
+        .unwrap();
+    let mut before = None;
+    let mut source_weak = None;
+    for generation in 1..=2 {
+        let bytes = Arc::new(vec![generation as u8 * 40; 8 * 8 * 4]);
+        source_weak = Some(Arc::downgrade(&bytes));
+        scene
+            .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle: 55,
+                generation,
+                size: source_size,
+                stride: 32,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                bytes,
+            })])
+            .unwrap();
+        let transaction = SurfaceTransaction {
+            transaction: TransactionId::from_raw(generation),
+            authority: AuthorityKind::SophiaX,
+            surface,
+            namespace: None,
+            target_geometry: source_geometry,
+            presentation_extent: source_size,
+            content: SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 55 },
+                source_size,
+            ),
+            damage: Region::single(Rect {
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 8,
+            }),
+            readiness: SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: generation - 1,
+            input_region: None,
+        };
+        runtime
+            .prepare_authority_transactions(transaction.transaction, &[transaction], &[])
+            .unwrap();
+        assert!(
+            runtime.presentation_order.is_empty(),
+            "the source is not presented"
+        );
+        let committed = runtime.committed_surfaces();
+        assert_eq!(
+            committed[0].geometry, source_geometry,
+            "its allocation is untouched"
+        );
+        let captured = output_composition::OutputCompositionSnapshot::capture(&runtime);
+        let list = captured.display_list(output.id, committed).unwrap();
+        assert!(
+            !list
+                .commands
+                .iter()
+                .any(|command| matches!(command, CompositorDisplayCommand::Surface { .. }))
+        );
+        let instances = list.surface_instances().collect::<Vec<_>>();
+        assert_eq!(instances.len(), 2);
+        assert!(instances.iter().all(|instance| instance.generation == 3
+            && instance.source_generation == generation
+            && instance.owner_epoch == 41));
+        let damage = output_frame_damage_snapshot(output, list.clone(), committed, None).unwrap();
+        assert!(damage.surfaces.is_empty(), "no application input layer");
+        assert!(
+            output_frame_damage(Some(&damage), &damage)
+                .unwrap()
+                .is_empty()
+        );
+        if let Some(before) = &before {
+            let changed = output_frame_damage(Some(before), &damage).unwrap();
+            assert!(!changed.is_empty());
+            assert!(
+                changed
+                    .rects
+                    .iter()
+                    .all(|rect| *rect == first || *rect == second)
+            );
+        }
+        let report = scene
+            .compose_display_list(output, committed, &list, None)
+            .unwrap();
+        let value = generation as u8 * 40;
+        for (x, y) in [(4, 4), (7, 7), (20, 4), (27, 11)] {
+            let pixel = (y * 64 + x) * 4;
+            // XRGB: colour only; the padding byte is copied as a layer's is.
+            assert_eq!(
+                &report.frame.bytes[pixel..pixel + 3],
+                &[value, value, value]
+            );
+        }
+        assert_eq!(&report.frame.bytes[..4], &[0; 4]);
+        before = Some(damage);
+    }
+    let source_weak = source_weak.unwrap();
+    // Production source lookup and native lowering, including a source that
+    // only instances reference: one lease, two drawn layers.
+    let frames = runtime
+        .retained_output_head_composition_frames(&scene, &target)
+        .unwrap();
+    let head = &frames[0].1[0].frame;
+    assert_eq!(
+        head.layers
+            .iter()
+            .filter(|layer| matches!(layer, LiveOwnedMixedCompositionLayer::Cpu { .. }))
+            .count(),
+        2
+    );
+    assert!(
+        head.output_damage_snapshot
+            .as_ref()
+            .unwrap()
+            .surfaces
+            .is_empty(),
+        "the retired head frame publishes no application input layer"
+    );
+    target
+        .queue_retained_batch(frames, &BTreeSet::new())
+        .unwrap();
+    runtime.set_policy_presentation(None, &scene, None).unwrap();
+    let closed = output_composition::OutputCompositionSnapshot::capture(&runtime)
+        .display_list(output.id, runtime.committed_surfaces())
+        .unwrap();
+    assert!(closed.surface_instances().next().is_none());
+    scene.reconcile_buffer_residency(&[]);
+    drop(runtime);
+    drop(scene);
+    assert!(
+        source_weak.upgrade().is_some(),
+        "queued native heads own the source after close"
+    );
+    target.install(output.id).unwrap();
+    assert!(
+        source_weak.upgrade().is_some(),
+        "installed copy requests still own the source"
+    );
+    target.prepare(output.id);
+    assert!(
+        source_weak.upgrade().is_none(),
+        "completed copies release the source lease"
+    );
+    assert_eq!(
+        target.owners.get(),
+        2,
+        "submitted scanout backings remain owned"
+    );
+    target.flip(output.id, 1);
+    assert!(target.heads[0].custody.submitted().is_some());
+    assert_eq!(target.owners.get(), 2);
+    target.flip(output.id, 0);
+    assert_eq!(
+        target.owners.get(),
+        2,
+        "the displayed backing remains owned until retirement"
+    );
+    target.teardown();
+    assert_eq!(target.owners.get(), 0);
+}
+
 #[test]
 fn mirrored_thousand_cycles_join_intake_lowering_installation_copy_and_completion() {
     exercise_thousand(MirroredTarget::new(&outputs()));

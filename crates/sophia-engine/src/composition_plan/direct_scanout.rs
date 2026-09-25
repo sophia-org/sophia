@@ -148,6 +148,8 @@ fn command_requires_composition(command: &HeadCompositorCommand) -> Option<&'sta
         }
         // The client's own content, which the plane will scan out directly.
         HeadCompositorCommand::Surface { .. } => None,
+        // A second, scaled presentation of a source is composition.
+        HeadCompositorCommand::SurfaceInstance(_) => Some("surface_instance"),
         HeadCompositorCommand::Border(_) => Some("border"),
         HeadCompositorCommand::Rect(_) => Some("rect"),
         HeadCompositorCommand::Text(_) => Some("text"),

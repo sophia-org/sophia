@@ -129,3 +129,73 @@ input path can confuse the two.
 - New negative controls: an instance must never appear among presented
   input layers, and a source generation change must not change the
   instance generation.
+
+## First source checkpoint (t244)
+
+The contract is [WM presentation](../../wm-presentation.md). This
+checkpoint joins surface instances through the Engine display list, the
+output snapshot, head plans, native and CPU lowering, frame damage and
+retained source ownership. Regions, ReplaceApplications suppression and
+the presentation's input half are not in it.
+
+- **Identity.** `CompositorSurfaceInstance` carries the WM's opaque id
+  and generation, qualified by the admitted connection epoch as
+  `CompositorNodeId::PolicyInstance`. The same id under a new epoch is a
+  distinct node. `Surface` is unchanged, so every existing duplicate
+  check still guards the source's own presentation.
+- **Source generation.** `resolve_surface_instance_sources` sets each
+  instance's source generation from the committed table at capture and
+  drops an instance whose source has no committed content. The snapshot
+  refuses a stale generation (`StaleInstanceSource`) and frame damage
+  refuses an unresolved or stale one.
+- **Preview-only sources.** The snapshot samples an instance's source
+  whether or not it is presented on that output. It does not add the
+  source to the presentation order, draw it at its own placement, or
+  make it a frame surface.
+- **Repeated sources.** Head plans keep one binding per source. Native
+  lowering draws that binding once per instance at the instance's
+  destination, clip, opacity and sampling. Retained source collection
+  takes the union of `Surface` and `SurfaceInstance` sources by id, and
+  CPU variant layers use the presentation order plus instance sources.
+- **Damage.** Instance damage is keyed by node. A changed placement,
+  opacity, generation or resolved source generation damages the visible
+  rectangle it had and has. A change of order among instances damages
+  every instance involved. A source commit also damages each instance's
+  visible rectangle on that output, not the hidden source placement.
+- **Input.** Head damage snapshots carry instances as display commands,
+  never as frame surfaces, so presented input layers cannot include one.
+- **CPU opacity.** The CPU instance path follows the native composition
+  shader. Premultiplied colour is clamped to alpha, colour and alpha are
+  scaled once by the opacity, and the result is composed over the frame.
+  At full opacity an unscaled instance matches an ordinary layer byte
+  for byte.
+- **Tier.** The runtime holds an admitted `LivePolicyPresentation`, whose
+  admission belongs to t243. The output list places its instances in z
+  order after the floating outline and before shell content.
+
+Guards: `crates/sophia-engine/tests/surface_instances.rs`,
+`crates/sophia-renderer-live/tests/cpu_instance_opacity.rs`, and the
+production test
+`preview_only_instances_share_a_source_until_copy_and_backings_until_retirement`.
+The production test ports the overview prototype's
+`preview_only_updates_damage` onto the generic presentation, with two
+instances of one preview-only source.
+
+Negative controls, run on this checkpoint with evidence in the
+worktree's `.artifacts/t244-controls/controls.json`. They correspond to
+the archived prototype's controls (overview 914858fa):
+
+| Control | Change | Result |
+|---|---|---|
+| missing-instance-source | retained collection ignores instance sources | fails: `MissingCpuSource(55)` |
+| missing-source-generation | display list skips source resolution | fails: instance source generation stays 0 |
+
+Remaining for t244: Engine chrome regions (Backdrop, Frame, Emphasis),
+ReplaceApplications suppression of that output's application surfaces,
+chrome, tab bars and floating outline, a test of an instance on one output
+whose source another output owns (the source union and snapshot
+sampling do not consult `surface_outputs`, which stays unchanged), source damage scaled into the destination (a source commit
+now damages each instance's whole visible rectangle), fractional scale,
+mirrored-head and direct-scanout fallback cases, and CPU and native
+sampling equivalence under scaling (the CPU path samples the nearest
+texel).

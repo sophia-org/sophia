@@ -93,7 +93,7 @@ impl LiveProductionVisualRuntime {
                 .transpose()?
         };
         let cpu_layers =
-            scene.presentation_variant_layers(&committed_surfaces, &self.presentation_order);
+            scene.presentation_variant_layers(&committed_surfaces, &self.sampled_surface_order());
         let tick = self.run_batch(
             &batch,
             presentation_layout,

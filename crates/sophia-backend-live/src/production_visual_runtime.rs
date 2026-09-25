@@ -21,7 +21,9 @@ mod compositor_graphics;
 mod lifecycle_tests;
 mod ordinary_repaint;
 mod output_composition;
+mod policy_presentation;
 use composition_target::NativeCompositionTarget;
+pub use policy_presentation::LivePolicyPresentation;
 mod native;
 mod ownership;
 mod present;
@@ -396,6 +398,7 @@ pub struct LiveProductionVisualRuntime {
     indicator_publication: Option<sophia_engine::PolicyIndicatorPublication>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
     descriptor_overlay_interactive: bool,
+    policy_presentation: Option<LivePolicyPresentation>,
     shell_content: BTreeMap<ShellContentKey, AdmittedShellContent>,
     tab_bars: Vec<sophia_engine::TabBarProjection>,
     tab_frames: BTreeMap<OutputId, sophia_engine::CompositorDamageList>,

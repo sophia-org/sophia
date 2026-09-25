@@ -11,6 +11,7 @@ pub(super) struct OutputComposition<'a> {
     pub tab_bars: &'a [sophia_engine::TabBarProjection],
     pub shell_content: &'a BTreeMap<ShellContentKey, AdmittedShellContent>,
     pub descriptor_overlay: Option<&'a sophia_engine::DescriptorOverlayProjection>,
+    pub policy_presentation: Option<&'a LivePolicyPresentation>,
 }
 
 impl OutputComposition<'_> {
@@ -52,6 +53,17 @@ impl OutputComposition<'_> {
                 .commands
                 .push(CompositorDisplayCommand::Border(border));
         }
+        // The WM presentation tier: above ordinary application content and
+        // its decorations, below shell content and the descriptor overlay.
+        if let Some(presentation) = self.policy_presentation {
+            let instances = presentation.instance_commands(output);
+            if display_list.commands.len().saturating_add(instances.len())
+                > MAX_COMPOSITOR_DISPLAY_COMMANDS
+            {
+                return Err(CompositorDisplayListError::CapacityExceeded);
+            }
+            display_list.commands.extend(instances);
+        }
         for (_, content) in self
             .shell_content
             .iter()
@@ -91,6 +103,8 @@ impl OutputComposition<'_> {
                 .commands
                 .extend(overlay.commands.iter().cloned());
         }
+        // Engine, never the WM, names the generation each instance samples.
+        sophia_engine::resolve_surface_instance_sources(&mut display_list, committed_surfaces);
         Ok(display_list)
     }
 }
@@ -107,6 +121,7 @@ pub(super) struct OutputCompositionSnapshot {
     tab_bars: Vec<sophia_engine::TabBarProjection>,
     shell_content: BTreeMap<ShellContentKey, AdmittedShellContent>,
     descriptor_overlay: Option<sophia_engine::DescriptorOverlayProjection>,
+    policy_presentation: Option<LivePolicyPresentation>,
 }
 
 impl OutputCompositionSnapshot {
@@ -121,6 +136,7 @@ impl OutputCompositionSnapshot {
             tab_bars: runtime.tab_bars.clone(),
             shell_content: runtime.shell_content.clone(),
             descriptor_overlay: runtime.descriptor_overlay.clone(),
+            policy_presentation: runtime.policy_presentation.clone(),
         }
     }
 
@@ -138,6 +154,7 @@ impl OutputCompositionSnapshot {
             tab_bars: &self.tab_bars,
             shell_content: &self.shell_content,
             descriptor_overlay: self.descriptor_overlay.as_ref(),
+            policy_presentation: self.policy_presentation.as_ref(),
         }
         .display_list(
             output,

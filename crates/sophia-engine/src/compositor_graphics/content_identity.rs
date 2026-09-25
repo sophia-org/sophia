@@ -100,6 +100,9 @@ impl From<CompositorDisplayList> for CompositorDamageList {
                     CompositorDisplayCommand::Surface { surface } => {
                         CompositorDisplayCommand::Surface { surface }
                     }
+                    CompositorDisplayCommand::SurfaceInstance(instance) => {
+                        CompositorDisplayCommand::SurfaceInstance(instance)
+                    }
                     CompositorDisplayCommand::Border(value) => {
                         CompositorDisplayCommand::Border(value)
                     }

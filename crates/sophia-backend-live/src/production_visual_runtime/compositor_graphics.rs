@@ -129,8 +129,12 @@ pub fn live_present_head_composition_sources<'a, 'b>(
     let mut sources = Vec::new();
     let mut seen = BTreeSet::new();
     for command in display_lists.into_iter().flat_map(|list| &list.commands) {
-        let CompositorDisplayCommand::Surface { surface } = command else {
-            continue;
+        // An instance samples its source like the source's own presentation
+        // does, including a source that is not presented anywhere.
+        let surface = match command {
+            CompositorDisplayCommand::Surface { surface } => surface,
+            CompositorDisplayCommand::SurfaceInstance(instance) => &instance.source,
+            _ => continue,
         };
         // Heads share retained sources; resolve each surface once across outputs.
         if !seen.insert(*surface) {
@@ -403,13 +407,17 @@ impl LiveProductionVisualRuntime {
                 self.display_list_for_output(output, viewport, &committed, &retained_order)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let cpu_layers = scene.presentation_variant_layers(&committed, &retained_order);
+        let cpu_layers =
+            scene.presentation_variant_layers(&committed, &self.sampled_surface_order());
         let in_flight = self.present_scheduler.in_flight_displayed_layer();
         let mut sources = Vec::new();
         let mut seen = BTreeSet::new();
         for command in display_lists.iter().flat_map(|list| &list.commands) {
-            let CompositorDisplayCommand::Surface { surface } = command else {
-                continue;
+            // Repeated and preview-only sources share one lease per surface.
+            let surface = match command {
+                CompositorDisplayCommand::Surface { surface } => surface,
+                CompositorDisplayCommand::SurfaceInstance(instance) => &instance.source,
+                _ => continue,
             };
             if !seen.insert(*surface) {
                 continue;
@@ -641,6 +649,7 @@ impl LiveProductionVisualRuntime {
             tab_bars: &self.tab_bars,
             shell_content: &self.shell_content,
             descriptor_overlay: self.descriptor_overlay.as_ref(),
+            policy_presentation: self.policy_presentation.as_ref(),
         }
         .display_list(output, committed_surfaces, &owned)
     }
