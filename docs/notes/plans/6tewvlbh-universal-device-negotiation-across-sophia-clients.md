@@ -375,7 +375,9 @@ loss and recovery.
   exactly once: `XServerFrontend::bind` and `bind_exclusive` through
   `over_listener`, and `run_x11_core_socket_server_once_config_traced_with_idle_timeout`.
   Only the registry, connection pins and backing owners hold a generation
-  afterwards.
+  afterwards. Release is not immediate when the last lease ends: the registry
+  collects a superseded, unleased generation at the next install. The
+  controls observe exactly that.
 - **Evidence.** Real-frontend controls with a provider lifetime witness fail
   first, pass after the change, and fail again when the handover clones
   instead of takes. Leases and the sixteen-generation bound are unchanged.
