@@ -104,12 +104,21 @@ fn spawn_x11_input_event_writer(
                 // such a key belongs to, so the route still decides there.
                 let focus_names_a_window =
                     focused != XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-                let focused_delivery = selections.keyboard_delivery(focused);
+                // A key is selected by direction: KeyPress and KeyRelease are
+                // two masks, and a client holding one is owed only that half
+                // (XTS Xlib11 KeyPress 3).
+                let key_pressed = match event {
+                    XAuthorityInputEvent::Key(key) => key.pressed,
+                    XAuthorityInputEvent::Pointer(_) => true,
+                };
+                let focused_delivery = selections.keyboard_delivery(focused, key_pressed);
                 let routed_delivery =
-                    target_window.map(|window| selections.keyboard_delivery(window));
-                let focused_fallback = selections.keyboard_target(focused);
+                    target_window.map(|window| selections.keyboard_delivery(window, key_pressed));
+                let focused_fallback = selections.keyboard_target(focused, key_pressed);
                 let routed_fallback =
-                    target_window.map(|window| selections.keyboard_target(window));
+                    target_window.map(|window| selections.keyboard_target(window, key_pressed));
+                let keyboard_decided = selections.keyboard_selection_decided(focused)
+                    || target_window.is_some_and(|window| selections.keyboard_selection_decided(window));
                 drop(selections);
                 let selected = |delivery: XKeyDelivery| match delivery {
                     XKeyDelivery::Window(window) => Some(window),
@@ -132,7 +141,7 @@ fn spawn_x11_input_event_writer(
                 if x11_keyboard_route_ready(
                     matches!(event, XAuthorityInputEvent::Key(_)),
                     xi_event_type.is_some(),
-                    focused_selected.is_some() || routed_selected.is_some(),
+                    focused_selected.is_some() || routed_selected.is_some() || keyboard_decided,
                     std::time::Instant::now() >= keyboard_deadline,
                 ) {
                     break (
@@ -229,7 +238,7 @@ fn spawn_x11_input_event_writer(
                     let delivered_window = selections
                         .selected_pointer_target(
                             surface_window,
-                            matches!(pointer.kind, XAuthorityPointerEventKind::Motion),
+                            pointer_selection(pointer.kind),
                             pointer.state,
                             pointer.event_x,
                             pointer.event_y,
@@ -476,8 +485,25 @@ fn spawn_x11_input_event_writer(
                     },
                 },
             );
+            // Whether this client holds an explicit pointer grab: that grab's
+            // mask decides delivery instead of the windows' selections. The
+            // implicit grab a press activates is not one: its mask is the
+            // pressed window's own selection, so the selections still decide
+            // (XTS Xlib11 ButtonPress 4 and 6).
+            let own_pointer_grab = match (event, input_authority.as_ref()) {
+                (XAuthorityInputEvent::Pointer(_), Some(authority)) => authority
+                    .lock()
+                    .map_err(|_| X11SetupSocketError::new("X11 input authority lock poisoned"))?
+                    .explicit_pointer_grab(namespace)
+                    .filter(|grab| grab.owner == client.raw()),
+                _ => None,
+            };
             let mut write_core_record = match (event, input_authority.as_ref()) {
-                (XAuthorityInputEvent::Pointer(pointer), Some(authority)) => {
+                // A key nobody selected on the delivery path, once the
+                // selections have had their moment to arrive, is no event:
+                // the protocol generates none for it (XTS Xlib11 KeyPress 3).
+                (XAuthorityInputEvent::Key(_), _) => keyboard_selected || xi_event_type.is_some(),
+                (XAuthorityInputEvent::Pointer(pointer), _) => {
                     // An explicit grab's mask follows the same rule as a
                     // window's: motion with a button down answers to
                     // ButtonMotion and the held button's own mask too.
@@ -490,16 +516,8 @@ fn spawn_x11_input_event_writer(
                         XAuthorityPointerEventKind::Button { pressed: false, .. }
                         | XAuthorityPointerEventKind::Axis { pressed: false, .. } => 1_u16 << 3,
                     };
-                    authority
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 input authority lock poisoned")
-                        })?
-                        .pointer_grab(namespace)
-                        .filter(|grab| grab.owner == client.raw())
-                        .is_none_or(|grab| grab.event_mask & selected_mask != 0)
+                    own_pointer_grab.is_none_or(|grab| grab.event_mask & selected_mask != 0)
                 }
-                _ => true,
             };
             if let (XAuthorityInputEvent::Pointer(pointer), Some(surface_window), Some(ancestry)) =
                 (event, pointer_surface_window, pointer_event_ancestry.as_ref())
@@ -508,7 +526,7 @@ fn spawn_x11_input_event_writer(
                     X11SetupSocketError::new("X11 core event selection lock poisoned")
                 })?.selected_pointer_target(
                     surface_window,
-                    matches!(pointer.kind, XAuthorityPointerEventKind::Motion),
+                    pointer_selection(pointer.kind),
                     pointer.state,
                     pointer.event_x,
                     pointer.event_y,
@@ -516,6 +534,14 @@ fn spawn_x11_input_event_writer(
                 let core_depth = core_target.and_then(|target| ancestry.iter().position(|window| *window == target));
                 let xi_depth = [xi_delivery, xi_emulated_button_delivery].into_iter().flatten()
                     .map(|delivery| delivery.ancestry_depth).min();
+                // Nobody selected it on the path from the source up and no
+                // grab of this client's is in force: the protocol generates no
+                // event, and writing one on the surface window told clients
+                // of presses and motion they had not asked for (XTS Xlib11
+                // ButtonPress 4 and 6).
+                if core_target.is_none() && xi_depth.is_none() && own_pointer_grab.is_none() {
+                    write_core_record = false;
+                }
                 // XI master delivery wins over core delivery at the same window.
                 // A nearer core subscriber still stops propagation to an XI ancestor.
                 if let Some(xi_depth) = xi_depth {
@@ -905,4 +931,15 @@ fn key_pointer_coordinates(
             i16::try_from(pointer.local_y).unwrap_or(i16::MAX),
         );
     Ok((pointer.root_x, pointer.root_y, event_x, event_y))
+}
+
+/// The selection half a core pointer event answers to.
+fn pointer_selection(kind: XAuthorityPointerEventKind) -> XPointerSelection {
+    match kind {
+        XAuthorityPointerEventKind::Motion => XPointerSelection::Motion,
+        XAuthorityPointerEventKind::Button { pressed: true, .. }
+        | XAuthorityPointerEventKind::Axis { pressed: true, .. } => XPointerSelection::Press,
+        XAuthorityPointerEventKind::Button { pressed: false, .. }
+        | XAuthorityPointerEventKind::Axis { pressed: false, .. } => XPointerSelection::Release,
+    }
 }

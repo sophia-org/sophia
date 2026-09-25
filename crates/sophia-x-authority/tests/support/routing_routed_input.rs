@@ -1123,14 +1123,14 @@ fn keyboard_focus_propagates_only_through_its_ancestor_chain() {
             height: 100,
         },
     );
-    assert_eq!(selections.selected_keyboard_target(child), None);
+    assert_eq!(selections.selected_keyboard_target(child, true), None);
     selections.update(parent, Some(1), None);
 
-    assert_eq!(selections.keyboard_target(child), parent);
-    assert_eq!(selections.selected_keyboard_target(child), Some(parent));
+    assert_eq!(selections.keyboard_target(child, true), parent);
+    assert_eq!(selections.selected_keyboard_target(child, true), Some(parent));
 
     assert_eq!(
-        selections.keyboard_target(XResourceId::new(0x200009, 1)),
+        selections.keyboard_target(XResourceId::new(0x200009, 1), true),
         XResourceId::new(0x200009, 1)
     );
 }
@@ -1140,7 +1140,7 @@ fn keyboard_delivery_falls_back_to_engine_focused_surface() {
     let selections = XCoreEventSelectionState::default();
 
     assert_eq!(
-        selections.keyboard_target(XResourceId::new(0x200001, 1)),
+        selections.keyboard_target(XResourceId::new(0x200001, 1), true),
         XResourceId::new(0x200001, 1)
     );
 }
@@ -1165,13 +1165,13 @@ fn root_focus_uses_mapped_stacking_order_and_restacking() {
         selections.update(window, Some(1), None);
         selections.observe_mapped(window);
     }
-    assert_eq!(selections.keyboard_target(root), upper);
+    assert_eq!(selections.keyboard_target(root, true), upper);
 
     selections.restack(lower, Some(upper), Some(0));
-    assert_eq!(selections.keyboard_target(root), lower);
+    assert_eq!(selections.keyboard_target(root, true), lower);
 
     selections.observe_unmapped(lower);
-    assert_eq!(selections.keyboard_target(root), upper);
+    assert_eq!(selections.keyboard_target(root, true), upper);
 }
 
 #[test]

@@ -638,7 +638,7 @@ fn routed_service_confines_input_and_control_to_two_workers_and_drains() {
     )
     .unwrap();
     let policy = Arc::new(SequencedXAdmissionPolicy {
-        namespaces: [first_namespace, second_namespace],
+        namespaces: vec![first_namespace, second_namespace],
         next_client: std::sync::atomic::AtomicU64::new(0),
         revoked: std::sync::Mutex::new(Vec::new()),
     });

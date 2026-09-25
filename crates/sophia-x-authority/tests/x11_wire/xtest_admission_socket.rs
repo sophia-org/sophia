@@ -110,6 +110,22 @@ mod xtest_admission_socket {
                 .write_all(&xtest_request(self.order, X_TEST_FAKE_INPUT_MINOR_OPCODE, &body))
                 .unwrap();
         }
+
+        /// A round trip that must find nothing queued ahead of its reply.
+        fn assert_quiet(&mut self, label: &str) {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, self.order, 1);
+            self.stream.write_all(&request).unwrap();
+            let mut stray = Vec::new();
+            loop {
+                let record = read_x_record(&mut self.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                stray.push(record);
+            }
+            assert!(stray.is_empty(), "{label}: {stray:?}");
+        }
     }
 
     pub(super) struct XtestFixture {
@@ -130,9 +146,14 @@ mod xtest_admission_socket {
         }
 
         /// Every client in the one namespace, each with an injector, and
-        /// clients placing their own toplevels: two peers of one window.
+        /// clients placing their own toplevels: peers of one window.
         pub(super) fn sharing_a_namespace() -> Self {
-            Self::with_namespaces([901, 901], true)
+            Self::with_namespaces([901, 901, 901], true)
+        }
+
+        /// A further client of the shared namespace.
+        pub(super) fn connect_into_namespace_of_owner(&mut self) -> XtestClient {
+            self.connect()
         }
 
         /// The conformance host's posture: clients place their own
@@ -142,10 +163,10 @@ mod xtest_admission_socket {
         }
 
         fn with_client_toplevel_placement(client_places: bool) -> Self {
-            Self::with_namespaces([901, 902], client_places)
+            Self::with_namespaces([901, 902, 902], client_places)
         }
 
-        fn with_namespaces(namespace_ids: [u64; 2], client_places: bool) -> Self {
+        fn with_namespaces(namespace_ids: [u64; 3], client_places: bool) -> Self {
             let path = std::env::temp_dir().join(format!(
                 "sophia-xtest-admission-{}-{}.sock",
                 std::process::id(),
@@ -179,7 +200,7 @@ mod xtest_admission_socket {
                 .with_client_toplevel_placement(client_places)
                 .with_max_concurrent_clients(NonZeroUsize::new(4).unwrap())
                 .with_admission_policy(Arc::new(SequencedXAdmissionPolicy {
-                    namespaces,
+                    namespaces: namespaces.to_vec(),
                     next_client: std::sync::atomic::AtomicU64::new(0),
                     revoked: std::sync::Mutex::new(Vec::new()),
                 }))
@@ -419,8 +440,7 @@ mod xtest_admission_socket {
             .unwrap();
         client.settle();
 
-        // Core motion reaches the surface's client whatever its windows
-        // selected; which window it is reported on is the question here, so
+        // Which window a motion is reported on is the question here, so
         // records are read past until the drag's own motion arrives.
         let motion_at = |client: &mut XtestClient, x: i16| -> [u8; 32] {
             for _ in 0..16 {
@@ -454,7 +474,12 @@ mod xtest_admission_socket {
         let release = client.next_event(5);
         assert_eq!(release[1], 1);
         // With the button up the child asked for no motion, so plain motion
-        // falls back to the shell.
+        // propagates to the shell once the shell selects it; nobody
+        // selecting it would mean no event at all.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, shell, 3 | (1 << 21) | (1 << 6)))
+            .unwrap();
+        client.settle();
         client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 12, 4);
         let plain = motion_at(&mut client, 12);
         assert_eq!(event_window(&plain), shell, "plain motion is not the child's");
@@ -685,6 +710,146 @@ mod xtest_admission_socket {
         // is quiet now.
         peer.barrier();
         owner.barrier();
+
+        // Propagation is decided once for everyone: a third client that
+        // selected motion only on the root hears nothing while the window
+        // itself has selectors, and everything once the owner and the peer
+        // stop selecting there.
+        let mut above = fixture.connect_into_namespace_of_owner();
+        above.stream
+            .write_all(&change_window_event_mask_request(above.order, X_SETUP_DEFAULT_ROOT, 1 << 6))
+            .unwrap();
+        // A new selector of root motion may be told where the pointer is.
+        above.settle();
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 26, 6);
+        let _ = next_motion(&mut owner);
+        let _ = next_motion(&mut peer);
+        {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, above.order, 1);
+            above.stream.write_all(&request).unwrap();
+            let mut stray = Vec::new();
+            loop {
+                let record = read_x_record(&mut above.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                stray.push(record);
+            }
+            assert!(stray.is_empty(), "a client selecting only on the root hears nothing while the window has selectors: {stray:?}");
+        }
+        let quiet = |client: &mut XtestClient, label: &str| {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, client.order, 1);
+            client.stream.write_all(&request).unwrap();
+            let mut stray = Vec::new();
+            loop {
+                let record = read_x_record(&mut client.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                stray.push(record);
+            }
+            assert!(stray.is_empty(), "{label}: {stray:?}");
+        };
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, 3 | (1 << 2) | (1 << 3)))
+            .unwrap();
+        quiet(&mut owner, "owner after dropping motion");
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 3 | (1 << 3)))
+            .unwrap();
+        quiet(&mut peer, "peer after dropping motion");
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        let motion = next_motion(&mut above);
+        assert_eq!(event_window(&motion), X_SETUP_DEFAULT_ROOT, "with nobody selecting on the window, motion propagates to the root's selector");
+        assert_eq!((at(&motion, 20), at(&motion, 22)), (27, 7), "root coordinates");
+        quiet(&mut owner, "owner, motion no longer selected");
+        quiet(&mut peer, "peer, motion no longer selected");
+    }
+
+    /// A press nobody selected on the event window or above it is no event
+    /// at all (XTS Xlib11 ButtonPress 4), and a client that did not select
+    /// it hears nothing when another client did (ButtonPress 6). The press
+    /// used to be written to the surface's owner regardless: the implicit
+    /// grab a press activates was taken for the owner's own grab, whose mask
+    /// admits everything. Red on the tree before the fix: the owner reads a
+    /// ButtonPress ahead of its barrier's reply.
+    #[test]
+    fn a_press_the_owner_did_not_select_is_not_written_to_it() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = owner.next;
+        owner.next += 2;
+        // Keys, ButtonRelease, motion of every kind and FocusChange: what a
+        // client may select on a window but ButtonPress, less the crossing
+        // masks, whose EnterNotify the motion below would have to read past.
+        let all_but_press = 3 | (1 << 3) | (1 << 6) | (1 << 8) | (1 << 13) | (1 << 21);
+        owner.stream
+            .write_all(&create_window_request(owner.order, window, 20, 0, 16, 16))
+            .unwrap();
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, all_but_press))
+            .unwrap();
+        owner.stream.write_all(&map_window_request(owner.order, window)).unwrap();
+        owner.settle();
+        let event_window = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+
+        owner.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let motion = owner.next_event(6);
+        assert_eq!(event_window(&motion), window, "motion was selected");
+        owner.fake_input(4, 1);
+        owner.assert_quiet("a press nobody selected is discarded");
+        owner.fake_input(5, 1);
+        let release = owner.next_event(5);
+        assert_eq!(event_window(&release), window, "the release was selected");
+
+        // A peer selecting the press hears it; the owner still does not.
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 1 << 2))
+            .unwrap();
+        peer.barrier();
+        owner.fake_input(4, 1);
+        let press = peer.next_event(4);
+        assert_eq!(event_window(&press), window, "the peer's press");
+        owner.assert_quiet("the owner did not select the press");
+        owner.fake_input(5, 1);
+        let release = owner.next_event(5);
+        assert_eq!(event_window(&release), window, "the owner's release");
+        peer.assert_quiet("the peer did not select the release");
+    }
+
+    /// A key is selected by direction: a client that selected KeyRelease and
+    /// not KeyPress is written the release and not the press (XTS Xlib11
+    /// KeyPress 3). The delivery rule checked one combined mask, so a press
+    /// reached every client that had selected either. Red on the tree before
+    /// the fix: the owner reads a KeyPress ahead of its barrier's reply.
+    #[test]
+    fn a_key_press_reaches_only_the_clients_that_selected_presses() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut owner = fixture.connect();
+        let mut peer = fixture.connect();
+        let window = fixture.focused_window(&mut owner);
+        // KeyRelease, ButtonPress, ButtonRelease and the fixture's FocusChange.
+        owner.stream
+            .write_all(&change_window_event_mask_request(owner.order, window, (1 << 1) | (1 << 2) | (1 << 3) | (1 << 21)))
+            .unwrap();
+        owner.settle();
+        peer.stream
+            .write_all(&change_window_event_mask_request(peer.order, window, 1 << 0))
+            .unwrap();
+        peer.barrier();
+
+        owner.fake_input(2, 38);
+        let press = peer.next_event(2);
+        assert_eq!(u32::from_le_bytes([press[12], press[13], press[14], press[15]]), window, "the peer's press");
+        assert_eq!(press[1], 38);
+        owner.assert_quiet("the owner selected releases, not presses");
+        owner.fake_input(3, 38);
+        let release = owner.next_event(3);
+        assert_eq!(release[1], 38, "the owner's release");
+        peer.assert_quiet("the peer selected presses, not releases");
     }
 
     fn warp_pointer_request(

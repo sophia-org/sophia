@@ -136,11 +136,11 @@ fn pointer_target_prefers_mapped_button_selecting_content_child() {
     selections.observe_mapped(content_child);
 
     assert_eq!(
-        selections.selected_pointer_target(top_level, false, 0, 100, 200),
+        selections.selected_pointer_target(top_level, XPointerSelection::Press, 0, 100, 200),
         Some(content_child)
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, 0, 100, 200),
+        selections.selected_pointer_target(top_level, XPointerSelection::Motion, 0, 100, 200),
         None
     );
     assert_eq!(
@@ -190,34 +190,34 @@ fn motion_with_a_button_down_reaches_a_window_selecting_only_button_motion() {
 
     // No button down: neither window asked for plain motion.
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, 0, 100, 100),
+        selections.selected_pointer_target(top_level, XPointerSelection::Motion, 0, 100, 100),
         None
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, 0, 100, 400),
+        selections.selected_pointer_target(top_level, XPointerSelection::Motion, 0, 100, 400),
         None
     );
     // Button 1 down: the drag reaches both.
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, BUTTON1_STATE, 100, 100),
+        selections.selected_pointer_target(top_level, XPointerSelection::Motion, BUTTON1_STATE, 100, 100),
         Some(button1_child)
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, BUTTON1_STATE, 100, 400),
+        selections.selected_pointer_target(top_level, XPointerSelection::Motion, BUTTON1_STATE, 100, 400),
         Some(any_button_child)
     );
     // Button 2 down: only the window that asked for any button's motion.
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, BUTTON2_STATE, 100, 100),
+        selections.selected_pointer_target(top_level, XPointerSelection::Motion, BUTTON2_STATE, 100, 100),
         None
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, true, BUTTON2_STATE, 100, 400),
+        selections.selected_pointer_target(top_level, XPointerSelection::Motion, BUTTON2_STATE, 100, 400),
         Some(any_button_child)
     );
     // Buttons themselves never consult the motion masks.
     assert_eq!(
-        selections.selected_pointer_target(top_level, false, BUTTON1_STATE, 100, 100),
+        selections.selected_pointer_target(top_level, XPointerSelection::Press, BUTTON1_STATE, 100, 100),
         None
     );
 }
@@ -256,7 +256,7 @@ fn pointer_event_target_does_not_depend_on_core_event_selection() {
         content_child
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, false, 0, 100, 200),
+        selections.selected_pointer_target(top_level, XPointerSelection::Press, 0, 100, 200),
         None
     );
 
@@ -376,7 +376,7 @@ fn core_pointer_selection_propagates_only_through_hit_target_ancestors() {
         content_child
     );
     assert_eq!(
-        selections.selected_pointer_target(top_level, false, 0, 100, 200),
+        selections.selected_pointer_target(top_level, XPointerSelection::Press, 0, 100, 200),
         Some(top_level)
     );
 }

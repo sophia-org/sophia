@@ -49,7 +49,7 @@ impl XServerFrontendAdmissionPolicy for TestXAdmissionPolicy {
 
 #[cfg(unix)]
 struct SequencedXAdmissionPolicy {
-    namespaces: [NamespaceContext; 2],
+    namespaces: Vec<NamespaceContext>,
     next_client: std::sync::atomic::AtomicU64,
     revoked: std::sync::Mutex<Vec<ClientAdmissionContext>>,
 }
@@ -230,7 +230,7 @@ fn x_server_frontend_confined_clients_reject_cross_namespace_window_property_and
     )
     .unwrap();
     let policy = Arc::new(SequencedXAdmissionPolicy {
-        namespaces: [first_namespace, second_namespace],
+        namespaces: vec![first_namespace, second_namespace],
         next_client: std::sync::atomic::AtomicU64::new(0),
         revoked: std::sync::Mutex::new(Vec::new()),
     });

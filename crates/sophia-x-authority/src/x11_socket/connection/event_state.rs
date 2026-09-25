@@ -38,6 +38,15 @@ pub(crate) enum XKeyDiscard {
     DoNotPropagate,
 }
 
+/// Which half of the pointer selection a core event answers to: the motion
+/// masks (chosen by the held buttons), ButtonPress or ButtonRelease.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum XPointerSelection {
+    Motion,
+    Press,
+    Release,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum XKeyDelivery {
     /// Report the key with respect to this window.
@@ -127,8 +136,10 @@ impl Default for XCoreEventSelectionState {
 
 #[cfg(unix)]
 impl XCoreEventSelectionState {
-    const KEY_MASKS: u32 = (1 << 0) | (1 << 1);
-    const BUTTON_MASKS: u32 = (1 << 2) | (1 << 3);
+    const KEY_PRESS_MASK: u32 = 1 << 0;
+    const KEY_RELEASE_MASK: u32 = 1 << 1;
+    const BUTTON_PRESS_MASK: u32 = 1 << 2;
+    const BUTTON_RELEASE_MASK: u32 = 1 << 3;
     const POINTER_MOTION_MASK: u32 = 1 << 6;
     /// ButtonMotion: motion while any button is down.
     const BUTTON_MOTION_MASK: u32 = 1 << 13;
@@ -375,16 +386,16 @@ impl XCoreEventSelectionState {
         self.finish_applied_mutation(revision);
     }
 
-    fn keyboard_target(&self, focused: XResourceId) -> XResourceId {
-        self.selected_keyboard_target(focused)
+    fn keyboard_target(&self, focused: XResourceId, pressed: bool) -> XResourceId {
+        self.selected_keyboard_target(focused, pressed)
             .unwrap_or_else(|| self.keyboard_fallback(focused))
     }
 
     /// The rule's answer as an `Option`, for callers that have no way to act
     /// on a discard. Prefer [`Self::keyboard_delivery`], which distinguishes
     /// "must not be delivered" from "nobody has selected it yet".
-    fn selected_keyboard_target(&self, focused: XResourceId) -> Option<XResourceId> {
-        match self.keyboard_delivery(focused) {
+    fn selected_keyboard_target(&self, focused: XResourceId, pressed: bool) -> Option<XResourceId> {
+        match self.keyboard_delivery(focused, pressed) {
             XKeyDelivery::Window(window) => Some(window),
             XKeyDelivery::Discard(_) | XKeyDelivery::Unselected => None,
         }
@@ -404,7 +415,32 @@ impl XCoreEventSelectionState {
     /// the private delivery path so the two cannot drift again. The ceiling
     /// is this path's own: it continues to the focus's ancestors, as Xorg
     /// does, where the private path stops at the focus.
-    pub(crate) fn keyboard_delivery(&self, focused: XResourceId) -> XKeyDelivery {
+    ///
+    /// `pressed` names the half of the keyboard selection that applies: a
+    /// press is owed to KeyPressMask and a release to KeyReleaseMask, and a
+    /// client holding one of the two is owed only that half. One combined
+    /// mask here wrote presses to clients that had selected releases alone
+    /// (XTS Xlib11 KeyPress 3).
+    pub(crate) fn keyboard_delivery(&self, focused: XResourceId, pressed: bool) -> XKeyDelivery {
+        self.keyboard_delivery_selecting(
+            focused,
+            if pressed { Self::KEY_PRESS_MASK } else { Self::KEY_RELEASE_MASK },
+        )
+    }
+
+    /// Whether any keyboard selection at all decides delivery from `focused`.
+    /// The readiness wait for a client still installing its masks asks this,
+    /// not the direction's own rule: a client that selected releases alone
+    /// has decided, and holding its presses for the deadline would only delay
+    /// every event queued behind them.
+    pub(crate) fn keyboard_selection_decided(&self, focused: XResourceId) -> bool {
+        !matches!(
+            self.keyboard_delivery_selecting(focused, Self::KEY_PRESS_MASK | Self::KEY_RELEASE_MASK),
+            XKeyDelivery::Unselected
+        )
+    }
+
+    fn keyboard_delivery_selecting(&self, focused: XResourceId, key_mask: u32) -> XKeyDelivery {
         let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
         let focus = match u32::try_from(focused.local.raw()) {
             // A focus of None discards keyboard events until a focus is set
@@ -447,11 +483,11 @@ impl XCoreEventSelectionState {
         let found = crate::key_routing::x_key_delivery_target::<()>(
             focus,
             &delivery_path,
-            &mut |window| Ok(self.selects(window, Self::KEY_MASKS).then_some(true)),
+            &mut |window| Ok(self.selects(window, key_mask).then_some(true)),
             &|window| {
                 self.windows
                     .get(&window)
-                    .is_some_and(|selection| selection.do_not_propagate_mask & Self::KEY_MASKS != 0)
+                    .is_some_and(|selection| selection.do_not_propagate_mask & key_mask != 0)
             },
             // No second try at the focus. This path's delivery path already
             // contains the focus, so a retry can only fire when the walk was
@@ -479,15 +515,18 @@ impl XCoreEventSelectionState {
     fn selected_pointer_target(
         &self,
         surface_window: XResourceId,
-        motion: bool,
+        selection: XPointerSelection,
         state: u16,
         event_x: i16,
         event_y: i16,
     ) -> Option<XResourceId> {
-        let selected_mask = if motion {
-            Self::motion_selection_mask(state)
-        } else {
-            Self::BUTTON_MASKS
+        // A button is selected by direction, as a key is: one combined mask
+        // here delivered presses to windows that had selected releases alone
+        // (XTS Xlib11 ButtonPress 4 and 6).
+        let selected_mask = match selection {
+            XPointerSelection::Motion => Self::motion_selection_mask(state),
+            XPointerSelection::Press => Self::BUTTON_PRESS_MASK,
+            XPointerSelection::Release => Self::BUTTON_RELEASE_MASK,
         };
         let event_window = self.pointer_event_target(surface_window, event_x, event_y);
         for candidate in self.ancestry_including(event_window) {
