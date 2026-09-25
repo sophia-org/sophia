@@ -29,9 +29,7 @@
   },
   {
     "case": "/Xlib11/ButtonPress",
-    "purpose": 7,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected event (ButtonPress) received.'"
+    "purpose": 7
   },
   {
     "case": "/Xlib11/ButtonPress",
@@ -71,9 +69,7 @@
   },
   {
     "case": "/Xlib11/ButtonRelease",
-    "purpose": 4,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected event (ButtonRelease) received.'"
+    "purpose": 4
   },
   {
     "case": "/Xlib11/ButtonRelease",
