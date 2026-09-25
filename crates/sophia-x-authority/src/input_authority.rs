@@ -73,6 +73,9 @@ struct XNamespaceInputAuthority {
     pointer_implicit: bool,
     pointer_passive_detail: Option<u8>,
     keyboard_passive_detail: Option<u8>,
+    /// The window the pointer is in, as the surface owner's writer last
+    /// resolved it: the source window of the next press.
+    pointer_window: Option<XResourceId>,
     /// The core button mapping a client set (SetPointerMapping); identity
     /// until then. Read by the button routing under this lock.
     pub pointer_mapping: crate::XPointerButtonMapping,
@@ -505,6 +508,18 @@ impl XInputAuthorityState {
         }
     }
 
+    pub fn observe_pointer_window(&mut self, namespace: NamespaceId, window: XResourceId) {
+        self.namespaces.entry(namespace).or_default().pointer_window = Some(window);
+    }
+
+    pub fn pointer_window(&self, namespace: NamespaceId) -> Option<XResourceId> {
+        self.namespaces
+            .get(&namespace)
+            .and_then(|state| state.pointer_window)
+    }
+
+    /// A press with no ancestry to search: any passive grab on the button
+    /// may activate, whatever its window.
     pub fn activate_button(
         &mut self,
         namespace: NamespaceId,
@@ -512,20 +527,43 @@ impl XInputAuthorityState {
         modifiers: u16,
         implicit: XActiveInputGrab,
     ) -> XActiveInputGrab {
+        self.activate_button_within(namespace, button, modifiers, implicit, &[])
+    }
+
+    /// A press in the source window whose ancestry is given root down: "the
+    /// X server activates a passive grab for the first ancestor of the
+    /// source window, searching from the root window down" (XTS Xlib11
+    /// ButtonPress 2); without one the implicit grab activates.
+    pub fn activate_button_within(
+        &mut self,
+        namespace: NamespaceId,
+        button: u8,
+        modifiers: u16,
+        implicit: XActiveInputGrab,
+        ancestry: &[XResourceId],
+    ) -> XActiveInputGrab {
         let state = self.namespaces.entry(namespace).or_default();
         // A further press belongs to the active grab; it cannot activate a
         // passive grab or change an explicit grab into an automatic one.
         if let Some(active) = state.pointer {
             return active;
         }
-        let (active, is_implicit) = state
-            .buttons
-            .iter()
-            .copied()
-            .find(|grab| {
-                (grab.detail == 0 || grab.detail == button)
-                    && (grab.modifiers == X_ANY_MODIFIER || grab.modifiers == modifiers)
+        let matches = |grab: &XPassiveInputGrab| {
+            (grab.detail == 0 || grab.detail == button)
+                && (grab.modifiers == X_ANY_MODIFIER || grab.modifiers == modifiers)
+        };
+        let passive = if ancestry.is_empty() {
+            state.buttons.iter().copied().find(matches)
+        } else {
+            ancestry.iter().find_map(|window| {
+                state
+                    .buttons
+                    .iter()
+                    .copied()
+                    .find(|grab| grab.window == *window && matches(grab))
             })
+        };
+        let (active, is_implicit) = passive
             .map(|grab| (active_from_passive(grab), false))
             .unwrap_or((implicit, true));
         let activation =
@@ -542,23 +580,27 @@ impl XInputAuthorityState {
         active
     }
 
+    /// The grab the release ended, if any, and whether it was implicit.
     pub fn release_button(
         &mut self,
         namespace: NamespaceId,
         button: u8,
         all_core_buttons_released: bool,
-    ) {
+    ) -> Option<(XActiveInputGrab, bool)> {
         if let Some(state) = self.namespaces.get_mut(&namespace)
             && ((state.pointer_implicit && all_core_buttons_released)
                 || state.pointer_passive_detail == Some(button))
         {
+            let ended = state.pointer.map(|grab| (grab, state.pointer_implicit));
             state.pointer_activation = PointerActivationState::Changing;
             state.pointer = None;
             state.pointer_implicit = false;
             state.pointer_passive_detail = None;
             state.freeze.pointer = None;
             state.pointer_activation = PointerActivationState::Absent;
+            return ended;
         }
+        None
     }
 
     pub fn cleanup_owner(&mut self, owner: u64) {

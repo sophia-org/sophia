@@ -482,6 +482,7 @@ fn routed_input_discards_another_clients_event() {
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
+            grab_crossing: None,
             delivery: None,
         })
         .unwrap();
@@ -502,6 +503,7 @@ fn routed_input_discards_another_clients_event() {
             xi_emulated_button_type: None,
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
+            grab_crossing: None,
             delivery: None,
         })
         .unwrap();
@@ -528,6 +530,7 @@ fn routed_input_discards_another_clients_event() {
             None,
             None,
             0,
+            None,
             None,
         )
     );

@@ -375,6 +375,41 @@ before the fixes: the flags assertions in the crossing tests,
 `a_peer_that_selects_leave_while_the_pointer_is_inside_is_told_of_the_leave`
 and `remapping_a_window_reports_visibility_and_exposure_on_its_viewable_inferiors`.
 
+## The passive grab from the root down
+
+ButtonPress 2 sets a passive grab on Button1 on a window, its child and
+the child's child, warps the pointer into the innermost, presses, and
+expects the outermost window's EnterNotify with mode NotifyGrab and none
+on the two below: "the X server activates a passive grab for the first
+ancestor of the source window, searching from the root window down",
+and the activation is a warp as far as the crossing events tell it. The
+authority took the first matching grab in GrabButton order whatever its
+window, and its activation crossed nothing.
+
+The search needs the source window, which the registry did not know:
+each connection's writer resolves the window under the pointer from its
+own table, and the registry routes to surfaces. The surface owner's
+writer now records the window it resolved in the input authority, and
+the press path walks that window's ancestry through the registry's
+parent map, root down, to the first window with a matching grab; a
+press with no such ancestor activates the implicit grab as before. The
+walk happens before the authority is held, since the parent map is its
+own lock.
+
+The crossing rides on the routed event: the delivery marks a press
+that activated a passive grab on another window than the pointer's
+with the grab window and NotifyGrab, and a release that ended one with
+NotifyUngrab, and the writer crosses from the window it last sent the
+pointer to into the grab window and back, with that mode, where it
+would otherwise cross on the pointer window's own moves. The scenario
+reads 123 passed, 72 declared. Red before the fix:
+`a_press_activates_the_ancestor_most_passive_grab_with_grab_crossings`.
+
+What the seam leaves: GrabPointer's activation and UngrabPointer owe the
+same crossings on the request path and do not generate them; under the
+grab no peer selecting crossings on the path is told, as the fan-out is
+confined by an explicit grab.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -402,8 +437,8 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(122 passed, 73 declared after the selection-by-direction, KeymapNotify,
+(123 passed, 72 declared after the selection-by-direction, KeymapNotify,
 subwindow, propagation, wheel-button, crossing, visibility,
-hierarchy-crossing and focus-flag reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
+hierarchy-crossing, focus-flag and passive-grab reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.

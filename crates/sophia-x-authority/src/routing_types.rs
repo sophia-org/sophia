@@ -59,6 +59,14 @@ pub enum XAuthorityInputEvent {
 }
 
 /// An Engine-selected input event addressed to one live X11 connection.
+/// A crossing a grab owes: `window` is where the pointer goes (NotifyGrab,
+/// mode 1) or comes back from (NotifyUngrab, mode 2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XPointerGrabCrossing {
+    pub window: XResourceId,
+    pub mode: u8,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XAuthorityClientInputEvent {
     pub client: XServerFrontendClientId,
@@ -73,6 +81,11 @@ pub struct XAuthorityClientInputEvent {
     /// Keyboard FocusIn/FocusOut belongs to the authority focus transition,
     /// not to a later physical key delivery.
     pub xi_pointer_crossing_mask: u16,
+    /// The crossing a grab owes with this event: its activation warps the
+    /// pointer, as the crossing events tell it, to the grab window with
+    /// mode NotifyGrab, and its release back to the pointer window with
+    /// NotifyUngrab.
+    pub grab_crossing: Option<XPointerGrabCrossing>,
     pub delivery: Option<XAuthorityInputDeliveryId>,
 }
 
