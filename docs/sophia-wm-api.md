@@ -6,6 +6,9 @@
 The optional [window translation contract](window-transitions.md) adds generic
 shared positional targets without changing frozen revision-3 records. WMs own
 spatial policy; Engine owns the presentation timeline and GPU rendering.
+The [WM presentation contract](wm-presentation.md) adds capability-gated surface
+instances, regions and presentation-scoped actions. Its isolated implementation
+candidate is undergoing joined acceptance; it is not yet an integrated feature.
 Revisions advance as the protocol grows; negotiation, not a freeze, is what
 keeps clients and servers compatible. The experimental Rust API v7 transport
 has been removed.
@@ -36,8 +39,10 @@ A WM never receives:
 - client pixels, renderer or DRM handles, or portal payloads; or
 - another WM's tags, views, trees, columns, stacks, or checkpoint.
 
-Engine preserves the last committed projection while policy is absent,
-incompatible, malformed, timed out, or restarting.
+Engine preserves the last committed ordinary layout while policy is absent,
+incompatible, malformed, timed out, or restarting. Optional presentation input
+is separately revoked on connection loss or restart; retaining ordinary layout
+does not retain authority for an old modal scope.
 
 ## Form-Neutral Policy
 
@@ -97,9 +102,13 @@ handshake.
 Revision 2 separates action registration from physical shortcut ownership.
 The policy client advertises a bounded catalog containing one nonzero opaque
 action ID, a unique semantic name of at most 128 bytes, and an optional
-session-operation slot. It never supplies keycodes or modifier masks. The
+session-operation slot. Catalog registration supplies no keycodes or modifier
+masks. The
 trusted session coordinator resolves the shortcut authority's prepared profile
 against the admitted catalog, then gives Engine only normalized chords and opaque IDs.
+The optional presentation extension separately permits bounded chords within an
+actually presented modal publication. They do not register global shortcuts and
+cannot displace protected session controls; see its [input contract](wm-presentation.md#presented-input).
 The offered catalog may include standard session-operation slots (1 through 7)
 that this desktop has not admitted. Session omits those actions before shortcut
 resolution and snapshot publication; an offer never creates an operation grant.
