@@ -92,7 +92,7 @@ control of protected layers, clipping, admission, and resource limits.
 
 ## What exists
 
-This inventory is based on source inspection of Sophia master `ba42f97e`.
+This inventory is based on source inspection of Sophia checkpoint `ba42f97e`.
 Implementation presence is separate from acceptance on particular hardware.
 
 | Mechanism | Current implementation | Remaining gap for this proposal |
