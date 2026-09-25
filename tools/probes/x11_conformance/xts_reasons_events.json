@@ -76,11 +76,7 @@
   "/Xlib11/SelectionNotify#1": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/SelectionRequest#1": "the suite retired this assertion (NOTINUSE in the source)",
   "/Xlib11/UnmapNotify#3": "the suite retired this assertion (NOTINUSE in the source)",
-  "/Xlib11/VisibilityNotify#2": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event ordering could not be compared due to missing events'",
   "/Xlib11/VisibilityNotify#3": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Event delivery was not as expected'",
   "/Xlib11/VisibilityNotify#5": "the suite retired this assertion (NOTINUSE in the source)",
-  "/Xlib11/VisibilityNotify#6": "the suite retired this assertion (NOTINUSE in the source)",
-  "/Xlib11/VisibilityNotify#7": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Expected VisibilityNotify event, got none (partially obscured test)'",
-  "/Xlib11/VisibilityNotify#8": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event (viewable & completely unobscured test)'",
-  "/Xlib11/VisibilityNotify#9": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event (viewable and partially obscured test)'"
+  "/Xlib11/VisibilityNotify#6": "the suite retired this assertion (NOTINUSE in the source)"
 }

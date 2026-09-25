@@ -284,6 +284,31 @@ in parallel, so an event a peer's request queues after this connection
 read its own is legitimately either side of the reply; the reference
 serialises requests and never sees that half.
 
+## Visibility from occlusion
+
+VisibilityNotify was Unobscured on every map and never changed. The window
+table now computes each window's visibility as the protocol reports it,
+from the viewable siblings stacked above it and above each of its
+ancestors, each clipped to its own ancestors, by rectangle subtraction:
+nothing left is FullyObscured, everything left Unobscured, the rest
+PartiallyObscured. InputOnly windows neither obscure nor report. The map
+reports the computed state (a window mapped under a cover is obscured from
+its first report), and every window request reports, after its own
+events, what it changed for the windows some client selected
+VisibilityChange on; the runtime keeps what each was last reported with.
+
+The first cut computed every viewable window of the namespace on every
+window request, and the suite showed why that is wrong: by the EnterNotify
+case it holds seven hundred viewable windows from the purposes before, the
+pass was quadratic at seventy milliseconds a call, twice a request, and
+EnterNotify 9 starved its per-test budget (NORESULT). The pass now takes
+the windows of interest as candidates, noted from the event masks the
+dispatcher sees, with the stacking index built once per call. Four
+purposes moved (VisibilityNotify 2, 7 to 9) and the scenario reads 116.
+VisibilityNotify 3 stays: a hierarchy window mapped under its unmapped
+parent gets no report of its own when the parent's map makes it viewable.
+Red before the fix: `visibility_follows_what_covers_a_window`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -311,8 +336,8 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(112 passed, 83 declared after the selection-by-direction, KeymapNotify,
-subwindow, propagation, wheel-button and crossing reruns; 60 and 135 at
-the section's first declaration) from `xts_reasons_events.json`,
+(116 passed, 79 declared after the selection-by-direction, KeymapNotify,
+subwindow, propagation, wheel-button, crossing and visibility reruns; 60
+and 135 at the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.
