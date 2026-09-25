@@ -1,4 +1,7 @@
 struct X11InputWriterState {
+    /// Counted down as this writer finishes with each event, for the
+    /// connection's own barrier after an injection.
+    input_watermark: Option<Arc<X11InputWatermark>>,
     stream: Arc<Mutex<X11ClientOutput>>,
     output_control_pending: Arc<AtomicUsize>,
     output_wire: Arc<X11WirePermission>,
@@ -38,6 +41,7 @@ fn spawn_x11_input_event_writer(
     receiver: X11InputEventReceiver,
 ) -> Result<X11InputEventWriter, X11SetupSocketError> {
     let X11InputWriterState {
+        input_watermark,
         stream,
         output_control_pending,
         output_wire,
@@ -74,6 +78,8 @@ fn spawn_x11_input_event_writer(
                     Err(RecvTimeoutError::Timeout) => continue,
                     Err(RecvTimeoutError::Disconnected) => return Ok(()),
                 };
+            // Counted as drained on every way out of this iteration.
+            let _drained = input_watermark.as_deref().map(X11InputDrainGuard);
             let receipt = X11InputDeliveryGuard {
                 receiver: &receiver, client, delivery, settled: std::cell::Cell::new(false),
             };

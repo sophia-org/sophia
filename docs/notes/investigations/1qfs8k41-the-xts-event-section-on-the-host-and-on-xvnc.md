@@ -169,6 +169,27 @@ every warp answered with its EnterNotify and KeymapNotify before the XSync
 reply: the load-only miss is the ordering race of t229, and the scenario is
 declared from the gate's journal at 85 passed.
 
+## The barrier that ended too early
+
+KeymapNotify 1 then read PASS under one gate and FAIL under the next, on
+one host build, `No events received` on some or all of its five warps. A
+stderr trace in the host showed the order: the connection's FakeInput
+wait printed `settled` before the input writer printed its write of the
+EnterNotify. The barrier a FakeInput (and a WarpPointer from a client that
+may inject, which becomes one) waits on is raised by the broker when the
+routing is done, with the event queued for the writers and not yet
+written; the next request, the XSync's GetInputFocus, was then read and
+answered, and the suite found nothing pending after the reply. Loaded or
+not decides only how often. This is t229's race with a face: the
+injecting connection now takes a mark of what the registry has queued for
+it once the routing is done and does not read on until its own writer has
+drained to the mark (a watermark shared by the registry's senders and the
+connection's writer, bounded at one second because the writer may be
+parked on the keyboard readiness wait). A reply on any other connection,
+and any physical event, is still unordered against the writer; that is
+the general seam and stays with t229. Red before the fix, on a fraction
+of its rounds: `an_injections_events_precede_the_reply_to_the_next_request`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over

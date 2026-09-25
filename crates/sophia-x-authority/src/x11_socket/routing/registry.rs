@@ -157,6 +157,9 @@ struct XAuthorityEpochRoutedInput {
 struct XServerFrontendClientRouteSenders {
     connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>>,
     input: SyncSender<XAuthorityClientInputEvent>,
+    /// What has been queued to `input` and what its writer has finished
+    /// with, shared with the connection that owns the writer.
+    input_watermark: Arc<X11InputWatermark>,
     control: SyncSender<X11RoutedControl>,
     protocol: X11ProtocolSender,
     admission: Option<ClientAdmissionContext>,
@@ -193,6 +196,7 @@ struct XServerFrontendClientRouteSenders {
 #[cfg(unix)]
 struct XServerFrontendClientRouteChannels {
     input: Receiver<XAuthorityClientInputEvent>,
+    input_watermark: Arc<X11InputWatermark>,
     control: Receiver<X11RoutedControl>,
     protocol: X11ProtocolReceiver,
     #[allow(dead_code)]
@@ -497,9 +501,11 @@ impl XServerFrontendRouteRegistry {
         // question "did this registration make this receiver" answerable.
         let connection_state: Arc<std::sync::OnceLock<PrivateAppliedClientState>> =
             Arc::new(std::sync::OnceLock::new());
+        let input_watermark = Arc::new(X11InputWatermark::default());
         let senders = XServerFrontendClientRouteSenders {
             connection_state: connection_state.clone(),
             input: input_sender,
+            input_watermark: input_watermark.clone(),
             control: control_sender,
             protocol: X11ProtocolSender(protocol_sender),
             admission,
@@ -609,6 +615,7 @@ impl XServerFrontendRouteRegistry {
             registration,
             XServerFrontendClientRouteChannels {
                 input,
+                input_watermark,
                 control,
                 protocol: X11ProtocolReceiver::Tracked { receiver: protocol, registration: connection_state.clone() },
                 ordered: XAuthorityOrderedReceiver {
@@ -712,10 +719,15 @@ impl XServerFrontendRouteRegistry {
     ) -> Result<(), XServerFrontendRouteError> {
         let senders = self.client_senders(route.client)?;
         let incarnation = senders.connection_state.clone();
+        let watermark = senders.input_watermark.clone();
         if !self.input_recovery.bind(route.delivery, route.client)? {
             return Ok(());
         }
         match self.route_to_client(route.client, &incarnation, senders.input, route) {
+            Ok(()) => {
+                watermark.queued();
+                Ok(())
+            }
             Err(error @ XServerFrontendRouteError::ClientQueueFull { client }) => {
                 // A client that stops draining its private input queue has
                 // failed as an endpoint. Remove every sender for that client

@@ -930,6 +930,58 @@ mod xtest_admission_socket {
         client.barrier();
     }
 
+    /// What an injection owes the injecting client reaches its socket before
+    /// the reply to its next request. FakeInput's barrier ended at routing,
+    /// with the event still in the writer's queue, so a client that injected
+    /// a motion and then asked anything saw the reply first and, reading
+    /// what was pending after it, nothing (t229; XTS Xlib11 KeymapNotify 1
+    /// on a loaded machine). Red on the tree before the fix, on a fraction
+    /// of the rounds; the fraction is what a race gives, so the test rounds.
+    #[test]
+    fn an_injections_events_precede_the_reply_to_the_next_request() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let window = client.next;
+        client.next += 2;
+        // PointerMotion and EnterWindow.
+        client.stream
+            .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 6)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+
+        let mut replies_first = Vec::new();
+        for round in 0..40 {
+            let x = 25 + (round % 2) as i16;
+            client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, x, 5);
+            let mut request = vec![43, 0];
+            push_u16(&mut request, client.order, 1);
+            client.stream.write_all(&request).unwrap();
+            // Everything up to the reply, then whatever the motion still
+            // owes if it came after the reply.
+            let mut before = Vec::new();
+            loop {
+                let record = read_x_record(&mut client.stream);
+                if record[0] == 1 {
+                    break;
+                }
+                before.push(record[0] & 0x7f);
+            }
+            if !before.contains(&6) {
+                replies_first.push(round);
+                let _ = client.next_event(6);
+            }
+        }
+        assert!(
+            replies_first.is_empty(),
+            "the reply overtook the injected motion in rounds {replies_first:?}"
+        );
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,

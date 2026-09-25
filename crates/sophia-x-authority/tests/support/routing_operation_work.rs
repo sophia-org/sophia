@@ -220,6 +220,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
     let pending = Arc::new(AtomicUsize::new(1));
     let writer = spawn_x11_input_event_writer(
         X11InputWriterState {
+            input_watermark: None,
             stream: X11ClientOutput::shared(stream, 0),
             output_control_pending: pending.clone(),
             output_wire: Arc::new(X11WirePermission::open()),
