@@ -964,6 +964,7 @@ include!("writers/ordered_delivery.rs");
 include!("writers/ordered_serving.rs");
 include!("writers/ordered_preparation.rs");
 include!("writers/input.rs");
+include!("writers/input_targets.rs");
 include!("writers/input_crossings.rs");
 
 include!("writers/xi_source.rs");

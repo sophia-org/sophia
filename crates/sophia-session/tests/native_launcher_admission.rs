@@ -514,6 +514,7 @@ fn connected_visit_joins_real_pointer_ledger_cancellation_and_launch_queue() {
             },
             authority_current: true,
             targets: vec![h.target.clone()],
+            popouts: Vec::new(),
             allocations: vec![(
                 h.target.allocation,
                 h.target.allocation_logical,

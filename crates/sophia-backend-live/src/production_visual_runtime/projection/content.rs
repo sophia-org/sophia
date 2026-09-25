@@ -46,6 +46,7 @@ pub(super) fn content_binding_from_frame(
             && owned.transform.viewport == viewport
             && owned.transform.layout_generation == layout_generation,
         targets: frame.targets.clone(),
+        popouts: frame.popouts.clone(),
         allocations: frame.allocations.clone(),
     }
 }
@@ -78,6 +79,7 @@ pub(super) fn same_content_binding(
                     })
                 && previous.targets.len() == next.targets.len()
                 && previous.allocations == next.allocations
+                && previous.popouts == next.popouts
         }
         _ => false,
     }
@@ -147,6 +149,7 @@ pub(super) fn presented_content_bindings(
                 },
                 authority_current: false,
                 targets: Vec::new(),
+                popouts: Vec::new(),
                 allocations: Vec::new(),
             }
         };

@@ -689,8 +689,20 @@ impl ContentAllocationStore {
 }
 
 fn resolved_pixel_geometry_is_valid(snapshot: &ContentAllocationSnapshot) -> bool {
+    let logical = if snapshot.role == 2 {
+        // The physical anchor already supplies an integral pixel origin.
+        // Its rounded logical placeholder cannot contribute another fractional
+        // offset to the extent's outward quantization.
+        ContentLogicalRect {
+            x: 0,
+            y: 0,
+            ..snapshot.logical
+        }
+    } else {
+        snapshot.logical
+    };
     let Some(quantized) = quantize(
-        snapshot.logical,
+        logical,
         snapshot.scale_numerator,
         snapshot.scale_denominator,
     ) else {

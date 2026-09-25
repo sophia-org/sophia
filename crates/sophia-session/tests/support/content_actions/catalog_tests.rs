@@ -67,6 +67,7 @@ fn presented(target: PresentedContentTarget) -> sophia_engine::PresentedContentB
         },
         authority_current: true,
         targets: vec![target],
+        popouts: Vec::new(),
         allocations: vec![],
     }
 }

@@ -12,6 +12,7 @@ pub(super) struct PhysicalInputRouteReport {
     pub(super) reference_operations: Vec<(sophia_protocol::OutputId,u64,sophia_protocol::ShellReferenceOperation)>,
     pub(super) chrome_activations: Vec<(sophia_protocol::OutputId, WmActionId)>,
     pub(super) content_activations: Vec<sophia_engine::PresentedContentTarget>,
+    pub(super) content_dismissals: Vec<sophia_engine::PresentedContentDismissal>,
     pub(super) descriptor_activations: Vec<(sophia_protocol::ToplevelActionCapabilityRef, u64)>,
     pub(super) chrome_captures_started: usize,
     pub(super) chrome_actions_activated: usize,

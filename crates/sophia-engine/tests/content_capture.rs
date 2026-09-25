@@ -67,6 +67,7 @@ fn binding(target: PresentedContentTarget) -> PresentedContentBinding {
             layout_generation: 1,
         },
         authority_current: true,
+        popouts: Vec::new(),
         allocations: vec![(
             target.allocation,
             target.allocation_logical,
