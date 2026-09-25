@@ -398,6 +398,25 @@ impl LiveProductionVisualRuntime {
         Ok(true)
     }
 
+    /// How a Present's composition must treat its own surface: under a
+    /// presentation that replaces applications on every one of the Present's
+    /// outputs, the surface may be sampled only by a preview, or not at all
+    /// (t246). The tier may still be withheld for a missing source, in which
+    /// case the ordinary draw returns and samples it anyway.
+    pub(super) fn present_sampling(&self, outputs: &[OutputId]) -> LivePresentSampling {
+        match &self.policy_presentation {
+            Some(presentation)
+                if !outputs.is_empty()
+                    && outputs
+                        .iter()
+                        .all(|output| presentation.replaces_applications(*output)) =>
+            {
+                LivePresentSampling::ReplacedByPolicy
+            }
+            _ => LivePresentSampling::Required,
+        }
+    }
+
     pub fn policy_presentation(&self) -> Option<&LivePolicyPresentation> {
         self.policy_presentation.as_ref()
     }

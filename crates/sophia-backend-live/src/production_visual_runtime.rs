@@ -35,7 +35,7 @@ mod service;
 mod software_present;
 mod translation;
 pub use compositor_graphics::{
-    live_present_head_composition_sources, live_surface_routes_to_output,
+    LivePresentSampling, live_present_head_composition_sources, live_surface_routes_to_output,
     live_surfaces_owned_by_output,
 };
 pub use native::*;

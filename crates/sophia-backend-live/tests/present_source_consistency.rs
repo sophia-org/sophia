@@ -271,6 +271,7 @@ fn a_released_present_resolves_a_surface_admitted_after_it_was_queued() {
     let sources = live_present_head_composition_sources(
         GUIDE,
         current_source(&queued),
+        sophia_backend_live::LivePresentSampling::Required,
         &candidate,
         [&display_list],
         &cpu_layers,
@@ -365,6 +366,7 @@ fn a_secondary_output_present_sources_each_output_without_primary_leakage() {
     let primary_only = live_present_head_composition_sources(
         GUIDE,
         current_source(&queued),
+        sophia_backend_live::LivePresentSampling::Required,
         &candidate,
         [&lists[0]],
         &cpu_layers,
@@ -379,6 +381,7 @@ fn a_secondary_output_present_sources_each_output_without_primary_leakage() {
     let secondary_only = live_present_head_composition_sources(
         GUIDE,
         current_source(&queued),
+        sophia_backend_live::LivePresentSampling::Required,
         &candidate,
         [&lists[1]],
         &cpu_layers,
@@ -390,6 +393,7 @@ fn a_secondary_output_present_sources_each_output_without_primary_leakage() {
     let sources = live_present_head_composition_sources(
         GUIDE,
         current_source(&queued),
+        sophia_backend_live::LivePresentSampling::Required,
         &candidate,
         &lists,
         &cpu_layers,

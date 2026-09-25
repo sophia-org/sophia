@@ -263,6 +263,7 @@ impl LiveProductionVisualRuntime {
         let head_sources = live_present_head_composition_sources(
             queued_surface,
             current_source,
+            self.present_sampling(&applicable_outputs),
             prepared.candidate(),
             output_display_lists.iter().map(|(_, list)| list),
             &cpu_layers,
