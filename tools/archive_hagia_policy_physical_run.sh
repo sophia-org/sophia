@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/proof_checkout.sh
+source "$ROOT_DIR/tools/lib/proof_checkout.sh"
 evidence="${1:?usage: archive_hagia_policy_physical_run.sh EVIDENCE [PROOF_TEXT]}"
 proof_text="${2:-hagiapolicyproof}"
 state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
@@ -20,7 +22,7 @@ narthex_commit="$(sed -n 's/.* narthex_commit=\([0-9a-f]\{40\}\) .*/\1/p' <<<"$i
 recorded_sophia_sha256="$(sed -n 's/.* sophia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")"
 recorded_hagia_sha256="$(sed -n 's/.* hagia_sha256=\([0-9a-f]\{64\}\) .*/\1/p' <<<"$identity")"
 recorded_narthex_sha256="$(sed -n 's/.* narthex_sha256=\([0-9a-f]\{64\}\)$/\1/p' <<<"$identity")"
-[[ -d "$hagia_root/.git" ]] || {
+proof_checkout_root "$hagia_root" || {
     echo "Hagia checkout is unavailable: $hagia_root" >&2
     exit 1
 }

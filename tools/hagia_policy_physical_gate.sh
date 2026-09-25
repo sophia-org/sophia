@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/proof_checkout.sh
+source "$ROOT_DIR/tools/lib/proof_checkout.sh"
 hagia_bin="${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}"
 hagia_shell_bin="${SOPHIA_HAGIA_SHELL_BIN:-$(command -v narthex || true)}"
 kitty_bin="${SOPHIA_TERMINAL_BIN:-$(command -v kitty || true)}"
@@ -59,13 +61,14 @@ if [[ ! -x "$guide" ]]; then
 fi
 if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$hagia_commit" =~ ^[0-9a-f]{40}$ \
+    || ! "$narthex_commit" =~ ^[0-9a-f]{40}$ \
     || ! "$recorded_sophia_sha256" =~ ^[0-9a-f]{64}$ \
     || ! "$recorded_hagia_sha256" =~ ^[0-9a-f]{64}$ \
-    || ! "$recorded_hagia_shell_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    || ! "$recorded_narthex_sha256" =~ ^[0-9a-f]{64}$ ]]; then
     echo "run tools/run_current_hagia_policy_gate_tty4.sh to bind all three signed commits and all three binary identities" >&2
     exit 2
 fi
-if [[ ! -d "$hagia_root/.git" ]]; then
+if ! proof_checkout_root "$hagia_root"; then
     echo "Hagia checkout not found at $hagia_root" >&2
     exit 2
 fi
