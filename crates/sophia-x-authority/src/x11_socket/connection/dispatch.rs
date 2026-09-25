@@ -3469,6 +3469,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
     // those are what name the recipients.
     let retired_selections = core::mem::take(&mut release.retired_selection_ownerships);
     if let Some(routing) = protocol_routing.as_ref() {
+        route_x11_colormap_changes(routing, namespace, &release.colormap_changes)?;
         for retired in retired_selections {
             // Routed under the namespace the ownership belonged to, not this
             // connection's: the queue is shared across namespaces.

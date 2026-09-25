@@ -587,7 +587,7 @@ fn a_true_color_server_answers_the_colormap_family_rather_than_refusing_it() {
 
     // Each request framed as the protocol frames it (t169). Read-write
     // allocation has no cells to give; storing into a read-only colormap is
-    // denied; installing is a no-op; freeing unallocated cells is denied.
+    // denied; installing notifies windows; freeing unallocated cells is denied.
     // The copy starts empty because this client has no allocations yet.
     let order = XByteOrder::LittleEndian;
     let body = |words: &[u32]| {
@@ -633,6 +633,11 @@ fn a_true_color_server_answers_the_colormap_family_rather_than_refusing_it() {
             &mut properties,
         );
         match expected {
+            None if matches!(opcode, 81 | 82) => {
+                assert!(!result.outputs.is_empty());
+                assert!(result.outputs.iter().all(|output| matches!(output,
+                    XClientOutput::Event(XClientEvent::ColormapNotify { new: false, .. }))));
+            }
             None => assert!(result.outputs.is_empty(), "opcode {opcode}"),
             Some(code) => assert!(
                 matches!(

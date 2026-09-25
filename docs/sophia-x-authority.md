@@ -302,6 +302,18 @@ valid components are still freed when another component is invalid.
 `CopyColormapAndFree` moves the requesting client's references into the new
 colormap. References are released with the client's resources (respecting
 retained close-down modes), and freeing a colormap removes all its references.
+Each namespace screen has one installed colormap, initially the default.
+`InstallColormap` replaces it, reporting loss before gain to the
+`ColormapChange` selectors of windows naming either map, including unmapped
+windows. Reinstalling the active map does nothing. `UninstallColormap` restores
+the default when it removes the active non-default map; the default cannot be
+uninstalled. Freeing the active map, including on owner disconnect, restores
+the default before clearing references in surviving windows. Installation
+notices have `new = False`; attribute changes have `new = True`.
+`ListInstalledColormaps` and `GetWindowAttributes.map_installed` report that
+state. Shared root IDs do not allow notices or installed-map state to cross
+namespaces. TrueColor pixel interpretation remains fixed; installation changes
+protocol state and notifications, not Engine color management.
 Invalid colormaps, pixels, visuals, depths, allocation modes, and duplicate
 resource IDs retain their core X11 errors. No color identity crosses into
 Engine; only normalized XRGB8888 or ARGB8888 content and opacity facts do.

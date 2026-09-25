@@ -2,6 +2,16 @@
 // requests, and the colour allocations and lookups. Included by
 // dispatch.rs beside input_discovery.rs; one module with it.
 
+fn colormap_change_output(sequence: u16, change: crate::XColormapChange) -> XClientOutput {
+    XClientOutput::Event(XClientEvent::ColormapNotify {
+        sequence,
+        window: change.window,
+        colormap: change.colormap,
+        new: change.new,
+        state: u8::from(change.installed),
+    })
+}
+
 fn dispatch_colormap_request(
     context: XDispatchContext,
     request: XWireRequest,
@@ -151,9 +161,7 @@ fn dispatch_colormap_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                // The one installed colormap is the default, always: the
-                // setup advertises one installed map at most and at least,
-                // and GetWindowAttributes reports every window's installed.
+                // The setup advertises exactly one installed map per screen.
                 XWireRequest::Core(crate::XCoreRequest::ListInstalledColormaps { window }) => {
                     let outputs = if window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
                         && runtime
@@ -168,7 +176,7 @@ fn dispatch_colormap_request(
                     } else {
                         vec![XClientOutput::Reply(XClientReply::ListInstalledColormaps {
                             sequence: context.sequence,
-                            colormaps: vec![crate::X_SETUP_DEFAULT_COLORMAP],
+                            colormaps: vec![runtime.installed_colormap(context.namespace).local.raw() as u32],
                         })]
                     };
                     XDispatchResult {
@@ -209,9 +217,12 @@ fn dispatch_colormap_request(
                             | crate::XColormapRequestKind::StoreNamedColor => {
                                 vec![color_error(context, XErrorCode::BadAccess, 0)]
                             }
-                            // Install/uninstall remain the fixed-map policy.
-                            crate::XColormapRequestKind::Install
-                            | crate::XColormapRequestKind::Uninstall => Vec::new(),
+                            crate::XColormapRequestKind::Install => runtime
+                                .install_colormap(context.namespace, colormap)
+                                .into_iter().map(|change| colormap_change_output(context.sequence, change)).collect(),
+                            crate::XColormapRequestKind::Uninstall => runtime
+                                .uninstall_colormap(context.namespace, colormap)
+                                .into_iter().map(|change| colormap_change_output(context.sequence, change)).collect(),
                         }
                     };
                     XDispatchResult {
@@ -221,23 +232,9 @@ fn dispatch_colormap_request(
                     }
                 }
                 XWireRequest::Core(crate::XCoreRequest::FreeColormap { colormap }) => {
-                    let outputs = match runtime.free_colormap(context.namespace, colormap) {
-                        // A window left naming the freed colormap has None,
-                        // and its ColormapChange selectors are told (t210).
-                        Ok(()) if colormap.local.raw() != u64::from(crate::X_SETUP_DEFAULT_COLORMAP) => runtime
-                            .release_window_colormaps(colormap)
-                            .into_iter()
-                            .map(|window| {
-                                XClientOutput::Event(XClientEvent::ColormapNotify {
-                                    sequence: context.sequence,
-                                    window,
-                                    colormap: 0,
-                                    new: true,
-                                    state: 0,
-                                })
-                            })
-                            .collect(),
-                        Ok(()) => Vec::new(),
+                    let outputs = match runtime.free_colormap_with_changes(context.namespace, colormap) {
+                        Ok(changes) => changes.into_iter()
+                            .map(|change| colormap_change_output(context.sequence, change)).collect(),
                         Err(_) => vec![color_error(
                             context,
                             XErrorCode::BadColor,

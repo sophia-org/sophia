@@ -17,6 +17,8 @@ mod colormap_notify {
     const COLORMAP_CHANGE: u32 = 1 << 23;
     const CW_COLORMAP: u32 = 1 << 13;
 
+    include!("colormap_install.rs");
+
     fn routed_service(name: &str, clients: usize) -> (std::path::PathBuf, thread::JoinHandle<Result<(), X11SetupSocketError>>) {
         let socket_path = std::env::temp_dir().join(format!(
             "sophia-x-cmap-{name}-{}-{}.sock",

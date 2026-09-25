@@ -351,7 +351,7 @@ fn dispatch_window_creation_request(
                                         window,
                                         colormap,
                                         new: true,
-                                        state: colormap_state(colormap),
+                                        state: u8::from(runtime.colormap_installed(context.namespace, colormap)),
                                     })
                                 });
                             }
@@ -485,6 +485,7 @@ fn dispatch_window_creation_request(
                             sequence: context.sequence,
                             visual: X_SETUP_DEFAULT_VISUAL,
                             colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
+                            colormap_installed: runtime.colormap_installed(context.namespace, X_SETUP_DEFAULT_COLORMAP),
                             map_state: 2,
                             override_redirect: false,
                             bit_gravity: 0,
@@ -510,6 +511,7 @@ fn dispatch_window_creation_request(
                             visual,
                             colormap,
                             map_state,
+                            colormap_installed: runtime.colormap_installed(context.namespace, colormap.local.raw() as u32),
                             override_redirect,
                             bit_gravity: runtime.window_bit_gravity(window),
                             win_gravity: runtime.window_gravity(window),

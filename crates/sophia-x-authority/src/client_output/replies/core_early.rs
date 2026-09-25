@@ -138,6 +138,7 @@ fn encode_core_early_reply(
                     sequence,
                     visual,
                     colormap,
+                    colormap_installed,
                     map_state,
                     override_redirect,
                     bit_gravity,
@@ -159,7 +160,7 @@ fn encode_core_early_reply(
                     put_u32(byte_order, &mut out[16..20], 0xffff_ffff);
                     put_u32(byte_order, &mut out[20..24], 0);
                     out[24] = 0;
-                    out[25] = 1;
+                    out[25] = u8::from(colormap_installed);
                     out[26] = map_state;
                     out[27] = u8::from(override_redirect);
                     put_resource(byte_order, &mut out[28..32], colormap);

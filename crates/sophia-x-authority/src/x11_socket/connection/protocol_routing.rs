@@ -11,6 +11,7 @@ fn route_x11_dispatch_protocol_outputs(
     route_selection_event(state, routing, client, output)?;
     route_property_events(routing, client, output)?;
     route_mapping_notify_events(routing, namespace, client, output)?;
+    route_colormap_events(routing, namespace, client, output)?;
     route_core_lifecycle_events(routing, client, output)
 }
 
@@ -90,7 +91,6 @@ fn route_core_lifecycle_events_with_control(
     };
     const EXPOSURE_MASK: u32 = 1 << 15;
     const VISIBILITY_CHANGE_MASK: u32 = 1 << 16;
-    const COLORMAP_CHANGE_MASK: u32 = 1 << 23;
     const STRUCTURE_NOTIFY_MASK: u32 = 1 << 17;
     const RESIZE_REDIRECT_MASK: u32 = 1 << 18;
     const SUBSTRUCTURE_NOTIFY_MASK: u32 = 1 << 19;
@@ -266,9 +266,6 @@ fn route_core_lifecycle_events_with_control(
             }
             XClientEvent::VisibilityNotify { window, .. } => {
                 Some((index, window, VISIBILITY_CHANGE_MASK, *event))
-            }
-            XClientEvent::ColormapNotify { window, .. } => {
-                Some((index, window, COLORMAP_CHANGE_MASK, *event))
             }
             XClientEvent::Expose { window, .. } => {
                 Some((index, window, EXPOSURE_MASK, *event))

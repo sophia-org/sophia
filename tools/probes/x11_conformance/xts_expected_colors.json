@@ -213,9 +213,7 @@
   },
   {
     "case": "/Xlib7/XFreeColormap",
-    "purpose": 3,
-    "expected": "UNRESOLVED",
-    "reason": "Xorg's own server (Xvnc, 2026-09-24) gives the same UNRESOLVED: REPORT: The installed colourmap was not on the required list."
+    "purpose": 3
   },
   {
     "case": "/Xlib7/XFreeColormap",
@@ -501,9 +499,7 @@
   },
   {
     "case": "/Xlib10/XUninstallColormap",
-    "purpose": 2,
-    "expected": "UNTESTED",
-    "reason": "the suite's own omission: 'There is no known portable test method for this assertion'"
+    "purpose": 2
   },
   {
     "case": "/Xlib10/XUninstallColormap",

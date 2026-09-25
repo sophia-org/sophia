@@ -883,13 +883,14 @@ impl XAuthorityRuntime {
                      release.released_cursors = release.released_cursors.saturating_add(1);
                  }
                  XResourceKind::Colormap => {
-                     self.free_colormap(namespace, record.id).map_err(|error| match error {
+                     let changes = self.free_colormap_with_changes(namespace, record.id).map_err(|error| match error {
                          crate::XColormapError::Access(error) => error.into(),
                          crate::XColormapError::DuplicateId
                          | crate::XColormapError::UnknownVisual => {
                              XAuthorityRuntimeError::UnknownResource
                          }
                      })?;
+                     release.colormap_changes.extend(changes);
                      release.released_colormaps = release.released_colormaps.saturating_add(1);
                  }
                  // The reduced frontend does not persist client atoms or GCs in

@@ -72,8 +72,19 @@ pub struct XSaveSetReparent {
     pub surface: Option<AuthoritySurface>,
 }
 
+/// A colormap attribute or installation change, routed by the frontend to
+/// this window's selectors. Cleanup carries these with its own release.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XColormapChange {
+    pub window: crate::XResourceId,
+    pub colormap: u32,
+    pub new: bool,
+    pub installed: bool,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct XAuthorityClientResourceRelease {
+    pub colormap_changes: Vec<XColormapChange>,
     /// X11 windows whose properties must be removed from the frontend table.
     pub destroyed_windows: Vec<crate::XResourceId>,
     /// Windows the departing client had saved (ChangeSaveSet), given to the
@@ -280,6 +291,8 @@ pub struct XAuthorityRuntime {
     /// Border widths as asked for: read back, never drawn.
     window_allocation: XWindowAllocationState,
     colormaps: BTreeMap<crate::XResourceId, u32>,
+    /// One installed map per namespace screen; absence means the default.
+    installed_colormaps: BTreeMap<NamespaceId, crate::XResourceId>,
     color_allocations: BTreeMap<(NamespaceId, u64, crate::XResourceId), [BTreeMap<u8, u64>; 3]>,
     glx_contexts: BTreeMap<crate::XResourceId, (NamespaceId, u32, bool)>,
     glx_drawables: BTreeMap<crate::XResourceId, XGlxDrawableRecord>,
@@ -388,6 +401,7 @@ impl Default for XAuthorityRuntime {
             input_only_windows: Default::default(),
             window_allocation: Default::default(),
             colormaps: Default::default(),
+            installed_colormaps: Default::default(),
             color_allocations: Default::default(),
             glx_contexts: Default::default(),
             glx_drawables: Default::default(),

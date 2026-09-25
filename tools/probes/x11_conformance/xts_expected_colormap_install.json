@@ -1,0 +1,8 @@
+[
+  {"case": "/Xlib10/XInstallColormap", "purpose": 1},
+  {"case": "/Xlib10/XInstallColormap", "purpose": 2, "expected": "UNTESTED", "reason": "suite omission: no known reliable test method for displayed true colours"},
+  {"case": "/Xlib10/XInstallColormap", "purpose": 3, "expected": "UNTESTED", "reason": "suite omission: no known portable test method for the required colormap list"},
+  {"case": "/Xlib10/XInstallColormap", "purpose": 4},
+  {"case": "/Xlib10/XInstallColormap", "purpose": 5, "expected": "UNTESTED", "reason": "suite omission: no known portable test method for side-effect installation notifications; covered by Sophia socket regressions"},
+  {"case": "/Xlib10/XInstallColormap", "purpose": 6}
+]

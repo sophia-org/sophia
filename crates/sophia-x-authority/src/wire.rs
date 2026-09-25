@@ -93,7 +93,7 @@ pub enum XPolyTextItem {
     Font { font: XResourceId },
 }
 
-/// The colormap requests a TrueColor-only server declines.
+/// Colormap allocation, mutation and installation requests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum XColormapRequestKind {
     /// Read-write allocation: there are no allocable cells on a TrueColor
@@ -103,7 +103,7 @@ pub enum XColormapRequestKind {
     /// Storing into a read-only colormap is `BadAccess`.
     StoreColors,
     StoreNamedColor,
-    /// Accepted and ignored: a TrueColor colormap is always installed.
+    /// Replace the namespace screen's installed map, or restore its default.
     Install,
     Uninstall,
 }
