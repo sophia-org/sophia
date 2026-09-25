@@ -9,9 +9,10 @@ printf 'schema 1\n' >"$work/profile.kdl"
 cat >"$work/sophia" <<'STUB'
 #!/usr/bin/env bash
 printf 'engine:%s\n' "$*" >>"$SOPHIA_PREFLIGHT_CALLS"
-if [[ "$2" == print-policy ]]; then printf 'schema 1\npolicy { layout "scroller"; }\n'; fi
-if [[ "$2" == print-component && "$4" == --component=window-manager ]]; then printf '%s' "${SOPHIA_TEST_SELECTED_WM:-}"; fi
-if [[ "$2" == print-component && "$4" == --component=shell-client ]]; then printf '%s' "${SOPHIA_TEST_SELECTED_SHELL:-}"; fi
+[[ "$1" == config && "$2" == check-session-profile ]] || exit 99
+if [[ "${SOPHIA_TEST_OLD_BINARY:-0}" != 1 ]]; then
+    echo 'sophia_session_profile_preflight schema=1 status=accepted policy=validated'
+fi
 exit "${SOPHIA_TEST_ENGINE_STATUS:-0}"
 STUB
 cat >"$work/hagia" <<'STUB'
@@ -21,15 +22,11 @@ exit "${SOPHIA_TEST_WM_STATUS:-0}"
 STUB
 chmod 700 "$work/sophia" "$work/hagia"
 sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"
-[[ "$(wc -l <"$work/calls")" == 5 ]]
-: >"$work/calls"
-SOPHIA_TEST_SELECTED_WM=/usr/bin/true sophia_check_hagia_profile "$work/sophia" "$work/missing-hagia" "$work/profile.kdl"
-[[ "$(wc -l <"$work/calls")" == 3 ]]
-if SOPHIA_TEST_SELECTED_WM="$work/missing" sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"; then
-    echo 'Missing selected WM was accepted' >&2; exit 1
-fi
-if SOPHIA_TEST_SELECTED_SHELL="$work/missing" sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"; then
-    echo 'Missing selected shell was accepted' >&2; exit 1
+[[ "$(wc -l <"$work/calls")" == 1 ]]
+# Role selection, policy rejection, private staging and timeout are exercised
+# against the real binary by the session_profile_preflight Rust tests.
+if SOPHIA_TEST_OLD_BINARY=1 sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"; then
+    echo 'An unsupported preflight operation returned zero and was accepted' >&2; exit 1
 fi
 : >"$work/calls"
 if SOPHIA_TEST_ENGINE_STATUS=1 sophia_check_hagia_profile "$work/sophia" "$work/hagia" "$work/profile.kdl"; then
@@ -59,7 +56,7 @@ for name, script in {
 env=dict(os.environ, PATH=str(work)+':'+os.environ['PATH'],
     SOPHIA_TTY_PROFILE='hagia', SOPHIA_TTY_NUMBER='3', SOPHIA_BUILD_SESSION='false',
     SOPHIA_BIN=str(work/'sophia'), SOPHIA_HAGIA_BIN=str(work/'hagia'),
-    SOPHIA_DESKTOP_PROFILE=str(work/'profile.kdl'), SOPHIA_TEST_WM_STATUS='1',
+    SOPHIA_DESKTOP_PROFILE=str(work/'profile.kdl'), SOPHIA_TEST_ENGINE_STATUS='1',
     XDG_STATE_HOME=str(work/'state'), SOPHIA_TAKEOVER_MARKER=str(marker))
 master, slave=pty.openpty()
 try:
@@ -68,7 +65,7 @@ try:
             stdin=slave,stdout=log,stderr=log,env=env,timeout=15)
     assert result.returncode == 1, (work/'launcher.log').read_text()
     assert not marker.exists(), 'Handoff began before WM validation passed'
-    assert (work/'calls').read_text().splitlines()[-1].startswith('wm:config check')
+    assert (work/'calls').read_text().splitlines()[-1].startswith('engine:config check-session-profile')
 finally:
     os.close(slave); os.close(master)
 PY

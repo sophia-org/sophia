@@ -185,9 +185,12 @@ staging; staged-file provenance replaces the source-file provenance on reload.
 `sophia config check --desktop-profile=...` reports
 `policy_validation=delegated`: success validates the envelope, not WM semantics.
 Use `sophia config print-policy --desktop-profile=...` to export a policy-only
-profile for `hagia config check --config=...`. The Hagia TTY adapter checks
-Sophia's envelope and passes only that exported policy to Hagia before
-display-manager takeover. An explicitly selected different WM validates its
+profile for `hagia config check --config=...`. The Hagia TTY adapter calls
+`sophia config check-session-profile --desktop-profile=... --default-wm=/path/to/hagia`
+before display-manager takeover. This installed-runtime command checks the
+envelope and selected executables, stages only the policy in a private temporary
+directory, and gives Hagia ten seconds to validate it. Rejection or timeout
+refuses the handoff and removes the staged policy. An explicitly selected different WM validates its
 own vocabulary during protocol activation. Packaging also checks both.
 Runtime still gives Hagia only its private
 Policy fragment, and Hagia constructs a valid policy model before acknowledging

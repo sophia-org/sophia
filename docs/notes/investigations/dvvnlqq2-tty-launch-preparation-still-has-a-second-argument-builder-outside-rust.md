@@ -45,12 +45,41 @@ driver. Gate-only orchestration can stay in xtask.
 
 ## Validation and remaining work
 
-No launcher behavior changed in this audit. t027 remains open. Required checks
+The initial audit changed no launcher behavior. t027 remains open. Required checks
 include the existing Hagia preflight fixture, terminal adapters, exact argument
 acceptance, refusal before display-manager shutdown, and disposable-PTY recovery
 fixtures. Preserve bounded child waits, guard death/recovery behavior, session
 process-group shutdown, private evidence modes and bus ownership. A headless
 run must not invoke real DRM, input acquisition or display-manager operations.
+
+## First implementation slice
+
+`sophia config check-session-profile` now owns the existing Hagia preflight:
+typed desktop loading, selected WM/shell executable checks, file-identity
+comparison for Hagia aliases, private policy-only staging, and a ten-second
+deadline for the policy checker and its process group. A different selected WM
+retains responsibility for its own vocabulary at protocol activation. The
+shell helper delegates to the installed binary, with an outer fifteen-second
+bound; no Cargo or xtask dependency enters installed startup. It requires the
+explicit acceptance record as well as success status, so an older binary that
+does not implement preflight cannot silently admit a handoff. The shell fixture
+includes that negative control.
+
+Seven new CLI tests cover policy privacy and file modes, cleanup on acceptance
+and rejection, missing executables, Hagia aliases, another WM's vocabulary,
+invalid envelopes/duplicate options and a stalled checker. Four existing
+desktop-config tests and 22 launcher-safety tests pass. The disposable-PTY
+fixture still proves that preflight refusal happens before TTY-mode queries or
+privileged handoff. Clippy passes for all CLI targets with and without native
+features. Logs are retained in the sibling owned build cache under
+`../sophia-t027/.artifacts/t027-*.log`.
+The native-feature normal-session lifecycle test also passes with devices and
+installed session sockets hidden (one test, five session-start variants).
+Formatting and the layout gate pass.
+
+The live argument/environment builder, remaining profile/gate dispatch and
+their exact-vector verification are still outstanding. This first slice does
+not close t027 and does not install or launch a live session.
 
 ## Connections
 

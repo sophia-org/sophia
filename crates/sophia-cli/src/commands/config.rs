@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+mod session_preflight;
+
 use sophia_config::{
     ConfigDomain, ConfigGeneration, ConfigSource, ConfigSourceClass,
     discover_default_config_source, load_core_snapshot, load_wm_snapshot,
@@ -10,6 +12,10 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool, Box<dyn std::error::Error
         return Ok(false);
     }
     let operation = args.get(1).map(String::as_str).unwrap_or("check");
+    if operation == "check-session-profile" {
+        session_preflight::run(&args[2..])?;
+        return Ok(true);
+    }
     if let Some(path) = desktop_profile_path(args)? {
         validate_desktop_profile_options(args)?;
         run_desktop_profile(operation, args, &path)?;
