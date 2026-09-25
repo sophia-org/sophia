@@ -2,7 +2,7 @@
 id: kc13g2uh
 date: 2026-09-25
 kind: investigation
-status: investigating
+status: implemented
 tags: [investigation, session, rendering]
 ---
 # An unsampled Present can terminate a replacement presentation session
@@ -163,16 +163,46 @@ observed by the controls. Their original provenance is
 `/home/niltempus/dev/sophia-t196/.artifacts/t244-controls/controls.json`.
 
 The session review has not established a separate session source defect. The
-director accepted the bounded headless scope and allocated a conditional main
-gate window for static checks, default workspace tests and the native protocol
-family. That final integration gate and coordinated docs closure remain pending;
-the t246 row stays open. This does not authorize installing or reloading either
-project. The separate Hagia clipped-border concern was not reproduced: valid
+director accepted the bounded headless scope. The separate Hagia clipped-border
+concern was not reproduced: valid
 geometry constraints and the backend's clipping-before-border construction
 exclude the hypothesized case. No border repair is attributed to t246.
 
-No main-tree operation, live install, reload, GPU execution, or physical-device
-test was performed for this reproduction. Physical acceptance remains outstanding.
+## Final gate and development closure
+
+The final signed candidate is `ae7f1578402fb5b45c39333f28b5a2d5bfdd5abd`.
+In the director's exclusive main-tree window, fmt, diff, metadata and layout
+all exited zero. Device-hidden default workspace tests passed 3,781 cases with
+zero failures and 33 ignored, from 17:01:53Z to 17:05:12Z on 2026-09-25.
+The native protocol family passed all eight phases from 17:05:46Z to 17:11:13Z:
+isolation, independent WM, independent shell, protocol/runtime, Engine owners,
+live-output owner, output client and control service. Its process exited zero
+and its start/end source identities match.
+
+The frozen paired sources were Hagia
+`9dc9d2be8b5f2f6888cc3fffada2ab93895c0bf8` (documentation above tested h004
+source `e3fe2b4`), Narthex `50b9014d96f675f515b5e092c071427fb8e34423`,
+and Lom `97b6f6345176841ebf0398df468015febe59fd6c`. Lom's diagnostic binary
+hash remained `bf32e46e5955131c41aac60f942ce7df69e9ae29c612b18beb4bc6efd2948b04`.
+All four roots were clean and unchanged at end capture, and the frozen Hagia
+binary retained the hash recorded above. The Hagia source freeze was released
+only after this capture.
+
+Durable evidence is
+`~/.local/state/sophia/development-evidence/t246-ae7f1578`: `manifest.json`,
+`gate-summary.json`, start/end identities, native-family report and logs,
+worktree logs and all four negative controls. Its `SHA256SUMS` covers 54 files;
+verification passed. Temporary directories and compiler caches are excluded.
+The SHA256 of `SHA256SUMS` is
+`c58507225d372235b493cbf1e4e854696397f1e76702bc6b1cdd5570d371b310`.
+The original main gate directory is
+`/home/niltempus/dev/sophia/.artifacts/t246-ae7f1578-74jtg8wi`.
+
+The director authorized t246 **development** closure after this result. No
+separate session correction was needed. The concrete-driver, wire-delivery and
+physical-cause limits above remain; this does not claim physical acceptance or
+authorize installing or reloading either project. Main is held at the gated
+candidate pending coordinated docs verification and merge authorization.
 
 ## Connections
 
