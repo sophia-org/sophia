@@ -87,6 +87,11 @@ pub struct LiveCpuCompositionLayerRef<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveCpuCompositionElementRef<'a> {
     Layer(LiveCpuCompositionLayerRef<'a>),
+    /// Samples the whole source into geometry, then clips the destination.
+    ClippedLayer {
+        layer: LiveCpuCompositionLayerRef<'a>,
+        clip: Rect,
+    },
     Solid {
         opacity: u8,
         geometry: Rect,
@@ -480,6 +485,11 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_curso
             }
             for (index, element) in elements.iter().enumerate() {
                 let composed = match element {
+                    LiveCpuCompositionElementRef::ClippedLayer {
+                        layer,
+                        clip: bounds,
+                    } => clip_rect(clip, *bounds)
+                        .is_some_and(|clip| compose_scaled_layer_clipped(&mut frame, layer, clip)),
                     LiveCpuCompositionElementRef::Layer(layer) => {
                         compose_layer_clipped(&mut frame, layer, clip)
                     }
@@ -510,6 +520,9 @@ pub fn compose_live_cpu_display_list_frame_with_metrics_reusing_damage_and_curso
             for element in elements {
                 let composed = match element {
                     LiveCpuCompositionElementRef::Layer(layer) => compose_layer(&mut frame, layer),
+                    LiveCpuCompositionElementRef::ClippedLayer { layer, clip } => {
+                        compose_scaled_layer_clipped(&mut frame, layer, *clip)
+                    }
                     LiveCpuCompositionElementRef::Solid {
                         opacity,
                         geometry,
@@ -576,8 +589,14 @@ fn composition_evidence_metrics(
     }
     let mut nonzero_evidence = 0usize;
     for element in elements {
+        if let LiveCpuCompositionElementRef::ClippedLayer { clip, .. } = element {
+            for value in [clip.x, clip.y, clip.width, clip.height] {
+                checksum = evidence_hash(checksum, value as u32 as u64);
+            }
+        }
         match element {
-            LiveCpuCompositionElementRef::Layer(layer) => {
+            LiveCpuCompositionElementRef::Layer(layer)
+            | LiveCpuCompositionElementRef::ClippedLayer { layer, .. } => {
                 for value in [
                     layer.buffer.handle,
                     layer.buffer.generation,
@@ -757,6 +776,45 @@ fn cpu_frame_metrics(bytes: &[u8]) -> (usize, u64) {
         checksum = (checksum ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3);
     }
     (nonzero_pixel_bytes, checksum)
+}
+
+fn compose_scaled_layer_clipped(
+    frame: &mut LiveCpuComposedFrame,
+    layer: &LiveCpuCompositionLayerRef<'_>,
+    clip: Rect,
+) -> bool {
+    let buffer = layer.buffer;
+    if !matches!(
+        buffer.format,
+        LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888 | LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888
+    ) || buffer.size.width <= 0
+        || buffer.size.height <= 0
+        || u64::from(buffer.stride) < buffer.size.width as u64 * 4
+        || (buffer.bytes.len() as u64) < u64::from(buffer.stride) * buffer.size.height as u64
+    {
+        return false;
+    }
+    let Some(target) =
+        clip_rect(layer.geometry, clip).and_then(|rect| clip_rect(rect, output_rect(frame.size)))
+    else {
+        return false;
+    };
+    for y in target.y..target.y + target.height {
+        let source_y = (i64::from(y) - i64::from(layer.geometry.y)) * i64::from(buffer.size.height)
+            / i64::from(layer.geometry.height);
+        for x in target.x..target.x + target.width {
+            let source_x = (i64::from(x) - i64::from(layer.geometry.x))
+                * i64::from(buffer.size.width)
+                / i64::from(layer.geometry.width);
+            let offset = source_y as usize * buffer.stride as usize + source_x as usize * 4;
+            let mut pixel: [u8; 4] = buffer.bytes[offset..offset + 4].try_into().unwrap();
+            if buffer.format == LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888 {
+                pixel[3] = 255;
+            }
+            blend_premultiplied_pixel(frame, x, y, pixel);
+        }
+    }
+    true
 }
 
 fn compose_layer(frame: &mut LiveCpuComposedFrame, layer: &LiveCpuCompositionLayerRef<'_>) -> bool {

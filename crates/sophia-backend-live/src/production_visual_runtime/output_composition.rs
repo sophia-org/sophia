@@ -87,9 +87,20 @@ impl OutputComposition<'_> {
             {
                 return Err(CompositorDisplayListError::CapacityExceeded);
             }
-            display_list
-                .commands
-                .extend(overlay.commands.iter().cloned());
+            for command in &overlay.commands {
+                let mut command = command.clone();
+                if let CompositorDisplayCommand::SurfacePreview(preview) = &mut command {
+                    let Some(source) = committed_surfaces
+                        .iter()
+                        .find(|state| state.surface == preview.surface)
+                    else {
+                        continue;
+                    };
+                    // Source updates damage the preview, not the hidden client geometry.
+                    preview.generation = source.committed_generation;
+                }
+                display_list.commands.push(command);
+            }
         }
         Ok(display_list)
     }

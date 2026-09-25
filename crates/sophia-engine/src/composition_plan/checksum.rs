@@ -37,6 +37,17 @@ fn logical_scene_checksum(
     }
     for command in &display_list.commands {
         match command {
+            CompositorDisplayCommand::SurfacePreview(preview) => {
+                mix(8);
+                mix(preview.generation);
+                mix(u64::from(preview.surface.index()));
+                mix(u64::from(preview.surface.generation()));
+                for rect in [preview.geometry, preview.clip] {
+                    for value in [rect.x, rect.y, rect.width, rect.height] {
+                        mix(value as u32 as u64);
+                    }
+                }
+            }
             CompositorDisplayCommand::Surface { surface } => {
                 mix(1);
                 mix(u64::from(surface.index()));

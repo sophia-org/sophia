@@ -1,4 +1,54 @@
-protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=8 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=9 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
+    capability "overview" bit=13 since=9
+    // Slots are catalog-local. Scene identities, geometry and pixels remain in Engine.
+    message "OverviewBegin" kind=123 direction="session-to-shell" transaction="required" since=9 bytes=24 {
+        field "connection_epoch" type="u64" nonzero=#true
+        field "catalog_generation" type="u64" nonzero=#true
+        field "workspaces" type="u16" min=1 max=1008
+        field "reserved" type="u16" reserved=#true
+        field "windows" type="u32" max=64512
+    }
+    message "OverviewWorkspace" kind=124 direction="session-to-shell" transaction="required" since=9 {
+        field "connection_epoch" type="u64" nonzero=#true
+        field "catalog_generation" type="u64" nonzero=#true
+        field "slot" type="u16" min=1
+        field "active" type="u16" max=1
+        field "output" type="opaque-u64" nonzero=#true
+        field "focused" type="u16"
+        field "window_count" type="u16" max=1024
+        field "windows" type="u16[window_count]"
+    }
+    message "OverviewEnd" kind=125 direction="session-to-shell" transaction="required" since=9 bytes=24 {
+        payload-ref "catalog" message="OverviewBegin"
+    }
+    message "OverviewRequest" kind=126 direction="session-to-shell" transaction="required" since=9 bytes=48 {
+        field "connection_epoch" type="u64" nonzero=#true
+        field "catalog_generation" type="u64" nonzero=#true
+        field "request_generation" type="u64" nonzero=#true
+        field "presentation_epoch" type="u64"
+        field "output" type="opaque-u64" nonzero=#true
+        field "operation" type="u16" min=1 max=10
+        field "workspace" type="u16"
+        field "window" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "OverviewCandidate" kind=127 direction="shell-to-session" transaction="required" since=9 bytes=40 {
+        field "connection_epoch" type="u64" nonzero=#true
+        field "catalog_generation" type="u64" nonzero=#true
+        field "request_generation" type="u64" nonzero=#true
+        field "candidate_generation" type="u64" nonzero=#true
+        field "state" type="u16" max=2
+        field "workspace" type="u16" min=1
+        field "window" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "OverviewOutcome" kind=128 direction="session-to-shell" transaction="required" since=9 bytes=28 {
+        field "connection_epoch" type="u64" nonzero=#true
+        field "candidate_generation" type="u64" nonzero=#true
+        field "presentation_epoch" type="u64"
+        field "kind" type="u16" min=1 max=4
+        field "reserved" type="u16" reserved=#true
+    }
     capability "descriptor_switcher" bit=0
     capability "work_area_reservation" bit=1
     capability "tab_groups" bit=2 since=2

@@ -19,7 +19,7 @@ pub(super) fn validate(text: &str) -> Result<(), String> {
     if string_arg(protocol, 0)? != "sophia_shell_v1"
         || integer_property(protocol, "frame-version")? != 1
         || integer_property(protocol, "interface-major")? != 1
-        || integer_property(protocol, "interface-revision")? != 8
+        || integer_property(protocol, "interface-revision")? != 9
         || integer_property(protocol, "max-descriptors")? != 16
         || integer_property(protocol, "max-label-bytes")? != 128
         || integer_property(protocol, "max-pending-activations")? != 16
@@ -30,6 +30,12 @@ pub(super) fn validate(text: &str) -> Result<(), String> {
         .children()
         .ok_or("shell protocol node must have children")?;
     let expected = BTreeMap::from([
+        ("OverviewBegin", (123, "session-to-shell", "required")),
+        ("OverviewWorkspace", (124, "session-to-shell", "required")),
+        ("OverviewEnd", (125, "session-to-shell", "required")),
+        ("OverviewRequest", (126, "session-to-shell", "required")),
+        ("OverviewCandidate", (127, "shell-to-session", "required")),
+        ("OverviewOutcome", (128, "session-to-shell", "required")),
         ("ClientHello", (96, "shell-to-session", "zero")),
         ("ServerWelcome", (97, "session-to-shell", "zero")),
         ("DescriptorSnapshot", (98, "session-to-shell", "required")),
@@ -207,7 +213,7 @@ pub(super) fn validate(text: &str) -> Result<(), String> {
         }
     }
     if actual.len() != expected_count {
-        return Err("shell schema revision-8 message set drifted".into());
+        return Err("shell schema revision-9 message set drifted".into());
     }
     Ok(())
 }

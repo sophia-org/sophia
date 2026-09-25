@@ -184,6 +184,13 @@ pub fn lower_head_composition_plan_with_caches(
                     .clone();
                 binding.native_geometry = preview.geometry;
                 binding.native_clip = preview.clip;
+                binding.requested_sampling = head_sampling_class(
+                    binding.source_pixel_size,
+                    Size {
+                        width: preview.geometry.width,
+                        height: preview.geometry.height,
+                    },
+                );
                 let source = sources
                     .iter()
                     .find(|source| {
