@@ -1011,9 +1011,13 @@ the harness runs whatever image is there.
 
 ```sh
 cargo xtask check x11-profile --profile=all \
-    --output=.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-all \
-    --target-dir=.artifacts/x11-profile-target --timeout=1800
+    --output=$PWD/.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-all \
+    --target-dir=$PWD/.artifacts/x11-profile-target --timeout=1800
 ```
+
+Both paths must be absolute and under the repository's `.artifacts`: the gate
+refuses a relative one ("output and target must be disk-backed children") and a
+directory that already exists.
 
 The two independent conformance profiles, `xtest` and `native-input`, run
 from a snapshot of the committed source against real private sockets and
@@ -1024,8 +1028,8 @@ statement about the run, never a pass:
 
 ```sh
 cargo xtask check x11-profile --profile=all \
-    --output=.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-xts \
-    --target-dir=.artifacts/x11-profile-target --timeout=1800 \
+    --output=$PWD/.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-xts \
+    --target-dir=$PWD/.artifacts/x11-profile-target --timeout=1800 \
     --xts-root=$HOME/src/xts \
     --xts-expected=tools/probes/x11_conformance/xts_expected_selected_core.json \
     --xts-scenario=selected-core --xts-timeout=900
@@ -1091,8 +1095,8 @@ same gate as a pixel oracle for the fixture host's CPU raster:
 
 ```sh
 cargo xtask check x11-profile --profile=xtest \
-    --output=.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-x11bench \
-    --target-dir=.artifacts/x11-profile-target --timeout=1800 \
+    --output=$PWD/.artifacts/x11-profile-$(git rev-parse --short=8 HEAD)-x11bench \
+    --target-dir=$PWD/.artifacts/x11-profile-target --timeout=1800 \
     --x11bench-bin=$HOME/src/x11bench/build/x11bench \
     --x11bench-expected=$PWD/tools/probes/x11_conformance/x11bench_expected.json
 ```
