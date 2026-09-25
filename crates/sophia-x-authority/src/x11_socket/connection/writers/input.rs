@@ -72,6 +72,7 @@ fn spawn_x11_input_event_writer(
                 mut xi_emulated_button_window,
                 xi_pointer_crossing_mask,
                 grab_crossing,
+                grab_target,
                 delivery,
             ) =
                 match receiver.recv_timeout(client) {
@@ -199,7 +200,7 @@ fn spawn_x11_input_event_writer(
                 );
             }
             let root = XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1);
-            let (delivered_window, pointer_surface_window, pointer_event_ancestry) = match event {
+            let (delivered_window, pointer_surface_window, pointer_event_ancestry, grab_delivered) = match event {
                 // The route says which surface a key belongs to; which window
                 // inside it hears the key is the protocol's question, and the
                 // focus is the only one of the two that was asked it. Taking
@@ -216,7 +217,7 @@ fn spawn_x11_input_event_writer(
                     } else {
                         routed_keyboard_window.unwrap_or(focused_window)
                     };
-                    (window, None, None)
+                    (window, None, None, false)
                 }
                 XAuthorityInputEvent::Pointer(pointer) => {
                     let Some(surface_window) = x11_pointer_surface_window(
@@ -251,16 +252,25 @@ fn spawn_x11_input_event_writer(
                         XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1)
                     };
                     let event_ancestry = selections.ancestry_including(event_window);
-                    let delivered_window = selections
-                        .selected_pointer_target(
-                            surface_window,
-                            pointer_selection(pointer.kind),
-                            pointer.state,
-                            pointer.event_x,
-                            pointer.event_y,
-                        )
-                        .unwrap_or(surface_window);
-                    (delivered_window, Some(surface_window), Some(event_ancestry))
+                    let selected = selections.selected_pointer_target(
+                        surface_window,
+                        pointer_selection(pointer.kind),
+                        pointer.state,
+                        pointer.event_x,
+                        pointer.event_y,
+                    );
+                    // Under a grab of this client's the grab window takes
+                    // the event, relative to itself wherever the pointer is,
+                    // when owner events are off or none of the client's own
+                    // windows selected it: the protocol's rule for the
+                    // window that took the press (t158).
+                    let (delivered_window, grab_delivered) = match grab_target {
+                        Some(target) if !target.owner_events || selected.is_none() => {
+                            (target.window, true)
+                        }
+                        _ => (selected.unwrap_or(surface_window), false),
+                    };
+                    (delivered_window, Some(surface_window), Some(event_ancestry), grab_delivered)
                 }
             };
             if let Some(authority) = standalone_query_authority.as_ref() {
@@ -340,17 +350,19 @@ fn spawn_x11_input_event_writer(
             }
             let (wire_event_x, wire_event_y) = match (event, pointer_surface_window) {
                 (XAuthorityInputEvent::Pointer(pointer), Some(surface_window)) => {
-                    core_event_selections
-                        .lock()
-                        .map_err(|_| {
-                            X11SetupSocketError::new("X11 core event selection lock poisoned")
-                        })?
-                        .pointer_event_coordinates(
+                    let selections = core_event_selections.lock().map_err(|_| {
+                        X11SetupSocketError::new("X11 core event selection lock poisoned")
+                    })?;
+                    if grab_delivered {
+                        selections.coordinates_relative_to(delivered_window, pointer.root_x, pointer.root_y)
+                    } else {
+                        selections.pointer_event_coordinates(
                             surface_window,
                             delivered_window,
                             pointer.event_x,
                             pointer.event_y,
                         )
+                    }
                 }
                 _ => (0, 0),
             };
@@ -581,7 +593,10 @@ fn spawn_x11_input_event_writer(
                         XAuthorityPointerEventKind::Button { pressed: false, .. }
                         | XAuthorityPointerEventKind::Axis { pressed: false, .. } => 1_u16 << 3,
                     };
-                    own_pointer_grab.is_none_or(|grab| grab.event_mask & selected_mask != 0)
+                    match grab_target {
+                        Some(target) if grab_delivered => target.event_mask & selected_mask != 0,
+                        _ => own_pointer_grab.is_none_or(|grab| grab.event_mask & selected_mask != 0),
+                    }
                 }
             };
             if let (XAuthorityInputEvent::Pointer(pointer), Some(surface_window), Some(ancestry)) =
@@ -595,13 +610,17 @@ fn spawn_x11_input_event_writer(
                 // a MotionNotify is not (t211).
                 let unmoved = matches!(pointer.kind, XAuthorityPointerEventKind::Motion)
                     && selections.pointer_position() == Some((pointer.root_x, pointer.root_y));
-                let core_target = selections.selected_pointer_target(
-                    surface_window,
-                    pointer_selection(pointer.kind),
-                    pointer.state,
-                    pointer.event_x,
-                    pointer.event_y,
-                );
+                let core_target = if grab_delivered {
+                    Some(delivered_window)
+                } else {
+                    selections.selected_pointer_target(
+                        surface_window,
+                        pointer_selection(pointer.kind),
+                        pointer.state,
+                        pointer.event_x,
+                        pointer.event_y,
+                    )
+                };
                 let core_depth = core_target.and_then(|target| ancestry.iter().position(|window| *window == target));
                 let xi_depth = [xi_delivery, xi_emulated_button_delivery].into_iter().flatten()
                     .map(|delivery| delivery.ancestry_depth).min();

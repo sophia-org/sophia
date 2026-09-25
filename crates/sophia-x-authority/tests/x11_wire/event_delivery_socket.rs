@@ -1077,6 +1077,92 @@ mod event_delivery_socket {
         }
     }
 
+    /// An implicit grab reports every pointer event to the window that took
+    /// the press, relative to it, until the last button is up: a press in a
+    /// child that selected it, the drag past the child's edge inside the
+    /// toplevel, and the release there all arrive on the child with the
+    /// child's coordinates, and never on the shell window (t158; the drag
+    /// that never let xterm claim PRIMARY). Red before the fix: the motion
+    /// and the release were delivered by position to the shell, which had
+    /// not selected them, so nothing arrived.
+    #[test]
+    fn an_implicit_grab_reports_to_the_window_that_took_the_press() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let shell = client.next;
+        let text = client.next + 2;
+        client.next += 4;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, shell, 20, 0, 100, 60))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, shell)).unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, text, shell, 10, 10, 40, 30))
+            .unwrap();
+        // ButtonPress, ButtonRelease and Button1Motion on the text widget alone.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, text, (1 << 2) | (1 << 3) | (1 << 8)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, text)).unwrap();
+        client.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        let at = |record: &[u8]| (i16::from_le_bytes([record[24], record[25]]), i16::from_le_bytes([record[26], record[27]]));
+        // Into the text widget, whose root origin is (30, 10).
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 25);
+        client.settle();
+        client.fake_input(4, 1);
+        let pressed = client.next_event(4);
+        assert_eq!((window_of(&pressed), at(&pressed)), (text, (5, 15)), "the press on the text widget");
+        // Past the widget's right edge, still inside the shell.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 100, 55);
+        let moved = client.next_event(6);
+        assert_eq!((window_of(&moved), at(&moved)), (text, (70, 45)), "the drag reported to the widget, past its edge");
+        client.fake_input(5, 1);
+        let released = client.next_event(5);
+        assert_eq!((window_of(&released), at(&released)), (text, (70, 45)), "the release on the widget that took the press");
+        client.assert_quiet("nothing on the shell");
+    }
+
+    /// The same past the toplevel altogether: the pointer released over the
+    /// root, where no window of the client's is, and the release still
+    /// arrives on the widget that took the press, relative to it (t158,
+    /// the note's second case).
+    #[test]
+    fn an_implicit_grab_reports_a_release_over_the_root_to_the_window_that_took_the_press() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let shell = client.next;
+        let text = client.next + 2;
+        client.next += 4;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, shell, 20, 0, 100, 60))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, shell)).unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, text, shell, 10, 10, 40, 30))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, text, (1 << 2) | (1 << 3)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, text)).unwrap();
+        client.settle();
+        let window_of = |record: &[u8]| u32::from_le_bytes([record[12], record[13], record[14], record[15]]);
+        let at = |record: &[u8]| (i16::from_le_bytes([record[24], record[25]]), i16::from_le_bytes([record[26], record[27]]));
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 35, 25);
+        client.settle();
+        client.fake_input(4, 1);
+        let pressed = client.next_event(4);
+        assert_eq!((window_of(&pressed), at(&pressed)), (text, (5, 15)), "the press on the text widget");
+        // Over the root, below the shell.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 5, 90);
+        client.fake_input(5, 1);
+        let released = client.next_event(5);
+        assert_eq!((window_of(&released), at(&released)), (text, (-25, 80)), "the release over the root, on the widget that took the press");
+        client.assert_quiet("nothing else");
+    }
+
     /// Remapping a window reports VisibilityNotify and Expose on every
     /// mapped inferior that becomes viewable with it, the VisibilityNotify
     /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the

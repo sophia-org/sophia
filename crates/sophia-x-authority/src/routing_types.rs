@@ -59,6 +59,16 @@ pub enum XAuthorityInputEvent {
 }
 
 /// An Engine-selected input event addressed to one live X11 connection.
+/// The grab a pointer event is delivered under: the window that took the
+/// press (or the grab window of GrabPointer), whether the client's own
+/// windows are tried first, and the mask the grab delivers by.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct XPointerGrabTarget {
+    pub window: XResourceId,
+    pub owner_events: bool,
+    pub event_mask: u16,
+}
+
 /// A crossing a grab owes: `window` is where the pointer goes (NotifyGrab,
 /// mode 1) or comes back from (NotifyUngrab, mode 2).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,6 +96,11 @@ pub struct XAuthorityClientInputEvent {
     /// mode NotifyGrab, and its release back to the pointer window with
     /// NotifyUngrab.
     pub grab_crossing: Option<XPointerGrabCrossing>,
+    /// The grab this pointer event is delivered under, for the writer: with
+    /// owner_events off every event goes to the grab window, relative to it;
+    /// with it on, to the client's own window under the pointer when one
+    /// selected the event, else to the grab window; the grab's mask decides.
+    pub grab_target: Option<XPointerGrabTarget>,
     pub delivery: Option<XAuthorityInputDeliveryId>,
 }
 
