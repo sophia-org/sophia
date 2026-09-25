@@ -140,21 +140,53 @@ fn missing_selected_shell_or_window_manager_is_refused_before_hagia() {
 #[test]
 #[ignore = "t101 gap: preflight checks legacy shell artifacts but not component artifacts"]
 fn missing_two_component_artifacts_must_not_pass_package_preflight() {
-    let fixture = Fixture::new();
-    fixture.profile(&format!(
-        r#"schema 1
+    let mut incorrectly_accepted = vec![];
+    for deferred in [false, true] {
+        for role in ["lom", "bemenu"] {
+            for missing in [false, true] {
+                let fixture = Fixture::new();
+                for name in ["lom", "bemenu"] {
+                    fixture.executable(name, "#!/bin/sh\nexit 99\n");
+                }
+                let victim = fixture.0.join(role);
+                if missing {
+                    fs::remove_file(victim).unwrap();
+                } else {
+                    fs::set_permissions(victim, fs::Permissions::from_mode(0o600)).unwrap();
+                }
+                // This asset is deliberately opaque; no UI grammar is owned
+                // by the session preflight. Only its path exists here.
+                fs::write(fixture.0.join("lom.kdl"), "opaque private asset\n").unwrap();
+                let wm = if deferred {
+                    let path = fixture.executable("different wm", "#!/bin/sh\nexit 99\n");
+                    format!("window-manager {:?};", path.to_str().unwrap())
+                } else {
+                    String::new()
+                };
+                fixture.profile(&format!(
+                    r#"schema 1
 shell {{ enabled #true; content #true; content-input #true; panel 24; }}
 session {{
-    shell-component "panel" "bar" {{ executable "{0}/missing-lom"; config "{0}/missing-lom.kdl"; gpu "direct"; reservation "top" 24; }}
-    shell-component "menu" "application-launcher" {{ executable "{0}/missing-bemenu"; gpu "denied"; }}
+    {wm}
+    shell-component "panel" "bar" {{ executable "{0}/lom"; config "{0}/lom.kdl"; gpu "direct"; reservation "top" 24; }}
+    shell-component "menu" "application-launcher" {{ executable "{0}/bemenu"; gpu "denied"; }}
 }}
 "#,
-        fixture.0.display()
-    ));
-    let output = fixture.command().output().unwrap();
+                    fixture.0.display()
+                ));
+                let output = fixture.command().output().unwrap();
+                if output.status.success() {
+                    incorrectly_accepted.push(format!(
+                        "deferred={deferred} role={role} missing={missing}: {}",
+                        String::from_utf8_lossy(&output.stdout)
+                    ));
+                }
+            }
+        }
+    }
     assert!(
-        !output.status.success(),
-        "missing component artifacts were accepted: {output:?}"
+        incorrectly_accepted.is_empty(),
+        "invalid component artifacts were accepted: {incorrectly_accepted:#?}"
     );
 }
 

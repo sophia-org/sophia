@@ -121,3 +121,15 @@ The real CLI red failed as intended: missing component executables and KDL
 returned exit0 with `status=accepted policy=validated`. The ordinary preflight
 suite passed7/0 with that one red explicitly ignored. The formatted Session
 rerun passed2/0. These totals do not count the red as accepted package behavior.
+
+Signed fixture checkpoint `7328e35cbfc9581d267049583cbb4bae157b9b6b` preserves
+that first red. The follow-up runs all eight invalid artifact cases: missing or
+non-executable Lom/Bemenu, each under validated and deferred policy exits.
+All eight incorrectly returned success (`preflight-eight-red.log`, test exit101).
+These cases keep the private KDL path present so that artifact refusal cannot
+be masked by a missing config. The intended correction is bounded to the
+existing CLI: check each component with `require_executable` before either
+policy exit, and canonicalize selected private paths to match the existing
+launch-plan existence contract. Do not impose a new regular-file/readability
+rule, parse KDL, authenticate hashes or claim race-free launch authority from
+this check. Production correction awaits director review.
