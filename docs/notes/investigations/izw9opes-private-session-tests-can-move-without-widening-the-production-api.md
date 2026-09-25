@@ -107,3 +107,22 @@ formatting and layout pass. Evidence is retained in
 The other agent's X-authority portion and final integration remain. The task
 stays open until both portions are integrated; these checks do not close any
 physical acceptance gate.
+
+## Integration candidate
+
+The five source commits were rebased with signatures onto master `b0f7c4d7`;
+the resulting source candidate is `d5299e39`. Its unified native-family gate
+passes all eight phases: isolation, independent WM and shell clients,
+protocol/runtime, Engine, output live owner, output client and control service.
+That includes the independent C/Hagia/Narthex clients and the retained eleven
+WM behavior scenarios. The gate does not supply a Lom content client and is
+not t099 popout acceptance.
+
+Durable evidence is retained at
+`~/.local/state/sophia/development-evidence/t026-source-layout-d5299e39/`.
+`native-family/report.json` records the clean candidate and peer identities;
+the adjacent logs retain each phase. The top-level logs retain the affected
+crate suites and Clippy/layout checks, including earlier failed extraction
+attempts separately from the successful reruns. Formatting, metadata and
+signature checks also pass. Only X-authority rows remain in the size-debt
+ledger; the task remains open for that agent's separately gated portion.
