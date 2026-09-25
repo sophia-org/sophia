@@ -43,6 +43,14 @@ source geometry, client allocation, ordinary layout and application input
 geometry are unchanged. Sampling scales committed source content into the
 destination and clips the result using the existing head transform.
 
+Policy targets and stamp coverage use conservative raster bounds: outer edges
+round outward and a region stroke's inner edges round inward. Drawing and mirror
+damage share this arithmetic. Admission also checks the actual targets of every
+covered output head. A missing head or a target with no drawable clipped pixels
+refuses the whole candidate before commit, preserving the previous publication.
+This includes a target fully cropped by Cover or Exact mapping; retaining its ID
+cannot stand in for a draw. Deferred installation rechecks the current heads.
+
 Z order is explicit and unique within each output across regions and instances.
 Engine sorts these records into one command list. The WM presentation tier is
 above ordinary application content and below protected shell/trust content.
@@ -136,6 +144,9 @@ All-head consensus, completed replacement and any-head visibility are separate
 facts. A lagging head which still shows a revoked tier keeps the output shielded
 from new application input. A withdrawal receipt requires completed evidence that
 every head has replaced that identity; missing consensus alone cannot certify it.
+Target membership is intersected across all completed heads, independently of
+stamp identity. A stamp shared by every head cannot attest a target absent from
+one of them.
 A completed frame without the publication revokes any held receipt and action
 authority for that output. Requested records cannot keep invisible targets active.
 
