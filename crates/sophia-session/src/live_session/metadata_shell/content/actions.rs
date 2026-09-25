@@ -574,7 +574,7 @@ impl super::LiveContentSession {
     }
 }
 
-#[path = "actions/tests.rs"]
+#[path = "../../../../tests/support/metadata_shell_content_actions.rs"]
 mod tests;
 
 #[cfg(test)]

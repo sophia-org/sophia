@@ -7,30 +7,6 @@
 # that pushes it past the number fails the gate until someone raises it on
 # purpose. Without it a ledgered file was never measured again, which is how
 # one test file reached forty thousand lines with this gate green throughout.
-large crates/sophia-backend-live/src/production_session/native_scanout.rs 4171
-large crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/renderer_images.rs 1191
-large crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/topology.rs 3101
-large crates/sophia-backend-live/src/production_visual_runtime.rs 1842
-large crates/sophia-backend-live/tests/libdrm_events_feature/scanout_submission.rs 1532
-large crates/sophia-conformance/src/desktop_comparison.rs 1300
-large crates/sophia-conformance/src/desktop_comparison/capture_owner.rs 1342
-large crates/sophia-engine/src/composition_plan.rs 1389
-large crates/sophia-engine/src/compositor_graphics.rs 1138
-large crates/sophia-protocol/src/ipc/wm_v1_records.rs 1749
-large crates/sophia-renderer-live/src/native_scanout.rs 1570
-large crates/sophia-session/src/live_session.rs 1367
-large crates/sophia-session/src/live_session/config.rs 1466
-large crates/sophia-session/src/live_session/input.rs 1960
-large crates/sophia-session/src/live_session/owner_loop/completion.rs 1544
-large crates/sophia-session/src/live_session/owner_loop/lifecycle.rs 1486
-large crates/sophia-session/src/live_session/owner_loop/physical_input_phase.rs 1624
-large crates/sophia-session/src/live_session/tests.rs 1617
-large crates/sophia-session/src/live_session/tests/input_policy_tests.rs 1527
-large crates/sophia-session/src/live_session/tests/session_config_tests.rs 1811
-large crates/sophia-session/src/live_session/tests/wm_session_tests.rs 1676
-large crates/sophia-session/src/live_session/wm/layout.rs 1387
-large crates/sophia-session/src/live_session/wm/public_policy.rs 3053
-large crates/sophia-session/tests/support/private_input_session.rs 2808
 large crates/sophia-x-authority/src/dispatch.rs 1145
 large crates/sophia-x-authority/tests/authority/resources.rs 1614
 large crates/sophia-x-authority/tests/support/m3_acceptance_c.rs 5146
@@ -39,7 +15,6 @@ large crates/sophia-x-authority/tests/x11_wire/extensions_dispatch.rs 5703
 large crates/sophia-x-authority/tests/x11_wire/properties_dispatch.rs 1779
 large crates/sophia-x-authority/tests/x11_wire/resources_frontend.rs 2134
 large crates/sophia-x-authority/tests/x11_wire/support_extensions.rs 1502
-large crates/sophia-session/src/diagnostics/capture.rs 1013
 large crates/sophia-x-authority/src/dispatch/core/input_discovery.rs 1089
 large crates/sophia-x-authority/src/dispatch/core/windows.rs 1406
 large crates/sophia-x-authority/src/wire/request.rs 1355

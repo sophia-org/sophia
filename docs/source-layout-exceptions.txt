@@ -10,6 +10,8 @@ inline-tests crates/sophia-session/src/live_session/render_devices.rs
 
 # External private-owner lifecycle fixtures; rationale in docs/style-guide.md.
 inline-tests crates/sophia-backend-live/src/production_session/native_scanout.rs
+# Existing test-only re-exports followed the extracted owner; no test bodies.
+inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout.rs
 inline-tests crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/composition_queue.rs
 inline-tests crates/sophia-backend-live/src/production_visual_runtime.rs
 inline-tests crates/sophia-runtime/src/shell_transport/control_budget.rs

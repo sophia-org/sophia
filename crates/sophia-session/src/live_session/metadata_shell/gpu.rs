@@ -172,5 +172,5 @@ fn render_node_identity_matches(identity: &LiveRenderDeviceIdentitySnapshot) -> 
     })
 }
 
-#[path = "gpu/tests.rs"]
+#[path = "../../../tests/support/metadata_shell_gpu.rs"]
 mod tests;

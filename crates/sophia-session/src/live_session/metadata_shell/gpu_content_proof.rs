@@ -368,5 +368,5 @@ fn checksum(bytes: &[u8]) -> u64 {
     })
 }
 
-#[path = "gpu_content_proof/tests.rs"]
+#[path = "../../../tests/support/metadata_shell_gpu_content_proof.rs"]
 mod tests;

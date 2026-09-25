@@ -74,6 +74,9 @@ acceptance was performed for this tooling change.
 
 ## t026
 
+The [Session and native-owner source splits](../investigations/izw9opes-private-session-tests-can-move-without-widening-the-production-api.md)
+record the validated non-X-authority portion; X-authority debt stays in the ledger.
+
 Move remaining session-private test modules out of production `src` as
 visibility boundaries permit, and split the oversized cohesive units named in
 `docs/source-layout-debt.txt`. Do not weaken privacy or add test-only
