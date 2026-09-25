@@ -120,6 +120,7 @@ pub struct PolicyWmSessionTransport {
     read_buffer: Vec<u8>,
     peer: Option<PolicyPeerIdentity>,
     profile_activation: bool,
+    capability_limit: u64,
 }
 
 impl PolicyWmSessionTransport {
@@ -131,6 +132,7 @@ impl PolicyWmSessionTransport {
             read_buffer: Vec::new(),
             peer: None,
             profile_activation,
+            capability_limit: u64::MAX,
         }
     }
 
@@ -196,6 +198,17 @@ impl PolicyWmSessionTransport {
         self.connection.selected_capabilities()
     }
 
+    /// Narrow mechanisms before negotiation to those this session can execute.
+    /// A negotiated connection cannot change its advertised authority in place.
+    /// Repeated calls only narrow the ceiling, including across disconnects.
+    pub fn limit_capabilities(&mut self, supported: u64) -> Result<(), PolicyTransportError> {
+        if self.stream.is_some() {
+            return Err(PolicyTransferError::AlreadyConnected.into());
+        }
+        self.capability_limit &= supported;
+        Ok(())
+    }
+
     pub fn accept_and_negotiate(
         &mut self,
         connection_epoch: u64,
@@ -219,7 +232,8 @@ impl PolicyWmSessionTransport {
                 .set_write_timeout(Some(timeout))
                 .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
             let frame = read_policy_frame(&mut stream)?;
-            let hello = decode_wm_v1_client_hello_frame(&frame)?;
+            let mut hello = decode_wm_v1_client_hello_frame(&frame)?;
+            hello.capabilities &= self.capability_limit;
             let mut connection = self.connection.clone();
             connection.connect(connection_epoch)?;
             let welcome =

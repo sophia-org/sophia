@@ -165,6 +165,13 @@ records and retain their behavior. A requested unsupported feature fails clearly
 The unreleased overview-specific WM and shell revision-9 prototype is archived,
 not a compatibility obligation or a second supported service.
 
+Production sessions advertise these capabilities only with a native frame
+retirement owner. Software composition through that owner is supported. The
+software-only diagnostic cycle without native scanout does not render this
+tier or establish presentation completion, so it omits both capabilities.
+Loss of the retirement owner revokes dependent input and withdraws publication;
+it never substitutes committed fallback state for actual completion.
+
 ## Acceptance and implementation ownership
 
 The director owns protocol/schema and WM integration; the renderer owner owns
