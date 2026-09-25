@@ -14,6 +14,25 @@ replaces application drawings but does not preview the presenting application?
 This investigation follows niltempus's report of a desktop exit after reloading
 Hagia and opening and navigating overview on 2026-09-25.
 
+## t246 scope and acceptance
+
+The director reserved t246 for generic backend Present visibility and settlement.
+An application excluded by a replacement publication must not terminate the
+session merely because no display list samples its new buffer. This applies to
+any WM policy; Sophia must not interpret overview action names or adopt Hagia's
+layout rules. Hagia h004's fixed 0.5 zoom and clipped preview panning deliberately
+leave sources outside the visible scene, making t246 a prerequisite for another
+live acceptance attempt.
+
+Development acceptance requires production-owner controls for bounded skip and
+first-visibility deferral, subsequent restoration and clearing repaint, and source
+retirement. Previewed sources must still consume their current buffer, and a
+missing source that is actually sampled must remain a refusal. Retain the red
+reproduction and green controls, run affected device-hidden tests on the signed
+joined candidate, and document their exact identities. Add a bounded diagnostic
+classification only if it establishes useful additional evidence. No main-tree
+operation or live action is authorized by this development task.
+
 ## Evidence
 
 The immutable incident bundle is
@@ -82,8 +101,9 @@ not count as validation.
 Claude owns the bounded backend fix and production settlement controls. The
 session review has not established a separate session source defect. Integration
 must review the signed fix, preserve red and green evidence, and verify hidden,
-previewed, restored, and missing-required-source cases. Tracking allocation is
-owned by the director; this investigation does not edit the queue.
+previewed, restored, and missing-required-source cases. The director allocated
+t246; its single critical development row is maintained on this investigation's
+isolated branch through candidate handoff.
 
 No main-tree operation, live install, reload, GPU execution, or physical-device
 test was performed for this reproduction. Physical acceptance remains outstanding.
