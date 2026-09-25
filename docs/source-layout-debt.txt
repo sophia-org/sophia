@@ -7,14 +7,11 @@
 # that pushes it past the number fails the gate until someone raises it on
 # purpose. Without it a ledgered file was never measured again, which is how
 # one test file reached forty thousand lines with this gate green throughout.
-large crates/sophia-backend-live/src/production_session/native_scanout.rs 4171
-large crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/renderer_images.rs 1191
 large crates/sophia-backend-live/src/production_session/native_scanout/persistent_native_scanout/topology.rs 3101
 large crates/sophia-backend-live/src/production_visual_runtime.rs 1842
 large crates/sophia-backend-live/tests/libdrm_events_feature/scanout_submission.rs 1532
 large crates/sophia-renderer-live/src/native_scanout.rs 1570
 large crates/sophia-session/src/live_session.rs 1367
-large crates/sophia-session/src/live_session/config.rs 1466
 large crates/sophia-session/src/live_session/input.rs 1960
 large crates/sophia-session/src/live_session/owner_loop/completion.rs 1544
 large crates/sophia-session/src/live_session/owner_loop/lifecycle.rs 1486

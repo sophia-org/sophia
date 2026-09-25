@@ -43,6 +43,9 @@ only of relocated private module paths.
 
 ## Remaining work
 
+The first two signed checkpoints are `252d9801` (private tests) and `8ca09bad`
+(protocol, composition and diagnostic domains).
+
 A second slice on the same branch separates WM control/snapshot/projection
 records, Engine scanout verdicts/scene checksums/projection geometry/frame
 presentation, diagnostic record reduction, and desktop comparison sample
@@ -55,6 +58,24 @@ This slice passes 676 protocol, Engine and conformance tests and the same
 579 Session tests (18 existing ignores), all-feature/all-target Clippy for
 the four affected crates, formatting, and the layout gate. Logs are retained
 in the worktree under `.artifacts/t026-domain-{tests,session,clippy,layout}.log`.
+
+A third slice extracts the persistent native-scanout module, retaining its
+existing module identity, into owner records and separate construction, head
+access, watchdog, singleton service, mirror retirement/presentation, frame
+retirement, callbacks, renderer initialization, queue and observation files.
+Output frame queuing leaves renderer-image custody in its own file. Session
+argument parsing also moves behind its existing private configuration facade.
+Three additional size-debt rows are removed. Existing test-only re-exports
+follow the extracted owner; the layout exception records that there are no
+test bodies in that production file.
+
+The device-hidden backend/Session run passes 1,701 tests across 77 result
+groups, with 37 existing opt-in tests ignored. Three source-reachability tests
+initially read the old monolithic path; their source inputs now follow the
+extracted functions, with all assertions retained. The successful rerun is
+`.artifacts/t026-native-session-tests-2.log`; Clippy and layout logs are
+`t026-native-session-clippy-2.log` and `t026-native-layout.log` in the same
+directory. This does not claim physical scanout acceptance.
 
 The other Session/backend/renderer/Engine/protocol/conformance production
 source rows and the other agent's X-authority rows still require cohesive
