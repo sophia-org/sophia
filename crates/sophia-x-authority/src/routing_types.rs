@@ -101,6 +101,15 @@ pub struct XAuthorityClientInputEvent {
     /// with it on, to the client's own window under the pointer when one
     /// selected the event, else to the grab window; the grab's mask decides.
     pub grab_target: Option<XPointerGrabTarget>,
+    /// The window a button event propagated to, decided once by the
+    /// registry from the pointer window up to the first window any client
+    /// selected the event on: the writer delivers to its client only where
+    /// its selection is at this window or nearer, so a peer's nearer
+    /// selection stops delivery farther up (t220). None when nobody
+    /// selected the event, for a motion, whose pointer window is resolved
+    /// after it is routed, and for a key, whose walk from the focus stays
+    /// the writer's.
+    pub propagation_stop: Option<XResourceId>,
     pub delivery: Option<XAuthorityInputDeliveryId>,
 }
 

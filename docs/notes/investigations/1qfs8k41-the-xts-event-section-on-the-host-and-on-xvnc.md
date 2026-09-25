@@ -521,6 +521,44 @@ ButtonRelease 7) have not recurred across the day's runs
 4629cca8, 17c0adf2, b6fc3365). The row closes on 2026-09-25 without a
 further ordering change.
 
+## One propagation walk for every recipient of a button
+
+The owner's writer walked its own table from the pointer window up and
+delivered at its nearest selecting window; the fan-out walked the
+registry's subscriptions from the surface window up and told the peers
+selecting at the first window it found. Two walks, two answers: a peer
+selecting ButtonPress on the child under the pointer while the owner
+selected it on the toplevel was never reached by the fan-out, which
+started above the child, and the owner was told at the toplevel where
+the reference stops the press at the child.
+
+The registry now decides the propagated-to window once per button
+event, from the pointer window the owner's writer resolved for the last
+motion up to the first window any client selected the button on. The
+owner's route carries it as the propagation stop and the writer
+delivers only where its own selection is that window or nearer; the
+fan-out starts from the same source window. A grab that moved the
+writer's base off the surface decides delivery by its own rule and
+carries no stop.
+
+The limits, stated rather than hidden. A motion keeps each writer's
+own walk from the surface: the pointer window the registry knows is the
+one the owner's writer resolved for the previous event, and a motion is
+what changes it, so a stop decided for a motion from that window stopped
+the owner's first motion into a child at the parent (the border
+guard `border_pointer_events_use_the_same_interior_as_pixels` read
+that). A table's do-not-propagate mask is per connection and not in the
+registry, so a peer's do-not-propagate below the owner's selection does
+not stop the owner. A press routed before the motion that moved the
+pointer was resolved carries a stop from higher up, or off the path: the
+owner's writer keeps a selection of its own that is nearer, and ignores
+a stop off the path, while a peer nearer than that start is missed for
+that press. XI2 selections are not among the subscriptions the stop is
+decided from. Guards:
+`a_peers_nearer_selection_stops_the_owners_delivery_farther_up` (red on
+0bc1d4f0: the peer's press never arrived) and
+`selectors_on_the_same_window_are_all_told_there`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over

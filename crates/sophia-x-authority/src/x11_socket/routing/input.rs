@@ -76,6 +76,7 @@ type X11ReceivedInputEvent = (
     u16,
     Option<crate::XPointerGrabCrossing>,
     Option<crate::XPointerGrabTarget>,
+    Option<XResourceId>,
     Option<XAuthorityInputDeliveryId>,
 );
 
@@ -88,7 +89,7 @@ impl X11InputEventReceiver {
         match self {
             Self::Plain(receiver) => receiver
                 .recv_timeout(Duration::from_millis(10))
-                .map(|event| (event, None, None, None, None, None, 0, None, None, None)),
+                .map(|event| (event, None, None, None, None, None, 0, None, None, None, None)),
             Self::Routed { receiver, .. } => {
                 match receiver.recv_timeout(Duration::from_millis(10)) {
                     Ok(route) if route.client == client => Ok((
@@ -101,6 +102,7 @@ impl X11InputEventReceiver {
                         route.xi_pointer_crossing_mask,
                         route.grab_crossing,
                         route.grab_target,
+                        route.propagation_stop,
                         route.delivery,
                     )),
                     // Drop one misaddressed route, then let the writer loop
@@ -342,6 +344,7 @@ impl XServerFrontendRouteRegistry {
         delivery: Option<XAuthorityInputDeliveryId>,
         grab_crossing: Option<crate::XPointerGrabCrossing>,
         grab_target: Option<crate::XPointerGrabTarget>,
+        propagation_stop: Option<XResourceId>,
     ) -> Result<(), XServerFrontendRouteError> {
         // This is logical input already admitted past epoch and freeze checks.
         // Publish it before subscription filtering or a possibly stalled writer.
@@ -473,6 +476,7 @@ impl XServerFrontendRouteRegistry {
             xi_pointer_crossing_mask,
             grab_crossing,
             grab_target,
+            propagation_stop,
             delivery,
         };
         match self.route_input(route) {
@@ -508,6 +512,7 @@ impl XServerFrontendRouteRegistry {
         event: XAuthorityInputEvent,
         confined_by_pointer_grab: bool,
         grab_crossing: Option<crate::XPointerGrabCrossing>,
+        source_window: Option<XResourceId>,
     ) -> Result<(), XServerFrontendRouteError> {
         const KEY_PRESS: u32 = 1 << 0;
         const KEY_RELEASE: u32 = 1 << 1;
@@ -551,7 +556,12 @@ impl XServerFrontendRouteRegistry {
         // the first window up from the source where any client selected
         // it, and to every client that selected it there; a client that
         // selected only higher up hears nothing.
-        let event_window = target_window.unwrap_or(surface_window);
+        // A button event's walk starts where it happened: the pointer
+        // window the owner's writer resolved for the last motion, so the
+        // fan-out and the owner's delivery share one propagation (t220).
+        let event_window = self
+            .source_under_surface(owner, source_window, surface_window)?
+            .unwrap_or_else(|| target_window.unwrap_or(surface_window));
         let mut propagated_to = None;
         let mut peers = Vec::new();
         for window in self.window_ancestry(owner, event_window)? {
@@ -579,6 +589,7 @@ impl XServerFrontendRouteRegistry {
                 xi_pointer_crossing_mask: 0,
                 grab_crossing,
                 grab_target: None,
+                propagation_stop: None,
                 delivery: None,
             };
             if let Err(error) = self.route_input(route) {
@@ -700,5 +711,49 @@ impl XServerFrontendRouteRegistry {
             }
         }
         Ok(routed)
+    }
+}
+
+#[cfg(unix)]
+impl XServerFrontendRouteRegistry {
+    /// The window a button event propagates to, from the source window up
+    /// to the first any client selected it on; None when nobody did. The
+    /// selections are the registry's, so a table's do-not-propagate mask is
+    /// not seen here: that limit stays with each writer (t220).
+    /// The source window when it lies under the surface the event is for;
+    /// None when it is stale (unmapped or destroyed under the pointer, or
+    /// the last window of another surface), so the walk starts at the
+    /// surface as it did before.
+    fn source_under_surface(
+        &self,
+        owner: XServerFrontendClientId,
+        source_window: Option<XResourceId>,
+        surface_window: XResourceId,
+    ) -> Result<Option<XResourceId>, XServerFrontendRouteError> {
+        let Some(source) = source_window else {
+            return Ok(None);
+        };
+        Ok(self
+            .window_ancestry(owner, source)?
+            .contains(&surface_window)
+            .then_some(source))
+    }
+
+    pub(crate) fn pointer_propagation_stop(
+        &self,
+        owner: XServerFrontendClientId,
+        source_window: XResourceId,
+        surface_window: XResourceId,
+        mask: u32,
+    ) -> Result<Option<XResourceId>, XServerFrontendRouteError> {
+        let start = self
+            .source_under_surface(owner, Some(source_window), surface_window)?
+            .unwrap_or(surface_window);
+        for window in self.window_ancestry(owner, start)? {
+            if !self.core_event_subscribers(window, mask)?.is_empty() {
+                return Ok(Some(window));
+            }
+        }
+        Ok(None)
     }
 }

@@ -484,6 +484,7 @@ fn routed_input_discards_another_clients_event() {
             xi_pointer_crossing_mask: 0,
             grab_crossing: None,
             grab_target: None,
+            propagation_stop: None,
             delivery: None,
         })
         .unwrap();
@@ -506,6 +507,7 @@ fn routed_input_discards_another_clients_event() {
             xi_pointer_crossing_mask: 0,
             grab_crossing: None,
             grab_target: None,
+            propagation_stop: None,
             delivery: None,
         })
         .unwrap();
@@ -532,6 +534,7 @@ fn routed_input_discards_another_clients_event() {
             None,
             None,
             0,
+            None,
             None,
             None,
             None,
