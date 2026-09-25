@@ -183,6 +183,7 @@ GIT_ENV = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1",
 PREDICATES = (ROOT / "tools/lib/proof_checkout.sh").read_text()
 COPIED = (
     "tools/run_current_hagia_native_gate_tty4.sh",
+    "tools/run_current_hagia_policy_gate_tty4.sh",
     "tools/hagia_native_session_gate.sh",
     "tools/hagia_policy_physical_gate.sh",
     "tools/lib/proof_checkout.sh",
@@ -295,9 +296,21 @@ class NativeReferenceDryRun(unittest.TestCase):
         files = {relative: ((ROOT / relative).read_text(), (ROOT / relative).stat().st_mode & 0o777)
                  for relative in COPIED}
         stub = "#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >>\"$MARKS/{name}\"\nexit {code}\n"
-        for name, code in (("atomic_scanout_preflight.sh", 0), ("start_sophia_tty3.sh", 3),
+        for name, code in (("atomic_scanout_preflight.sh", 0),
                            ("live_session_persistent_hardware_proof.sh", 3)):
             files[f"tools/{name}"] = (stub.format(name=name, code=code), 0o755)
+        # The runners record, then execute, the Sophia binary they were handed,
+        # as the real ones do; the policy wrapper's hand-off records the digest
+        # it bound.
+        files["tools/start_sophia_tty3.sh"] = ("""#!/bin/sh
+printf '%s\\n' "$0 $*" >>"$MARKS/start_sophia_tty3.sh"
+"${SOPHIA_BIN:-$(dirname "$0")/../target/release/sophia}" runner
+exit 3
+""", 0o755)
+        files["tools/start_sophia_hagia_policy_tty4.sh"] = ("""#!/bin/sh
+printf '%s\\n' "$SOPHIA_HAGIA_PHYSICAL_SOPHIA_SHA256" >>"$MARKS/policy-bound-sophia"
+exit 3
+""", 0o755)
         files["tools/fixtures/hagia_native_session_guide.sh"] = ("#!/bin/sh\n", 0o755)
         files["tools/fixtures/hagia_physical_guide.sh"] = ("#!/bin/sh\n", 0o755)
         files[".gitignore"] = ("target/\n", 0o644)
@@ -325,11 +338,19 @@ done
 printf '#!/bin/sh\\n# %s\\nexit 0\\n' "$out" >"$out"
 chmod 755 "$out"
 """)
+        # Cargo honours --target-dir, then an inherited CARGO_TARGET_DIR.
         executable(self.bin / "cargo", """#!/bin/bash
 echo cargo >>"$MARKS/build"
-mkdir -p target/release
-printf '#!/bin/sh\\n# sophia\\nexit 0\\n' >target/release/sophia
-chmod 755 target/release/sophia
+out="${CARGO_TARGET_DIR:-target}"
+previous=
+for argument; do
+    case "$argument" in --target-dir=*) out="${argument#--target-dir=}" ;; esac
+    [[ "$previous" == --target-dir ]] && out="$argument"
+    previous="$argument"
+done
+mkdir -p "$out/release"
+printf '#!/bin/sh\\n# fresh build\\necho "fresh $*" >>"$MARKS/sophia-invoked"\\nexit 0\\n' >"$out/release/sophia"
+chmod 755 "$out/release/sophia"
 """)
         for name in ("kitty", "browser"):
             executable(self.bin / name, "#!/bin/sh\n")
@@ -388,6 +409,41 @@ chmod 755 target/release/sophia
                 self.assertIn("desktop profile must be", result.stderr)
                 self.assertEqual(self.mark("build"), "")
                 self.assertEqual(self.mark("start_sophia_tty3.sh"), "")
+
+    def inherited_alternatives(self):
+        """An inherited SOPHIA_BIN sentinel, an inherited Cargo target and a
+        stale executable where the wrappers hash and run Sophia."""
+        sentinel = self.directory / "alternate-sophia"
+        executable(sentinel, '#!/bin/sh\necho "alternate $*" >>"$MARKS/sophia-invoked"\n')
+        stale = self.sophia / "target/release/sophia"
+        executable(stale, '#!/bin/sh\necho "stale $*" >>"$MARKS/sophia-invoked"\n')
+        return {"SOPHIA_BIN": str(sentinel),
+                "CARGO_TARGET_DIR": str(self.directory / "alternate-target")}
+
+    def test_the_native_chain_runs_the_binary_it_built_and_bound(self):
+        profile = self.sophia / "tools/fixtures/t018_tab_reference.kdl"
+        result = self.run_script("run_current_hagia_native_gate_tty4.sh", self.environment(
+            SOPHIA_HAGIA_NATIVE_PROFILE=str(profile), **self.inherited_alternatives()))
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(self.mark("sophia-invoked").split(), ["fresh", "runner"],
+                         "the runner must execute the freshly built, hashed Sophia only")
+
+    def test_the_policy_wrapper_binds_the_binary_it_built(self):
+        result = self.run_script("run_current_hagia_policy_gate_tty4.sh",
+                                 self.environment(**self.inherited_alternatives()))
+        self.assertEqual(result.returncode, 3, result.stderr)
+        built = (self.sophia / "target/release/sophia").read_bytes()
+        self.assertIn(b"# fresh build", built)
+        self.assertEqual(self.mark("policy-bound-sophia").strip(),
+                         __import__("hashlib").sha256(built).hexdigest())
+
+    def test_the_policy_launcher_runs_its_literal_bound_path(self):
+        # Documentation control: the policy gate's launcher runs the literal
+        # target/release/sophia it hashed and never reads SOPHIA_BIN, so it has
+        # no inherited-binary hand-off to pin.
+        launcher = (ROOT / "tools/live_session_persistent_hardware_proof.sh").read_text()
+        self.assertIn('"$ROOT_DIR/target/release/sophia"', launcher)
+        self.assertNotIn("SOPHIA_BIN", launcher)
 
     def gate_environment(self, **overrides):
         commits = {name: subprocess.run([REAL_GIT, "-C", str(root), "rev-parse", "HEAD"],
