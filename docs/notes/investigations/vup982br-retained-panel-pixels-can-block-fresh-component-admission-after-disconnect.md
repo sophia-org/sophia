@@ -157,6 +157,38 @@ collision; a process-local atomic counter now gives each fixture a unique path.
 That failed log, the feature-build failures and the compiled negatives remain
 alongside the passing reruns. None is counted as accepted reconnect progress.
 
+### Integration gate: diagnostic child lifetime
+
+The first default workspace gate on signed `1c780ccd` stopped at the CLI
+`scanout_records_reach_capture_independently_of_console_logging` test. Its
+capture child exited successfully and all seven expected records matched;
+the subsequent `recording=stopped` assertion failed. The fixture removed its
+store during unwinding, so its final health and storage-error counts cannot be
+reconstructed. The original failure remains in
+`sophia/.artifacts/t100-1c780ccd-qaeeapr4/workspace.log`.
+
+`Capture::drop` intentionally waits at most 500 ms to preserve recovery latency;
+it does not promise synchronization before returning. The child previously
+exited immediately afterward, potentially ending the still-syncing worker.
+The capture, storage and tracing-layer sources are unchanged and have no new
+feature branch. Three independent direct-child pins of the original binary
+passed in 0.14–0.17 seconds with seven records, two discarded records, zero
+storage errors and stopped health. Their report is in the gate's
+`diagnostic-child/report.json` (binary SHA256
+`32826ff68b6a4dbd15a9a00a3fdfa35152ba4b6b8a1226ebfdffe65530ac05ea`).
+These support an intermittent fixture-lifetime assumption; they do not recover
+the original child's missing final state.
+
+The fixture now keeps the child alive after drop and polls for the actual exact
+stopped-health line for at most five seconds. Failure reports the last health
+or read error, path, PID and elapsed time. The production 500 ms bound and APIs
+are unchanged; the parent still checks exact records and health accounting.
+The corrected exact CLI test passes (one test, 0.15 seconds); strict Clippy for
+that integration target, formatting, diff and layout checks pass. Worktree logs
+are `diagnostic-fixture.log`, `diagnostic-clippy.log` and
+`diagnostic-layout.log` under `.artifacts/t100/`. A fresh full default workspace
+gate remains required on the signed follow-up.
+
 The evidence is headless development coverage. It does not establish physical
 KMS/driver completion, protected launch, installed two-role recovery, successful
 VT resume, all topology/scale/revocation transitions, a complete Session/WM/Lom
