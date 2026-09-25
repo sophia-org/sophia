@@ -278,7 +278,6 @@ pub struct XAuthorityRuntime {
     /// have no pixels, so the drawing family refuses them.
     input_only_windows: BTreeSet<crate::XResourceId>,
     /// Border widths as asked for: read back, never drawn.
-    window_border_widths: BTreeMap<crate::XResourceId, u16>,
     window_allocation: XWindowAllocationState,
     colormaps: BTreeMap<crate::XResourceId, u32>,
     color_allocations: BTreeMap<(NamespaceId, u64, crate::XResourceId), [BTreeMap<u8, u64>; 3]>,
@@ -387,7 +386,6 @@ impl Default for XAuthorityRuntime {
             window_bit_gravities: Default::default(),
             window_cursors: Default::default(),
             input_only_windows: Default::default(),
-            window_border_widths: Default::default(),
             window_allocation: Default::default(),
             colormaps: Default::default(),
             color_allocations: Default::default(),

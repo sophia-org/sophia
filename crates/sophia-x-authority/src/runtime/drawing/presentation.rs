@@ -4,14 +4,41 @@
 // runtime.rs beside the other drawing paths, so it shares their imports.
 
 impl XAuthorityRuntime {
+    /// A border change moves existing pixels without changing their drawable
+    /// coordinates. Recompose the whole top-level so the old position is erased.
+    pub(crate) fn republish_border_geometry(
+        &mut self,
+        transaction: TransactionId,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+    ) -> Option<XAuthorityResponsePacket> {
+        let surface = self.windows.get(window)?.authority_surface();
+        let (top, _, _) = self.windows.presentation_root_and_offset(window).ok()?;
+        let record = self.windows.get(top)?;
+        let generation = record.generation;
+        let whole = Rect { x: 0, y: 0, width: record.geometry.width, height: record.geometry.height };
+        let Some(handle) = self.software_buffers.buffer_handle(top) else {
+            let mut response = XAuthorityResponsePacket::accepted(transaction);
+            response.surfaces.push(surface);
+            return Some(response);
+        };
+        self.pending_raster_command = Some(XAuthorityRasterCommand::Unsupported(
+            XRasterUnsupportedKind::RenderOperation,
+        ));
+        let mut response = self.finish_drawing_update(XDrawingUpdate::core_draw(
+            transaction, namespace, top, handle, Region::single(whole), generation, 250,
+        ));
+        response.surfaces.push(surface);
+        Some(response)
+    }
+
     /// What covers `source` inside the toplevel `presentation`.
     ///
     /// Every mapped window painted after the source is either its inferior
     /// or stacked over it, so those are the layers -- except the source's
     /// own inferiors while a draw goes through them, since the source's
-    /// buffer then already holds them. A source the walk never reaches
-    /// (unmapped, or hidden under an unmapped ancestor) keeps the old
-    /// behaviour of composing alone.
+    /// buffer then already holds them. A source the walk never reaches is
+    /// unmapped or clipped away and contributes no pixels to the presentation.
     fn present_stacking(
         &self,
         presentation: crate::XResourceId,
@@ -39,7 +66,10 @@ impl XAuthorityRuntime {
             };
         }
         let Some(index) = painted.iter().position(|window| window.layer.window == source) else {
-            return crate::XPresentStacking::default();
+            return crate::XPresentStacking {
+                source_clip: Some(Rect::default()),
+                above: Vec::new(),
+            };
         };
         let depth = painted[index].depth;
         let after = &painted[index + 1..];
@@ -311,7 +341,7 @@ impl XAuthorityRuntime {
             surface: record.surface,
             namespace: Some(record.namespace),
             input_region,
-            target_geometry: record.geometry,
+            target_geometry: record.interior_geometry(),
             content,
             // Engine asked for this raster at this extent and the store
             // produced it, so what it fills is what it spans.

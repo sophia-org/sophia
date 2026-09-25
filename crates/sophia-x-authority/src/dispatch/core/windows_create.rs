@@ -138,6 +138,7 @@ fn dispatch_window_creation_request(
                     if response.outcome == XAuthorityResponseOutcome::Accepted
                         && let XAuthorityRequestKind::CreateWindow { window, .. } = &kind
                     {
+                        runtime.set_window_border_width(*window, border_width);
                         if let Ok(surface) = runtime.set_window_override_redirect(
                             namespace,
                             *window,
@@ -164,7 +165,6 @@ fn dispatch_window_creation_request(
                             resolved_colormap,
                         );
                         runtime.set_window_input_only(*window, input_only);
-                        runtime.set_window_border_width(*window, border_width);
                         if let Some(gravity) = win_gravity {
                             runtime.set_window_gravity(*window, gravity);
                         }

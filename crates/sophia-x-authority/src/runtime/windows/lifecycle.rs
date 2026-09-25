@@ -4,12 +4,61 @@
 // keep that file within the layout ledger's bound (t026).
 
 impl XAuthorityRuntime {
+    /// Engine geometry locates the drawable interior; X geometry locates its
+    /// outer border. Convert without advancing client drawing generation.
+    pub fn configure_window_from_engine(
+        &mut self,
+        namespace: NamespaceId,
+        window: crate::XResourceId,
+        geometry: Rect,
+    ) -> Result<Rect, XAuthorityRuntimeError> {
+        let border = i32::from(self.window_border_width(window));
+        let geometry = Rect {
+            x: geometry.x.saturating_sub(border),
+            y: geometry.y.saturating_sub(border),
+            ..geometry
+        };
+        if geometry.is_empty()
+            || geometry.width > i32::from(u16::MAX)
+            || geometry.height > i32::from(u16::MAX)
+            || geometry.x < i32::from(i16::MIN)
+            || geometry.x > i32::from(i16::MAX)
+            || geometry.y < i32::from(i16::MIN)
+            || geometry.y > i32::from(i16::MAX)
+        {
+            return Err(XAuthorityRuntimeError::InvalidResource);
+        }
+        let generation = self
+            .windows
+            .get(window)
+             .ok_or(XAuthorityRuntimeError::UnknownResource)?
+             .generation;
+         self.configure_window_geometry(
+             namespace,
+            window,
+            XWindowGeometryUpdate {
+                x: Some(i16::try_from(geometry.x).expect("validated above")),
+                y: Some(i16::try_from(geometry.y).expect("validated above")),
+                width: Some(u16::try_from(geometry.width).expect("validated above")),
+                height: Some(u16::try_from(geometry.height).expect("validated above")),
+                generation,
+            },
+        )?;
+        Ok(geometry)
+    }
+
      pub fn admit_window_from_engine(
          &mut self,
          namespace: NamespaceId,
          window: crate::XResourceId,
          geometry: Rect,
      ) -> Result<Rect, XAuthorityRuntimeError> {
+         let border = i32::from(self.window_border_width(window));
+         let geometry = Rect {
+             x: geometry.x.saturating_sub(border),
+             y: geometry.y.saturating_sub(border),
+             ..geometry
+         };
          if geometry.is_empty()
              || geometry.width > i32::from(u16::MAX)
              || geometry.height > i32::from(u16::MAX)

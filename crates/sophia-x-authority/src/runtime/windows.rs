@@ -432,7 +432,7 @@ impl XAuthorityRuntime {
         let root_geometry = self
             .windows
             .get(root)
-            .map(|record| record.geometry)
+            .map(|record| record.interior_geometry())
             .ok_or(XAuthorityRuntimeError::UnknownResource)?;
         Ok((
             root_geometry.x.saturating_add(offset_x),
@@ -517,18 +517,19 @@ impl XAuthorityRuntime {
      }
 
      /// Record the border width a window was created or configured with.
-     /// Sophia draws no border, so this is the number a client reads back
-     /// and nothing on screen; zero is the default and is not stored.
+     /// Borders reserve space without painting pixels. Keep the pointer's
+     /// root position stationary when changing its surface's inside origin.
      pub fn set_window_border_width(&mut self, window: crate::XResourceId, border_width: u16) {
-         if border_width == 0 {
-             self.window_border_widths.remove(&window);
-         } else {
-             self.window_border_widths.insert(window, border_width);
+         if let Some(namespace) = self.windows.get(window).map(|record| record.namespace) {
+             let _ = self.change_pointer_anchor_geometry(namespace, |runtime| {
+                 runtime.windows.set_border_width(window, border_width);
+                 Ok(())
+             });
          }
      }
 
      pub fn window_border_width(&self, window: crate::XResourceId) -> u16 {
-         self.window_border_widths.get(&window).copied().unwrap_or(0)
+         self.windows.get(window).map_or(0, |record| record.border_width)
      }
 
      pub fn window_map_state(
@@ -719,7 +720,6 @@ impl XAuthorityRuntime {
          self.window_bit_gravities.remove(&window);
          self.release_window_cursor(window);
          self.input_only_windows.remove(&window);
-         self.window_border_widths.remove(&window);
          self.glx_drawables.retain(|_, record| match record.backing {
              XGlxDrawableBacking::Window(underlying) => underlying != window,
              // Neither borrows a window, so neither is disturbed by one going.
@@ -935,42 +935,7 @@ impl XAuthorityRuntime {
          Ok(release)
      }
  
-    /// Applies Engine-owned outer geometry without advancing client drawing
-    /// generation.
-    pub fn configure_window_from_engine(
-        &mut self,
-        namespace: NamespaceId,
-        window: crate::XResourceId,
-        geometry: Rect,
-    ) -> Result<Rect, XAuthorityRuntimeError> {
-        if geometry.is_empty()
-            || geometry.width > i32::from(u16::MAX)
-            || geometry.height > i32::from(u16::MAX)
-            || geometry.x < i32::from(i16::MIN)
-            || geometry.x > i32::from(i16::MAX)
-            || geometry.y < i32::from(i16::MIN)
-            || geometry.y > i32::from(i16::MAX)
-        {
-            return Err(XAuthorityRuntimeError::InvalidResource);
-        }
-        let generation = self
-            .windows
-            .get(window)
-             .ok_or(XAuthorityRuntimeError::UnknownResource)?
-             .generation;
-         self.configure_window_geometry(
-             namespace,
-            window,
-            XWindowGeometryUpdate {
-                x: Some(i16::try_from(geometry.x).expect("validated above")),
-                y: Some(i16::try_from(geometry.y).expect("validated above")),
-                width: Some(u16::try_from(geometry.width).expect("validated above")),
-                height: Some(u16::try_from(geometry.height).expect("validated above")),
-                generation,
-            },
-        )?;
-        Ok(geometry)
-    }
+
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct XWindowGeometryUpdate {

@@ -401,6 +401,13 @@ from its current hierarchy. Configure and reparent changes adjust a stationary
 anchor, and child lookup rejects unmapped, destroyed, or foreign resources.
 Connection cleanup retains an observation while its namespace still has clients.
 
+X window geometry reports the outer border corner; drawable and event
+coordinates start inside the border. Descendant origins accumulate each
+ancestor's border width. The top-level Engine surface and its raster start at
+the same interior origin, and Engine configure geometry converts back to the
+X outer corner. Borders reserve space without painting border pixels. Child
+composition and IncludeInferiors are clipped to each ancestor's interior.
+
 `WM_TRANSIENT_FOR` is reduced at the X boundary into two protocol-neutral
 facts: property presence makes the root child client-positioned, while a
 resolvable value supplies an optional presentation owner on `AuthoritySurface`.

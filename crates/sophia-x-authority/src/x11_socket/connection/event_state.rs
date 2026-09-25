@@ -189,6 +189,7 @@ struct XCoreEventSelectionState {
     windows: BTreeMap<XResourceId, XCoreWindowEventSelection>,
     parents: BTreeMap<XResourceId, XResourceId>,
     geometries: BTreeMap<XResourceId, Rect>,
+    border_widths: BTreeMap<XResourceId, u16>,
     stacking: Vec<XResourceId>,
     mapped: BTreeSet<XResourceId>,
     fallback_mapped_window: XResourceId,
@@ -205,6 +206,7 @@ impl Default for XCoreEventSelectionState {
             windows: BTreeMap::new(),
             parents: BTreeMap::new(),
             geometries: BTreeMap::new(),
+            border_widths: BTreeMap::new(),
             stacking: Vec::new(),
             mapped: BTreeSet::new(),
             fallback_mapped_window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
@@ -348,6 +350,16 @@ impl XCoreEventSelectionState {
         self.finish_applied_mutation(revision);
     }
 
+    fn set_border_width(&mut self, window: XResourceId, width: u16) {
+        let revision = self.begin_applied_mutation();
+        self.border_widths.insert(window, width);
+        self.finish_applied_mutation(revision);
+    }
+
+    fn border_width(&self, window: XResourceId) -> u16 {
+        self.border_widths.get(&window).copied().unwrap_or(0)
+    }
+
     fn restack(&mut self, window: XResourceId, sibling: Option<XResourceId>, mode: Option<u8>) {
         let revision = self.begin_applied_mutation();
         self.stacking.retain(|candidate| *candidate != window);
@@ -465,6 +477,7 @@ impl XCoreEventSelectionState {
         self.windows.remove(&window);
         self.parents.remove(&window);
         self.geometries.remove(&window);
+        self.border_widths.remove(&window);
         self.stacking.retain(|candidate| *candidate != window);
         self.mapped.remove(&window);
         if self.fallback_mapped_window == window {
@@ -808,8 +821,9 @@ impl XCoreEventSelectionState {
                 return Some((x, y));
             }
             let geometry = self.geometries.get(&candidate)?;
-            x = x.saturating_add(geometry.x);
-            y = y.saturating_add(geometry.y);
+            let border = i32::from(self.border_width(candidate));
+            x = x.saturating_add(geometry.x).saturating_add(border);
+            y = y.saturating_add(geometry.y).saturating_add(border);
             candidate = self.parents.get(&candidate).copied()?;
         }
         None

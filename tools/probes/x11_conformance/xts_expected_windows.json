@@ -79,7 +79,7 @@
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
+    "reason": "the pixel reference includes deliberately contrasting child borders; t214/t227 now place and clip interiors correctly, but Sophia does not paint border pixels (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
@@ -93,19 +93,19 @@
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 6,
     "expected": "FAIL",
-    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so the border the pixel check looks for is not painted; t214 counts it as space"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 7,
     "expected": "FAIL",
-    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
+    "reason": "the pixel reference includes deliberately contrasting child borders; t214/t227 now place and clip interiors correctly, but Sophia does not paint border pixels (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
     "purpose": 8,
     "expected": "FAIL",
-    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
+    "reason": "the pixel reference includes deliberately contrasting child borders; t214/t227 now place and clip interiors correctly, but Sophia does not paint border pixels (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XConfigureWindow/XConfigureWindow",
@@ -253,7 +253,7 @@
     "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
     "purpose": 4,
     "expected": "FAIL",
-    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+    "reason": "the clipped interior is placed correctly; the reference also paints the created window's three-pixel border, which Sophia deliberately leaves unpainted (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XCreateSimpleWindow/XCreateSimpleWindow",
@@ -567,7 +567,7 @@
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
     "purpose": 2,
     "expected": "FAIL",
-    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
+    "reason": "the pixel reference includes deliberately contrasting child borders; t214/t227 now place and clip interiors correctly, but Sophia does not paint border pixels (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XMoveResizeWindow/XMoveResizeWindow",
@@ -681,7 +681,7 @@
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
     "purpose": 2,
     "expected": "FAIL",
-    "reason": "win-gravity moves the children, but their one-pixel borders are not yet space on the raster side, so the pixel check finds them at their outer corners; t214 (with t227)"
+    "reason": "the pixel reference includes deliberately contrasting child borders; t214/t227 now place and clip interiors correctly, but Sophia does not paint border pixels (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XResizeWindow/XResizeWindow",
@@ -821,19 +821,19 @@
     "case": "/Xlib4/XSetWindowBorder",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so a border pixel is never painted or read back; t214 counts the border as space"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XSetWindowBorder",
     "purpose": 2,
     "expected": "FAIL",
-    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so a border pixel is never painted or read back; t214 counts the border as space"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XSetWindowBorder",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "by decision: Sophia draws no window borders (docs/x11-compatibility-matrix.md), so a border pixel is never painted or read back; t214 counts the border as space"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XSetWindowBorder",
@@ -847,19 +847,19 @@
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
     "purpose": 2,
     "expected": "FAIL",
-    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
     "purpose": 3,
     "expected": "FAIL",
-    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XSetWindowBorderPixmap/XSetWindowBorderPixmap",
@@ -891,7 +891,7 @@
     "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
     "purpose": 1,
     "expected": "FAIL",
-    "reason": "borders are not yet space on the raster side, so a child is placed and clipped at its outer corner; t214 (with t227)"
+    "reason": "by decision: border width reserves space, but Sophia does not paint border pixels or border pixmaps, which this pixel reference requires (docs/sophia-x-authority.md)"
   },
   {
     "case": "/Xlib4/XSetWindowBorderWidth/XSetWindowBorderWidth",
@@ -1223,9 +1223,7 @@
   },
   {
     "case": "/Xlib5/XQueryPointer",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "a child is found at its outer corner, not past its border; t227 (with t214)"
+    "purpose": 3
   },
   {
     "case": "/Xlib5/XQueryPointer",
@@ -1317,9 +1315,7 @@
   },
   {
     "case": "/Xlib5/XTranslateCoordinates",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "a child's origin does not count its parent's border; t227 (with t214)"
+    "purpose": 1
   },
   {
     "case": "/Xlib5/XTranslateCoordinates",
@@ -1329,9 +1325,7 @@
   },
   {
     "case": "/Xlib5/XTranslateCoordinates",
-    "purpose": 3,
-    "expected": "FAIL",
-    "reason": "a child's origin does not count its parent's border; t227 (with t214)"
+    "purpose": 3
   },
   {
     "case": "/Xlib5/XTranslateCoordinates",
