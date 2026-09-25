@@ -306,8 +306,24 @@ inherited the caller's `SOPHIA_INSTALLED_ATTEMPT_MODE=xtest` and entered the
 proof path with an ordinary-login stub. The fixture now explicitly selects
 ordinary mode and passes even with proof/watchdog settings injected.
 
-The final candidate, full-gate verdict and retained evidence follow after
-the clean rerun. Physical session acceptance is not claimed by this task.
+Signed candidate `4f2ed1716d947c8bb08205f61171799f600ac474` passed the full
+`cargo xtask check` with exit 0. The final run also gave the archive-verifier
+fixtures a private writable Git metadata copy: their local unsigned-commit
+negative control cannot fetch into a read-only Git directory. Neither that
+scratch fetch nor the gate altered the shared repository's metadata or the
+live session. The final session-library result remained 579 passed, 18
+ignored, zero filtered, with all six socket-directory controls passing.
+
+The gate also passed workspace Clippy, layout, shell checks and the fixture
+verifiers. Promoted archive verification reported Hagia 5/5, mirror groups
+9/9 and direct scanout 6/6. Hardware pixel equivalence and first-frame proofs
+reported no available device, not a hardware pass. This closes t143 without
+adding a duplicate runner or enabling the explicitly ignored tests.
+
+The final log, earlier failed isolation attempts and contaminated-environment
+fixture check are retained with verified `SHA256SUMS` at
+`~/.local/state/sophia/development-evidence/t143-4f2ed171`.
+Physical session acceptance is not claimed by this task.
 
 ## Connections
 
