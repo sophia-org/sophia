@@ -2,7 +2,7 @@
 id: nwse35zs
 date: 2026-09-25
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, x11, raster, input, conformance]
 ---
 # Window borders separate outer geometry from drawable origins
@@ -58,13 +58,44 @@ interiors still use outer-corner coordinates.
 
 ## Validation and remaining work
 
-Worktree: `sophia-borders`, branch `raster/t214-t227-borders`, based on
-`baae1419`. Initial targeted regressions cover nested coordinates, the Engine
-round trip, readback versus presentation, IncludeInferiors clipping, changed
-border width, and real-socket pointer delivery. Worktree logs are under
-`.artifacts/borders/`; final candidate identity and retained gate evidence will
-be recorded after the complete gate chain. Task status stays in
-[todo.md](../../../todo.md).
+Accepted candidate: signed `73392063f2c53424be13d87e9a023bc049d6836e`, on
+`01828630`, branch `raster/t214-t227-borders`. Four regressions cover nested
+coordinates, the Engine round trip and raster transaction origin, readback
+versus presentation, IncludeInferiors clipping, changed border width,
+real-socket pointer delivery, and the client-placed root-warp query guard.
+
+The main-tree gates all passed on that exact clean candidate, with unchanged
+source attested after every run:
+
+| Gate | Passed | Declared exceptions |
+| --- | ---: | ---: |
+| Windows, all profiles | 244 | 60 |
+| Selected-core, all profiles | 76 | 23 |
+| Xproto, XTEST profile | 339 | 50 |
+| Events, XTEST admitted | 123 | 72 |
+
+Every XTEST profile passed 44/44; both native-input profiles passed 40/40.
+The separate core probe passed 162/162. The authority and session all-feature
+suites passed 2,969 tests across 74 binary/doc groups. Workspace/all-target
+Clippy, formatting, layout and diff checks passed. An initial session run
+inherited the operator's configuration and failed the optional Hagia policy
+test during argument parsing; the full rerun under a fresh private
+`XDG_CONFIG_HOME` passed without a source change. That failed run is retained
+separately, not counted as acceptance.
+
+Three previously declared purposes became mandatory passes:
+XTranslateCoordinates 1 and 3, and XQueryPointer 3. No mandatory purpose was
+weakened. Painted-border pixel references remain declared for the explicit
+compatibility limit above; passing coordinate checks is not evidence of
+border painting or physical desktop acceptance. No live install or reload
+was performed.
+
+Checksummed reports, journals, source attestations and suite logs are retained
+at `~/.local/state/sophia/development-evidence/t214-t227-borders-73392063/`
+(`SHA256SUMS`, `summary.json`). The original main-tree gate outputs are
+`.artifacts/x11-profile-73392063-xts-{windows,selected-core,xproto,events}`;
+the core output is `.artifacts/conformance-core-73392063`. Task status stays
+in [todo.md](../../../todo.md) and its monthly completion file.
 
 ## Connections
 

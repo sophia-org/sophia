@@ -430,8 +430,11 @@ selection taken from one connection with another client's window
 survived that connection's departure, because ownership was cleared by
 window rather than by the client that took it (t226). After those the
 host passes 214 of the scenario's purposes where Xvnc passes 277; what
-remains in this area is border geometry (t227, coupled to the raster
-side) and the pane's attribute, gravity and pixel work.
+remained in this area was border geometry and the pane's attribute, gravity
+and pixel work. The [paired border acceptance](nwse35zs-window-borders-separate-outer-geometry-from-drawable-origins.md)
+records t214/t227's interior origins, raster clipping, matching input coordinates
+and the windows scenario at 244 passed, 60 declared. Border painting remains
+outside the compatibility contract.
 
 ## Status
 
