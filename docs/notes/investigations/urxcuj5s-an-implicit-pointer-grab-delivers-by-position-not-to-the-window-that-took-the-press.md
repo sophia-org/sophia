@@ -64,7 +64,28 @@ report, and the one piece of that report the headless runs cannot settle.
 
 ## Finding and resolution
 
-Open. The repair is in the frontend: the implicit grab must be opened on the
+Resolved 2026-09-25 in two seams. t230 gave the implicit grab its client
+and mask: the press path finds the first window up from the pointer
+window with a ButtonPress selection and the last client the reference
+would try there. This seam gives it the window: that delivered window,
+with OwnerGrabButton as its owner events, for the surface's own client
+as for a peer. The routed event carries the grab (window, owner events,
+mask) to the writer, which reports to the grab window with coordinates
+relative to it, wherever the pointer is, when owner events are off or
+none of the client's own windows selected the event, and by the grab's
+mask; an explicit grab is delivered the same way. The surface's own
+client keeps its surface as the writer's base for resolution, so the
+paths that propagate and cross are unchanged. The wire guards are
+`an_implicit_grab_reports_to_the_window_that_took_the_press` (press in
+the text widget, drag and release past its edge inside the shell) and
+its release over the root, both red on master a50e393f and green with
+the seam. The gate's `--overshoot` variant, added here, read green on
+a50e393f's session binary too, before the frontend seam: since it was
+filed, the session-level grab, the borders' coordinates and t230's client
+rule changed what the two-xterm drag exercises, so the variant stands as
+the two-xterm check and the wire pair is this seam's proof.
+
+The repair as it was filed: the repair is in the frontend: the implicit grab must be opened on the
 window the press is delivered to, with owner-events false, and while it is
 active the writer must report to that window with coordinates relative to
 it rather than descending by position. `input_authority.rs` already
@@ -76,9 +97,10 @@ release outside it, the release arrives at the child with its coordinates.
 
 ## Validation and remaining work
 
-- [ ] Wire test: press inside a selecting child, release outside its bounds
-      but inside the top-level; release delivered to the child. Red today.
-- [ ] Same, release outside the top-level altogether (over the root or
+- [x] Wire test: press inside a selecting child, release outside its bounds
+      but inside the top-level; release delivered to the child. Red before
+      the seam, green after (2026-09-25).
+- [x] Same, release outside the top-level altogether (over the root or
       another surface); the session grab keeps it on the surface, the
       frontend must keep it on the child.
 - [ ] `xtest_selection_driver --overshoot` goes green through the headless
