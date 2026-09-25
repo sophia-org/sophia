@@ -619,6 +619,20 @@ impl XServerFrontendRouteRegistry {
             let admission = self.client_senders(client).ok()?.admission?;
             Some((identity, kind, admission))
         });
+        // The peers' copies are queued before the recipient's own: an
+        // injector's return waits for the recipient's writer alone, and a
+        // peer whose barrier is read after that return must find its copy
+        // already queued for its own writer's drain to order it (t229).
+        if let Err(error) = self.route_to_selecting_peers(
+            surface_route.namespace,
+            client,
+            surface_route.window,
+            target_window,
+            event,
+            fan_out_confined,
+        ) {
+            tracing::warn!("sophia_x11_input_route status=peer_fanout_failed reason={error:?} content=redacted");
+        }
         let result = self.route_resolved_input(
             surface_route.namespace,
             client,
@@ -628,18 +642,6 @@ impl XServerFrontendRouteRegistry {
             route.delivery,
             grab_crossing,
         );
-        if result.is_ok()
-            && let Err(error) = self.route_to_selecting_peers(
-                surface_route.namespace,
-                client,
-                surface_route.window,
-                target_window,
-                event,
-                fan_out_confined,
-            )
-        {
-            tracing::warn!("sophia_x11_input_route status=peer_fanout_failed reason={error:?} content=redacted");
-        }
         if let Some((identity, kind, admission)) = lease_update {
             let reported_kind = if result.is_ok() {
                 kind
