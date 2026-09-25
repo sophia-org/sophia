@@ -740,6 +740,18 @@ impl XCoreEventSelectionState {
             .is_some_and(|selection| selection.mask & Self::KEYMAP_STATE_MASK != 0)
     }
 
+    /// A root position relative to a window this table knows; the root
+    /// position itself for one it does not.
+    pub(crate) fn coordinates_relative_to(&self, window: XResourceId, root_x: i16, root_y: i16) -> (i16, i16) {
+        match self.root_origin(window) {
+            Some((origin_x, origin_y)) => (
+                clamp_engine_i16(i32::from(root_x) - origin_x),
+                clamp_engine_i16(i32::from(root_y) - origin_y),
+            ),
+            None => (root_x, root_y),
+        }
+    }
+
     fn pointer_event_coordinates(
         &self,
         surface_window: XResourceId,

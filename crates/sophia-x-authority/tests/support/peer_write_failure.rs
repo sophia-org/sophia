@@ -82,6 +82,7 @@ fn peer_failure_event(kind: &str) -> XAuthorityClientInputEvent {
         xi_emulated_button_window: None,
         xi_pointer_crossing_mask: 0,
         grab_crossing: None,
+        grab_target: None,
         delivery: Some(XAuthorityInputDeliveryId::from_raw(91)),
     };
     match kind {

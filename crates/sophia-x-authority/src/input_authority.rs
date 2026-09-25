@@ -525,6 +525,13 @@ impl XInputAuthorityState {
         })
     }
 
+    /// Whether the active pointer grab is the implicit one a press opened.
+    pub fn pointer_grab_is_implicit(&self, namespace: NamespaceId) -> bool {
+        self.namespaces
+            .get(&namespace)
+            .is_some_and(|state| state.pointer.is_some() && state.pointer_implicit)
+    }
+
     pub fn pointer_window(&self, namespace: NamespaceId) -> Option<XResourceId> {
         self.namespaces
             .get(&namespace)

@@ -979,9 +979,12 @@ B's paste asking for it), and a completed `sophia_live_session_xtest` with
 without `--admit-xtest`, and no middle-click. This covers the headless, no-WM
 path only. A physical drag, a window manager's session and scanout are
 separate evidence. The driver's `--overshoot` argument releases past xterm's
-right edge and is red until t158 lands: the frontend delivers an implicitly
-grabbed release by position, so it reaches xterm's shell window rather than
-its text widget.
+right edge, and `cargo xtask check xtest-selection --overshoot` runs the pass
+with it. It was red when filed (the frontend delivered an implicitly grabbed
+release by position, to xterm's shell window rather than its text widget),
+read green on master a50e393f before t158's frontend seam landed, and t158's
+own red and green are its wire tests; the variant stands as the two-xterm
+check of the window that took the press.
 
 The same drag and paste under Hagia, with an operator's own configuration
 copied into the isolated directory, is a normal session with the driver as

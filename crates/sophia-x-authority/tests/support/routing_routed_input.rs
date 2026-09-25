@@ -273,6 +273,7 @@ fn route_broker_reports_rejected_delivery_for_an_unknown_client() {
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
             grab_crossing: None,
+            grab_target: None,
             delivery: Some(delivery),
         })
         .unwrap();

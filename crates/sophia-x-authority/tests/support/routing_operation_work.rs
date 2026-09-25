@@ -285,6 +285,7 @@ fn a_cancelled_input_write_is_not_reported_as_flushed() {
             xi_emulated_button_window: None,
             xi_pointer_crossing_mask: 0,
             grab_crossing: None,
+            grab_target: None,
             delivery: Some(delivery),
         })
         .expect("room");
