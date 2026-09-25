@@ -183,7 +183,7 @@ pub fn surface_transaction_from_drawing_update(
         input_region: None,
         surface: window.surface,
         namespace: Some(window.namespace),
-        target_geometry: window.geometry,
+        target_geometry: window.interior_geometry(),
         content: sophia_protocol::SurfaceContentSet::singleton(update.buffer, raster_extent),
         presentation_extent,
         damage: update.damage,

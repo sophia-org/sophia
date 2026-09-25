@@ -9,6 +9,29 @@ pub(crate) struct XPointerQuery {
 }
 
 impl XAuthorityRuntime {
+    /// TranslateCoordinates asks about a supplied point, not the seat's
+    /// pointer. Resolve only direct mapped children in the parent's X space.
+    pub(crate) fn mapped_child_at(
+        &self,
+        namespace: NamespaceId,
+        parent: crate::XResourceId,
+        x: i16,
+        y: i16,
+    ) -> Option<crate::XResourceId> {
+        self.windows.direct_children_bottom_to_top(namespace, parent)
+            .into_iter().rev().find(|child| {
+                self.windows.get(*child).is_some_and(|record| {
+                    let border = i32::from(record.border_width) * 2;
+                    let x = i32::from(x) - record.geometry.x;
+                    let y = i32::from(y) - record.geometry.y;
+                    record.map_state != crate::XMapState::Unmapped
+                        && x >= 0 && y >= 0
+                        && x < record.geometry.width.saturating_add(border)
+                        && y < record.geometry.height.saturating_add(border)
+                })
+            })
+    }
+
     // Serialize anchor adjustment with input publication, not with socket I/O.
     // A stationary pointer must not move along with a reconfigured X window.
     fn change_pointer_anchor_geometry<T>(
@@ -261,17 +284,20 @@ impl XAuthorityRuntime {
             query.win_x = clamp(logical.0.saturating_sub(x));
             query.win_y = clamp(logical.1.saturating_sub(y));
         }
-        // Engine chose the surface. Only refine its X descendants; scanning
-        // other top levels here would invent compositor hit-testing authority.
+        // Only the client-placed conformance mode may choose a toplevel here.
+        // A root-relative WarpPointer there has no Engine surface anchor.
+        // In a desktop session retain Engine's target and refine descendants.
+        let surface_window = self.client_placed_toplevel_at(namespace, logical.0, logical.1)
+            .unwrap_or(pointer.surface_window);
         if self
             .windows
-            .get(pointer.surface_window)
-            .is_none_or(|record| record.surface != pointer.surface)
-            || !self.pointer_window_contains(namespace, pointer.surface_window, logical)
+            .get(surface_window)
+            .is_none_or(|record| !self.client_places_toplevels && record.surface != pointer.surface)
+            || !self.pointer_window_contains(namespace, surface_window, logical)
         {
             return Ok(query);
         }
-        let mut deepest = pointer.surface_window;
+        let mut deepest = surface_window;
         for _ in 0..64 {
             let child = self
                 .windows

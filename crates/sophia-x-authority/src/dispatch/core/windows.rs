@@ -114,9 +114,6 @@ fn dispatch_core_window_request(
                     let border_before = runtime.window_border_width(window);
                     let border_changed = border_width.is_some_and(|asked| asked != border_before)
                         && runtime.validate_window_access(context.namespace, window).is_ok();
-                    if border_changed {
-                        runtime.set_window_border_width(window, border_width.unwrap_or(0));
-                    }
                     // The siblings' order before, so a restack that changed
                     // nothing reports nothing and one that did names the
                     // sibling now beneath the window.
@@ -169,6 +166,10 @@ fn dispatch_core_window_request(
                         }
                         Ok(())
                     });
+                    let border_changed = border_changed && configure.is_ok();
+                    if border_changed {
+                        runtime.set_window_border_width(window, border_width.unwrap_or(0));
+                    }
                     let outputs = if let Err(error) = configure {
                         vec![XClientOutput::Error(x_error_from_runtime(
                             error,
@@ -226,15 +227,23 @@ fn dispatch_core_window_request(
                                 u32::try_from(window.local.raw()).unwrap_or(0)))],
                         }
                     };
+                    let border_packet = border_changed.then(|| {
+                        runtime.republish_border_geometry(context.transaction, context.namespace, window)
+                    }).flatten();
                     // A child unmapped by its gravity is a surface change too.
                     let response = if restacked.is_some()
                         || !gravity_surfaces.is_empty()
                         || bit_gravity_packet.is_some()
+                        || border_packet.is_some()
                     {
                         let mut response = XAuthorityResponsePacket::accepted(context.transaction);
                         response.surfaces.extend(restacked);
                         response.surfaces.extend(gravity_surfaces);
                         if let Some(presented) = bit_gravity_packet {
+                            response.surfaces.extend(presented.surfaces);
+                            response.transactions.extend(presented.transactions);
+                        }
+                        if let Some(presented) = border_packet {
                             response.surfaces.extend(presented.surfaces);
                             response.transactions.extend(presented.transactions);
                         }

@@ -61,7 +61,7 @@ fn x11_surface_geometry_records(
             y: clamp_engine_i16(geometry.y),
             width,
             height,
-            border_width: 0,
+            border_width: selections.border_width(window),
             override_redirect: false,
         });
     }

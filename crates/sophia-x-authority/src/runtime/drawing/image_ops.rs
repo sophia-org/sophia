@@ -323,17 +323,17 @@ impl XAuthorityRuntime {
         region: Rect,
         image: &mut [u8],
     ) {
-        let mut stack: Vec<(crate::XResourceId, i32, i32)> = self
+        let mut stack: Vec<(crate::XResourceId, i32, i32, Rect)> = self
             .windows
             .direct_children_bottom_to_top(namespace, drawable)
             .into_iter()
             .rev()
-            .map(|child| (child, 0, 0))
+            .map(|child| (child, 0, 0, region))
             .collect();
         // Bounded: the store is finite and each window is reached from its
         // own parent exactly once.
         let mut visited = 0usize;
-        while let Some((child, parent_x, parent_y)) = stack.pop() {
+        while let Some((child, parent_x, parent_y, parent_clip)) = stack.pop() {
             visited += 1;
             if visited > 4096 {
                 return;
@@ -344,16 +344,20 @@ impl XAuthorityRuntime {
             if record.map_state != crate::XMapState::Viewable {
                 continue;
             }
-            let x = parent_x.saturating_add(record.geometry.x);
-            let y = parent_y.saturating_add(record.geometry.y);
-            self.blit_child(child, x, y, record.geometry, region, image);
+            let x = parent_x.saturating_add(record.interior_geometry().x);
+            let y = parent_y.saturating_add(record.interior_geometry().y);
+            let bounds = Rect { x, y, ..record.geometry };
+            let Some(clip) = crate::software::intersect_rects(bounds, parent_clip) else {
+                continue;
+            };
+            self.blit_child(crate::XPresentLayer { window: child, x, y, clip }, region, image);
             for grandchild in self
                 .windows
                 .direct_children_bottom_to_top(namespace, child)
                 .into_iter()
                 .rev()
             {
-                stack.push((grandchild, x, y));
+                stack.push((grandchild, x, y, clip));
             }
         }
     }
@@ -361,19 +365,15 @@ impl XAuthorityRuntime {
     /// Copies one window's pixels into the part of `region` it covers.
     fn blit_child(
         &self,
-        child: crate::XResourceId,
-        x: i32,
-        y: i32,
-        geometry: Rect,
+        layer: crate::XPresentLayer,
         region: Rect,
         image: &mut [u8],
     ) {
-        let left = x.max(region.x);
-        let top = y.max(region.y);
-        let right = x.saturating_add(geometry.width).min(region.x.saturating_add(region.width));
-        let bottom = y
-            .saturating_add(geometry.height)
-            .min(region.y.saturating_add(region.height));
+        let crate::XPresentLayer { window: child, x, y, clip } = layer;
+        let left = clip.x;
+        let top = clip.y;
+        let right = clip.x.saturating_add(clip.width);
+        let bottom = clip.y.saturating_add(clip.height);
         if right <= left || bottom <= top {
             return;
         }

@@ -27,12 +27,23 @@ pub struct XWindowRecord {
     pub policy_map_pending: bool,
     pub map_state: XMapState,
     pub geometry: Rect,
+    /// X geometry locates the outer corner; drawable coordinates start inside this border.
+    pub border_width: u16,
     pub constraints: SurfaceConstraints,
     pub generation: u64,
     pub stack_rank: u32,
 }
 
 impl XWindowRecord {
+    pub fn interior_geometry(&self) -> Rect {
+        let border = i32::from(self.border_width);
+        Rect {
+            x: self.geometry.x.saturating_add(border),
+            y: self.geometry.y.saturating_add(border),
+            ..self.geometry
+        }
+    }
+
     pub fn presentation_role(&self) -> SurfacePresentationRole {
         let is_root_child = self.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT);
         if self.override_redirect || self.window_type_client_positioned || !is_root_child {
@@ -70,7 +81,7 @@ impl XWindowRecord {
             presentation_owner: self.presentation_owner,
             stack_rank: self.stack_rank,
             mapped: self.map_state == XMapState::Viewable,
-            geometry: self.geometry,
+            geometry: self.interior_geometry(),
             constraints: self.constraints,
             generation: self.generation,
         }
@@ -118,6 +129,12 @@ pub struct XWindowTable {
 }
 
 impl XWindowTable {
+    pub fn set_border_width(&mut self, id: XResourceId, width: u16) {
+        if let Some(record) = self.windows.get_mut(&id) {
+            record.border_width = width;
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -159,6 +176,7 @@ impl XWindowTable {
                     policy_map_pending: false,
                     map_state: XMapState::Unmapped,
                     geometry,
+                    border_width: 0,
                     constraints,
                     generation,
                     stack_rank: self.windows.len().try_into().unwrap_or(u32::MAX),
@@ -758,8 +776,8 @@ impl XWindowTable {
                 .windows
                 .get(&current)
                 .ok_or(XAuthorityAccessError::UnknownResource)?;
-            x = x.saturating_add(record.geometry.x);
-            y = y.saturating_add(record.geometry.y);
+            x = x.saturating_add(record.interior_geometry().x);
+            y = y.saturating_add(record.interior_geometry().y);
             if record.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
                 return Ok((x, y));
             }
@@ -782,8 +800,8 @@ impl XWindowTable {
             if record.parent.local.raw() == u64::from(crate::X_SETUP_DEFAULT_ROOT) {
                 return Ok((current, x, y));
             }
-            x = x.saturating_add(record.geometry.x);
-            y = y.saturating_add(record.geometry.y);
+            x = x.saturating_add(record.interior_geometry().x);
+            y = y.saturating_add(record.interior_geometry().y);
             current = record.parent;
         }
     }

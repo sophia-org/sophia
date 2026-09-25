@@ -162,12 +162,7 @@ fn dispatch_core_input_discovery_request(
                                     XClientReply::TranslateCoordinates {
                                         sequence: context.sequence,
                                         same_screen: true,
-                                        // Which child of the destination holds
-                                        // the point is not reported. A client
-                                        // that needs it asks the pointer
-                                        // instead, and answering with a guess
-                                        // would be worse than answering none.
-                                        child: None,
+                                        child: runtime.mapped_child_at(context.namespace, destination, dst_x, dst_y),
                                         dst_x,
                                         dst_y,
                                     },

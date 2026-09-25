@@ -2375,6 +2375,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 && !selections.registered(window)
                             {
                                 selections.register(window, parent, geometry);
+                                selections.set_border_width(window, runtime.window_border_width(window));
                             }
                             if let Some((toplevel, root_x, root_y, event_x, event_y)) = pointer_seed
                                 && selections.pointer_window().is_none()
@@ -2395,6 +2396,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                         if let Some((window, parent, geometry)) = hierarchy_create {
                             selections.register(window, parent, geometry);
+                            selections.set_border_width(window, runtime.window_border_width(window));
                             if let Some(routing) = protocol_routing.as_ref() {
                                 routing
                                     .register_window_parent(client, window, parent)
@@ -2413,6 +2415,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }
                         if let Some((window, x, y, width, height)) = hierarchy_geometry {
                             selections.configure_geometry(window, x, y, width, height);
+                            selections.set_border_width(window, runtime.window_border_width(window));
                         }
                         for window in mapped_windows {
                             selections.observe_mapped(window);

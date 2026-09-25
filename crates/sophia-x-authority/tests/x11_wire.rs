@@ -43,6 +43,7 @@ include!("x11_wire/destroy_window_outputs.rs");
 include!("x11_wire/put_image_outputs.rs");
 include!("x11_wire/root_and_stacking.rs");
 include!("x11_wire/include_inferiors.rs");
+include!("x11_wire/border_geometry.rs");
 include!("x11_wire/replay_stacking.rs");
 include!("x11_wire/cursor_errors.rs");
 include!("x11_wire/text_fill_style.rs");

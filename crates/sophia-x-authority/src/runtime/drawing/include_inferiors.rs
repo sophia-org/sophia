@@ -50,8 +50,8 @@ impl XAuthorityRuntime {
             if record.map_state == crate::XMapState::Unmapped {
                 continue;
             }
-            let x = parent_x.saturating_add(record.geometry.x);
-            let y = parent_y.saturating_add(record.geometry.y);
+            let x = parent_x.saturating_add(record.interior_geometry().x);
+            let y = parent_y.saturating_add(record.interior_geometry().y);
             let bounds = Rect {
                 x,
                 y,
