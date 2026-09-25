@@ -11,8 +11,9 @@ tags: [session, shell, validation]
 
 Prepare t101/t081 acceptance for the [authorized Lom/Bemenu desktop](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md).
 This slice starts at `1fbaf4cbc81ef3629176aea30b758ce51018d887` on
-`session/t101-two-component-acceptance` in `sophia-borders`. It changes tests
-and this investigation only. Queue, primary plans and peer queues remain with
+`session/t101-two-component-acceptance` in `sophia-borders`. The first checkpoint
+changes tests and this investigation only; the approved bounded CLI correction
+is recorded below. Queue, primary plans and peer queues remain with
 the director. Narthex is a separate reference/rollback session, never a third
 simultaneous provider. No dock or new tab service is included.
 
@@ -110,7 +111,7 @@ Session controls. The CLI gap control invokes the real CLI with a fixture WM
 policy checker, not Hagia or either shell. Its expected failure is recorded
 separately from passing tests; it is not desktop progress.
 
-Production, plans and queues are unchanged. Broader t100, t097 and physical
+At the first checkpoint production, plans and queues were unchanged. Broader t100, t097 and physical
 acceptance exits remain open. Lom t007/t008/t009/t010 need scoped peer evidence;
 removing Lom t020 from this desktop's prerequisite does not close that peer.
 Calendar stays required, while new tabs/switcher service does not enter this
@@ -132,4 +133,39 @@ existing CLI: check each component with `require_executable` before either
 policy exit, and canonicalize selected private paths to match the existing
 launch-plan existence contract. Do not impose a new regular-file/readability
 rule, parse KDL, authenticate hashes or claim race-free launch authority from
-this check. Production correction awaits director review.
+this check. That proposed correction was subsequently approved by the director.
+
+## Approved CLI correction
+
+After signed red checkpoints `7328e35c` and `24b48372`, the existing CLI
+preflight now visits every parsed component before either policy exit. It
+reuses `require_executable`; errors name the parser-bounded ID and fixed role
+token. Optional private paths are canonicalized only, as at launch. There is
+no client config parser, new API, GPU check, component execution or change to
+runtime launch authorization. Legacy shell/WM checks and WM-only policy
+handoff remain intact. A directory or opaque readable/unreadable object is
+not reclassified by a new file-type/readability rule: canonicalization is the
+actual existing boundary, not a promise the client can consume the asset.
+
+The eight artifact cases now refuse before the fixture WM policy checker runs.
+Missing private config refuses in both branches. Present opaque config and a
+symlink to it pass in both branches; component executables contain a sentinel
+write and exit99, and the sentinel stays absent. The validated branch still
+passes only WM policy and cleans its private staged file; the deferred branch
+does not execute its selected WM. These tests use fixture scripts, not actual
+Hagia/Lom/Bemenu binaries.
+
+The focused CLI suite passed10/0. A compiled mutation replaced the component
+iteration by `iter().take(0)`; the artifact test failed in0.11s with all eight
+invalid cases accepted again. `mutation-bypass-loop.log` and
+`mutation-source-hashes.txt` retain that control; the original initial and
+expanded red logs remain separate. The source was restored before final checks.
+This closes the demonstrated preflight omission, not exact package identity,
+current-process identity, TOCTOU-free launch, or attended acceptance.
+
+After restoration, the real CLI suite again passed10/0 and the native-session
+preparation controls passed2/0. Strict CLI preflight-test Clippy and native-session
+test Clippy passed. Formatting and diff checks passed; no broad owner suite or
+main/native-family gate was run in this slice. Evidence names:
+`preflight-restored.log`, `session-corrected.log`, `clippy-corrected.log`,
+`clippy-session.log`, and `layout-corrected.log`.

@@ -36,6 +36,24 @@ pub(super) fn run(arguments: &[String]) -> Result<()> {
     if let Some(shell) = &components.shell_client {
         require_executable(shell, "selected native shell")?;
     }
+    for component in &components.shell_components {
+        let role = match component.role {
+            sophia_config::ShellComponentRole::Bar => "bar",
+            sophia_config::ShellComponentRole::ApplicationLauncher => "application-launcher",
+            sophia_config::ShellComponentRole::Dock => "dock",
+        };
+        // IDs and roles are bounded by profile parsing. This checks current
+        // paths, not binary identity or authority to launch them later.
+        let label = format!("selected shell component {} ({role})", component.id);
+        require_executable(&component.executable, &label)?;
+        if let Some(config) = &component.config {
+            // Match ShellComponentLaunch::new: the client owns the contents,
+            // and its private path is canonicalized again at actual launch.
+            config
+                .canonicalize()
+                .map_err(|error| format!("{label} private config cannot be resolved: {error}"))?;
+        }
+    }
     let selected = match &components.window_manager {
         Some(wm) => Some(wm.executable.clone()),
         None => {
