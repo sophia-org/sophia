@@ -9,12 +9,14 @@ proof_checkout_root() {
     [[ "$(cd -- "$top" 2>/dev/null && pwd -P)" == "$real" ]]
 }
 
-# A profile a proof run names must be a tracked, unmodified file of one of the
-# given checkouts, so the signed commit the run binds also fixes its bytes.
+# A profile a proof run names must be a tracked, unmodified regular file of one
+# of the given checkouts, so the signed commit the run binds also fixes its
+# bytes. A symlink is refused whatever it points at: git tracks the link, not
+# the bytes it resolves to.
 proof_tracked_file() {
     local path="$1" root real_root relative
     shift
-    [[ "$path" == /* && -f "$path" ]] || return 1
+    [[ "$path" == /* && -f "$path" && ! -L "$path" ]] || return 1
     path="$(cd -- "$(dirname -- "$path")" && pwd -P)/$(basename -- "$path")"
     for root in "$@"; do
         real_root="$(cd -- "$root" 2>/dev/null && pwd -P)" || continue
