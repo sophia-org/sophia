@@ -924,3 +924,73 @@ fn a_missing_source_refuses_the_presentation_whole_and_removal_revokes_it_whole(
 fn scene_for(outputs: &[HeadlessOutput]) -> LiveProductionCpuScene {
     LiveProductionCpuScene::new(outputs[0].size)
 }
+
+/// An instance on one output may sample a source another output presents:
+/// the source keeps its canonical placement and output, the second output
+/// draws it as ever, and the first samples it under the same single lease.
+#[test]
+fn an_instance_samples_a_source_that_another_output_presents() {
+    let outputs = outputs();
+    let (first, second) = (outputs[0].id, outputs[1].id);
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(outputs[0].size);
+    let target = MirroredTarget::new(&outputs);
+    let viewport = runtime.outputs.logical_viewport(second).unwrap();
+    let placement = rect(viewport.x + 4, viewport.y + 4, 8, 8);
+    let source = SurfaceId::new(8, 1);
+    commit_cpu_surface(&mut runtime, &mut scene, source, 88, 1, placement);
+    runtime.presentation_order = vec![source];
+    runtime.surface_outputs.insert(source, second);
+    runtime
+        .set_policy_presentation(
+            Some(published(
+                1,
+                vec![presentation_output(first, PolicyPresentationMode::Overlay)],
+                vec![shown_instance(first, 2, 1, source, rect(20, 4, 16, 16))],
+                vec![],
+            )),
+            &scene,
+            None,
+        )
+        .unwrap();
+    let on_first = output_list(&runtime, first);
+    assert_eq!(on_first.surface_instances().count(), 1);
+    assert!(
+        !on_first
+            .commands
+            .iter()
+            .any(|command| matches!(command, CompositorDisplayCommand::Surface { .. }))
+    );
+    let on_second = output_list(&runtime, second);
+    assert!(on_second
+        .commands
+        .iter()
+        .any(|command| matches!(command, CompositorDisplayCommand::Surface { surface } if *surface == source)));
+    assert!(on_second.surface_instances().next().is_none());
+    assert_eq!(
+        runtime.surface_outputs.get(&source),
+        Some(&second),
+        "ownership unchanged"
+    );
+    assert_eq!(
+        runtime.committed_surfaces()[0].geometry,
+        placement,
+        "placement unchanged"
+    );
+    let sources = runtime
+        .retained_composition_source_set(&scene, None)
+        .unwrap();
+    let frames = runtime
+        .retained_output_head_composition_frames_from_sources(&target, &sources)
+        .unwrap();
+    for (output, heads) in &frames {
+        let cpu_layers = heads[0]
+            .frame
+            .layers
+            .iter()
+            .filter(|layer| matches!(layer, LiveOwnedMixedCompositionLayer::Cpu { .. }))
+            .count();
+        assert_eq!(cpu_layers, 1, "one draw of the source on {output:?}");
+    }
+    assert_eq!(frames.len(), 2);
+}

@@ -439,3 +439,107 @@ fn restacking_instances_damages_every_instance_involved() {
     assert!(damage.rects.contains(&lower.destination));
     assert!(damage.rects.contains(&upper.destination));
 }
+
+fn fullscreen_dmabuf(surface: SurfaceId) -> CommittedSurfaceState {
+    let full = rect(0, 0, 1280, 720);
+    CommittedSurfaceState {
+        surface,
+        committed_generation: 4,
+        geometry: full,
+        content: SurfaceContentSet::singleton(
+            BufferSource::DmaBuf { handle: 77 },
+            Size {
+                width: 1280,
+                height: 720,
+            },
+        ),
+        damage: Region::single(full),
+    }
+}
+
+#[test]
+fn an_instance_forces_composition_and_a_stamp_alone_does_not() {
+    let source = SurfaceId::new(4, 1);
+    let committed = [fullscreen_dmabuf(source)];
+    let alone = plan(
+        &committed,
+        list(
+            vec![CompositorDisplayCommand::Surface { surface: source }],
+            &committed,
+        ),
+    );
+    assert_eq!(alone.direct_scanout, DirectScanoutVerdict::Eligible);
+    let stamp = CompositorDisplayCommand::PresentationStamp(CompositorPresentationStamp {
+        owner_epoch: 7,
+        publication_generation: 1,
+        output: OUTPUT,
+        output_generation: 1,
+        coverage: rect(0, 0, 1280, 720),
+    });
+    let stamped = plan(
+        &committed,
+        list(
+            vec![
+                CompositorDisplayCommand::Surface { surface: source },
+                stamp.clone(),
+            ],
+            &committed,
+        ),
+    );
+    assert_eq!(
+        stamped.direct_scanout,
+        DirectScanoutVerdict::Eligible,
+        "a stamp draws nothing"
+    );
+    let previewed = plan(
+        &committed,
+        list(
+            vec![
+                CompositorDisplayCommand::Surface { surface: source },
+                stamp,
+                CompositorDisplayCommand::SurfaceInstance(instance(
+                    7,
+                    1,
+                    source,
+                    rect(10, 10, 320, 180),
+                )),
+            ],
+            &committed,
+        ),
+    );
+    assert_eq!(
+        previewed.direct_scanout,
+        DirectScanoutVerdict::CompositionRequired("surface_instance")
+    );
+}
+
+#[test]
+fn an_instance_is_projected_through_a_fractional_head_and_its_repaint_widened() {
+    let source = SurfaceId::new(5, 1);
+    let committed = [committed(source, 2, rect(-1000, -1000, 64, 64))];
+    let list = list(
+        vec![CompositorDisplayCommand::SurfaceInstance(instance(
+            7,
+            1,
+            source,
+            rect(100, 100, 200, 150),
+        ))],
+        &committed,
+    );
+    let snapshot =
+        output_scene_snapshot_from_committed(output(), 9, &committed, list, None).unwrap();
+    // A 1280x720 logical output on a 1920x1080 head: scale 1.5.
+    let head = HeadRenderTarget {
+        native_size: Size {
+            width: 1920,
+            height: 1080,
+        },
+        ..target()
+    };
+    let plan = build_head_composition_plan(&snapshot, head).unwrap();
+    let drawn = instances(&plan);
+    assert_eq!(drawn[0].destination, rect(150, 150, 300, 225));
+    assert_eq!(drawn[0].clip, rect(150, 150, 300, 225));
+    // The source commit repaints the instance, widened for the filter.
+    assert!(plan.repaint.rects.contains(&rect(149, 149, 302, 227)));
+}

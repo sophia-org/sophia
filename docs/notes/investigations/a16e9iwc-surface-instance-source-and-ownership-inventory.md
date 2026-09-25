@@ -241,10 +241,23 @@ and
 | stamp-missing | the tier omits its stamp | fails: the retired frame names no publication |
 | stamp-change-undamaged | a stamp change damages nothing | fails: a binding-only change has no damage |
 
-Remaining for t244: a test of an instance on one output whose source
-another output owns (the source union and snapshot sampling do not
-consult `surface_outputs`, which stays unchanged), source damage scaled
-into the destination (a source commit now damages each instance's whole
-visible rectangle), fractional scale, mirrored-head and direct-scanout
-fallback cases, and CPU and native sampling equivalence under scaling
-(the CPU path samples the nearest texel).
+Further coverage on the same checkpoint series:
+`an_instance_samples_a_source_that_another_output_presents` covers a
+source that another output owns. It keeps its placement and
+`surface_outputs` entry, the second output draws it, the first samples
+it, and both lower one layer from one lease.
+`an_instance_forces_composition_and_a_stamp_alone_does_not` covers the
+direct-scanout fallback.
+`an_instance_is_projected_through_a_fractional_head_and_its_repaint_widened`
+covers a 1.5 scale head. Mirrored heads settle ownership in the
+preview-only production test, which flips the sibling head before the
+primary.
+
+Stated rather than tested: a source commit damages each instance's whole
+visible rectangle rather than the source's damage scaled into the
+destination. That is the same whole-placement policy ordinary surfaces
+follow in the snapshot. Sampling under scaling is nearest texel on the CPU
+path and the native shader's filter on the GPU path. The two agree
+exactly only at identity scale (a test covers opacity 1000). Scaled
+equivalence needs a native renderer run, and headless evidence does not
+establish physical GPU/KMS behaviour.
