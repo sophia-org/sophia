@@ -2,7 +2,7 @@
 id: su9ilnw1
 date: 2026-09-25
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation, x11, architecture]
 ---
 # Decoded X11 request families preserve payloads and dispatch order
@@ -44,9 +44,25 @@ Rustfmt's optional trailing commas. One test closure gained only Rustfmt body
 braces around its request expression. All 264 moved payload declarations retain
 the same tokens. The raw layout audit reports no new violation.
 
-The core probe, main-tree layout gate and selected-core/xproto/events profile
-gates remain required before closure. t240 stays open until those results are
-retained. No physical acceptance is claimed.
+Signed candidate `f0d78651503e3d6cfce3bb60c9f4f52080ec36f5` passed the core
+probe (162/162), main-tree layout gate, and all three X11 profile gates on a
+clean, unchanged checkout. Each profile ran native-input (40/40) and XTEST
+(44/44). XTS completed every manifested purpose with the existing expectations:
+selected-core 76 passed/23 declared, xproto 339/50, and events 118/77 with
+XTEST admission. Declared dispositions are retained baseline limitations, not
+new passes. No expectations were weakened or rewritten.
+
+The first selected-core attempt supplied a hyphenated manifest filename instead
+of `xts_expected_selected_core.json`; its XTS result was BLOCKED despite the
+wrapper's overall PASS. It is not acceptance evidence. The corrected run in
+`x11-profile-f0d78651-xts-selected-core-rerun` supplies the accepted result.
+
+Checksummed evidence is retained under
+`~/.local/state/sophia/development-evidence/t240-request-families-f0d78651/`:
+authority/Clippy/workspace logs, the reversible token comparison, core report,
+profile reports and XTS journals, selections and expectations. The source-layout
+debt ledger now has no rows. These deterministic results close t240; no physical
+acceptance is claimed.
 
 ## Connections
 
