@@ -29,6 +29,11 @@ impl Fixture {
             fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
         }
         fs::write(root.join("desktop.kdl"), "schema 1\n").unwrap();
+        fs::create_dir(root.join("bin")).unwrap();
+        for name in ["mktemp", "timeout", "rm", "chmod"] {
+            std::os::unix::fs::symlink(format!("/usr/bin/{name}"), root.join("bin").join(name))
+                .unwrap();
+        }
         Self {
             root,
             terminal,
@@ -45,21 +50,19 @@ impl Fixture {
             &source[a..b]
         };
         let script = format!(
-            "set -euo pipefail\nsource \"$ROOT_DIR/tools/lib/session_terminal.sh\"\ncommand() {{ if [[ \"$1\" == -v ]]; then return 1; fi; builtin command \"$@\"; }}\n{}\n{}\nif false; then :\n{}\nstandalone_bin=\"\"\n{}\nprintf '%s\\0' \"${{session_args[@]}}\"",
-            block("normal_application_defaults=false\n", "SESSION_LABEL="),
+            "set -euo pipefail\nsource \"$ROOT_DIR/tools/lib/session_preparation.sh\"\n{}\n{}\nprintf '%s\\0' \"${{session_args[@]}}\"",
             block(
-                "hagia_browser_bin=\"\"\n",
+                "sophia_load_preparation 'sophia_session_inputs",
                 "lifecycle_phase complete preflight"
             ),
-            block("else\n    terminal_bin=", "# Prepare private proof inputs"),
             block("prepared_arguments=\"", "prepared_environment=\"")
         );
-        let mut command = Command::new("bash");
+        let mut command = Command::new("/bin/bash");
         command
             .args(["-c", &script, "fallback"])
             .args(extra)
             .env_clear()
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", self.root.join("bin"))
             .env(
                 "ROOT_DIR",
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
@@ -171,17 +174,13 @@ fn profile_can_own_all_applications_without_discovered_fallbacks() {
 #[test]
 fn explicit_missing_fallbacks_are_diagnosed() {
     let f = Fixture::new();
-    for (variable, role) in [
+    for (variable, _role) in [
         ("SOPHIA_TERMINAL_BIN", "terminal"),
         ("SOPHIA_HAGIA_BROWSER_BIN", "browser"),
     ] {
         let output = f.assemble(&[(variable, Some("/nonexistent/sophia-app"))], &[]);
         assert!(!output.status.success());
-        assert!(
-            String::from_utf8(output.stderr)
-                .unwrap()
-                .contains(&format!("default {role} is not executable"))
-        );
+        assert!(String::from_utf8(output.stderr).unwrap().contains(variable));
     }
 }
 

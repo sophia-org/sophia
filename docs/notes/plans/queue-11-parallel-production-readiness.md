@@ -136,6 +136,11 @@ Reduce `tools/start_sophia_tty3.sh` to the minimum TTY/display-manager
 adapter around `sophia session run`. Typed parsing, verification, archive
 handling, and gate orchestration stay in Rust.
 
+Accepted at signed `dd2caf20`: installed Rust commands own preparation and
+bounded command acceptance; adapters retain TTY/display-manager custody and
+the independent recovery processes. The linked investigation records the
+eight-phase device-hidden gate, refusal/recovery tests and retained evidence.
+
 
 ## t028
 

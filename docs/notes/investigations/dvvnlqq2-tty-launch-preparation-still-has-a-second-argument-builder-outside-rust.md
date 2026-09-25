@@ -2,7 +2,7 @@
 id: dvvnlqq2
 date: 2026-09-24
 kind: investigation
-status: investigating
+status: closed
 tags: [investigation]
 ---
 # TTY launch preparation still has a second argument builder outside Rust
@@ -133,3 +133,74 @@ The [Session source split](izw9opes-private-session-tests-can-move-without-widen
 keeps argument parsing and startup profile evidence behind their existing
 private facade. That refactoring supplies a clearer owner for preparation but
 does not itself migrate the launcher or satisfy t027.
+
+## Remaining preparation moved to the installed binary
+
+The final preparation slice adds `prepare-controls`, `prepare-inputs`,
+`stage-proofs` and `check-launch` under `sophia session`. Controls are checked
+before the wrapper creates session state, and before the outer ordinary-profile
+TTY adapter queries modes or begins privileged handoff. Development startup
+builds the matching validator first; installed startup forbids that bootstrap.
+Executable discovery preserves optional normal-Hagia defaults, explicit proof
+adapters and standalone workload choices. A retained Bash oracle compares those
+results, including absent defaults, invalid paths and literal shell syntax.
+
+Proof staging requires an absolute private owner directory, creates Firefox
+profiles with 0700 directories/0600 files, and reclaims only real stale profile
+directories. Failed preparation removes the new profile before reporting failure;
+only a complete acceptance record transfers cleanup ownership to the adapter.
+Direct-scanout fixture copies replace destination links atomically. The Kitty
+parser and exact session parser each have a ten-second process-group deadline.
+The latter executes the same binary with the actual prepared environment and
+argument vector, captures private diagnostics, and requires parser acceptance.
+It preserves the existing parser's vocabulary and handling of unknown switches;
+it does not introduce a new argument grammar.
+
+The wrapper is now 542 lines, down from 1,180 at the audit. Its remaining work
+is TTY ownership, independent guard/watchdog custody, bounded session shutdown,
+bus lifetime and recovery logging. The outer adapter retains display-manager
+handoff and dispatch to ordinary or explicit physical-proof entry points; its
+profile check already delegates to Rust/xtask. Archive verification remains in
+the existing Rust tooling. None of these preparation commands opens devices,
+starts a bus, installs a release or reloads a running desktop.
+
+The native-feature CLI suite, executable discovery/argument/environment
+comparisons, private proof and exact-parser tests pass. Disposable PTY tests
+show guard death and early emergency recovery prevent graphics takeover and
+invalid controls stop before TTY-mode queries or privileged handoff. The external
+watchdog regression, lifecycle diagnostics, Hagia preflight refusal fixture and
+terminal checks pass. Clippy, formatting and the layout gate pass. One new PTY
+fixture initially allowed stdin EOF to hang up its shell before exec; retaining
+the input pipe until exit fixes the harness and tests the intended refusal.
+The complete native-family gate and source-bound final acceptance remain pending.
+
+## Accepted completion
+
+Signed candidate `dd2caf20b4aba35180613cd8b197b248c65fb9ed` passes all eight
+device-hidden native-family phases. Sophia, Hagia `ad3a738d` and Narthex
+`50b9014d` were clean and their identities were unchanged at completion. The
+retained evidence directory is
+`~/.local/state/sophia/development-evidence/t027-completion-dd2caf20`:
+20 files, including the family report and each phase log, have verified SHA-256
+checksums. Additional acceptance includes 83 CLI tests (four pre-existing
+ignored cases), two disposable-PTY tests, 82 conformance tests, the discovery
+and retained-vector comparisons, watchdog recovery, lifecycle diagnostics,
+preflight refusal, Clippy, formatting and layout.
+
+This closes t027's preparation/adapter boundary. The independent input guard,
+watchdog, TTY/display-manager restoration and explicit physical-proof dispatch
+remain deliberate adapter responsibilities. No installed-session or physical
+acceptance is claimed. The family gate reports Lom content unavailable when no
+Lom client is supplied; that optional branch does not satisfy or close t099.
+
+After t230 landed as `79493df8`, the signed rebase retained identical production
+preparation code (`1752d0f8`). Both completed-task rows were preserved. The
+full CLI suite passed again: 85 tests, four pre-existing ignored cases; Clippy,
+formatting and layout passed. A repeat of the new outer-adapter PTY test exposed
+another harness dependency: the refusal can exit before its process-substitution
+`tee` drains. Keeping stdin open alone was insufficient. Signed `680f0c09`
+records the preparation invocation synchronously and asserts no TTY query or
+privileged handoff occurred, without relying on terminal output. Both recovery
+tests and three additional refusal repetitions pass. The rebased evidence and
+empty production-preparation diff are separately checksummed at
+`~/.local/state/sophia/development-evidence/t027-rebased-680f0c09`.

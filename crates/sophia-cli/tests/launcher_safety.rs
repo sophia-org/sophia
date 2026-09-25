@@ -56,11 +56,8 @@ fn lom_gate_keeps_unsanitized_child_output_private_and_explicit() {
 }
 
 #[test]
-fn input_guard_arm_timeout_is_bounded_and_defaults_to_thirty_seconds() {
-    assert!(SESSION_LAUNCHER.contains(
-        "INPUT_GUARD_ARM_TIMEOUT_SECONDS=\"${SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS:-30}\""
-    ));
-    assert!(SESSION_LAUNCHER.contains("\"$INPUT_GUARD_ARM_TIMEOUT_SECONDS\" -gt 300"));
+fn input_guard_wait_uses_the_validated_bound() {
+    assert!(offset("prepare-controls") < offset("mkdir -p \"$STATE_DIR\""));
     assert!(SESSION_LAUNCHER.contains("guard_wait_tick < INPUT_GUARD_ARM_WAIT_TICKS"));
     assert!(SESSION_LAUNCHER.contains("within $INPUT_GUARD_ARM_TIMEOUT_SECONDS seconds"));
 }
@@ -105,9 +102,7 @@ fn visual_proofs_opt_in_to_repeated_final_region_readback() {
 #[test]
 fn firefox_m10_gate_uses_the_proven_isolated_native_x_configuration() {
     assert!(SESSION_LAUNCHER.contains("firefox_m10_profile_dir=\"\""));
-    assert!(SESSION_LAUNCHER.contains("$firefox_m10_profile_dir/user.js"));
-    assert!(SESSION_LAUNCHER.contains("browser.tabs.remote.autostart"));
-    assert!(SESSION_LAUNCHER.contains("fission.autostart"));
+    assert!(SESSION_LAUNCHER.contains("stage-proofs"));
     assert!(SESSION_LAUNCHER.contains("--firefox-profile=$firefox_m10_profile_dir"));
     assert!(SESSION_LAUNCHER.contains("session prepare-environment"));
     assert!(SESSION_LAUNCHER.contains("--firefox-probe=$firefox_m10_probe_dir"));
@@ -122,15 +117,12 @@ fn firefox_m10_profiles_are_bounded_by_the_session_lifecycle() {
     );
     let current_cleanup = offset("if [[ -n \"$firefox_m10_probe_dir\" ]]; then");
     let trap = offset("trap cleanup EXIT");
-    let stale_cleanup =
-        offset("find \"$STATE_DIR\" -mindepth 1 -maxdepth 1 -type d -name 'firefox-m10.*'");
-    let profile_create = offset("firefox_m10_probe_dir=\"$(mktemp -d");
+    let staging = offset("stage-proofs");
 
     assert!(prior_wrapper_check < graphical_session_check);
-    assert!(graphical_session_check < stale_cleanup);
+    assert!(graphical_session_check < staging);
     assert!(child_shutdown < current_cleanup);
-    assert!(trap < stale_cleanup);
-    assert!(stale_cleanup < profile_create);
+    assert!(trap < staging);
     assert!(SESSION_LAUNCHER.contains("rm -rf -- \"$firefox_m10_probe_dir\""));
     assert!(SESSION_LAUNCHER.contains("firefox_m10_probe_dir=\"\""));
 }
@@ -231,7 +223,7 @@ fn desktop_comparison_gate_is_terminal_free_local_and_failure_safe() {
     assert!(DESKTOP_COMPARISON_GATE.contains("trap cleanup_xmonad EXIT"));
     assert!(!DESKTOP_COMPARISON_GATE.contains("/tmp/crtc"));
     assert!(!DESKTOP_COMPARISON_GATE.to_ascii_lowercase().contains("ssh"));
-    assert!(SESSION_LAUNCHER.contains("SESSION_STARTUP"));
+    assert!(SESSION_LAUNCHER.contains("prepare-controls"));
     assert!(SESSION_LAUNCHER.contains("session prepare-arguments"));
     assert!(SESSION_LAUNCHER.contains("sophia_session_arguments schema=1 status=prepared"));
 }
