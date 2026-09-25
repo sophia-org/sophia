@@ -6,6 +6,7 @@ pub(super) struct PendingDismissal {
     pub action: ContentAction,
     pub deadline_msec: u64,
     pub acknowledged: bool,
+    pub notification_sent: bool,
     cancellation_sent: bool,
     withdrawal_error_reported: bool,
 }
@@ -25,15 +26,26 @@ impl ContentActionLedger {
                 && pending.action.allocation == popout.allocation
         }) {
             // Repeated outside presses cannot renew the withdrawal deadline.
-            return Ok(Some(pending.action.event_id));
+            return Ok(pending.notification_sent.then_some(pending.action.event_id));
         }
-        if self.live.len() + self.dismissals.len() >= limits.max_pending_actions as usize
-            || self.dismissals.len() == self.dismissals.capacity()
-            || !transport.content_action_capacity_available()
-        {
-            return Ok(None);
+        if self.dismissals.len() == self.dismissals.capacity() {
+            return Err(ShellTransportError::ContentQueueSaturated);
         }
-        let event_id = self.next_event_id;
+        // Withdrawal is an Engine obligation even when the bounded wire queue
+        // cannot admit a notification. Keep its original deadline independently.
+        let notification_sent = self.live.len()
+            + self
+                .dismissals
+                .iter()
+                .filter(|p| p.notification_sent)
+                .count()
+            < limits.max_pending_actions as usize
+            && transport.content_action_capacity_available();
+        let event_id = if notification_sent {
+            self.next_event_id
+        } else {
+            0
+        };
         let next = event_id
             .checked_add(1)
             .ok_or(ShellTransportError::InvalidConnectionEpoch)?;
@@ -54,17 +66,20 @@ impl ContentActionLedger {
             kind: 2,
             reason: ContentReason::None as u16,
         };
-        transport.send_content_action(transaction, &action)?;
-        self.next_event_id = next;
-        self.issued_high_water = event_id;
+        if notification_sent {
+            transport.send_content_action(transaction, &action)?;
+            self.next_event_id = next;
+            self.issued_high_water = event_id;
+        }
         self.dismissals.push(PendingDismissal {
             action,
             deadline_msec,
             acknowledged: false,
+            notification_sent,
             cancellation_sent: false,
             withdrawal_error_reported: false,
         });
-        Ok(Some(event_id))
+        Ok(notification_sent.then_some(event_id))
     }
 
     pub(in crate::live_session::metadata_shell) fn dismissal_expired(
@@ -155,7 +170,7 @@ impl super::super::LiveContentSession {
                 index += 1;
                 continue;
             }
-            if !pending.acknowledged && !pending.cancellation_sent {
+            if pending.notification_sent && !pending.acknowledged && !pending.cancellation_sent {
                 let mut cancel = action.clone();
                 cancel.kind = ACTION_CANCEL;
                 cancel.reason = ContentReason::Stale as u16;

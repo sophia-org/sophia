@@ -311,6 +311,18 @@ native-session Clippy passes. Evidence is in
 worktree. These supplied rational parent facts do not establish live fractional
 output admission or hardware presentation.
 
+A further bounded-queue control filled all sixteen action slots before an
+outside press. It failed because no withdrawal deadline survived notification
+refusal. The ledger now reserves local dismissal obligations independently of
+wire action capacity; repeated presses keep the first deadline. If no action
+was emitted, no event number is consumed and no cancellation is owed. The local
+obligation still reaches the existing withdrawal path at expiry. Its storage is
+bounded by the sixteen-allocation ceiling; exhausting that storage reports an
+error instead of silently forgetting a withdrawal. The private-socket action
+suite passes 22 controls with one existing ignored case. Red and green evidence
+is in `.artifacts/t099-dismiss-capacity-{red,green}.log`. These controls establish
+deadline retention and wire admission, not a new native presentation result.
+
 ### t100
 
 Complete production topology/output-fact publication, fresh reconnect grants,

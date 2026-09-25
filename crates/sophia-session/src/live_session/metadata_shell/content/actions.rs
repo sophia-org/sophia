@@ -56,8 +56,8 @@ pub(super) struct ContentActionLedger {
     dismissals: Vec<dismissal::PendingDismissal>,
 }
 
-// r5 advertises at most sixteen actions. Reserve once before a connection
-// can issue anything; neither issuance nor cancellation bookkeeping allocates.
+// r5 advertises at most sixteen actions and sixteen allocations. Reserve
+// independent dismissal obligations even when every wire action slot is full.
 const ACTION_CAPACITY: usize = 16;
 
 impl Default for ContentActionLedger {
@@ -197,7 +197,7 @@ impl ContentActionLedger {
         if let Some(pending) = self
             .dismissals
             .iter_mut()
-            .find(|p| p.action.event_id == ack.event_id)
+            .find(|p| p.notification_sent && p.action.event_id == ack.event_id)
         {
             if ack_matches(ack, &pending.action) && now_msec <= pending.deadline_msec {
                 pending.acknowledged = true;

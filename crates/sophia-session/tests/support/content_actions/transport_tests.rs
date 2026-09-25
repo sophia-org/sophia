@@ -152,6 +152,70 @@ fn expired_action_keeps_its_real_fifo_cancel_credit_until_exact_transfer() {
 }
 
 #[test]
+fn a_full_action_queue_cannot_erase_the_outside_dismissal_deadline() {
+    let (mut transport, mut peer, limits) = transport_peer();
+    let mut target = super::tests::target();
+    target.grant = limits.grant;
+    let mut ledger = ContentActionLedger::default();
+    for i in 0..limits.max_pending_actions {
+        assert!(
+            ledger
+                .issue(
+                    target.clone(),
+                    1,
+                    &limits,
+                    TransactionId::from_raw(u64::from(i) + 1),
+                    &mut transport.connection()
+                )
+                .unwrap()
+                .is_some()
+        );
+    }
+    let popout = sophia_engine::PresentedContentDismissal {
+        grant: target.grant,
+        output: target.output,
+        candidate_generation: target.candidate_generation,
+        presentation_epoch: target.presentation_epoch,
+        interaction_generation: target.interaction_generation,
+        allocation: target.allocation,
+    };
+    let deadline = 10 + u64::from(limits.action_ack_timeout_ms);
+    for now in [10, 20] {
+        assert_eq!(
+            ledger
+                .issue_dismissal(
+                    popout.clone(),
+                    now,
+                    &limits,
+                    TransactionId::from_raw(100),
+                    &mut transport.connection()
+                )
+                .unwrap(),
+            None
+        );
+    }
+    assert!(ledger.dismissal_expired(popout.allocation, deadline));
+    assert!(!ledger.dismissal_expired(popout.allocation, deadline - 1));
+    assert_eq!(ledger.dismissals.len(), 1);
+    assert!(!ledger.dismissals[0].notification_sent);
+    assert_eq!(ledger.next_event_id, u64::from(limits.max_pending_actions) + 1);
+    transport.poll_io().unwrap();
+    for _ in 0..limits.max_pending_actions {
+        let (_, ShellContentRecord::Action(action)) =
+            decode_shell_content_frame(&read_frame(&mut peer)).unwrap()
+        else {
+            panic!("activation action");
+        };
+        assert_eq!(action.kind, 1);
+    }
+    peer.set_nonblocking(true).unwrap();
+    assert_eq!(
+        peer.read(&mut [0]).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+}
+
+#[test]
 fn dismissal_wire_identity_has_no_coordinates_and_ack_cannot_renew_its_deadline() {
     let (mut transport, mut peer, limits) = transport_peer();
     let target = super::tests::target();
