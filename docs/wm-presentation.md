@@ -122,6 +122,11 @@ Protected recovery/session controls retain precedence.
 Existing application captures keep their existing owner; modal admission waits
 for them to settle rather than transferring ownership. Ordinary unbound input is
 consumed within the admitted modal scope and is never forwarded through previews.
+The session defers installation of replacement records while application keys,
+leases or pending focus handoffs remain. This keeps the real application hit
+layers available until those sequences settle. The regular presentation service
+retries the committed records without requiring another WM proposal, revalidating
+source and action admission before installation.
 
 The owner retains requested, committed and presented identities separately.
 Submission and a projection acknowledgement grant no input authority. A typed
@@ -131,6 +136,8 @@ All-head consensus, completed replacement and any-head visibility are separate
 facts. A lagging head which still shows a revoked tier keeps the output shielded
 from new application input. A withdrawal receipt requires completed evidence that
 every head has replaced that identity; missing consensus alone cannot certify it.
+A completed frame without the publication revokes any held receipt and action
+authority for that output. Requested records cannot keep invisible targets active.
 
 The action wire identity is scoped by its authenticated session connection.
 The input owner also retains a monotonic presentation epoch across reconnects;
