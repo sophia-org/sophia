@@ -46,9 +46,9 @@ takeover:
 - **Reference profile.** `SOPHIA_HAGIA_NATIVE_PROFILE` may name a profile. It
   is chosen before any build and must be an absolute, tracked, unmodified
   regular file of the Sophia or Hagia checkout. A symlink is refused whatever
-  it targets (\`787e0f95\`): review showed that a tracked link to an external
+  it targets (`787e0f95`): review showed that a tracked link to an external
   file passed while the target's bytes changed, because git records the link
-  and not those bytes. The red control is \`fab01fa5\`. The default profile is unchanged.
+  and not those bytes. The red control is `fab01fa5`. The default profile is unchanged.
   `tools/fixtures/t018_tab_reference.kdl` holds only Hagia policy:
   - the native-workflow keys;
   - scroller at start;
@@ -85,10 +85,10 @@ control:
 
 The first runs of both Hagia verifier-matcher checks failed, and a first
 reading blamed signature verification in the device-hidden sandbox. That was
-wrong. Both runs, including the comparison run, checked HEAD \`1fbaf4cb\`, an
+wrong. Both runs, including the comparison run, checked HEAD `1fbaf4cb`, an
 unsigned documentation commit, so the matchers correctly refused an unsigned
-source. On signed \`1a9ab46c\`, in the same wrapper with frozen signed Hagia
-\`97ed593\` and Narthex \`7f51175\` roots, both matchers pass. The first
+source. On signed `1a9ab46c`, in the same wrapper with frozen signed Hagia
+`97ed593` and Narthex `7f51175` roots, both matchers pass. The first
 failing logs are retained with the passing ones.
 
 ## Sessions
@@ -124,3 +124,51 @@ SOPHIA_HAGIA_ROOT=$HOME/dev/hagia SOPHIA_NARTHEX_ROOT=$HOME/dev/narthex \
 SOPHIA_HAGIA_NATIVE_PROFILE=$HOME/dev/sophia/tools/fixtures/t018_tab_reference.kdl \
   $HOME/dev/sophia/tools/run_current_hagia_native_gate_tty4.sh
 ```
+
+## Built-binary identity (`5df5a380`)
+
+Review (pN) found two routes by which the Hagia proofs could bind one Sophia
+binary and run another:
+
+- **Build output.** Both wrappers built with an inherited
+  `CARGO_TARGET_DIR`, yet hashed and ran `ROOT_DIR/target/release/sophia`. A
+  stale executable there was bound as the current commit's build.
+- **Native hand-off.** The native gate hashed that path but handed its runner
+  an inherited `SOPHIA_BIN`, which `start_sophia_tty3.sh` and
+  `run_sophia_session.sh` execute.
+
+A related case: an inherited `CARGO_BUILD_TARGET` moves the output under
+`target/<triple>/`.
+
+The repair:
+
+- **Build target.** Both wrappers build with `--target-dir "$ROOT_DIR/target"`.
+- **Cross target.** Both refuse `CARGO_BUILD_TARGET` before any build. No
+  cross-compilation mode is added.
+- **Native hand-off.** The native gate hands its runner and archive the
+  hashed path explicitly.
+- **Policy gate.** Its launcher already runs the literal hashed path and
+  never reads `SOPHIA_BIN`. A documentation control records that, and it
+  needed no change.
+
+| Commit | Content |
+| --- | --- |
+| `622d614a` | Red: an inherited binary, target directory or stale executable is run or bound |
+| `11713d4b` | Red: `CARGO_BUILD_TARGET` is not refused |
+| `5df5a380` | Fix |
+
+The fix is based on `9fdb7ff0`, on branch `gate/t018-sophia-bin-pin`.
+
+Controls: the cargo stub honours `--target-dir` and then
+`CARGO_TARGET_DIR`, and the runner stub executes the `SOPHIA_BIN` it is given.
+The results:
+
+- The device-hidden suite passes 15 of 15.
+- Reverting only the three sources fails the native, policy and cross-target
+  controls.
+- Dropping only the native hand-off pin fails the native control.
+- With the real signed Hagia `97ed593` and Narthex `7f51175` roots, the
+  native and physical matchers and the profile preflight pass.
+
+Logs are retained under `.artifacts/t018-pin/` in the repair worktree. No
+API or session code changed.
