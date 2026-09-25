@@ -1049,6 +1049,88 @@ mod xtest_admission_socket {
         client.barrier();
     }
 
+    /// A press nobody selected on the source propagates up to the first
+    /// window where the client selected it, the root included, and stops at
+    /// a do-not-propagate mask or at the first selector (XTS Xlib11
+    /// ButtonPress 7, ButtonRelease 4). The owner's walk stopped at its own
+    /// toplevel, so a client that selected on the root heard nothing from
+    /// its own windows. Red before the fix: the first press reaches nobody.
+    #[test]
+    fn a_press_propagates_to_the_root_and_stops_at_do_not_propagate() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let toplevel = client.next;
+        let child = client.next + 2;
+        let grandchild = client.next + 4;
+        client.next += 6;
+        client.stream
+            .write_all(&create_window_request(client.order, toplevel, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, child, toplevel, 2, 2, 12, 12))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, grandchild, child, 2, 2, 8, 8))
+            .unwrap();
+        for window in [toplevel, child, grandchild] {
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        // ButtonPress on the root only.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, X_SETUP_DEFAULT_ROOT, 1 << 2))
+            .unwrap();
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let field = |event: &[u8; 32], at: usize| u32::from_le_bytes([event[at], event[at + 1], event[at + 2], event[at + 3]]);
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        let dnp = |client: &mut XtestClient, window: u32, mask: u32| {
+            let mut out = vec![2, 0];
+            push_u16(&mut out, client.order, 4);
+            push_u32(&mut out, client.order, window);
+            push_u32(&mut out, client.order, 1 << 12);
+            push_u32(&mut out, client.order, mask);
+            client.stream.write_all(&out).unwrap();
+        };
+
+        // In the grandchild (root 24..32, 4..12): the press climbs to the root.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!((field(&press, 12), field(&press, 16)), (X_SETUP_DEFAULT_ROOT, toplevel), "the press on the root names the toplevel as child");
+        assert_eq!((at(&press, 20), at(&press, 22), at(&press, 24), at(&press, 26)), (27, 7, 27, 7), "root coordinates on the root");
+        client.fake_input(5, 1);
+        client.assert_quiet("nobody selected the release");
+
+        // The root stops selecting, the toplevel selects, and the child
+        // refuses to propagate presses: the press reaches nobody.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, X_SETUP_DEFAULT_ROOT, 0))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, toplevel, 1 << 2))
+            .unwrap();
+        dnp(&mut client, child, 1 << 2);
+        client.barrier();
+        client.fake_input(4, 1);
+        client.assert_quiet("the child's do-not-propagate mask stops the press");
+        client.fake_input(5, 1);
+
+        // The child selects and the toplevel refuses to propagate: the press
+        // stops at the child, the first selector, and the toplevel hears
+        // nothing.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, child, 1 << 2))
+            .unwrap();
+        dnp(&mut client, toplevel, 1 << 2);
+        dnp(&mut client, child, 0);
+        client.barrier();
+        client.fake_input(4, 1);
+        let press = client.next_event(4);
+        assert_eq!((field(&press, 12), field(&press, 16)), (child, grandchild), "the press on the child names the grandchild");
+        client.fake_input(5, 1);
+        client.assert_quiet("the toplevel heard nothing");
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,
