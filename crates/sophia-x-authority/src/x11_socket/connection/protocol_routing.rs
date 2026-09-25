@@ -111,19 +111,56 @@ fn route_core_lifecycle_events_with_control(
     // treatment the substructure events below get. The focus producer reaches
     // only the requesting connection's own stream, so without this a second
     // client watching a window learns nothing when the focus enters it.
+    //
+    // A KeymapNotify follows every FocusIn for the clients that selected
+    // KeymapState on the window, whether or not they selected the FocusIn
+    // itself (XTS Xlib11 KeymapNotify 2); the requester's own copy takes its
+    // place in the outputs right after the FocusIn.
+    const KEYMAP_STATE_MASK: u32 = 1 << 14;
     let mut unselected_focus = Vec::new();
+    let mut keymap_after_focus = Vec::new();
+    let mut pressed_keys = None;
     for (index, item) in output.outputs.iter().enumerate() {
-        let crate::XClientOutput::Event(event @ XClientEvent::Focus { event: window, .. }) = item
+        let crate::XClientOutput::Event(
+            event @ XClientEvent::Focus {
+                event: window,
+                focused,
+                ..
+            },
+        ) = item
         else {
             continue;
         };
-        let selectors = routing
-            .core_event_subscribers(*window, FOCUS_CHANGE_MASK)
-            .map_err(|error| {
+        let inspect = |mask: u32| {
+            routing.core_event_subscribers(*window, mask).map_err(|error| {
                 X11SetupSocketError::new(format!(
                     "failed to inspect X11 focus subscriptions: {error}"
                 ))
-            })?;
+            })
+        };
+        let selectors = inspect(FOCUS_CHANGE_MASK)?;
+        let keymap_selectors = if *focused {
+            inspect(KEYMAP_STATE_MASK)?
+        } else {
+            Vec::new()
+        };
+        let keymap = if keymap_selectors.is_empty() {
+            None
+        } else {
+            let keys = match pressed_keys {
+                Some(keys) => keys,
+                None => {
+                    let keys = routing.pressed_keys_of_client(client).map_err(|error| {
+                        X11SetupSocketError::new(format!(
+                            "failed to read the keys down for KeymapNotify: {error}"
+                        ))
+                    })?;
+                    pressed_keys = Some(keys);
+                    keys
+                }
+            };
+            Some(keymap_notify_event(keys))
+        };
         for recipient in selectors
             .iter()
             .copied()
@@ -132,12 +169,34 @@ fn route_core_lifecycle_events_with_control(
             retain_private_control_events(execution, [(Some(recipient), *event)])?;
             deliver(recipient, *event, "X11 focus event")?;
         }
+        if let Some(keymap) = keymap {
+            for recipient in keymap_selectors
+                .iter()
+                .copied()
+                .filter(|recipient| *recipient != client)
+            {
+                retain_private_control_events(execution, [(Some(recipient), keymap)])?;
+                deliver(recipient, keymap, "X11 keymap event")?;
+            }
+            if keymap_selectors.contains(&client) {
+                retain_private_control_events(execution, [(None, keymap)])?;
+                keymap_after_focus.push((index, keymap));
+            }
+        }
         if !selectors.contains(&client) {
             unselected_focus.push(index);
         }
     }
-    for index in unselected_focus.into_iter().rev() {
-        output.outputs.remove(index);
+    if !unselected_focus.is_empty() || !keymap_after_focus.is_empty() {
+        let outputs = std::mem::take(&mut output.outputs);
+        for (index, item) in outputs.into_iter().enumerate() {
+            if !unselected_focus.contains(&index) {
+                output.outputs.push(item);
+            }
+            if let Some((_, keymap)) = keymap_after_focus.iter().find(|(at, _)| *at == index) {
+                output.outputs.push(crate::XClientOutput::Event(*keymap));
+            }
+        }
     }
 
     let mut candidates = Vec::new();

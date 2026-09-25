@@ -624,6 +624,19 @@ fn spawn_x11_input_event_writer(
                 }
                 if let Some((previous, out_type, in_type)) = transition {
                     if let XAuthorityInputEvent::Pointer(pointer) = event {
+                        // Read before the selections are held: the focus
+                        // records take the authority first and then the
+                        // selections, and this writer must not hold them in
+                        // the other order.
+                        let pressed_keys = match input_authority.as_ref() {
+                            Some(authority) => authority
+                                .lock()
+                                .map_err(|_| {
+                                    X11SetupSocketError::new("X11 input authority lock poisoned")
+                                })?
+                                .pressed_keys(namespace),
+                            None => [0; 32],
+                        };
                         let selections = core_event_selections.lock().map_err(|_| {
                             X11SetupSocketError::new("X11 core event selection lock poisoned")
                         })?;
@@ -675,6 +688,19 @@ fn spawn_x11_input_event_writer(
                                 ))
                                 .map_err(|error| {
                                     x11_peer_write_error("failed to write X11 EnterNotify event", error)
+                                })?;
+                        }
+                        // A KeymapNotify follows every EnterNotify for the
+                        // clients that selected KeymapState on the window
+                        // entered (XTS Xlib11 KeymapNotify 1).
+                        if selections.keymap_state_selected(delivered_window) {
+                            stream
+                                .write_all(&encode_x_client_event(
+                                    byte_order,
+                                    keymap_notify_event(pressed_keys),
+                                ))
+                                .map_err(|error| {
+                                    x11_peer_write_error("failed to write X11 KeymapNotify event", error)
                                 })?;
                         }
                         drop(selections);

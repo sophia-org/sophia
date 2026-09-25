@@ -49,6 +49,10 @@ pub fn encode_x_client_event(byte_order: XByteOrder, event: XClientEvent) -> Vec
             put_resource(byte_order, &mut out[4..8], event);
             out[8] = mode;
         }
+        XClientEvent::KeymapNotify { keys } => {
+            out[0] = X_KEYMAP_NOTIFY;
+            out[1..32].copy_from_slice(&keys);
+        }
         XClientEvent::XkbStateNotify {
             sequence,
             time,

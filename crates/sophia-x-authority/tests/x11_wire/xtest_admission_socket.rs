@@ -852,6 +852,84 @@ mod xtest_admission_socket {
         peer.assert_quiet("the peer selected presses, not releases");
     }
 
+    /// A KeymapNotify follows every EnterNotify and FocusIn for a client
+    /// that selected KeymapState on the window entered or focused, carrying
+    /// the keys down (XTS Xlib11 KeymapNotify 1 and 2). None was written,
+    /// and the suite's KeymapNotify 1 binary then crashed on its own
+    /// "Missing %s event" report once no stray motion followed the
+    /// EnterNotify. Red on the tree before the fix: the record after the
+    /// EnterNotify is not a KeymapNotify.
+    ///
+    /// The pointer moves between two windows of the one client: a motion
+    /// onto the root reaches no client's writer, so the return from it
+    /// crosses nothing this layer can see (t211).
+    #[test]
+    fn a_keymap_notify_follows_an_enter_notify_and_a_focus_in() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let first = client.next;
+        let second = client.next + 2;
+        client.next += 4;
+        // KeyPress, KeyRelease, EnterWindow, KeymapState and FocusChange on
+        // both windows.
+        for (window, x) in [(first, 20), (second, 40)] {
+            client.stream
+                .write_all(&create_window_request(client.order, window, x, 0, 16, 16))
+                .unwrap();
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, 3 | (1 << 4) | (1 << 14) | (1 << 21)))
+                .unwrap();
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        // A read that starves is a failure here, not a hang.
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let event_window = |event: &[u8; 32]| u32::from_le_bytes([event[12], event[13], event[14], event[15]]);
+        let event_window_of_focus = |event: &[u8; 32]| u32::from_le_bytes([event[4], event[5], event[6], event[7]]);
+
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 25, 5);
+        let entered = client.next_event(7);
+        assert_eq!(event_window(&entered), first, "EnterNotify on the first window");
+        let keymap = read_x_record(&mut client.stream);
+        assert_eq!(keymap[0], 11, "a KeymapNotify follows the EnterNotify: {keymap:?}");
+        assert_eq!(keymap[4] & 0x40, 0, "no key is down yet");
+
+        // Keycode 38 held: bit 38 of the bitmap is byte 4, bit 6, and the
+        // KeymapNotify carries bytes 1 to 31 of the bitmap at 1 to 31.
+        client.fake_input(2, 38);
+        let _ = client.next_event(2);
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 5);
+        let entered = client.next_event(7);
+        assert_eq!(event_window(&entered), second, "EnterNotify on the second window");
+        let keymap = read_x_record(&mut client.stream);
+        assert_eq!(keymap[0], 11, "a KeymapNotify follows the second EnterNotify: {keymap:?}");
+        assert_eq!(keymap[4] & 0x40, 0x40, "keycode 38 is down in the bitmap: {keymap:?}");
+
+        // FocusIn on the first window, then its KeymapNotify. The focus was
+        // at the root with the pointer in the second window, so a FocusOut
+        // with detail Pointer on the second window comes first.
+        let mut request = vec![42, 0];
+        push_u16(&mut request, client.order, 3);
+        push_u32(&mut request, client.order, first);
+        push_u32(&mut request, client.order, 0);
+        client.stream.write_all(&request).unwrap();
+        let focus = loop {
+            let record = read_x_record(&mut client.stream);
+            match record[0] & 0x7f {
+                9 => break record,
+                10 => assert_eq!((event_window_of_focus(&record), record[1]), (second, 5), "the pointer window's FocusOut"),
+                other => panic!("expected a focus event, got record {other}: {record:?}"),
+            }
+        };
+        assert_eq!(event_window_of_focus(&focus), first, "FocusIn on the first window");
+        let keymap = read_x_record(&mut client.stream);
+        assert_eq!(keymap[0], 11, "a KeymapNotify follows the FocusIn: {keymap:?}");
+        assert_eq!(keymap[4] & 0x40, 0x40, "keycode 38 is still down: {keymap:?}");
+        client.fake_input(3, 38);
+        let _ = client.next_event(3);
+        client.barrier();
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,

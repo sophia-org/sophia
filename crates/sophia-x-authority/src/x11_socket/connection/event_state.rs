@@ -160,6 +160,7 @@ impl XCoreEventSelectionState {
     }
     const ENTER_WINDOW_MASK: u32 = 1 << 4;
     const LEAVE_WINDOW_MASK: u32 = 1 << 5;
+    const KEYMAP_STATE_MASK: u32 = 1 << 14;
     const FOCUS_CHANGE_MASK: u32 = 1 << 21;
 
     fn select_xkb_state_notifications(
@@ -597,6 +598,14 @@ impl XCoreEventSelectionState {
         self.windows
             .get(&window)
             .is_some_and(|selection| selection.mask & Self::FOCUS_CHANGE_MASK != 0)
+    }
+
+    /// Whether this connection selected KeymapState on the window: the
+    /// KeymapNotify after an EnterNotify or FocusIn on it is owed to it.
+    pub(crate) fn keymap_state_selected(&self, window: XResourceId) -> bool {
+        self.windows
+            .get(&window)
+            .is_some_and(|selection| selection.mask & Self::KEYMAP_STATE_MASK != 0)
     }
 
     fn pointer_event_coordinates(

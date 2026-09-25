@@ -30,6 +30,7 @@ pub(crate) const X_BUTTON_PRESS: u8 = 4;
 pub(crate) const X_BUTTON_RELEASE: u8 = 5;
 pub(crate) const X_MOTION_NOTIFY: u8 = 6;
 const X_FOCUS_IN: u8 = 9;
+const X_KEYMAP_NOTIFY: u8 = 11;
 const X_FOCUS_OUT: u8 = 10;
 const X_EXPOSE: u8 = 12;
 const X_GRAPHICS_EXPOSE: u8 = 13;
@@ -77,6 +78,11 @@ pub enum XClientEvent {
         event: XResourceId,
         mode: u8,
     },
+    /// The keys down, reported after every EnterNotify and FocusIn to the
+    /// clients that selected KeymapState on the window entered or focused.
+    /// It carries no sequence number: bytes 1 to 31 are the bitmap's bytes
+    /// 1 to 31, QueryKeymap's without its first byte.
+    KeymapNotify { keys: [u8; 31] },
     XkbStateNotify {
         sequence: u16,
         time: XTimestamp,

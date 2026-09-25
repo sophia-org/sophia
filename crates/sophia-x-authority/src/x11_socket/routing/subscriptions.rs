@@ -46,6 +46,30 @@ impl XServerFrontendRouteRegistry {
             .collect())
     }
 
+    /// The keys down in the client's namespace, as QueryKeymap reports them:
+    /// what a KeymapNotify to it carries.
+    fn pressed_keys_of_client(
+        &self,
+        client: XServerFrontendClientId,
+    ) -> Result<[u8; 32], XServerFrontendRouteError> {
+        // A client not registered into a namespace has no keyboard here:
+        // nothing is down.
+        let Some(namespace) = self
+            .clients
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .get(&client)
+            .and_then(|senders| senders.namespace)
+        else {
+            return Ok([0; 32]);
+        };
+        Ok(self
+            .input_authority
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .pressed_keys(namespace))
+    }
+
     fn core_event_subscribers(
         &self,
         window: XResourceId,
