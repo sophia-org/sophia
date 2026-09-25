@@ -322,94 +322,98 @@ fn a_popout_requires_the_exact_presented_parent_epoch() {
 
 #[test]
 fn a_popout_origin_is_exact_physical_even_when_logical_coordinates_cannot_name_it() {
-    let mut store = ContentAllocationStore::new(ContentLimits::prototype(grant())).unwrap();
-    store
-        .publish_outputs(
-            tx(1),
-            1,
-            vec![ContentOutputFactsEntry {
-                output: output(),
-                local_width: 250,
-                local_height: 125,
-                scale_numerator: 5,
-                scale_denominator: 4,
-                scale_generation: 1,
-            }],
-        )
-        .unwrap();
-    store.take_event();
-    let parent = ContentAllocationId {
-        id: 1,
-        generation: 1,
-    };
-    let mut panel_request = panel_request(1, 1, ContentAllocationId::default());
-    panel_request.desired_width = 200;
-    panel_request.desired_height = 20;
-    store.request(tx(2), panel_request, &[], 0).unwrap();
-    let mut panel = panel(parent);
-    panel.logical.width = 200;
-    panel.logical.height = 20;
-    panel.pixel.width = 250;
-    panel.pixel.height = 25;
-    panel.scale_numerator = 5;
-    panel.scale_denominator = 4;
-    store.grant(1, panel, &[]).unwrap();
-    store.take_event();
-
-    let request = ContentAllocationRequest {
-        grant: grant(),
-        output: output(),
-        allocation_request_id: 2,
-        operation: 1,
-        role: 2,
-        edge: 1,
-        prior: ContentAllocationId::default(),
-        parent,
-        parent_presentation_epoch: 7,
-        anchor_parent_rect: ContentPixelRect {
-            x: 1,
-            y: 0,
-            width: 1,
-            height: 1,
-        },
-        desired_width: 40,
-        desired_height: 24,
-        margins: ContentMargins::default(),
-    };
-    store
-        .request(tx(3), request.clone(), &[(parent, 7)], 1)
-        .unwrap();
-    let popout = ContentAllocationSnapshot {
-        native_opening: None,
-        output: output(),
-        allocation: ContentAllocationId {
-            id: 2,
+    for (physical_x, logical_x, width, height, pixel_width, pixel_height) in
+        [(1, 0, 40, 24, 50, 30), (4, 3, 2, 2, 3, 3)]
+    {
+        let mut store = ContentAllocationStore::new(ContentLimits::prototype(grant())).unwrap();
+        store
+            .publish_outputs(
+                tx(1),
+                1,
+                vec![ContentOutputFactsEntry {
+                    output: output(),
+                    local_width: 250,
+                    local_height: 125,
+                    scale_numerator: 5,
+                    scale_denominator: 4,
+                    scale_generation: 1,
+                }],
+            )
+            .unwrap();
+        store.take_event();
+        let parent = ContentAllocationId {
+            id: 1,
             generation: 1,
-        },
-        scale_generation: 1,
-        scale_numerator: 5,
-        scale_denominator: 4,
-        role: 2,
-        edge: 1,
-        margins: ContentMargins::default(),
-        // No integer logical x quantizes to physical x=1 at this scale.
-        logical: ContentLogicalRect {
-            x: 0,
-            y: 0,
-            width: 40,
-            height: 24,
-        },
-        pixel: ContentPixelRect {
-            x: 1,
-            y: 1,
-            width: 50,
-            height: 30,
-        },
-        parent,
-        anchor_parent_rect: request.anchor_parent_rect,
-        allowed_reservation_extent: 0,
-    };
-    store.grant(2, popout, &[(parent, 7)]).unwrap();
+        };
+        let mut panel_request = panel_request(1, 1, ContentAllocationId::default());
+        panel_request.desired_width = 200;
+        panel_request.desired_height = 20;
+        store.request(tx(2), panel_request, &[], 0).unwrap();
+        let mut panel = panel(parent);
+        panel.logical.width = 200;
+        panel.logical.height = 20;
+        panel.pixel.width = 250;
+        panel.pixel.height = 25;
+        panel.scale_numerator = 5;
+        panel.scale_denominator = 4;
+        store.grant(1, panel, &[]).unwrap();
+        store.take_event();
+
+        let request = ContentAllocationRequest {
+            grant: grant(),
+            output: output(),
+            allocation_request_id: 2,
+            operation: 1,
+            role: 2,
+            edge: 1,
+            prior: ContentAllocationId::default(),
+            parent,
+            parent_presentation_epoch: 7,
+            anchor_parent_rect: ContentPixelRect {
+                x: physical_x,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            desired_width: width,
+            desired_height: height,
+            margins: ContentMargins::default(),
+        };
+        store
+            .request(tx(3), request.clone(), &[(parent, 7)], 1)
+            .unwrap();
+        let popout = ContentAllocationSnapshot {
+            native_opening: None,
+            output: output(),
+            allocation: ContentAllocationId {
+                id: 2,
+                generation: 1,
+            },
+            scale_generation: 1,
+            scale_numerator: 5,
+            scale_denominator: 4,
+            role: 2,
+            edge: 1,
+            margins: ContentMargins::default(),
+            // The exact physical origin need not have an integer logical representation.
+            logical: ContentLogicalRect {
+                x: logical_x,
+                y: 0,
+                width,
+                height,
+            },
+            pixel: ContentPixelRect {
+                x: physical_x,
+                y: 1,
+                width: pixel_width,
+                height: pixel_height,
+            },
+            parent,
+            anchor_parent_rect: request.anchor_parent_rect,
+            allowed_reservation_extent: 0,
+        };
+        store.grant(2, popout, &[(parent, 7)]).unwrap();
+    }
 }
 
 #[test]

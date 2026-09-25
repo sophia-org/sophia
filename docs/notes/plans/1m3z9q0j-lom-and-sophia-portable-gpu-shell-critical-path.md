@@ -292,8 +292,24 @@ optional fixture now explicitly admits its terminal/browser bindings so it
 reaches policy validation. Strict session Clippy and workspace checks pass.
 Logs are in the development worktree's `.artifacts/t099-*` files. These are
 deterministic controls with simulated device completion, not native acceptance.
-The independent C/Lom full popout lifecycle and fractional placement controls
-remain required before closing t099, as do the final signed-candidate gates.
+The independent C/Lom full popout lifecycle and the final signed-candidate gates
+remain required before closing t099.
+
+The fractional placement follow-up found a second rounding step in allocation
+validation: a popout at exact physical x=4 with logical width=2 and scale=5/4
+was rejected because its rounded logical placeholder x=3 implied width=4,
+instead of the required three pixels from the exact physical origin. The
+runtime regression failed with `Malformed` before the repair. Popout extent
+validation now quantizes from a zero local origin; panel endpoint quantization
+is unchanged. The owner uses the acknowledged parent's scale and generation,
+including signed margins, rather than a newer output descriptor's scale.
+The production resolver's fractional result is accepted by the real allocation
+store, and negative margins at 3/2 and 7/4 retain their physical anchors.
+Runtime allocation tests pass 11 controls, owner tests pass 13, and strict
+native-session Clippy passes. Evidence is in
+`.artifacts/t099-fractional-{red,runtime,owner,clippy}.log` in the development
+worktree. These supplied rational parent facts do not establish live fractional
+output admission or hardware presentation.
 
 ### t100
 

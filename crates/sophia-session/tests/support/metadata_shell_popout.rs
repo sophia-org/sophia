@@ -136,3 +136,113 @@ fn refused_popouts_do_not_clip_or_consume_an_allocation_identity() {
         .unwrap();
     assert_eq!(admitted.allocation.id, initial_id);
 }
+
+#[test]
+fn fractional_negative_margins_use_the_acknowledged_parent_scale() {
+    for (numerator, denominator, width, height, logical_x) in
+        [(3, 2, 30, 15, 58), (7, 4, 35, 18, 49)]
+    {
+        let (mut session, mut request, mut parent, output) = fixture();
+        parent.scale_numerator = numerator;
+        parent.scale_denominator = denominator;
+        request.anchor_parent_rect.x = 89;
+        request.anchor_parent_rect.width = 22;
+        request.margins = ContentMargins {
+            top: -1,
+            right: -1,
+            bottom: -1,
+            left: -1,
+        };
+        let resolved = session
+            .resolve_allocation(&request, &[output], &[parent])
+            .unwrap();
+        assert_eq!(
+            resolved.pixel,
+            ContentPixelRect {
+                x: 87,
+                y: 108,
+                width,
+                height
+            }
+        );
+        assert_eq!(resolved.logical.x, logical_x);
+        assert_eq!(
+            (resolved.scale_numerator, resolved.scale_denominator),
+            (numerator, denominator)
+        );
+    }
+}
+
+#[test]
+fn fractional_owner_placement_is_accepted_by_the_allocation_store() {
+    use sophia_runtime::ContentAllocationStore;
+    let (mut session, mut request, mut parent, output) = fixture();
+    parent.scale_numerator = 5;
+    parent.scale_denominator = 4;
+    parent.logical = ContentLogicalRect {
+        x: 0,
+        y: 0,
+        width: 160,
+        height: 20,
+    };
+    parent.pixel = ContentPixelRect {
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 25,
+    };
+    parent.allowed_reservation_extent = 25;
+    request.allocation_request_id = 2;
+    request.desired_width = 2;
+    request.desired_height = 2;
+    request.anchor_parent_rect = ContentPixelRect {
+        x: 4,
+        y: 0,
+        width: 1,
+        height: 1,
+    };
+    session.next_allocation_id = 2;
+    let resolved = session
+        .resolve_allocation(&request, &[output], std::slice::from_ref(&parent))
+        .unwrap();
+    assert_eq!(
+        resolved.pixel,
+        ContentPixelRect {
+            x: 4,
+            y: 1,
+            width: 3,
+            height: 3
+        }
+    );
+    assert_eq!(resolved.logical.x, 3);
+
+    let mut store = ContentAllocationStore::new(ContentLimits::prototype(GRANT)).unwrap();
+    store
+        .publish_outputs(
+            tx(1),
+            1,
+            vec![ContentOutputFactsEntry {
+                output: OUTPUT,
+                local_width: 160,
+                local_height: 160,
+                scale_numerator: 5,
+                scale_denominator: 4,
+                scale_generation: parent.scale_generation,
+            }],
+        )
+        .unwrap();
+    let mut parent_request = request.clone();
+    parent_request.allocation_request_id = 1;
+    parent_request.role = 1;
+    parent_request.parent = ContentAllocationId::default();
+    parent_request.parent_presentation_epoch = 0;
+    parent_request.anchor_parent_rect = ContentPixelRect::default();
+    parent_request.desired_width = 160;
+    parent_request.desired_height = 20;
+    store.request(tx(2), parent_request, &[], 0).unwrap();
+    store.grant(1, parent, &[]).unwrap();
+    store
+        .request(tx(3), request, &[(ALLOCATION, 8)], 1)
+        .unwrap();
+    store.grant(2, resolved, &[(ALLOCATION, 8)]).unwrap();
+}
