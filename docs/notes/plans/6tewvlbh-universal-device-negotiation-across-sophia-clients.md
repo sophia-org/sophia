@@ -347,6 +347,21 @@ video-frame callbacks. The matched override control sustains 903 callbacks with
 VA decoding and no GPU restart. This leaves the normal-launch exit unmet and
 pins the required next device-selection repair to the client boundary.
 
+## 2026-09-25 evidence reconciliation
+
+Review against accepted `9ee301e74ef22a065dcb112dc1873c7e458dfec4` preserves the
+normal, unmodified-client exit. Connection-pinned bundles, cross-device transfer
+and the accepted XR24 reallocation controls are evidence for their named server
+boundaries. They do not establish the no-override client allocation path.
+
+The retained `76ed2fdd` comparison failed inside Chromium before submission;
+the matched override control sustained 903 video callbacks. This is historical
+evidence with its original identity, not a fresh verdict about current browser
+versions. No new normal-launch or device-loss acceptance was performed by this
+review. A later workspace or native-protocol-family pass cannot replace those
+missing client/device observations, and a server-only transfer change cannot
+repair an allocation that the client never submitted.
+
 ## Connections
 
 The [Brave GPU investigation](../investigations/uqnx2t2b-brave-gpu-restarts-after-va-buffers-fail-gbm-import.md)

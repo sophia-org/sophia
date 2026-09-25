@@ -180,6 +180,21 @@ the native verifier requires exactly one committed configuration. This does
 not yet attribute the shell transport failures or prove pointer recovery; both
 remain outcomes for the next separately authorized attended run.
 
+#### 2026-09-25 GPU-admission evidence reconciliation
+
+Review against accepted `9ee301e74ef22a065dcb112dc1873c7e458dfec4` separates
+implemented admission/accounting controls from the full contained GPU exit.
+The `d00f43f6` / Lom `4340aa0` proof above established selected RADV adapter
+identity and visible output; its accompanying restart failures preclude a
+combined native-session claim. It is retained under that exact identity.
+
+The remaining evidence must cover the complete selected-device grant, exclusion
+of other devices, stock-kernel prerequisites and retirement/backing accounting
+on a compatible candidate. None is inferred merely from a working current
+desktop or a later device-hidden family pass. No hardware proof was rerun in
+this review. Reconnect settlement can develop against simulated completion
+without granting GPU acceptance or waiving the integration prerequisites.
+
 ### t098
 
 Carry content target tables through production projection to the exact native
