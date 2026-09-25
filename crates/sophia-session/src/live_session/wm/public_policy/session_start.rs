@@ -144,6 +144,7 @@ impl LiveWmSession {
             prepared: None,
             shortcut_profile_slot,
             actions: Vec::new(),
+            dropped_default_shortcuts: config.dropped_shortcuts.clone(),
             accepted_configuration: None,
             launch_classifications: BTreeMap::new(),
             launch_origins: Arc::new(Mutex::new(crate::launch_origin::LaunchOriginRegistry::default())),
