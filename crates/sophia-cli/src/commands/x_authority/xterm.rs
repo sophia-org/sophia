@@ -92,6 +92,7 @@ pub(crate) fn run_x_authority_xterm_input_smoke()
                 xi_emulated_button_type: None,
                 xi_emulated_button_window: None,
                 xi_pointer_crossing_mask: 0,
+                grab_crossing: None,
                 delivery: None,
             })?;
             time_msec = time_msec.saturating_add(1);
@@ -521,6 +522,7 @@ fn send_xterm_text_to_client(
                 xi_emulated_button_type: None,
                 xi_emulated_button_window: None,
                 xi_pointer_crossing_mask: 0,
+                grab_crossing: None,
                 delivery: Some(delivery),
             })?;
             *time_msec = time_msec.saturating_add(1);
