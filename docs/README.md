@@ -107,6 +107,9 @@ candidates that role may exchange.
   future protocol authority candidates (native GPU surface, 9P synthetic
   filesystem, and remote streaming) sitting alongside `sophia-x-authority`,
   while analyzing terminal-emulator integration as a monolithic anti-pattern.
+- [Universal 9P Control Bus](sophia-9p-control-bus.md) proposes unifying the
+  desktop control and policy plane (WM, shell, control, portals) into a single
+  in-memory synthetic filesystem served over 9P2000.L with kernel VFS sandboxing.
 - [State and Transition Discipline](state-and-transition-discipline.md)
   explains how transition systems, I/O automata, single-writer authority, and
   CALM make Sophia's separated authorities manageable. It also records the
