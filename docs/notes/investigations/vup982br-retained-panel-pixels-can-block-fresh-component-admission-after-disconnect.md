@@ -186,8 +186,33 @@ are unchanged; the parent still checks exact records and health accounting.
 The corrected exact CLI test passes (one test, 0.15 seconds); strict Clippy for
 that integration target, formatting, diff and layout checks pass. Worktree logs
 are `diagnostic-fixture.log`, `diagnostic-clippy.log` and
-`diagnostic-layout.log` under `.artifacts/t100/`. A fresh full default workspace
-gate remains required on the signed follow-up.
+`diagnostic-layout.log` under `.artifacts/t100/`. These focused checks preceded
+the fresh full default workspace gate recorded below.
+
+## Joined checkpoint gate on 2026-09-25
+
+The signed test checkpoint `1c780ccd245870d1fd79f792267799da7f9a5a60` and
+fixture-only follow-up `d5dfbe71cedb62141aad446680adfafe35bdfa4b` were reviewed
+for integration. On the exact latter candidate, the fresh main-tree default
+workspace suite passed 4,481 tests with zero failures and 37 ignored. Formatting,
+whitespace, metadata and layout checks also passed. The device-hidden wrapper
+cleared inherited live-session variables, used private runtime and temporary
+directories, and kept compilation at two jobs with reduced priority. The source
+identity and clean tree matched before and after the gate.
+
+The passing report and logs are checksummed in
+`~/.local/state/sophia/development-evidence/t100-d5dfbe71-main`. The failed
+first main gate and retained direct-child observations remain separately in
+`~/.local/state/sophia/development-evidence/t100-1c780ccd-main-red`. The owning
+worktree's broader native checks, compiled negative controls, feature graph and
+rebase equality proof retain their own `t100-1c780ccd` bundle; the diagnostic
+follow-up retains its `t100-d5dfbe71` bundle.
+
+This integrates deterministic test coverage and the investigation, not a
+reconnect repair or t100 closure. The explicit progress red remains unresolved.
+No new cross-repository family or physical acceptance is claimed; production
+behavior and the paired WM/shell wire are unchanged. No installation or live
+reload accompanied the gate.
 
 The evidence is headless development coverage. It does not establish physical
 KMS/driver completion, protected launch, installed two-role recovery, successful
