@@ -235,6 +235,32 @@ never released, so 13 finds Button1Mask where it expects nothing held, on
 Xvnc as on the host. Red before the fix:
 `an_injected_wheel_button_is_held_like_any_button`.
 
+## The protocol's crossings
+
+The crossing model was one EnterNotify of detail Nonlinear on the window a
+motion was reported on, and nothing at all when the pointer left a
+client's windows: the input writer compared the window it had last
+reported on with the one it was reporting on now, and a motion over the
+bare root went to the focus or nowhere. The writer now tracks the window
+the pointer is in, this table's view (the deepest window under the
+pointer, the root when the point is outside the surface window), and on a
+change generates the protocol's crossings from the two windows' ancestries:
+`to` an inferior of `from` (leave `from` as Inferior, enter the windows
+between as Virtual, enter `to` as Ancestor), `to` an ancestor of `from`
+(leave `from` as Ancestor, leave the windows between as Virtual, enter `to`
+as Inferior), or through the nearest common ancestor, which hears nothing
+(Nonlinear at the ends, NonlinearVirtual between); every leave precedes
+every enter, each carries the child toward the pointer and coordinates in
+its own window, and a KeymapNotify follows each written EnterNotify. A
+pointer injection over no toplevel goes to the last toplevel's client, so
+that client sees the pointer leave to the root. Eleven purposes moved
+(EnterNotify 4, 7 to 9, 13; LeaveNotify 4, 5, 8 to 10, 15) and the
+scenario reads 110. What stays with t211: a move between two clients'
+windows, where the registry routes nothing to the client the pointer left;
+the crossings a map, unmap or reparent under the pointer owes; and the
+visibility purposes. Red before the fix:
+`a_pointer_move_generates_the_protocols_crossings`.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over
@@ -262,8 +288,8 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(99 passed, 96 declared after the selection-by-direction, KeymapNotify,
-subwindow, propagation and wheel-button reruns; 60 and 135 at the
-section's first declaration) from `xts_reasons_events.json`,
+(110 passed, 85 declared after the selection-by-direction, KeymapNotify,
+subwindow, propagation, wheel-button and crossing reruns; 60 and 135 at
+the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.
