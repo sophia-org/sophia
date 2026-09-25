@@ -1,4 +1,6 @@
 use super::*;
+#[path = "policy_presentation_routing.rs"]
+mod routing;
 use sophia_protocol::{
     PolicyPresentation, PolicyPresentationMode, PolicyPresentationOutcome,
     PolicyPresentationOutput, PolicyPresentationRegion, PolicyPresentationRegionRole,

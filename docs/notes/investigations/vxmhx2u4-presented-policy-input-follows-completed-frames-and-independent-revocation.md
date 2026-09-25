@@ -78,6 +78,29 @@ completion owner is introduced. Full joined routing and independent Hagia accept
 including older-WM compatibility, remain required. The director owns task
 closure and the gate window.
 
+## Production routing follow-up
+
+The follow-up to signed checkpoint `eaac9451` drives physical packets through
+`route_input_events_with_launcher` with a completed modal publication. It checks
+the exact keyboard zero-target and pointer region identities, swallows an
+unbound modal key before application routing, and gives launcher capture and
+the virtual-terminal chord precedence. Filling the session action queue then
+issuing a routed action revokes locally; key and button releases remain consumed
+after even the visible shield is removed. The retained application-grab control
+now presents a policy tier over the application and verifies that motion and
+release still reach the original client.
+
+`t245-routing-session-lib.log` records 598 passed and 18 intentional ignores in
+the device-hidden full native-session suite. The initial fixture omitted the
+launcher's pointer placement and failed its activation assertion; that run is
+retained as `t245-routing-session-initial.log`, followed by the corrected run.
+`t245-routing-clippy.log` and `t245-routing-layout.log` retain strict session
+all-target Clippy and the worktree layout audit. These controls use supplied
+completion evidence to exercise routing; the separate mirrored backend control
+owns actual retirement production. Independent Hagia transport is validated on
+the director's joined branch and is not duplicated here. Final joined candidate
+gates and physical acceptance remain separate.
+
 ## Connections
 
 The [presentation contract](../../wm-presentation.md) defines the authority and
