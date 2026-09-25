@@ -15,6 +15,10 @@ pub(crate) struct X11InputWatermark {
     queued: std::sync::atomic::AtomicU64,
     drained: std::sync::atomic::AtomicU64,
     wake: std::sync::Mutex<Option<crate::NotifierSubscription>>,
+    /// For a waiter with no notifier of its own: the request loop after a
+    /// pointer replay.
+    changed: std::sync::Condvar,
+    waiting: std::sync::Mutex<()>,
 }
 
 #[cfg(unix)]
@@ -33,6 +37,27 @@ impl X11InputWatermark {
             && let Some(wake) = wake.as_ref()
         {
             let _ = wake.notify();
+        }
+        self.changed.notify_all();
+    }
+
+    /// Wait until the writer has drained to `mark`, or the bound passes.
+    /// A drain between the check and the sleep is caught by the bound, which
+    /// is far beyond the microseconds a write takes.
+    pub(crate) fn wait_drained(&self, mark: u64, bound: std::time::Duration) {
+        let deadline = std::time::Instant::now() + bound;
+        let Ok(mut guard) = self.waiting.lock() else {
+            return;
+        };
+        while !self.reached(mark) {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return;
+            }
+            let Ok((next, _)) = self.changed.wait_timeout(guard, deadline - now) else {
+                return;
+            };
+            guard = next;
         }
     }
 

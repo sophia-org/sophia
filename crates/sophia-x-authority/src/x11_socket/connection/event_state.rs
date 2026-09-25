@@ -650,6 +650,11 @@ impl XCoreEventSelectionState {
         target
     }
 
+    /// Where the pointer was last observed, in root coordinates.
+    pub(crate) fn pointer_position(&self) -> Option<(i16, i16)> {
+        self.pointer.map(|pointer| (pointer.root_x, pointer.root_y))
+    }
+
     /// The window the pointer is in, when one has been observed.
     ///
     /// The focus algebra needs it because a transition that crosses on or off
