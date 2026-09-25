@@ -244,7 +244,91 @@ Mesa, OpenGL, Wayland libraries, or X11 dependencies.
 
 ---
 
-## 7. Engine Integration Contract
+## 7. Client Ingress vs. Policy Egress: The 9P Duality & Rio
+
+A crucial architectural distinction in Sophia is the separation between
+**Client Ingress** (applications presenting pixels) and **Policy Egress**
+(window managers deciding spatial layouts). 
+
+Applying 9P to Sophia reveals two distinct, complementary roles:
+
+```text
+                                [ CLIENT INGRESS ]
+                   Applications that want to DRAW pixels
+        ┌────────────────────────────────────────────────────────┐
+        │  • Firefox, Kitty, Steam        ──► sophia-x-authority │
+        │  • Acme, Sam, bash scripts      ──► sophia-9p-authority│
+        └──────────────────────────┬─────────────────────────────┘
+                                   │
+                                   ▼ SurfaceTransaction (raw pixels & damage)
+        ┌────────────────────────────────────────────────────────┐
+        │                 SOPHIA ENGINE: VISUAL KERNEL           │
+        │  • Holds the composed scene graph & schedules DRM flips│
+        └──────────────────────────┬─────────────────────────────┘
+                                   │
+                                   ▼ sophia_wm_v1 (spatial proposals)
+        ┌────────────────────────────────────────────────────────┐
+        │                   [ POLICY EGRESS ]                    │
+        │                Who DECIDES window layouts?             │
+        │                                                        │
+        │   Option A: Native Sophia WM (Hagia in Nim)            │
+        │   Option B: 9P Policy Bridge (sophia-wm-9p-bridge)     │
+        │             ──► lets scripts/wmii/rio position windows │
+        └────────────────────────────────────────────────────────┘
+```
+
+### Running Rio on Sophia: Two Architectural Models
+
+The Plan 9 window manager, **Rio**, can operate in Sophia under two different
+paradigms:
+
+#### Model A: Rio as a Self-Contained Nested Desktop (Zero `sophia_wm_v1` required)
+In Plan 9, `rio` is fundamentally an ordinary client application that connects to
+`/dev/draw` and `/dev/mouse`.
+
+Under `sophia-9p-authority`:
+1. `rio` launches as an ordinary 9P client, connecting to `/dev/sophia/draw/new`
+   and requesting a surface (e.g. 1920×1080 or floating window).
+2. Inside that allocated canvas, `rio` acts as a synthetic file server, serving
+   its own nested `/dev/draw` and `/dev/mouse` to its child processes.
+3. Users can sweep out windows, launch Acme, Sam, or `rc` shells entirely within
+   Rio's canvas.
+4. **Relationship to Sophia:** `sophia-engine` and the active system window
+   manager (`Hagia`) treat `rio` as **one single opaque surface**. Hagia positions
+   the Rio canvas; Rio manages its internal sub-windows. Zero `sophia_wm_v1`
+   negotiation is required.
+
+#### Model B: Rio / 9P as the System-Wide Window Manager (`sophia-wm-9p-bridge`)
+If the goal is for a Plan 9 tool or shell script to manage **external Sophia
+applications** (e.g., tiling Firefox from `sophia-x-authority`, Kitty, and Acme
+side-by-side on the display), it cannot do so over `/dev/draw`.
+
+In Sophia, the only interface permitted to propose geometries for compositor
+surfaces is the **`sophia_wm_v1`** protocol.
+
+To enable 9P-based desktop layout policy, Sophia defines a companion bridge:
+**`sophia-wm-9p-bridge`** (inspired by `wmii`):
+1. The bridge connects to `sophia-engine` as a standard `sophia_wm_v1` policy
+   client.
+2. The bridge exposes a synthetic 9P filesystem:
+   ```text
+   $XDG_RUNTIME_DIR/sophia/wm/
+   ├── event               # Streaming snapshot events (new window, destroyed, focus)
+   ├── client/
+   │   └── <id>/
+   │       ├── ctl         # Write: "geom 0 0 960 1080", "state floating"
+   │       ├── focus       # Write: "1" to focus
+   │       └── props       # Read-only spatial bounds and state
+   └── ctl                 # Write: "commit" to finalize layout epoch
+   ```
+3. With this bridge, any Plan 9 `rc` script, Python script, or modified Rio can
+   act as the **system-wide window manager** for all Sophia applications purely
+   by reading and writing 9P files, without linking against binary socket
+   codecs or knowing about DRM modesetting.
+
+---
+
+## 8. Engine Integration Contract
 
 The contract between `sophia-9p-authority` and `sophia-engine` mirrors that of
 `sophia-x-authority`:
@@ -259,7 +343,7 @@ The contract between `sophia-9p-authority` and `sophia-engine` mirrors that of
 
 ---
 
-## 8. Implementation Roadmap
+## 9. Implementation Roadmap
 
 1. **Milestone 1: In-Memory 9P Protocol Server:** Implement a lightweight, pure-Rust
    9P2000.L server in `crates/sophia-9p-authority`, exposing the synthetic
