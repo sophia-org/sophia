@@ -97,7 +97,14 @@ fn guard_death_and_early_recovery_prevent_graphics_takeover() {
 #[test]
 fn tty_adapter_refuses_controls_before_queries_or_privileged_handoff() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let root = std::env::temp_dir().join(format!("sophia-handoff-refusal-{}", std::process::id()));
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "sophia-handoff-refusal-{}-{nonce}",
+        std::process::id()
+    ));
     fs::create_dir_all(root.join("tools/lib")).unwrap();
     fs::create_dir_all(root.join("bin")).unwrap();
     let launcher = fs::read_to_string(source.join("tools/start_sophia_tty3.sh"))
@@ -114,6 +121,10 @@ fn tty_adapter_refuses_controls_before_queries_or_privileged_handoff() {
     .unwrap();
     for (name, body) in [
         ("tty", "echo /dev/tty3"),
+        (
+            "prepare",
+            "printf '%s\\n' \"$*\" > \"$HOME/preparation\"; exec \"$SOPHIA_TEST_PREPARER_BIN\" \"$@\"",
+        ),
         ("python3", "echo forbidden >> \"$HOME/takeover\"; exit 99"),
         ("sudo", "echo forbidden >> \"$HOME/takeover\"; exit 99"),
     ] {
@@ -137,13 +148,16 @@ fn tty_adapter_refuses_controls_before_queries_or_privileged_handoff() {
             .env("HOME", &root)
             .env("SOPHIA_TTY_PROFILE", "native")
             .env("SOPHIA_BUILD_SESSION", "false")
-            .env("SOPHIA_BIN", env!("CARGO_BIN_EXE_sophia"))
+            .env("SOPHIA_BIN", root.join("bin/prepare"))
+            .env("SOPHIA_TEST_PREPARER_BIN", env!("CARGO_BIN_EXE_sophia"))
             .env("SOPHIA_INPUT_GUARD_ARMING", "invalid"),
     );
     assert_eq!(output.status.code(), Some(1), "{output:?}");
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("SOPHIA_INPUT_GUARD_ARMING"),
-        "{output:?}"
+    // A fast refusal can exit before the launcher's process-substitution tee
+    // drains. Observe the synchronous call, not that best-effort terminal log.
+    assert_eq!(
+        fs::read_to_string(root.join("preparation")).unwrap(),
+        "session prepare-controls\n"
     );
     assert!(!root.join("takeover").exists());
     fs::remove_dir_all(root).unwrap();
