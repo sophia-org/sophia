@@ -538,7 +538,8 @@ fn d_service_exit() {
         if kind == "unwind" {
             assert_eq!(egress, 1);
         }
-        let step = service.step();
+        // Owed a charge: a budget yield under load is retried (t194).
+        let step = service.step_charged();
         assert_eq!(step.instance, closed.instance);
         assert_eq!(step.phase, PrivateMaintenancePhase::Output);
         assert_eq!(step.modifiers, Some(1));

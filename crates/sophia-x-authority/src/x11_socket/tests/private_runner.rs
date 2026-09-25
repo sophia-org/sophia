@@ -858,7 +858,28 @@ fn a_terminal_step_whose_watch_refuses_is_blocked_and_keeps_its_entry() {
         .expect("the supervisor is idle before this");
 
     let before = runner.service.usage();
-    let step = runner.deliver_accounted_step().unwrap();
+    // Owed a step: a yield on the service budget is retried after the
+    // budget's own retry_after, since the interval's time is wall-clock and
+    // a loaded machine spends it faster (t194).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let step = loop {
+        let delivered = runner.deliver_accounted_step().unwrap();
+        let PrivateAccountedDelivery::Yield { cause, .. } = &delivered else {
+            break delivered;
+        };
+        use sophia_input_authority::ServiceStartRefusal as Refusal;
+        let (Refusal::StartsExhausted { retry_after }
+        | Refusal::TimeExhausted { retry_after }
+        | Refusal::CleanupStartsReserved { retry_after }
+        | Refusal::CleanupTimeReserved { retry_after }) = cause
+        else {
+            break delivered;
+        };
+        if std::time::Instant::now() + *retry_after > deadline {
+            break delivered;
+        }
+        std::thread::sleep(*retry_after);
+    };
     let PrivateAccountedDelivery::Step {
         step,
         charge,

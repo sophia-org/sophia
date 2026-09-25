@@ -446,6 +446,12 @@ pub(super) struct Maintained {
     pub(super) supervision_ok: bool,
     pub(super) settled: Option<bool>,
     pub(super) charged: bool,
+    /// When the step yielded on the service budget (starts or time of the
+    /// interval spent), how long the budget asks the caller to wait. The
+    /// interval's time is charged in wall-clock, so under load one slow
+    /// step empties it for the next; production retries on its next tick,
+    /// and a caller that must see a charged step retries the same way.
+    pub(super) budget_retry_after: Option<Duration>,
     pub(super) modifiers: Option<u16>,
     pub(super) instance: u64,
     pub(super) detail: String,
@@ -673,6 +679,15 @@ impl LifecycleService {
                                 },
                                 settled: report.output_settled(),
                                 charged: report.charge().is_some_and(Result::is_ok),
+                                budget_retry_after: match &report.outcome {
+                                    PrivateMaintenanceOutcome::Output(
+                                        PrivateRetainedDriveStep::Yield(refusal),
+                                    )
+                                    | PrivateMaintenanceOutcome::Terminal(
+                                        PrivateTerminalDriveStep::Yield(refusal),
+                                    ) => budget_retry_after(refusal),
+                                    _ => None,
+                                },
                                 modifiers: resources.keyboards.modifiers(resources.seat),
                                 instance: resources.lifetime.0.instance,
                                 detail: format!("{report:?}"),
@@ -775,6 +790,23 @@ impl LifecycleService {
         self.steps.recv_timeout(Duration::from_secs(5)).unwrap()
     }
 
+    /// A step that is owed a charge: one that yields on the service budget
+    /// is retried after the budget's own `retry_after`, bounded, since the
+    /// interval's time is wall-clock and a loaded machine spends it faster.
+    pub(super) fn step_charged(&self) -> Maintained {
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let step = self.step();
+            let Some(retry_after) = step.budget_retry_after else {
+                return step;
+            };
+            if step.charged || std::time::Instant::now() + retry_after > deadline {
+                return step;
+            }
+            std::thread::sleep(retry_after);
+        }
+    }
+
     pub(super) fn finish(mut self, custodies: &[Arc<PrivateEvidenceCustody>]) -> Vec<String> {
         for custody in custodies {
             if custody.ever_started() {
@@ -857,4 +889,17 @@ pub(super) fn focus_window(
         .ingress_for(&lease, client, DeviceId::from_raw(1))
         .unwrap();
     (surface, sequence, ingress)
+}
+
+/// The wait a service budget refusal asks for, none for the refusals that
+/// are not the budget's.
+fn budget_retry_after(refusal: &sophia_input_authority::ServiceStartRefusal) -> Option<Duration> {
+    use sophia_input_authority::ServiceStartRefusal as Refusal;
+    match refusal {
+        Refusal::StartsExhausted { retry_after }
+        | Refusal::TimeExhausted { retry_after }
+        | Refusal::CleanupStartsReserved { retry_after }
+        | Refusal::CleanupTimeReserved { retry_after } => Some(*retry_after),
+        _ => None,
+    }
 }
