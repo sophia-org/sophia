@@ -83,9 +83,13 @@ control:
 - no root equality;
 - untracked profiles accepted.
 
-Both Hagia verifier-matcher checks fail identically on unmodified master in
-the device-hidden sandbox, where commit signatures cannot be verified. That is
-an environment limit, not a result of this change.
+The first runs of both Hagia verifier-matcher checks failed, and a first
+reading blamed signature verification in the device-hidden sandbox. That was
+wrong. Both runs, including the comparison run, checked HEAD \`1fbaf4cb\`, an
+unsigned documentation commit, so the matchers correctly refused an unsigned
+source. On signed \`1a9ab46c\`, in the same wrapper with frozen signed Hagia
+\`97ed593\` and Narthex \`7f51175\` roots, both matchers pass. The first
+failing logs are retained with the passing ones.
 
 ## Sessions
 
