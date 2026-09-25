@@ -7,6 +7,10 @@ tags: [session, shell, validation]
 ---
 # Two component desktop acceptance separates package preparation from attended retirement
 
+The [joined desktop-preparation gate](4l5bntke-critical-desktop-exits-require-separate-device-tab-and-workload-evidence.md#desktop-preparation-integration-september-25)
+records integration of the correction below with the t018 launcher repairs.
+It does not establish the attended t101/t081 exits.
+
 ## Question and scope
 
 Prepare t101/t081 acceptance for the [authorized Lom/Bemenu desktop](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md).

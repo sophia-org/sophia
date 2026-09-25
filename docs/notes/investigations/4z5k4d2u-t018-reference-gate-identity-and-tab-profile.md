@@ -49,16 +49,20 @@ takeover:
   it targets (`787e0f95`): review showed that a tracked link to an external
   file passed while the target's bytes changed, because git records the link
   and not those bytes. The red control is `fab01fa5`. The default profile is unchanged.
-  `tools/fixtures/t018_tab_reference.kdl` holds only Hagia policy:
+  `tools/fixtures/t018_tab_reference.kdl` holds Hagia policy within Sophia's
+  desktop-profile envelope:
   - the native-workflow keys;
   - scroller at start;
   - layout selection for `frame-tree`, `notion` and `i3`;
   - Hagia's documented frame, tab and split-tree actions;
   - fullscreen and floating.
 
-  Narthex is still selected by the gate's `--shell-process`. Installed Hagia
-  and Sophia `config check` both accepted the fixture (digest `a841b87e…`).
-  The wrapper re-runs both checks with the exact candidate builds.
+  The policy block and `policy:*` actions belong to Hagia; shell, shortcut,
+  session, input, output and broker records belong to Sophia. Narthex is still
+  selected by the gate's `--shell-process`. Installed Hagia and Sophia
+  `config check` accepted the original fixture (digest `a841b87e…`) and the
+  ownership-header correction in `1a9ab46c` (digest `de7bffd9…`). The wrapper
+  re-runs both checks with the exact candidate builds.
 
 ## Controls
 
