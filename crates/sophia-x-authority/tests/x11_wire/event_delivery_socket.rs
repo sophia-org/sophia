@@ -868,6 +868,47 @@ mod event_delivery_socket {
     /// Unobscured again; a window mapped under a cover reports the cover
     /// from the start (XTS Xlib11 VisibilityNotify 2, 3, 7 to 9). The
     /// state was Unobscured on map and never changed. Red before the fix.
+    /// A selection on the root, as a window manager or an observer makes,
+    /// leaves the root where it is in the connection's tree: a key still
+    /// reaches the focused window afterwards. The selection-time
+    /// registration of a foreign window gave the root a parent of None,
+    /// and the session's departure witness lost its keys.
+    #[test]
+    fn a_selection_on_the_root_leaves_keys_reaching_the_focused_window() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let window = client.next;
+        client.next += 2;
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, window, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, window, (1 << 0) | (1 << 1)))
+            .unwrap();
+        client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        // SubstructureNotify and PointerMotion on the root.
+        client.stream
+            .write_all(&change_window_event_mask_request(client.order, 0x20, (1 << 19) | (1 << 6)))
+            .unwrap();
+        client.settle();
+        let mut focus = vec![42, 0];
+        push_u16(&mut focus, client.order, 3);
+        push_u32(&mut focus, client.order, window);
+        push_u32(&mut focus, client.order, 0);
+        client.stream.write_all(&focus).unwrap();
+        client.settle();
+        client.fake_input(2, 38);
+        let pressed = client.next_event(2);
+        assert_eq!(
+            (u32::from_le_bytes([pressed[12], pressed[13], pressed[14], pressed[15]]), pressed[1]),
+            (window, 38),
+            "the key on the focused window"
+        );
+        client.fake_input(3, 38);
+        let _released = client.next_event(3);
+    }
+
     /// Remapping a window reports VisibilityNotify and Expose on every
     /// mapped inferior that becomes viewable with it, the VisibilityNotify
     /// before the Expose on each (XTS Xlib11 VisibilityNotify 3). Only the

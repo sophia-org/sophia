@@ -2329,7 +2329,14 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         // learns the window's parent and geometry, so its
                         // writer can tell inside from outside (LeaveNotify 2).
                         let foreign_window = event_selection.and_then(|(window, _, _)| {
+                            // The root is every table's ceiling, never a
+                            // registered window: a selection on it (as an
+                            // observer's on the root's substructure) must
+                            // not give it a parent.
                             let (parent, _) = runtime.window_parent_and_children(namespace, window).ok()?;
+                            if parent == XResourceId::NONE {
+                                return None;
+                            }
                             let geometry = runtime.drawable_facts(namespace, window).ok()?.geometry;
                             Some((window, parent, geometry))
                         });
