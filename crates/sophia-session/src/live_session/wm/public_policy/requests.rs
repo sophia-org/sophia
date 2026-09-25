@@ -10,13 +10,15 @@ impl LiveWmSession {
         let mut public = self.public.take().expect("public WM state is present");
         public.poll_output_authority()?;
         public.flush_deferred_command()?;
+        public.revalidate_presentation_input();
+        let receipts_submitted = public.flush_presentation_receipts()?;
         let event = public
             .worker
             .as_ref()
             .ok_or("public WM transport is unavailable")?
             .try_event();
         let mut transport_failed = None;
-        let mut defer_cycle = false;
+        let mut defer_cycle = receipts_submitted;
         let proposal = match event {
             Ok(Some(PolicyTransportEvent::Negotiated)) => {
                 public.negotiated = true;
@@ -101,11 +103,12 @@ impl LiveWmSession {
                             reconciliation.adjusted_surfaces,
                         );
                     }
+                    let presentation_cause_valid = public.in_flight_request.as_ref().is_none_or(|request| public.presented_cause_is_current(request.cause));
                     let context_valid = projection.launch_contexts.iter().all(|context| context.epoch == public.connection_epoch && public.reducer.scene().surfaces.iter().any(|s| s.surface == context.surface))
                         && projection.output_launch_contexts.iter().all(|context| context.epoch == public.connection_epoch && public.reducer.scene().outputs.iter().any(|o| o.output == context.output && o.generation == context.output_generation));
                     let presentation_valid = projection.presentation.as_ref().is_none_or(|p|
                         sophia_protocol::validate_policy_presentation_actions(p, &public.actions).is_ok());
-                    match if context_valid && presentation_valid { public.reducer.stage_proposal(&reconciliation.policy) } else { Err(sophia_protocol::PolicyProjectionOutcome::RejectedInvalid) } {
+                    match if !presentation_cause_valid { Err(sophia_protocol::PolicyProjectionOutcome::RejectedStale) } else if context_valid && presentation_valid { public.reducer.stage_proposal(&reconciliation.policy) } else { Err(sophia_protocol::PolicyProjectionOutcome::RejectedInvalid) } {
                     Ok(staged) => {
                         let expected_operation_slot = match source {
                             LiveWmProposalSource::Action(action) => public
@@ -254,6 +257,7 @@ impl LiveWmSession {
             if scene.generation > public.reducer.scene().generation {
                 public.reducer.observe_scene(scene.clone())?;
             }
+            public.revalidate_presentation_input();
             // A cause whose subject is gone is moot, and the projection
             // reducer refuses it outright rather than ignoring it, which ends
             // the session. Withdrawal raises its own cause, so dropping this
@@ -279,6 +283,7 @@ impl LiveWmSession {
                     }
                 }
                 if policy_cause_subject_is_live(cause.cause, &scene)
+                    && public.presented_cause_is_current(cause.cause)
                     && public.reducer.presentation_cause_is_current(cause.cause) {
                     break Some(cause);
                 }
@@ -302,13 +307,26 @@ impl LiveWmSession {
             // resolved against the scene the request will actually carry. A
             // cause that outlived every output it named still needs servicing:
             // the topology moved, which is precisely a reason to lay out again.
+            let mut requested_outputs = cause.affected_outputs;
+            // Publication is one complete scene, even when its action names
+            // one output. Withdrawal after source/topology loss has the same
+            // coverage obligation; the action's identity remains untouched.
+            if public.reducer.presentation_publication().is_some()
+                || public.presentation_withdrawal_pending
+                || public.presentation_scene_dirty
+            {
+                requested_outputs.extend(scene.outputs.iter().map(|output| output.output));
+                requested_outputs.sort();
+                requested_outputs.dedup();
+            }
             let affected_outputs = resolve_public_policy_affected_outputs(
-                cause.affected_outputs,
+                requested_outputs,
                 scene.outputs.iter().map(|output| output.output),
             );
             let request = public
                 .reducer
                 .issue_request_with_cause(affected_outputs, cause.cause)?;
+            public.presentation_scene_dirty = false;
             let snapshot_transaction = public.mint_transaction()?;
             let request_transaction = public.mint_transaction()?;
             let classifications =

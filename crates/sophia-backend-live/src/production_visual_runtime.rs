@@ -265,6 +265,12 @@ pub struct LiveFloatingOutline {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LivePresentedInputProjection {
     pub output: OutputId,
+    /// Exact completed-frame stamp, absent from committed-only projections.
+    pub policy_publication: Option<LivePresentedPolicyPublication>,
+    /// Distinguishes a completed withdrawal from an output with no frame yet.
+    pub frame_completed: bool,
+    /// Some head still shows policy pixels, including a mixed-head transition.
+    pub policy_visible: bool,
     pub epoch: u64,
     pub layers: Vec<LayerSnapshot>,
     pub chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,

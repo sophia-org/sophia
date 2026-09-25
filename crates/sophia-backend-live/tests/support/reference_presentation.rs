@@ -43,6 +43,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
     );
     runtime.replace_presented_input_projection(
         0,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         Vec::new(),
         Vec::new(),
         None,
@@ -64,6 +65,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
     );
     runtime.replace_presented_input_projection(
         0,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         Vec::new(),
         Vec::new(),
         None,
@@ -85,6 +87,7 @@ fn read_only_reference_requires_its_exact_retired_projection_without_hit_targets
     runtime.tab_frames.remove(&output.id);
     runtime.replace_presented_input_projection(
         0,
+        crate::production_visual_runtime::projection::PresentedPolicyFrameEvidence::default(),
         Vec::new(),
         Vec::new(),
         None,

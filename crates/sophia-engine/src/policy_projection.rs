@@ -119,6 +119,12 @@ pub struct StagedPolicyProjection {
 }
 
 impl StagedPolicyProjection {
+    /// Immutable publication for session admission before ordinary layout or
+    /// reducer state becomes authoritative.
+    pub fn presentation_publication(&self) -> Option<(u64, &sophia_protocol::PolicyPresentation)> {
+        self.candidate.presentation_publication()
+    }
+
     pub fn projections(&self) -> Vec<PolicyOutputProjection> {
         self.candidate.committed()
     }

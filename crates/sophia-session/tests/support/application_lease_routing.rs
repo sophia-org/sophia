@@ -107,6 +107,9 @@ fn event(serial: u64, kind: InputEventKind, x: f64) -> InputEventPacket {
 
 fn projection(layers: Vec<LayerSnapshot>) -> sophia_backend_live::LivePresentedInputProjection {
     sophia_backend_live::LivePresentedInputProjection {
+        policy_publication: None,
+        frame_completed: false,
+        policy_visible: false,
         output: OutputId::from_raw(1),
         epoch: 5,
         layers,
@@ -658,6 +661,7 @@ fn a_bound_grab_routes_physical_motion_and_release_after_a_scene_change() {
         true,
         &mut None,
         std::time::Duration::ZERO,
+        None,
     )
     .unwrap();
     assert!(
@@ -824,6 +828,7 @@ fn route_pointer_batch_paced(
         repaint_due,
         held_since,
         frame_interval,
+        None,
     )
     .unwrap();
     let delivered = receiver

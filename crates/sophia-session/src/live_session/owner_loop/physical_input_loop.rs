@@ -179,6 +179,11 @@ let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
                 .map(|execution| execution.phase),
             wm_session.as_ref().is_some_and(LiveWmSession::startup_output_topology_pending),
         );
+        if let Some(wm) = wm_session.as_mut()
+            && let Some(runtime) = runtime.as_mut()
+        {
+            wm.service_presented_policy(runtime, scene, native_scanout.as_mut(), shell_presentation_available)?;
+        }
         // Reconcile against current topology as well as the last committed policy.
         // A stale publication cannot reopen a removed/replaced output.
         let contexts = wm_session.as_ref().and_then(|w| w.public.as_ref()).and_then(|p| {

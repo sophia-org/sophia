@@ -208,6 +208,13 @@ struct LivePublicPolicyState {
     checkpoint_path: std::path::PathBuf,
     directory: PolicySessionDirectory,
     reducer: sophia_engine::PolicyProjectionReducer,
+    presentation_input: sophia_engine::PresentedPolicyState,
+    presentation_capture: sophia_engine::PolicyInputCapture,
+    presentation_receipts: VecDeque<sophia_protocol::PolicyPresentationReceipt>,
+    presentation_withdrawals: VecDeque<sophia_protocol::PolicyPresentationReceipt>,
+    presentation_withdrawal_pending: bool,
+    presentation_scene_dirty: bool,
+    native_presentation_capable: bool,
     connection_epoch: u64,
     next_connection_epoch: u64,
     next_transaction: u64,
@@ -456,10 +463,15 @@ fn bind_public_policy_transport(
 }
 
 fn start_public_policy_worker(
-    transport: sophia_runtime::PolicyWmSessionTransport,
+    mut transport: sophia_runtime::PolicyWmSessionTransport,
     connection_epoch: u64,
     profile_key: Option<sophia_config::DesktopProfileActivationKey>,
+    native_scanout: bool,
 ) -> Result<PolicyTransportWorker, Box<dyn std::error::Error>> {
+    if !native_scanout {
+        transport.limit_capabilities(!(sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
+            | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS))?;
+    }
     match profile_key {
         Some(key) => Ok(PolicyTransportWorker::new_profile_activated(
             transport,
@@ -568,7 +580,7 @@ impl PreparedPublicPolicyLaunch {
         }
         let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
         supervisor_state = state;
-        let worker = start_public_policy_worker(transport, 1, profile_key)?;
+        let worker = start_public_policy_worker(transport, 1, profile_key, config.native_scanout)?;
         Ok(StartedPublicPolicyRuntime {
             supervisor,
             supervisor_state,

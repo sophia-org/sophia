@@ -115,6 +115,9 @@
                     .as_ref()
                     .and_then(LiveWmSession::indicator_publication);
                 visual_progress.observe_intake(&production_batch);
+                if let Some(wm) = wm_session.as_mut() {
+                    wm.install_committed_policy_presentation(runtime, scene, native_scanout.is_some())?;
+                }
                 let (_tick, report, committed_surfaces, composed, compose_elapsed, cpu_progress) =
                     if !production_batch.has_dma_buf_present_submissions()
                         && !runtime.released_surface_content_requires_gpu()

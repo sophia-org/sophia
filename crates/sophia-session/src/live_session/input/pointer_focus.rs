@@ -9,6 +9,7 @@ pub(super) struct PresentedPointerFocus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PhysicalPolicyInput {
     Action(WmActionId),
+    PresentedAction(sophia_engine::PresentedPolicyAction),
     ClickFocus(SurfaceId),
     Hover(PresentedPointerFocus),
 }
@@ -40,7 +41,7 @@ impl PhysicalPolicyInputQueue {
                     return true;
                 }
             }
-            PhysicalPolicyInput::Action(_) | PhysicalPolicyInput::ClickFocus(_) => {}
+            PhysicalPolicyInput::Action(_) | PhysicalPolicyInput::PresentedAction(_) | PhysicalPolicyInput::ClickFocus(_) => {}
         }
         if self.pending.len() >= 256 {
             return false;

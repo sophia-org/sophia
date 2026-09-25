@@ -43,6 +43,10 @@ pub(super) enum PolicyTransportCommand {
         request_id: u64,
         outcome: PolicyProjectionOutcome,
     },
+    PresentationReceipt {
+        transaction: TransactionId,
+        receipt: sophia_protocol::PolicyPresentationReceipt,
+    },
     Stop,
 }
 
@@ -56,7 +60,7 @@ pub(super) enum PolicyTransportEvent {
         configuration: PolicyConfiguration,
     },
     Dirty(sophia_protocol::PolicyDirtyRequest),
-    Projection(PolicyProjectionProposal),
+    Projection(Box<PolicyProjectionProposal>),
     SessionOperation {
         transaction: TransactionId,
         request: PolicySessionOperationRequest,
@@ -351,7 +355,7 @@ fn run_policy_transport(
                     return Err("unnegotiated launch context".to_owned());
                 }
                 events
-                    .send(PolicyTransportEvent::Projection(proposal))
+                    .send(PolicyTransportEvent::Projection(Box::new(proposal)))
                     .map_err(|_| "policy owner event channel disconnected".to_owned())?;
             }
             PolicyTransportCommand::ProjectionOutcome {
@@ -390,6 +394,14 @@ fn run_policy_transport(
                         })
                         .map_err(|_| "policy owner event channel disconnected".to_owned())?;
                 }
+            }
+            PolicyTransportCommand::PresentationReceipt {
+                transaction,
+                receipt,
+            } => {
+                transport
+                    .send_presentation_receipt(transaction, receipt)
+                    .map_err(|error| error.to_string())?;
             }
             PolicyTransportCommand::SessionOperationOutcome {
                 transaction,

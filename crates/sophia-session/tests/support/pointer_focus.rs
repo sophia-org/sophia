@@ -274,6 +274,9 @@ fn an_unpresented_second_output_never_borrows_primary_input_authority() {
         },
     ];
     let projection = sophia_backend_live::LivePresentedInputProjection {
+        policy_publication: None,
+        frame_completed: false,
+        policy_visible: false,
         output: outputs[0].id,
         epoch: 99,
         layers: vec![],

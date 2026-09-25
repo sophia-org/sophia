@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Default)]
+pub(super) struct PresentedPolicyFrameEvidence {
+    pub(super) publication: Option<LivePresentedPolicyPublication>,
+    pub(super) completed: bool,
+    pub(super) visible: bool,
+}
+
 mod content;
 mod retirement;
 pub(super) use content::presented_content_list_matches;
@@ -104,6 +111,7 @@ impl LiveProductionVisualRuntime {
             );
             self.replace_presented_input_projection(
                 index,
+                PresentedPolicyFrameEvidence::default(),
                 input_layers.clone(),
                 Vec::new(),
                 None,
@@ -200,8 +208,22 @@ impl LiveProductionVisualRuntime {
                     )
                 },
             );
+            let heads = native_scanout.presented_head_frames(output);
+            let publication = LivePresentedPolicyPublication::from_presented_heads(&heads);
+            let policy_visible = heads
+                .iter()
+                .flatten()
+                .any(|frame| frame.compositor_display_list.presentation_stamp().is_some());
+            let frame_completed = !heads.is_empty()
+                && heads.iter().all(Option::is_some)
+                && (!policy_visible || publication.is_some());
             self.replace_presented_input_projection(
                 index,
+                PresentedPolicyFrameEvidence {
+                    publication,
+                    completed: frame_completed,
+                    visible: policy_visible,
+                },
                 input_layers,
                 chrome_targets,
                 chrome_occlusion,
@@ -221,6 +243,7 @@ impl LiveProductionVisualRuntime {
     fn replace_presented_input_projection(
         &mut self,
         index: usize,
+        policy: PresentedPolicyFrameEvidence,
         input_layers: Vec<LayerSnapshot>,
         chrome_targets: Vec<sophia_engine::IndicatorChromeHitTarget>,
         chrome_occlusion: Option<Rect>,
@@ -228,6 +251,11 @@ impl LiveProductionVisualRuntime {
         descriptor_occlusion: Option<Rect>,
         mut content: Vec<sophia_engine::PresentedContentBinding>,
     ) {
+        let PresentedPolicyFrameEvidence {
+            publication: policy_publication,
+            completed: frame_completed,
+            visible: policy_visible,
+        } = policy;
         let Some(output) = self.input_projections.get(index).map(|p| p.output) else {
             return;
         };
@@ -274,7 +302,10 @@ impl LiveProductionVisualRuntime {
         let Some(projection) = self.input_projections.get_mut(index) else {
             return;
         };
-        if !same_interaction_projection(&projection.layers, &input_layers)
+        if projection.frame_completed != frame_completed
+            || projection.policy_visible != policy_visible
+            || projection.policy_publication != policy_publication
+            || !same_interaction_projection(&projection.layers, &input_layers)
             || projection.chrome_targets != chrome_targets
             || projection.chrome_occlusion != chrome_occlusion
             || projection.descriptor_targets != descriptor_targets
@@ -294,6 +325,9 @@ impl LiveProductionVisualRuntime {
                 .expect("presented input epoch exhausted");
         }
         projection.layers = input_layers;
+        projection.policy_publication = policy_publication;
+        projection.frame_completed = frame_completed;
+        projection.policy_visible = policy_visible;
         projection.chrome_targets = chrome_targets;
         projection.chrome_occlusion = chrome_occlusion;
         projection.descriptor_targets = descriptor_targets;

@@ -3,6 +3,9 @@
 use super::*;
 use std::sync::Arc;
 
+#[path = "presentation_input.rs"]
+mod presentation_input;
+
 fn commit_cpu_surface(
     runtime: &mut LiveProductionVisualRuntime,
     scene: &mut LiveProductionCpuScene,

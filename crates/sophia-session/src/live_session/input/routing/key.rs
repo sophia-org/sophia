@@ -36,7 +36,7 @@
                                 let _ = keyboard.observe(modifier_keycode, false, false);
                             }
                             if routing_mode != PhysicalInputRoutingMode::Full {
-                                continue;
+                                discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                             }
                             let mut release = event.clone();
                             release.kind = sophia_protocol::InputEventKind::Key {
@@ -52,7 +52,7 @@
                                 | FocusedInputRoute::UnsupportedEvent(_) => continue,
                             };
                             let Some(target_surface) = release.target_surface else {
-                                continue;
+                                discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                             };
                             let delivery =
                                 XAuthorityInputDeliveryId::from_raw(*next_input_delivery);
@@ -84,7 +84,7 @@
                                 sophia_protocol::CapacityClass::TerminatingBoundary,
                                 &mut report.ingress_saturation,
                             )? {
-                                continue;
+                                discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                             }
                             client_keys.record_routed(
                                 SessionClientPressedKey {
@@ -103,14 +103,14 @@
                             report.deliveries.push(delivery);
                         }
                         report.virtual_terminal = Some(terminal);
-                        continue;
+                        discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
                     }
                     if emergency_chord.observe_at_device(event.device, keycode, pressed)
                         == EmergencyChordAction::Triggered
                     {
                         report.emergency_exit = true;
-                        continue;
+                        discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
                     }
                     let decision = if routing_mode != PhysicalInputRoutingMode::CursorOnly {
                         shortcuts.as_deref_mut().map(|router|router.route_key(event.seat,keycode,pressed))
@@ -124,12 +124,37 @@
                             return Err("native launcher capture capacity exhausted".into());
                         }
                         report.launcher_events.extend(input);
-                        if consumed {key_repeat.cancel_seat(event.seat);continue;}
+                        if consumed {
+                            if let Some(policy) = policy_presentation.as_mut() { policy.capture.revoke(); }
+                            key_repeat.cancel_seat(event.seat);discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
+                        }
                     }
                     if !switcher && let Some(capture)=reference_capture.as_deref_mut() {
                         let (consumed,operation)=capture.route(&event);
                         report.reference_operations.extend(operation);
-                        if consumed {key_repeat.cancel_seat(event.seat);continue;}
+                        if consumed {
+                            if let Some(policy) = policy_presentation.as_mut() { policy.capture.revoke(); }
+                            key_repeat.cancel_seat(event.seat);discard_preempted_policy_release(&mut policy_presentation, event.seat, event.device, event.kind); continue;
+                        }
+                    }
+                    if let Some(policy) = policy_presentation.as_mut() {
+                        let protected = decision.as_ref().and_then(|decision| decision.action).is_some_and(|action|
+                            is_reserved_session_action(action) || policy.protected_actions.contains(&action));
+                        if !protected {
+                            let mask = shortcuts.as_deref().map_or(sophia_protocol::WmModifierMask { bits: 0 }, |router| router.modifier_mask(event.seat));
+                            let application_active = client_keys.pending_len() != 0
+                                || application_route_leases.as_deref().is_some_and(|leases| leases.leases().next().is_some())
+                                || pointer_focus_handoff.as_deref().and_then(PointerFocusHandoffState::target).is_some();
+                            let disposition = if policy.keyboard_needs_shield(input_projections) {
+                                policy.capture.block_key(event.seat, event.device, keycode, pressed, application_active)
+                            } else {
+                                policy.capture.key(policy.state, event.seat, event.device, keycode, pressed, mask, application_active)
+                            };
+                            if record_policy_input(disposition, &mut report) {
+                                key_repeat.cancel_seat(event.seat);
+                                continue;
+                            }
+                        }
                     }
                     if let Some(decision)=decision && decision.consumed {
                         if pressed && key_repeat_map.evdev_key_repeats(keycode) {key_repeat.cancel_seat(event.seat);}
