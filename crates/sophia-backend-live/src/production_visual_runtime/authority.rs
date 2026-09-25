@@ -403,11 +403,12 @@ impl LiveProductionVisualRuntime {
                                 &self.surface_outputs,
                                 &self.geometry_routed_surfaces,
                                 output,
-                            ) && !crate::presentation::intersect_rects(
-                                self.translations.geometry(surface, output, geometry, time),
-                                viewport,
-                            )
-                            .is_empty()
+                            ) && !self.surface_hidden_by_policy(surface, output)
+                                && !crate::presentation::intersect_rects(
+                                    self.translations.geometry(surface, output, geometry, time),
+                                    viewport,
+                                )
+                                .is_empty()
                         })
                     }
                 };

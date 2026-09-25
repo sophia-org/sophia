@@ -102,6 +102,17 @@ pub(crate) fn retained_surface_sources(
     Err("retained head plan has no authority-owned source")
 }
 
+/// Whether a current Present that no lowered list samples is an error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LivePresentSampling {
+    /// The lists are the Present's own outputs, so the Present must be in one:
+    /// an omitted owner is a caller error and never a silently lost Present.
+    Required,
+    /// A WM presentation replaces the presenting surface on every applicable
+    /// output: it may be sampled only by a preview there, or not at all.
+    ReplacedByPolicy,
+}
+
 /// The sources a queued Present's plan requires, read from the candidate it plans.
 ///
 /// The caller passes the same `candidate` slice it builds its display lists from, so
@@ -116,9 +127,13 @@ pub(crate) fn retained_surface_sources(
 /// for it rather than the DMA-BUF being presented.
 /// Sources cover the union of the output display lists that will be lowered. Using
 /// only the primary output's list loses every surface owned by another output.
+/// Under [`LivePresentSampling::ReplacedByPolicy`] a current Present no list samples
+/// is released rather than refused (t246, the overview crash of 2026-09-25): the
+/// caller's capture check then routes it to the no-captured-image path.
 pub fn live_present_head_composition_sources<'a, 'b>(
     presenting_surface: SurfaceId,
     current_source: sophia_renderer_live::LiveOwnedHeadCompositionSource,
+    sampling: LivePresentSampling,
     candidate: &[CommittedSurfaceState],
     display_lists: impl IntoIterator<Item = &'b CompositorDisplayList>,
     cpu_layers: &[LiveCpuPresentationLayer],
@@ -171,7 +186,15 @@ pub fn live_present_head_composition_sources<'a, 'b>(
             retained_direct(*surface),
         )?);
     }
-    if current_source.is_some() {
+    // The sources are exactly the union the lowered lists sample. A current
+    // Present they do not sample because a WM presentation replaced its
+    // surface on every applicable output, without a preview of it, is not a
+    // missing retained source: it is released here, and the caller's capture
+    // check routes the Present to its no-captured-image path, which settles
+    // or defers it and still queues the clearing repaint. Otherwise an
+    // unsampled Present is an omitted owner and still refuses, as does every
+    // sampled source that cannot be resolved.
+    if current_source.is_some() && sampling == LivePresentSampling::Required {
         return Err("visible Present surface is missing from the presentation order".into());
     }
     Ok(sources)
