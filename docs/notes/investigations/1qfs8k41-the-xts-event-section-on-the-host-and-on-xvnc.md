@@ -585,7 +585,37 @@ records t214/t227's interior origins, raster clipping, matching input coordinate
 and the windows scenario at 244 passed, 60 declared. Border painting remains
 outside the compatibility contract.
 
-## Status
+## Event-section acceptance on 2026-09-25
+
+The fresh device-hidden gate on signed, clean
+`9ee301e74ef22a065dcb112dc1873c7e458dfec4` started and completed all 195 event
+purposes: 123 passed and 72 matched their declared outcomes (43 NOTINUSE,
+22 UNSUPPORTED, four UNTESTED, two UNRESOLVED and one FAIL). All 44 XTEST
+profile checks also passed. Layout passed, the source identity stayed unchanged,
+and the harness collected all 83 tracked XTEST descendants. The wrapper hid
+DRM/input devices, runtime sockets and inherited live-session variables.
+
+The retained Xvnc journal has 121 passes. Comparing it with the new host journal
+finds only ButtonPress 10 and LeaveNotify 2 different: both pass on the host and
+fail on Xvnc. No reference pass fails only on the host. The declarations remain
+explicit suite/reference limitations, not 195 claimed passes. This reran the
+host; it did not rerun Xvnc or exercise physical input.
+
+Exact reports, both journals, their comparison and hashes, the source archive
+and invocation records are checksummed in
+`~/.local/state/sophia/development-evidence/todo-closure-9ee301e7`.
+The original report is
+`/home/niltempus/dev/sophia/.artifacts/todo-closure-9ee301e7-57kctrdv/events/report.json`.
+The earlier `31b53195` gate retains its own identity and is not substituted for
+this result.
+
+This satisfies t196's event-section comparison and declaration exit. The
+separately described hierarchy case in t211 and private-key/propagation gaps
+in t220 still require their own production controls; the current XTS scenario
+does not expose them. t228's unidentified original hang is not closed by this
+run either. No install, reload or live-session change accompanied acceptance.
+
+## Historical implementation checkpoint
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
