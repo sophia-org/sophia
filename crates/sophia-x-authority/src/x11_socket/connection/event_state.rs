@@ -38,6 +38,85 @@ pub(crate) enum XKeyDiscard {
     DoNotPropagate,
 }
 
+/// One EnterNotify or LeaveNotify of a pointer move: the window it is
+/// reported on, its detail (Ancestor, Virtual, Inferior, Nonlinear,
+/// NonlinearVirtual) and the child of that window containing the pointer's
+/// position on the other side of the move, None when there is none.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct XPointerCrossingStep {
+    pub(crate) window: XResourceId,
+    pub(crate) entered: bool,
+    pub(crate) detail: u8,
+    pub(crate) child: XResourceId,
+}
+
+/// The crossing events of a move from `from` to `to`, given each window's
+/// ancestry (the window first, then its parents up to the root). The
+/// protocol's three shapes: `to` an inferior of `from` (leave `from` as
+/// Inferior, enter the windows between as Virtual, enter `to` as
+/// Ancestor); `to` an ancestor of `from` (leave `from` as Ancestor, leave
+/// the windows between as Virtual, enter `to` as Inferior); and otherwise
+/// through the nearest common ancestor, which itself hears nothing (leave
+/// `from` as Nonlinear, leave and enter the windows between as
+/// NonlinearVirtual, enter `to` as Nonlinear). Every leave precedes every
+/// enter.
+pub(crate) fn x11_pointer_crossings(
+    ancestry_from: &[XResourceId],
+    ancestry_to: &[XResourceId],
+) -> Vec<XPointerCrossingStep> {
+    const ANCESTOR: u8 = 0;
+    const VIRTUAL: u8 = 1;
+    const INFERIOR: u8 = 2;
+    const NONLINEAR: u8 = 3;
+    const NONLINEAR_VIRTUAL: u8 = 4;
+    let (Some(&from), Some(&to)) = (ancestry_from.first(), ancestry_to.first()) else {
+        return Vec::new();
+    };
+    if from == to {
+        return Vec::new();
+    }
+    // The child of ancestry[depth] toward its window: the element below it.
+    let below = |ancestry: &[XResourceId], depth: usize| {
+        depth.checked_sub(1).map_or(XResourceId::NONE, |index| ancestry[index])
+    };
+    let mut steps = Vec::new();
+    if let Some(depth) = ancestry_to.iter().position(|window| *window == from) {
+        // `from` is an ancestor of `to`.
+        steps.push(XPointerCrossingStep { window: from, entered: false, detail: INFERIOR, child: below(ancestry_to, depth) });
+        for index in (1..depth).rev() {
+            steps.push(XPointerCrossingStep { window: ancestry_to[index], entered: true, detail: VIRTUAL, child: below(ancestry_to, index) });
+        }
+        steps.push(XPointerCrossingStep { window: to, entered: true, detail: ANCESTOR, child: XResourceId::NONE });
+        return steps;
+    }
+    if let Some(depth) = ancestry_from.iter().position(|window| *window == to) {
+        // `to` is an ancestor of `from`.
+        steps.push(XPointerCrossingStep { window: from, entered: false, detail: ANCESTOR, child: XResourceId::NONE });
+        for index in 1..depth {
+            steps.push(XPointerCrossingStep { window: ancestry_from[index], entered: false, detail: VIRTUAL, child: below(ancestry_from, index) });
+        }
+        steps.push(XPointerCrossingStep { window: to, entered: true, detail: INFERIOR, child: below(ancestry_from, depth) });
+        return steps;
+    }
+    let common_from = ancestry_from
+        .iter()
+        .position(|window| ancestry_to.contains(window))
+        .unwrap_or(ancestry_from.len());
+    let common_to = ancestry_from
+        .get(common_from)
+        .and_then(|common| ancestry_to.iter().position(|window| window == common))
+        .unwrap_or(ancestry_to.len());
+    steps.push(XPointerCrossingStep { window: from, entered: false, detail: NONLINEAR, child: XResourceId::NONE });
+    for index in 1..common_from {
+        steps.push(XPointerCrossingStep { window: ancestry_from[index], entered: false, detail: NONLINEAR_VIRTUAL, child: below(ancestry_from, index) });
+    }
+    for index in (1..common_to).rev() {
+        steps.push(XPointerCrossingStep { window: ancestry_to[index], entered: true, detail: NONLINEAR_VIRTUAL, child: below(ancestry_to, index) });
+    }
+    steps.push(XPointerCrossingStep { window: to, entered: true, detail: NONLINEAR, child: XResourceId::NONE });
+    steps
+}
+
 /// Which half of the pointer selection a core event answers to: the motion
 /// masks (chosen by the held buttons), ButtonPress or ButtonRelease.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -629,6 +708,28 @@ impl XCoreEventSelectionState {
             clamp_engine_i16(i32::from(event_x) + surface_x - delivered_x),
             clamp_engine_i16(i32::from(event_y) + surface_y - delivered_y),
         )
+    }
+
+    /// Whether a surface-relative point lies inside the surface window's
+    /// own extent; a surface whose geometry is unknown is taken to contain
+    /// it. Outside it the pointer is in the root (or another client's
+    /// window, which this table cannot see), and the crossing events say
+    /// so.
+    pub(crate) fn surface_contains(&self, surface_window: XResourceId, event_x: i16, event_y: i16) -> bool {
+        self.geometries.get(&surface_window).is_none_or(|geometry| {
+            event_x >= 0
+                && event_y >= 0
+                && i32::from(event_x) < geometry.width
+                && i32::from(event_y) < geometry.height
+        })
+    }
+
+    /// The EnterNotify and LeaveNotify events a pointer move from `from` to
+    /// `to` generates, in the protocol's order: the leaves from the window
+    /// left up to the common ancestor, then the enters down from it, each
+    /// with its detail and the child on the way to the pointer.
+    pub(crate) fn pointer_crossings(&self, from: XResourceId, to: XResourceId) -> Vec<XPointerCrossingStep> {
+        x11_pointer_crossings(&self.ancestry_including(from), &self.ancestry_including(to))
     }
 
     fn contains_surface_point(

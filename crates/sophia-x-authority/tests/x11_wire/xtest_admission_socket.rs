@@ -1169,6 +1169,128 @@ mod xtest_admission_socket {
         client.assert_quiet("plain motion is not selected");
     }
 
+    /// A pointer move generates the protocol's crossings: leaves from the
+    /// window left up to the common ancestor, then enters down to the
+    /// window entered, each with its detail (Ancestor, Virtual, Inferior,
+    /// Nonlinear, NonlinearVirtual), its child toward the pointer and
+    /// coordinates in its own window; a move out of every window of the
+    /// client is a move to the root (XTS Xlib11 EnterNotify 3, 4, 7 to 9,
+    /// 12, 13; LeaveNotify 4, 5, 8 to 10, 14, 15). The crossing was one
+    /// EnterNotify of detail Nonlinear on the window a motion was reported
+    /// on, and nothing when the pointer left. Red before the fix: the first
+    /// move into the grandchild produces one record where four are owed.
+    #[test]
+    fn a_pointer_move_generates_the_protocols_crossings() {
+        let mut fixture = XtestFixture::sharing_a_namespace();
+        let mut client = fixture.connect();
+        let toplevel = client.next;
+        let child = client.next + 2;
+        let grandchild = client.next + 4;
+        let other = client.next + 6;
+        client.next += 8;
+        let root = X_SETUP_DEFAULT_ROOT;
+        // EnterWindow and LeaveWindow everywhere, the root included.
+        client.stream
+            .write_all(&create_window_request(client.order, toplevel, 20, 0, 16, 16))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, child, toplevel, 4, 4, 8, 8))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request_with_parent(client.order, grandchild, child, 2, 2, 4, 4))
+            .unwrap();
+        client.stream
+            .write_all(&create_window_request(client.order, other, 40, 0, 16, 16))
+            .unwrap();
+        for window in [toplevel, child, grandchild, other, root] {
+            client.stream
+                .write_all(&change_window_event_mask_request(client.order, window, (1 << 4) | (1 << 5)))
+                .unwrap();
+        }
+        for window in [toplevel, child, grandchild, other] {
+            client.stream.write_all(&map_window_request(client.order, window)).unwrap();
+        }
+        client.settle();
+        client.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let field = |event: &[u8; 32], at: usize| u32::from_le_bytes([event[at], event[at + 1], event[at + 2], event[at + 3]]);
+        let at = |event: &[u8; 32], offset: usize| i16::from_le_bytes([event[offset], event[offset + 1]]);
+        // (type, detail, window, child) of every crossing up to the barrier.
+        let crossings = |client: &mut XtestClient| {
+            let mut request = vec![43, 0];
+            push_u16(&mut request, client.order, 1);
+            client.stream.write_all(&request).unwrap();
+            let mut seen = Vec::new();
+            loop {
+                let record = read_x_record(&mut client.stream);
+                match record[0] & 0x7f {
+                    1 => break seen,
+                    7 | 8 => seen.push((record[0] & 0x7f, record[1], field(&record, 12), field(&record, 16), at(&record, 24), at(&record, 26))),
+                    6 => {}
+                    other => panic!("unexpected record {other}: {record:?}"),
+                }
+            }
+        };
+        const ANCESTOR: u8 = 0;
+        const VIRTUAL: u8 = 1;
+        const INFERIOR: u8 = 2;
+        const NONLINEAR: u8 = 3;
+        const NONLINEAR_VIRTUAL: u8 = 4;
+
+        // From the root into the grandchild (root 26..30, 6..10): the root
+        // is left toward the toplevel, the windows between are entered
+        // virtually, the grandchild as Ancestor; coordinates in each window.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        assert_eq!(
+            crossings(&mut client),
+            vec![
+                (8, INFERIOR, root, toplevel, 27, 7),
+                (7, VIRTUAL, toplevel, child, 7, 7),
+                (7, VIRTUAL, child, grandchild, 3, 3),
+                (7, ANCESTOR, grandchild, 0, 1, 1),
+            ],
+            "root to grandchild"
+        );
+        // Up to the toplevel: the grandchild is left as Ancestor, the child
+        // virtually, the toplevel entered as Inferior toward the child.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 21, 1);
+        assert_eq!(
+            crossings(&mut client),
+            vec![
+                (8, ANCESTOR, grandchild, 0, -5, -5),
+                (8, VIRTUAL, child, grandchild, -3, -3),
+                (7, INFERIOR, toplevel, child, 1, 1),
+            ],
+            "grandchild to toplevel"
+        );
+        // Out to the root: no window of the client is under the pointer.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 5, 5);
+        assert_eq!(
+            crossings(&mut client),
+            vec![(8, ANCESTOR, toplevel, 0, -15, 5), (7, INFERIOR, root, toplevel, 5, 5)],
+            "toplevel to root"
+        );
+        // Into the other toplevel, then across to the grandchild: siblings
+        // under the root, so the root is the common ancestor and hears
+        // nothing, and the windows between are crossed as NonlinearVirtual.
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 45, 5);
+        assert_eq!(
+            crossings(&mut client),
+            vec![(8, INFERIOR, root, other, 45, 5), (7, ANCESTOR, other, 0, 5, 5)],
+            "root to the other toplevel"
+        );
+        client.fake_input_at(6, X_TEST_MOTION_ABSOLUTE, 27, 7);
+        assert_eq!(
+            crossings(&mut client),
+            vec![
+                (8, NONLINEAR, other, 0, -13, 7),
+                (7, NONLINEAR_VIRTUAL, toplevel, child, 7, 7),
+                (7, NONLINEAR_VIRTUAL, child, grandchild, 3, 3),
+                (7, NONLINEAR, grandchild, 0, 1, 1),
+            ],
+            "the other toplevel to the grandchild"
+        );
+    }
+
     fn warp_pointer_request(
         order: XByteOrder,
         source: u32,
