@@ -7,6 +7,7 @@ They do not revive work, close a current milestone, or change acceptance gates.
 
 ## Milestone records
 
+- 2026-09-25: [Desktop acceptance retargeted to Lom and Bemenu](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md)
 - 2026-09-20: [M6 accepted: the whole of t093 on one source](../milestones/cfko9jxl-m6-accepted-the-whole-of-t093-on-one-source.md)
 - 2026-09-20: [M5: the XTEST adapter accepted, and the one obligation left open](../milestones/vlcrn30a-m5-xtest-adapter-accepted-and-the-one-obligation-left-open.md)
 - 2026-09-19: [M4 private Session acceptance and what mutation showed about it](../milestones/pq4wr7xn-m4-private-session-acceptance-and-what-mutation-showed.md)

@@ -67,6 +67,12 @@ establish physical tab behavior, while t081 remains dependent on the combined
 workflow/package exit in t101. Running Narthex concurrently with the personal
 components is not the proposed solution.
 
+After this baseline review, niltempus
+[retargeted t081 and t101](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md)
+to the selected Lom + Bemenu desktop. That supersedes the combined-client
+prerequisite described above; it supplies no missing tab service or physical
+observations. The reference-session distinction remains.
+
 ### Prepared operator sequence, not an executed run
 
 Use one frozen Sophia/Hagia/Narthex pair in a separately authorized test session,

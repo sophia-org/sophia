@@ -6,6 +6,18 @@ tags: [plan, shell, architecture, native-components]
 ---
 # Modular native shell components and independent launcher critical path
 
+## Selected desktop reconciliation, 2026-09-25
+
+niltempus [retargeted t081 and its t101 prerequisite](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md)
+to the current Lom + Bemenu desktop. The two-component development-session
+acceptance now uses this plan's existing component owners and evidence, while
+retaining the admission/lifecycle prerequisites and exact installed checks in
+the Lom critical path. The earlier statement that this plan cannot replace the
+one-Lom baseline is superseded for that target. Integrated-shell compatibility
+and Narthex reference/rollback remain separate. No tab-descriptor service is
+declared implemented on the component path. The three-component t108 candidate,
+including Provlita, is neither promoted nor required by this retargeting.
+
 ## Current scope reconciliation, 2026-09-18
 
 The [source audit](../investigations/vle7mt47-native-desktop-capability-audit-separates-contracts-from-client-ui.md)
@@ -32,9 +44,10 @@ public language-neutral contract, existing content/descriptor lifecycle and
 Session-owned launch policy. No private Lom coordinator or display bridge.
 
 The operator has approved implementation of the Bemenu/native-component path.
-That is not evidence of current multi-client support. Task status and order live only in
-[todo.md](../../../todo.md). The sequence below is its own critical path; it does
-not replace the current Lom daily-driver path or authorize input-branch imports.
+That authorization alone is not evidence of multi-client support. Task status
+and order live only in [todo.md](../../../todo.md). The September 25 reconciliation
+above identifies the selected two-component target; historical checkpoints below
+retain their original scope. No unfinished input-branch import is authorized.
 
 The exit is an independently implemented launcher operating beside the bar under
 separate grants, with bounded cross-client scheduling/resources, correct focus

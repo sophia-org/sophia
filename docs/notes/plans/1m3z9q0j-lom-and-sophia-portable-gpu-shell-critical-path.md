@@ -11,18 +11,24 @@ tags: [plan, shell, gpu, lom, daily-driver]
 
 ## Scope and exit
 
-Deliver one protected Lom shell with workspace/active-output indicators, clock,
-calendar popout and preserved descriptor launcher/switcher behavior. It must
-work on supported stock Linux installations under the accepted
+Deliver the selected protected Lom panel/calendar and independent Bemenu
+launcher, with Hagia owning layout, workspace policy and window navigation.
+The [September 25 retargeting](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md)
+records niltempus's authorization to replace the earlier one-shell
+content/descriptor acceptance requirement. Preserve the integrated shell and
+Narthex as separate compatibility/reference paths, not simultaneous providers.
+The selected desktop must work on supported stock Linux installations under the
+accepted
 [presentation/execution decision](../decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md).
 No custom kernel, mandatory GPU bridge, Waybridge, Vello dependency in Sophia,
-or second native shell is on this path.
+or additional shell role is on this path.
 
-The CPU content implementation and Lom's persistent client are the starting
-point. Production GPU admission is implemented behind a default-denied profile,
-while content input and native acceptance remain closed/incomplete;
-writing this plan is not evidence of an admitted desktop. Preserve previous
-model, fixture and incident evidence under its exact source identity.
+The CPU content implementation and Lom's persistent client were the starting
+point. Production GPU admission is implemented behind a default-denied profile;
+exact presented-content input and popout lifecycle mechanisms have since landed.
+Paired native acceptance remains incomplete. This plan is not evidence of an
+admitted desktop. Preserve previous model, fixture and incident evidence under
+its exact source identity.
 
 The exit is a paired, exact-release daily-driver acceptance, with bounded
 protocol/storage obligations and honest direct-GPU availability limits. The
@@ -45,13 +51,15 @@ own scope and exits.
 | 2 | t098: exact presented targets, action dispatch and settlement | t004: view bindings, TEA action intake and acknowledgements | A real private protocol exchange activates only the exact presented pill |
 | 3 | t099: popout composition, precedence and dismissal | t005: calendar state and complete panel/popout candidates | Open, action, dismissal and parent-loss transitions settle coherently |
 | 4 | t100: output/epoch/recovery lifecycle | t006: per-output scheduling and reconnection | Fresh state after every transition; no stale action or retained obligation |
-| 5 | t101: shared client workflow support and package verification | t020: combined descriptor workflows; t007: package/configuration | One shell preserves desktop controls and has verified rollback |
-| 6 | t081: native-shell milestone and evidence | t008: attended matrix; t009: soak; t010: promotion | Exact installed candidate earns both repositories' acceptance claims |
+| 5 | t101: separate component workflows and exact desktop package | t007: Lom package/configuration; Bemenu artifacts pinned separately | Lom/Bemenu preserve their negotiated controls and have separate verified rollback |
+| 6 | t081: two-component desktop evidence | t008: attended Lom matrix; t009: measured workload; t010: promotion | Exact installed component desktop earns each repository's scoped acceptance claim |
 
 Steps 1 and 2 can develop independently using contained fixtures. Step 3 needs
 step 2; step 4 tests can begin earlier but must validate the combined path.
-Descriptor compatibility can develop in parallel with those implementations;
-packaging and native acceptance wait for all of them. Existing higher-priority
+Existing descriptor compatibility remains covered separately; new combined
+descriptor UI in Lom is not a prerequisite for the selected desktop. Packaging
+and native acceptance retain the named lifecycle/admission dependencies. Existing
+higher-priority
 X11/input work retains its ownership and queue order. Before implementation or
 integration, coordinate shared files, use separate disk-backed build targets,
 and reconcile with the current master; this plan imports no unfinished branch.
@@ -943,34 +951,43 @@ Daily application failures also require
 Deterministic process/storage checks and an installed application launch are
 separate evidence; neither recovers output discarded by an older release.
 
-Support one combined content/descriptor shell in the shared client boundary,
-including bounded message demultiplexing and terminal outcomes for every
-negotiated workflow. Lom currently consumes content and indicators; receipt of
-other negotiated records must not fill an unserviced queue. Keep the original
-descriptor switcher/launcher trust and activation rules. No second Narthex
-connection and no custom raster launcher authority is implied.
+Under the [authorized two-component target](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md),
+verify Lom's panel/calendar and Bemenu's launcher on separate protected
+connections and grants. Every negotiated workflow must have bounded service and
+terminal outcomes; content updates and reconnect must not fill an unserviced
+queue. Preserve catalog authority, exact presented activation/focus, stale-epoch
+refusal and the surviving component's identity during peer replacement.
+Hagia retains window navigation and overview policy. A new combined descriptor
+launcher/switcher in Lom is no longer required by this exit.
 
-Package exact Sophia and Lom commits, dependency lock, binaries, profile and
-private KDL assets. The verifier must distinguish requested `gpu "direct"`,
-actual launch evidence and granted content/input capabilities. Retain the
-selected policy client identity and a known Narthex profile/artifact for rollback
-in a separate session. Coordinate existing packaging tasks rather than marking
-them complete from this narrower artifact.
+Package exact Sophia, Hagia, Lom and Bemenu source identities, dependency locks,
+binaries, profile and private KDL assets, including the Bemenu Sophia backend
+identity. Validate role selection and permissions separately for each component.
+Distinguish requested `gpu "direct"`, actual launch evidence and granted
+content/input capabilities. Retain a known Narthex profile/artifact for rollback
+in a separate session; do not select it beside the two components. Preserve
+existing integrated-client compatibility controls without claiming missing
+client UI is implemented. Coordinate existing packaging tasks and retain each
+repository's own completion decision.
 
-Exit: combined-client fixtures preserve descriptor controls through content
-updates and reconnect; exact package and profile validation pass with identity,
-missing-resource, old-quota and permission mutation negatives. Document the
-authorized install/run/rollback procedure. No GUI, signing prompt, session
-restart or install follows automatically from a passing offline verifier.
+Exit: real component/private-transport fixtures preserve the selected workflows
+through updates and reconnect; exact package/profile validation passes identity,
+missing-resource, role/provider, old-quota and permission mutation negatives.
+Document the explicit install/run/rollback procedure. No GUI, signing prompt,
+session restart or install follows automatically from a passing offline verifier.
 
 ### t081
 
-Use the paired package to prove actual native panel pixels/reservation on every
-admitted output, empty-focused-output styling, workspace activation, clock,
-calendar interaction/dismissal, descriptor launcher/switcher behavior and
-recovery. Tie input to exact native retirement, not `Prepared`, renderer
-completion or a synthetic `Presented` record. Narthex is tested as rollback,
-not simultaneous native-shell coexistence.
+Use the selected Sophia/Hagia/Lom/Bemenu package to prove actual native panel
+pixels/reservation on every admitted output, empty-focused-output styling,
+workspace activation, clock, calendar interaction/dismissal, Bemenu launching
+and focus restoration, Hagia window navigation/overview, and recovery. Observe
+separate component replacement without changing the survivor's grant or giving
+old pixels new input authority. Tie input to exact native retirement, not
+`Prepared`, renderer completion or a synthetic `Presented` record. Narthex is
+tested as a separate rollback; t018's descriptor-tab reference matrix remains
+separate. The former same-Lom descriptor requirement is superseded by the
+[recorded retargeting](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md).
 
 Lom t008 owns the attended matrix and t009 the measured workload/soak; this task
 retains the Sophia-side evidence and incident links. Record source, installed

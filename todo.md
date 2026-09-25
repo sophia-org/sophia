@@ -24,9 +24,9 @@
 
 (A) 2026-09-13 Repair native repaint deferral and startup topology, then complete content epoch, reconnect and retirement recovery through production owners. +critical +lom @development id:t100 order:000.804 depends:t097,t098,t099 peer:lom/t006 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t100)
 
-(A) 2026-09-13 Verify one combined content/descriptor shell, exact Lom package and profile, and independent Narthex rollback. +critical +lom @development id:t101 order:000.805 depends:t097,t098,t099,t100 peer:lom/t007,t020 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t101)
+(A) 2026-09-13 Verify the exact Sophia/Hagia/Lom/Bemenu package, separate component workflows and grants, and independent Narthex rollback. +critical +lom +native-components @development id:t101 order:000.805 depends:t097,t098,t099,t100 peer:lom/t007 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t101)
 
-(A) 2026-09-12 Accept Lom's globally numbered per-output refresh-safe workspace clicks/shortcuts, flash-free native panel, popouts and descriptor controls on every output with clean shutdown using exact installed evidence and a measured daily workload. +critical +lom @physical id:t081 order:000.85 depends:t101 peer:lom/t008,t009,t010 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t081)
+(A) 2026-09-12 Accept the Lom/Bemenu desktop with per-output panel/workspace/calendar behavior, launcher focus, Hagia navigation/overview, component recovery and clean shutdown on exact installed evidence and a measured workload. +critical +lom +native-components @physical id:t081 order:000.85 depends:t101 peer:lom/t008,t009,t010 [details](docs/notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md#t081)
 
 (A) Complete the physical tab acceptance for frame-tree/Notion and i3/split-tree: empty/nested groups, hidden-member activation, shell recovery, title changes, fullscreen, and floating occlusion. +critical +cp14-3 @development id:t018 order:018 [details](docs/notes/plans/queue-06-4-exercise-real-development-workflows.md#t018)
 
