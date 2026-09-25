@@ -410,6 +410,42 @@ same crossings on the request path and do not generate them; under the
 grab no peer selecting crossings on the path is told, as the fan-out is
 confined by an explicit grab.
 
+## The implicit grab's client
+
+The authority activated the implicit pointer grab on every press, for
+the surface's owner, with a mask of every event, and the fan-out to
+selecting peers went on under it: a peer that selected ButtonRelease
+but not ButtonPress on the owner's window was told of the release. The
+reference activates the implicit grab only when a ButtonPress was
+delivered, for the client it was delivered to (the last one tried at
+the window: the window's own client first, then the other clients,
+oldest last), with that client's selection on the event window as the
+grab's mask and OwnerGrabButton as its owner_events, and while it
+lasts TryClientEvents refuses every other client (t230).
+
+The press path now finds the first window up from the source window
+with a ButtonPress selection in the registry's subscriptions, takes the
+oldest client other than the surface's own there, or the surface's own
+when no other selected, and hands the authority an implicit grab with
+that client, window and mask. A press nobody selected activates no
+grab in the reference; here the surface's own client holds one, marked
+undelivered, because the Engine's route lease for the click is held by
+the grab until the release or an explicit grab replaces it (the
+explicit-grab lifecycle test reads `replaces: Some(click)` from it), and
+such a grab confines nothing, so the release routes by position as
+before, which is what the multi-client release purposes of the events
+scenario press with. The fan-out is confined by the grab that was
+active before the event when it is explicit or a delivered implicit
+one, so the press that activates a grab still reaches every client that
+selected it, and nothing after it reaches a client that is not the
+grab's. The surface's own client keeps the surface window as its grab
+window with owner events, so its writer resolves and propagates from
+the surface as for every routed event; a peer is routed to the window
+the press reached. XI2 selections do not yet count as deliveries. The scenario reads 123 passed, 72
+declared, unchanged. Red before the fix:
+`the_implicit_grab_belongs_to_the_client_the_press_was_delivered_to`, and the
+fan-out test's release assertion, which had encoded the wrong behaviour.
+
 ## The windows scenario, in the authority's area
 
 The pane ran Xlib4 and Xlib5 (408 purposes) the same way and handed over

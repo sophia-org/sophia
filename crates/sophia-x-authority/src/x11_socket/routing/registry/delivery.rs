@@ -271,6 +271,7 @@ impl XServerFrontendRouteRegistry {
         let mut client = surface_route.client;
         let mut button_lease_update = None;
         let mut grab_crossing: Option<crate::XPointerGrabCrossing> = None;
+        let mut fan_out_confined = false;
         // Engine already selected the committed target surface. Preserve its
         // owning window as the start of core propagation; X grabs may replace
         // it below, but event-mask update order must never choose the target.
@@ -306,12 +307,15 @@ impl XServerFrontendRouteRegistry {
                 resolved.event
             }
             InputEventKind::PointerMotion => {
-                if let Some(grab) = self
-                    .input_authority
-                    .lock()
-                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                    .pointer_grab(surface_route.namespace)
-                {
+                let pointer_grab_before = {
+                    let authority = self
+                        .input_authority
+                        .lock()
+                        .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+                    fan_out_confined = authority.pointer_grab_confines(surface_route.namespace);
+                    authority.pointer_grab(surface_route.namespace)
+                };
+                if let Some(grab) = pointer_grab_before {
                     client = XServerFrontendClientId(grab.owner);
                     target_window = Some(if grab.owner_events && client == surface_route.client {
                         surface_route.window
@@ -337,12 +341,15 @@ impl XServerFrontendRouteRegistry {
                 })
             }
             InputEventKind::PointerButton { button, pressed } => {
-                if let Some(grab) = self
-                    .input_authority
-                    .lock()
-                    .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                    .pointer_grab(surface_route.namespace)
-                {
+                let pointer_grab_before = {
+                    let authority = self
+                        .input_authority
+                        .lock()
+                        .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
+                    fan_out_confined = authority.pointer_grab_confines(surface_route.namespace);
+                    authority.pointer_grab(surface_route.namespace)
+                };
+                if let Some(grab) = pointer_grab_before {
                     client = XServerFrontendClientId(grab.owner);
                     target_window = Some(if grab.owner_events && client == surface_route.client {
                         surface_route.window
@@ -393,6 +400,48 @@ impl XServerFrontendRouteRegistry {
                         .unwrap_or(surface_route.window);
                     let mut ancestry = self.window_ancestry(surface_route.client, pointer_window)?;
                     ancestry.reverse();
+                    // The implicit grab belongs to the client the press is
+                    // delivered to: at the first window up from the source
+                    // with a ButtonPress selection, the last client the
+                    // reference would try, the oldest other than the
+                    // surface's own; its selection there is the grab's mask
+                    // and OwnerGrabButton its owner_events. A press nobody
+                    // selected activates no grab in the reference; here the
+                    // surface's own client holds one for the route lease's
+                    // custody, undelivered, which confines nothing (t230).
+                    let mut implicit = None;
+                    for window in ancestry.iter().rev() {
+                        let subscribers = self.core_event_subscribers(*window, 1 << 2)?;
+                        if subscribers.is_empty() {
+                            continue;
+                        }
+                        let delivered_to = subscribers
+                            .iter()
+                            .copied()
+                            .filter(|candidate| *candidate != surface_route.client)
+                            .min()
+                            .unwrap_or(surface_route.client);
+                        let mask = self.core_event_mask(delivered_to, *window)?;
+                        // The surface's own client keeps the surface window
+                        // as the grab window with owner events, so its
+                        // writer goes on resolving and propagating from the
+                        // surface as it does for every routed event; a peer
+                        // is routed to the window the press reached, which
+                        // its table knows from its selection there.
+                        let own = delivered_to == surface_route.client;
+                        implicit = Some(crate::XActiveInputGrab {
+                            owner: delivered_to.raw(),
+                            window: if own { surface_route.window } else { *window },
+                            owner_events: own || mask & (1 << 24) != 0,
+                            pointer_mode: 1,
+                            keyboard_mode: 1,
+                            event_mask: u16::try_from(mask & 0xffff).unwrap_or(u16::MAX),
+                            xi_event_mask: [0; 8],
+                            xi_event_mask_words: 0,
+                            route_lease: route.route_lease,
+                        });
+                        break;
+                    }
                     let mut authority = self
                         .input_authority
                         .lock()
@@ -400,21 +449,24 @@ impl XServerFrontendRouteRegistry {
                     if authority.pointer_grab(surface_route.namespace).is_none() {
                         button_lease_update = Some(XAuthorityRouteLeaseUpdateKind::Confirmed);
                     }
+                    let delivered = implicit.is_some();
+                    let implicit = implicit.unwrap_or(crate::XActiveInputGrab {
+                        owner: surface_route.client.raw(),
+                        window: surface_route.window,
+                        owner_events: true,
+                        pointer_mode: 1,
+                        keyboard_mode: 1,
+                        event_mask: u16::MAX,
+                        xi_event_mask: [0; 8],
+                        xi_event_mask_words: 0,
+                        route_lease: route.route_lease,
+                    });
                     let grab = authority.activate_button_within(
                         surface_route.namespace,
                         button,
                         state & 0xff,
-                        crate::XActiveInputGrab {
-                            owner: surface_route.client.raw(),
-                            window: surface_route.window,
-                            owner_events: true,
-                            pointer_mode: 1,
-                            keyboard_mode: 1,
-                            event_mask: u16::MAX,
-                            xi_event_mask: [0; 8],
-                            xi_event_mask_words: 0,
-                            route_lease: route.route_lease,
-                        },
+                        implicit,
+                        delivered,
                         &ancestry,
                     );
                     // A passive grab on another window than the pointer's
@@ -469,12 +521,14 @@ impl XServerFrontendRouteRegistry {
                 horizontal_v120,
                 vertical_v120,
             } => {
-                if let Some(grab) = self
+                // An axis event routes its press and release below and
+                // returns, so the fan-out's confinement is not its concern.
+                let pointer_grab_before = self
                     .input_authority
                     .lock()
                     .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
-                    .pointer_grab(surface_route.namespace)
-                {
+                    .pointer_grab(surface_route.namespace);
+                if let Some(grab) = pointer_grab_before {
                     client = XServerFrontendClientId(grab.owner);
                     target_window = Some(if grab.owner_events && client == surface_route.client {
                         surface_route.window
@@ -581,6 +635,7 @@ impl XServerFrontendRouteRegistry {
                 surface_route.window,
                 target_window,
                 event,
+                fan_out_confined,
             )
         {
             tracing::warn!("sophia_x11_input_route status=peer_fanout_failed reason={error:?} content=redacted");

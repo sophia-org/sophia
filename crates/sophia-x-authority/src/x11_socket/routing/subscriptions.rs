@@ -19,6 +19,21 @@ impl XServerFrontendRouteRegistry {
         Ok(())
     }
 
+    /// The core event mask a client selected on a window, 0 for none.
+    fn core_event_mask(
+        &self,
+        client: XServerFrontendClientId,
+        window: XResourceId,
+    ) -> Result<u32, XServerFrontendRouteError> {
+        Ok(self
+            .core_event_subscriptions
+            .lock()
+            .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?
+            .get(&(client, window))
+            .copied()
+            .unwrap_or(0))
+    }
+
     fn remove_core_event_window(
         &self,
         window: XResourceId,

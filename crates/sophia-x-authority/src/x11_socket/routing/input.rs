@@ -489,10 +489,12 @@ impl XServerFrontendRouteRegistry {
     /// event window or an ancestor, not only the surface's owner (t220):
     /// each peer's writer resolves the window it selected on, propagation
     /// and coordinates from its own selection table, given the surface
-    /// window to start from. An explicit pointer or keyboard grab confines
-    /// the event to the grabbing client, so nothing fans out under one; an
-    /// implicit grab does not, as the reference server has it. A peer whose
-    /// queue refuses the copy loses only its copy.
+    /// window to start from. A pointer grab active before the event,
+    /// implicit or explicit, confines it to the grab's client, as the
+    /// reference's TryClientEvents refuses any other (t230); the press that
+    /// activates a grab still reaches every client that selected it. A
+    /// keyboard grab confines a key. A peer whose queue refuses the copy
+    /// loses only its copy.
     fn route_to_selecting_peers(
         &self,
         namespace: NamespaceId,
@@ -500,6 +502,7 @@ impl XServerFrontendRouteRegistry {
         surface_window: XResourceId,
         target_window: Option<XResourceId>,
         event: XAuthorityInputEvent,
+        confined_by_pointer_grab: bool,
     ) -> Result<(), XServerFrontendRouteError> {
         const KEY_PRESS: u32 = 1 << 0;
         const KEY_RELEASE: u32 = 1 << 1;
@@ -531,7 +534,7 @@ impl XServerFrontendRouteRegistry {
                 .lock()
                 .map_err(|_| XServerFrontendRouteError::RegistryPoisoned)?;
             let confined = if pointer {
-                authority.explicit_pointer_grab(namespace).is_some()
+                confined_by_pointer_grab
             } else {
                 authority.keyboard_grab(namespace).is_some()
             };
