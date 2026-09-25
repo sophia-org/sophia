@@ -253,11 +253,72 @@ covers a 1.5 scale head. Mirrored heads settle ownership in the
 preview-only production test, which flips the sibling head before the
 primary.
 
-Stated rather than tested: a source commit damages each instance's whole
-visible rectangle rather than the source's damage scaled into the
-destination. That is the same whole-placement policy ordinary surfaces
-follow in the snapshot. Sampling under scaling is nearest texel on the CPU
-path and the native shader's filter on the GPU path. The two agree
-exactly only at identity scale (a test covers opacity 1000). Scaled
-equivalence needs a native renderer run, and headless evidence does not
-establish physical GPU/KMS behaviour.
+## Scaled sampling: what is controlled headlessly and what is not
+
+The native renderer already has a headless reference model.
+`crates/sophia-renderer-native-egl/tests/sampling.rs` reads
+`composition.frag` and `sharp_reconstruction.frag` as text, mirrors them
+in Rust (`finish_sample`, Catmull-Rom reconstruction in linear light,
+unfiltered texel fetches), and pins which sampling each source-to-target
+size selects (`native_composition_sampling`: exact nearest at identity,
+sharp reconstruction when scaled). `tools/check_shaders.sh` compiles the
+same GLSL. None of this needs a GPU.
+
+- **Opacity.** The CPU instance path is cross-checked against that model.
+  `identity_scale_opacity_matches_the_native_reference_model` composes the
+  model's own `finish_sample` cases (opaque XRGB, clamped premultiplied
+  ARGB, zero alpha) and matches its values to within one step of byte
+  rounding. At identity scale and full opacity the CPU instance is also
+  byte-identical to an ordinary CPU layer.
+- **Scaled sampling.** Not equivalent. At any scale other than identity,
+  native reconstructs with Catmull-Rom in linear light, while the CPU
+  instance path takes the nearest texel in gamma space. CPU and native
+  pixels of a scaled instance differ by design today. This is a known
+  divergence, not an accepted or untested equivalence. Closing it headlessly means porting the reference reconstruction into
+  the CPU scaled draw and testing it against the model, a t244 follow-up
+  not yet admitted. Until then, the CPU path, the software fallback and
+  the mirror bootstrap, draws scaled previews coarser than native.
+- **Physical limit.** Whether the GPU's output on real hardware matches
+  the reference model is a physical question. The model, the shader text
+  contracts and shader compilation constrain it without proving it. No
+  physical run is claimed here.
+
+A source commit damages each instance's whole visible rectangle rather
+than the source's damage scaled into the destination. That is the same
+whole-placement policy ordinary surfaces follow in the snapshot.
+
+## Incident: the real-card smoke ran during a suite
+
+On 2026-09-25, two `cargo test --offline -p sophia-backend-live
+--all-features` runs from this worktree executed
+`atomic_scanout_hardware_smoke`, the real primary-card atomic scanout
+smoke, while the operator's live session on `:77` held the card.
+
+- **Trigger.** The live session's launch command exports
+  `SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1` (its parent process runs
+  `env ... SOPHIA_RUN_REAL_ATOMIC_SCANOUT_SMOKE=1 ... sophia session run
+  --display=:77 --native-scanout ...`). The agent's shell inherits it, and
+  those two commands did not clear it. The gate chains and other suite
+  commands that day did unset it.
+- **Source.** Both runs built the tree committed as 934aab9c ("Draw WM
+  regions, replace applications and stamp presented publications"). The
+  first ran just before that commit, on the identical working tree. The
+  second was a rerun on the committed tree to identify the failures. The
+  test binary `libdrm_events_feature-1b36adee45dbaf8c` was built at
+  09:11:17 -0400.
+- **Outcome.** In both runs the child test
+  `native_atomic_scanout_real_primary_card_child` failed its assertion
+  that the smoke evidence status is `Passed`, with `left:
+  AtomicSubmitFailed`. The parent test
+  `native_atomic_scanout_smokes_real_primary_card_when_enabled` reported
+  `real atomic scanout smoke child failed with status exit status: 101`.
+  The atomic submit was refused because the live session holds the card,
+  and the `:77` session process was still running afterwards. The full
+  output of the runs was not saved; the lines quoted here are the
+  captured excerpt.
+- **Correction.** Removing the flag alone is not isolation. Backend and
+  session suites now run inside the same device-hidden sandbox that
+  `xtask native-protocol-family` uses for its stages: bwrap with a
+  minimal `/dev` (no DRM nodes), an empty `/run/user`, a private `/tmp`,
+  and the display, socket, config and smoke variables cleared. No further
+  physical probe or live-session action is part of this work.

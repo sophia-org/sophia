@@ -216,3 +216,83 @@ fn an_instance_scales_its_whole_source_into_its_destination_and_clips() {
         "outside the destination"
     );
 }
+
+/// The CPU instance path against the native path's headless reference
+/// model: the expected values of `finish_sample` in
+/// sophia-renderer-native-egl/tests/sampling.rs, which mirrors
+/// composition.frag (opaque XRGB ignores its padding byte, premultiplied
+/// colour clamps to alpha, then colour and alpha scale by the opacity).
+/// Composed over black, the frame holds the reference colour to within one
+/// step of byte rounding. This cross-checks opacity only, at identity
+/// scale: scaled sampling differs (see the investigation note a16e9iwc).
+#[test]
+fn identity_scale_opacity_matches_the_native_reference_model() {
+    let black = |bytes: &[u8], format: u32, opacity_millis: u16| {
+        let report = compose_live_cpu_display_list_frame(
+            FRAME,
+            &[LiveCpuCompositionElementRef::ScaledLayer {
+                layer: layer(
+                    bytes,
+                    Size {
+                        width: 1,
+                        height: 1,
+                    },
+                    format,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: 1,
+                        height: 1,
+                    },
+                ),
+                clip: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                opacity_millis,
+            }],
+            None,
+        )
+        .unwrap();
+        pixel(&report.frame.bytes, 0, 0)
+    };
+    // Reference rgba in [0, 1]; the frame stores BGRX.
+    let close = |frame: [u8; 4], reference: [f32; 3]| {
+        for (byte, expected) in [frame[2], frame[1], frame[0]].into_iter().zip(reference) {
+            let expected = expected * 255.0;
+            assert!(
+                (f32::from(byte) - expected).abs() <= 1.0,
+                "{frame:?} is not {reference:?}"
+            );
+        }
+    };
+    // finish_sample([1.0, 0.5, 0.25, 0.0], Opaque, 0.5) == [0.5, 0.25, 0.125, 0.5]
+    close(
+        black(
+            &[64, 128, 255, 0],
+            LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+            500,
+        ),
+        [0.5, 0.25, 0.125],
+    );
+    // finish_sample([0.8, 0.4, 0.2, 0.5], Premultiplied, 0.5) == [0.25, 0.2, 0.1, 0.25]
+    close(
+        black(
+            &[51, 102, 204, 128],
+            LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
+            500,
+        ),
+        [0.25, 0.2, 0.1],
+    );
+    // finish_sample([0.7, 0.2, 0.1, 0.0], Premultiplied, 1.0) == [0.0, 0.0, 0.0, 0.0]
+    close(
+        black(
+            &[26, 51, 179, 0],
+            LIVE_RENDERER_SCANOUT_FORMAT_ARGB8888,
+            1_000,
+        ),
+        [0.0, 0.0, 0.0],
+    );
+}
