@@ -10,7 +10,7 @@ fn dispatch_window_hierarchy_request(
     properties: &mut XPropertyTable,
 ) -> XDispatchResult {
     match request {
-                XWireRequest::DestroyWindow { window } => {
+                XWireRequest::Core(crate::XCoreRequest::DestroyWindow { window }) => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime
@@ -75,12 +75,12 @@ fn dispatch_window_hierarchy_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ReparentWindow {
+                XWireRequest::Core(crate::XCoreRequest::ReparentWindow {
                     window,
                     parent,
                     x,
                     y,
-                } => {
+                }) => {
                     let transaction = context.transaction;
                     let (response, outputs) = match runtime.reparent_window(
                         context.namespace,
@@ -160,7 +160,7 @@ fn dispatch_window_hierarchy_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::DestroySubwindows { window } => {
+                XWireRequest::Core(crate::XCoreRequest::DestroySubwindows { window }) => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime
@@ -208,7 +208,7 @@ fn dispatch_window_hierarchy_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::MapSubwindows { window, withheld } => {
+                XWireRequest::Core(crate::XCoreRequest::MapSubwindows { window, withheld }) => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime.map_direct_subwindows(
@@ -288,7 +288,7 @@ fn dispatch_window_hierarchy_request(
                 }
                 // Every mapped child, top to bottom, each with the UnmapNotify
                 // UnmapWindow would give it; the router adds the parent's copy.
-                XWireRequest::UnmapSubwindows { window } => {
+                XWireRequest::Core(crate::XCoreRequest::UnmapSubwindows { window }) => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime.unmap_direct_subwindows(context.namespace, window) {
@@ -326,7 +326,7 @@ fn dispatch_window_hierarchy_request(
                 // retained surfaces here, and raising one uncovers nothing
                 // that was lost. A redirected circulate never reaches this
                 // arm; the socket layer turns it into a CirculateRequest.
-                XWireRequest::CirculateWindow { window, direction } => {
+                XWireRequest::Core(crate::XCoreRequest::CirculateWindow { window, direction }) => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let moved = runtime
@@ -364,7 +364,7 @@ fn dispatch_window_hierarchy_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::UnmapWindow { window } => {
+                XWireRequest::Core(crate::XCoreRequest::UnmapWindow { window }) => {
                     let transaction = context.transaction;
                     let mut response = XAuthorityResponsePacket::accepted(transaction);
                     let outputs = match runtime.unmap_window(context.namespace, window) {

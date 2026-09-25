@@ -33,10 +33,10 @@ fn x11_dispatch_advertises_probe_backed_xkeyboard_extension() {
     .unwrap();
     assert_eq!(
         use_extension,
-        XWireRequest::XkbUseExtension {
+        XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbUseExtension {
             wanted_major: 1,
             wanted_minor: 0,
-        }
+        })
     );
     let use_extension = dispatch_x11_wire_request(
         dispatch_context(
@@ -144,7 +144,7 @@ fn xkb_state_names_and_state_subscription_use_standard_wire_layouts() {
         ],
     )
     .unwrap();
-    assert_eq!(get_state, XWireRequest::XkbGetState);
+    assert_eq!(get_state, XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbGetState));
     let state = dispatch_x11_wire_request(
         dispatch_context(namespace, 1, order, X_KEYBOARD_MAJOR_OPCODE),
         get_state,
@@ -174,7 +174,7 @@ fn xkb_state_names_and_state_subscription_use_standard_wire_layouts() {
         ],
     )
     .unwrap();
-    assert_eq!(names, XWireRequest::XkbGetNames { which: 0x3f });
+    assert_eq!(names, XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbGetNames { which: 0x3f }));
     let names = dispatch_x11_wire_request(
         dispatch_context(namespace, 2, order, X_KEYBOARD_MAJOR_OPCODE),
         names,
@@ -216,12 +216,12 @@ fn xkb_state_names_and_state_subscription_use_standard_wire_layouts() {
     .unwrap();
     assert_eq!(
         select,
-        XWireRequest::XkbSelectEvents {
+        XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbSelectEvents {
             affect_which: 4,
             clear: 0,
             select_all: 0,
             state_details: Some((1, 1)),
-        }
+        })
     );
 
     let notify = encode_x_client_event(
@@ -270,10 +270,10 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
     .unwrap();
     assert_eq!(
         version,
-        XWireRequest::GeQueryVersion {
+        XWireRequest::Extension(sophia_x_authority::XExtensionRequest::GeQueryVersion {
             major_version: 1,
             minor_version: 0
-        }
+        })
     );
     let encoded = dispatch_x11_wire_request(
         dispatch_context(
@@ -292,10 +292,10 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
 
     let xi_version = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
-        XWireRequest::XiQueryVersion {
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiQueryVersion {
             major_version: 2,
             minor_version: 3,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -312,7 +312,7 @@ fn xge_and_xi2_report_versioned_master_device_classes() {
 
     let devices = dispatch_x11_wire_request(
         dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
-        XWireRequest::XiQueryDevice { device_id: 0 },
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiQueryDevice { device_id: 0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -434,10 +434,10 @@ fn xkb_get_map_encodes_schema_aligned_types_symbols_and_modifier_map() {
             XByteOrder::LittleEndian,
             X_KEYBOARD_MAJOR_OPCODE,
         ),
-        XWireRequest::XkbGetMap {
+        XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbGetMap {
             full: 0x47,
             partial: 0,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -666,7 +666,7 @@ fn vidmode_reports_the_measured_modeline_not_the_nominal_rate() {
             XByteOrder::LittleEndian,
             X_XF86_VIDMODE_MAJOR_OPCODE,
         ),
-        XWireRequest::XF86VidModeGetModeLine { screen: 0 },
+        XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XF86VidModeGetModeLine { screen: 0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -704,7 +704,7 @@ fn vidmode_refuses_an_output_whose_timing_was_never_measured() {
                 XByteOrder::LittleEndian,
                 X_XF86_VIDMODE_MAJOR_OPCODE,
             ),
-            XWireRequest::XF86VidModeGetModeLine { screen },
+            XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XF86VidModeGetModeLine { screen }),
             &mut runtime,
             &mut atoms,
             &mut properties,
@@ -754,7 +754,7 @@ fn vidmode_answers_the_two_requests_mesa_needs_and_declines_the_rest() {
         )
     };
 
-    let version = dispatch(XWireRequest::XF86VidModeQueryVersion);
+    let version = dispatch(XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XF86VidModeQueryVersion));
     assert!(
         matches!(
             version.outputs.as_slice(),
@@ -767,10 +767,10 @@ fn vidmode_answers_the_two_requests_mesa_needs_and_declines_the_rest() {
         version.outputs
     );
 
-    let client_version = dispatch(XWireRequest::XF86VidModeSetClientVersion {
+    let client_version = dispatch(XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XF86VidModeSetClientVersion {
         major: 2,
         minor: 2,
-    });
+    }));
     assert!(
         client_version.outputs.is_empty(),
         "SetClientVersion must be accepted silently: {:?}",
@@ -781,7 +781,7 @@ fn vidmode_answers_the_two_requests_mesa_needs_and_declines_the_rest() {
     // defines it, so a server of that version has a dispatch entry for it and
     // owes BadImplementation; answering BadRequest would claim the request does
     // not exist at the version just negotiated.
-    let refused = dispatch(XWireRequest::XF86VidModeUnimplemented { minor_opcode: 10 });
+    let refused = dispatch(XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XF86VidModeUnimplemented { minor_opcode: 10 }));
     assert!(
         matches!(
             refused.outputs.as_slice(),
@@ -798,7 +798,7 @@ fn vidmode_answers_the_two_requests_mesa_needs_and_declines_the_rest() {
 
     // Past the last minor 2.2 defines, where a genuine server of this version
     // had no entry at all.
-    let unknown = dispatch(XWireRequest::XF86VidModeUnimplemented { minor_opcode: 200 });
+    let unknown = dispatch(XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XF86VidModeUnimplemented { minor_opcode: 200 }));
     assert!(
         matches!(
             unknown.outputs.as_slice(),
@@ -841,7 +841,7 @@ fn xc_misc_defaults_to_reporting_no_identifiers_rather_than_inventing_some() {
         )
     };
 
-    let version = dispatch(XWireRequest::XCMiscGetVersion { major: 1, minor: 1 });
+    let version = dispatch(XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XCMiscGetVersion { major: 1, minor: 1 }));
     assert!(
         matches!(
             version.outputs.as_slice(),
@@ -855,7 +855,7 @@ fn xc_misc_defaults_to_reporting_no_identifiers_rather_than_inventing_some() {
         version.outputs
     );
 
-    let range = dispatch(XWireRequest::XCMiscGetXIDRange);
+    let range = dispatch(XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XCMiscGetXIDRange));
     assert!(
         matches!(
             range.outputs.as_slice(),
@@ -871,7 +871,7 @@ fn xc_misc_defaults_to_reporting_no_identifiers_rather_than_inventing_some() {
 
     // Asking for four billion identifiers must not produce four billion
     // words in memory before anything has looked at the number.
-    let list = dispatch(XWireRequest::XCMiscGetXIDList { count: u32::MAX });
+    let list = dispatch(XWireRequest::Extension(sophia_x_authority::XExtensionRequest::XCMiscGetXIDList { count: u32::MAX }));
     match list.outputs.as_slice() {
         [XClientOutput::Reply(XClientReply::XCMiscGetXIDList { ids, .. })] => {
             assert!(ids.is_empty(), "{ids:?}");
@@ -892,7 +892,7 @@ fn xkb_level_names_are_real_atoms_because_a_client_may_ask_what_they_are_called(
     // level names, virtual modifier names.
     let reply = dispatch_x11_wire_request(
         dispatch_context(namespace, 9, order, X_KEYBOARD_MAJOR_OPCODE),
-        XWireRequest::XkbGetNames { which: 0x8c0 },
+        XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbGetNames { which: 0x8c0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -957,7 +957,7 @@ fn xkb_latch_lock_state_is_answered_when_the_state_it_asks_for_already_holds() {
     .unwrap();
     assert_eq!(
         request,
-        XWireRequest::XkbLatchLockState {
+        XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbLatchLockState {
             affect_mod_locks: 0,
             mod_locks: 0,
             lock_group: true,
@@ -966,7 +966,7 @@ fn xkb_latch_lock_state_is_answered_when_the_state_it_asks_for_already_holds() {
             mod_latches: 0,
             latch_group: false,
             group_latch: 0,
-        }
+        })
     );
 
     let mut runtime = XAuthorityRuntime::new();
@@ -1004,7 +1004,7 @@ fn xkb_latch_lock_state_refuses_a_group_and_a_modifier_this_keymap_has_not_got()
         )
     };
     let state = |lock_group, group_lock, affect_mod_locks, mod_locks| {
-        XWireRequest::XkbLatchLockState {
+        XWireRequest::Xkb(sophia_x_authority::XkbRequest::XkbLatchLockState {
             affect_mod_locks,
             mod_locks,
             lock_group,
@@ -1013,7 +1013,7 @@ fn xkb_latch_lock_state_refuses_a_group_and_a_modifier_this_keymap_has_not_got()
             mod_latches: 0,
             latch_group: false,
             group_latch: 0,
-        }
+        })
     };
 
     // A second group is out of range for a keymap that advertises one.

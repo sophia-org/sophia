@@ -7,49 +7,49 @@ fn dispatch_core_input_discovery_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::GetInputFocus
-            | XWireRequest::SetInputFocus { .. }
-            | XWireRequest::GetModifierMapping
-            | XWireRequest::GetPointerMapping
-            | XWireRequest::GetKeyboardMapping { .. }
-            | XWireRequest::GetKeyboardControl
-            | XWireRequest::SetPointerMapping { .. }
-            | XWireRequest::ChangeKeyboardMapping { .. }
-            | XWireRequest::SetModifierMapping { .. }
-            | XWireRequest::QueryKeymap
-            | XWireRequest::ChangeKeyboardControl(_)
-            | XWireRequest::ChangePointerControl { .. }
-            | XWireRequest::GetPointerControl
-            | XWireRequest::SetScreenSaver { .. }
-            | XWireRequest::GetScreenSaver
-            | XWireRequest::GetMotionEvents { .. }
-            | XWireRequest::ListHosts
-            | XWireRequest::ChangeHosts
-            | XWireRequest::SetAccessControl
-            | XWireRequest::Bell
-            | XWireRequest::ForceScreenSaver { .. }
-            | XWireRequest::WarpPointer { .. }
-            | XWireRequest::TranslateCoordinates { .. }
-            | XWireRequest::QueryPointer { .. }
-            | XWireRequest::QueryExtension { .. }
-            | XWireRequest::ListExtensions
-            | XWireRequest::NoOperation
-            | XWireRequest::QueryBestSize { .. }
-            | XWireRequest::QueryColors { .. }
-            | XWireRequest::CreateColormap { .. }
-            | XWireRequest::FreeColormap { .. }
-            | XWireRequest::ColormapRequest { .. }
-            | XWireRequest::FreeColors { .. }
-            | XWireRequest::CopyColormapAndFree { .. }
-            | XWireRequest::ListInstalledColormaps { .. }
-            | XWireRequest::AllocNamedColor { .. }
-            | XWireRequest::LookupColor { .. }
-            | XWireRequest::AllocColor { .. }
+            XWireRequest::Core(crate::XCoreRequest::GetInputFocus)
+            | XWireRequest::Core(crate::XCoreRequest::SetInputFocus { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetModifierMapping)
+            | XWireRequest::Core(crate::XCoreRequest::GetPointerMapping)
+            | XWireRequest::Core(crate::XCoreRequest::GetKeyboardMapping { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetKeyboardControl)
+            | XWireRequest::Core(crate::XCoreRequest::SetPointerMapping { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ChangeKeyboardMapping { .. })
+            | XWireRequest::Core(crate::XCoreRequest::SetModifierMapping { .. })
+            | XWireRequest::Core(crate::XCoreRequest::QueryKeymap)
+            | XWireRequest::Core(crate::XCoreRequest::ChangeKeyboardControl(_))
+            | XWireRequest::Core(crate::XCoreRequest::ChangePointerControl { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetPointerControl)
+            | XWireRequest::Core(crate::XCoreRequest::SetScreenSaver { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetScreenSaver)
+            | XWireRequest::Core(crate::XCoreRequest::GetMotionEvents { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ListHosts)
+            | XWireRequest::Core(crate::XCoreRequest::ChangeHosts)
+            | XWireRequest::Core(crate::XCoreRequest::SetAccessControl)
+            | XWireRequest::Core(crate::XCoreRequest::Bell)
+            | XWireRequest::Core(crate::XCoreRequest::ForceScreenSaver { .. })
+            | XWireRequest::Core(crate::XCoreRequest::WarpPointer { .. })
+            | XWireRequest::Core(crate::XCoreRequest::TranslateCoordinates { .. })
+            | XWireRequest::Core(crate::XCoreRequest::QueryPointer { .. })
+            | XWireRequest::Core(crate::XCoreRequest::QueryExtension { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ListExtensions)
+            | XWireRequest::Core(crate::XCoreRequest::NoOperation)
+            | XWireRequest::Core(crate::XCoreRequest::QueryBestSize { .. })
+            | XWireRequest::Core(crate::XCoreRequest::QueryColors { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CreateColormap { .. })
+            | XWireRequest::Core(crate::XCoreRequest::FreeColormap { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ColormapRequest { .. })
+            | XWireRequest::Core(crate::XCoreRequest::FreeColors { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CopyColormapAndFree { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ListInstalledColormaps { .. })
+            | XWireRequest::Core(crate::XCoreRequest::AllocNamedColor { .. })
+            | XWireRequest::Core(crate::XCoreRequest::LookupColor { .. })
+            | XWireRequest::Core(crate::XCoreRequest::AllocColor { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::GetInputFocus => {
+                XWireRequest::Core(crate::XCoreRequest::GetInputFocus) => {
                     let (focus, revert_to) = runtime.input_focus(context.namespace);
                     XDispatchResult {
                         response: None,
@@ -61,11 +61,11 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::SetInputFocus {
+                XWireRequest::Core(crate::XCoreRequest::SetInputFocus {
                     focus,
                     revert_to,
                     time,
-                } => {
+                }) => {
                     let (previous, _) = runtime.input_focus(context.namespace);
                     let applied =
                         x11_apply_focus_request(runtime, context, focus, revert_to, time);
@@ -76,13 +76,13 @@ fn dispatch_core_input_discovery_request(
                     };
                     input_focus_dispatch_result(context, focus, applied, events)
                 }
-                request @ (XWireRequest::GetModifierMapping | XWireRequest::GetPointerMapping | XWireRequest::GetKeyboardMapping { .. } | XWireRequest::GetKeyboardControl | XWireRequest::ChangeKeyboardControl(..) | XWireRequest::ChangePointerControl { .. } | XWireRequest::GetPointerControl | XWireRequest::SetScreenSaver { .. } | XWireRequest::GetScreenSaver | XWireRequest::GetMotionEvents { .. } | XWireRequest::ListHosts | XWireRequest::ChangeHosts | XWireRequest::SetAccessControl | XWireRequest::SetPointerMapping { .. } | XWireRequest::ChangeKeyboardMapping { .. } | XWireRequest::SetModifierMapping { .. } | XWireRequest::QueryKeymap) => dispatch_input_control_request(context, request, runtime, _atoms, _properties),
-                XWireRequest::Bell => XDispatchResult {
+                request @ (XWireRequest::Core(crate::XCoreRequest::GetModifierMapping) | XWireRequest::Core(crate::XCoreRequest::GetPointerMapping) | XWireRequest::Core(crate::XCoreRequest::GetKeyboardMapping { .. }) | XWireRequest::Core(crate::XCoreRequest::GetKeyboardControl) | XWireRequest::Core(crate::XCoreRequest::ChangeKeyboardControl(..)) | XWireRequest::Core(crate::XCoreRequest::ChangePointerControl { .. }) | XWireRequest::Core(crate::XCoreRequest::GetPointerControl) | XWireRequest::Core(crate::XCoreRequest::SetScreenSaver { .. }) | XWireRequest::Core(crate::XCoreRequest::GetScreenSaver) | XWireRequest::Core(crate::XCoreRequest::GetMotionEvents { .. }) | XWireRequest::Core(crate::XCoreRequest::ListHosts) | XWireRequest::Core(crate::XCoreRequest::ChangeHosts) | XWireRequest::Core(crate::XCoreRequest::SetAccessControl) | XWireRequest::Core(crate::XCoreRequest::SetPointerMapping { .. }) | XWireRequest::Core(crate::XCoreRequest::ChangeKeyboardMapping { .. }) | XWireRequest::Core(crate::XCoreRequest::SetModifierMapping { .. }) | XWireRequest::Core(crate::XCoreRequest::QueryKeymap)) => dispatch_input_control_request(context, request, runtime, _atoms, _properties),
+                XWireRequest::Core(crate::XCoreRequest::Bell) => XDispatchResult {
                     response: None,
                     outputs: Vec::new(),
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::ForceScreenSaver { mode } => {
+                XWireRequest::Core(crate::XCoreRequest::ForceScreenSaver { mode }) => {
                     // Reset is 0 and Activate is 1. This host blanks nothing
                     // and has no idle timer, so both are accepted and move
                     // no state; the suite's per-test reset needs exactly
@@ -106,12 +106,12 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::TranslateCoordinates {
+                XWireRequest::Core(crate::XCoreRequest::TranslateCoordinates {
                     source,
                     destination,
                     src_x,
                     src_y,
-                } => {
+                }) => {
                     let output =
                         if let Err(error) = runtime.validate_drawable_access(context.namespace, source) {
                             XClientOutput::Error(x_error_from_runtime(
@@ -188,7 +188,7 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::WarpPointer {
+                XWireRequest::Core(crate::XCoreRequest::WarpPointer {
                     source,
                     destination,
                     src_x,
@@ -197,7 +197,7 @@ fn dispatch_core_input_discovery_request(
                     src_height,
                     dst_x,
                     dst_y,
-                } => {
+                }) => {
                     // Beside QueryPointer, which reads the position this
                     // writes. A warp that names a window that does not exist
                     // is a Window error; one whose source rectangle does not
@@ -230,7 +230,7 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::QueryPointer { window } => {
+                XWireRequest::Core(crate::XCoreRequest::QueryPointer { window }) => {
                     let output = match runtime.query_pointer(context.namespace, window) {
                         Ok(pointer) => XClientOutput::Reply(XClientReply::QueryPointer {
                             sequence: context.sequence,
@@ -252,7 +252,7 @@ fn dispatch_core_input_discovery_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::QueryExtension { name } => {
+                XWireRequest::Core(crate::XCoreRequest::QueryExtension { name }) => {
                     let extension = extension_query_result(&name, context.injection);
                     if !extension.present {
                         // The only record of what this server was asked for and
@@ -288,12 +288,12 @@ fn dispatch_core_input_discovery_request(
                 // consumes a sequence number, which the connection assigns
                 // before dispatch, so the request after it completes against
                 // the sequence the client expects.
-                XWireRequest::NoOperation => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::NoOperation) => XDispatchResult {
                     response: None,
                     outputs: Vec::new(),
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::ListExtensions => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::ListExtensions) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::ListExtensions {
                         sequence: context.sequence,
@@ -301,12 +301,12 @@ fn dispatch_core_input_discovery_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::QueryBestSize {
+                XWireRequest::Core(crate::XCoreRequest::QueryBestSize {
                     class,
                     drawable,
                     width,
                     height,
-                } => {
+                }) => {
                     // The drawable must exist, and a tile or stipple size is
                     // only meaningful for one with pixels: an InputOnly
                     // window is a Match error for those two classes.
@@ -337,7 +337,7 @@ fn dispatch_core_input_discovery_request(
                         }
                     }
                 }
-                request @ (XWireRequest::QueryColors { .. } | XWireRequest::CreateColormap { .. } | XWireRequest::CopyColormapAndFree { .. } | XWireRequest::ListInstalledColormaps { .. } | XWireRequest::FreeColors { .. } | XWireRequest::ColormapRequest { .. } | XWireRequest::FreeColormap { .. } | XWireRequest::AllocNamedColor { .. } | XWireRequest::LookupColor { .. } | XWireRequest::AllocColor { .. }) => dispatch_colormap_request(context, request, runtime, _atoms, _properties),
+                request @ (XWireRequest::Core(crate::XCoreRequest::QueryColors { .. }) | XWireRequest::Core(crate::XCoreRequest::CreateColormap { .. }) | XWireRequest::Core(crate::XCoreRequest::CopyColormapAndFree { .. }) | XWireRequest::Core(crate::XCoreRequest::ListInstalledColormaps { .. }) | XWireRequest::Core(crate::XCoreRequest::FreeColors { .. }) | XWireRequest::Core(crate::XCoreRequest::ColormapRequest { .. }) | XWireRequest::Core(crate::XCoreRequest::FreeColormap { .. }) | XWireRequest::Core(crate::XCoreRequest::AllocNamedColor { .. }) | XWireRequest::Core(crate::XCoreRequest::LookupColor { .. }) | XWireRequest::Core(crate::XCoreRequest::AllocColor { .. })) => dispatch_colormap_request(context, request, runtime, _atoms, _properties),
         _ => unreachable!("request family checked before dispatch"),
     })
 }

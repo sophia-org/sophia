@@ -7,30 +7,30 @@ fn dispatch_core_drawing_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::PolyFillRectangle { .. }
-            | XWireRequest::CopyArea { .. }
-            | XWireRequest::PolyLine { .. }
-            | XWireRequest::PolyRectangle { .. }
-            | XWireRequest::PolySegment { .. }
-            | XWireRequest::PolyFillArc { .. }
-            | XWireRequest::PolyArc { .. }
-            | XWireRequest::PolyPoint { .. }
-            | XWireRequest::CopyPlane { .. }
-            | XWireRequest::PolyText8 { .. }
-            | XWireRequest::ImageText8 { .. }
-            | XWireRequest::PolyText16 { .. }
-            | XWireRequest::ImageText16 { .. }
-            | XWireRequest::FillPoly { .. }
-            | XWireRequest::PutImage { .. }
+        XWireRequest::Core(crate::XCoreRequest::PolyFillRectangle { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CopyArea { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolyLine { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolyRectangle { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolySegment { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolyFillArc { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolyArc { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolyPoint { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CopyPlane { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolyText8 { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ImageText8 { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PolyText16 { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ImageText16 { .. })
+            | XWireRequest::Core(crate::XCoreRequest::FillPoly { .. })
+            | XWireRequest::Core(crate::XCoreRequest::PutImage { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-        XWireRequest::PolyFillRectangle {
+        XWireRequest::Core(crate::XCoreRequest::PolyFillRectangle {
             drawable,
             gc,
             rectangles,
-        } => {
+        }) => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
                 Ok(values) => values,
@@ -67,11 +67,11 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::PolyRectangle {
+        XWireRequest::Core(crate::XCoreRequest::PolyRectangle {
             drawable,
             gc,
             rectangles,
-        } => {
+        }) => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
                 Ok(values) => values,
@@ -104,7 +104,7 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::CopyArea {
+        XWireRequest::Core(crate::XCoreRequest::CopyArea {
             source,
             destination,
             gc,
@@ -114,7 +114,7 @@ fn dispatch_core_drawing_request(
             dst_y,
             width,
             height,
-        } => {
+        }) => {
             let transaction = context.transaction;
             if let Err(error) = runtime.validate_drawable_access(context.namespace, source) {
                 return Handled(core_draw_validation_error(
@@ -204,11 +204,11 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::PolyLine {
+        XWireRequest::Core(crate::XCoreRequest::PolyLine {
             drawable,
             gc,
             points,
-        } => {
+        }) => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
                 Ok(values) => values,
@@ -241,11 +241,11 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::PolySegment {
+        XWireRequest::Core(crate::XCoreRequest::PolySegment {
             drawable,
             gc,
             segments,
-        } => {
+        }) => {
             // Each segment is its own two-point line: disjoint, so the ends do
             // not join. xterm draws the VT100 line-drawing characters with
             // this request when the font has no glyph for them, which is why
@@ -284,7 +284,7 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::PolyFillArc { drawable, gc, arcs } => {
+        XWireRequest::Core(crate::XCoreRequest::PolyFillArc { drawable, gc, arcs }) => {
             // `miPolyFillArc`: the pixels whose centres lie inside the
             // ellipse, clipped to a pie slice or a chord as the graphics
             // context's arc mode says.
@@ -301,7 +301,7 @@ fn dispatch_core_drawing_request(
             let spans = crate::software::geometry::fill_arc::fill(&arcs, pie_slice);
             core_rectangle_fill(context, runtime, drawable, &spans, &values)
         }
-        XWireRequest::PolyArc { drawable, gc, arcs } => {
+        XWireRequest::Core(crate::XCoreRequest::PolyArc { drawable, gc, arcs }) => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
                 Ok(values) => values,
@@ -336,7 +336,7 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::CopyPlane {
+        XWireRequest::Core(crate::XCoreRequest::CopyPlane {
             source,
             destination,
             gc,
@@ -347,7 +347,7 @@ fn dispatch_core_drawing_request(
             width,
             height,
             bit_plane,
-        } => {
+        }) => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, destination, gc) {
                 Ok(values) => values,
@@ -430,12 +430,12 @@ fn dispatch_core_drawing_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::PolyPoint {
+        XWireRequest::Core(crate::XCoreRequest::PolyPoint {
             drawable,
             gc,
             coordinate_mode,
             points,
-        } => {
+        }) => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
                 Ok(values) => values,
@@ -459,27 +459,27 @@ fn dispatch_core_drawing_request(
                 .collect();
             core_rectangle_fill(context, runtime, drawable, &rectangles, &values)
         }
-        XWireRequest::PolyText8 {
+        XWireRequest::Core(crate::XCoreRequest::PolyText8 {
             drawable,
             gc,
             x,
             y,
             items,
-        }
-        | XWireRequest::PolyText16 {
+        })
+        | XWireRequest::Core(crate::XCoreRequest::PolyText16 {
             drawable,
             gc,
             x,
             y,
             items,
-        } => dispatch_poly_text(context, runtime, drawable, gc, x, y, &items),
-        XWireRequest::ImageText8 {
+        }) => dispatch_poly_text(context, runtime, drawable, gc, x, y, &items),
+        XWireRequest::Core(crate::XCoreRequest::ImageText8 {
             drawable,
             gc,
             x,
             y,
             text,
-        } => {
+        }) => {
             // An 8-bit request names characters whose high byte is zero, which
             // is how the server reads it against a two-byte face as well.
             let chars: Vec<u16> = text.iter().map(|byte| u16::from(*byte)).collect();
@@ -497,13 +497,13 @@ fn dispatch_core_drawing_request(
                 },
             )
         }
-        XWireRequest::ImageText16 {
+        XWireRequest::Core(crate::XCoreRequest::ImageText16 {
             drawable,
             gc,
             x,
             y,
             chars,
-        } => dispatch_text_draw(
+        }) => dispatch_text_draw(
             context,
             runtime,
             drawable,
@@ -518,13 +518,13 @@ fn dispatch_core_drawing_request(
                 font: crate::builtin_font_handle(),
             },
         ),
-        XWireRequest::FillPoly {
+        XWireRequest::Core(crate::XCoreRequest::FillPoly {
             drawable,
             gc,
             shape,
             coordinate_mode,
             points,
-        } => {
+        }) => {
             let transaction = context.transaction;
             let values = match core_draw_gc(context, runtime, drawable, gc) {
                 Ok(values) => values,
@@ -545,7 +545,7 @@ fn dispatch_core_drawing_request(
             };
             core_rectangle_fill(context, runtime, drawable, &spans, &values)
         }
-        XWireRequest::PutImage {
+        XWireRequest::Core(crate::XCoreRequest::PutImage {
             format,
             drawable,
             gc,
@@ -556,7 +556,7 @@ fn dispatch_core_drawing_request(
             left_pad,
             depth,
             data,
-        } => {
+        }) => {
             let transaction = context.transaction;
             if let Err(error) = runtime.validate_drawable_access(context.namespace, drawable) {
                 return Handled(core_draw_validation_error(

@@ -69,10 +69,10 @@ fn xtest_get_version_carries_what_was_asked_in_both_byte_orders() {
         // say what a client asked for.
         assert_eq!(
             decode_xtest_in(byte_order, &request),
-            XWireRequest::XTestGetVersion {
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestGetVersion {
                 major_version: 2,
                 minor_version: 0x0102,
-            },
+            }),
             "{byte_order:?} must read the requested minor in its own order"
         );
     }
@@ -87,10 +87,10 @@ fn xtest_compare_cursor_keeps_none_and_current_cursor_raw() {
             body.extend_from_slice(&u32_bytes(byte_order, cursor));
             let request = xtest_request(byte_order, X_TEST_COMPARE_CURSOR_MINOR_OPCODE, &body);
 
-            let XWireRequest::XTestCompareCursor {
+            let XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestCompareCursor {
                 window,
                 cursor: decoded,
-            } = decode_xtest_in(byte_order, &request)
+            }) = decode_xtest_in(byte_order, &request)
             else {
                 panic!("CompareCursor must decode to its own variant");
             };
@@ -112,7 +112,7 @@ fn xtest_fake_input_decodes_every_field_in_both_byte_orders() {
 
         assert_eq!(
             decode_xtest_in(byte_order, &request),
-            XWireRequest::XTestFakeInput {
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestFakeInput {
                 event_type: 6,
                 sent_event_type: 6,
                 detail: X_TEST_MOTION_RELATIVE,
@@ -123,7 +123,7 @@ fn xtest_fake_input_decodes_every_field_in_both_byte_orders() {
                 root_x: -7,
                 root_y: 9,
                 events: 1,
-            },
+            }),
             "{byte_order:?}"
         );
     }
@@ -135,11 +135,11 @@ fn xtest_fake_input_masks_the_send_event_bit_but_remembers_it() {
         let body = fake_input_body(byte_order, 0x82, 38, 0, 0, 0, 0);
         let request = xtest_request(byte_order, X_TEST_FAKE_INPUT_MINOR_OPCODE, &body);
 
-        let XWireRequest::XTestFakeInput {
+        let XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestFakeInput {
             event_type,
             sent_event_type,
             ..
-        } = decode_xtest_in(byte_order, &request)
+        }) = decode_xtest_in(byte_order, &request)
         else {
             panic!("FakeInput must decode to its own variant");
         };
@@ -159,7 +159,7 @@ fn xtest_fake_input_counts_event_records_without_judging_them() {
         body.extend_from_slice(&fake_input_body(byte_order, 0, 0, 0, 0, 0, 0));
         let request = xtest_request(byte_order, X_TEST_FAKE_INPUT_MINOR_OPCODE, &body);
 
-        let XWireRequest::XTestFakeInput { events, .. } = decode_xtest_in(byte_order, &request)
+        let XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestFakeInput { events, .. }) = decode_xtest_in(byte_order, &request)
         else {
             panic!("FakeInput must decode to its own variant");
         };
@@ -227,7 +227,7 @@ fn xtest_grab_control_carries_a_non_boolean_rather_than_refusing_it() {
         // rather than here, where a parse either succeeds or does not.
         assert_eq!(
             decode_xtest_in(byte_order, &request),
-            XWireRequest::XTestGrabControl { impervious: 2 }
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestGrabControl { impervious: 2 })
         );
     }
 }
@@ -241,7 +241,7 @@ fn xtest_minors_the_extension_does_not_define_decode_rather_than_fail() {
         // parse failure would deny it.
         assert_eq!(
             decode_xtest_in(byte_order, &request),
-            XWireRequest::XTestUnimplemented { minor_opcode: 9 }
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestUnimplemented { minor_opcode: 9 })
         );
     }
 }
@@ -256,21 +256,21 @@ fn xtest_refuses_an_unadmitted_client_with_access_not_request() {
     for (minor, request) in [
         (
             X_TEST_GET_VERSION_MINOR_OPCODE,
-            XWireRequest::XTestGetVersion {
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestGetVersion {
                 major_version: 2,
                 minor_version: 2,
-            },
+            }),
         ),
         (
             X_TEST_COMPARE_CURSOR_MINOR_OPCODE,
-            XWireRequest::XTestCompareCursor {
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestCompareCursor {
                 window: XResourceId::new(0x0022_0001, 1),
                 cursor: 0,
-            },
+            }),
         ),
         (
             X_TEST_FAKE_INPUT_MINOR_OPCODE,
-            XWireRequest::XTestFakeInput {
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestFakeInput {
                 event_type: 2,
                 sent_event_type: 2,
                 detail: 38,
@@ -279,13 +279,13 @@ fn xtest_refuses_an_unadmitted_client_with_access_not_request() {
                 root_x: 0,
                 root_y: 0,
                 events: 1,
-            },
+            }),
         ),
         (
             X_TEST_GRAB_CONTROL_MINOR_OPCODE,
-            XWireRequest::XTestGrabControl { impervious: 1 },
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestGrabControl { impervious: 1 }),
         ),
-        (17, XWireRequest::XTestUnimplemented { minor_opcode: 17 }),
+        (17, XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestUnimplemented { minor_opcode: 17 })),
     ] {
         let result = dispatch_x11_wire_request(
             dispatch_context(namespace, 90, XByteOrder::LittleEndian, X_TEST_MAJOR_OPCODE),
@@ -327,10 +327,10 @@ fn xtest_answers_an_admitted_client_a_constant_version() {
     for requested in [(1u8, 0u16), (2, 2), (255, 65535)] {
         let result = dispatch_x11_wire_request(
             admitted,
-            XWireRequest::XTestGetVersion {
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestGetVersion {
                 major_version: requested.0,
                 minor_version: requested.1,
-            },
+            }),
             &mut runtime,
             &mut atoms,
             &mut properties,
@@ -367,7 +367,7 @@ fn xtest_tells_an_admitted_client_an_undefined_minor_does_not_exist() {
 
     let result = dispatch_x11_wire_request(
         admitted,
-        XWireRequest::XTestUnimplemented { minor_opcode: 9 },
+        XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestUnimplemented { minor_opcode: 9 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -391,7 +391,7 @@ fn admitted_context(sequence: u16, byte_order: XByteOrder) -> XDispatchContext {
 }
 
 fn fake_input_request(event_type: u8, detail: u8, root: u32, events: usize) -> XWireRequest {
-    XWireRequest::XTestFakeInput {
+    XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestFakeInput {
         event_type: event_type & X_TEST_EVENT_TYPE_MASK,
         sent_event_type: event_type,
         detail,
@@ -400,7 +400,7 @@ fn fake_input_request(event_type: u8, detail: u8, root: u32, events: usize) -> X
         root_x: 0,
         root_y: 0,
         events,
-    }
+    })
 }
 
 #[test]
@@ -532,7 +532,7 @@ fn xtest_grab_control_takes_a_strict_boolean() {
         for impervious in [0u8, 1] {
             let result = dispatch_x11_wire_request(
                 admitted_context(44, byte_order),
-                XWireRequest::XTestGrabControl { impervious },
+                XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestGrabControl { impervious }),
                 &mut runtime,
                 &mut atoms,
                 &mut properties,
@@ -541,7 +541,7 @@ fn xtest_grab_control_takes_a_strict_boolean() {
         }
         let result = dispatch_x11_wire_request(
             admitted_context(45, byte_order),
-            XWireRequest::XTestGrabControl { impervious: 2 },
+            XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestGrabControl { impervious: 2 }),
             &mut runtime,
             &mut atoms,
             &mut properties,
@@ -611,10 +611,10 @@ fn xtest_compare_cursor_answers_the_windows_own_cursor_and_none() {
         let mut compare = |sequence: u16, window: u32, cursor: u32| {
             dispatch_x11_wire_request(
                 admitted_context(sequence, byte_order),
-                XWireRequest::XTestCompareCursor {
+                XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestCompareCursor {
                     window: XResourceId::new(u64::from(window), 1),
                     cursor,
-                },
+                }),
                 &mut runtime,
                 &mut atoms,
                 &mut properties,
@@ -678,10 +678,10 @@ fn xtest_compare_cursor_refuses_the_window_before_the_cursor() {
         ] {
             let result = dispatch_x11_wire_request(
                 admitted_context(53, byte_order),
-                XWireRequest::XTestCompareCursor {
+                XWireRequest::XTest(sophia_x_authority::XTestRequest::XTestCompareCursor {
                     window: XResourceId::new(u64::from(named_window), 1),
                     cursor: named_cursor,
-                },
+                }),
                 &mut runtime,
                 &mut atoms,
                 &mut properties,
@@ -704,7 +704,7 @@ fn the_cursor_attribute_is_decoded_in_both_orders() {
         let bytes = change_window_cursor_request(byte_order, 0x0026_0001, 0x0026_0003);
         let request = decode_x11_core_request(context(namespace, 1, byte_order), &bytes)
             .expect("a well-formed attribute request");
-        let XWireRequest::ChangeWindowAttributes { cursor, window, .. } = request else {
+        let XWireRequest::Core(sophia_x_authority::XCoreRequest::ChangeWindowAttributes { cursor, window, .. }) = request else {
             panic!("{byte_order:?} decoded the wrong request");
         };
         // Raw, because zero is None in this attribute rather than a resource.

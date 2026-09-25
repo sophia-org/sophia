@@ -20,13 +20,13 @@ fn decode_query_extension(
         expected_at_least: expected_len,
         actual: bytes.len(),
     })?;
-    Ok(XWireRequest::QueryExtension {
+    Ok(XWireRequest::Core(crate::XCoreRequest::QueryExtension {
         name: name.to_owned(),
-    })
+    }))
 }
 
 fn decode_list_extensions(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_LIST_EXTENSIONS, X_LIST_EXTENSIONS_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::ListExtensions)
+    Ok(XWireRequest::Core(crate::XCoreRequest::ListExtensions))
 }
 

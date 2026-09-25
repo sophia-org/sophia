@@ -5,20 +5,20 @@ fn dispatch_dri3_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::Dri3Open { .. }
-            | XWireRequest::Dri3PixmapFromBuffer { .. }
-            | XWireRequest::Dri3PixmapFromBuffers { .. }
-            | XWireRequest::Dri3FenceFromFd { .. }
-            | XWireRequest::Dri3GetSupportedModifiers { .. }
-            | XWireRequest::Dri3SetDrmDeviceInUse { .. }
-            | XWireRequest::Dri3BufferFromPixmap { .. }
-            | XWireRequest::Dri3BuffersFromPixmap { .. }
-            | XWireRequest::Dri3Unimplemented { .. }
+            XWireRequest::Dri3(crate::XDri3Request::Dri3Open { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffer { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffers { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3FenceFromFd { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3GetSupportedModifiers { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3SetDrmDeviceInUse { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3BufferFromPixmap { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3BuffersFromPixmap { .. })
+            | XWireRequest::Dri3(crate::XDri3Request::Dri3Unimplemented { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::Dri3Open { drawable, provider } => {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3Open { drawable, provider }) => {
                     let outputs = if provider != 0 {
                         vec![XClientOutput::Error(crate::XClientError {
                             code: XErrorCode::BadValue,
@@ -47,7 +47,7 @@ fn dispatch_dri3_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::Dri3PixmapFromBuffer {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffer {
                     pixmap,
                     drawable,
                     size_bytes,
@@ -56,7 +56,7 @@ fn dispatch_dri3_request(
                     stride,
                     depth,
                     bits_per_pixel,
-                } => {
+                }) => {
                     let outputs =
                         if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, drawable) {
                             vec![XClientOutput::Error(x_error_from_runtime(
@@ -91,7 +91,7 @@ fn dispatch_dri3_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::Dri3PixmapFromBuffers {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffers {
                     pixmap,
                     window,
                     num_buffers,
@@ -102,7 +102,7 @@ fn dispatch_dri3_request(
                     depth,
                     bits_per_pixel,
                     modifier,
-                } => {
+                }) => {
                     let outputs =
                         if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, window) {
                             vec![XClientOutput::Error(x_error_from_runtime(
@@ -139,9 +139,9 @@ fn dispatch_dri3_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::Dri3FenceFromFd {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3FenceFromFd {
                     drawable, fence, ..
-                } => {
+                }) => {
                     let outputs =
                         if let Err(error) = runtime.validate_dri3_drawable_access(context.namespace, drawable) {
                             vec![XClientOutput::Error(x_error_from_runtime(
@@ -168,7 +168,7 @@ fn dispatch_dri3_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::Dri3BuffersFromPixmap { pixmap } => {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3BuffersFromPixmap { pixmap }) => {
                     let outputs = match runtime
                         .dri3_pixmap_buffers(context.namespace, pixmap)
                     {
@@ -213,7 +213,7 @@ fn dispatch_dri3_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::Dri3BufferFromPixmap { pixmap } => {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3BufferFromPixmap { pixmap }) => {
                     let outputs = match runtime
                         .dri3_pixmap_buffers(context.namespace, pixmap)
                     {
@@ -270,7 +270,7 @@ fn dispatch_dri3_request(
                 // advertises the DRI3 version whose requests it answers; the
                 // ones it does not answer owe a normal error rather than a
                 // dropped connection.
-                XWireRequest::Dri3Unimplemented { minor_opcode } => XDispatchResult {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3Unimplemented { minor_opcode }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Error(crate::XClientError {
                         code: if minor_opcode <= crate::X_DRI3_LAST_MINOR_OPCODE {
@@ -285,7 +285,7 @@ fn dispatch_dri3_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::Dri3SetDrmDeviceInUse { window, major, minor } => {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3SetDrmDeviceInUse { window, major, minor }) => {
                     let outputs = match runtime.set_window_render_device_hint(
                         context.namespace, window, crate::XDrmDeviceHint { major, minor },
                     ) {
@@ -298,11 +298,11 @@ fn dispatch_dri3_request(
                     };
                     XDispatchResult { response: None, outputs, metadata_candidates: Vec::new() }
                 }
-                XWireRequest::Dri3GetSupportedModifiers {
+                XWireRequest::Dri3(crate::XDri3Request::Dri3GetSupportedModifiers {
                     window,
                     depth,
                     bits_per_pixel,
-                } => {
+                }) => {
                     let screen_modifiers = match (depth, bits_per_pixel) {
                         (24, 32) => runtime.dma_buf_import_modifiers_for_client(
                             context.client_id, sophia_protocol::DRM_FORMAT_XRGB8888).to_vec(),

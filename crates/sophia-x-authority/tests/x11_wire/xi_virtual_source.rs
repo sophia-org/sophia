@@ -25,7 +25,7 @@ mod xi_virtual_source {
                 (128, vec![128]),
             ] {
                 let reply = dispatch(
-                    XWireRequest::XiQueryDevice { device_id: query },
+                    XWireRequest::Xi(sophia_x_authority::XInputRequest::XiQueryDevice { device_id: query }),
                     &mut atoms,
                     order,
                 );
@@ -85,7 +85,7 @@ mod xi_virtual_source {
     #[test]
     fn xi_virtual_source_is_not_in_the_legacy_inventory() {
         let reply = dispatch(
-            XWireRequest::XiListInputDevices,
+            XWireRequest::Xi(sophia_x_authority::XInputRequest::XiListInputDevices),
             &mut XAtomTable::new(),
             XByteOrder::LittleEndian,
         );
@@ -102,15 +102,15 @@ mod xi_virtual_source {
         for order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
             for (request, code, minor) in [
                 (
-                    XWireRequest::XiQueryPointer {
+                    XWireRequest::Xi(sophia_x_authority::XInputRequest::XiQueryPointer {
                         window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
                         device_id: X_INPUT_POINTER_SOURCE_ID,
-                    },
+                    }),
                     X_INPUT_FIRST_ERROR,
                     X_INPUT_QUERY_POINTER_MINOR_OPCODE,
                 ),
                 (
-                    XWireRequest::XiGrabDevice {
+                    XWireRequest::Xi(sophia_x_authority::XInputRequest::XiGrabDevice {
                         window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
                         time: 0,
                         cursor: None,
@@ -119,7 +119,7 @@ mod xi_virtual_source {
                         keyboard_mode: 1,
                         owner_events: false,
                         event_mask: vec![0],
-                    },
+                    }),
                     XErrorCode::BadAccess.wire_code(),
                     X_INPUT_GRAB_DEVICE_MINOR_OPCODE,
                 ),

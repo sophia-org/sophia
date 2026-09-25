@@ -13,10 +13,10 @@ fn dri3_open_decodes_default_provider_and_encodes_one_fd_reply() {
     assert_eq!(request.required_fd_count(), 0);
     assert_eq!(
         request,
-        XWireRequest::Dri3Open {
+        XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3Open {
             drawable: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             provider: 0,
-        }
+        })
     );
 
     let mut runtime = XAuthorityRuntime::new();
@@ -80,11 +80,11 @@ fn dri3_get_supported_modifiers_without_measurements_reports_no_explicit_layouts
     .unwrap();
     assert_eq!(
         request,
-        XWireRequest::Dri3GetSupportedModifiers {
+        XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3GetSupportedModifiers {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             depth: 24,
             bits_per_pixel: 32,
-        }
+        })
     );
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
@@ -104,11 +104,11 @@ fn dri3_get_supported_modifiers_without_measurements_reports_no_explicit_layouts
 
     let argb = dispatch_x11_wire_request(
         dispatch_context(namespace, 10, XByteOrder::LittleEndian, X_DRI3_MAJOR_OPCODE),
-        XWireRequest::Dri3GetSupportedModifiers {
+        XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3GetSupportedModifiers {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             depth: 32,
             bits_per_pixel: 32,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -159,7 +159,7 @@ fn dri3_pixmap_from_buffer_requires_one_fd_and_preserves_bounded_metadata() {
     assert_eq!(request.required_fd_count(), 1);
     assert_eq!(
         request,
-        XWireRequest::Dri3PixmapFromBuffer {
+        XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3PixmapFromBuffer {
             pixmap: XResourceId::new(0x220801, 1),
             drawable: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             size_bytes: 64 * 48 * 4,
@@ -168,7 +168,7 @@ fn dri3_pixmap_from_buffer_requires_one_fd_and_preserves_bounded_metadata() {
             stride: 256,
             depth: 24,
             bits_per_pixel: 32,
-        }
+        })
     );
 }
 
@@ -196,7 +196,7 @@ fn dri3_pixmap_from_buffers_preserves_modifier_and_plane_metadata() {
     assert_eq!(request.required_fd_count(), 1);
     assert_eq!(
         request,
-        XWireRequest::Dri3PixmapFromBuffers {
+        XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3PixmapFromBuffers {
             pixmap,
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             num_buffers: 1,
@@ -207,7 +207,7 @@ fn dri3_pixmap_from_buffers_preserves_modifier_and_plane_metadata() {
             depth: 24,
             bits_per_pixel: 32,
             modifier: 0,
-        }
+        })
     );
 
     let mut runtime = XAuthorityRuntime::new();
@@ -252,11 +252,11 @@ fn dri3_fence_from_fd_requires_one_fd_and_registers_authority_identity() {
     assert_eq!(request.required_fd_count(), 1);
     assert_eq!(
         request,
-        XWireRequest::Dri3FenceFromFd {
+        XWireRequest::Dri3(sophia_x_authority::XDri3Request::Dri3FenceFromFd {
             drawable: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             fence: XResourceId::new(0x220802, 1),
             initially_triggered: false,
-        }
+        })
     );
 
     let mut runtime = XAuthorityRuntime::new();

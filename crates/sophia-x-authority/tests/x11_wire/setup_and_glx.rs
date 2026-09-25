@@ -187,11 +187,11 @@ fn glx_config_requests_decode_in_both_byte_orders() {
         for (minor, expected) in [
             (
                 X_GLX_GET_VISUAL_CONFIGS_MINOR_OPCODE,
-                XWireRequest::GlxGetVisualConfigs { screen: 0 },
+                XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxGetVisualConfigs { screen: 0 }),
             ),
             (
                 X_GLX_GET_FB_CONFIGS_MINOR_OPCODE,
-                XWireRequest::GlxGetFbConfigs { screen: 0 },
+                XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 }),
             ),
         ] {
             let mut request = vec![X_GLX_MAJOR_OPCODE, minor, 0, 0, 0, 0, 0, 0];
@@ -245,13 +245,13 @@ fn legacy_glx_context_uses_a_visual_and_normalizes_to_its_fbconfig() {
         decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap();
     assert_eq!(
         decoded,
-        XWireRequest::GlxCreateContext {
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreateContext {
             context: context_id,
             config: XGlxContextConfig::Visual(X_SETUP_DEFAULT_VISUAL),
             screen: 0,
             share: None,
             direct: true,
-        }
+        })
     );
 
     let mut runtime = XAuthorityRuntime::new();
@@ -296,11 +296,11 @@ fn legacy_glx_context_uses_a_visual_and_normalizes_to_its_fbconfig() {
         decode_x11_core_request(context(namespace, 2, byte_order), &make_current).unwrap();
     assert_eq!(
         decoded,
-        XWireRequest::GlxMakeCurrent {
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxMakeCurrent {
             drawable: Some(drawable),
             context: Some(context_id),
             old_context_tag: 0,
-        }
+        })
     );
     let encoded = dispatch_x11_wire_request(
         dispatch_context(namespace, 13, byte_order, X_GLX_MAJOR_OPCODE),
@@ -336,13 +336,13 @@ fn kitty_glx_context_attribs_layout_decodes_the_28_byte_header() {
     assert_eq!(
         decode_x11_core_request(context(NamespaceId::from_raw(1), 1, byte_order), &request)
             .unwrap(),
-        XWireRequest::GlxCreateContext {
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxCreateContext {
             context: XResourceId::new(0x0020_000b, 1),
             config: XGlxContextConfig::FbConfig(3),
             screen: 0,
             share: None,
             direct: true,
-        }
+        })
     );
 }
 
@@ -354,7 +354,7 @@ fn kitty_fbconfig_catalog_has_argb_blue_aux_and_srgb_attributes() {
     let mut properties = XPropertyTable::new();
     let encoded = dispatch_x11_wire_request(
         dispatch_context(namespace, 12, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
-        XWireRequest::GlxGetFbConfigs { screen: 0 },
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxGetFbConfigs { screen: 0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -410,7 +410,7 @@ fn legacy_glx_visual_catalog_has_rgba_double_buffer_and_depth() {
     let mut properties = XPropertyTable::new();
     let encoded = dispatch_x11_wire_request(
         dispatch_context(namespace, 12, XByteOrder::LittleEndian, X_GLX_MAJOR_OPCODE),
-        XWireRequest::GlxGetVisualConfigs { screen: 0 },
+        XWireRequest::Glx(sophia_x_authority::XGlxRequest::GlxGetVisualConfigs { screen: 0 }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -461,36 +461,36 @@ fn sync_counter_and_kitty_teardown_requests_decode() {
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &initialize)
             .unwrap(),
-        XWireRequest::SyncInitialize {
+        XWireRequest::Sync(sophia_x_authority::XSyncRequest::SyncInitialize {
             desired_major: 3,
             desired_minor: 1
-        }
+        })
     );
     let counter = 0x0020_0010u32;
     for (minor, value, expected) in [
         (
             X_SYNC_CREATE_COUNTER_MINOR_OPCODE,
             -2i64,
-            XWireRequest::SyncCreateCounter {
+            XWireRequest::Sync(sophia_x_authority::XSyncRequest::SyncCreateCounter {
                 counter: XResourceId::new(u64::from(counter), 1),
                 initial_value: -2,
-            },
+            }),
         ),
         (
             X_SYNC_SET_COUNTER_MINOR_OPCODE,
             17,
-            XWireRequest::SyncSetCounter {
+            XWireRequest::Sync(sophia_x_authority::XSyncRequest::SyncSetCounter {
                 counter: XResourceId::new(u64::from(counter), 1),
                 value: 17,
-            },
+            }),
         ),
         (
             X_SYNC_CHANGE_COUNTER_MINOR_OPCODE,
             -3,
-            XWireRequest::SyncChangeCounter {
+            XWireRequest::Sync(sophia_x_authority::XSyncRequest::SyncChangeCounter {
                 counter: XResourceId::new(u64::from(counter), 1),
                 delta: -3,
-            },
+            }),
         ),
     ] {
         let mut request = vec![X_SYNC_MAJOR_OPCODE, minor, 4, 0];
@@ -506,15 +506,15 @@ fn sync_counter_and_kitty_teardown_requests_decode() {
     for (minor, expected) in [
         (
             X_SYNC_QUERY_COUNTER_MINOR_OPCODE,
-            XWireRequest::SyncQueryCounter {
+            XWireRequest::Sync(sophia_x_authority::XSyncRequest::SyncQueryCounter {
                 counter: XResourceId::new(u64::from(counter), 1),
-            },
+            }),
         ),
         (
             X_SYNC_DESTROY_COUNTER_MINOR_OPCODE,
-            XWireRequest::SyncDestroyCounter {
+            XWireRequest::Sync(sophia_x_authority::XSyncRequest::SyncDestroyCounter {
                 counter: XResourceId::new(u64::from(counter), 1),
-            },
+            }),
         ),
     ] {
         let mut request = vec![X_SYNC_MAJOR_OPCODE, minor, 2, 0];
@@ -529,16 +529,16 @@ fn sync_counter_and_kitty_teardown_requests_decode() {
         (
             X_SYNC_MAJOR_OPCODE,
             X_SYNC_DESTROY_FENCE_MINOR_OPCODE,
-            XWireRequest::SyncDestroyFence {
+            XWireRequest::Sync(sophia_x_authority::XSyncRequest::SyncDestroyFence {
                 fence: XResourceId::new(0x0020_000f, 1),
-            },
+            }),
         ),
         (
             79,
             0,
-            XWireRequest::FreeColormap {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::FreeColormap {
                 colormap: XResourceId::new(0x0020_0008, 1),
-            },
+            }),
         ),
     ] {
         let mut request = vec![major, minor, 2, 0];

@@ -7,39 +7,39 @@ fn dispatch_core_resource_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-        XWireRequest::CreateGraphicsContext { .. }
-            | XWireRequest::ChangeGraphicsContext { .. }
-            | XWireRequest::SetClipRectangles { .. }
-            | XWireRequest::FreeGraphicsContext { .. }
-            | XWireRequest::ClearArea { .. }
-            | XWireRequest::OpenFont { .. }
-            | XWireRequest::CloseFont { .. }
-            | XWireRequest::QueryFont { .. }
-            | XWireRequest::CreateCursor { .. }
-            | XWireRequest::CreateGlyphCursor { .. }
-            | XWireRequest::FreeCursor { .. }
-            | XWireRequest::RecolorCursor { .. }
-            | XWireRequest::ListFonts { .. }
-            | XWireRequest::ListFontsWithInfo { .. }
-            | XWireRequest::QueryTextExtents { .. }
-            | XWireRequest::SetFontPath
-            | XWireRequest::ChangeSaveSet { .. }
-            | XWireRequest::SetCloseDownMode { .. }
-            | XWireRequest::KillClient { .. }
-            | XWireRequest::GetFontPath
-            | XWireRequest::CopyGraphicsContext { .. }
-            | XWireRequest::SetDashes { .. }
-            | XWireRequest::CreatePixmap { .. }
-            | XWireRequest::FreePixmap { .. }
+        XWireRequest::Core(crate::XCoreRequest::CreateGraphicsContext { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ChangeGraphicsContext { .. })
+            | XWireRequest::Core(crate::XCoreRequest::SetClipRectangles { .. })
+            | XWireRequest::Core(crate::XCoreRequest::FreeGraphicsContext { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ClearArea { .. })
+            | XWireRequest::Core(crate::XCoreRequest::OpenFont { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CloseFont { .. })
+            | XWireRequest::Core(crate::XCoreRequest::QueryFont { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CreateCursor { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CreateGlyphCursor { .. })
+            | XWireRequest::Core(crate::XCoreRequest::FreeCursor { .. })
+            | XWireRequest::Core(crate::XCoreRequest::RecolorCursor { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ListFonts { .. })
+            | XWireRequest::Core(crate::XCoreRequest::ListFontsWithInfo { .. })
+            | XWireRequest::Core(crate::XCoreRequest::QueryTextExtents { .. })
+            | XWireRequest::Core(crate::XCoreRequest::SetFontPath)
+            | XWireRequest::Core(crate::XCoreRequest::ChangeSaveSet { .. })
+            | XWireRequest::Core(crate::XCoreRequest::SetCloseDownMode { .. })
+            | XWireRequest::Core(crate::XCoreRequest::KillClient { .. })
+            | XWireRequest::Core(crate::XCoreRequest::GetFontPath)
+            | XWireRequest::Core(crate::XCoreRequest::CopyGraphicsContext { .. })
+            | XWireRequest::Core(crate::XCoreRequest::SetDashes { .. })
+            | XWireRequest::Core(crate::XCoreRequest::CreatePixmap { .. })
+            | XWireRequest::Core(crate::XCoreRequest::FreePixmap { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-        XWireRequest::CreateGraphicsContext {
+        XWireRequest::Core(crate::XCoreRequest::CreateGraphicsContext {
             gc,
             drawable,
             values,
-        } => {
+        }) => {
             if runtime.resource_id_in_use(gc) {
                 return Handled(core_resource_bad_id_choice(context, gc));
             }
@@ -101,11 +101,11 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::ChangeGraphicsContext {
+        XWireRequest::Core(crate::XCoreRequest::ChangeGraphicsContext {
             gc,
             value_mask,
             values,
-        } => {
+        }) => {
             let depth = match runtime.graphics_context_depth_and_values(context.namespace, gc) {
                 Ok((depth, _)) => depth,
                 Err(error) => {
@@ -163,12 +163,12 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::SetClipRectangles {
+        XWireRequest::Core(crate::XCoreRequest::SetClipRectangles {
             gc,
             clip_x_origin,
             clip_y_origin,
             rectangles,
-        } => {
+        }) => {
             if let Err(error) = runtime.set_graphics_context_clip_rectangles(
                 context.namespace,
                 gc,
@@ -189,7 +189,7 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::FreeGraphicsContext { gc } => {
+        XWireRequest::Core(crate::XCoreRequest::FreeGraphicsContext { gc }) => {
             if let Err(error) = runtime.free_graphics_context(context.namespace, gc) {
                 return Handled(core_resource_validation_error(
                     context,
@@ -204,14 +204,14 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::ClearArea {
+        XWireRequest::Core(crate::XCoreRequest::ClearArea {
             exposures,
             window,
             x,
             y,
             width,
             height,
-        } => {
+        }) => {
             let transaction = context.transaction;
             // An InputOnly window has no background to restore.
             if runtime.window_is_input_only(window) {
@@ -267,7 +267,7 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::OpenFont { font, name } => {
+        XWireRequest::Core(crate::XCoreRequest::OpenFont { font, name }) => {
             if runtime.resource_id_in_use(font) {
                 return Handled(core_resource_bad_id_choice(context, font));
             }
@@ -311,7 +311,7 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::CloseFont { font } => {
+        XWireRequest::Core(crate::XCoreRequest::CloseFont { font }) => {
             let outputs = match runtime.close_font(context.namespace, font) {
                 Ok(()) => Vec::new(),
                 Err(error) => {
@@ -325,7 +325,7 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::QueryFont { font } => {
+        XWireRequest::Core(crate::XCoreRequest::QueryFont { font }) => {
             let output = match runtime.fontable_face(context.namespace, font) {
                 Ok(face) => XClientOutput::Reply(XClientReply::QueryFont {
                     sequence: context.sequence,
@@ -345,13 +345,13 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::CreateCursor {
+        XWireRequest::Core(crate::XCoreRequest::CreateCursor {
             cursor,
             source,
             mask,
             hotspot_x,
             hotspot_y,
-        } => {
+        }) => {
             if runtime.resource_id_in_use(cursor) {
                 return Handled(core_resource_bad_id_choice(context, cursor));
             }
@@ -393,13 +393,13 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::CreateGlyphCursor {
+        XWireRequest::Core(crate::XCoreRequest::CreateGlyphCursor {
             cursor,
             source_font,
             mask_font,
             source_char,
             mask_char,
-        } => {
+        }) => {
             if runtime.resource_id_in_use(cursor) {
                 return Handled(core_resource_bad_id_choice(context, cursor));
             }
@@ -483,7 +483,7 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::FreeCursor { cursor } => {
+        XWireRequest::Core(crate::XCoreRequest::FreeCursor { cursor }) => {
             let outputs = match runtime.free_cursor(context.namespace, cursor) {
                 Ok(()) => Vec::new(),
                 Err(error) => vec![XClientOutput::Error(cursor_error(error, context, cursor))],
@@ -494,7 +494,7 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::RecolorCursor { cursor } => {
+        XWireRequest::Core(crate::XCoreRequest::RecolorCursor { cursor }) => {
             let outputs = match runtime.validate_cursor_access(context.namespace, cursor) {
                 Ok(()) => Vec::new(),
                 Err(error) => vec![XClientOutput::Error(cursor_error(error, context, cursor))],
@@ -505,10 +505,10 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::ListFonts {
+        XWireRequest::Core(crate::XCoreRequest::ListFonts {
             max_names,
             ref pattern,
-        } => XDispatchResult {
+        }) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::ListFonts {
                 sequence: context.sequence,
@@ -516,10 +516,10 @@ fn dispatch_core_resource_request(
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::ListFontsWithInfo {
+        XWireRequest::Core(crate::XCoreRequest::ListFontsWithInfo {
             max_names,
             ref pattern,
-        } => {
+        }) => {
             // Each name is reported with its own metrics, so every entry costs
             // a load. The bound is smaller than the plain listing's because
             // this one measures rather than names.
@@ -539,11 +539,11 @@ fn dispatch_core_resource_request(
         // The font path is session configuration. Refusing a client's attempt
         // to change it is the safeguard that lets a host path be exposed at
         // all: nothing a client sends can add a directory to search.
-        XWireRequest::CopyGraphicsContext {
+        XWireRequest::Core(crate::XCoreRequest::CopyGraphicsContext {
             source,
             destination,
             value_mask,
-        } => {
+        }) => {
             // Both contexts must exist, and then they must share a depth: a
             // context is bound to the depth of the drawable it was made for,
             // and copying components across depths is a Match error.
@@ -599,11 +599,11 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::SetDashes {
+        XWireRequest::Core(crate::XCoreRequest::SetDashes {
             gc,
             dash_offset,
             ref dashes,
-        } => {
+        }) => {
             // The server's own order: an unknown graphics context is reported
             // before the pattern is judged, and only then is an empty or
             // zero-length pattern a bad value. A dash of zero length would
@@ -655,7 +655,7 @@ fn dispatch_core_resource_request(
         // leases: a window in the requester's own range is refused
         // (BadMatch: a client saves another's windows, not its own), an
         // unknown one BadWindow.
-        XWireRequest::ChangeSaveSet { window, own_window, .. } => {
+        XWireRequest::Core(crate::XCoreRequest::ChangeSaveSet { window, own_window, .. }) => {
             let error = |code: XErrorCode| {
                 XClientOutput::Error(crate::XClientError {
                     code,
@@ -682,12 +682,12 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::SetCloseDownMode { .. } | XWireRequest::KillClient { .. } => XDispatchResult {
+        XWireRequest::Core(crate::XCoreRequest::SetCloseDownMode { .. }) | XWireRequest::Core(crate::XCoreRequest::KillClient { .. }) => XDispatchResult {
             response: None,
             outputs: Vec::new(),
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::SetFontPath => XDispatchResult {
+        XWireRequest::Core(crate::XCoreRequest::SetFontPath) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Error(crate::XClientError {
                 code: XErrorCode::BadAccess,
@@ -698,7 +698,7 @@ fn dispatch_core_resource_request(
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::GetFontPath => XDispatchResult {
+        XWireRequest::Core(crate::XCoreRequest::GetFontPath) => XDispatchResult {
             response: None,
             outputs: vec![XClientOutput::Reply(XClientReply::GetFontPath {
                 sequence: context.sequence,
@@ -706,7 +706,7 @@ fn dispatch_core_resource_request(
             })],
             metadata_candidates: Vec::new(),
         },
-        XWireRequest::QueryTextExtents { fontable, ref chars } => {
+        XWireRequest::Core(crate::XCoreRequest::QueryTextExtents { fontable, ref chars }) => {
             let output = match runtime.fontable_face(context.namespace, fontable) {
                 Ok(face) => XClientOutput::Reply(XClientReply::QueryTextExtents {
                     sequence: context.sequence,
@@ -726,13 +726,13 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::CreatePixmap {
+        XWireRequest::Core(crate::XCoreRequest::CreatePixmap {
             depth,
             pixmap,
             drawable,
             width,
             height,
-        } => {
+        }) => {
             if runtime.resource_id_in_use(pixmap) {
                 return Handled(core_resource_bad_id_choice(context, pixmap));
             }
@@ -786,7 +786,7 @@ fn dispatch_core_resource_request(
                 metadata_candidates: Vec::new(),
             }
         }
-        XWireRequest::FreePixmap { pixmap } => {
+        XWireRequest::Core(crate::XCoreRequest::FreePixmap { pixmap }) => {
             if let Err(error) = runtime.free_pixmap(context.namespace, pixmap) {
                 return Handled(core_resource_validation_error(
                     context,

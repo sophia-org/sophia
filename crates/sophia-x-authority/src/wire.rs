@@ -215,11 +215,11 @@ fn decode_colormap_request(
         XColormapRequestKind::AllocPlanes => contiguous.or_else(no_colors),
         _ => None,
     };
-    Ok(XWireRequest::ColormapRequest {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ColormapRequest {
         kind,
         colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         invalid_value,
-    })
+    }))
 }
 
 pub fn decode_x11_core_request(
@@ -270,10 +270,10 @@ pub fn decode_x11_core_request(
         X_CHANGE_PROPERTY => decode_change_property(context, bytes),
         X_DELETE_PROPERTY => {
             require_exact_len(X_DELETE_PROPERTY, X_DELETE_PROPERTY_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::DeleteProperty {
+            Ok(XWireRequest::Core(crate::XCoreRequest::DeleteProperty {
                 window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 property: context.byte_order.u32(&bytes[8..12]),
-            })
+            }))
         }
         X_GET_PROPERTY => decode_get_property(context, bytes),
         X_LIST_PROPERTIES => decode_list_properties(context, bytes),
@@ -296,27 +296,27 @@ pub fn decode_x11_core_request(
         X_WARP_POINTER => decode_warp_pointer(context, bytes),
         X_QUERY_POINTER => {
             require_exact_len(X_QUERY_POINTER, X_QUERY_POINTER_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::QueryPointer {
+            Ok(XWireRequest::Core(crate::XCoreRequest::QueryPointer {
                 window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-            })
+            }))
         }
         X_SET_INPUT_FOCUS => decode_set_input_focus(context, bytes),
         X_GET_INPUT_FOCUS => decode_get_input_focus(bytes),
         X_UNMAP_SUBWINDOWS => {
             require_exact_len(X_UNMAP_SUBWINDOWS, X_UNMAP_SUBWINDOWS_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::UnmapSubwindows {
+            Ok(XWireRequest::Core(crate::XCoreRequest::UnmapSubwindows {
                 window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-            })
+            }))
         }
         X_CIRCULATE_WINDOW => {
             require_exact_len(X_CIRCULATE_WINDOW, X_CIRCULATE_WINDOW_REQ_LEN, bytes.len())?;
             if bytes[1] > 1 {
                 return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
             }
-            Ok(XWireRequest::CirculateWindow {
+            Ok(XWireRequest::Core(crate::XCoreRequest::CirculateWindow {
                 window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 direction: bytes[1],
-            })
+            }))
         }
         X_CHANGE_ACTIVE_POINTER_GRAB => decode_change_active_pointer_grab(context, bytes),
         X_ROTATE_PROPERTIES => decode_rotate_properties(context, bytes),
@@ -328,13 +328,13 @@ pub fn decode_x11_core_request(
                 other => return Err(XWireParseError::InvalidValue(u32::from(other))),
             };
             let raw = context.byte_order.u32(&bytes[4..8]);
-            Ok(XWireRequest::ChangeSaveSet {
+            Ok(XWireRequest::Core(crate::XCoreRequest::ChangeSaveSet {
                 window: XResourceId::new(u64::from(raw), 1),
                 mode,
                 own_window: context
                     .resource_id_range
                     .is_some_and(|range| range.owns_new_resource(raw)),
-            })
+            }))
         }
         X_SET_CLOSE_DOWN_MODE => {
             require_exact_len(
@@ -348,14 +348,16 @@ pub fn decode_x11_core_request(
                 2 => XCloseDownMode::RetainTemporary,
                 other => return Err(XWireParseError::InvalidValue(u32::from(other))),
             };
-            Ok(XWireRequest::SetCloseDownMode { mode })
+            Ok(XWireRequest::Core(crate::XCoreRequest::SetCloseDownMode {
+                mode,
+            }))
         }
         X_KILL_CLIENT => {
             require_exact_len(X_KILL_CLIENT, X_KILL_CLIENT_REQ_LEN, bytes.len())?;
             let raw = context.byte_order.u32(&bytes[4..8]);
-            Ok(XWireRequest::KillClient {
+            Ok(XWireRequest::Core(crate::XCoreRequest::KillClient {
                 resource: (raw != 0).then(|| XResourceId::new(u64::from(raw), 1)),
-            })
+            }))
         }
         X_SET_POINTER_MAPPING => {
             let count = usize::from(bytes[1]);
@@ -364,9 +366,9 @@ pub fn decode_x11_core_request(
                 X_SET_POINTER_MAPPING_REQ_LEN + ((count + 3) & !3),
                 bytes.len(),
             )?;
-            Ok(XWireRequest::SetPointerMapping {
+            Ok(XWireRequest::Core(crate::XCoreRequest::SetPointerMapping {
                 mapping: bytes[4..4 + count].to_vec(),
-            })
+            }))
         }
         X_CHANGE_KEYBOARD_MAPPING => {
             require_len(
@@ -388,11 +390,13 @@ pub fn decode_x11_core_request(
                 .chunks_exact(4)
                 .map(|word| context.byte_order.u32(word))
                 .collect();
-            Ok(XWireRequest::ChangeKeyboardMapping {
-                first_keycode: bytes[4],
-                keysyms_per_keycode: per_keycode,
-                keysyms,
-            })
+            Ok(XWireRequest::Core(
+                crate::XCoreRequest::ChangeKeyboardMapping {
+                    first_keycode: bytes[4],
+                    keysyms_per_keycode: per_keycode,
+                    keysyms,
+                },
+            ))
         }
         X_SET_MODIFIER_MAPPING => {
             let per_modifier = usize::from(bytes[1]);
@@ -401,14 +405,16 @@ pub fn decode_x11_core_request(
                 X_SET_MODIFIER_MAPPING_REQ_LEN + 8 * per_modifier,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::SetModifierMapping {
-                keycodes_per_modifier: bytes[1],
-                keycodes: bytes[4..].to_vec(),
-            })
+            Ok(XWireRequest::Core(
+                crate::XCoreRequest::SetModifierMapping {
+                    keycodes_per_modifier: bytes[1],
+                    keycodes: bytes[4..].to_vec(),
+                },
+            ))
         }
         X_QUERY_KEYMAP => {
             require_exact_len(X_QUERY_KEYMAP, X_QUERY_KEYMAP_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::QueryKeymap)
+            Ok(XWireRequest::Core(crate::XCoreRequest::QueryKeymap))
         }
         X_CHANGE_KEYBOARD_CONTROL => decode_change_keyboard_control(context, bytes),
         X_CHANGE_POINTER_CONTROL => decode_change_pointer_control(context, bytes),
@@ -418,12 +424,12 @@ pub fn decode_x11_core_request(
                 X_GET_POINTER_CONTROL_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::GetPointerControl)
+            Ok(XWireRequest::Core(crate::XCoreRequest::GetPointerControl))
         }
         X_SET_SCREEN_SAVER => decode_set_screen_saver(context, bytes),
         X_GET_SCREEN_SAVER => {
             require_exact_len(X_GET_SCREEN_SAVER, X_GET_SCREEN_SAVER_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::GetScreenSaver)
+            Ok(XWireRequest::Core(crate::XCoreRequest::GetScreenSaver))
         }
         X_GET_MOTION_EVENTS => {
             require_exact_len(
@@ -431,15 +437,15 @@ pub fn decode_x11_core_request(
                 X_GET_MOTION_EVENTS_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::GetMotionEvents {
+            Ok(XWireRequest::Core(crate::XCoreRequest::GetMotionEvents {
                 window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 start: context.byte_order.u32(&bytes[8..12]),
                 stop: context.byte_order.u32(&bytes[12..16]),
-            })
+            }))
         }
         X_LIST_HOSTS => {
             require_exact_len(X_LIST_HOSTS, X_LIST_HOSTS_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::ListHosts)
+            Ok(XWireRequest::Core(crate::XCoreRequest::ListHosts))
         }
         X_CHANGE_HOSTS => decode_change_hosts(context, bytes),
         X_SET_ACCESS_CONTROL => {
@@ -451,21 +457,23 @@ pub fn decode_x11_core_request(
             if bytes[1] > 1 {
                 return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
             }
-            Ok(XWireRequest::SetAccessControl)
+            Ok(XWireRequest::Core(crate::XCoreRequest::SetAccessControl))
         }
         X_GET_KEYBOARD_CONTROL => {
             require_exact_len(X_GET_KEYBOARD_CONTROL, 4, bytes.len())?;
-            Ok(XWireRequest::GetKeyboardControl)
+            Ok(XWireRequest::Core(crate::XCoreRequest::GetKeyboardControl))
         }
         X_BELL => {
             require_exact_len(X_BELL, 4, bytes.len())?;
-            Ok(XWireRequest::Bell)
+            Ok(XWireRequest::Core(crate::XCoreRequest::Bell))
         }
         X_FORCE_SCREEN_SAVER => {
             require_exact_len(X_FORCE_SCREEN_SAVER, 4, bytes.len())?;
             // An out-of-range mode is a Value error the client must see with
             // its sequence, not a decode failure, so it is carried through.
-            Ok(XWireRequest::ForceScreenSaver { mode: bytes[1] })
+            Ok(XWireRequest::Core(crate::XCoreRequest::ForceScreenSaver {
+                mode: bytes[1],
+            }))
         }
         X_OPEN_FONT => decode_open_font(context, bytes),
         X_CLOSE_FONT => decode_close_font(context, bytes),
@@ -480,11 +488,16 @@ pub fn decode_x11_core_request(
             if value_mask & !0x007f_ffff != 0 {
                 return Err(XWireParseError::InvalidValue(value_mask));
             }
-            Ok(XWireRequest::CopyGraphicsContext {
-                source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-                destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
-                value_mask,
-            })
+            Ok(XWireRequest::Core(
+                crate::XCoreRequest::CopyGraphicsContext {
+                    source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                    destination: XResourceId::new(
+                        u64::from(context.byte_order.u32(&bytes[8..12])),
+                        1,
+                    ),
+                    value_mask,
+                },
+            ))
         }
         X_SET_DASHES => {
             require_len(X_SET_DASHES, X_SET_DASHES_REQ_LEN, bytes.len())?;
@@ -503,11 +516,11 @@ pub fn decode_x11_core_request(
                     actual: bytes.len(),
                 });
             }
-            Ok(XWireRequest::SetDashes {
+            Ok(XWireRequest::Core(crate::XCoreRequest::SetDashes {
                 gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 dash_offset: context.byte_order.u16(&bytes[8..10]),
                 dashes: bytes[X_SET_DASHES_REQ_LEN..X_SET_DASHES_REQ_LEN + dash_len].to_vec(),
-            })
+            }))
         }
         X_SET_FONT_PATH => {
             require_len(X_SET_FONT_PATH, X_SET_FONT_PATH_REQ_LEN, bytes.len())?;
@@ -524,11 +537,11 @@ pub fn decode_x11_core_request(
                 cursor += 1 + usize::from(len);
             }
             require_exact_len(X_SET_FONT_PATH, (cursor + 3) & !3, bytes.len())?;
-            Ok(XWireRequest::SetFontPath)
+            Ok(XWireRequest::Core(crate::XCoreRequest::SetFontPath))
         }
         X_GET_FONT_PATH => {
             require_exact_len(X_GET_FONT_PATH, X_GET_FONT_PATH_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::GetFontPath)
+            Ok(XWireRequest::Core(crate::XCoreRequest::GetFontPath))
         }
         X_LIST_FONTS => decode_list_fonts(context, bytes),
         X_LIST_FONTS_WITH_INFO => decode_list_fonts_with_info(context, bytes),
@@ -556,7 +569,7 @@ pub fn decode_x11_core_request(
             if bit_plane.count_ones() != 1 {
                 return Err(XWireParseError::InvalidValue(bit_plane));
             }
-            Ok(XWireRequest::CopyPlane {
+            Ok(XWireRequest::Core(crate::XCoreRequest::CopyPlane {
                 source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
                 destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
                 gc: XResourceId::new(u64::from(context.byte_order.u32(&bytes[12..16])), 1),
@@ -567,7 +580,7 @@ pub fn decode_x11_core_request(
                 width: context.byte_order.u16(&bytes[24..26]),
                 height: context.byte_order.u16(&bytes[26..28]),
                 bit_plane,
-            })
+            }))
         }
         X_PUT_IMAGE => decode_put_image(context, bytes),
         X_GET_IMAGE => decode_get_image(context, bytes),
@@ -578,9 +591,9 @@ pub fn decode_x11_core_request(
         X_CREATE_COLORMAP => decode_create_colormap(context, bytes),
         X_FREE_COLORMAP => {
             require_exact_len(X_FREE_COLORMAP, X_FREE_COLORMAP_REQ_LEN, bytes.len())?;
-            Ok(XWireRequest::FreeColormap {
+            Ok(XWireRequest::Core(crate::XCoreRequest::FreeColormap {
                 colormap: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-            })
+            }))
         }
         X_COPY_COLORMAP_AND_FREE => decode_copy_colormap_and_free(context, bytes),
         X_LIST_INSTALLED_COLORMAPS => {
@@ -589,9 +602,11 @@ pub fn decode_x11_core_request(
                 X_LIST_INSTALLED_COLORMAPS_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::ListInstalledColormaps {
-                window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-            })
+            Ok(XWireRequest::Core(
+                crate::XCoreRequest::ListInstalledColormaps {
+                    window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
+                },
+            ))
         }
         X_INSTALL_COLORMAP => decode_colormap_request(
             context,
@@ -663,14 +678,16 @@ pub fn decode_x11_core_request(
                 X_GENERIC_EVENT_QUERY_VERSION_REQ_LEN,
                 bytes.len(),
             )?;
-            Ok(XWireRequest::GeQueryVersion {
-                major_version: context.byte_order.u16(&bytes[4..6]),
-                minor_version: context.byte_order.u16(&bytes[6..8]),
-            })
+            Ok(XWireRequest::Extension(
+                crate::XExtensionRequest::GeQueryVersion {
+                    major_version: context.byte_order.u16(&bytes[4..6]),
+                    minor_version: context.byte_order.u16(&bytes[6..8]),
+                },
+            ))
         }
         // Deliberately no length check beyond the preamble's: NoOperation may
         // carry any amount of padding, and all of it is ignored.
-        X_NO_OPERATION => Ok(XWireRequest::NoOperation),
+        X_NO_OPERATION => Ok(XWireRequest::Core(crate::XCoreRequest::NoOperation)),
         X_DRI3_MAJOR_OPCODE => decode_dri3(context, bytes),
         X_PRESENT_MAJOR_OPCODE => decode_present(context, bytes),
         X_XFIXES_MAJOR_OPCODE => decode_xfixes(context, bytes),

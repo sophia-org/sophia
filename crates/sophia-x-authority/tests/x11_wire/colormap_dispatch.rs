@@ -21,12 +21,12 @@ fn x11_dispatch_create_colormap_accepts_root_visual() {
 
     assert_eq!(
         request,
-        XWireRequest::CreateColormap {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::CreateColormap {
             alloc: 0,
             colormap: XResourceId::new(0x200001, 1),
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             visual: X_SETUP_DEFAULT_VISUAL,
-        }
+        })
     );
 
     let result = dispatch_x11_wire_request(
@@ -231,10 +231,10 @@ fn x11_dispatch_alloc_named_color_encodes_exact_palette_values_in_both_orders() 
 
         assert_eq!(
             request,
-            XWireRequest::AllocNamedColor {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::AllocNamedColor {
                 colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
                 name: "Light Gray".to_owned(),
-            }
+            })
         );
         let result = dispatch_x11_wire_request(
             dispatch_context(namespace, 1, byte_order, 85),
@@ -293,12 +293,12 @@ fn x11_dispatch_alloc_color_returns_quantized_true_color_in_both_orders() {
 
         assert_eq!(
             request,
-            XWireRequest::AllocColor {
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::AllocColor {
                 colormap: XResourceId::new(u64::from(X_SETUP_DEFAULT_COLORMAP), 1),
                 red: 0x1234,
                 green: 0xabcd,
                 blue: 0x80ff,
-            }
+            })
         );
         let encoded = dispatch_x11_wire_request(
             dispatch_context(namespace, 3, byte_order, 84),

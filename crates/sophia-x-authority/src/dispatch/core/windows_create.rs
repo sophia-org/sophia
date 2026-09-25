@@ -10,7 +10,7 @@ fn dispatch_window_creation_request(
     _properties: &mut XPropertyTable,
 ) -> XDispatchResult {
     match request {
-                XWireRequest::CreateWindow {
+                XWireRequest::Core(crate::XCoreRequest::CreateWindow {
                     packet,
                     event_mask,
                     parent,
@@ -28,7 +28,7 @@ fn dispatch_window_creation_request(
                     border_pixmap,
                     border_pixel,
                     ..
-                } => {
+                }) => {
                     let kind = packet.kind.clone();
                     let namespace = packet.namespace;
                     let transaction = packet.transaction;
@@ -289,7 +289,7 @@ fn dispatch_window_creation_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ChangeWindowAttributes {
+                XWireRequest::Core(crate::XCoreRequest::ChangeWindowAttributes {
                     window,
                     event_mask,
                     background_pixmap,
@@ -302,7 +302,7 @@ fn dispatch_window_creation_request(
                     bit_gravity,
                     colormap,
                     ..
-                } => {
+                }) => {
                     if event_mask.is_some_and(|mask| mask & (1 << 16) != 0) {
                         runtime.note_visibility_interest(window);
                     }
@@ -471,7 +471,7 @@ fn dispatch_window_creation_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetWindowAttributes { window } => {
+                XWireRequest::Core(crate::XCoreRequest::GetWindowAttributes { window }) => {
                     let output = if window.local.raw() == u64::from(X_SETUP_DEFAULT_ROOT) {
                         XClientOutput::Reply(XClientReply::GetWindowAttributes {
                             sequence: context.sequence,

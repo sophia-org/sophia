@@ -1,6 +1,6 @@
 fn decode_get_input_focus(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GET_INPUT_FOCUS, X_GET_INPUT_FOCUS_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GetInputFocus)
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetInputFocus))
 }
 
 fn decode_set_input_focus(
@@ -11,11 +11,11 @@ fn decode_set_input_focus(
     if bytes[1] > 2 {
         return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
     }
-    Ok(XWireRequest::SetInputFocus {
+    Ok(XWireRequest::Core(crate::XCoreRequest::SetInputFocus {
         focus: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         revert_to: bytes[1],
         time: context.byte_order.u32(&bytes[8..12]),
-    })
+    }))
 }
 
 fn decode_get_modifier_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
@@ -24,7 +24,7 @@ fn decode_get_modifier_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseE
         X_GET_MODIFIER_MAPPING_REQ_LEN,
         bytes.len(),
     )?;
-    Ok(XWireRequest::GetModifierMapping)
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetModifierMapping))
 }
 
 fn decode_get_pointer_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
@@ -33,7 +33,7 @@ fn decode_get_pointer_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseEr
         X_GET_POINTER_MAPPING_REQ_LEN,
         bytes.len(),
     )?;
-    Ok(XWireRequest::GetPointerMapping)
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetPointerMapping))
 }
 
 fn decode_get_keyboard_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
@@ -42,10 +42,10 @@ fn decode_get_keyboard_mapping(bytes: &[u8]) -> Result<XWireRequest, XWireParseE
         X_GET_KEYBOARD_MAPPING_REQ_LEN,
         bytes.len(),
     )?;
-    Ok(XWireRequest::GetKeyboardMapping {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetKeyboardMapping {
         first_keycode: bytes[4],
         count: bytes[5],
-    })
+    }))
 }
 
 /// ChangeKeyboardControl: a mask, then one four-byte value per set bit, in
@@ -128,7 +128,7 @@ fn decode_change_keyboard_control(
         }
         change.auto_repeat_mode = Some(mode as u8);
     }
-    Ok(XWireRequest::ChangeKeyboardControl(change))
+    Ok(XWireRequest::Core(crate::XCoreRequest::ChangeKeyboardControl(change)))
 }
 
 /// ChangePointerControl: acceleration as a fraction and a threshold, each
@@ -158,13 +158,13 @@ fn decode_change_pointer_control(
     if do_threshold && threshold < -1 {
         return Err(XWireParseError::InvalidValue(threshold as u32));
     }
-    Ok(XWireRequest::ChangePointerControl {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ChangePointerControl {
         acceleration_numerator: numerator,
         acceleration_denominator: denominator,
         threshold,
         do_acceleration,
         do_threshold,
-    })
+    }))
 }
 
 /// SetScreenSaver: timings at least -1 (the default), and two modes each
@@ -186,12 +186,12 @@ fn decode_set_screen_saver(
             return Err(XWireParseError::InvalidValue(u32::from(mode)));
         }
     }
-    Ok(XWireRequest::SetScreenSaver {
+    Ok(XWireRequest::Core(crate::XCoreRequest::SetScreenSaver {
         timeout,
         interval,
         prefer_blanking: bytes[8],
         allow_exposures: bytes[9],
-    })
+    }))
 }
 
 /// ChangeHosts: a mode, a family and an address whose length frames the
@@ -211,7 +211,7 @@ fn decode_change_hosts(
         X_CHANGE_HOSTS_REQ_LEN + ((address_len + 3) & !3),
         bytes.len(),
     )?;
-    Ok(XWireRequest::ChangeHosts)
+    Ok(XWireRequest::Core(crate::XCoreRequest::ChangeHosts))
 }
 
 /// ChangeActivePointerGrab: a cursor, a time and the pointer event mask;
@@ -232,11 +232,11 @@ fn decode_change_active_pointer_grab(
     if event_mask & !POINTER_EVENT_MASK != 0 {
         return Err(XWireParseError::InvalidValue(u32::from(event_mask)));
     }
-    Ok(XWireRequest::ChangeActivePointerGrab {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ChangeActivePointerGrab {
         cursor: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         time: context.byte_order.u32(&bytes[8..12]),
         event_mask,
-    })
+    }))
 }
 
 fn decode_grab_button(
@@ -244,7 +244,7 @@ fn decode_grab_button(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GRAB_BUTTON, X_GRAB_BUTTON_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GrabButton {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GrabButton {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         event_mask: context.byte_order.u16(&bytes[8..10]),
         button: bytes[20],
@@ -252,7 +252,7 @@ fn decode_grab_button(
         owner_events: bytes[1] != 0,
         pointer_mode: bytes[10],
         keyboard_mode: bytes[11],
-    })
+    }))
 }
 
 fn decode_grab_pointer(
@@ -260,14 +260,14 @@ fn decode_grab_pointer(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GRAB_POINTER, X_GRAB_POINTER_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GrabPointer {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GrabPointer {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         event_mask: context.byte_order.u16(&bytes[8..10]),
         owner_events: bytes[1] != 0,
         pointer_mode: bytes[10],
         keyboard_mode: bytes[11],
         time: context.byte_order.u32(&bytes[20..24]),
-    })
+    }))
 }
 
 fn decode_ungrab_pointer(
@@ -275,9 +275,9 @@ fn decode_ungrab_pointer(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_UNGRAB_POINTER, X_UNGRAB_POINTER_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::UngrabPointer {
+    Ok(XWireRequest::Core(crate::XCoreRequest::UngrabPointer {
         time: context.byte_order.u32(&bytes[4..8]),
-    })
+    }))
 }
 
 fn decode_ungrab_button(
@@ -285,11 +285,11 @@ fn decode_ungrab_button(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_UNGRAB_BUTTON, X_UNGRAB_BUTTON_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::UngrabButton {
+    Ok(XWireRequest::Core(crate::XCoreRequest::UngrabButton {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         button: bytes[1],
         modifiers: context.byte_order.u16(&bytes[8..10]),
-    })
+    }))
 }
 
 fn decode_grab_keyboard(
@@ -297,13 +297,13 @@ fn decode_grab_keyboard(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GRAB_KEYBOARD, X_GRAB_KEYBOARD_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GrabKeyboard {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GrabKeyboard {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         owner_events: bytes[1] != 0,
         time: context.byte_order.u32(&bytes[8..12]),
         pointer_mode: bytes[12],
         keyboard_mode: bytes[13],
-    })
+    }))
 }
 
 fn decode_ungrab_keyboard(
@@ -311,9 +311,9 @@ fn decode_ungrab_keyboard(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_UNGRAB_KEYBOARD, X_UNGRAB_KEYBOARD_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::UngrabKeyboard {
+    Ok(XWireRequest::Core(crate::XCoreRequest::UngrabKeyboard {
         time: context.byte_order.u32(&bytes[4..8]),
-    })
+    }))
 }
 
 fn decode_grab_key(
@@ -321,14 +321,14 @@ fn decode_grab_key(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GRAB_KEY, X_GRAB_KEY_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GrabKey {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GrabKey {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         modifiers: context.byte_order.u16(&bytes[8..10]),
         key: bytes[10],
         pointer_mode: bytes[11],
         keyboard_mode: bytes[12],
         owner_events: bytes[1] != 0,
-    })
+    }))
 }
 
 fn decode_ungrab_key(
@@ -336,11 +336,11 @@ fn decode_ungrab_key(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_UNGRAB_KEY, X_UNGRAB_KEY_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::UngrabKey {
+    Ok(XWireRequest::Core(crate::XCoreRequest::UngrabKey {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         key: bytes[1],
         modifiers: context.byte_order.u16(&bytes[8..10]),
-    })
+    }))
 }
 
 fn decode_allow_events(
@@ -348,18 +348,18 @@ fn decode_allow_events(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_ALLOW_EVENTS, X_ALLOW_EVENTS_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::AllowEvents {
+    Ok(XWireRequest::Core(crate::XCoreRequest::AllowEvents {
         mode: bytes[1],
         time: context.byte_order.u32(&bytes[4..8]),
-    })
+    }))
 }
 
 fn decode_grab_server(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GRAB_SERVER, X_GRAB_SERVER_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GrabServer)
+    Ok(XWireRequest::Core(crate::XCoreRequest::GrabServer))
 }
 
 fn decode_ungrab_server(bytes: &[u8]) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_UNGRAB_SERVER, X_UNGRAB_SERVER_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::UngrabServer)
+    Ok(XWireRequest::Core(crate::XCoreRequest::UngrabServer))
 }

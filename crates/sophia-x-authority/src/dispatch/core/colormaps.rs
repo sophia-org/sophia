@@ -10,7 +10,7 @@ fn dispatch_colormap_request(
     _properties: &mut XPropertyTable,
 ) -> XDispatchResult {
     match request {
-                XWireRequest::QueryColors { colormap, pixels } => {
+                XWireRequest::Core(crate::XCoreRequest::QueryColors { colormap, pixels }) => {
                     let output = match runtime.colormap_visual(context.namespace, colormap) {
                         Err(_) => color_error(
                             context,
@@ -47,12 +47,12 @@ fn dispatch_colormap_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::CreateColormap {
+                XWireRequest::Core(crate::XCoreRequest::CreateColormap {
                     alloc,
                     colormap,
                     window,
                     visual,
-                } => {
+                }) => {
                     let output = if alloc > 1 {
                         Some(color_error(
                             context,
@@ -113,7 +113,7 @@ fn dispatch_colormap_request(
                 // and these arrive on ordinary teardown paths.
                 // The copy keeps the visual and moves only this client's
                 // component references; other clients keep theirs.
-                XWireRequest::CopyColormapAndFree { colormap, source } => {
+                XWireRequest::Core(crate::XCoreRequest::CopyColormapAndFree { colormap, source }) => {
                     let output = match runtime.colormap_visual(context.namespace, source) {
                         Err(_) => Some(color_error(
                             context,
@@ -154,7 +154,7 @@ fn dispatch_colormap_request(
                 // The one installed colormap is the default, always: the
                 // setup advertises one installed map at most and at least,
                 // and GetWindowAttributes reports every window's installed.
-                XWireRequest::ListInstalledColormaps { window } => {
+                XWireRequest::Core(crate::XCoreRequest::ListInstalledColormaps { window }) => {
                     let outputs = if window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
                         && runtime
                             .validate_window_access(context.namespace, window)
@@ -177,7 +177,7 @@ fn dispatch_colormap_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::FreeColors { colormap, plane_mask, ref pixels } => {
+                XWireRequest::Core(crate::XCoreRequest::FreeColors { colormap, plane_mask, ref pixels }) => {
                     let error = runtime.free_colors(context.namespace, context.client_id, colormap, plane_mask, pixels);
                     XDispatchResult {
                         response: None,
@@ -185,11 +185,11 @@ fn dispatch_colormap_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ColormapRequest {
+                XWireRequest::Core(crate::XCoreRequest::ColormapRequest {
                     kind,
                     colormap,
                     invalid_value,
-                } => {
+                }) => {
                     let known = runtime.colormap_visual(context.namespace, colormap).is_ok();
                     let outputs = if !known {
                         vec![color_error(
@@ -220,7 +220,7 @@ fn dispatch_colormap_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::FreeColormap { colormap } => {
+                XWireRequest::Core(crate::XCoreRequest::FreeColormap { colormap }) => {
                     let outputs = match runtime.free_colormap(context.namespace, colormap) {
                         // A window left naming the freed colormap has None,
                         // and its ColormapChange selectors are told (t210).
@@ -250,9 +250,9 @@ fn dispatch_colormap_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::AllocNamedColor { colormap, ref name }
-                | XWireRequest::LookupColor { colormap, ref name } => {
-                    let lookup = matches!(request, XWireRequest::LookupColor { .. });
+                XWireRequest::Core(crate::XCoreRequest::AllocNamedColor { colormap, ref name })
+                | XWireRequest::Core(crate::XCoreRequest::LookupColor { colormap, ref name }) => {
+                    let lookup = matches!(request, XWireRequest::Core(crate::XCoreRequest::LookupColor { .. }));
                     let output = match runtime.colormap_visual(context.namespace, colormap) {
                         Err(_) => color_error(
                             context,
@@ -287,12 +287,12 @@ fn dispatch_colormap_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::AllocColor {
+                XWireRequest::Core(crate::XCoreRequest::AllocColor {
                     colormap,
                     red,
                     green,
                     blue,
-                } => {
+                }) => {
                     let output = match runtime.colormap_visual(context.namespace, colormap) {
                         Err(_) => color_error(
                             context,

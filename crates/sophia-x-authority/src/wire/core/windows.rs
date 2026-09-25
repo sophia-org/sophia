@@ -13,9 +13,9 @@ fn decode_query_tree(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_QUERY_TREE, X_QUERY_TREE_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::QueryTree {
+    Ok(XWireRequest::Core(crate::XCoreRequest::QueryTree {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_unmap_window(
@@ -23,9 +23,9 @@ fn decode_unmap_window(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_UNMAP_WINDOW, X_UNMAP_WINDOW_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::UnmapWindow {
+    Ok(XWireRequest::Core(crate::XCoreRequest::UnmapWindow {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_configure_window(
@@ -60,7 +60,7 @@ fn decode_configure_window(
     let sibling = (value_mask & 0x0020 != 0).then(|| XResourceId::new(u64::from(next_value()), 1));
     let stack_mode = (value_mask & 0x0040 != 0).then(|| next_value() as u8);
 
-    Ok(XWireRequest::ConfigureWindow {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ConfigureWindow {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         value_mask,
         x,
@@ -70,7 +70,7 @@ fn decode_configure_window(
         border_width,
         sibling,
         stack_mode,
-    })
+    }))
 }
 
 fn decode_get_window_attributes(
@@ -82,9 +82,9 @@ fn decode_get_window_attributes(
         X_GET_WINDOW_ATTRIBUTES_REQ_LEN,
         bytes.len(),
     )?;
-    Ok(XWireRequest::GetWindowAttributes {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetWindowAttributes {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_warp_pointer(
@@ -95,7 +95,7 @@ fn decode_warp_pointer(
     // Zero is `None` for either window and stays zero here: which of the two
     // is absent changes what the request means, so the decision belongs to
     // the dispatcher that can act on it, not to a resource id minted early.
-    Ok(XWireRequest::WarpPointer {
+    Ok(XWireRequest::Core(crate::XCoreRequest::WarpPointer {
         source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         src_x: context.byte_order.i16(&bytes[12..14]),
@@ -104,7 +104,7 @@ fn decode_warp_pointer(
         src_height: context.byte_order.u16(&bytes[18..20]),
         dst_x: context.byte_order.i16(&bytes[20..22]),
         dst_y: context.byte_order.i16(&bytes[22..24]),
-    })
+    }))
 }
 
 fn decode_translate_coordinates(
@@ -116,12 +116,12 @@ fn decode_translate_coordinates(
         X_TRANSLATE_COORDINATES_REQ_LEN,
         bytes.len(),
     )?;
-    Ok(XWireRequest::TranslateCoordinates {
+    Ok(XWireRequest::Core(crate::XCoreRequest::TranslateCoordinates {
         source: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         destination: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         src_x: context.byte_order.i16(&bytes[12..14]),
         src_y: context.byte_order.i16(&bytes[14..16]),
-    })
+    }))
 }
 
 fn decode_get_geometry(
@@ -129,9 +129,9 @@ fn decode_get_geometry(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_GET_GEOMETRY, X_GET_GEOMETRY_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::GetGeometry {
+    Ok(XWireRequest::Core(crate::XCoreRequest::GetGeometry {
         drawable: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_clear_area(
@@ -144,14 +144,14 @@ fn decode_clear_area(
     if bytes[1] > 1 {
         return Err(XWireParseError::InvalidValue(u32::from(bytes[1])));
     }
-    Ok(XWireRequest::ClearArea {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ClearArea {
         exposures: bytes[1] != 0,
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         x: context.byte_order.i16(&bytes[8..10]),
         y: context.byte_order.i16(&bytes[10..12]),
         width: context.byte_order.u16(&bytes[12..14]),
         height: context.byte_order.u16(&bytes[14..16]),
-    })
+    }))
 }
 
 fn decode_destroy_window(
@@ -159,9 +159,9 @@ fn decode_destroy_window(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_DESTROY_WINDOW, X_DESTROY_WINDOW_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::DestroyWindow {
+    Ok(XWireRequest::Core(crate::XCoreRequest::DestroyWindow {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_destroy_subwindows(
@@ -173,9 +173,9 @@ fn decode_destroy_subwindows(
         X_DESTROY_SUBWINDOWS_REQ_LEN,
         bytes.len(),
     )?;
-    Ok(XWireRequest::DestroySubwindows {
+    Ok(XWireRequest::Core(crate::XCoreRequest::DestroySubwindows {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
-    })
+    }))
 }
 
 fn decode_change_window_attributes(
@@ -236,7 +236,7 @@ fn decode_change_window_attributes(
             _ => {}
         }
     }
-    Ok(XWireRequest::ChangeWindowAttributes {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ChangeWindowAttributes {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         background_pixmap,
         background_pixel,
@@ -249,7 +249,7 @@ fn decode_change_window_attributes(
         win_gravity,
         border_pixmap,
         border_pixel,
-    })
+    }))
 }
 
 fn decode_create_window(
@@ -318,7 +318,7 @@ fn decode_create_window(
     if class > 2 {
         return Err(XWireParseError::InvalidValue(u32::from(class)));
     }
-    Ok(XWireRequest::CreateWindow {
+    Ok(XWireRequest::Core(crate::XCoreRequest::CreateWindow {
         packet: XAuthorityRequestPacket {
             transaction: context.transaction,
             namespace: context.namespace,
@@ -355,7 +355,7 @@ fn decode_create_window(
         win_gravity,
         border_pixmap,
         border_pixel,
-    })
+    }))
 }
 
 fn decode_map_window(
@@ -378,12 +378,12 @@ fn decode_reparent_window(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_REPARENT_WINDOW, X_REPARENT_WINDOW_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::ReparentWindow {
+    Ok(XWireRequest::Core(crate::XCoreRequest::ReparentWindow {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         parent: XResourceId::new(u64::from(context.byte_order.u32(&bytes[8..12])), 1),
         x: context.byte_order.i16(&bytes[12..14]),
         y: context.byte_order.i16(&bytes[14..16]),
-    })
+    }))
 }
 
 fn decode_map_subwindows(
@@ -391,10 +391,10 @@ fn decode_map_subwindows(
     bytes: &[u8],
 ) -> Result<XWireRequest, XWireParseError> {
     require_exact_len(X_MAP_SUBWINDOWS, X_MAP_SUBWINDOWS_REQ_LEN, bytes.len())?;
-    Ok(XWireRequest::MapSubwindows {
+    Ok(XWireRequest::Core(crate::XCoreRequest::MapSubwindows {
         window: XResourceId::new(u64::from(context.byte_order.u32(&bytes[4..8])), 1),
         withheld: Vec::new(),
-    })
+    }))
 }
 
 /// A gravity value: Forget or Unmap (0) through Static (10); anything past

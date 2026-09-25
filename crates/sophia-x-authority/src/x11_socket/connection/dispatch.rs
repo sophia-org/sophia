@@ -83,10 +83,10 @@ fn x11_prepare_explicit_pointer_grab(
     // dispatcher return BadAccess without reserving the Engine's master route.
     if matches!(
         request,
-        crate::XWireRequest::XiGrabDevice {
+        crate::XWireRequest::Xi(crate::XInputRequest::XiGrabDevice {
             device_id: crate::X_INPUT_POINTER_SOURCE_ID,
             ..
-        }
+        })
     ) {
         return Ok(X11ExplicitPointerGrabPreparation::Unmanaged);
     }
@@ -97,21 +97,21 @@ fn x11_prepare_explicit_pointer_grab(
         return Ok(X11ExplicitPointerGrabPreparation::Rejected(1));
     };
     let (window, pointer_mode, keyboard_mode, cursor) = match request {
-        crate::XWireRequest::GrabPointer {
+        crate::XWireRequest::Core(crate::XCoreRequest::GrabPointer {
             window,
             pointer_mode,
             keyboard_mode,
             ..
-        } => (*window, *pointer_mode, *keyboard_mode, None),
-        crate::XWireRequest::XiGrabDevice {
+        }) => (*window, *pointer_mode, *keyboard_mode, None),
+        crate::XWireRequest::Xi(crate::XInputRequest::XiGrabDevice {
             window,
             cursor,
             device_id: 2,
             pointer_mode,
             keyboard_mode,
             ..
-        } => (*window, *pointer_mode, *keyboard_mode, *cursor),
-        crate::XWireRequest::XiGrabDevice { .. } => {
+        }) => (*window, *pointer_mode, *keyboard_mode, *cursor),
+        crate::XWireRequest::Xi(crate::XInputRequest::XiGrabDevice { .. }) => {
             return Ok(X11ExplicitPointerGrabPreparation::Rejected(1));
         }
         _ => return Ok(X11ExplicitPointerGrabPreparation::Unmanaged),
@@ -190,10 +190,10 @@ fn x11_begin_explicit_pointer_release(
     client: XServerFrontendClientId,
     request: &crate::XWireRequest,
 ) -> Result<Option<sophia_protocol::ApplicationRouteLeaseIdentity>, X11SetupSocketError> {
-    if !matches!(request, crate::XWireRequest::UngrabPointer { .. })
+    if !matches!(request, crate::XWireRequest::Core(crate::XCoreRequest::UngrabPointer { .. }))
         && !matches!(
             request,
-            crate::XWireRequest::XiUngrabDevice { device_id: 2, .. }
+            crate::XWireRequest::Xi(crate::XInputRequest::XiUngrabDevice { device_id: 2, .. })
         )
     {
         return Ok(None);
@@ -1218,19 +1218,19 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
             } {
                 Ok(mut request) => {
                     fake_input = XTestFakeInputRequest::from_request(&request);
-                    warp_pointer = matches!(&request, crate::XWireRequest::WarpPointer { .. });
-                    if let crate::XWireRequest::XTestGrabControl { impervious } = &request {
+                    warp_pointer = matches!(&request, crate::XWireRequest::Core(crate::XCoreRequest::WarpPointer { .. }));
+                    if let crate::XWireRequest::XTest(crate::XTestRequest::XTestGrabControl { impervious }) = &request {
                         grab_control = Some(*impervious);
                     }
                     if matches!(
                         &request,
-                        crate::XWireRequest::ChangeSaveSet { .. }
-                            | crate::XWireRequest::SetCloseDownMode { .. }
-                            | crate::XWireRequest::KillClient { .. }
+                        crate::XWireRequest::Core(crate::XCoreRequest::ChangeSaveSet { .. })
+                            | crate::XWireRequest::Core(crate::XCoreRequest::SetCloseDownMode { .. })
+                            | crate::XWireRequest::Core(crate::XCoreRequest::KillClient { .. })
                     ) {
                         lifetime_request = Some(request.clone());
                     }
-                    let create_surface_route = if let crate::XWireRequest::CreateWindow {
+                    let create_surface_route = if let crate::XWireRequest::Core(crate::XCoreRequest::CreateWindow {
                         packet:
                             crate::XAuthorityRequestPacket {
                                 kind:
@@ -1240,7 +1240,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 ..
                             },
                         ..
-                    } = &mut request
+                    }) = &mut request
                     {
                         let candidate = surface_generations.candidate(surface.index())?;
                         *surface = candidate;
@@ -1294,7 +1294,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // which is what Chromium's VA-API exports send. Resolving it
                     // before the pure dispatch keeps every bound there applied to
                     // a real size; an unanswerable descriptor keeps the zero.
-                    if let crate::XWireRequest::Dri3PixmapFromBuffer { size_bytes, .. } =
+                    if let crate::XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffer { size_bytes, .. }) =
                         &mut request
                         && *size_bytes == 0
                         && let Some(fd) = received_fds.first()
@@ -1304,34 +1304,34 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     }
                     let event_selection = x11_core_event_selection_update(&request);
                     let xid_request = match &request {
-                        crate::XWireRequest::XCMiscGetXIDRange => Some(1u32),
-                        crate::XWireRequest::XCMiscGetXIDList { count } => Some(*count),
+                        crate::XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetXIDRange) => Some(1u32),
+                        crate::XWireRequest::Extension(crate::XExtensionRequest::XCMiscGetXIDList { count }) => Some(*count),
                         _ => None,
                     };
                     let shm_attach_fd = match &request {
-                        crate::XWireRequest::ShmAttachFd {
+                        crate::XWireRequest::Shm(crate::XShmRequest::ShmAttachFd {
                             segment,
                             read_only,
-                        } => Some((*segment, *read_only)),
+                        }) => Some((*segment, *read_only)),
                         _ => None,
                     };
                     let shm_created_segment = match &request {
-                        crate::XWireRequest::ShmCreateSegment { segment, .. } => Some(*segment),
+                        crate::XWireRequest::Shm(crate::XShmRequest::ShmCreateSegment { segment, .. }) => Some(*segment),
                         _ => None,
                     };
                     let dri3_recovered_pixmap = match &request {
-                        crate::XWireRequest::Dri3BufferFromPixmap { pixmap }
-                        | crate::XWireRequest::Dri3BuffersFromPixmap { pixmap } => Some(*pixmap),
+                        crate::XWireRequest::Dri3(crate::XDri3Request::Dri3BufferFromPixmap { pixmap })
+                        | crate::XWireRequest::Dri3(crate::XDri3Request::Dri3BuffersFromPixmap { pixmap }) => Some(*pixmap),
                         _ => None,
                     };
                     let dri3_query = matches!(
                         &request,
-                        crate::XWireRequest::QueryExtension { name }
+                        crate::XWireRequest::Core(crate::XCoreRequest::QueryExtension { name })
                             if name == crate::X_DRI3_EXTENSION_NAME
                     );
                     let dri3_pixmap = match &request {
-                        crate::XWireRequest::Dri3PixmapFromBuffer { pixmap, .. }
-                        | crate::XWireRequest::Dri3PixmapFromBuffers { pixmap, .. } => {
+                        crate::XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffer { pixmap, .. })
+                        | crate::XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffers { pixmap, .. }) => {
                             Some(*pixmap)
                         }
                         _ => None,
@@ -1341,12 +1341,12 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // descriptors do, and are read before the pure dispatch:
                     // before this request allocates or publishes anything.
                     let dri3_plane_offset_refused = match &request {
-                        crate::XWireRequest::Dri3PixmapFromBuffers {
+                        crate::XWireRequest::Dri3(crate::XDri3Request::Dri3PixmapFromBuffers {
                             num_buffers,
                             offsets,
                             modifier,
                             ..
-                        } if dri3_modifier_is_opaque(*modifier) => {
+                        }) if dri3_modifier_is_opaque(*modifier) => {
                             let planes = usize::from(*num_buffers)
                                 .min(received_fds.len())
                                 .min(sophia_protocol::DMA_BUF_MAX_PLANES);
@@ -1358,19 +1358,19 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         _ => None,
                     };
                     let dri3_fence_request = match &request {
-                        crate::XWireRequest::Dri3FenceFromFd {
+                        crate::XWireRequest::Dri3(crate::XDri3Request::Dri3FenceFromFd {
                             fence,
                             initially_triggered,
                             ..
-                        } => Some((*fence, *initially_triggered)),
+                        }) => Some((*fence, *initially_triggered)),
                         _ => None,
                     };
                     let destroyed_fence = match &request {
-                        crate::XWireRequest::SyncDestroyFence { fence } => Some(*fence),
+                        crate::XWireRequest::Sync(crate::XSyncRequest::SyncDestroyFence { fence }) => Some(*fence),
                         _ => None,
                     };
                     let hierarchy_create = match &request {
-                        crate::XWireRequest::CreateWindow { packet, parent, .. } => {
+                        crate::XWireRequest::Core(crate::XCoreRequest::CreateWindow { packet, parent, .. }) => {
                             match &packet.kind {
                                 crate::XAuthorityRequestKind::CreateWindow {
                                     window,
@@ -1385,95 +1385,95 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         _ => None,
                     };
                     let hierarchy_reparent = match &request {
-                        crate::XWireRequest::ReparentWindow {
+                        crate::XWireRequest::Core(crate::XCoreRequest::ReparentWindow {
                             window,
                             parent,
                             x,
                             y,
-                        } => Some((*window, *parent, *x, *y)),
+                        }) => Some((*window, *parent, *x, *y)),
                         _ => None,
                     };
                     let hierarchy_restack = match &request {
-                        crate::XWireRequest::ConfigureWindow {
+                        crate::XWireRequest::Core(crate::XCoreRequest::ConfigureWindow {
                             window,
                             sibling,
                             stack_mode,
                             ..
-                        } => Some((*window, *sibling, *stack_mode)),
+                        }) => Some((*window, *sibling, *stack_mode)),
                         _ => None,
                     };
                     let hierarchy_geometry = match &request {
-                        crate::XWireRequest::ConfigureWindow {
+                        crate::XWireRequest::Core(crate::XCoreRequest::ConfigureWindow {
                             window,
                             x,
                             y,
                             width,
                             height,
                             ..
-                        } => Some((*window, *x, *y, *width, *height)),
+                        }) => Some((*window, *x, *y, *width, *height)),
                         _ => None,
                     };
                     let randr_selection = match &request {
-                        crate::XWireRequest::RandrSelectInput { window, enable } => {
+                        crate::XWireRequest::Randr(crate::XRandrRequest::RandrSelectInput { window, enable }) => {
                             Some((*window, *enable))
                         }
                         _ => None,
                     };
                     let present_selection = match &request {
-                        crate::XWireRequest::PresentSelectInput {
+                        crate::XWireRequest::Present(crate::XPresentRequest::PresentSelectInput {
                             event_id,
                             window,
                             event_mask,
-                        } => Some((*event_id, *window, *event_mask)),
+                        }) => Some((*event_id, *window, *event_mask)),
                         _ => None,
                     };
                     let present_msc_notify = match &request {
-                        crate::XWireRequest::PresentNotifyMsc {
+                        crate::XWireRequest::Present(crate::XPresentRequest::PresentNotifyMsc {
                             window,
                             serial,
                             target_msc,
                             ..
-                        } => Some((*window, *serial, *target_msc)),
+                        }) => Some((*window, *serial, *target_msc)),
                         _ => None,
                     };
                     let pending_present = match &request {
-                        crate::XWireRequest::PresentPixmap {
+                        crate::XWireRequest::Present(crate::XPresentRequest::PresentPixmap {
                             window,
                             pixmap,
                             serial,
                             idle_fence,
                             options,
                             ..
-                        } => Some((*window, *pixmap, *serial, *idle_fence, options & 0x0a == 0x08)),
+                        }) => Some((*window, *pixmap, *serial, *idle_fence, options & 0x0a == 0x08)),
                         _ => None,
                     };
                     let present_request = match &request {
-                        crate::XWireRequest::PresentPixmap {
+                        crate::XWireRequest::Present(crate::XPresentRequest::PresentPixmap {
                             window,
                             wait_fence,
                             idle_fence,
                             x_offset,
                             y_offset,
                             ..
-                        } => Some((*window, *wait_fence, *idle_fence, *x_offset, *y_offset)),
+                        }) => Some((*window, *wait_fence, *idle_fence, *x_offset, *y_offset)),
                         _ => None,
                     };
                     let xkb_selection = match &request {
-                        crate::XWireRequest::XkbSelectEvents {
+                        crate::XWireRequest::Xkb(crate::XkbRequest::XkbSelectEvents {
                             affect_which,
                             clear,
                             select_all,
                             state_details,
-                        } => Some((*affect_which, *clear, *select_all, *state_details)),
+                        }) => Some((*affect_which, *clear, *select_all, *state_details)),
                         _ => None,
                     };
-                    let xkb_get_state = matches!(request, crate::XWireRequest::XkbGetState);
+                    let xkb_get_state = matches!(request, crate::XWireRequest::Xkb(crate::XkbRequest::XkbGetState));
                     let xfixes_selection_input = match &request {
-                        crate::XWireRequest::XfixesSelectSelectionInput {
+                        crate::XWireRequest::Xfixes(crate::XFixesRequest::XfixesSelectSelectionInput {
                             window,
                             selection,
                             event_mask,
-                        } => Some((*window, *selection, *event_mask)),
+                        }) => Some((*window, *selection, *event_mask)),
                         _ => None,
                     };
                     // Ownership changes carry the cause with them, so the
@@ -1500,7 +1500,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     };
                     let selection_property_read = selection_property_read_trace(&request);
                     let requested_input_focus = match &request {
-                        crate::XWireRequest::SetInputFocus { focus, revert_to, time } => Some((*focus, *revert_to, *time)),
+                        crate::XWireRequest::Core(crate::XCoreRequest::SetInputFocus { focus, revert_to, time }) => Some((*focus, *revert_to, *time)),
                         _ => None,
                     };
                     let mapped_window = match &request {
@@ -1510,33 +1510,33 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         }) => Some(*window),
                         _ => None,
                     };
-                    let mapped_subwindows = matches!(&request, crate::XWireRequest::MapSubwindows { .. });
+                    let mapped_subwindows = matches!(&request, crate::XWireRequest::Core(crate::XCoreRequest::MapSubwindows { .. }));
                     let circulated = match &request {
-                        crate::XWireRequest::CirculateWindow { window, direction } => Some((*window, *direction)),
+                        crate::XWireRequest::Core(crate::XCoreRequest::CirculateWindow { window, direction }) => Some((*window, *direction)),
                         _ => None,
                     };
                     let configured = match &request {
-                        crate::XWireRequest::ConfigureWindow { .. } => Some(request.clone()),
+                        crate::XWireRequest::Core(crate::XCoreRequest::ConfigureWindow { .. }) => Some(request.clone()),
                         _ => None,
                     };
                     let unmapped_window = match &request {
-                        crate::XWireRequest::UnmapWindow { window } => Some(*window),
+                        crate::XWireRequest::Core(crate::XCoreRequest::UnmapWindow { window }) => Some(*window),
                         _ => None,
                     };
                     let output_reservation_property = match &request {
-                        crate::XWireRequest::ChangeProperty(change) => {
+                        crate::XWireRequest::Core(crate::XCoreRequest::ChangeProperty(change)) => {
                             Some((change.window, change.property))
                         }
-                        crate::XWireRequest::DeleteProperty { window, property } => {
+                        crate::XWireRequest::Core(crate::XCoreRequest::DeleteProperty { window, property }) => {
                             Some((*window, *property))
                         }
                         _ => None,
                     };
                     let metadata_property_update = match &request {
-                        crate::XWireRequest::ChangeProperty(change) => {
+                        crate::XWireRequest::Core(crate::XCoreRequest::ChangeProperty(change)) => {
                             Some((change.window, change.property))
                         }
-                        crate::XWireRequest::DeleteProperty { window, property } => {
+                        crate::XWireRequest::Core(crate::XCoreRequest::DeleteProperty { window, property }) => {
                             Some((*window, *property))
                         }
                         _ => None,
@@ -1652,8 +1652,8 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                             crate::XAuthorityExplicitPointerGrabAnchor::AdmissionDefault => true,
                             crate::XAuthorityExplicitPointerGrabAnchor::Surface(surface) => {
                                 let window = match &request {
-                                    crate::XWireRequest::GrabPointer { window, .. }
-                                    | crate::XWireRequest::XiGrabDevice { window, .. } => *window,
+                                    crate::XWireRequest::Core(crate::XCoreRequest::GrabPointer { window, .. })
+                                    | crate::XWireRequest::Xi(crate::XInputRequest::XiGrabDevice { window, .. }) => *window,
                                     _ => unreachable!("only grab requests prepare leases"),
                                 };
                                 runtime
@@ -1727,7 +1727,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // ConfigureRequest and nothing is applied. Override-redirect
                     // is never redirected, as for a map (t198).
                     let redirected_configure = match (&configured, protocol_routing.as_ref()) {
-                        (Some(crate::XWireRequest::ConfigureWindow { window, .. }), Some(routing))
+                        (Some(crate::XWireRequest::Core(crate::XCoreRequest::ConfigureWindow { window, .. })), Some(routing))
                             if !runtime.window_override_redirect(namespace, *window).unwrap_or(false) =>
                         {
                             let parent = routing.window_parent(*window).map_err(|error| {
@@ -1758,7 +1758,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     let mut resize_request = None;
                     if redirected_configure.is_none()
                         && let (
-                            Some(crate::XWireRequest::ConfigureWindow { window, value_mask, width, height, .. }),
+                            Some(crate::XWireRequest::Core(crate::XCoreRequest::ConfigureWindow { window, value_mask, width, height, .. })),
                             Some(routing),
                         ) = (&configured, protocol_routing.as_ref())
                         && *value_mask & 0xC != 0
@@ -1785,7 +1785,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                                 width: asked_width,
                                 height: asked_height,
                             });
-                            if let crate::XWireRequest::ConfigureWindow { value_mask, width, height, .. } = &mut request {
+                            if let crate::XWireRequest::Core(crate::XCoreRequest::ConfigureWindow { value_mask, width, height, .. }) = &mut request {
                                 *value_mask &= !0xC;
                                 *width = None;
                                 *height = None;
@@ -1798,7 +1798,7 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     // children stay unmapped; the rest map as before (XTS
                     // XMapSubwindows 5, t217).
                     let mut withheld_map_requests = Vec::new();
-                    if let (crate::XWireRequest::MapSubwindows { window: parent, withheld }, Some(routing)) =
+                    if let (crate::XWireRequest::Core(crate::XCoreRequest::MapSubwindows { window: parent, withheld }), Some(routing)) =
                         (&mut request, protocol_routing.as_ref())
                         && routing
                             .core_event_subscribers(*parent, SUBSTRUCTURE_REDIRECT_MASK)
@@ -1885,9 +1885,9 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                         _ if redirected_configure.is_some() => {
                             runtime.begin_dispatch();
                             let parent = redirected_configure.expect("redirect guard");
-                            let Some(crate::XWireRequest::ConfigureWindow {
+                            let Some(crate::XWireRequest::Core(crate::XCoreRequest::ConfigureWindow {
                                 window, value_mask, x, y, width, height, border_width, sibling, stack_mode,
-                            }) = configured
+                            })) = configured
                             else {
                                 unreachable!("a configure redirect names a ConfigureWindow")
                             };
@@ -2837,13 +2837,13 @@ fn serve_x11_core_socket_client_with_trace_observer_and_input(
                     connection.impervious = impervious == 1;
                 }
                 match lifetime_request.take() {
-                    Some(crate::XWireRequest::SetCloseDownMode { mode }) => {
+                    Some(crate::XWireRequest::Core(crate::XCoreRequest::SetCloseDownMode { mode })) => {
                         state.set_close_down_mode(client, mode)?;
                     }
-                    Some(crate::XWireRequest::ChangeSaveSet { window, mode, .. }) => {
+                    Some(crate::XWireRequest::Core(crate::XCoreRequest::ChangeSaveSet { window, mode, .. })) => {
                         state.change_save_set(client, window, mode)?;
                     }
-                    Some(crate::XWireRequest::KillClient { resource }) => {
+                    Some(crate::XWireRequest::Core(crate::XCoreRequest::KillClient { resource })) => {
                         let ended_self = apply_x11_kill_client(
                             state,
                             protocol_routing.as_ref(),

@@ -11,7 +11,7 @@ fn xi_grab_device_installs_only_the_bounded_master_pointer_mask() {
             XByteOrder::LittleEndian,
             X_INPUT_MAJOR_OPCODE,
         ),
-        XWireRequest::XiGrabDevice {
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiGrabDevice {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             time: 0,
             cursor: None,
@@ -20,7 +20,7 @@ fn xi_grab_device_installs_only_the_bounded_master_pointer_mask() {
             keyboard_mode: 1,
             owner_events: false,
             event_mask: vec![0x70],
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -71,10 +71,10 @@ fn x11_dispatch_advertises_randr_and_replies_to_query_version() {
     .unwrap();
     assert_eq!(
         version,
-        XWireRequest::RandrQueryVersion {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrQueryVersion {
             major_version: 1,
             minor_version: 5,
-        }
+        })
     );
     let version = dispatch_x11_wire_request(
         dispatch_context(namespace, 2, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
@@ -95,10 +95,10 @@ fn x11_dispatch_advertises_randr_and_replies_to_query_version() {
     .unwrap();
     assert_eq!(
         select,
-        XWireRequest::RandrSelectInput {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrSelectInput {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             enable: 0x000b,
-        }
+        })
     );
     let select = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
@@ -120,9 +120,9 @@ fn x11_dispatch_advertises_randr_and_replies_to_query_version() {
     .unwrap();
     assert_eq!(
         primary,
-        XWireRequest::RandrGetOutputPrimary {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetOutputPrimary {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-        }
+        })
     );
     let primary = dispatch_x11_wire_request(
         dispatch_context(namespace, 4, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
@@ -152,9 +152,9 @@ fn x11_dispatch_advertises_randr_and_replies_to_query_version() {
     .unwrap();
     assert_eq!(
         get_providers,
-        XWireRequest::RandrGetProviders {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetProviders {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
-        }
+        })
     );
     let get_providers = dispatch_x11_wire_request(
         dispatch_context(namespace, 5, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
@@ -174,10 +174,10 @@ fn x11_dispatch_advertises_randr_and_replies_to_query_version() {
     .unwrap();
     assert_eq!(
         monitors,
-        XWireRequest::RandrGetMonitors {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetMonitors {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             get_active: true,
-        }
+        })
     );
     let monitors = dispatch_x11_wire_request(
         dispatch_context(namespace, 5, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
@@ -229,7 +229,7 @@ fn randr_get_panning_reports_disabled_and_rejects_unknown_crtcs() {
             &request,
         )
         .unwrap();
-        assert_eq!(request, XWireRequest::RandrGetPanning { crtc });
+        assert_eq!(request, XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetPanning { crtc }));
 
         let encoded = dispatch_x11_wire_request(
             dispatch_context(
@@ -280,9 +280,9 @@ fn randr_get_crtc_transform_reports_bounded_identity_transform() {
     .unwrap();
     assert_eq!(
         request,
-        XWireRequest::RandrGetCrtcTransform {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetCrtcTransform {
             crtc: 0x1000_0001
-        }
+        })
     );
 
     let encoded = dispatch_x11_wire_request(
@@ -324,9 +324,9 @@ fn randr_get_crtc_gamma_matches_the_advertised_zero_length_ramp() {
     .unwrap();
     assert_eq!(
         request,
-        XWireRequest::RandrGetCrtcGamma {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetCrtcGamma {
             crtc: 0x1000_0001
-        }
+        })
     );
 
     let encoded = dispatch_x11_wire_request(
@@ -357,12 +357,12 @@ fn randr_output_property_returns_bounded_empty_edid_fallback() {
     .unwrap();
     assert!(matches!(
         request,
-        XWireRequest::RandrGetOutputProperty {
+        XWireRequest::Randr(sophia_x_authority::XRandrRequest::RandrGetOutputProperty {
             output: 0x2000_0001,
             property,
             long_length: 128,
             ..
-        } if property == edid
+        }) if property == edid
     ));
     let result = dispatch_x11_wire_request(
         dispatch_context(namespace, 6, XByteOrder::LittleEndian, X_RANDR_MAJOR_OPCODE),
@@ -571,10 +571,10 @@ fn xfixes_regions_support_create_set_and_destroy_lifecycle() {
         if sequence == 1 {
             assert!(matches!(
                 request,
-                XWireRequest::XfixesSetRegion {
+                XWireRequest::Xfixes(sophia_x_authority::XFixesRequest::XfixesSetRegion {
                     rectangles: ref decoded,
                     ..
-                } if decoded == &rectangles
+                }) if decoded == &rectangles
             ));
         }
         let result = dispatch_x11_wire_request(
@@ -597,7 +597,7 @@ fn xfixes_regions_support_create_set_and_destroy_lifecycle() {
         runtime.validate_xfixes_region_access(namespace, region_id),
         Ok(())
     );
-    let destroy = XWireRequest::XfixesDestroyRegion { region: region_id };
+    let destroy = XWireRequest::Xfixes(sophia_x_authority::XFixesRequest::XfixesDestroyRegion { region: region_id });
     let result = dispatch_x11_wire_request(
         dispatch_context(
             namespace,
@@ -685,10 +685,10 @@ fn root_scoped_requests_are_admitted_without_a_client_window() {
     // Setting the root cursor names the root for scope in the same way.
     let result = dispatch_x11_wire_request(
         dispatch_context(namespace, 10, XByteOrder::LittleEndian, X_INPUT_MAJOR_OPCODE),
-        XWireRequest::XiChangeCursor {
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiChangeCursor {
             window: XResourceId::new(u64::from(X_SETUP_DEFAULT_ROOT), 1),
             cursor: None,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -822,11 +822,11 @@ fn xfixes_selection_subscription_accepts_known_window_atom_and_mask() {
     .unwrap();
     assert!(matches!(
         request,
-        XWireRequest::XfixesSelectSelectionInput {
+        XWireRequest::Xfixes(sophia_x_authority::XFixesRequest::XfixesSelectSelectionInput {
             selection: X_ATOM_PRIMARY,
             event_mask: 0b111,
             ..
-        }
+        })
     ));
     let result = dispatch_x11_wire_request(
         dispatch_context(

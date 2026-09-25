@@ -313,7 +313,7 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
 
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
-        XWireRequest::SendSelectionNotify {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::SendSelectionNotify {
             destination: XResourceId::new(0x200001, 1),
             event_mask: 0,
             event: XClientEvent::SelectionNotify {
@@ -325,7 +325,7 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
                 target: 19,
                 property: 20,
             },
-        }
+        })
     );
 
     request[8..12].copy_from_slice(&0x0018_0000u32.to_le_bytes());
@@ -336,7 +336,7 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
     unmap[0] |= 0x80;
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
-        XWireRequest::SendSelectionNotify {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::SendSelectionNotify {
             destination: XResourceId::new(0x200001, 1),
             event_mask: 0x0018_0000,
             event: XClientEvent::ClientMessage {
@@ -346,7 +346,7 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
                 event_mask: 0x0018_0000,
                 propagate: false,
             },
-        }
+        })
     );
 
     request[12] = 0xf0;
@@ -354,7 +354,7 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
     extension_event.copy_from_slice(&request[12..44]);
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, byte_order), &request).unwrap(),
-        XWireRequest::SendSelectionNotify {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::SendSelectionNotify {
             destination: XResourceId::new(0x200001, 1),
             event_mask: 0x0018_0000,
             event: XClientEvent::ClientMessage {
@@ -364,7 +364,7 @@ fn send_event_accepts_selection_notify_and_rejects_input_events() {
                 event_mask: 0x0018_0000,
                 propagate: false,
             },
-        }
+        })
     );
 
     request[12] = 2;
@@ -381,20 +381,20 @@ fn xi2_decoder_accepts_query_pointer_and_ungrab_device() {
 
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap(),
-        XWireRequest::XiQueryPointer {
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiQueryPointer {
             window: XResourceId::new(0x200001, 1),
             device_id: 2,
-        }
+        })
     );
 
     request[1] = 52;
     request[4..8].copy_from_slice(&7u32.to_le_bytes());
     assert_eq!(
         decode_x11_core_request(context(namespace, 2, XByteOrder::LittleEndian), &request).unwrap(),
-        XWireRequest::XiUngrabDevice {
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiUngrabDevice {
             device_id: 2,
             time: 7,
-        }
+        })
     );
 }
 
@@ -418,7 +418,7 @@ fn xi2_decoder_bounds_grab_device_event_mask() {
 
     assert_eq!(
         decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap(),
-        XWireRequest::XiGrabDevice {
+        XWireRequest::Xi(sophia_x_authority::XInputRequest::XiGrabDevice {
             window: XResourceId::new(0x200001, 1),
             time: 7,
             cursor: Some(XResourceId::new(0x300001, 1)),
@@ -427,7 +427,7 @@ fn xi2_decoder_bounds_grab_device_event_mask() {
             keyboard_mode: 1,
             owner_events: true,
             event_mask: vec![0x00c0, 1],
-        }
+        })
     );
 
     request[22..24].copy_from_slice(&9_u16.to_le_bytes());
@@ -452,7 +452,7 @@ fn legacy_xinput_device_bell_is_a_bounded_noop() {
     ];
     let decoded =
         decode_x11_core_request(context(namespace, 1, XByteOrder::LittleEndian), &request).unwrap();
-    assert_eq!(decoded, XWireRequest::XiDeviceBell);
+    assert_eq!(decoded, XWireRequest::Xi(sophia_x_authority::XInputRequest::XiDeviceBell));
 
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
@@ -483,7 +483,7 @@ fn core_keyboard_control_and_bell_requests_are_bounded() {
         &[103, 0, 1, 0],
     )
     .unwrap();
-    assert_eq!(keyboard_control, XWireRequest::GetKeyboardControl);
+    assert_eq!(keyboard_control, XWireRequest::Core(sophia_x_authority::XCoreRequest::GetKeyboardControl));
 
     let mut runtime = XAuthorityRuntime::new();
     let mut atoms = XAtomTable::new();
@@ -504,7 +504,7 @@ fn core_keyboard_control_and_bell_requests_are_bounded() {
         &[104, 0, 1, 0],
     )
     .unwrap();
-    assert_eq!(bell, XWireRequest::Bell);
+    assert_eq!(bell, XWireRequest::Core(sophia_x_authority::XCoreRequest::Bell));
 }
 
 fn warp_request(
@@ -742,7 +742,7 @@ fn x11_warp_pointer_decodes_every_field_and_refuses_a_request_of_the_wrong_lengt
     .unwrap();
     assert_eq!(
         decoded,
-        XWireRequest::WarpPointer {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::WarpPointer {
             source: XResourceId::new(0x200040, 1),
             destination: XResourceId::new(0x200041, 1),
             src_x: 3,
@@ -751,7 +751,7 @@ fn x11_warp_pointer_decodes_every_field_and_refuses_a_request_of_the_wrong_lengt
             src_height: 19,
             dst_x: -7,
             dst_y: 11,
-        }
+        })
     );
 
     // Both windows absent is the unconditional warp, and zero must survive
@@ -763,7 +763,7 @@ fn x11_warp_pointer_decodes_every_field_and_refuses_a_request_of_the_wrong_lengt
     .unwrap();
     assert_eq!(
         unconditional,
-        XWireRequest::WarpPointer {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::WarpPointer {
             source: XResourceId::new(0, 1),
             destination: XResourceId::new(0, 1),
             src_x: 0,
@@ -772,7 +772,7 @@ fn x11_warp_pointer_decodes_every_field_and_refuses_a_request_of_the_wrong_lengt
             src_height: 0,
             dst_x: 1,
             dst_y: 2,
-        }
+        })
     );
 
     let mut overlong = warp_request(0, 0, (0, 0, 0, 0), (0, 0));
@@ -948,7 +948,7 @@ fn x11_force_screen_saver_accepts_both_modes_and_refuses_any_other() {
             &[115, mode, 1, 0],
         )
         .unwrap();
-        assert_eq!(request, XWireRequest::ForceScreenSaver { mode });
+        assert_eq!(request, XWireRequest::Core(sophia_x_authority::XCoreRequest::ForceScreenSaver { mode }));
         let accepted = dispatch_x11_wire_request(
             dispatch_context(namespace, sequence, XByteOrder::LittleEndian, 115),
             request,
@@ -969,7 +969,7 @@ fn x11_force_screen_saver_accepts_both_modes_and_refuses_any_other() {
         &[115, 2, 1, 0],
     )
     .unwrap();
-    assert_eq!(refused, XWireRequest::ForceScreenSaver { mode: 2 });
+    assert_eq!(refused, XWireRequest::Core(sophia_x_authority::XCoreRequest::ForceScreenSaver { mode: 2 }));
     let encoded = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, 115),
         refused,

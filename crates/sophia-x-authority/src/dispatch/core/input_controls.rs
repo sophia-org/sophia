@@ -11,7 +11,7 @@ fn dispatch_input_control_request(
     _properties: &mut XPropertyTable,
 ) -> XDispatchResult {
     match request {
-                XWireRequest::GetModifierMapping => {
+                XWireRequest::Core(crate::XCoreRequest::GetModifierMapping) => {
                     let (keycodes_per_modifier, keycodes) =
                         runtime.xkb_keymap().core_modifier_mapping();
                     XDispatchResult {
@@ -24,7 +24,7 @@ fn dispatch_input_control_request(
                     metadata_candidates: Vec::new(),
                 }
                 }
-                XWireRequest::GetPointerMapping => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::GetPointerMapping) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetPointerMapping {
                         sequence: context.sequence,
@@ -35,10 +35,10 @@ fn dispatch_input_control_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::GetKeyboardMapping {
+                XWireRequest::Core(crate::XCoreRequest::GetKeyboardMapping {
                     first_keycode,
                     count,
-                } => XDispatchResult {
+                }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetKeyboardMapping {
                         sequence: context.sequence,
@@ -47,7 +47,7 @@ fn dispatch_input_control_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::GetKeyboardControl => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::GetKeyboardControl) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetKeyboardControl {
                         sequence: context.sequence,
@@ -59,7 +59,7 @@ fn dispatch_input_control_request(
                 // back, validated as the protocol validates it; nothing
                 // here acts on them. The Engine owns pointer acceleration,
                 // the session owns key repeat, and no screen is blanked.
-                XWireRequest::ChangeKeyboardControl(change) => {
+                XWireRequest::Core(crate::XCoreRequest::ChangeKeyboardControl(change)) => {
                     let outputs = match runtime.controls_mut().change_keyboard(change) {
                         Ok(()) => Vec::new(),
                         // A led without a mode, or a key without a repeat
@@ -74,13 +74,13 @@ fn dispatch_input_control_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ChangePointerControl {
+                XWireRequest::Core(crate::XCoreRequest::ChangePointerControl {
                     acceleration_numerator,
                     acceleration_denominator,
                     threshold,
                     do_acceleration,
                     do_threshold,
-                } => {
+                }) => {
                     runtime.controls_mut().change_pointer(
                         acceleration_numerator,
                         acceleration_denominator,
@@ -94,7 +94,7 @@ fn dispatch_input_control_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetPointerControl => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::GetPointerControl) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetPointerControl {
                         sequence: context.sequence,
@@ -102,12 +102,12 @@ fn dispatch_input_control_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::SetScreenSaver {
+                XWireRequest::Core(crate::XCoreRequest::SetScreenSaver {
                     timeout,
                     interval,
                     prefer_blanking,
                     allow_exposures,
-                } => {
+                }) => {
                     runtime.controls_mut().set_screen_saver(
                         timeout,
                         interval,
@@ -120,7 +120,7 @@ fn dispatch_input_control_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GetScreenSaver => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::GetScreenSaver) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GetScreenSaver {
                         sequence: context.sequence,
@@ -130,7 +130,7 @@ fn dispatch_input_control_request(
                 },
                 // No motion history is kept, which the protocol allows: a
                 // valid window gets an empty reply.
-                XWireRequest::GetMotionEvents { window, .. } => {
+                XWireRequest::Core(crate::XCoreRequest::GetMotionEvents { window, .. }) => {
                     let outputs = if window.local.raw() != u64::from(X_SETUP_DEFAULT_ROOT)
                         && runtime
                             .validate_window_access(context.namespace, window)
@@ -157,14 +157,14 @@ fn dispatch_input_control_request(
                 // credentials. The list is empty and enabled, and no client
                 // is authorised to change it, which is the protocol's
                 // BadAccess.
-                XWireRequest::ListHosts => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::ListHosts) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::ListHosts {
                         sequence: context.sequence,
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::ChangeHosts | XWireRequest::SetAccessControl => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::ChangeHosts) | XWireRequest::Core(crate::XCoreRequest::SetAccessControl) => XDispatchResult {
                     response: None,
                     outputs: vec![color_error(context, XErrorCode::BadAccess, 0)],
                     metadata_candidates: Vec::new(),
@@ -174,7 +174,7 @@ fn dispatch_input_control_request(
                 // table clients translate with; a modifier mapping is served
                 // only when it is the current one, xkbcommon owning modifier
                 // state; QueryKeymap is what the keyboard routing observed.
-                XWireRequest::SetPointerMapping { ref mapping } => {
+                XWireRequest::Core(crate::XCoreRequest::SetPointerMapping { ref mapping }) => {
                     let outputs = match crate::XPointerButtonMapping::from_request(mapping) {
                         Err(crate::XPointerMappingRefusal::LengthMismatch(len)) => {
                             vec![color_error(context, XErrorCode::BadValue, u32::from(len))]
@@ -220,11 +220,11 @@ fn dispatch_input_control_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::ChangeKeyboardMapping {
+                XWireRequest::Core(crate::XCoreRequest::ChangeKeyboardMapping {
                     first_keycode,
                     keysyms_per_keycode,
                     ref keysyms,
-                } => {
+                }) => {
                     let outputs = match runtime.keyboard_map_mut().change(
                         first_keycode,
                         keysyms_per_keycode,
@@ -246,10 +246,10 @@ fn dispatch_input_control_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::SetModifierMapping {
+                XWireRequest::Core(crate::XCoreRequest::SetModifierMapping {
                     keycodes_per_modifier,
                     ref keycodes,
-                } => {
+                }) => {
                     let width = usize::from(keycodes_per_modifier);
                     let mut requested: [std::collections::BTreeSet<u8>; 8] = Default::default();
                     let mut refused = None;
@@ -297,7 +297,7 @@ fn dispatch_input_control_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::QueryKeymap => XDispatchResult {
+                XWireRequest::Core(crate::XCoreRequest::QueryKeymap) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::QueryKeymap {
                         sequence: context.sequence,

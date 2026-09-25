@@ -75,22 +75,24 @@ fn shared_zpixmap_upload_decodes_packed_depths_padding_crop_and_byte_order() {
                     1,
                 )
                 .unwrap();
-            let request = |offset| XWireRequest::ShmPutImage {
-                drawable: pixmap,
-                gc,
-                segment,
-                total_width: 3,
-                total_height: 2,
-                src_x: 1,
-                src_y: 0,
-                src_width: 2,
-                src_height: 2,
-                dst_x: 0,
-                dst_y: 0,
-                depth,
-                format: 2,
-                offset,
-                send_event: true,
+            let request = |offset| {
+                XWireRequest::Shm(sophia_x_authority::XShmRequest::ShmPutImage {
+                    drawable: pixmap,
+                    gc,
+                    segment,
+                    total_width: 3,
+                    total_height: 2,
+                    src_x: 1,
+                    src_y: 0,
+                    src_width: 2,
+                    src_height: 2,
+                    dst_x: 0,
+                    dst_y: 0,
+                    depth,
+                    format: 2,
+                    offset,
+                    send_event: true,
+                })
             };
             let context = XDispatchContext {
                 byte_order: order,

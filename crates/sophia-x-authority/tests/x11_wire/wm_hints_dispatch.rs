@@ -108,9 +108,9 @@ fn wm_transient_for_attaches_dialog_and_unmap_publishes_lifecycle_snapshot() {
 
     let unmapped = dispatch_x11_wire_request(
         dispatch_context(namespace, 5, XByteOrder::LittleEndian, 10),
-        XWireRequest::UnmapWindow {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::UnmapWindow {
             window: XResourceId::new(u64::from(dialog), 1),
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -188,10 +188,10 @@ fn root_transient_stays_policy_managed_without_a_surface_owner() {
 
     let detached = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, 19),
-        XWireRequest::DeleteProperty {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::DeleteProperty {
             window: XResourceId::new(u64::from(dialog), 1),
             property: transient_for,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -286,10 +286,10 @@ fn ewmh_dialog_type_is_policy_managed_and_requests_floating_placement() {
 
     let deleted = dispatch_x11_wire_request(
         dispatch_context(namespace, 4, XByteOrder::LittleEndian, 19),
-        XWireRequest::DeleteProperty {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::DeleteProperty {
             window: XResourceId::new(u64::from(dialog), 1),
             property: window_type,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,

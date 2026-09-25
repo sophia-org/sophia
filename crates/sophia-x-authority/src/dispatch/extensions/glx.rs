@@ -32,33 +32,33 @@ fn dispatch_glx_request(
 ) -> XDispatchFamilyResult {
     if !matches!(
         &request,
-            XWireRequest::GlxQueryVersion { .. }
-            | XWireRequest::GlxGetVisualConfigs { .. }
-            | XWireRequest::GlxGetFbConfigs { .. }
-            | XWireRequest::GlxClientInfo
-            | XWireRequest::GlxCreateContext { .. }
-            | XWireRequest::GlxDestroyContext { .. }
-            | XWireRequest::GlxMakeCurrent { .. }
-            | XWireRequest::GlxIsDirect { .. }
-            | XWireRequest::GlxCreateWindow { .. }
-            | XWireRequest::GlxCreatePbuffer { .. }
-            | XWireRequest::GlxDestroyPbuffer { .. }
-            | XWireRequest::GlxCreatePixmap { .. }
-            | XWireRequest::GlxCreateGlxPixmap { .. }
-            | XWireRequest::GlxDestroyPixmap { .. }
-            | XWireRequest::GlxQueryContext { .. }
-            | XWireRequest::GlxChangeDrawableAttributes { .. }
-            | XWireRequest::GlxMakeContextCurrent { .. }
-            | XWireRequest::GlxDeleteWindow { .. }
-            | XWireRequest::GlxGetDrawableAttributes { .. }
-            | XWireRequest::GlxQueryExtensionsString
-            | XWireRequest::GlxQueryServerString { .. }
-            | XWireRequest::GlxUnimplemented { .. }
+            XWireRequest::Glx(crate::XGlxRequest::GlxQueryVersion { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxGetVisualConfigs { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxGetFbConfigs { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxClientInfo)
+            | XWireRequest::Glx(crate::XGlxRequest::GlxCreateContext { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxDestroyContext { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxMakeCurrent { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxIsDirect { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxCreateWindow { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxCreatePbuffer { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxDestroyPbuffer { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxCreatePixmap { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxCreateGlxPixmap { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxDestroyPixmap { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxQueryContext { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxChangeDrawableAttributes { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxMakeContextCurrent { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxDeleteWindow { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxGetDrawableAttributes { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxQueryExtensionsString)
+            | XWireRequest::Glx(crate::XGlxRequest::GlxQueryServerString { .. })
+            | XWireRequest::Glx(crate::XGlxRequest::GlxUnimplemented { .. })
     ) {
         return Unhandled(request);
     }
     Handled(match request {
-                XWireRequest::GlxQueryVersion { .. } => XDispatchResult {
+                XWireRequest::Glx(crate::XGlxRequest::GlxQueryVersion { .. }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GlxQueryVersion {
                         sequence: context.sequence,
@@ -67,7 +67,7 @@ fn dispatch_glx_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::GlxGetVisualConfigs { screen } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxGetVisualConfigs { screen }) => {
                     let outputs = if screen == 0 {
                         vec![XClientOutput::Reply(XClientReply::GlxVisualConfigs {
                             sequence: context.sequence,
@@ -86,7 +86,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxGetFbConfigs { screen } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxGetFbConfigs { screen }) => {
                     let outputs = if screen == 0 {
                         vec![XClientOutput::Reply(XClientReply::GlxFbConfigs {
                             sequence: context.sequence,
@@ -105,18 +105,18 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxClientInfo => XDispatchResult {
+                XWireRequest::Glx(crate::XGlxRequest::GlxClientInfo) => XDispatchResult {
                     response: None,
                     outputs: Vec::new(),
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::GlxCreateContext {
+                XWireRequest::Glx(crate::XGlxRequest::GlxCreateContext {
                     context: id,
                     config,
                     screen,
                     share,
                     direct,
-                } => {
+                }) => {
                     let fbconfig = match config {
                         XGlxContextConfig::Visual(X_SETUP_DEFAULT_VISUAL) => Some(1),
                         XGlxContextConfig::Visual(X_SETUP_ARGB_VISUAL) => Some(2),
@@ -165,7 +165,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxDestroyContext { context: id } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxDestroyContext { context: id }) => {
                     let outputs = runtime
                         .destroy_glx_context(context.namespace, id)
                         .err()
@@ -185,11 +185,11 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxMakeCurrent {
+                XWireRequest::Glx(crate::XGlxRequest::GlxMakeCurrent {
                     drawable,
                     context: context_id,
                     old_context_tag,
-                } => {
+                }) => {
                     let valid_old_tag = matches!(old_context_tag, 0 | 1);
                     let valid = match (drawable, context_id) {
                         (None, None) => valid_old_tag,
@@ -229,7 +229,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxIsDirect { context: id } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxIsDirect { context: id }) => {
                     let outputs = match runtime.glx_context(context.namespace, id) {
                         Ok((_, direct)) => vec![XClientOutput::Reply(XClientReply::GlxIsDirect {
                             sequence: context.sequence,
@@ -248,12 +248,12 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxCreateWindow {
+                XWireRequest::Glx(crate::XGlxRequest::GlxCreateWindow {
                     screen,
                     fbconfig,
                     window,
                     glx_window,
-                } => {
+                }) => {
                     let visual = runtime.window_visual(window).1;
                     let compatible = crate::x_glx_fb_config(fbconfig, runtime.pixmap_textures_supported())
                         .is_some_and(|config| config.visual == visual);
@@ -284,14 +284,14 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxCreatePbuffer {
+                XWireRequest::Glx(crate::XGlxRequest::GlxCreatePbuffer {
                     screen,
                     fbconfig,
                     pbuffer,
                     width,
                     height,
                     largest,
-                } => {
+                }) => {
                     let outputs = if screen != 0
                         || crate::x_glx_fb_config(fbconfig, runtime.pixmap_textures_supported())
                             .is_none()
@@ -338,7 +338,7 @@ fn dispatch_glx_request(
                 // attributes, but a client that asks is entitled to an answer from
                 // a server claiming this version. The reply shares the drawable
                 // attributes shape: a pair count, twenty bytes of pad, then pairs.
-                XWireRequest::GlxQueryContext { context: glx_context } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxQueryContext { context: glx_context }) => {
                     let outputs = match runtime.glx_context(context.namespace, glx_context) {
                         Ok((fbconfig, _)) => {
                             vec![XClientOutput::Reply(XClientReply::GlxDrawableAttributes {
@@ -367,7 +367,7 @@ fn dispatch_glx_request(
                 // pbuffer can report. Sophia never sends them, so the drawable is
                 // validated and the request records nothing -- refusing it would be
                 // the worse answer, since the client is entitled to ask.
-                XWireRequest::GlxChangeDrawableAttributes { drawable } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxChangeDrawableAttributes { drawable }) => {
                     let outputs = runtime
                         .drawable_facts(context.namespace, drawable)
                         .err()
@@ -387,7 +387,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxCreatePixmap {
+                XWireRequest::Glx(crate::XGlxRequest::GlxCreatePixmap {
                     screen,
                     fbconfig,
                     pixmap,
@@ -395,7 +395,7 @@ fn dispatch_glx_request(
                     target,
                     format,
                     mipmap,
-                } => {
+                }) => {
                     // The capability first: with no provider behind them these
                     // configurations never claimed pixmap drawables, so the
                     // configuration is what cannot answer.
@@ -438,12 +438,12 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxCreateGlxPixmap {
+                XWireRequest::Glx(crate::XGlxRequest::GlxCreateGlxPixmap {
                     screen,
                     visual,
                     pixmap,
                     glx_pixmap,
-                } => {
+                }) => {
                     // The visual-based constructor requires native X depth;
                     // the FBConfig constructor may also wrap full RGBA storage.
                     let supported = runtime.pixmap_textures_supported();
@@ -499,10 +499,10 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxDestroyPixmap {
+                XWireRequest::Glx(crate::XGlxRequest::GlxDestroyPixmap {
                     minor_opcode,
                     glx_pixmap,
-                } => {
+                }) => {
                     let outputs = runtime
                         .destroy_glx_pixmap(context.namespace, glx_pixmap)
                         .err()
@@ -523,7 +523,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxDestroyPbuffer { pbuffer } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxDestroyPbuffer { pbuffer }) => {
                     let outputs = runtime
                         .destroy_glx_pbuffer(context.namespace, pbuffer)
                         .err()
@@ -547,11 +547,11 @@ fn dispatch_glx_request(
                 // answers for the clients that send the older one. Both drawables
                 // are validated so a context cannot be bound to a surface the
                 // client does not own.
-                XWireRequest::GlxMakeContextCurrent {
+                XWireRequest::Glx(crate::XGlxRequest::GlxMakeContextCurrent {
                     drawable,
                     read_drawable,
                     context: glx_context,
-                } => {
+                }) => {
                     // Sophia renders nothing indirectly, so a context that is
                     // not direct has no renderer to become current on. Binding
                     // it would promise a path that does not exist.
@@ -585,7 +585,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxDeleteWindow { glx_window } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxDeleteWindow { glx_window }) => {
                     let outputs = runtime
                         .destroy_glx_window(context.namespace, glx_window)
                         .err()
@@ -605,7 +605,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxGetDrawableAttributes { drawable } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxGetDrawableAttributes { drawable }) => {
                     // A window alias reports its backing window's live geometry;
                     // an offscreen surface reports the extent it was created
                     // with, because no window is tracking it.
@@ -689,7 +689,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxQueryExtensionsString => XDispatchResult {
+                XWireRequest::Glx(crate::XGlxRequest::GlxQueryExtensionsString) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Reply(XClientReply::GlxString {
                         sequence: context.sequence,
@@ -697,7 +697,7 @@ fn dispatch_glx_request(
                     })],
                     metadata_candidates: Vec::new(),
                 },
-                XWireRequest::GlxQueryServerString { name } => {
+                XWireRequest::Glx(crate::XGlxRequest::GlxQueryServerString { name }) => {
                     let value = match name {
                         1 => "Sophia",
                         2 => "1.4",
@@ -714,7 +714,7 @@ fn dispatch_glx_request(
                         metadata_candidates: Vec::new(),
                     }
                 }
-                XWireRequest::GlxUnimplemented { minor_opcode } => XDispatchResult {
+                XWireRequest::Glx(crate::XGlxRequest::GlxUnimplemented { minor_opcode }) => XDispatchResult {
                     response: None,
                     outputs: vec![XClientOutput::Error(crate::XClientError {
                         code: if minor_opcode <= crate::X_GLX_LAST_MINOR_OPCODE {

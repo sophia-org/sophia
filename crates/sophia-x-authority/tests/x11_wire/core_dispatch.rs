@@ -75,9 +75,9 @@ fn override_redirect_window_is_reported_as_client_positioned() {
 
     let attributes = dispatch_x11_wire_request(
         dispatch_context(namespace, 2, XByteOrder::LittleEndian, 3),
-        XWireRequest::GetWindowAttributes {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::GetWindowAttributes {
             window: XResourceId::new(u64::from(window), 1),
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -124,12 +124,12 @@ fn reparent_reports_policy_role_transition_to_session_observer() {
 
     let reparented = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, 7),
-        XWireRequest::ReparentWindow {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ReparentWindow {
             window: XResourceId::new(u64::from(child), 1),
             parent: XResourceId::new(u64::from(parent), 1),
             x: 12,
             y: 24,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
@@ -181,7 +181,7 @@ fn x11_dispatch_reports_window_lifecycle_map_state() {
                       properties: &mut XPropertyTable| {
         dispatch_x11_wire_request(
             dispatch_context(namespace, 2, XByteOrder::LittleEndian, 3),
-            XWireRequest::GetWindowAttributes { window },
+            XWireRequest::Core(sophia_x_authority::XCoreRequest::GetWindowAttributes { window }),
             runtime,
             atoms,
             properties,
@@ -302,7 +302,7 @@ fn mapped_policy_toplevel_cannot_overwrite_engine_geometry() {
 
     let result = dispatch_x11_wire_request(
         dispatch_context(namespace, 3, XByteOrder::LittleEndian, 12),
-        XWireRequest::ConfigureWindow {
+        XWireRequest::Core(sophia_x_authority::XCoreRequest::ConfigureWindow {
             window,
             value_mask: 0x000f,
             x: Some(10),
@@ -312,7 +312,7 @@ fn mapped_policy_toplevel_cannot_overwrite_engine_geometry() {
             border_width: None,
             sibling: None,
             stack_mode: None,
-        },
+        }),
         &mut runtime,
         &mut atoms,
         &mut properties,
