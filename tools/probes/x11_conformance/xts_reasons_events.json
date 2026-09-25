@@ -61,7 +61,6 @@
   "/Xlib11/KeyRelease#6": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'The subwindow component of the KeyRelease event was not set correctly.'",
   "/Xlib11/KeyRelease#8": "the suite's own unsupported, on Xvnc as on the host: 'There is no known portable test method for this assertion; Multiple screens not supported.'",
   "/Xlib11/KeyRelease#9": "the suite's own unsupported, on Xvnc as on the host: 'There is no known portable test method for this assertion; Multiple screens not supported.'",
-  "/Xlib11/KeymapNotify#1": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got MotionNotify, expected KeymapNotify'",
   "/Xlib11/KeymapNotify#2": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got FocusIn, expected KeymapNotify'",
   "/Xlib11/KeymapNotify#3": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'display: 0x37b879f0, client2: 0x37b98c60, client2: 0x37ba6c20'",
   "/Xlib11/KeymapNotify#4": "the suite retired this assertion (NOTINUSE in the source)",

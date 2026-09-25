@@ -161,9 +161,13 @@ down as QueryKeymap reports them, less the bitmap's first byte. Red before
 the fix: `a_keymap_notify_follows_an_enter_notify_and_a_focus_in`, which
 crosses between two windows of one client, because a motion onto the root
 reaches no writer of the client the pointer left and the return then
-crosses nothing this layer can see; that gap stays with t211. The rerun
-read 84 passed: KeymapNotify 2 moved, KeymapNotify 1 reads FAIL instead of
-a crash, and nothing else changed.
+crosses nothing this layer can see; that gap stays with t211. The rerun,
+made beside the full test suites, read 84 passed: KeymapNotify 2 moved and
+KeymapNotify 1 read FAIL instead of a crash, `No events received` on four
+of its five warps. The gate's own run on a quiet machine then passed it,
+every warp answered with its EnterNotify and KeymapNotify before the XSync
+reply: the load-only miss is the ordering race of t229, and the scenario is
+declared from the gate's journal at 85 passed.
 
 ## The windows scenario, in the authority's area
 
@@ -192,7 +196,7 @@ side) and the pane's attribute, gravity and pixel work.
 
 The repairs are on `xts-events/t196` with wire tests that were red on the
 tree before them, and the scenario is declared: `xts_expected_events.json`
-(84 passed, 111 declared after the selection-by-direction and KeymapNotify
+(85 passed, 110 declared after the selection-by-direction and KeymapNotify
 reruns; 60 and 135 at the section's first declaration) from `xts_reasons_events.json`,
 every authority row naming its task, run under the gate with
 `--xts-admit-xtest=yes`. Each seam that lands re-declares it.

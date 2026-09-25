@@ -629,9 +629,7 @@
   },
   {
     "case": "/Xlib11/KeymapNotify",
-    "purpose": 1,
-    "expected": "FAIL",
-    "reason": "t211: the authority does not pass this yet (FAIL; Xvnc PASS): 'Got MotionNotify, expected KeymapNotify'"
+    "purpose": 1
   },
   {
     "case": "/Xlib11/KeymapNotify",
