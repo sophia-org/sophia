@@ -773,15 +773,11 @@
   },
   {
     "case": "/Xlib11/MotionNotify",
-    "purpose": 6,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
+    "purpose": 6
   },
   {
     "case": "/Xlib11/MotionNotify",
-    "purpose": 7,
-    "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc PASS): 'Unexpected values in delivered event'"
+    "purpose": 7
   },
   {
     "case": "/Xlib11/MotionNotify",
@@ -813,7 +809,7 @@
     "case": "/Xlib11/MotionNotify",
     "purpose": 13,
     "expected": "FAIL",
-    "reason": "t220: the authority does not pass this yet (FAIL; Xvnc FAIL): 'Delivered event did not match expected event'"
+    "reason": "the suite's own, on Xvnc as on the host: purposes 10 and 11 end unresolved with Button1 pressed and never released (the suite releases at the end of the case), so 13 finds Button1Mask in the state where it expects nothing held; Xvnc reads FAIL the same way"
   },
   {
     "case": "/Xlib11/MotionNotify",
