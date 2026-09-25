@@ -1,6 +1,192 @@
 use super::*;
 
 #[test]
+fn preview_only_updates_damage_and_hold_sources_until_copy_then_backings_until_retirement() {
+    use std::sync::Arc;
+    let outputs = outputs();
+    let output = outputs[0];
+    let mut runtime = LiveProductionVisualRuntime::new(&outputs, None).unwrap();
+    let mut scene = LiveProductionCpuScene::new(output.size);
+    let mut target = MirroredTarget::new(&outputs);
+    let surface = SurfaceId::new(5, 1);
+    let source_size = Size {
+        width: 8,
+        height: 8,
+    };
+    let source_geometry = Rect {
+        x: -100,
+        y: -100,
+        width: 8,
+        height: 8,
+    };
+    let preview_geometry = Rect {
+        x: 4,
+        y: 4,
+        width: 4,
+        height: 4,
+    };
+    runtime.descriptor_overlay = Some(DescriptorOverlayProjection {
+        output: output.id,
+        generation: 77,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 32,
+        },
+        commands: vec![CompositorDisplayCommand::SurfacePreview(
+            CompositorSurfacePreview {
+                node: CompositorNodeId::DescriptorOverlay {
+                    projection: 77,
+                    slot: 1,
+                    role: DescriptorOverlayNodeRole::Row,
+                },
+                generation: 77,
+                surface,
+                geometry: preview_geometry,
+                clip: preview_geometry,
+            },
+        )],
+        targets: vec![],
+    });
+    let mut before = None;
+    let mut source_weak = None;
+    for generation in 1..=2 {
+        let bytes = Arc::new(vec![generation as u8 * 40; 8 * 8 * 4]);
+        source_weak = Some(Arc::downgrade(&bytes));
+        scene
+            .apply_updates([LiveCpuBufferUpdate::Replace(LiveCpuBufferSource {
+                handle: 55,
+                generation,
+                size: source_size,
+                stride: 32,
+                format: LIVE_RENDERER_SCANOUT_FORMAT_XRGB8888,
+                bytes,
+            })])
+            .unwrap();
+        let transaction = SurfaceTransaction {
+            transaction: TransactionId::from_raw(generation),
+            authority: AuthorityKind::SophiaX,
+            surface,
+            namespace: None,
+            target_geometry: source_geometry,
+            presentation_extent: source_size,
+            content: SurfaceContentSet::singleton(
+                BufferSource::CpuBuffer { handle: 55 },
+                source_size,
+            ),
+            damage: Region::single(Rect {
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 8,
+            }),
+            readiness: SurfaceTransactionReadiness::Ready,
+            timeout_msec: 250,
+            previous_committed_generation: generation - 1,
+            input_region: None,
+        };
+        runtime
+            .prepare_authority_transactions(transaction.transaction, &[transaction], &[])
+            .unwrap();
+        assert!(runtime.presentation_order.is_empty());
+        let committed = runtime.committed_surfaces();
+        assert_eq!(committed[0].geometry, source_geometry);
+        let captured = output_composition::OutputCompositionSnapshot::capture(&runtime);
+        let list = captured.display_list(output.id, committed).unwrap();
+        assert!(
+            !list
+                .commands
+                .iter()
+                .any(|c| matches!(c, CompositorDisplayCommand::Surface { .. }))
+        );
+        let preview = list.surface_previews().next().unwrap();
+        assert_eq!(preview.generation, generation);
+        assert_eq!(preview.geometry, preview_geometry);
+        let damage = output_frame_damage_snapshot(output, list.clone(), committed, None).unwrap();
+        assert!(
+            output_frame_damage(Some(&damage), &damage)
+                .unwrap()
+                .is_empty()
+        );
+        if let Some(before) = &before {
+            let changed = output_frame_damage(Some(before), &damage).unwrap();
+            assert!(!changed.is_empty());
+            assert!(changed.rects.iter().all(|rect| *rect == preview_geometry));
+        }
+        let report = scene
+            .compose_display_list(output, committed, &list, None)
+            .unwrap();
+        let pixel = (4 * 64 + 4) * 4;
+        assert_eq!(
+            &report.frame.bytes[pixel..pixel + 4],
+            &[
+                generation as u8 * 40,
+                generation as u8 * 40,
+                generation as u8 * 40,
+                255
+            ]
+        );
+        assert_eq!(&report.frame.bytes[..4], &[0; 4]);
+        before = Some(damage);
+    }
+    let source_weak = source_weak.unwrap();
+    // Exercise production source lookup and native lowering, including the
+    // preview-only member absent from normal presentation order.
+    let frames = runtime
+        .retained_output_head_composition_frames(&scene, &target)
+        .unwrap();
+    assert!(
+        frames[0].1[0]
+            .frame
+            .layers
+            .iter()
+            .any(|layer| matches!(layer, LiveOwnedMixedCompositionLayer::Cpu { .. }))
+    );
+    target
+        .queue_retained_batch(frames, &BTreeSet::new())
+        .unwrap();
+    runtime.set_descriptor_overlay(None, &scene, None).unwrap();
+    let closed = output_composition::OutputCompositionSnapshot::capture(&runtime)
+        .display_list(output.id, runtime.committed_surfaces())
+        .unwrap();
+    assert!(closed.surface_previews().next().is_none());
+    scene.reconcile_buffer_residency(&[]);
+    drop(runtime);
+    drop(scene);
+    assert!(
+        source_weak.upgrade().is_some(),
+        "queued native heads own the source after close"
+    );
+    target.install(output.id).unwrap();
+    assert!(
+        source_weak.upgrade().is_some(),
+        "installed copy requests still own the source"
+    );
+    target.prepare(output.id);
+    assert!(
+        source_weak.upgrade().is_none(),
+        "completed copies release source leases"
+    );
+    assert_eq!(
+        target.owners.get(),
+        2,
+        "submitted scanout backings remain owned"
+    );
+    target.flip(output.id, 1);
+    assert!(target.heads[0].custody.submitted().is_some());
+    assert_eq!(target.owners.get(), 2);
+    target.flip(output.id, 0);
+    assert_eq!(
+        target.owners.get(),
+        2,
+        "displayed backing remains owned until retirement"
+    );
+    target.teardown();
+    assert_eq!(target.owners.get(), 0);
+}
+
+#[test]
 fn mirrored_thousand_cycles_join_intake_lowering_installation_copy_and_completion() {
     exercise_thousand(MirroredTarget::new(&outputs()));
 }

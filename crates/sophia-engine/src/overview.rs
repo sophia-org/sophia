@@ -2,6 +2,13 @@ use std::collections::BTreeSet;
 
 use sophia_protocol::{PolicyOverviewWorkspace, PolicySceneSnapshot, validate_wm_overview};
 
+mod projection;
+pub use projection::*;
+mod capture;
+pub use capture::*;
+mod authority;
+pub use authority::*;
+
 /// Committed spatial preview facts. Shell clients receive only remapped slots;
 /// Engine retains these opaque scene identities for image sampling and selection.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

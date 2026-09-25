@@ -9,6 +9,7 @@ include!("wm/output_policy_keys.rs");
 include!("wm/session.rs");
 include!("wm/control.rs");
 include!("wm/chrome.rs");
+include!("wm/overview.rs");
 include!("wm/commit.rs");
 include!("wm/visual_candidate.rs");
 include!("wm/admission.rs");

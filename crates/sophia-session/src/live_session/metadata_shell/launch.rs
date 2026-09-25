@@ -62,6 +62,7 @@ impl LiveMetadataShell {
             tabs: LiveTabSession::default(),
             indicators: indicators::LiveIndicatorState::default(),
             reference: LiveReferenceSession::default(),
+            overview: overview::LiveOverviewSession::default(),
             launcher: LiveLauncherSession::default(),
             supervisor,
             base_launch_spec: spec,

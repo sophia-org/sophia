@@ -403,13 +403,26 @@ impl LiveProductionVisualRuntime {
                 self.display_list_for_output(output, viewport, &committed, &retained_order)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let cpu_layers = scene.presentation_variant_layers(&committed, &retained_order);
+        let source_order: Vec<_> = display_lists
+            .iter()
+            .flat_map(|list| &list.commands)
+            .filter_map(|command| match command {
+                CompositorDisplayCommand::Surface { surface } => Some(*surface),
+                CompositorDisplayCommand::SurfacePreview(preview) => Some(preview.surface),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let cpu_layers = scene.presentation_variant_layers(&committed, &source_order);
         let in_flight = self.present_scheduler.in_flight_displayed_layer();
         let mut sources = Vec::new();
         let mut seen = BTreeSet::new();
         for command in display_lists.iter().flat_map(|list| &list.commands) {
-            let CompositorDisplayCommand::Surface { surface } = command else {
-                continue;
+            let surface = match command {
+                CompositorDisplayCommand::Surface { surface } => surface,
+                CompositorDisplayCommand::SurfacePreview(preview) => &preview.surface,
+                _ => continue,
             };
             if !seen.insert(*surface) {
                 continue;

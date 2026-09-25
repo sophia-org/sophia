@@ -1,5 +1,7 @@
 const SHELL_HELP_SHORTCUT_ACTION: sophia_protocol::WmActionId =
     sophia_protocol::WmActionId::from_raw(u64::MAX - 1);
+const SHELL_OVERVIEW_SHORTCUT_ACTION: sophia_protocol::WmActionId =
+    sophia_protocol::WmActionId::from_raw(u64::MAX - 2);
 
 const SHELL_SWITCHER_SHORTCUT_ACTION: sophia_protocol::WmActionId =
     sophia_protocol::WmActionId::from_raw(u64::MAX);

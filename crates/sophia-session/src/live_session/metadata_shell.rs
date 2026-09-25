@@ -15,6 +15,7 @@ pub(crate) mod component_launch;
 pub(crate) mod component_session;
 mod launch;
 mod launcher;
+mod overview;
 mod reference;
 mod revoked_content_grants;
 use launcher::LiveLauncherSession;
@@ -102,6 +103,7 @@ pub(super) struct LiveMetadataShell {
     tabs: LiveTabSession,
     indicators: indicators::LiveIndicatorState,
     reference: LiveReferenceSession,
+    overview: overview::LiveOverviewSession,
     launcher: LiveLauncherSession,
     supervisor: ProcessSupervisor,
     base_launch_spec: ProcessLaunchSpec,
@@ -777,6 +779,7 @@ impl LiveMetadataShell {
         self.activating = None;
         self.tabs = LiveTabSession::default();
         self.reset_reference();
+        self.overview = overview::LiveOverviewSession::default();
         self.reset_launcher();
         self.pending = None;
         self.presented = None;
