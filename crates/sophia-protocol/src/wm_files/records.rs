@@ -5,6 +5,21 @@ pub const WM_FILE_MAX_SECTIONS: usize = 32;
 pub const WM_FILE_SECTION_HEADER_BYTES: usize = 16;
 pub const WM_FILE_SUBMIT_BYTES: usize = 24;
 pub const WM_FILE_ACK_BYTES: usize = 16;
+pub const WM_FILE_MAX_JOURNAL_RECORDS: u16 = 64;
+pub const WM_FILE_ASSEMBLY_TIMEOUT_MILLIS: u32 = 12_000;
+pub const WM_FILE_SEND_TIMEOUT_MILLIS: u32 = 4_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFileLimits {
+    pub capability_ceiling: u64,
+    pub profile_required: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFileNegotiationOffer {
+    pub required_capabilities: u64,
+    pub optional_capabilities: u64,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]

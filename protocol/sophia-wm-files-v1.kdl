@@ -1,5 +1,5 @@
-// Envelope, complete arrays and policy controls. Negotiation/profile bodies,
-// independent Nim bodies and role integration remain under t249/h006 review.
+// WM file byte contract. Independent Nim bodies and role integration remain
+// under t249/h006 review; these records alone grant no admission or authority.
 protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=1048576 max-sections=32 {
     header size=32 {
         field "total_bytes" type="u32" offset=0
@@ -33,6 +33,40 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
     candidate "Dirty" kind=261
     candidate "Projection" kind=262
     candidate "SessionOperation" kind=263
+
+    body "Limits" size=32 {
+        field "capability_ceiling" type="u64" offset=0
+        field "max_object_bytes" type="u32" offset=8 value=1048576
+        field "max_journal_bytes" type="u32" offset=12 value=1048576
+        field "max_journal_records" type="u16" offset=16 value=64
+        field "max_sections" type="u16" offset=18 value=32
+        field "assembly_timeout_ms" type="u32" offset=20 value=12000
+        field "send_timeout_ms" type="u32" offset=24 value=4000
+        field "profile_required" type="u16" offset=28 min=0 max=1
+        field "reserved" type="u16" offset=30 value=0
+    }
+    // Required and optional masks must be disjoint. Unknown bits are retained
+    // for the admission owner's selection/refusal, not granted by this codec.
+    body "Negotiate" size=16 {
+        field "required_capabilities" type="u64" offset=0
+        field "optional_capabilities" type="u64" offset=8
+    }
+    body "Negotiated" size=8 {
+        field "selected_capabilities" type="u64" offset=0
+    }
+    body "ProfileCommand" size=48 kinds="ProfilePrepare,ProfileActivate,ProfileRollback" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "profile_generation" type="u64" offset=8 nonzero=true
+        field "profile_digest" type="bytes" offset=16 size=32 nonzero=true
+    }
+    body "ProfileCompletion" size=56 kinds="ProfilePrepared,ProfileActive,ProfileRolledBack" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "profile_generation" type="u64" offset=8 nonzero=true
+        field "profile_digest" type="bytes" offset=16 size=32 nonzero=true
+        // 1 Accepted, 2 RejectedIdentity, 3 RejectedState.
+        field "outcome" type="u16" offset=48 min=1 max=3
+        field "reserved" type="bytes" offset=50 size=6 value=0
+    }
 
     // Prefix offsets start after the common header. Domain transaction ids
     // do not alias the candidate submission id. Sections immediately follow.

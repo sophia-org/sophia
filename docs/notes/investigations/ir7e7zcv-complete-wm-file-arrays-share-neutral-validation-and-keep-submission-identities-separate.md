@@ -85,6 +85,34 @@ file bodies, and the complete admitted Session/Hagia roundtrip are not yet
 proved by it. The separate supplied-stream custody checkpoint does not turn
 these codec tests into semantic settlement or physical presentation evidence.
 
+## Admission bodies
+
+The follow-up joins the neutral profile records and existing handoff helper
+`c1a97762` as `10147db4d`. `wm_files/admission.rs` defines Limits, disjoint
+required/optional capability offers, the selected set, and profile commands
+and completions. The latter reuse PolicyProfileIdentity and its constructor;
+the kind identifies the stage and the header supplies the exact epoch.
+No fake legacy hello, frame container, second profile reducer or negotiation
+state is added. Limits publishes API-1 constants; the file owner must consume
+those constants at its next integration checkpoint.
+
+Five focused controls pass: literal limits and offers, overlap refusal in both
+directions, every profile command/completion/outcome, exact epoch and identity,
+reserved fields, truncations and tails. Three compiled mutations fail at their
+intended assertions: allow overlapping masks, bypass profile epoch binding and
+ignore the published journal-record bound. Source is restored before the final
+protocol suite (239 passed, zero failed), strict all-target protocol Clippy,
+fresh-root layout, fmt, metadata and diff checks. Evidence is in
+`.artifacts/t249-admission`; there were no live, hardware or main-tree actions.
+
+The contract now specifies one successful selection per epoch and admission
+closure when required capabilities are missing after dependency reduction.
+The file Negotiated event precedes profile handoff; the worker notification
+still follows it. Existing reducer correlation owns completion pairing. These
+are integration requirements, not proof that the supplied-stream custody
+fixture already performs admission or semantic settlement. Independent Nim
+body codecs and the complete Session/Hagia roundtrip remain open.
+
 ## Connections
 
 - [WM file contract](../../sophia-wm-files.md) owns byte and custody semantics.

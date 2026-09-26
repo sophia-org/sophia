@@ -17,11 +17,36 @@ cloning the admitted root does not create another role or epoch.
 9P negotiates the base version `9P2000.L` and its message-size limit. WM API
 negotiation is separate: the file family is `sophia_wm_fs_v1`, API version 1.
 The server publishes its admitted epoch, API range, capability ceiling and
-object limits. A client submits its required and optional capabilities before
-profile handoff. Selection is required union supported optional, within the
-Session ceiling. An unknown required bit refuses. Native presentation
+object limits. A client submits disjoint required and optional capability masks
+before profile handoff. The existing admission owner intersects their union
+with the supported set and Session ceiling, then removes presentation actions
+without surface instances and output launch context without launch origin.
+If any required bit is absent after these reductions, including an unknown
+required bit, admission fails and closes the endpoint without a Negotiated
+event. A malformed offer is refused before submission custody. Native presentation
 capabilities remain absent without native retirement; files supply no software
 completion owner. Negotiation does not admit configuration or an application.
+
+Exactly one successful capability selection occurs per admitted epoch. Its
+Negotiated event carries the immutable selected set and therefore needs no
+second negotiation correlation ID. Replaying an accepted Negotiate submission
+only replays its retained Submitted custody result. It cannot negotiate again.
+The file Negotiated event precedes optional profile handoff; the internal
+driver's Negotiated notification still follows successful profile admission.
+Failure or timeout during handoff closes the admission without configuration.
+
+ProfilePrepare, ProfileActivate and ProfileRollback require, respectively,
+ProfilePrepared, ProfileActive and ProfileRolledBack with the exact server
+transaction, epoch, generation and digest. The existing profile handoff reducer
+owns this pairing and its terminal outcome; a codec-valid completion alone
+cannot activate a profile.
+
+API-1 Limits publishes fixed file custody bounds. Role maxima remain the
+compile-time record contract: 16 outputs, 1024 surfaces/placements and 256
+actions or presentation bindings. The remaining per-kind maxima and row layouts
+are the shared records in [the WM schema](../protocol/sophia-wm-v1.kdl), enforced
+by the neutral `policy_record_layout` owner and `POLICY_MAX_*` constants. Limits
+does not renegotiate those maxima or change active connection bounds.
 
 Revocation invalidates every operation through retained fids immediately.
 Clunk and disconnect still release their local resources. Reconnect creates a
@@ -78,7 +103,8 @@ Expiry releases the buffer and makes the old fid stale.
 admitted epoch, a nonzero attach-local submission ID and the exact candidate
 length. Submission IDs increase within an attach and are distinct from domain
 transaction IDs, request IDs, scene generations, 9P tags and fids. Domain IDs
-retain their existing correlation and reuse rules.
+retain Session's semantic correlation; file admission applies the separate
+increasing domain watermark described below.
 
 Before submission, the adapter validates the complete binary shape, bounds,
 capabilities and epoch, and obtains admission from the single existing driver
@@ -91,6 +117,12 @@ custody. Queue refusal leaves the exact candidate retryable. The adapter does
 not perform a second policy validation or commit: configuration, projection,
 session-operation and presentation decisions still belong to their existing
 Session/Engine owners.
+
+A submit refused with `EAGAIN` has transferred nothing. The WM services and
+acknowledges pending events or uses bounded retry backoff within the owning
+response deadline before trying again; it must not spin on a withheld permit
+or full journal. The core does not park a write request waiting for semantic
+credit.
 
 After custody transfers, an ordered `Submitted` event records the submission
 ID. This means only that the existing driver accepted a complete value. It is
@@ -204,6 +236,23 @@ Session. A transport Submitted event names the submission ID; policy settlement
 names the original domain transaction/request identities. Neither substitutes
 for the other.
 
+Configuration, Projection and SessionOperation candidates carry client domain
+transaction IDs from one strictly increasing namespace per admitted connection;
+gaps are allowed. This file admission rule fits Hagia's serialized allocator
+and uses one bounded watermark. It does not harden or replace the legacy IPC
+transaction set. Dirty carries no domain transaction and must not borrow its
+submission ID as one. Profile completions echo server-owned transaction IDs
+and are outside the client namespace.
+
+The domain watermark advances only when a complete candidate acquires its
+Submitted journal reservation and driver delivery custody. Decoding, capability,
+phase/permit or capacity refusal leaves it unchanged. A domain ID at or below
+the watermark refuses with `EALREADY` while retaining staging; a later Session
+outcome does not release that consumed ID. An exact retained submit retry takes
+the existing idempotent path before this check and cannot enqueue a second
+event. A fresh admitted epoch resets the client watermark; the logical
+filesystem qid allocator continues across epochs.
+
 The Cycle event has a 48-byte prefix, the affected output IDs and one exact
 cause body. It names both the immutable snapshot transaction and the separate
 request transaction/request ID. File cause codes are SceneChanged=0, Action=1,
@@ -229,8 +278,9 @@ per connection, this would permit at most sixteen MiB of candidate staging;
 the WM endpoint instead admits only its one supervised writer. Snapshot/event
 retention and server output queues have their separate stated bounds.
 
-The remaining codec checkpoint fixes negotiation/profile body layouts and publishes
-cross-language valid/malformed binary corpora. Record-array layouts already
+Negotiation and profile bodies use the fixed layouts in the file schema and
+the neutral profile identity records. Independent Nim bodies and cross-language
+valid/malformed binary corpora remain required. Record-array layouts already
 have a neutral codec owner shared by both transports. The new adapter must not build old IPC
 frames or feed files through the old transport. Hagia implements the published
 layouts independently in Nim; Sophia source is not a Hagia dependency.
