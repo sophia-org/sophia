@@ -4,10 +4,9 @@
 use super::*;
 use sha2::{Digest, Sha256};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
 
-const FROZEN_BINARY: &str =
-    "/home/niltempus/dev/hagia-overview-fix/.artifacts/h006-endpoint/hagia-7455c3e";
 const FROZEN_SHA256: &str = "0419e09e224676c4d925438f80b22df9532c1653ec339507637edbe01ea52f5f";
 
 #[path = "policy_hagia_layout.rs"]
@@ -67,7 +66,16 @@ fn with_normal_hagia_transport<T>(
     .unwrap();
     let expected = std::env::var("SOPHIA_HAGIA_FILE_SHA256").expect("required pinned hash missing");
     assert_eq!(expected, FROZEN_SHA256);
-    assert_eq!(binary, std::fs::canonicalize(FROZEN_BINARY).unwrap());
+    let metadata = std::fs::metadata(&binary).unwrap();
+    assert!(
+        metadata.is_file(),
+        "supplied Hagia must be a regular executable"
+    );
+    assert_ne!(
+        metadata.permissions().mode() & 0o111,
+        0,
+        "supplied Hagia must be executable"
+    );
     assert_eq!(binary_hash(&binary), expected);
     let evidence = PathBuf::from(
         std::env::var_os("SOPHIA_HAGIA_FILE_EVIDENCE")

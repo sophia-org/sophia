@@ -11,6 +11,9 @@ mod cpu_join;
 #[path = "policy_hagia_operation.rs"]
 mod operation_join;
 
+#[path = "policy_hagia_recovery.rs"]
+mod recovery_join;
+
 const SURFACE: SurfaceId = SurfaceId::new(3, 1);
 
 fn retain_existing_surface(layout: &mut PersistentLiveLayout) {
