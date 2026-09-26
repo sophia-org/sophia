@@ -11,8 +11,12 @@
 //! owner decides admission, disclosure and revocation. Attach names, user
 //! names and peer credentials reach the owner as data and grant nothing here.
 //!
+//! [`client`] is a separate bounded, read-only client with its own codec; it
+//! shares only the protocol's value records with the server core.
+//!
 //! The older `sophia-9p-authority` scaffold is unrelated and unused.
 
+pub mod client;
 pub mod connection;
 pub mod export;
 pub mod records;
