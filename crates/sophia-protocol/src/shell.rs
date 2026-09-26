@@ -1,14 +1,20 @@
-//! Wire-neutral typed shell IPC record model.
+//! Wire-neutral typed shell protocol record model.
 //!
-//! Everything under this module is plain data plus pure validation: no
-//! cursors, no `Wire` impls, no `IpcMessageKind`. The codec in `crate::ipc`
-//! depends on these types; nothing here depends back on the codec, so the
-//! codec can be replaced without touching this module.
+//! The record modules below (`content`, `native_launcher`, `catalog_actions`,
+//! ...) are plain data plus pure validation: no cursors, no `Wire` impls, no
+//! frame message kinds. `encoding` holds their VALUE encodings — the little
+//! endian cursor, the per-record byte shapes and the neutral
+//! `encode_*_value`/`decode_*_value` entry points — which is likewise free
+//! of frame message kinds and frame headers, so `crate::shell_files` can
+//! encode these records without depending on the frame codec. The frame
+//! codec depends on both; neither depends back on it, so the frame format
+//! can be replaced without touching this module.
 
 pub mod applications;
 pub mod catalog_actions;
 pub mod catalog_transaction;
 pub mod content;
+pub mod encoding;
 pub mod hello;
 pub mod indicators;
 pub mod native_launcher;

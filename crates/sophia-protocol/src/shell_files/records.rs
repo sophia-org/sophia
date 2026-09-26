@@ -91,7 +91,7 @@ pub enum ShellFileCodecError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellFilePayloadError {
     Envelope(ShellFileCodecError),
-    Records(crate::IpcCodecError),
+    Records(crate::shell::encoding::ValueError),
     Identity,
     Value,
 }

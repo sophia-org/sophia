@@ -3,6 +3,7 @@
 //! This crate deliberately has no compositor, X11, or IPC dependencies. It is
 //! the executable form of the data model in `docs/dod.md`.
 
+mod byte_cursor;
 pub mod capacity;
 pub mod cursor;
 pub mod geometry;

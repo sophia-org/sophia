@@ -1,6 +1,6 @@
 use super::codec::validate_header;
 use super::*;
-use crate::IpcCodecError;
+use crate::shell::encoding::ValueError;
 
 impl From<ShellFileCodecError> for ShellFilePayloadError {
     fn from(error: ShellFileCodecError) -> Self {
@@ -8,8 +8,8 @@ impl From<ShellFileCodecError> for ShellFilePayloadError {
     }
 }
 
-impl From<IpcCodecError> for ShellFilePayloadError {
-    fn from(error: IpcCodecError) -> Self {
+impl From<ValueError> for ShellFilePayloadError {
+    fn from(error: ValueError) -> Self {
         Self::Records(error)
     }
 }

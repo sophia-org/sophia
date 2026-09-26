@@ -1,52 +1,10 @@
-use crate::IpcCodecError;
-use crate::ipc::cursor::Cursor;
+//! Field-level byte shapes for the r5 content vocabulary records
+//! (`crate::shell::encoding::content`). Split out from `content.rs` purely
+//! for file size; every `Wire` impl here backs the encode/decode entry
+//! points defined there.
+use crate::byte_cursor::Cursor;
+use crate::shell::encoding::{ValueError, Wire, fields, reserved};
 use crate::*;
-
-pub(crate) trait Wire: Sized {
-    fn put(&self, bytes: &mut Vec<u8>);
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError>;
-}
-
-macro_rules! integer {
-    ($ty:ty, $read:ident) => {
-        impl Wire for $ty {
-            fn put(&self, bytes: &mut Vec<u8>) {
-                bytes.extend_from_slice(&self.to_le_bytes());
-            }
-            fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
-                Ok(cursor.$read()? as Self)
-            }
-        }
-    };
-}
-integer!(u16, u16);
-integer!(u32, u32);
-integer!(u64, u64);
-integer!(i16, u16);
-integer!(i32, i32);
-
-/// Reserved fields exist only on the wire, never as mutable record state.
-pub(crate) fn reserved<T: Wire + Default + PartialEq>(
-    cursor: &mut Cursor<'_>,
-) -> Result<(), IpcCodecError> {
-    if T::take(cursor)? != T::default() {
-        return Err(IpcCodecError::ReservedNonZero(1));
-    }
-    Ok(())
-}
-
-macro_rules! fields {
-    ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
-        impl Wire for $name {
-            fn put(&self, bytes: &mut Vec<u8>) {
-                $(self.$field.put(bytes);)*
-            }
-            fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
-                Ok(Self { $($field: <$ty>::take(cursor)?),* })
-            }
-        }
-    };
-}
 
 fields!(ContentGrant {
     connection_epoch: u64,
@@ -147,7 +105,7 @@ impl Wire for ContentLimits {
         self.max_candidate_rate_millihz.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let limits_generation = u64::take(cursor)?;
         let max_resource_bytes = u64::take(cursor)?;
@@ -268,7 +226,7 @@ impl Wire for ContentAdmissionRefused {
         0u16.put(bytes);
         self.denied_capabilities.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let reason = u16::take(cursor)?;
         reserved::<u16>(cursor)?;
         let denied_capabilities = u64::take(cursor)?;
@@ -296,7 +254,7 @@ impl Wire for ContentAllocationRequest {
         self.desired_height.put(bytes);
         self.margins.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let output = ContentOutputId::take(cursor)?;
         let allocation_request_id = u64::take(cursor)?;
@@ -349,7 +307,7 @@ impl Wire for ContentAllocationResult {
         self.acknowledged_anchor.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let allocation_request_id = u64::take(cursor)?;
         let status = u16::take(cursor)?;
@@ -400,7 +358,7 @@ impl Wire for ContentResourceBegin {
         self.chunk_count.put(bytes);
         self.total_bytes.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let resource = ContentResourceId::take(cursor)?;
         let width_px = u32::take(cursor)?;
@@ -442,7 +400,7 @@ impl Wire for ContentResourceEnd {
         self.chunk_count.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let resource = ContentResourceId::take(cursor)?;
         let total_bytes = u64::take(cursor)?;
@@ -486,7 +444,7 @@ impl Wire for ContentCandidateBegin {
         self.target_count.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let candidate_generation = u64::take(cursor)?;
         let output = ContentOutputId::take(cursor)?;
@@ -520,7 +478,7 @@ impl Wire for ContentCandidateEnd {
         self.target_count.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let candidate_generation = u64::take(cursor)?;
         let surface_count = u32::take(cursor)?;
@@ -568,7 +526,7 @@ impl Wire for ContentFramePermit {
         self.max_candidate_bytes.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let output = ContentOutputId::take(cursor)?;
         let demand_id = u64::take(cursor)?;
@@ -614,7 +572,7 @@ impl Wire for ContentAction {
         self.reason.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let output = ContentOutputId::take(cursor)?;
         let candidate_generation = u64::take(cursor)?;
@@ -661,7 +619,7 @@ impl Wire for ContentActionAck {
         0u16.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let grant = ContentGrant::take(cursor)?;
         let output = ContentOutputId::take(cursor)?;
         let candidate_generation = u64::take(cursor)?;
@@ -713,7 +671,7 @@ impl Wire for ContentSurface {
         self.anchor_parent_rect.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let allocation = ContentAllocationId::take(cursor)?;
         let scale_generation = u64::take(cursor)?;
         let role = u16::take(cursor)?;
@@ -746,7 +704,7 @@ impl Wire for ContentPlacement {
         self.destination_y_px.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let resource = ContentResourceId::take(cursor)?;
         let surface_index = u16::take(cursor)?;
         reserved::<u16>(cursor)?;
@@ -772,7 +730,7 @@ impl Wire for ContentTarget {
         self.bounds_px.put(bytes);
         0u32.put(bytes);
     }
-    fn take(cursor: &mut Cursor<'_>) -> Result<Self, IpcCodecError> {
+    fn take(cursor: &mut Cursor<'_>) -> Result<Self, ValueError> {
         let surface_index = u16::take(cursor)?;
         let action_kind = u16::take(cursor)?;
         let target_id = u64::take(cursor)?;
@@ -787,6 +745,107 @@ impl Wire for ContentTarget {
             target_generation,
             action_id,
             bounds_px,
+        })
+    }
+}
+
+/// Reads a table length prefix, bounded by `maximum`.
+fn count(cursor: &mut Cursor<'_>, maximum: usize) -> Result<usize, ValueError> {
+    let value = cursor.u32()? as usize;
+    if value > maximum {
+        return Err(ValueError::CountTooLarge {
+            count: value,
+            max: maximum,
+        });
+    }
+    Ok(value)
+}
+
+/// Reads exactly `count` rows of `T`, each row's own shape doing its own
+/// bounds checking.
+fn take_table<T: Wire>(cursor: &mut Cursor<'_>, count: usize) -> Result<Vec<T>, ValueError> {
+    (0..count).map(|_| T::take(cursor)).collect()
+}
+
+impl Wire for ContentOutputFacts {
+    fn put(&self, b: &mut Vec<u8>) {
+        self.grant.put(b);
+        self.facts_generation.put(b);
+        (self.outputs.len() as u32).put(b);
+        0u32.put(b);
+        for row in &self.outputs {
+            row.put(b);
+        }
+    }
+    fn take(c: &mut Cursor<'_>) -> Result<Self, ValueError> {
+        let grant = ContentGrant::take(c)?;
+        let facts_generation = c.u64()?;
+        let count = count(c, 16)?;
+        reserved::<u32>(c)?;
+        Ok(Self {
+            grant,
+            facts_generation,
+            outputs: take_table(c, count)?,
+        })
+    }
+}
+impl Wire for ContentResourceChunk {
+    fn put(&self, b: &mut Vec<u8>) {
+        self.grant.put(b);
+        self.resource.put(b);
+        self.ordinal.put(b);
+        (self.bytes.len() as u32).put(b);
+        self.offset.put(b);
+        b.extend_from_slice(&self.bytes);
+    }
+    fn take(c: &mut Cursor<'_>) -> Result<Self, ValueError> {
+        let grant = ContentGrant::take(c)?;
+        let resource = ContentResourceId::take(c)?;
+        let ordinal = c.u32()?;
+        let length = count(c, 65488)?;
+        let offset = c.u64()?;
+        let bytes = c.slice(length)?.to_vec();
+        Ok(Self {
+            grant,
+            resource,
+            ordinal,
+            offset,
+            bytes,
+        })
+    }
+}
+impl Wire for ContentCandidateChunk {
+    fn put(&self, b: &mut Vec<u8>) {
+        self.grant.put(b);
+        self.candidate_generation.put(b);
+        self.chunk_ordinal.put(b);
+        (self.surfaces.len() as u32).put(b);
+        (self.placements.len() as u32).put(b);
+        (self.targets.len() as u32).put(b);
+        for row in &self.surfaces {
+            row.put(b);
+        }
+        for row in &self.placements {
+            row.put(b);
+        }
+        for row in &self.targets {
+            row.put(b);
+        }
+    }
+    fn take(c: &mut Cursor<'_>) -> Result<Self, ValueError> {
+        let grant = ContentGrant::take(c)?;
+        let candidate_generation = c.u64()?;
+        let chunk_ordinal = c.u32()?;
+        let ns = count(c, 8)?;
+        let np = count(c, 32)?;
+        let nt = count(c, 64)?;
+        Ok(Self {
+            grant,
+            candidate_generation,
+            chunk_ordinal,
+            surfaces: take_table(c, ns)?,
+            placements: take_table(c, np)?,
+            targets: take_table(c, nt)?,
         })
     }
 }

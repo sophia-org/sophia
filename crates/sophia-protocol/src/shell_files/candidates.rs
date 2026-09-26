@@ -5,17 +5,20 @@
 use super::codec::{u32_at, u64_at};
 use super::payload::*;
 use super::*;
+use crate::shell::encoding::content::{
+    ShellContentValueKind, decode_shell_content_value, encode_shell_content_value,
+};
 use crate::*;
 
 /// The payload a single-payload transaction record carries.
-fn carried(kind: ShellFileKind) -> Option<IpcMessageKind> {
+fn carried(kind: ShellFileKind) -> Option<ShellContentValueKind> {
     Some(match kind {
-        ShellFileKind::CandidateOutcome => IpcMessageKind::ShellContentCandidateOutcome,
-        ShellFileKind::FramePermit => IpcMessageKind::ShellContentFramePermit,
-        ShellFileKind::Action => IpcMessageKind::ShellContentAction,
-        ShellFileKind::FrameDemand => IpcMessageKind::ShellContentFrameDemand,
-        ShellFileKind::FrameDemandCancel => IpcMessageKind::ShellContentFrameDemandCancel,
-        ShellFileKind::ActionAck => IpcMessageKind::ShellContentActionAck,
+        ShellFileKind::CandidateOutcome => ShellContentValueKind::CandidateOutcome,
+        ShellFileKind::FramePermit => ShellContentValueKind::FramePermit,
+        ShellFileKind::Action => ShellContentValueKind::Action,
+        ShellFileKind::FrameDemand => ShellContentValueKind::FrameDemand,
+        ShellFileKind::FrameDemandCancel => ShellContentValueKind::FrameDemandCancel,
+        ShellFileKind::ActionAck => ShellContentValueKind::ActionAck,
         _ => return None,
     })
 }
@@ -42,8 +45,7 @@ pub fn encode_shell_file_transaction_body(
     if !tx_record.transaction.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -65,13 +67,13 @@ pub fn decode_shell_file_transaction(
     bytes: &[u8],
     kind: ShellFileKind,
 ) -> Result<ShellFileTransactionRecord, ShellFilePayloadError> {
-    let ipc = carried(kind).ok_or(ShellFileCodecError::Kind)?;
+    let value_kind = carried(kind).ok_or(ShellFileCodecError::Kind)?;
     let r = record(bytes, kind, 8)?;
     let transaction = TransactionId::from_raw(u64_at(r.body, 0)?);
     if !transaction.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(ipc, transaction, &r.body[8..])?;
+    let decoded = decode_shell_content_value(value_kind, &r.body[8..])?;
     if shell_file_transaction_kind(&decoded) != Some(kind) {
         return Err(ShellFileCodecError::Kind.into());
     }
@@ -123,18 +125,11 @@ pub fn encode_shell_file_candidate(
         return Err(ShellFilePayloadError::Identity);
     }
     let tx = candidate.transaction;
-    let (_, begin) = crate::ipc::encode_shell_content_payload(
-        tx,
-        &ShellContentRecord::CandidateBegin(candidate.begin.clone()),
-    )?;
-    let (_, chunk) = crate::ipc::encode_shell_content_payload(
-        tx,
-        &ShellContentRecord::CandidateChunk(candidate.chunk.clone()),
-    )?;
-    let (_, end) = crate::ipc::encode_shell_content_payload(
-        tx,
-        &ShellContentRecord::CandidateEnd(candidate.end.clone()),
-    )?;
+    let begin =
+        encode_shell_content_value(&ShellContentRecord::CandidateBegin(candidate.begin.clone()))?;
+    let chunk =
+        encode_shell_content_value(&ShellContentRecord::CandidateChunk(candidate.chunk.clone()))?;
+    let end = encode_shell_content_value(&ShellContentRecord::CandidateEnd(candidate.end.clone()))?;
     let mut body = Vec::with_capacity(16 + begin.len() + chunk.len() + end.len());
     body.extend(tx.raw().to_le_bytes());
     body.extend((begin.len() as u32).to_le_bytes());
@@ -169,15 +164,11 @@ pub fn decode_shell_file_candidate(
         .checked_add(chunk_len)
         .filter(|end_at| *end_at <= r.body.len())
         .ok_or(ShellFileCodecError::Length)?;
-    let part = |kind, range: std::ops::Range<usize>| {
-        crate::ipc::decode_shell_content_payload(kind, transaction, &r.body[range])
-    };
-    let begin = part(IpcMessageKind::ShellContentCandidateBegin, 16..chunk_at)?;
-    let chunk = part(IpcMessageKind::ShellContentCandidateChunk, chunk_at..end_at)?;
-    let end = part(
-        IpcMessageKind::ShellContentCandidateEnd,
-        end_at..r.body.len(),
-    )?;
+    let part =
+        |kind, range: std::ops::Range<usize>| decode_shell_content_value(kind, &r.body[range]);
+    let begin = part(ShellContentValueKind::CandidateBegin, 16..chunk_at)?;
+    let chunk = part(ShellContentValueKind::CandidateChunk, chunk_at..end_at)?;
+    let end = part(ShellContentValueKind::CandidateEnd, end_at..r.body.len())?;
     let (
         ShellContentRecord::CandidateBegin(begin),
         ShellContentRecord::CandidateChunk(chunk),

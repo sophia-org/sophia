@@ -1,6 +1,9 @@
 use super::codec::u64_at;
 use super::payload::*;
 use super::*;
+use crate::shell::encoding::content::{
+    ShellContentValueKind, decode_shell_content_value, encode_shell_content_value,
+};
 use crate::*;
 
 pub fn encode_shell_file_limits(
@@ -9,17 +12,13 @@ pub fn encode_shell_file_limits(
 ) -> Result<Vec<u8>, ShellFilePayloadError> {
     header_kind(header, ShellFileKind::Limits)?;
     let record = ShellContentRecord::Limits(limits);
-    let (_, body) = crate::ipc::encode_shell_content_payload(TransactionId::INVALID, &record)?;
+    let body = encode_shell_content_value(&record)?;
     Ok(encode_shell_file_record(header, &body)?)
 }
 
 pub fn decode_shell_file_limits(bytes: &[u8]) -> Result<ContentLimits, ShellFilePayloadError> {
     let r = record(bytes, ShellFileKind::Limits, 0)?;
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentLimits,
-        TransactionId::INVALID,
-        r.body,
-    )?;
+    let decoded = decode_shell_content_value(ShellContentValueKind::Limits, r.body)?;
     match decoded {
         ShellContentRecord::Limits(limits) => Ok(limits),
         _ => Err(ShellFileCodecError::Kind.into()),
@@ -44,8 +43,7 @@ pub fn encode_shell_file_allocation_request(
         ShellContentRecord::AllocationRequest(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -60,11 +58,8 @@ pub fn decode_shell_file_allocation_request(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentAllocationRequest,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded =
+        decode_shell_content_value(ShellContentValueKind::AllocationRequest, &r.body[8..])?;
     match decoded {
         ShellContentRecord::AllocationRequest(_) => Ok(ShellFileTransactionRecord {
             transaction: tx,
@@ -94,8 +89,7 @@ pub fn encode_shell_file_allocation_result_body(
         ShellContentRecord::AllocationResult(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -110,11 +104,8 @@ pub fn decode_shell_file_allocation_result(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentAllocationResult,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded =
+        decode_shell_content_value(ShellContentValueKind::AllocationResult, &r.body[8..])?;
     match decoded {
         ShellContentRecord::AllocationResult(_) => Ok(ShellFileTransactionRecord {
             transaction: tx,
@@ -148,8 +139,7 @@ pub fn encode_shell_file_outputs_body(
     let ShellContentRecord::OutputFacts(_) = &tx_record.record else {
         return Err(ShellFileCodecError::Kind.into());
     };
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -170,11 +160,7 @@ pub fn decode_shell_file_outputs(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentOutputFacts,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded = decode_shell_content_value(ShellContentValueKind::OutputFacts, &r.body[8..])?;
     Ok(ShellFileTransactionRecord {
         transaction: tx,
         record: decoded,
@@ -245,8 +231,7 @@ pub fn encode_shell_file_resource_end_body(
         ShellContentRecord::ResourceEnd(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -261,11 +246,7 @@ pub fn decode_shell_file_resource_end(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentResourceEnd,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded = decode_shell_content_value(ShellContentValueKind::ResourceEnd, &r.body[8..])?;
     match decoded {
         ShellContentRecord::ResourceEnd(_) => Ok(ShellFileTransactionRecord {
             transaction: tx,
@@ -294,8 +275,7 @@ pub fn encode_shell_file_resource_cancel_body(
         ShellContentRecord::ResourceCancel(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -310,11 +290,7 @@ pub fn decode_shell_file_resource_cancel(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentResourceCancel,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded = decode_shell_content_value(ShellContentValueKind::ResourceCancel, &r.body[8..])?;
     match decoded {
         ShellContentRecord::ResourceCancel(_) => Ok(ShellFileTransactionRecord {
             transaction: tx,
@@ -343,8 +319,7 @@ pub fn encode_shell_file_resource_retire_body(
         ShellContentRecord::ResourceRetire(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -359,11 +334,7 @@ pub fn decode_shell_file_resource_retire(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentResourceRetire,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded = decode_shell_content_value(ShellContentValueKind::ResourceRetire, &r.body[8..])?;
     match decoded {
         ShellContentRecord::ResourceRetire(_) => Ok(ShellFileTransactionRecord {
             transaction: tx,
@@ -392,8 +363,7 @@ pub fn encode_shell_file_resource_status_body(
         ShellContentRecord::ResourceStatus(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -408,11 +378,7 @@ pub fn decode_shell_file_resource_status(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentResourceStatus,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded = decode_shell_content_value(ShellContentValueKind::ResourceStatus, &r.body[8..])?;
     match decoded {
         ShellContentRecord::ResourceStatus(_) => Ok(ShellFileTransactionRecord {
             transaction: tx,
@@ -441,8 +407,7 @@ pub fn encode_shell_file_resource_released_body(
         ShellContentRecord::ResourceReleased(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) =
-        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let payload = encode_shell_content_value(&tx_record.record)?;
     let mut body = Vec::with_capacity(8 + payload.len());
     body.extend(tx_record.transaction.raw().to_le_bytes());
     body.extend_from_slice(&payload);
@@ -457,11 +422,8 @@ pub fn decode_shell_file_resource_released(
     if !tx.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentResourceReleased,
-        tx,
-        &r.body[8..],
-    )?;
+    let decoded =
+        decode_shell_content_value(ShellContentValueKind::ResourceReleased, &r.body[8..])?;
     match decoded {
         ShellContentRecord::ResourceReleased(_) => Ok(ShellFileTransactionRecord {
             transaction: tx,
@@ -503,7 +465,7 @@ pub fn encode_shell_file_resource_begin_body(
         ShellContentRecord::ResourceBegin(_) => {}
         _ => return Err(ShellFileCodecError::Kind.into()),
     }
-    let (_, payload) = crate::ipc::encode_shell_content_payload(value.transaction, &value.record)?;
+    let payload = encode_shell_content_value(&value.record)?;
     let mut body = Vec::with_capacity(16 + payload.len());
     body.extend(value.transaction.raw().to_le_bytes());
     body.extend(value.slot.to_le_bytes());
@@ -525,11 +487,7 @@ pub fn decode_shell_file_resource_begin(
         return Err(ShellFilePayloadError::Value);
     }
     reserved(&r.body[10..16])?;
-    let decoded = crate::ipc::decode_shell_content_payload(
-        IpcMessageKind::ShellContentResourceBegin,
-        tx,
-        &r.body[16..],
-    )?;
+    let decoded = decode_shell_content_value(ShellContentValueKind::ResourceBegin, &r.body[16..])?;
     match decoded {
         ShellContentRecord::ResourceBegin(_) => Ok(ShellFileResourceBegin {
             transaction: tx,
