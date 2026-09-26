@@ -158,6 +158,8 @@ that pinned revision (diod commit `de51d1ee1bd5`, `protocol.md` SHA-256
 nothing here until the pin moves in a reviewed change. A verbatim copy is kept at
 [`references/diod-9p2000L-protocol.md`](references/diod-9p2000L-protocol.md);
 it remains diod's text under GPL-2.0, not this repository's BSD-3-Clause licence.
+The subset Sophia's core serves, its refusals and bounds are stated in
+[Sophia's 9P2000.L profile](sophia-9p-profile.md).
 The [host mounting investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
 observed v9fs refusing an unprivileged user-namespace mount; this is host evidence,
 not a portable kernel guarantee. Direct clients need no mount privilege. A
