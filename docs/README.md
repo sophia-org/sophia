@@ -111,6 +111,9 @@ candidates that role may exchange.
   target for WM, shell, administrative and application interfaces, with ASCII
   ownership diagrams, gradual migration criteria and open design questions.
   Namespace isolation and server authorization remain complementary.
+- [Daily-driver 9P migration plan](notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
+  sequences WM acceptance, Lom/Bemenu/Provlita shell migration, output and
+  administrative roles, and per-role compatibility retirement.
 - [9P architectural decision](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
   records acceptance of the direction, separately from implementation, wire
   freeze and physical acceptance.

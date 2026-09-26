@@ -265,6 +265,16 @@ are compact binary, with text discovery and derived inspection; no KDL runtime
 payload is required. The output role remains current IPC in this first milestone.
 Task state and order belong in the existing queues, not this document.
 
+The [desktop migration plan](notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
+now sequences the next work: qualify the pinned WM daily configuration while
+specifying the shell contract; migrate Lom, Bemenu and Provlita through separate
+component grants with Narthex as the descriptor reference; then migrate output
+and retire old transports per accepted role. Administrative command migration
+can proceed independently after the WM development exit.
+Portals and application interfaces retain their subsequent contract gates.
+This sequence does not claim those later services are implemented. Current IPC
+is still the installed default, and the output role still uses current IPC.
+
 Before an old interface is retired, demonstrate:
 
 1. Published role contracts and 9P operation conformance, including malformed

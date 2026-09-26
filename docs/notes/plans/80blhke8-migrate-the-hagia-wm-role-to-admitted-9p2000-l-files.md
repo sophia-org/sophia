@@ -36,6 +36,12 @@ need controls. Captured-record inspection and admitted live inspection must be
 labelled separately. Physical and default-switch acceptance are separate. Task
 state and order live only in the queues.
 
+The [desktop-role migration plan](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
+continues from this development exit to pinned WM daily acceptance, shell,
+output and administrative migrations. It preserves t247–t249 and this plan's
+measurement budgets; later roles do not become part of the WM implementation
+by implication.
+
 ## Task details
 
 ### Approved inspection slice

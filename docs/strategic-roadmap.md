@@ -17,8 +17,11 @@ X11. Application-owned service exports use explicit grants. Namespaces and
 existing semantic owners remain; Engine's internal typed execution is outside
 the public transport replacement. Hagia's WM role is in approved implementation
 on the t249/h006 development branches under the [WM file contract](sophia-wm-files.md).
-Other role APIs and their migration schedules remain open. Current IPC remains
-the default pending acceptance and measured performance.
+The [desktop-role migration plan](notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
+sequences WM daily acceptance, the Lom/Bemenu/Provlita shell clients, output and
+administration, then per-role compatibility retirement. Later role contracts
+still need specification; this sequence is not implementation evidence.
+Current IPC remains the default pending acceptance and measured performance.
 
 This roadmap outlines the evolution of the Sophia codebase from its current
 **Phase 1: Monorepo Incubation** into **Phase 3: Autonomous Satellite Repositories**
