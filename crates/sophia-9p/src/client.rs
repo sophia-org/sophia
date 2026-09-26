@@ -26,7 +26,8 @@ use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType};
 
 use crate::records::{Attr, Errno, Qid, QidKind};
 
-// Message types, from the 9P2000.L specification (diod protocol.md).
+// Message types, from the 9P2000.L specification (diod protocol.md at
+// de51d1ee1bd5, pinned in docs/sophia-9p-control-bus.md).
 const RLERROR: u8 = 7;
 const TLOPEN: u8 = 12;
 const RLOPEN: u8 = 13;

@@ -151,7 +151,12 @@ Linux provides a 9P client with Unix-socket transport. The `.L` dialect defines
 Linux-oriented operations and numeric `Rlerror` replies. Mount setup, privileges,
 caching and caller identity still need a Sophia-specific design. See
 [Linux v9fs](https://docs.kernel.org/filesystems/9p.html) and the
-[9P2000.L specification](https://github.com/chaos/diod/blob/master/protocol.md).
+[9P2000.L specification](https://github.com/chaos/diod/blob/de51d1ee1bd5ccf1d8c16b96227c8bb03ec50106/protocol.md).
+Sophia's core, its independent oracle and these contracts are judged against
+that pinned revision (diod commit `de51d1ee1bd5`, `protocol.md` SHA-256
+`10c7d7de8108fd81af14ff9c59136349b00b20bef9f1e139647568838b913a2a`). A newer upstream text changes
+nothing here until the pin moves in a reviewed change. diod is GPL-2.0, so no
+copy is kept in this BSD-licensed repository.
 The [host mounting investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
 observed v9fs refusing an unprivileged user-namespace mount; this is host evidence,
 not a portable kernel guarantee. Direct clients need no mount privilege. A
