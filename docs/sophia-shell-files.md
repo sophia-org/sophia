@@ -477,6 +477,37 @@ no transfer shapes. Kind numbers are reserved here before implementation:
 | Candidate | `CatalogActivate` 271 | 200 | The content action and catalog generation, never a command |
 | Candidate | `IndicatorActivate` 272 | 185 | Snapshot generation, output, indicator, action and event |
 
+**Owner handoff.** These families are frame-shaped above the wire today, so
+B5 moves the seam up to typed values on both sides of the transport:
+
+- Session stops encoding frames for component roles. Indicator snapshots and
+  application catalogs, plain or with r8 identities, reach the transport as
+  typed values through `publish_indicators` and `publish_catalog`. Session no
+  longer builds frames and hands them to `send_async`
+  (`metadata_shell/indicators.rs`, the catalog paths in
+  `metadata_shell/launcher.rs` and `application_catalog/publication.rs`).
+- The transport's owner paths hand typed records to one queue call per wire,
+  not raw socket frames through `output.push`:
+  - native launcher: opening, focus, focus revocation, input, activation
+    outcome and close;
+  - catalog activation outcomes;
+  - indicator activation outcomes.
+
+  The socket wire encodes frames, including the multi-frame catalog and
+  indicator transfers, and the file wire encodes events or publishes objects.
+- Inbound, the file export decodes the new candidate kinds into typed
+  submissions: native and catalog candidates as whole values, input acks,
+  activations and indicator activations. The existing owner calls
+  (`take_native_launcher_input_ack`, `take_catalog_request`,
+  `take_indicator_request` and the candidate services) read them from the typed
+  queue exactly as they read decoded frames today.
+- Response credit is charged per record by kind, not in socket-frame bytes, and
+  each wire enforces its own byte bounds. This removes the socket-shaped
+  charge the file wire inherited in B4.
+
+Legacy descriptor paths (`reference.rs`, `tabs.rs` and the descriptor launcher
+flow) keep sending frames until that profile moves to files.
+
 The legacy descriptor profile's feeds (`descriptors`, `tabs`, `shortcuts`)
 and records get kinds when that profile moves to files; until then it stays
 on its socket, and the purge inventory lists it.

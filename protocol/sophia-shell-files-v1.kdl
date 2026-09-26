@@ -1,10 +1,14 @@
-// Shell file byte contract. Bodies reuse sophia-shell-v1 record payloads and grant no admission or authority.
+// Shell file byte contract. Bodies are this contract's own layouts, defined
+// here from the neutral shell content codec; they are not sophia-shell-v1
+// frame payloads, and a client author needs nothing from that protocol or
+// its Rust to implement any record below. These records grant no admission
+// or authority.
 protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes=4194304 {
     header size=32 {
         field "total_bytes" type="u32" offset=0
         field "api_version" type="u16" offset=4 value=1
         field "kind" type="u16" offset=6
-        field "connection_epoch" type="u64" offset=8 nonzero=true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
         field "submission_id" type="u64" offset=16
         field "sequence" type="u64" offset=24
     }
@@ -32,14 +36,90 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     candidate "FrameDemandCancel" kind=264
     candidate "ActionAck" kind=265
 
-    // Payload bodies are the unchanged sophia-shell-v1 record payload of the
-    // named kind, validated by that record's existing codec; no fixed size.
-    body "Limits" {
-        field "payload" type="sophia-shell-v1" record="ShellContentLimits" offset=0
+    // The full granted profile. Every max below is the fixed
+    // ContentLimits::prototype cap; several fields are also related to each
+    // other by the codec (for example max_staging_bytes >= max_resource_bytes,
+    // max_session_retiring_bytes >= staging+resident+retiring, and
+    // max_chunk_bytes bounded by max_width_px and max_frame_payload). Those
+    // cross-field relations are enforced by the codec but are not restated as
+    // a single-field bound here.
+    body "Limits" size=264 {
+        field "grant_connection_epoch" type="u64" offset=0 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=8 nonzero=#true
+        field "limits_generation" type="u64" offset=16 nonzero=#true
+        field "max_resource_bytes" type="u64" offset=24 nonzero=#true max=4194304
+        field "max_staging_bytes" type="u64" offset=32 max=8388608
+        field "max_resident_bytes" type="u64" offset=40 max=16777216
+        field "max_retiring_bytes" type="u64" offset=48 max=16777216
+        field "max_session_retiring_bytes" type="u64" offset=56 max=67108864
+        field "pixel_format_mask" type="u64" offset=64 value=1
+        field "effect_mask" type="u64" offset=72 value=0
+        field "max_frame_payload" type="u32" offset=80 max=65536
+        field "max_chunk_bytes" type="u32" offset=84 max=65488
+        field "max_width_px" type="u32" offset=88 nonzero=#true max=8192
+        field "max_height_px" type="u32" offset=92 nonzero=#true max=4096
+        field "max_live_resources" type="u32" offset=96 nonzero=#true max=64
+        field "max_resource_ids" type="u32" offset=100 max=4096
+        field "max_open_transfers" type="u32" offset=104 nonzero=#true max=4
+        field "max_outputs" type="u32" offset=108 nonzero=#true max=16
+        field "max_allocations_total" type="u32" offset=112 max=16
+        field "max_allocations_per_output" type="u32" offset=116 nonzero=#true max=4
+        field "max_panels_per_output" type="u32" offset=120 max=1
+        field "max_popouts_per_output" type="u32" offset=124 max=3
+        field "max_candidate_surfaces" type="u32" offset=128 nonzero=#true max=8
+        field "max_candidate_placements" type="u32" offset=132 nonzero=#true max=32
+        field "max_candidate_targets" type="u32" offset=136 max=64
+        field "max_candidate_bytes" type="u32" offset=140 min=40 max=8192
+        field "max_pending_allocation_requests" type="u32" offset=144 max=8
+        field "max_open_candidates_total" type="u32" offset=148 max=2
+        field "max_open_candidates_per_output" type="u32" offset=152 nonzero=#true max=1
+        field "max_pending_candidates_total" type="u32" offset=156 max=8
+        field "max_pending_candidates_per_output" type="u32" offset=160 nonzero=#true max=1
+        field "max_pending_actions" type="u32" offset=164 max=16
+        field "max_frame_demands_per_output" type="u32" offset=168 value=1
+        field "max_control_records" type="u32" offset=172 min=1 max=64
+        field "reserved_control_queue_bytes" type="u32" offset=176 min=1024 max=65536
+        field "max_input_queue_bytes" type="u32" offset=180 max=131072
+        field "max_output_queue_bytes" type="u32" offset=184 max=262144
+        field "max_frames_per_service_tick" type="u32" offset=188 nonzero=#true max=16
+        field "max_panel_extent" type="u32" offset=192 max=512
+        field "max_popout_extent_px" type="u32" offset=196 max=1024
+        field "max_reservation_extent" type="u32" offset=200 max=512
+        field "max_content_coverage_percent" type="u32" offset=204 max=50
+        field "max_margin_logical" type="u32" offset=208 max=512
+        field "max_scale_numerator" type="u32" offset=212 nonzero=#true max=32
+        field "max_scale_denominator" type="u32" offset=216 nonzero=#true max=4
+        field "allocation_timeout_ms" type="u32" offset=220 nonzero=#true max=1000
+        field "transfer_timeout_ms" type="u32" offset=224 nonzero=#true max=2000
+        field "transfer_idle_timeout_ms" type="u32" offset=228 nonzero=#true max=500
+        field "candidate_timeout_ms" type="u32" offset=232 nonzero=#true max=1000
+        field "preparation_timeout_ms" type="u32" offset=236 nonzero=#true max=1000
+        field "presentation_timeout_ms" type="u32" offset=240 nonzero=#true max=2000
+        field "action_ack_timeout_ms" type="u32" offset=244 nonzero=#true max=1000
+        field "permit_timeout_ms" type="u32" offset=248 nonzero=#true max=250
+        field "peer_write_timeout_ms" type="u32" offset=252 nonzero=#true max=2000
+        field "max_candidate_rate_millihz" type="u32" offset=256 nonzero=#true max=120000
+        field "reserved" type="u32" offset=260 value=0
     }
-    body "Outputs" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentOutputFacts" offset=8
+    // Followed by output_count ContentOutputFactsEntry rows. Distinct output
+    // ids across rows and a reduced (coprime) scale fraction per row are
+    // codec-enforced but are not single-field bounds.
+    body-prefix "Outputs" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "facts_generation" type="u64" offset=24 nonzero=#true
+        field "output_count" type="u32" offset=32 max=16
+        field "reserved" type="u32" offset=36 value=0
+    }
+    row "ContentOutputFactsEntry" size=40 {
+        field "output_id" type="u64" offset=0 nonzero=#true
+        field "output_generation" type="u64" offset=8 nonzero=#true
+        field "local_width" type="u32" offset=16 nonzero=#true
+        field "local_height" type="u32" offset=20 nonzero=#true
+        field "scale_numerator" type="u32" offset=24 min=1 max=32
+        field "scale_denominator" type="u32" offset=28 min=1 max=4
+        field "scale_generation" type="u64" offset=32 nonzero=#true
     }
     body "Negotiate" size=16 {
         field "minimum_revision" type="u16" offset=0
@@ -50,7 +130,7 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     body "Negotiated" size=32 {
         field "selected_revision" type="u16" offset=0
         field "reserved" type="u16" offset=2 value=0
-        field "connection_epoch" type="u64" offset=4 nonzero=true
+        field "connection_epoch" type="u64" offset=4 nonzero=#true
         field "capabilities" type="u64" offset=12
         field "max_descriptors" type="u16" offset=20
         field "max_label_bytes" type="u16" offset=22
@@ -65,7 +145,7 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "denied_capabilities" type="u64" offset=8
     }
     body "Submitted" size=16 {
-        field "submission_id" type="u64" offset=0 nonzero=true
+        field "submission_id" type="u64" offset=0 nonzero=#true
         field "candidate_kind" type="u16" offset=8 min=256 max=265
         field "reserved" type="bytes" offset=10 size=6 value=0
     }
@@ -73,96 +153,333 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "object_kind" type="u16" offset=0 min=1 max=2
         field "reserved" type="bytes" offset=2 size=6 value=0
         field "generation" type="u64" offset=8
-        field "qid" type="u64" offset=16 nonzero=true
+        field "qid" type="u64" offset=16 nonzero=#true
     }
-    body "AllocationRequest" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentAllocationRequest" offset=8
+    // operation 1 acquire, 2 modify, 3 release; role 1 panel, 2 popout; edge
+    // 1-4. On release (operation=3) parent, parent_presentation_epoch, the
+    // anchor rectangle, desired_width/height and every margin are all zero.
+    // On acquire/modify, desired_width/height are nonzero; a panel (role=1)
+    // carries no parent or anchor, a popout (role=2) requires
+    // parent_presentation_epoch>0 and a valid nonzero anchor rectangle.
+    // prior may be zero only when operation=1 (acquire); parent may be zero
+    // unless role=2 while acquiring or modifying.
+    body "AllocationRequest" size=128 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "allocation_request_id" type="u64" offset=40 nonzero=#true
+        field "operation" type="u16" offset=48 min=1 max=3
+        field "role" type="u16" offset=50 min=1 max=2
+        field "edge" type="u16" offset=52 min=1 max=4
+        field "reserved" type="u16" offset=54 value=0
+        field "prior_id" type="u64" offset=56
+        field "prior_generation" type="u64" offset=64
+        field "parent_id" type="u64" offset=72
+        field "parent_generation" type="u64" offset=80
+        field "parent_presentation_epoch" type="u64" offset=88
+        field "anchor_x" type="i32" offset=96
+        field "anchor_y" type="i32" offset=100
+        field "anchor_width" type="u32" offset=104
+        field "anchor_height" type="u32" offset=108
+        field "desired_width" type="u32" offset=112
+        field "desired_height" type="u32" offset=116
+        field "margin_top" type="i16" offset=120 min=-512 max=512
+        field "margin_right" type="i16" offset=122 min=-512 max=512
+        field "margin_bottom" type="i16" offset=124 min=-512 max=512
+        field "margin_left" type="i16" offset=126 min=-512 max=512
     }
-    body "AllocationResult" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentAllocationResult" offset=8
+    // status 1 Granted, 2 Rejected, 3 Released, 4 Invalidated
+    // (allocation_request_id=0 iff status=4). output is always a live
+    // identity. allocation may be zero only when status=2; parent is zero as
+    // a pair or nonzero as a pair, never mixed. On status=1 the scale,
+    // geometry, allowed_reservation_extent and acknowledged_anchor fields are
+    // populated (a valid reduced scale fraction, nonzero pixel/logical
+    // extents); on status=2 or 3 they are all zero.
+    body "AllocationResult" size=168 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "allocation_request_id" type="u64" offset=24
+        field "status" type="u16" offset=32 min=1 max=4
+        field "reason" type="u16" offset=34 max=12
+        field "reserved" type="u32" offset=36 value=0
+        field "output_id" type="u64" offset=40 nonzero=#true
+        field "output_generation" type="u64" offset=48 nonzero=#true
+        field "allocation_id" type="u64" offset=56
+        field "allocation_generation" type="u64" offset=64
+        field "parent_id" type="u64" offset=72
+        field "parent_generation" type="u64" offset=80
+        field "scale_generation" type="u64" offset=88
+        field "logical_x" type="i32" offset=96
+        field "logical_y" type="i32" offset=100
+        field "logical_width" type="u32" offset=104
+        field "logical_height" type="u32" offset=108
+        field "pixel_x" type="i32" offset=112
+        field "pixel_y" type="i32" offset=116
+        field "pixel_width" type="u32" offset=120
+        field "pixel_height" type="u32" offset=124
+        field "scale_numerator" type="u32" offset=128
+        field "scale_denominator" type="u32" offset=132
+        field "allowed_reservation_extent" type="u32" offset=136 max=512
+        field "margin_top" type="i16" offset=140 min=-512 max=512
+        field "margin_right" type="i16" offset=142 min=-512 max=512
+        field "margin_bottom" type="i16" offset=144 min=-512 max=512
+        field "margin_left" type="i16" offset=146 min=-512 max=512
+        field "acknowledged_anchor_x" type="i32" offset=148
+        field "acknowledged_anchor_y" type="i32" offset=152
+        field "acknowledged_anchor_width" type="u32" offset=156
+        field "acknowledged_anchor_height" type="u32" offset=160
+        field "reserved_tail" type="u32" offset=164 value=0
     }
-    // ResourceBegin also carries the upload slot the chunks that follow are
-    // written to; chunks travel as writes to that slot, never as records.
-    body "ResourceBegin" {
-        field "transaction" type="u64" offset=0 nonzero=true
+    // pixel_format is fixed at 1 (premultiplied BGRA8).
+    // rendered_scale_numerator/denominator form the reduced scale fraction;
+    // row_bytes = width_px*4 and total_bytes = row_bytes*height_px, and
+    // chunk_count is derived from the connection's granted limits. Those
+    // derivations are verified, not asserted, by the codec.
+    body "ResourceBegin" size=80 {
+        field "transaction" type="u64" offset=0 nonzero=#true
         field "slot" type="u16" offset=8 min=0 max=3
         field "reserved" type="bytes" offset=10 size=6 value=0
-        field "payload" type="sophia-shell-v1" record="ShellContentResourceBegin" offset=16
+        field "grant_connection_epoch" type="u64" offset=16 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=24 nonzero=#true
+        field "resource_id" type="u64" offset=32 nonzero=#true
+        field "resource_generation" type="u64" offset=40 nonzero=#true
+        field "width_px" type="u32" offset=48 nonzero=#true max=8192
+        field "height_px" type="u32" offset=52 nonzero=#true max=4096
+        field "rendered_scale_numerator" type="u32" offset=56 min=1 max=32
+        field "rendered_scale_denominator" type="u32" offset=60 min=1 max=4
+        field "pixel_format" type="u16" offset=64 value=1
+        field "reserved_tail" type="u16" offset=66 value=0
+        field "chunk_count" type="u32" offset=68
+        field "total_bytes" type="u64" offset=72
     }
-    body "ResourceEnd" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentResourceEnd" offset=8
+    body "ResourceEnd" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+        field "total_bytes" type="u64" offset=40 nonzero=#true max=4194304
+        field "chunk_count" type="u32" offset=48 nonzero=#true max=4096
+        field "reserved" type="u32" offset=52 value=0
     }
-    body "ResourceCancel" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentResourceCancel" offset=8
+    body "ResourceCancel" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
     }
-    body "ResourceRetire" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentResourceRetire" offset=8
+    body "ResourceRetire" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
     }
-    body "ResourceStatus" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentResourceStatus" offset=8
+    // status 1 Admitted, 2 Rejected, 3 Accepted, 4 Incomplete; reason is 0
+    // unless status>2.
+    body "ResourceStatus" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+        field "status" type="u16" offset=40 min=1 max=4
+        field "reason" type="u16" offset=42 max=12
+        field "next_ordinal" type="u32" offset=44
+        field "admitted_bytes" type="u64" offset=48 max=4194304
     }
-    body "ResourceReleased" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentResourceReleased" offset=8
+    // reason names why the last consumer dropped the lease.
+    body "ResourceReleased" size=42 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+        field "reason" type="u16" offset=40 max=12
     }
     // One complete candidate as a whole value. Rows follow the prefix in
     // order: surface_count ContentSurface, placement_count ContentPlacement,
     // target_count ContentTarget rows. No chunk ordinals or repeated counts.
     body-prefix "Candidate" size=80 max-bytes=8192 {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "grant_connection_epoch" type="u64" offset=8 nonzero=true
-        field "grant_content_epoch" type="u64" offset=16 nonzero=true
-        field "candidate_generation" type="u64" offset=24 nonzero=true
-        field "output_id" type="u64" offset=32
-        field "output_generation" type="u64" offset=40
-        field "facts_generation" type="u64" offset=48
-        field "pacing_permit" type="u64" offset=56
-        field "interaction_generation" type="u64" offset=64
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "facts_generation" type="u64" offset=48 nonzero=#true
+        field "pacing_permit" type="u64" offset=56 nonzero=#true
+        field "interaction_generation" type="u64" offset=64 nonzero=#true
         field "surface_count" type="u16" offset=72 max=8
         field "placement_count" type="u16" offset=74 max=32
         field "target_count" type="u16" offset=76 max=64
         field "reserved" type="u16" offset=78 value=0
     }
-    body "FrameDemand" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentFrameDemand" offset=8
+    // allocation and scale_generation are always nonzero. role 1 panel, 2
+    // popout; edge 1-4; each margin within [-512, 512]; reservation_extent at
+    // most 512. A panel (role=1) has parent_surface_index=65535 (none) and a
+    // zero anchor rectangle; a popout has parent_surface_index<8, a zero
+    // reservation_extent and a valid nonzero anchor rectangle.
+    row "ContentSurface" size=64 {
+        field "allocation_id" type="u64" offset=0 nonzero=#true
+        field "allocation_generation" type="u64" offset=8 nonzero=#true
+        field "scale_generation" type="u64" offset=16 nonzero=#true
+        field "role" type="u16" offset=24 min=1 max=2
+        field "edge" type="u16" offset=26 min=1 max=4
+        field "margin_top" type="i16" offset=28 min=-512 max=512
+        field "margin_right" type="i16" offset=30 min=-512 max=512
+        field "margin_bottom" type="i16" offset=32 min=-512 max=512
+        field "margin_left" type="i16" offset=34 min=-512 max=512
+        field "reservation_extent" type="u32" offset=36 max=512
+        field "parent_surface_index" type="u16" offset=40
+        field "reserved" type="u16" offset=42 value=0
+        field "anchor_x" type="i32" offset=44
+        field "anchor_y" type="i32" offset=48
+        field "anchor_width" type="u32" offset=52
+        field "anchor_height" type="u32" offset=56
+        field "reserved_tail" type="u32" offset=60 value=0
     }
-    body "FrameDemandCancel" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentFrameDemandCancel" offset=8
+    // resource is always a live identity. surface_index selects a row of the
+    // same record's surface table.
+    row "ContentPlacement" size=32 {
+        field "resource_id" type="u64" offset=0 nonzero=#true
+        field "resource_generation" type="u64" offset=8 nonzero=#true
+        field "surface_index" type="u16" offset=16 max=7
+        field "reserved" type="u16" offset=18 value=0
+        field "destination_x_px" type="i32" offset=20 min=0
+        field "destination_y_px" type="i32" offset=24 min=0
+        field "reserved_tail" type="u32" offset=28 value=0
     }
-    body "ActionAck" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentActionAck" offset=8
+    // surface_index selects a row of the same record's surface table.
+    // action_kind is fixed at 1 for this profile (the native launcher and
+    // persistent catalog row families use other action kinds, reserved for
+    // later work and not carried by this contract). target_id,
+    // target_generation and action_id are always nonzero.
+    row "ContentTarget" size=48 {
+        field "surface_index" type="u16" offset=0 max=7
+        field "action_kind" type="u16" offset=2 value=1
+        field "target_id" type="u64" offset=4 nonzero=#true
+        field "target_generation" type="u64" offset=12 nonzero=#true
+        field "action_id" type="u64" offset=20 nonzero=#true
+        field "bounds_x" type="i32" offset=28 min=0
+        field "bounds_y" type="i32" offset=32 min=0
+        field "bounds_width" type="u32" offset=36 nonzero=#true
+        field "bounds_height" type="u32" offset=40 nonzero=#true
+        field "reserved" type="u32" offset=44 value=0
     }
-    body "CandidateOutcome" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentCandidateOutcome" offset=8
+    // allocation is zero-or-nonzero as a pair (zero for an output-wide
+    // demand); reason 1-3 names why a frame is wanted.
+    body "FrameDemand" size=66 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "allocation_id" type="u64" offset=40
+        field "allocation_generation" type="u64" offset=48
+        field "demand_id" type="u64" offset=56 nonzero=#true
+        field "reason" type="u16" offset=64 min=1 max=3
     }
-    body "FramePermit" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentFramePermit" offset=8
+    body "FrameDemandCancel" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "demand_id" type="u64" offset=40 nonzero=#true
+        field "permit_id" type="u64" offset=48
     }
-    body "Action" {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "payload" type="sophia-shell-v1" record="ShellContentAction" offset=8
+    // state 1 Granted, 2-4 a refusal kind; reason is 0 when state=1.
+    // permit_id, ttl_ms (1-250) and a nonzero max_candidate_bytes are only
+    // meaningful when state=1.
+    body "FramePermit" size=72 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "demand_id" type="u64" offset=40 nonzero=#true
+        field "permit_id" type="u64" offset=48
+        field "state" type="u16" offset=56 min=1 max=4
+        field "reason" type="u16" offset=58 max=12
+        field "ttl_ms" type="u32" offset=60 max=250
+        field "max_candidate_bytes" type="u32" offset=64 max=8192
+        field "reserved" type="u32" offset=68 value=0
+    }
+    // kind 1 Activation (target_id, target_generation and action_id nonzero,
+    // reason=0), 2 Dismissal (target_id, target_generation and action_id
+    // zero, reason=0), 3 other (reason may be nonzero). allocation is always
+    // nonzero.
+    body "Action" size=120 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "candidate_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48 nonzero=#true
+        field "interaction_generation" type="u64" offset=56 nonzero=#true
+        field "allocation_id" type="u64" offset=64 nonzero=#true
+        field "allocation_generation" type="u64" offset=72 nonzero=#true
+        field "target_id" type="u64" offset=80
+        field "target_generation" type="u64" offset=88
+        field "action_id" type="u64" offset=96
+        field "event_id" type="u64" offset=104 nonzero=#true
+        field "kind" type="u16" offset=112 min=1 max=3
+        field "reason" type="u16" offset=114 max=12
+        field "reserved" type="u32" offset=116 value=0
+    }
+    // disposition 1 Consumed, 2 Stale. target_id, target_generation and
+    // action_id are all zero or all nonzero, echoing the acknowledged
+    // action. allocation is always nonzero.
+    body "ActionAck" size=120 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "candidate_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48 nonzero=#true
+        field "interaction_generation" type="u64" offset=56 nonzero=#true
+        field "allocation_id" type="u64" offset=64 nonzero=#true
+        field "allocation_generation" type="u64" offset=72 nonzero=#true
+        field "target_id" type="u64" offset=80
+        field "target_generation" type="u64" offset=88
+        field "action_id" type="u64" offset=96
+        field "event_id" type="u64" offset=104 nonzero=#true
+        field "disposition" type="u16" offset=112 min=1 max=2
+        field "reserved" type="u16" offset=114 value=0
+        field "reserved_tail" type="u32" offset=116 value=0
+    }
+    // kind 1 Prepared, 2 Presented (presentation_epoch nonzero only when
+    // kind=2), 3 Rejected, 4 Superseded; reason is 0 unless kind>2.
+    body "CandidateOutcome" size=76 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "kind" type="u16" offset=48 min=1 max=4
+        field "reason" type="u16" offset=50 max=12
+        field "presentation_epoch" type="u64" offset=52
+        field "work_area_generation" type="u64" offset=60
+        field "wm_commit_generation" type="u64" offset=68
     }
 
     submit size=24 {
-        field "connection_epoch" type="u64" offset=0 nonzero=true
-        field "submission_id" type="u64" offset=8 nonzero=true
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "submission_id" type="u64" offset=8 nonzero=#true
         field "candidate_bytes" type="u32" offset=16
         field "reserved" type="u32" offset=20 value=0
     }
 
     ack size=16 {
-        field "connection_epoch" type="u64" offset=0 nonzero=true
-        field "sequence" type="u64" offset=8 nonzero=true
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "sequence" type="u64" offset=8 nonzero=#true
     }
 }
