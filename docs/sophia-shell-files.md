@@ -1,9 +1,10 @@
 # Shell files over 9P2000.L
 
-Status: **proposed contract, t251 planning draft.** Nothing here is
-implemented. `sophia_shell_v1` over its existing socket remains the only shell
-transport and the installed default. Items marked **decision pending** are
-proposals that need review before t252 can depend on them. Source references
+Status: **accepted contract (t251, accepted by the operator on 2026-09-26).**
+Nothing here is implemented yet; t252 implements it. `sophia_shell_v1` over its
+existing socket remains the only shell transport and the installed default
+until t252's gates pass. The items under "Open decisions" stay open and do not
+block t252. Source references
 are to the tree this draft was written against (signed `2f9c2220`, based on
 `11d6deef9`).
 
@@ -527,12 +528,12 @@ Rows marked as product gaps belong to their own tasks, not to this transport.
 | Bar (Lom, r6) | Panel allocation per output with its reservation. Indicator snapshot and exact activation echo. Presented work-area bands survive reconnect until the new first Present. Content upload and retirement within role limits. | Recovery (t100) |
 | Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | Overview r9 exists only on the unmerged `overview` branch |
 
-## Budgets (decisions pending)
+## Budgets
 
-These are proposed acceptance budgets, not measurements. They are stated
+These are the accepted acceptance budgets, not measurements. They are stated
 before measurement and cannot be relaxed after a result.
 
-| Measure | Proposed budget |
+| Measure | Budget |
 | --- | --- |
 | Panel repaint: submit of a bar-sized resource (for example 1920x24, 180 KiB) to `accepted` | p95 within current IPC + 1 ms, p99 within + 2 ms |
 | 4 MiB resource upload to `accepted` | p95 within current IPC + 10%; no timeout at the 2000 ms transfer bound |
@@ -550,4 +551,3 @@ with the same client, workload and output on both transports.
   it is Session-initiated, holds no pre-reserved credit (`crates/sophia-runtime/src/shell_content/allocations.rs:379-407`),
   and uses the non-reserve journal space. A guaranteed variant would reserve +16
   (`max_allocations_total`).
-- The numeric budgets above are pending acceptance.

@@ -4,8 +4,6 @@
 
 (A) 2026-09-26 Qualify a pinned 9P WM daily-driver configuration with classified validation gates, drag-latency budgets, attended recovery and explicit current-IPC relaunch rollback. +critical +9p @physical id:t250 order:000.000004 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t250--qualify-the-wm-daily-configuration)
 
-(B) 2026-09-26 Specify the shell 9P file contract and acceptance matrix for independent Lom bar, Bemenu launcher and Provlita dock, retaining the Narthex descriptor reference and existing role authorities. +parallel +9p @planning id:t251 order:000.000005 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t251--specify-the-shell-file-contract)
-
 (A) 2026-09-26 Join and accept the shell 9P adapter with independent Lom, Bemenu and Provlita clients, per-component grants, native lifetime/input evidence, measured bounds and Narthex rollback. +critical +9p @development id:t252 order:000.000006 depends:t251 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path)
 
 (A) 2026-09-26 Specify, implement and accept the separate 9P output role through existing topology and supervision owners, with an independent peer, epoch fencing, candidate rollback and applicable native evidence. +critical +9p @development id:t253 order:000.000007 depends:t252 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t253--migrate-the-separate-output-role)
