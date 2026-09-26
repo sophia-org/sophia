@@ -765,6 +765,42 @@ is separate under `.artifacts/t249-hagia-cpu`; no production or decoder change
 was needed. Strict native-session all-target Session Clippy, layout, direct
 rustfmt of the included support files and diff checks pass.
 
+## Canonical behavior corpus parity across both transports
+
+Signed `be449f389be6447c4f4eb292fcf27b4b92b36486`, joined as
+`5b6a4ad00f360d93c56387bc89335e6b9eb9af8c`, adds a test-only eleven-scenario
+comparison through the configured protected worker and frozen normal Hagia
+`7455c3e`. The fixture takes the worker before driving it, so the shared public
+Session state no longer polls it. A test-owned canonical reducer supplies the
+conformance host's decisions. No production owner or API changed.
+
+The pair passes 1/0 in 1.02 seconds: full decoded proposals and outcomes match
+exactly, selection remains `0x3dfff`, and both observation digests are
+`7ee814817923d62c8c6c0f53b9c7753b927fca9b50ca80f9889b8eb316fe3653`.
+Each subsequent proposal proves continuation after the preceding outcome.
+ReadyForCycle alone establishes driver send completion, not Hagia's consumption
+of the final outcome. This is behavior parity, not checkpoint or layout/native
+settlement parity. The invalid-discard case judges a deliberately invalid copy
+inside the test reducer, as the original host does; Hagia's wire proposal is
+unchanged.
+
+The retained first run failed on current IPC: it included configured session
+actions in canonical snapshots without the corresponding operation slots.
+The corrected fixture uses the host-exact empty snapshot action catalog and
+asserts empty canonical operation catalogs; configuration admission stays real.
+Strict native Session all-target Clippy, layout and direct support formatting
+pass. The five retained opt-in tests were listed, not rerun. The first layout
+command incorrectly passed `-j 2` to xtask; the corrected invocation sets
+`CARGO_BUILD_JOBS=2` and passes.
+
+The independently verified durable bundle is
+`~/.local/state/sophia/development-evidence/t249-hagia-corpus-be449f38`,
+manifest `8e34f49956c17d9c0553a26f287c0045607a4ff88938d6f571c8179b2258b44f`.
+The author additionally corrected P1 layout provenance: its valid exit 0 came
+from the fallback command at the wrapper's eight-job setting, above the agreed
+two-job limit. No fresh P1 run is claimed by this disclosure; its original
+evidence is unchanged.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
