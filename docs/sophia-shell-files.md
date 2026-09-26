@@ -176,16 +176,34 @@ object never aliases an open pin. An object that has not yet been published
 answers `EAGAIN`.
 
 An announced qid is not kept forever. Per feed, Session retains only the
-current object and at most one older object still pinned by an open fid. The
-exact retention is a **design decision**, with this required invariant:
+current object and at most one older object still pinned by an open fid.
+Each attach holds at most one open pin per feed; a second open while a pin is
+held returns `EBUSY`. Publication continues while a pin is held; the
+old pin stays immutable and the epoch fences it. Object identity (qid)
+changes whenever the bytes change, even at an unchanged domain generation
+(indicators can republish focus at the same generation).
+
+The retention rule requires this invariant:
 
 - the opened object's generation and qid are reported through `getattr`;
 - a client whose opened object does not match the event it is handling must
-  resynchronise from the newest event and object;
+  clunk, reopen, and continue from the newest event. `ESTALE` below the
+  retention floor means: re-read every disclosed snapshot object and resume
+  from the newest event sequence;
 - a mismatch never authorises anything. Every activation, candidate or action
   names the exact generation and slot identity it acts on, and the existing
   owner validates that against current state, rejecting stale references as it
   does today.
+
+The encoded snapshot cap per component is the sum over its role's disclosed
+feeds of 2 x cap plus one shared 4 MiB build scratch. These are encoded-buffer
+bounds, not RSS; allocator capacity, metadata and queues are accounted
+separately. The per-object caps are: catalog 4 MiB, tabs 1 MiB, shortcuts
+128 KiB, indicators 32 KiB, descriptors 4 KiB, outputs 1 KiB.
+
+The r8 catalog maximum is 3,014,740 bytes in old framing, and 3,145,876 bytes
+conservative with headers, which fits the 4 MiB cap. The new codec must
+enforce count, row, and header bounds independently.
 
 ### Negotiation is a candidate, not a node
 
@@ -216,11 +234,11 @@ below the watermark is `EALREADY`. A submit refused with `EAGAIN` has
 transferred nothing.
 
 Candidate Begin/Chunk/End collapse into one complete record, which stays
-within `max_candidate_bytes` (8192). As in the WM contract, each attach has one
+within `max_candidate_bytes` (8192 bytes, `crates/sophia-protocol/src/ipc/shell_content/limits.rs:309`). As in the WM contract, each attach has one
 candidate buffer, and `submit` refers to that attach's staged candidate. The
 buffer therefore needs no more than the largest control record, not the WM's
-1 MiB. **Decision
-pending:** the shell transaction cap is 64 KiB (`max_frame_payload`).
+1 MiB. The shell transaction cap is 64 KiB per attach transaction buffer, equal to
+`max_frame_payload` (65,536 bytes, `crates/sophia-protocol/src/ipc/shell_content/limits.rs:294`).
 
 ### Resource staging without client-created files
 
@@ -325,18 +343,56 @@ whole records, reads that block at the tail, `EINVAL` past it and `ESTALE`
 below the retention floor. Acknowledgement releases transport retention only.
 
 Shell traffic is denser than WM traffic: frame permits, candidate outcomes and
-resource statuses. **Decision pending:** 256 records and 1 MiB per component
-journal (four times today's 256 KiB output queue).
+resource statuses. A component journal holds at most 256 records. 64 of them
+are the terminal reserve, equal to `max_control_records`
+(`crates/sophia-protocol/src/ipc/shell_content/limits.rs:317`, enforced in aggregate
+by `crates/sophia-runtime/src/shell_transport/control_budget.rs:18-41`). Only
+records that already hold a counted credit may use the reserve, so every
+promised response always has space. The other 192 hold unsolicited Session
+events (snapshot announcements, allocation invalidation, focus revocation,
+opening, content actions, closed) and unacknowledged history.
+
+Byte bounds are derived from the largest Session-to-client record of each role
+profile. The file envelope's 32-byte header (as in [WM files](sophia-wm-files.md))
+replaces the 24-byte frame header, adding 8 bytes per record. The journal byte
+bound is 256 times that record, rounded up to the next power of two and capped at
+1 MiB. The terminal reserve is 64 times the largest terminal record. Snapshot
+objects are not journal records; their events only name the object.
+
+To bound a stalled reader, `journal_ack_progress_timeout` is 2000 ms. It is a
+separate constant from the 2000 ms peer-write timeout, which the socket layer
+owns; the same value treats a stalled reader like a stalled socket. When Session
+must append an unsolicited record and the non-reserve part of the journal is
+full, it waits for acknowledgement progress. If no acknowledgement advances
+within the deadline, that component alone is closed and revoked, as saturation
+does today. A reader that keeps acknowledging is never closed by this rule.
+Credited records never wait. There is no fake acknowledgement, overwrite,
+invented outcome or dropped owed record.
+
+### Per-role disclosure bounds
+
+The root names come from the vocabulary above. Snapshot bound is twice the sum of
+the disclosed feeds' caps (current plus one pinned older object) plus one
+shared 4 MiB build scratch.
+
+| Role profile | Root names | Snapshot feeds and caps | Largest S-to-C record (file framing) | Journal bytes | Terminal reserve | Snapshot bound |
+| --- | --- | --- | --- | --- | --- | --- |
+| Bar (Lom, r6) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `upload/N`; `indicators` with bit 9 | outputs 1 KiB; indicators 32 KiB | AllocationResult, 192 B (`crates/sophia-protocol/src/ipc/shell_content/fields.rs:332-351`) | 65,536 (256 x 192 = 49,152, rounded) | 12,288 | 4,261,888 |
+| Launcher (Bemenu, r7) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB | native Input, up to 420 B (`crates/sophia-protocol/src/ipc/shell_native_launcher/records.rs:100`) | 131,072 (256 x 420 = 107,520, rounded) | 26,880 | 12,584,960 |
+| Dock (Provlita, r8) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB with r8 identities | AllocationResult, 192 B | 65,536 | 12,288 | 12,584,960 |
+| Legacy descriptor (Narthex, r1-r8) | `api`, `events`, `transaction`, `submit`, `ack`, `descriptors`, `tabs`, `shortcuts`; `catalog` when r4 and bit 5 are selected | descriptors 4 KiB; tabs 1 MiB; shortcuts 128 KiB; catalog 4 MiB when selected | Not yet derived | Derived by the same rule before implementation, at most 1 MiB | 64 x largest terminal record | 6,561,792; 14,950,400 with catalog |
+
+The bar and dock record sizes come from the terminal-debt inventory (184-byte
+AllocationResult and up to 412-byte native Input in today's framing, plus 8).
+The legacy descriptor profile's largest record must be derived from its codec
+before its byte bound is fixed; the rule, not a guessed number, is the decision.
+
+Note: The component bar's inert bit 0 discloses no descriptor, tab, or shortcut feed.
 
 Catalog objects can exceed the WM's 1 MiB snapshot bound: 4096 entries with
-128-byte labels and 256-byte keywords. **Decision pending:** a 4 MiB cap on
-snapshot objects, charged to the component and released when the pin is
-clunked. The alternative is catalog paging.
-
-Content actions, focus revocation, input-lease loss and allocation
-invalidation remain local Session transitions. They never wait for a reader's
-acknowledgement credit. A saturated journal stops that component only, as
-saturation does today.
+128-byte labels and 256-byte keywords. Content actions, focus revocation, input-lease
+loss and allocation invalidation remain local Session transitions. They never wait
+for a reader's acknowledgement credit.
 
 ## Multiple writers, isolation and revocation
 
@@ -439,6 +495,12 @@ The independent Go oracle will carry these scenarios, written from
 Its test admission is supplied, so it cannot prove supervisor authentication.
 The product clients then prove integration, not independence; Narthex remains
 the descriptor reference rather than acquiring content work for this gate.
+Because Provlita cannot build as-is (due to missing `../sophia-stack` path
+dependencies), its r8 dock bounds (catalog with r8 identities at the 4 MiB cap,
+per-output allocations and reservations, journal and snapshot bounds) are proven first through the
+independent Go oracle's r8 profile. Provlita's own integration evidence requires
+repairing its dependency pin, which is a prerequisite recorded here and not a
+transport change.
 
 Required evidence follows the control bus's five retirement criteria, per
 profile:
@@ -457,7 +519,7 @@ Rows marked as product gaps belong to their own tasks, not to this transport.
 
 | Role | Must behave as today over files | Product gaps, not transport |
 | --- | --- | --- |
-| Dock (Provlita, r8) | Per-output allocations and edge reservations, checked against the allowed reservation extent. Pinned tiles from the catalog, with r8 identities. Activation names the catalog generation and slot and is accepted only against the Presented target. Launch context taken by Session from the committed WM output context, refused when stale. Replacing the dock does not disturb bar or launcher. Retained dock content retires after revocation, and storage is reclaimed. | Running-window feed (t043); reservation arbitration (t106) |
+| Dock (Provlita, r8) | Per-output allocations and edge reservations, checked against the allowed reservation extent. Pinned tiles from the catalog, with r8 identities at the 4 MiB cap. Activation names the catalog generation and slot and is accepted only against the Presented target. Launch context taken by Session from the committed WM output context, refused when stale. Replacing the dock does not disturb bar or launcher. Retained dock content retires after revocation, and storage is reclaimed. | Running-window feed (t043); reservation arbitration (t106) |
 | Launcher (Bemenu, r7) | Opening from Session; parentless allocation with no reservation. Focus lease minted only after an actual Presented, and FocusRevoked on loss. Semantic input with stale acknowledgements. A query edit disarms activation. Activation admits a queue slot only; the revocation semantics above hold. Close, and the opening timeout. | Popout workflow (t099) |
 | Bar (Lom, r6) | Panel allocation per output with its reservation. Indicator snapshot and exact activation echo. Presented work-area bands survive reconnect until the new first Present. Content upload and retirement within role limits. | Recovery (t100) |
 | Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | Overview r9 exists only on the unmerged `overview` branch |
@@ -481,8 +543,10 @@ with the same client, workload and output on both transports.
 
 ## Open decisions
 
-- Shell transaction cap (proposed 64 KiB).
-- Journal bounds (proposed 256 records and 1 MiB).
-- Snapshot cap or catalog paging (proposed 4 MiB).
-- Snapshot retention per feed, and the mismatch and resync rule.
-- The numeric budgets above.
+- The `AllocationResult` event `status=4` (invalidate) preserves today's semantics in v1:
+  it is Session-initiated, holds no pre-reserved credit (`crates/sophia-runtime/src/shell_content/allocations.rs:379-407`),
+  and uses the non-reserve journal space. A guaranteed variant would reserve +16
+  (`max_allocations_total`).
+- The numeric budgets above are pending acceptance.
+- The legacy descriptor profile's largest Session-to-client record, and so its journal
+  byte bound and terminal reserve, derived from its codec by the rule above.
