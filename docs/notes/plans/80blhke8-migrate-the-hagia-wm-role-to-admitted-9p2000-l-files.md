@@ -102,6 +102,10 @@ whole-candidate acceptance remain separate.
 
 ### t249
 
+The [driver-idle investigation](../investigations/87juczar-wm-file-reactor-waits-behind-the-driver-command-channel.md)
+records the first accounted drag smoke, its failed budgets and the bounded
+reactor-servicing correction. The smoke does not satisfy the release gate.
+
 The director (w9:pP) owns the WM file/binary contract, protocol fixtures, paired
 Hagia integration, queue and main-gate allocation. w9:pN implements the Session
 WM export after t247/t248 interfaces and this contract are reviewed. Contract

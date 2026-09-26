@@ -137,6 +137,12 @@ supervision, metadata delivery, reservations, focus/capture, actions, content
 submission and receipts. Map every operation to its current owner and a
 versioned file/record contract before implementation.
 
+The [proposed shell file contract](../../sophia-shell-files.md) maps the current
+owners and revision skew, per-component uploads and revocation, and the Lom,
+Bemenu, Provlita and Narthex acceptance scopes. Snapshot retention, adapter
+buffer accounting, selection scope and numerical budgets remain named design
+decisions; the draft does not yet satisfy the implementable-contract exit.
+
 Define admission, negotiation, immutable reads, transaction assembly/submit,
 outcome correlation, source lifetime, disconnect and stale-handle semantics.
 Set numeric payload/queue/storage bounds and workload-specific latency/upload
