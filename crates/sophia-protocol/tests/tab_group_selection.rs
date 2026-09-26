@@ -1,22 +1,13 @@
-//! Characterization of the tab group selected-surface codec at 6871d0d8, on
-//! both wires (legacy projection chunks and the WM file projection), which
-//! share `decode_policy_tab_groups_records`. These pin current behaviour; they
-//! are not the intended contract.
+//! The tab group selected surface on both wires (legacy projection chunks and
+//! the WM file projection), which share `decode_policy_tab_groups_records`.
 //!
-//! The strict optional-surface contract used by the file bodies is: absent is
-//! exactly (0, 0); present is any index but u32::MAX with a nonzero
-//! generation, index zero included. Member records already follow the present
-//! half. The selected field does not:
-//!
-//! - a selected surface at index zero is refused, although the same surface is
-//!   an accepted member and Engine accepts the selection;
-//! - no selection is encoded as `SurfaceId::INVALID`, (u32::MAX, 0), which the
-//!   decoder refuses, so a group without a selection cannot round trip; only a
-//!   hand-written (0, 0) decodes as none;
-//! - a selected all-ones index with a nonzero generation is accepted by the
-//!   codec and refused only later by Engine, which finds it among no members.
-//!
-//! The tests marked `ignore` state the strict contract; a fix should flip them.
+//! It follows the strict optional-surface contract: no selection is exactly
+//! (0, 0); a selection is any index but u32::MAX with a nonzero generation,
+//! index zero included, in both directions. Before this contract (at
+//! 6871d0d8, pinned by 71fde5fb) a selected index zero was refused, no
+//! selection was written as (u32::MAX, 0) that the decoder refused, and a
+//! selected all-ones index passed the codec to be refused only by Engine.
+//! Membership and visible placement remain Engine's to judge.
 use sophia_protocol::wm_files::*;
 use sophia_protocol::*;
 
@@ -101,28 +92,6 @@ fn a_zero_index_member_round_trips_on_both_wires() {
 }
 
 #[test]
-fn a_zero_index_selection_is_refused_on_both_wires() {
-    let groups = vec![group(
-        Some(SurfaceId::new(0, 1)),
-        vec![SurfaceId::new(0, 1)],
-    )];
-    assert_eq!(encoded_selected(groups[0].clone()), (0, 1));
-    assert!(legacy(groups.clone()).is_err());
-    assert!(file(groups).is_err());
-}
-
-#[test]
-fn no_selection_encodes_a_sentinel_its_own_decoder_refuses() {
-    let groups = vec![group(None, Vec::new())];
-    assert_eq!(encoded_selected(groups[0].clone()), (u32::MAX, 0));
-    assert!(legacy(groups.clone()).is_err());
-    assert!(file(groups).is_err());
-    // Only a hand-written (0, 0) decodes as no selection.
-    assert_eq!(decode_raw(0, 0).unwrap()[0].selected, None);
-    assert!(decode_raw(u32::MAX, 0).is_err());
-}
-
-#[test]
 fn a_zero_generation_selection_is_refused() {
     assert!(decode_raw(5, 0).is_err());
     let groups = vec![group(
@@ -133,16 +102,16 @@ fn a_zero_generation_selection_is_refused() {
 }
 
 #[test]
-fn an_all_ones_selected_index_passes_the_codec_and_is_left_to_engine() {
-    let selected = SurfaceId::new(u32::MAX, 1);
-    assert_eq!(decode_raw(u32::MAX, 1).unwrap()[0].selected, Some(selected));
-    let groups = vec![group(Some(selected), vec![SurfaceId::new(3, 1)])];
-    assert_eq!(legacy(groups.clone()).unwrap(), groups);
-    assert_eq!(file(groups.clone()).unwrap(), groups);
-}
-
-#[test]
-fn contract_zero_index_selection_and_no_selection_round_trip() {
+fn a_zero_index_selection_and_no_selection_round_trip_on_both_wires() {
+    assert_eq!(
+        encoded_selected(group(
+            Some(SurfaceId::new(0, 1)),
+            vec![SurfaceId::new(0, 1)]
+        )),
+        (0, 1)
+    );
+    assert_eq!(encoded_selected(group(None, Vec::new())), (0, 0));
+    assert_eq!(decode_raw(0, 0).unwrap()[0].selected, None);
     for groups in [
         vec![group(
             Some(SurfaceId::new(0, 1)),
@@ -156,6 +125,18 @@ fn contract_zero_index_selection_and_no_selection_round_trip() {
 }
 
 #[test]
-fn contract_all_ones_selected_index_is_refused_by_the_codec() {
-    assert!(decode_raw(u32::MAX, 1).is_err());
+fn an_all_ones_or_zero_generation_selection_is_refused_in_both_directions() {
+    for (index, generation) in [(u32::MAX, 1), (u32::MAX, 0), (5, 0)] {
+        assert!(
+            decode_raw(index, generation).is_err(),
+            "{index} {generation}"
+        );
+        let groups = vec![group(
+            Some(SurfaceId::new(index, generation)),
+            vec![SurfaceId::new(3, 1)],
+        )];
+        assert!(encode_policy_tab_groups_records(&groups).is_err());
+        assert!(legacy(groups.clone()).is_err());
+        assert!(file(groups).is_err());
+    }
 }

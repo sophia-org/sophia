@@ -60,9 +60,15 @@ pub fn encode_policy_tab_groups_records(
         ] {
             headers.extend(n.to_le_bytes());
         }
-        let s = g.selected.unwrap_or(SurfaceId::INVALID);
-        headers.extend(s.index().to_le_bytes());
-        headers.extend(s.generation().to_le_bytes());
+        // No selection is exactly (0, 0); a selection is a valid surface,
+        // index zero included, as the decoder requires.
+        let (index, generation) = match g.selected {
+            None => (0, 0),
+            Some(s) if s.is_valid() => (s.index(), s.generation()),
+            Some(_) => return Err(invalid()),
+        };
+        headers.extend(index.to_le_bytes());
+        headers.extend(generation.to_le_bytes());
         headers.extend((g.members.len() as u32).to_le_bytes());
         headers.extend(u32::from(g.focused).to_le_bytes());
         for s in &g.members {
@@ -121,8 +127,8 @@ pub fn decode_policy_tab_groups_records(
                 let i32_at = |i| i32::from_le_bytes(b[i..i + 4].try_into().unwrap());
                 let selected = match (u32_at(32), u32_at(36)) {
                     (0, 0) => None,
-                    (0, _) | (_, 0) => return Err(invalid()),
-                    (i, g) => Some(SurfaceId::new(i, g)),
+                    (i, g) if SurfaceId::new(i, g).is_valid() => Some(SurfaceId::new(i, g)),
+                    _ => return Err(invalid()),
                 };
                 groups.push(PolicyTabGroup {
                     output: OutputId::from_raw(u64_at(0)),

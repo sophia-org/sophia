@@ -1205,11 +1205,11 @@ fn pointer_focus_requires_a_live_focusable_target_on_its_affected_output() {
     }
 }
 
-/// Characterization, not a contract change: Engine judges a tab selection by
-/// membership and a visible placement only. It accepts a selected surface at
-/// index zero, refuses an all-ones index (never a member), and accepts no
-/// selection only for a group without members. The protocol codec currently
-/// disagrees on the first and last; see sophia-protocol tests/tab_group_selection.rs.
+/// Engine judges a tab selection by membership and a visible placement only:
+/// it accepts a selected surface at index zero, refuses an all-ones index
+/// (never a member), and accepts no selection only for a group without
+/// members. The protocol codec now agrees on surface validity; see
+/// sophia-protocol tests/tab_group_selection.rs.
 #[test]
 fn tab_selection_is_judged_by_membership_not_by_index() {
     let tab = |selected, members| sophia_protocol::PolicyTabGroup {
