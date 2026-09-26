@@ -943,7 +943,19 @@ strict runtime/Session, layout and format checks pass. The first native Session
 run had three reconnect failures (664/3/21); repeated focused and full runs did
 not reproduce them. These remain intermittent and unresolved, not established
 as pre-existing or disproved by reruns. Logs and the initial listing error are
-retained in `sophia-legacy/.artifacts/neutral-validation`. Direct formatting debt
+retained in `~/.local/state/hagia/development-evidence/h006-pairing-1f24fbc/neutral-validation`
+(the original `sophia-legacy/.artifacts` copy was removed with that worktree on
+2026-09-26). The three were
+`two_role_panel_reconnect_progresses_after_all_old_native_work_completes`,
+`fully_connected_three_role_replacement_keeps_neighbors_and_exact_completion` and
+`component_disconnect_settles_real_debt_without_disposing_pixels_or_neighbor`;
+each asserts a completed disconnect after one `drop(peer)` and one production
+service pass (`component_reconnect.rs:368/465/719`). On 2026-09-26, at master
+`d6becc2a`, they did not reproduce in 72 loaded runs: 40 with four concurrent
+copies of the reconnect tests and 32 with four concurrent full native-session
+library runs. Their shape matches the single-pass budget races settled under
+t194, but without a reproduction the cause stays unattributed: recorded for t250
+as not reproduced in 72 loaded runs, not as fixed. Direct formatting debt
 in the existing desktop reload mount has the same twelve hunks at base and head
 and was left untouched. The external overlay's combined legacy acceptance is a
 separate gate; source composition and neutral-tree tests do not establish it.
