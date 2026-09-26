@@ -21,40 +21,19 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use rustix::event::{PollFd, PollFlags, Timespec, poll};
-use rustix::net::{AddressFamily, SocketAddrUnix, SocketFlags, SocketType};
-
+use crate::client_codec::{
+    self, Fields, HEADER, MAX_WALK, NOFID, NOTAG, RATTACH, RCLUNK, READ_OVERHEAD, RFLUSH, RLERROR,
+    RLOPEN, RREAD, RVERSION, RWALK, TATTACH, TCLUNK, TFLUSH, TLOPEN, TREAD, TVERSION, TWALK,
+};
 use crate::records::{Attr, Errno, Qid, QidKind};
 
-// Message types, from the 9P2000.L specification (diod protocol.md).
-const RLERROR: u8 = 7;
-const TLOPEN: u8 = 12;
-const RLOPEN: u8 = 13;
+// Message types the server core answers but this client's shared codec does
+// not: `Client` alone reads directory entries and attributes.
 const TGETATTR: u8 = 24;
 const RGETATTR: u8 = 25;
 const TREADDIR: u8 = 40;
 const RREADDIR: u8 = 41;
-const TVERSION: u8 = 100;
-const RVERSION: u8 = 101;
-const TATTACH: u8 = 104;
-const RATTACH: u8 = 105;
-const TFLUSH: u8 = 108;
-const RFLUSH: u8 = 109;
-const TWALK: u8 = 110;
-const RWALK: u8 = 111;
-const TREAD: u8 = 116;
-const RREAD: u8 = 117;
-const TCLUNK: u8 = 120;
-const RCLUNK: u8 = 121;
 
-const NOTAG: u16 = u16::MAX;
-const NOFID: u32 = u32::MAX;
-const DIALECT: &[u8] = b"9P2000.L";
-/// size[4] type[1] tag[2].
-const HEADER: usize = 7;
-/// What `Rread` and `Rreaddir` add to their data.
-const READ_OVERHEAD: u32 = 11;
-const MAX_WALK: usize = 16;
 const NAME_MAX: usize = 255;
 const O_RDONLY: u32 = 0;
 const O_DIRECTORY: u32 = 0o200000;
@@ -66,8 +45,6 @@ const RGETATTR_BODY: usize = 153;
 /// Linux `d_type` values for a directory and a regular file.
 const DT_DIR: u8 = 4;
 const DT_REG: u8 = 8;
-/// How long a connect waits before retrying a listener whose queue is full.
-const CONNECT_RETRY: Duration = Duration::from_millis(5);
 
 /// Bounds a client holds itself to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -237,41 +214,31 @@ impl Client {
     }
 
     fn version(&mut self) -> Result<(), ClientError> {
-        let mut body = self.limits.msize.to_le_bytes().to_vec();
-        put_string(&mut body, DIALECT)?;
+        let body = client_codec::version_body(self.limits.msize);
         let deadline = deadline_after(self.limits.request_deadline)?;
         let reply = self.exchange(TVERSION, NOTAG, &body, deadline)?;
         let body = self.expect(reply, NOTAG, RVERSION)?;
-        let mut fields = Fields(&body);
-        let msize = fields.u32();
-        let version = fields.string();
-        let (Some(msize), Some(version), true) = (msize, version, fields.0.is_empty()) else {
+        let Some((msize, version)) = client_codec::decode_rversion(&body) else {
             return Err(self.poison(ClientError::Protocol("Rversion shape")));
         };
-        if version != DIALECT {
-            return Err(self.poison(ClientError::Protocol("dialect other than 9P2000.L")));
+        let accepted = client_codec::accept_rversion(self.limits.msize, msize, version);
+        match accepted {
+            Ok(msize) => {
+                self.msize = msize;
+                Ok(())
+            }
+            Err(reason) => Err(self.poison(ClientError::Protocol(reason))),
         }
-        if msize > self.limits.msize || msize < ClientLimits::MIN_MSIZE {
-            return Err(self.poison(ClientError::Protocol("negotiated msize out of range")));
-        }
-        self.msize = msize;
-        Ok(())
     }
 
     /// Attaches to the root the server gives this connection.
     pub fn attach(&mut self, uname: &[u8], aname: &[u8]) -> Result<File, ClientError> {
         let fid = self.allocate_fid()?;
-        let mut body = fid.to_le_bytes().to_vec();
-        body.extend_from_slice(&NOFID.to_le_bytes());
-        put_string(&mut body, uname)?;
-        put_string(&mut body, aname)?;
-        body.extend_from_slice(&NOFID.to_le_bytes());
+        let body =
+            client_codec::attach_body(fid, NOFID, uname, aname).map_err(ClientError::Limit)?;
         let result = self.call(TATTACH, &body, RATTACH).and_then(|reply| {
-            let mut fields = Fields(&reply);
-            match (fields.qid(), fields.0.is_empty()) {
-                (Some(Ok(qid)), true) => Ok(qid),
-                _ => Err(self.poison(ClientError::Protocol("Rattach shape"))),
-            }
+            client_codec::decode_rattach(&reply)
+                .ok_or_else(|| self.poison(ClientError::Protocol("Rattach shape")))
         });
         self.settle_new_fid(fid, result)
     }
@@ -287,12 +254,7 @@ impl Client {
             return Err(ClientError::Limit("walk from an open file"));
         }
         let fid = self.allocate_fid()?;
-        let mut body = from.fid.to_le_bytes().to_vec();
-        body.extend_from_slice(&fid.to_le_bytes());
-        body.extend_from_slice(&(names.len() as u16).to_le_bytes());
-        for name in names {
-            put_string(&mut body, name)?;
-        }
+        let body = client_codec::walk_body(from.fid, fid, names).map_err(ClientError::Limit)?;
         let result = self.call(TWALK, &body, RWALK).and_then(|reply| {
             let mut fields = Fields(&reply);
             let count = fields.u16().map(usize::from);
@@ -324,17 +286,15 @@ impl Client {
             return Err(ClientError::Limit("already open"));
         }
         let flags = O_RDONLY | if directory { O_DIRECTORY } else { 0 };
-        let mut body = file.fid.to_le_bytes().to_vec();
-        body.extend_from_slice(&flags.to_le_bytes());
+        let body = client_codec::lopen_body(file.fid, flags);
         let reply = self.call(TLOPEN, &body, RLOPEN)?;
-        let mut fields = Fields(&reply);
-        match (fields.qid(), fields.u32(), fields.0.is_empty()) {
-            (Some(Ok(qid)), Some(iounit), true) => {
+        match client_codec::decode_rlopen(&reply) {
+            Some((qid, iounit)) => {
                 file.qid = qid;
                 file.iounit = Some(iounit);
                 Ok(())
             }
-            _ => Err(self.poison(ClientError::Protocol("Rlopen shape"))),
+            None => Err(self.poison(ClientError::Protocol("Rlopen shape"))),
         }
     }
 
@@ -371,7 +331,8 @@ impl Client {
         let deadline = deadline_after(self.limits.request_deadline)?;
         let tag = self.next_tag();
         let count = self.io_count(file, count)?;
-        let reply = self.exchange(TREAD, tag, &io_body(file.fid, offset, count), deadline)?;
+        let body = client_codec::io_body(file.fid, offset, count);
+        let reply = self.exchange(TREAD, tag, &body, deadline)?;
         let body = self.expect(reply, tag, RREAD)?;
         self.read_data(body, count)
     }
@@ -393,7 +354,8 @@ impl Client {
             return Ok(None);
         }
         let tag = self.next_tag();
-        self.send(TREAD, tag, &io_body(file.fid, offset, count), deadline)?;
+        let body = client_codec::io_body(file.fid, offset, count);
+        self.send(TREAD, tag, &body, deadline)?;
         match self.receive(deadline) {
             Ok(reply) => {
                 let body = self.expect(reply, tag, RREAD)?;
@@ -414,7 +376,7 @@ impl Client {
         let deadline = deadline_after(self.limits.request_deadline)?;
         let tag = self.next_tag();
         let count = self.io_count(directory, count)?;
-        let body = io_body(directory.fid, cookie, count);
+        let body = client_codec::io_body(directory.fid, cookie, count);
         let reply = self.exchange(TREADDIR, tag, &body, deadline)?;
         let body = self.expect(reply, tag, RREADDIR)?;
         let mut fields = Fields(&body);
@@ -501,11 +463,13 @@ impl Client {
     /// clunk always frees the fid on the server too.
     pub fn clunk(&mut self, file: File) -> Result<(), ClientError> {
         self.owns(&file)?;
-        let result = self.call(TCLUNK, &file.fid.to_le_bytes(), RCLUNK);
+        let result = self.call(TCLUNK, &client_codec::clunk_body(file.fid), RCLUNK);
         self.fids.remove(&file.fid);
         match result {
-            Ok(body) if body.is_empty() => Ok(()),
-            Ok(_) => Err(self.poison(ClientError::Protocol("Rclunk length"))),
+            Ok(body) => match client_codec::decode_rclunk(&body) {
+                Some(()) => Ok(()),
+                None => Err(self.poison(ClientError::Protocol("Rclunk length"))),
+            },
             Err(error) => Err(error),
         }
     }
@@ -568,12 +532,10 @@ impl Client {
     }
 
     fn read_data(&mut self, body: Vec<u8>, count: u32) -> Result<Vec<u8>, ClientError> {
-        let mut fields = Fields(&body);
-        let length = fields.u32().map(|length| length as usize);
-        if length != Some(fields.0.len()) || fields.0.len() > count as usize {
-            return Err(self.poison(ClientError::Protocol("Rread count")));
+        match client_codec::decode_rread(&body) {
+            Some(data) if data.len() <= count as usize => Ok(data),
+            _ => Err(self.poison(ClientError::Protocol("Rread count"))),
         }
-        Ok(fields.0.to_vec())
     }
 
     fn next_tag(&mut self) -> u16 {
@@ -612,10 +574,9 @@ impl Client {
             return Err(self.poison(ClientError::Protocol("reply to another tag")));
         }
         if reply.kind == RLERROR {
-            let mut fields = Fields(&reply.body);
-            return match (fields.u32(), fields.0.is_empty()) {
-                (Some(errno), true) => Err(ClientError::Remote(Errno(errno))),
-                _ => Err(self.poison(ClientError::Protocol("Rlerror length"))),
+            return match client_codec::decode_rlerror(&reply.body) {
+                Some(errno) => Err(ClientError::Remote(errno)),
+                None => Err(self.poison(ClientError::Protocol("Rlerror length"))),
             };
         }
         if reply.kind != kind {
@@ -630,7 +591,7 @@ impl Client {
     fn flush(&mut self, old: u16) -> Result<(), ClientError> {
         let deadline = deadline_after(self.limits.flush_deadline)?;
         let tag = self.next_tag();
-        self.send(TFLUSH, tag, &old.to_le_bytes(), deadline)?;
+        self.send(TFLUSH, tag, &client_codec::flush_body(old), deadline)?;
         let mut late = false;
         loop {
             let reply = self.receive(deadline).map_err(|error| self.poison(error))?;
@@ -752,57 +713,14 @@ fn remaining(deadline: Instant) -> Result<Duration, ClientError> {
         .ok_or(ClientError::Timeout)
 }
 
-/// Connects without blocking past `deadline`: a nonblocking connect, a poll
-/// for completion and the socket's pending error. A listener whose queue is
-/// full is retried until the deadline.
+/// Connects without blocking past `deadline`, sharing the dance with
+/// [`crate::pipeline::Pipeline`].
 fn connect_by(path: &Path, deadline: Instant) -> Result<UnixStream, ClientError> {
-    let rustix_error = |errno: rustix::io::Errno| io_error(&io::Error::from(errno));
-    let socket = rustix::net::socket_with(
-        AddressFamily::UNIX,
-        SocketType::STREAM,
-        SocketFlags::NONBLOCK | SocketFlags::CLOEXEC,
-        None,
-    )
-    .map_err(rustix_error)?;
-    let address = SocketAddrUnix::new(path).map_err(rustix_error)?;
-    loop {
-        match rustix::net::connect(&socket, &address) {
-            Ok(()) => break,
-            Err(rustix::io::Errno::INTR) => {}
-            Err(rustix::io::Errno::AGAIN) => {
-                std::thread::sleep(remaining(deadline)?.min(CONNECT_RETRY));
-            }
-            Err(rustix::io::Errno::INPROGRESS) => {
-                let left = remaining(deadline)?;
-                let timeout = Timespec::try_from(left)
-                    .map_err(|_| ClientError::Limit("deadline overflow"))?;
-                let mut fds = [PollFd::new(&socket, PollFlags::OUT)];
-                if poll(&mut fds, Some(&timeout)).map_err(rustix_error)? == 0 {
-                    return Err(ClientError::Timeout);
-                }
-                rustix::net::sockopt::socket_error(&socket)
-                    .map_err(rustix_error)?
-                    .map_err(rustix_error)?;
-                break;
-            }
-            Err(errno) => return Err(rustix_error(errno)),
-        }
-    }
-    Ok(UnixStream::from(socket))
-}
-
-fn io_body(fid: u32, offset: u64, count: u32) -> Vec<u8> {
-    let mut body = fid.to_le_bytes().to_vec();
-    body.extend_from_slice(&offset.to_le_bytes());
-    body.extend_from_slice(&count.to_le_bytes());
-    body
-}
-
-fn put_string(out: &mut Vec<u8>, value: &[u8]) -> Result<(), ClientError> {
-    let length = u16::try_from(value.len()).map_err(|_| ClientError::Limit("string too long"))?;
-    out.extend_from_slice(&length.to_le_bytes());
-    out.extend_from_slice(value);
-    Ok(())
+    client_codec::connect_by(path, deadline).map_err(|error| match error {
+        client_codec::ConnectError::Io(kind) => ClientError::Io(kind),
+        client_codec::ConnectError::Timeout => ClientError::Timeout,
+        client_codec::ConnectError::Limit(what) => ClientError::Limit(what),
+    })
 }
 
 fn listable(name: &[u8]) -> bool {
@@ -811,54 +729,4 @@ fn listable(name: &[u8]) -> bool {
         && name != b"."
         && name != b".."
         && !name.iter().any(|byte| matches!(byte, b'/' | 0))
-}
-
-/// A cursor over a reply body.
-struct Fields<'body>(&'body [u8]);
-
-impl<'body> Fields<'body> {
-    fn take(&mut self, count: usize) -> Option<&'body [u8]> {
-        if self.0.len() < count {
-            self.0 = &[];
-            return None;
-        }
-        let (head, rest) = self.0.split_at(count);
-        self.0 = rest;
-        Some(head)
-    }
-    fn u8(&mut self) -> Option<u8> {
-        self.take(1).map(|bytes| bytes[0])
-    }
-    fn u16(&mut self) -> Option<u16> {
-        self.take(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-    }
-    fn u32(&mut self) -> Option<u32> {
-        self.take(4)
-            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
-    }
-    fn u64(&mut self) -> Option<u64> {
-        self.take(8)
-            .map(|bytes| u64::from_le_bytes(bytes.try_into().unwrap()))
-    }
-    fn string(&mut self) -> Option<&'body [u8]> {
-        let length = usize::from(self.u16()?);
-        self.take(length)
-    }
-    /// `None` when too short; `Some(Err)` for a type this client does not
-    /// know.
-    fn qid(&mut self) -> Option<Result<Qid, ()>> {
-        let kind = match self.u8()? {
-            0x80 => Ok(QidKind::Directory),
-            0x00 => Ok(QidKind::File),
-            _ => Err(()),
-        };
-        let version = self.u32()?;
-        let path = self.u64()?;
-        Some(kind.map(|kind| Qid {
-            kind,
-            version,
-            path,
-        }))
-    }
 }
