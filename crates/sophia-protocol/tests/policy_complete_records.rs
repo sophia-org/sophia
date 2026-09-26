@@ -89,6 +89,35 @@ fn coalescing_checks_aggregate_not_only_individual_chunks() {
     assert_eq!(joined[0].count, 2);
     assert_eq!(joined[0].bytes, [s.bytes.clone(), s.bytes.clone()].concat());
 }
+
+#[test]
+fn maximum_u32_count_with_four_row_bytes_is_refused_before_row_allocation() {
+    let bytes = [0_u8; 4];
+    let sections = [PolicyRecordSectionRef {
+        kind: SNAPSHOT_OUTPUT_RECORD_KIND,
+        count: u32::MAX,
+        bytes: &bytes,
+    }];
+    // Pin the neutral preflight error, not a downstream array decoder error.
+    // Both coalescing and domain conversion must take this path before sizing
+    // any row vector from the untrusted count.
+    let expected = IpcCodecError::InvalidEnum {
+        field: "policy_record_section",
+        value: u32::from(SNAPSHOT_OUTPUT_RECORD_KIND),
+    };
+    assert_eq!(
+        validate_policy_record_sections(PolicyRecordContext::Snapshot, &sections),
+        Err(expected.clone())
+    );
+    assert_eq!(
+        coalesce_policy_record_sections(PolicyRecordContext::Snapshot, &sections),
+        Err(expected.clone())
+    );
+    assert_eq!(
+        decode_policy_snapshot_records(snapshot_meta(), &sections),
+        Err(expected)
+    );
+}
 #[test]
 fn cross_array_identity_and_count_failures_share_the_legacy_validators() {
     for kind in [

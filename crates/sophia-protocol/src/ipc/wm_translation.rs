@@ -23,8 +23,12 @@ pub fn encode_wm_translation_groups(
         epoch,
         ordinal,
         |kind| match kind {
-            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => Some(32),
-            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => Some(24),
+            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => {
+                Some(PROJECTION_TRANSLATION_GROUP_RECORD_LEN)
+            }
+            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => {
+                Some(PROJECTION_TRANSLATION_MEMBER_RECORD_LEN)
+            }
             _ => None,
         },
     )
@@ -65,8 +69,16 @@ pub fn encode_policy_translation_groups_records(
     }
     let mut sections = Vec::new();
     for (kind, size, bytes) in [
-        (PROJECTION_TRANSLATION_GROUP_RECORD_KIND, 32, headers),
-        (PROJECTION_TRANSLATION_MEMBER_RECORD_KIND, 24, members),
+        (
+            PROJECTION_TRANSLATION_GROUP_RECORD_KIND,
+            PROJECTION_TRANSLATION_GROUP_RECORD_LEN,
+            headers,
+        ),
+        (
+            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND,
+            PROJECTION_TRANSLATION_MEMBER_RECORD_LEN,
+            members,
+        ),
     ] {
         if !bytes.is_empty() {
             sections.push(PolicyRecordSection {
@@ -87,8 +99,8 @@ pub fn decode_policy_translation_groups_records(
     let mut members = Vec::new();
     for chunk in sections {
         let size = match chunk.kind {
-            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => 32,
-            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => 24,
+            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => PROJECTION_TRANSLATION_GROUP_RECORD_LEN,
+            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => PROJECTION_TRANSLATION_MEMBER_RECORD_LEN,
             _ => continue,
         };
         if chunk.count == 0 || chunk.bytes.len() != chunk.count as usize * size {

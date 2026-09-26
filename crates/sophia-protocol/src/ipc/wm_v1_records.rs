@@ -204,7 +204,7 @@ fn push_projection_chunk(
     }
     chunks.push(WmV1ProjectionChunk {
         connection_epoch,
-        ordinal: chunks.len() as u16,
+        ordinal: legacy_record_count_u16(chunks.len())?,
         record_kind,
         item_count: u32::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
             count,
@@ -513,3 +513,10 @@ include!("wm_v1_records/snapshot_records.rs");
 include!("wm_v1_records/projection_records.rs");
 
 include!("wm_v1_records/control_records.rs");
+
+fn legacy_record_count_u16(count: usize) -> Result<u16, IpcCodecError> {
+    u16::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
+        count,
+        max: u16::MAX as usize,
+    })
+}

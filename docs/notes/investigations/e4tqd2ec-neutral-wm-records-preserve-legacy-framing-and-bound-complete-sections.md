@@ -90,6 +90,16 @@ control body framing, Session export or a Hagia pair. Domain ownership, old
 output-role IPC and physical acceptance are unchanged. The director owns task
 tracking; this evidence does not close t249.
 
+Follow-up review replaced narrowed legacy count/ordinal casts with checked u16
+conversion and reused the existing group/member row-width constants. The named
+`maximum_u32_count_with_four_row_bytes_is_refused_before_row_allocation` control
+pins the exact neutral preflight error through validation, coalescing and domain
+decode: an untrusted u32 count cannot reach row sizing merely because the file
+envelope itself fits. Focused follow-up: nine passed, including unchanged old
+frame bytes and the legacy 17-output characterization; strict protocol all-target
+Clippy passed. Logs `followup-tests.log` and `followup-clippy.log` remain in the
+worktree evidence directory; the earlier durable bundle remains immutable.
+
 ## Connections
 
 The [typed driver extraction](uf2wya88-typed-wm-driver-preserves-current-ipc-phase-and-shutdown-ownership.md)

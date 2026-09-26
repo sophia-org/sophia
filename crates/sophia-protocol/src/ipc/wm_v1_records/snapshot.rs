@@ -36,16 +36,18 @@ pub fn encode_wm_v1_policy_snapshot(
             .find(|s| s.kind == kind)
             .map_or(0, |s| s.count)
     };
-    let chunk_count = sections.iter().filter(|s| s.kind < 0xff00).count() as u16;
+    let chunk_count = legacy_record_count_u16(sections.iter().filter(|s| s.kind < 0xff00).count())?;
     let begin = WmV1SnapshotBegin {
         connection_epoch,
         scene_generation: scene.generation,
         active_output: scene.active_output.raw(),
         chunk_count,
-        output_count: count(SNAPSHOT_OUTPUT_RECORD_KIND) as u16,
+        output_count: legacy_record_count_u16(count(SNAPSHOT_OUTPUT_RECORD_KIND) as usize)?,
         surface_count: count(SNAPSHOT_SURFACE_RECORD_KIND),
-        action_count: count(SNAPSHOT_ACTION_RECORD_KIND) as u16,
-        session_operation_count: count(SNAPSHOT_SESSION_OPERATION_RECORD_KIND) as u16,
+        action_count: legacy_record_count_u16(count(SNAPSHOT_ACTION_RECORD_KIND) as usize)?,
+        session_operation_count: legacy_record_count_u16(count(
+            SNAPSHOT_SESSION_OPERATION_RECORD_KIND,
+        ) as usize)?,
     };
     let end = WmV1SnapshotEnd {
         connection_epoch,
@@ -55,14 +57,16 @@ pub fn encode_wm_v1_policy_snapshot(
     let chunks = sections
         .into_iter()
         .enumerate()
-        .map(|(ordinal, s)| WmV1SnapshotChunk {
-            connection_epoch,
-            ordinal: ordinal as u16,
-            record_kind: s.kind,
-            item_count: s.count,
-            data: s.bytes,
+        .map(|(ordinal, s)| {
+            Ok(WmV1SnapshotChunk {
+                connection_epoch,
+                ordinal: legacy_record_count_u16(ordinal)?,
+                record_kind: s.kind,
+                item_count: s.count,
+                data: s.bytes,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, IpcCodecError>>()?;
     Ok(WmV1SnapshotTransfer {
         transaction,
         begin,

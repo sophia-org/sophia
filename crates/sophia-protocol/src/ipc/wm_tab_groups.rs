@@ -25,8 +25,8 @@ pub fn encode_wm_tab_groups(
         epoch,
         ordinal,
         |kind| match kind {
-            PROJECTION_TAB_GROUP_RECORD_KIND => Some(48),
-            PROJECTION_TAB_MEMBER_RECORD_KIND => Some(24),
+            PROJECTION_TAB_GROUP_RECORD_KIND => Some(PROJECTION_TAB_GROUP_RECORD_LEN),
+            PROJECTION_TAB_MEMBER_RECORD_KIND => Some(PROJECTION_TAB_MEMBER_RECORD_LEN),
             _ => None,
         },
     )
@@ -74,8 +74,16 @@ pub fn encode_policy_tab_groups_records(
     }
     let mut sections = Vec::new();
     for (kind, size, data) in [
-        (PROJECTION_TAB_GROUP_RECORD_KIND, 48, headers),
-        (PROJECTION_TAB_MEMBER_RECORD_KIND, 24, members),
+        (
+            PROJECTION_TAB_GROUP_RECORD_KIND,
+            PROJECTION_TAB_GROUP_RECORD_LEN,
+            headers,
+        ),
+        (
+            PROJECTION_TAB_MEMBER_RECORD_KIND,
+            PROJECTION_TAB_MEMBER_RECORD_LEN,
+            members,
+        ),
     ] {
         if !data.is_empty() {
             sections.push(PolicyRecordSection {
@@ -96,8 +104,8 @@ pub fn decode_policy_tab_groups_records(
     let mut member_records = Vec::new();
     for c in sections {
         let size = match c.kind {
-            PROJECTION_TAB_GROUP_RECORD_KIND => 48,
-            PROJECTION_TAB_MEMBER_RECORD_KIND => 24,
+            PROJECTION_TAB_GROUP_RECORD_KIND => PROJECTION_TAB_GROUP_RECORD_LEN,
+            PROJECTION_TAB_MEMBER_RECORD_KIND => PROJECTION_TAB_MEMBER_RECORD_LEN,
             _ => continue,
         };
         if c.count == 0 || c.bytes.len() != c.count as usize * size {

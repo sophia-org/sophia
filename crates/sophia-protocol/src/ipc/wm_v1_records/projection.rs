@@ -8,17 +8,17 @@ pub fn encode_wm_v1_policy_projection(
             .find(|s| s.kind == kind)
             .map_or(0, |s| s.count)
     };
-    let chunk_count = sections.iter().filter(|s| s.kind < 0xff00).count() as u16;
+    let chunk_count = legacy_record_count_u16(sections.iter().filter(|s| s.kind < 0xff00).count())?;
     let begin = WmV1ProjectionBegin {
         connection_epoch: proposal.connection_epoch,
         request_id: proposal.request_id,
         base_generation: proposal.base_generation,
         active_output: proposal.active_output.raw(),
         chunk_count,
-        output_count: count(PROJECTION_OUTPUT_RECORD_KIND) as u16,
+        output_count: legacy_record_count_u16(count(PROJECTION_OUTPUT_RECORD_KIND) as usize)?,
         placement_count: count(PROJECTION_PLACEMENT_RECORD_KIND),
-        indicator_count: count(PROJECTION_INDICATOR_RECORD_KIND) as u16,
-        status_count: count(PROJECTION_OUTPUT_STATUS_RECORD_KIND) as u16,
+        indicator_count: legacy_record_count_u16(count(PROJECTION_INDICATOR_RECORD_KIND) as usize)?,
+        status_count: legacy_record_count_u16(count(PROJECTION_OUTPUT_STATUS_RECORD_KIND) as usize)?,
     };
     let end = WmV1ProjectionEnd {
         connection_epoch: proposal.connection_epoch,
@@ -32,17 +32,23 @@ pub fn encode_wm_v1_policy_projection(
         // Frozen ordinary arrays and bookmark extensions are single chunks;
         // only group/presentation extensions historically split their rows.
         let size = match kind {
-            super::PROJECTION_TAB_GROUP_RECORD_KIND => Some(48),
-            super::PROJECTION_TAB_MEMBER_RECORD_KIND => Some(24),
-            super::PROJECTION_TRANSLATION_GROUP_RECORD_KIND => Some(32),
-            super::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => Some(24),
+            super::PROJECTION_TAB_GROUP_RECORD_KIND => Some(super::PROJECTION_TAB_GROUP_RECORD_LEN),
+            super::PROJECTION_TAB_MEMBER_RECORD_KIND => {
+                Some(super::PROJECTION_TAB_MEMBER_RECORD_LEN)
+            }
+            super::PROJECTION_TRANSLATION_GROUP_RECORD_KIND => {
+                Some(super::PROJECTION_TRANSLATION_GROUP_RECORD_LEN)
+            }
+            super::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => {
+                Some(super::PROJECTION_TRANSLATION_MEMBER_RECORD_LEN)
+            }
             other => super::wm_presentation_record_layout(other).map(|r| r.0),
         };
         if let Some(size) = size {
             chunks.extend(super::wm_record_sections::projection_chunks(
                 vec![section],
                 proposal.connection_epoch,
-                chunks.len() as u16,
+                legacy_record_count_u16(chunks.len())?,
                 |_| Some(size),
             )?);
         } else {
