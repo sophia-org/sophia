@@ -194,14 +194,33 @@ and chrome styles. Chrome colours use `0x00RRGGBB`; the legacy scalar frame's
 Projection require an output section, and a snapshot's active output must
 occur in it. Session still validates complete output coverage and scene truth.
 
-The file path refuses unnegotiated sections even where the legacy path did not
-enforce those capability bits. Snapshot encoding omits unselected extensions;
+The file codec itself refuses unnegotiated sections. The direct legacy codec
+does not take the selected set; the legacy runtime separately gates indicators,
+tab and translation groups, presentation and other extensions. Snapshot encoding omits unselected extensions;
 WM candidates must omit them themselves, or submission refuses. Hagia must
 honour the selected set, not merely the capabilities it offered. Capability
 requirements within individual rows and final authority checks remain with
 Session. A transport Submitted event names the submission ID; policy settlement
 names the original domain transaction/request identities. Neither substitutes
 for the other.
+
+The Cycle event has a 48-byte prefix, the affected output IDs and one exact
+cause body. It names both the immutable snapshot transaction and the separate
+request transaction/request ID. File cause codes are SceneChanged=0, Action=1,
+Focus=2, PointerFocus=3, Interaction=4, OutputAction=5 and PresentationAction=6.
+These are file codes: legacy PointerFocus/Interaction numbering must not be
+copied. Geometry fields are signed 32-bit values; the shared semantic validator
+enforces the interaction-specific rules.
+
+Dirty and session-operation candidates, their typed outcomes and presentation
+receipts have bounded complete bodies in the same schema. Strict neutral
+validators check targets, exact identities and affected outputs. Known legacy
+codec exceptions remain confined to the compatibility path. File candidates
+require their selected POLICY_DIRTY or SESSION_OPERATIONS capability; cycle
+causes use the shared cause-capability map. Submitted carries only the accepted
+submission ID and candidate kind. It has no commit outcome or presentation
+identity. The journal supplies its actual epoch and sequence; no placeholder
+event header is needed to encode that body.
 
 Staging belongs to the per-attach file owner. It enforces the 1 MiB total and
 requires submit length to equal the actual complete staged length. If the
@@ -210,7 +229,7 @@ per connection, this would permit at most sixteen MiB of candidate staging;
 the WM endpoint instead admits only its one supervised writer. Snapshot/event
 retention and server output queues have their separate stated bounds.
 
-The remaining codec checkpoint fixes scalar body layouts and publishes
+The remaining codec checkpoint fixes negotiation/profile body layouts and publishes
 cross-language valid/malformed binary corpora. Record-array layouts already
 have a neutral codec owner shared by both transports. The new adapter must not build old IPC
 frames or feed files through the old transport. Hagia implements the published

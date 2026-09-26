@@ -31,8 +31,10 @@ The public API returns domain values; the file owner retains the envelope's
 submission and admitted-epoch correlation.
 
 Snapshot encoding omits unselected extensions. Candidate encoding and decoding
-refuse unnegotiated sections, which is deliberately stricter than some legacy
-capability checks. Session still owns capabilities within row content, output
+refuse unnegotiated sections at the codec boundary. The direct legacy codec
+lacks that selected-set parameter; its runtime separately checks indicators,
+tab/translation groups and presentation. This is not evidence that the complete
+legacy IPC path admits those unnegotiated extensions. Session still owns capabilities within row content, output
 coverage, admission and settlement. A snapshot's active output must occur in
 its output section. Projection and Snapshot cannot omit all output sections.
 Colours use `0x00RRGGBB`, not the legacy scalar frame's alpha byte.
@@ -57,6 +59,31 @@ All are restored before the final suite. No Session, Engine, live installation,
 hardware or default transport changed. Scalar bodies, independent Nim body
 corpus and the real Session/export pairing remain t249/h006 work; this is not
 WM migration acceptance or a performance result.
+
+## Scalar controls
+
+The follow-up joins the shared scalar semantic owner `59eb5f34` as signed
+`627fe79ba`, then defines complete Cycle, Dirty, SessionOperation, their outcomes,
+PresentationReceipt and Submitted bodies. Shared helpers now live in
+`wm_files/payload.rs`; array behavior is unchanged. The KDL states the new file
+cause numbering, exact lengths and signed geometry fields. All typed decoders
+retain strict neutral checks, separate epoch/submission/domain identities and
+capability requirements. Submitted's checked body helper lets the journal
+supply its actual sequence without inventing an event header.
+
+Ten focused controls pass, covering every cause/outcome, exact literal offsets,
+capabilities, strict targets, each cycle truncation, fixed-body lengths and
+reserved fields. The first compile caught width/height typed as unsigned when
+Sophia Rect uses signed fields; the source and schema were corrected together.
+That failed log remains in `.artifacts/t249-controls`. Three compiled mutations
+remove strict request validation, epoch binding and fixed-body length checks;
+each fails its named control. Restored full protocol: 232/0; strict protocol
+all-target Clippy, fresh-root layout, fmt and diff pass.
+
+This remains protocol evidence. Negotiation/profile bodies, independent Nim
+file bodies, and the complete admitted Session/Hagia roundtrip are not yet
+proved by it. The separate supplied-stream custody checkpoint does not turn
+these codec tests into semantic settlement or physical presentation evidence.
 
 ## Connections
 

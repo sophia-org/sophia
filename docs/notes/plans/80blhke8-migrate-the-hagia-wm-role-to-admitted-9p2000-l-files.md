@@ -130,8 +130,11 @@ The [complete-array checkpoint](../investigations/ir7e7zcv-complete-wm-file-arra
 adds typed Snapshot, Projection and Configuration bodies with shared neutral
 validation, exact identities and selected capability refusal. Nine focused
 controls and three compiled negative controls cover the file boundary; the
-joined protocol suite passes 210 tests. Scalar bodies, independent Nim file
-corpus and production Session export are still incomplete. Existing WM
+joined protocol suite passes 210 tests. Its scalar follow-up defines typed cycle,
+dirty/session-operation, outcome and receipt bodies through the shared scalar
+owner; ten focused controls and three compiled negative controls pass, with
+232 joined protocol tests. Negotiation/profile bodies, independent Nim file
+corpus and the complete Session/Hagia integration are still incomplete. Existing WM
 semantics and output transport remain current IPC.
 
 ## Connections

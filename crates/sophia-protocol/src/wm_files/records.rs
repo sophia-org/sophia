@@ -108,4 +108,54 @@ pub enum WmFilePayloadError {
     Records(crate::IpcCodecError),
     Identity,
     Capabilities { missing: u64 },
+    Value,
+}
+
+pub const WM_FILE_CYCLE_PREFIX_BYTES: usize = 48;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmFileCycle {
+    pub snapshot_transaction: crate::TransactionId,
+    pub request_transaction: crate::TransactionId,
+    pub request: crate::PolicyProjectionRequest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFileSessionOperation {
+    pub transaction: crate::TransactionId,
+    pub request: crate::PolicySessionOperationRequest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFileConfigurationOutcome {
+    pub transaction: crate::TransactionId,
+    pub generation: u64,
+    pub outcome: crate::PolicyProjectionOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFileProjectionOutcome {
+    pub transaction: crate::TransactionId,
+    pub request_id: u64,
+    pub scene_generation: u64,
+    pub outcome: crate::PolicyProjectionOutcome,
+    pub expect_session_operation: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFileSessionOperationOutcome {
+    pub transaction: crate::TransactionId,
+    pub outcome: crate::PolicySessionOperationOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFilePresentationReceipt {
+    pub transaction: crate::TransactionId,
+    pub receipt: crate::PolicyPresentationReceipt,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WmFileSubmitted {
+    pub submission_id: u64,
+    pub candidate_kind: WmFileKind,
 }

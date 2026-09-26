@@ -1,5 +1,5 @@
-// Envelope and complete-array bodies. Remaining scalar bodies and role
-// integration remain under t249/h006 review; this is not a usable WM transport.
+// Envelope, complete arrays and policy controls. Negotiation/profile bodies,
+// independent Nim bodies and role integration remain under t249/h006 review.
 protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=1048576 max-sections=32 {
     header size=32 {
         field "total_bytes" type="u32" offset=0
@@ -63,6 +63,108 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
         field "frame_focused_rgb" type="u32" offset=32 max=16777215
         field "frame_unfocused_rgb" type="u32" offset=36 max=16777215
         field "reserved" type="u64" offset=40 value=0
+    }
+
+    // Followed by output_count u64 output ids, then exactly one cause body.
+    body-prefix "Cycle" size=48 {
+        field "snapshot_transaction" type="u64" offset=0 nonzero=true
+        field "request_transaction" type="u64" offset=8 nonzero=true
+        field "request_id" type="u64" offset=16 nonzero=true
+        field "scene_generation" type="u64" offset=24 nonzero=true
+        field "policy_generation" type="u64" offset=32 nonzero=true
+        field "cause_kind" type="u16" offset=40 min=0 max=6
+        field "output_count" type="u16" offset=42 min=1 max=16
+        field "reserved" type="u32" offset=44 value=0
+    }
+    cause "SceneChanged" kind=0 size=0
+    cause "Action" kind=1 size=16 {
+        field "activation_serial" type="u64" offset=0 nonzero=true
+        field "action" type="u64" offset=8 nonzero=true
+    }
+    // A surface occupies index:u32,generation:u32; only optional surfaces may
+    // use (0,0). Every present surface has index!=u32::MAX and generation>0.
+    cause "Focus" kind=2 size=8 {
+        field "target" type="surface" offset=0
+    }
+    cause "PointerFocus" kind=3 size=16 {
+        field "output" type="u64" offset=0 nonzero=true
+        field "target" type="optional-surface" offset=8
+    }
+    cause "Interaction" kind=4 size=32 {
+        field "phase" type="u16" offset=0 min=1 max=4
+        field "kind" type="u16" offset=2 min=1 max=4
+        field "axis" type="u16" offset=4 min=0 max=2
+        field "reserved" type="u16" offset=6 value=0
+        field "target" type="surface" offset=8
+        field "x" type="i32" offset=16
+        field "y" type="i32" offset=20
+        field "width" type="i32" offset=24
+        field "height" type="i32" offset=28
+    }
+    cause "OutputAction" kind=5 size=32 {
+        field "activation_serial" type="u64" offset=0 nonzero=true
+        field "action" type="u64" offset=8 nonzero=true
+        field "output" type="u64" offset=16 nonzero=true
+        field "output_generation" type="u64" offset=24 nonzero=true
+    }
+    cause "PresentationAction" kind=6 size=64 {
+        field "activation_serial" type="u64" offset=0 nonzero=true
+        field "action" type="u64" offset=8 nonzero=true
+        field "publication_generation" type="u64" offset=16 nonzero=true
+        field "output" type="u64" offset=24 nonzero=true
+        field "output_generation" type="u64" offset=32 nonzero=true
+        field "presentation_epoch" type="u64" offset=40 nonzero=true
+        field "target_id" type="u64" offset=48
+        field "target_generation" type="u64" offset=56
+    }
+    body-prefix "Dirty" size=16 {
+        field "policy_generation" type="u64" offset=0 nonzero=true
+        field "output_count" type="u16" offset=8 min=1 max=16
+        field "reserved" type="bytes" offset=10 size=6 value=0
+        // Followed by exactly output_count distinct nonzero u64 output ids.
+    }
+    body "SessionOperation" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "request_id" type="u64" offset=8 nonzero=true
+        field "operation" type="u64" offset=16 nonzero=true
+        field "target" type="optional-surface" offset=24
+    }
+    // Projection outcomes: 1 Committed, 2 RejectedStale, 3 RejectedInvalid,
+    // 4 TimedOut, 5 Disconnected. No transport ack implies any such outcome.
+    body "ConfigurationOutcome" size=24 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "generation" type="u64" offset=8 nonzero=true
+        field "outcome" type="u16" offset=16 min=1 max=5
+        field "reserved" type="bytes" offset=18 size=6 value=0
+    }
+    body "ProjectionOutcome" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "request_id" type="u64" offset=8 nonzero=true
+        field "scene_generation" type="u64" offset=16 nonzero=true
+        field "outcome" type="u16" offset=24 min=1 max=5
+        field "expect_session_operation" type="u16" offset=26 min=0 max=1
+        field "reserved" type="u32" offset=28 value=0
+    }
+    body "SessionOperationOutcome" size=24 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "request_id" type="u64" offset=8 nonzero=true
+        field "outcome" type="u16" offset=16 min=1 max=5
+        field "reserved" type="bytes" offset=18 size=6 value=0
+    }
+    body "PresentationReceipt" size=48 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "publication_generation" type="u64" offset=8 nonzero=true
+        field "output" type="u64" offset=16 nonzero=true
+        field "output_generation" type="u64" offset=24 nonzero=true
+        field "presentation_epoch" type="u64" offset=32 nonzero=true
+        // 1 Presented, 2 Revoked, 3 Withdrawn; distinct from projection outcome.
+        field "outcome" type="u16" offset=40 min=1 max=3
+        field "reserved" type="bytes" offset=42 size=6 value=0
+    }
+    body "Submitted" size=16 {
+        field "accepted_submission_id" type="u64" offset=0 nonzero=true
+        field "candidate_kind" type="u16" offset=8 min=256 max=263
+        field "reserved" type="bytes" offset=10 size=6 value=0
     }
 
     // Complete row sections, strictly ascending unique nonzero kinds. No

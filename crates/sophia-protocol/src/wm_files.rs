@@ -3,8 +3,13 @@
 
 mod arrays;
 mod codec;
+mod controls;
+mod cycle;
+mod payload;
 mod records;
 
 pub use arrays::*;
 pub use codec::*;
+pub use controls::*;
+pub use cycle::*;
 pub use records::*;

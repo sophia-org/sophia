@@ -3,58 +3,10 @@
 //! Session still owns correlation, admission, publication and final validation,
 //! including capability-dependent row content and output coverage. Section
 //! capability refusal here is deliberately stricter than the legacy codec.
-use super::codec::{u16_at, u32_at, u64_at, validate_header};
+use super::codec::{u16_at, u32_at, u64_at};
+use super::payload::*;
 use super::*;
 use crate::*;
-
-impl From<WmFileCodecError> for WmFilePayloadError {
-    fn from(error: WmFileCodecError) -> Self {
-        Self::Envelope(error)
-    }
-}
-
-impl From<IpcCodecError> for WmFilePayloadError {
-    fn from(error: IpcCodecError) -> Self {
-        Self::Records(error)
-    }
-}
-
-pub(super) fn require_capabilities(selected: u64, required: u64) -> Result<(), WmFilePayloadError> {
-    let missing = required & !selected;
-    if missing == 0 {
-        Ok(())
-    } else {
-        Err(WmFilePayloadError::Capabilities { missing })
-    }
-}
-
-fn header_kind(header: WmFileHeader, kind: WmFileKind) -> Result<(), WmFilePayloadError> {
-    validate_header(header)?;
-    if header.kind != kind {
-        return Err(WmFileCodecError::Kind.into());
-    }
-    Ok(())
-}
-
-fn record(
-    bytes: &[u8],
-    kind: WmFileKind,
-    prefix: usize,
-) -> Result<WmFileRecord<'_>, WmFilePayloadError> {
-    let record = decode_wm_file_record(bytes, wm_file_class(kind))?;
-    header_kind(record.header, kind)?;
-    if record.body.len() < prefix {
-        return Err(WmFileCodecError::Length.into());
-    }
-    Ok(record)
-}
-
-fn reserved(bytes: &[u8]) -> Result<(), WmFilePayloadError> {
-    if bytes.iter().any(|value| *value != 0) {
-        return Err(WmFileCodecError::Reserved.into());
-    }
-    Ok(())
-}
 
 fn section_capabilities(context: PolicyRecordContext, kind: u16) -> u64 {
     match (context, kind) {
@@ -175,13 +127,6 @@ fn finish(
     prefix[count_offset..count_offset + 2].copy_from_slice(&count.to_le_bytes());
     prefix.extend(rows);
     Ok(encode_wm_file_record(header, &prefix)?)
-}
-
-fn identity(values: &[u64]) -> Result<(), WmFilePayloadError> {
-    if values.contains(&0) {
-        return Err(WmFilePayloadError::Identity);
-    }
-    Ok(())
 }
 
 pub fn encode_wm_file_snapshot(

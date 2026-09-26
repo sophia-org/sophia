@@ -20,7 +20,7 @@ pub(super) fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, WmFileCodecErro
     Ok(u64::from_le_bytes(field(bytes, offset)?))
 }
 
-fn kind(value: u16) -> Result<WmFileKind, WmFileCodecError> {
+pub(super) fn kind(value: u16) -> Result<WmFileKind, WmFileCodecError> {
     Ok(match value {
         1 => WmFileKind::Limits,
         2 => WmFileKind::Snapshot,
