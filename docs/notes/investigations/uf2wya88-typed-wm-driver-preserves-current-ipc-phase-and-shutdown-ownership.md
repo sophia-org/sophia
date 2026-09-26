@@ -658,6 +658,15 @@ the same invariants, an outstanding rollback and exactly one actual queued
 ConfigureSurface routed to the retained surface/client and old geometry. No
 pending flags or returned proposal are edited to obtain these results.
 
+Q1 remains explicit: the rollback ConfigureSurface is issued but not answered.
+The fixture asserts `rollback_pending=true` at expiry and supplies neither a
+rollback ACK nor rollback pixels before the next Hagia proposal. Continuation
+therefore occurs with rollback still outstanding; this is not completed rollback
+or application recovery. The first proposal's cause is unspecified: the supplied
+historical transition may itself queue relayout. Its actual resize obligation,
+pending stage and correlated settlement are asserted independently of that cause.
+The signed correction is `7f7bd745`; this qualification changes no tested source.
+
 The corrected A/B controls pass 3/0. The P1 compiled negative and restored
 controls are repeated against this coherent baseline. Evidence remains separate
 under `.artifacts/t249-hagia-f1`; the initial fixture failures remain in the
