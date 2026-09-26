@@ -7,12 +7,6 @@ fn bad() -> IpcCodecError {
 fn require(ok: bool) -> Result<(), IpcCodecError> {
     if ok { Ok(()) } else { Err(bad()) }
 }
-pub fn shell_launcher_text_valid(s: &str, max: usize) -> bool {
-    s.len() <= max
-        && !s.chars().any(|c| {
-            c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-        })
-}
 fn put_text(b: &mut Vec<u8>, s: &str, max: usize) -> Result<(), IpcCodecError> {
     require(shell_launcher_text_valid(s, max))?;
     push_u16(b, s.len() as u16);
@@ -43,27 +37,6 @@ fn payload(f: &[u8], kind: IpcMessageKind) -> Result<(TransactionId, Cursor<'_>)
     let (h, b) = decode_frame(f)?;
     require(h.message_kind == kind && h.transaction.is_valid())?;
     Ok((h.transaction, Cursor::new(b)))
-}
-pub fn validate_shell_application_catalog(
-    s: &ShellApplicationCatalog,
-) -> Result<(), IpcCodecError> {
-    require(
-        s.connection_epoch > 0
-            && s.generation > 0
-            && s.entries.len() <= SOPHIA_SHELL_MAX_APPLICATIONS,
-    )?;
-    let mut slots = std::collections::BTreeSet::new();
-    for e in &s.entries {
-        require(
-            e.slot > 0
-                && usize::from(e.slot) <= SOPHIA_SHELL_MAX_APPLICATIONS
-                && slots.insert(e.slot)
-                && !e.label.is_empty()
-                && shell_launcher_text_valid(&e.label, 128)
-                && shell_launcher_text_valid(&e.keywords, 256),
-        )?;
-    }
-    Ok(())
 }
 pub fn encode_shell_application_catalog(
     tx: TransactionId,

@@ -1,11 +1,7 @@
-use super::SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES;
-use super::records::*;
+use crate::IpcCodecError;
 use crate::ipc::cursor::Cursor;
 use crate::ipc::shell_content::fields::{Wire, reserved};
-use crate::{
-    ContentAllocationId, ContentCandidateBegin, ContentGrant, ContentMargins, ContentOutputId,
-    IpcCodecError, SOPHIA_SHELL_MAX_LAUNCHER_ROWS,
-};
+use crate::*;
 
 macro_rules! fields {
     ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {

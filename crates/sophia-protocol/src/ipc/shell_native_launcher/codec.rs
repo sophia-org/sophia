@@ -1,6 +1,6 @@
-use super::records::*;
 use crate::ipc::cursor::Cursor;
 use crate::ipc::shell_content::fields::Wire;
+use crate::*;
 use crate::{
     ContentCandidateChunk, IpcCodecError, IpcMessageKind, TransactionId, decode_frame, encode_frame,
 };
@@ -14,7 +14,7 @@ pub fn encode_shell_native_launcher_frame(
     if !transaction.is_valid() {
         return Err(IpcCodecError::InvalidRecord("native launcher transaction"));
     }
-    super::validation::validate(record)?;
+    crate::shell::native_launcher::validation::validate(record)?;
     let mut payload = Vec::new();
     macro_rules! put {
         ($v:ident, $kind:ident) => {{
@@ -77,6 +77,6 @@ pub fn decode_shell_native_launcher_frame(
         _ => return Err(IpcCodecError::InvalidRecord("not a native launcher record")),
     };
     cursor.finish()?;
-    super::validation::validate(&record)?;
+    crate::shell::native_launcher::validation::validate(&record)?;
     Ok((header.transaction, record))
 }

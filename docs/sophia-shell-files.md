@@ -634,6 +634,7 @@ is the accepted default:
 | Shell | socket transport (`shell_transport` socket branch, inbox/outbox frames), `ipc::shell_*` codecs (`fields.rs`, `codec.rs`), `packets/shell_*` |
 | Shell clients | `sophia-shell-client` socket wire; `bindings/c/shell_wire` socket half |
 | WM | `policy_transport_worker/current_ipc.rs`, `ipc::wm_v1*` and `ipc::policy_*` codecs, Hagia's legacy policy wire |
+| WM file wire (relocate, not delete) | the neutral row-section codec now under `ipc::wm_v1_records` and `ipc::policy_records`, and the row layouts `sophia-wm-files-v1.kdl` cites from `sophia-wm-v1.kdl`, move to wire-neutral homes before the WM IPC codecs go |
 | Output | output socket role (`ipc::output_v1`), migrated by t253 |
 | Control | control socket (`ipc::control_v1`), per the control-bus plan |
 | Broker/portal | `ipc::broker*`, `ipc::portal` (t254 inventory) |

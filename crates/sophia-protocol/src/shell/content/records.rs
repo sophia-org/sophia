@@ -1,3 +1,4 @@
+//! Wire-neutral typed content records: the r5 content vocabulary payloads.
 use super::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

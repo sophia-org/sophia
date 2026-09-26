@@ -1,3 +1,4 @@
+//! Wire-neutral typed model for the revision-6 shell indicator vocabulary.
 use crate::OutputId;
 
 pub const SOPHIA_SHELL_INDICATOR_REVISION: u16 = 6;

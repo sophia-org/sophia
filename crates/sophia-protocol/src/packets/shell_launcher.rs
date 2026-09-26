@@ -7,20 +7,6 @@ pub const SOPHIA_SHELL_MAX_APPLICATIONS: usize = 4096;
 pub const SOPHIA_SHELL_MAX_LAUNCHER_ROWS: usize = 32;
 pub const SOPHIA_SHELL_MAX_QUERY_BYTES: usize = 256;
 
-/// A catalog identity is a display reference, not permission to execute.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShellApplicationDescriptor {
-    pub slot: u16,
-    pub available: bool,
-    pub label: String,
-    pub keywords: String,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShellApplicationCatalog {
-    pub connection_epoch: u64,
-    pub generation: u64,
-    pub entries: Vec<ShellApplicationDescriptor>,
-}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]
 pub enum ShellLauncherOperation {

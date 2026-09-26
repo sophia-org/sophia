@@ -1,3 +1,4 @@
+//! Wire-neutral content limits: the advertised per-connection resource profile.
 use super::ContentGrant;
 
 /// Immutable limits for one granted connection. Defaults are the r5 ADR profile;
@@ -62,9 +63,9 @@ pub struct ContentLimits {
 
 impl ContentLimits {
     /// Validate an advertised profile before allocating or accepting obligations.
-    pub fn validate(&self) -> Result<(), crate::IpcCodecError> {
+    pub fn validate(&self) -> Result<(), crate::InvalidRecord> {
         let cap = Self::prototype(self.grant);
-        let invalid = || crate::IpcCodecError::InvalidRecord("content limits");
+        let invalid = || crate::InvalidRecord("content limits");
         if self.grant.connection_epoch == 0
             || self.grant.content_grant_epoch == 0
             || self.limits_generation == 0

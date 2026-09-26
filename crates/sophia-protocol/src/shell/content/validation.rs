@@ -1,11 +1,13 @@
+//! Wire-neutral validators for content records: pure value checks with no
+//! codec dependency.
 use super::*;
-use crate::IpcCodecError;
+use crate::InvalidRecord;
 
-fn require(ok: bool, field: &'static str) -> Result<(), IpcCodecError> {
+fn require(ok: bool, field: &'static str) -> Result<(), InvalidRecord> {
     if ok {
         Ok(())
     } else {
-        Err(IpcCodecError::InvalidRecord(field))
+        Err(InvalidRecord(field))
     }
 }
 
@@ -24,22 +26,22 @@ pub(super) fn scale(n: u32, d: u32) -> bool {
     a == 1
 }
 
-fn resource(id: ContentResourceId) -> Result<(), IpcCodecError> {
+fn resource(id: ContentResourceId) -> Result<(), InvalidRecord> {
     require(
         pair(id.id, id.generation, false),
         "content resource identity",
     )
 }
-fn output(id: ContentOutputId) -> Result<(), IpcCodecError> {
+fn output(id: ContentOutputId) -> Result<(), InvalidRecord> {
     require(pair(id.id, id.generation, false), "content output identity")
 }
-fn allocation(id: ContentAllocationId, null: bool) -> Result<(), IpcCodecError> {
+fn allocation(id: ContentAllocationId, null: bool) -> Result<(), InvalidRecord> {
     require(
         pair(id.id, id.generation, null),
         "content allocation identity",
     )
 }
-fn margins(m: ContentMargins) -> Result<(), IpcCodecError> {
+fn margins(m: ContentMargins) -> Result<(), InvalidRecord> {
     require(
         [m.top, m.right, m.bottom, m.left]
             .into_iter()
@@ -47,13 +49,13 @@ fn margins(m: ContentMargins) -> Result<(), IpcCodecError> {
         "content margin",
     )
 }
-fn reason(value: u16) -> Result<(), IpcCodecError> {
+fn reason(value: u16) -> Result<(), InvalidRecord> {
     require(value <= 12, "content reason")
 }
-fn counts(s: u32, p: u32, t: u32) -> Result<(), IpcCodecError> {
+fn counts(s: u32, p: u32, t: u32) -> Result<(), InvalidRecord> {
     require(s <= 8 && p <= 32 && t <= 64, "content candidate counts")
 }
-fn pixel_rect(r: ContentPixelRect) -> Result<(), IpcCodecError> {
+fn pixel_rect(r: ContentPixelRect) -> Result<(), InvalidRecord> {
     require(
         r.width > 0
             && r.height > 0
@@ -65,7 +67,7 @@ fn pixel_rect(r: ContentPixelRect) -> Result<(), IpcCodecError> {
     )
 }
 
-pub(crate) fn validate(record: &ShellContentRecord) -> Result<(), IpcCodecError> {
+pub(crate) fn validate(record: &ShellContentRecord) -> Result<(), InvalidRecord> {
     use ShellContentRecord::*;
     let grant = match record {
         AdmissionRefused(v) => {
@@ -364,7 +366,7 @@ pub struct ContentResourceLayout {
 }
 
 impl ContentResourceBegin {
-    pub fn layout(&self, limits: &ContentLimits) -> Result<ContentResourceLayout, IpcCodecError> {
+    pub fn layout(&self, limits: &ContentLimits) -> Result<ContentResourceLayout, InvalidRecord> {
         resource(self.resource)?;
         require(
             self.grant == limits.grant
@@ -384,7 +386,7 @@ impl ContentResourceBegin {
         let row_bytes = self
             .width_px
             .checked_mul(4)
-            .ok_or(IpcCodecError::InvalidRecord("content row overflow"))?;
+            .ok_or(InvalidRecord("content row overflow"))?;
         let total_bytes = u64::from(row_bytes) * u64::from(self.height_px);
         require(
             total_bytes <= limits.max_resource_bytes && self.total_bytes == total_bytes,
@@ -414,13 +416,13 @@ impl ContentResourceBegin {
 pub(crate) fn validate_candidate_chunk(
     v: &ContentCandidateChunk,
     native_launcher: bool,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), InvalidRecord> {
     validate_candidate_chunk_profile(v, native_launcher, if native_launcher { 2 } else { 1 })
 }
 
 pub(crate) fn validate_catalog_candidate_chunk(
     v: &ContentCandidateChunk,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), InvalidRecord> {
     validate_candidate_chunk_profile(v, false, 3)?;
     require(
         v.surfaces.iter().all(|s| s.role == 1) && v.targets.iter().all(|t| t.action_id <= 4096),
@@ -432,7 +434,7 @@ fn validate_candidate_chunk_profile(
     v: &ContentCandidateChunk,
     native_launcher: bool,
     action_kind: u16,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), InvalidRecord> {
     require(v.candidate_generation > 0, "content candidate generation")?;
     require(
         v.surfaces.len() <= 8 && v.placements.len() <= 32 && v.targets.len() <= 64,

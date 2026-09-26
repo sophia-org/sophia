@@ -1,6 +1,6 @@
 use super::fields::{Wire, reserved};
-use super::*;
 use crate::ipc::cursor::Cursor;
+use crate::*;
 use crate::{IpcCodecError, IpcMessageKind, TransactionId, decode_frame, encode_frame};
 
 /// Decode one bounded frame; permission and lifecycle validation remain with
@@ -79,7 +79,7 @@ pub(crate) fn decode_shell_content_payload(
     };
     cursor.finish()?;
     validate_transaction(transaction, &record)?;
-    super::validation::validate(&record)?;
+    crate::shell::content::validation::validate(&record)?;
     Ok(record)
 }
 
@@ -96,7 +96,7 @@ pub(crate) fn encode_shell_content_payload(
     record: &ShellContentRecord,
 ) -> Result<(IpcMessageKind, Vec<u8>), IpcCodecError> {
     validate_transaction(transaction, record)?;
-    super::validation::validate(record)?;
+    crate::shell::content::validation::validate(record)?;
     let mut bytes = Vec::new();
     let kind = match record {
         ShellContentRecord::AdmissionRefused(value) => {

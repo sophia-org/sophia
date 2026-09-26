@@ -1,12 +1,7 @@
-//! Atomic revision-8 catalog decoding. No partial catalog becomes current.
+//! Atomic revision-8 catalog decoding for `crate::shell::ShellPersistentCatalog`.
+//! No partial catalog becomes current.
 use crate::*;
 use std::collections::{BTreeMap, BTreeSet};
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShellPersistentCatalog {
-    pub catalog: ShellApplicationCatalog,
-    pub identities: BTreeMap<u16, String>,
-}
 
 /// Decode one bounded Begin/Entry/Identity/End transaction. Identities are a
 /// bijection with the entries, never a best-effort hint or display-label match.

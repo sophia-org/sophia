@@ -1,6 +1,6 @@
-use super::*;
 use crate::IpcCodecError;
 use crate::ipc::cursor::Cursor;
+use crate::*;
 
 pub(crate) trait Wire: Sized {
     fn put(&self, bytes: &mut Vec<u8>);

@@ -1,3 +1,4 @@
+//! Wire-neutral typed native launcher records.
 use crate::{
     ContentAllocationId, ContentCandidateBegin, ContentCandidateChunk, ContentGrant,
     ContentMargins, ContentOutputId,

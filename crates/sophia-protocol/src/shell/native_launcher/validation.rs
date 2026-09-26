@@ -1,27 +1,30 @@
+//! Wire-neutral validators for native launcher records: pure value checks
+//! with no codec dependency.
 use super::SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES;
 use super::records::*;
+use crate::InvalidRecord;
 use crate::{
-    ContentAllocationId, ContentGrant, ContentMargins, ContentOutputId, IpcCodecError,
+    ContentAllocationId, ContentGrant, ContentMargins, ContentOutputId,
     SOPHIA_SHELL_MAX_APPLICATIONS, SOPHIA_SHELL_MAX_LAUNCHER_ROWS, ShellContentRecord,
 };
 
-fn require(ok: bool, field: &'static str) -> Result<(), IpcCodecError> {
+fn require(ok: bool, field: &'static str) -> Result<(), InvalidRecord> {
     if ok {
         Ok(())
     } else {
-        Err(IpcCodecError::InvalidRecord(field))
+        Err(InvalidRecord(field))
     }
 }
-fn grant(v: ContentGrant) -> Result<(), IpcCodecError> {
+fn grant(v: ContentGrant) -> Result<(), InvalidRecord> {
     require(
         v.connection_epoch > 0 && v.content_grant_epoch > 0,
         "native launcher grant",
     )
 }
-fn output(v: ContentOutputId) -> Result<(), IpcCodecError> {
+fn output(v: ContentOutputId) -> Result<(), InvalidRecord> {
     require(v.id > 0 && v.generation > 0, "native launcher output")
 }
-fn binding(v: &NativeLauncherBinding) -> Result<(), IpcCodecError> {
+fn binding(v: &NativeLauncherBinding) -> Result<(), InvalidRecord> {
     grant(v.grant)?;
     output(v.output)?;
     require(
@@ -41,14 +44,14 @@ fn binding(v: &NativeLauncherBinding) -> Result<(), IpcCodecError> {
         "native launcher binding",
     )
 }
-fn event(v: &NativeLauncherEvent) -> Result<(), IpcCodecError> {
+fn event(v: &NativeLauncherEvent) -> Result<(), InvalidRecord> {
     binding(&v.binding)?;
     require(
         v.event_id > 0 && v.state_revision >= v.binding.state_revision,
         "native launcher event",
     )
 }
-fn activation(v: &NativeLauncherActivation) -> Result<(), IpcCodecError> {
+fn activation(v: &NativeLauncherActivation) -> Result<(), InvalidRecord> {
     event(&v.event)?;
     require(
         (1..=2).contains(&v.cause)
@@ -58,11 +61,11 @@ fn activation(v: &NativeLauncherActivation) -> Result<(), IpcCodecError> {
         "native launcher activation",
     )
 }
-fn reason(v: u16) -> Result<(), IpcCodecError> {
+fn reason(v: u16) -> Result<(), InvalidRecord> {
     require((1..=12).contains(&v), "native launcher reason")
 }
 
-pub(super) fn validate(record: &ShellNativeLauncherRecord) -> Result<(), IpcCodecError> {
+pub(crate) fn validate(record: &ShellNativeLauncherRecord) -> Result<(), InvalidRecord> {
     use ShellNativeLauncherRecord::*;
     match record {
         Opening(v) => {
@@ -114,7 +117,7 @@ pub(super) fn validate(record: &ShellNativeLauncherRecord) -> Result<(), IpcCode
             )
         }
         CandidateBegin(v) => {
-            crate::ipc::shell_content::validation::validate(&ShellContentRecord::CandidateBegin(
+            crate::shell::content::validation::validate(&ShellContentRecord::CandidateBegin(
                 v.content.clone(),
             ))?;
             require(
@@ -144,9 +147,7 @@ pub(super) fn validate(record: &ShellNativeLauncherRecord) -> Result<(), IpcCode
                 "native launcher selection",
             )
         }
-        CandidateChunk(v) => {
-            crate::ipc::shell_content::validation::validate_candidate_chunk(v, true)
-        }
+        CandidateChunk(v) => crate::shell::content::validation::validate_candidate_chunk(v, true),
         Focus(v) => binding(v),
         FocusRevoked(v) => {
             binding(&v.binding)?;
