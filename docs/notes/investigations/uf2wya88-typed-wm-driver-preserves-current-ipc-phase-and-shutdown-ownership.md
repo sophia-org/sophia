@@ -945,6 +945,33 @@ pins the absence of negotiation/phase inference. The durable
 captures, runnable tool and checksums. This closes the captured-text tool slice,
 not admitted live or mounted inspection.
 
+## First attended opt-in WM file session
+
+On 2026-09-26 niltempus authorized a separate trial and logged out of the daily
+desktop. Production release Sophia `81e9826a6` and Hagia `1f24fbc` ran with
+`--wm-transport=9p2000.L`, native scanout and the existing shell artifacts on
+tty4/display `:90`. Running executable hashes matched the staged candidates;
+Hagia received only the 9P WM endpoint plus the separate current-IPC output
+endpoint. No acceptance overlay, installation or default-transport change was
+involved. The actual policy-fragment and generated-argument preflights passed.
+
+The operator reported normal behavior including overview. Normal logout ended
+the 246,261 ms run with exit status 0, no emergency, `wm_degraded=false`, no
+native frame in flight and no native cleanup pending. All trial processes were
+collected. Greetd returned successfully through the existing safe-text-baseline
+path after exact tty7 termios restoration differed; this was not an exact-state
+restore pass. The diagnostic capture suppressed 42,456 records under its budget
+and reported zero storage errors, so it cannot establish complete event coverage.
+
+This establishes a first attended live smoke result. It does not complete the
+physical behavior checklist, pointer-latency/default-switch gates or resolve
+the earlier intermittent reconnect tests. Reported lower CPU use remains an
+observation: the five-second Sophia sample was 22.6% of one core, without a
+matched IPC workload. Detailed custody and evidence are in Hagia's `aoivl2yn`
+note and the private 47-file `h006-live-9p-20260926` bundle, whose verified
+`SHA256SUMS` digest is
+`f32b1f39850b672c8bf5512ca335fd158706807d8297308307878c6c8917cc7e`.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
