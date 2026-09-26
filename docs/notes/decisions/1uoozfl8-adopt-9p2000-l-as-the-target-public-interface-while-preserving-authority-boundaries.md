@@ -36,9 +36,11 @@ Support the design direction of application-owned service exports, available to
 explicitly granted consumers. Application semantics remain with their owners;
 blind WM policy does not acquire access to those exports.
 
-The detailed file API, operation subset, encoding, attach identity, compatibility
-and performance thresholds remain open. Coexistence is a migration mechanism,
-not an accepted permanent division into a compiled fast path and a script path.
+Role contracts settle their file API, operation subset, encoding, attach
+identity and compatibility separately. The Hagia-first execution plan now names
+readable inspection and pointer-drag regression budgets as acceptance gates;
+other roles still need their own thresholds. Coexistence is a migration
+mechanism, not a permanent division into a compiled fast path and a script path.
 
 ## Alternatives
 

@@ -28,9 +28,13 @@ LivePublicPolicyState remains the sole policy/reducer/presentation/restart owner
 The new path never sends existing IPC frames through a filesystem proxy.
 
 The first development exit is signed paired candidates, independent protocol
-and full WM lifecycle evidence, reproducible old/new transport measurements,
-and isolated integration gates. Physical and default-switch acceptance are
-separate. Task state and order live only in the queues.
+and full WM lifecycle evidence, bounded read-only snapshot/event text inspection,
+reproducible old/new transport measurements, and isolated integration gates.
+The inspection command must preserve identities and distinguish Submitted
+custody from semantic outcomes; malformed/truncated records and record limits
+need controls. Captured-record inspection and admitted live inspection must be
+labelled separately. Physical and default-switch acceptance are separate. Task
+state and order live only in the queues.
 
 ## Task details
 
@@ -93,10 +97,35 @@ release debt and reconnect with reused numeric identities. Production
 Session/backend joins are required; simulated native completion remains labelled.
 
 Compare identical old/new workloads for latency distributions, CPU, allocation,
-copied bytes, idle wakes and queue bounds. Do not invent a performance result
-from encoding size. Default-switch/retirement thresholds require their own
-review before changing defaults. Rollback explicitly selects one transport and
-uses existing revoke/settle/restart barriers before a fresh owner is admitted.
+copied bytes, idle wakes, round trips and queue bounds. Do not infer performance
+from encoding size. Before proposing a default switch, the pointer-drag gate is:
+
+- Measure from Session enqueueing each admitted move/resize update to its
+  correlated layout settlement, using the same WM, scene, update sequence,
+  coalescing policy and build mode for both transports. Record offered, admitted,
+  coalesced and settled counts so dropping work cannot improve the result.
+- Run at least five alternating pairs of at least 10,000 admitted updates each,
+  at 60 Hz and 120 Hz, on the same machine under both idle and a recorded
+  repeatable CPU load. Report p50/p95/p99, maximum and every timeout/disconnect.
+- In every paired run, files may add at most 1 ms at p95 and 2 ms at p99 over
+  current IPC. File p99 must also stay within one offered-update interval
+  (16.67 ms at 60 Hz, 8.33 ms at 120 Hz). No timeout, disconnect or unbounded
+  queue growth is accepted. These are acceptance budgets, not measured results.
+
+Failure keeps current IPC the default; do not relax a budget after observing a
+failure without a separate recorded decision. This control-path gate is not
+input-to-photon evidence: attended pointer-drag and physical presentation
+acceptance remain additional requirements. Rollback explicitly selects one
+transport and uses existing revoke/settle/restart barriers before a fresh owner
+is admitted.
+
+Sophia's mandatory tests remain WM-neutral. Hagia policy assertions and real
+Hagia lifecycle pairing belong to Hagia's optional `tools/sophia_pairing` gate.
+Private Session joins use an isolated pinned Sophia revision plus a recorded,
+hashed test-only source overlay; they never claim an unmodified Sophia checkout
+or add a production test API. Generic protocol, admission, reducer, replay and
+backend tests remain in Sophia. Pairing must list and run each required test,
+refusing missing or zero-test runs.
 
 ### Working arrangement
 

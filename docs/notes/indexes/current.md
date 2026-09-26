@@ -36,9 +36,9 @@ map, not a list of every note or another roadmap.
 
 [Explicit scoped component grants](../concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md) describes integrated and modular shells; the linked candidate plan starts with a bar and independent launcher. This is not current multi-client support.
 
-## Session control plane
+## Public role IPC and mounting
 
-The [Plan 9 control-plane investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
+The [9P role replacement and mounting investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
 records the observed unprivileged-v9fs restriction and corrects its initial
 administration-only scope. The [accepted 9P direction](../../sophia-9p-control-bus.md)
 replaces public role IPC progressively, beginning with Hagia. Engine's internal

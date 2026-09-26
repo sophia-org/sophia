@@ -181,6 +181,19 @@ epoch and monotonically increasing byte offsets. A record is appended whole;
 bytes. Reads at the current end block; reads beyond it return `EINVAL`; reads
 below the acknowledged retention floor return `ESTALE`.
 
+For the direct client, `getattr(events).size` is the current absolute journal
+tail offset, not the number of retained bytes. Acknowledgement advances the
+retention floor without shrinking that size; the size is neither a pin nor
+permission to read an acknowledged prefix. This describes the implemented
+direct-client contract, not ordinary seekable-file semantics.
+
+Mounted event access is not accepted by this milestone. Its later contract must
+prove uncached reads and metadata (`cache=none` or an equivalent userspace
+policy), end-of-file blocking, retention-floor errors, flush and reconnect.
+In particular, a mount must not turn a cached tail into permanent EOF or serve
+acknowledged bytes from its cache. `getattr` and event retention tests through
+the chosen mount client are required before advertising mounted access.
+
 `ack` is one fixed-size epoch/sequence record at offset zero. It acknowledges
 all records through that sequence. Exact repeats succeed. An older sequence,
 a future sequence or a wrong epoch refuses. It releases transport retention
@@ -325,8 +338,14 @@ have a neutral codec owner shared by both transports. The new adapter must not b
 frames or feed files through the old transport. Hagia implements the published
 layouts independently in Nim; Sophia source is not a Hagia dependency.
 
-Text inspection, when added, is a derived view with no mutation authority. It
-does not replace the binary runtime path or expose client metadata to the WM.
+Readable snapshot and event inspection is a required development exit, currently
+unimplemented. The view must derive from the same validated neutral records,
+retain their epoch, transaction/sequence and outcome distinctions, and stay
+bounded. A documented read-only inspection command may render captured records
+as text; live inspection additionally needs an admitted read path and must not
+consume the WM's event acknowledgements or acquire writer authority. Raw binary
+records are not a `cat`-readable interface, and an offline dump must not be
+advertised as live mounted inspection. No additional client metadata is exposed.
 
 ## Required evidence
 

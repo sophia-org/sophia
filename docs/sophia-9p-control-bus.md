@@ -143,6 +143,11 @@ Linux-oriented operations and numeric `Rlerror` replies. Mount setup, privileges
 caching and caller identity still need a Sophia-specific design. See
 [Linux v9fs](https://docs.kernel.org/filesystems/9p.html) and the
 [9P2000.L specification](https://github.com/chaos/diod/blob/master/protocol.md).
+The [host mounting investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
+observed v9fs refusing an unprivileged user-namespace mount; this is host evidence,
+not a portable kernel guarantee. Direct clients need no mount privilege. A
+userspace `9pfuse` path is a later option requiring its own admission, caching
+and lifecycle checks, not an already supported access path.
 
 Classic 9P2000 fallback is a separate compatibility question. Supporting `.L`
 does not make existing Plan 9 or plan9port applications work unchanged. Graphics,

@@ -5,7 +5,7 @@ kind: investigation
 status: investigating
 tags: [session, architecture]
 ---
-# Plan 9 belongs in the session control plane, not the engine
+# 9P replaces public role IPC; unprivileged v9fs mounting was unavailable
 
 ## Question
 

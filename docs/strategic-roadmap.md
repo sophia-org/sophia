@@ -15,8 +15,10 @@ The accepted [9P2000.L direction](sophia-9p-control-bus.md) targets common publi
 WM, shell and administrative interfaces and a 9P application frontend alongside
 X11. Application-owned service exports use explicit grants. Namespaces and
 existing semantic owners remain; Engine's internal typed execution is outside
-the public transport replacement. The file API and migration schedule remain
-open, and implementation stays paused during the current brainstorming session.
+the public transport replacement. Hagia's WM role is in approved implementation
+on the t249/h006 development branches under the [WM file contract](sophia-wm-files.md).
+Other role APIs and their migration schedules remain open. Current IPC remains
+the default pending acceptance and measured performance.
 
 This roadmap outlines the evolution of the Sophia codebase from its current
 **Phase 1: Monorepo Incubation** into **Phase 3: Autonomous Satellite Repositories**
@@ -155,10 +157,10 @@ four **Extraction Gates**:
 | **`sophia-session`** | `crates/sophia-session` | `sophia-org/sophia` | Supervisor lifecycle, Namespace admission | Core supervisor |
 | **`sophia-protocol`** | `crates/sophia-protocol` | `sophia-org/sophia` (or standalone crate) | KDL/Binary Wire Schemas | Iterating towards v1.0 freeze |
 | **`sophia-portal`** | `crates/sophia-portal` | `sophia-org/sophia` | Deterministic cross-namespace reducers | Implemented |
-| **`Hagia`** | External repository | `sophia-org/hagia` | Current `sophia_wm_v1`; target 9P WM role (opaque spatial layout) | External satellite (Active); migration unimplemented |
+| **`Hagia`** | External repository | `sophia-org/hagia` | Current `sophia_wm_v1`; opt-in 9P WM role (opaque spatial layout) | External satellite (Active); development migration implemented, acceptance open |
 | **`sophia-x-authority`** | `crates/sophia-x-authority`| `sophia-org/sophia-x-authority` | X11 Wire ──► `SurfaceTransaction` | Phase 1 (Incubating) |
 | **`sophia-9p-authority`**| `crates/sophia-9p-authority`| `sophia-org/sophia-9p-authority`| 9P2000.L ──► `SurfaceTransaction` | Phase 1 (Stubbed) |
-| **9P desktop role services** | Design only | Crate/process split open | Separate authorized WM, shell and administrative exports | Accepted direction; API unimplemented |
+| **9P desktop role services** | WM export in Session; other roles in design | Broader crate/process split open | Separate authorized WM, shell and administrative exports | WM implementation contract; remaining role APIs open |
 
 The earlier permanent `sophia-wm-9p-bridge` proposal is replaced by the common
 public-interface direction. Any temporary migration adapter requires an explicit
