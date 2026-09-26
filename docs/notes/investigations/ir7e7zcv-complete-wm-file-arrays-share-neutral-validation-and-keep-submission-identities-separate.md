@@ -113,6 +113,40 @@ are integration requirements, not proof that the supplied-stream custody
 fixture already performs admission or semantic settlement. Independent Nim
 body codecs and the complete Session/Hagia roundtrip remain open.
 
+## Tab selected surface
+
+The shared tab record owner, `ipc/wm_tab_groups.rs`, serves the legacy
+projection chunks and the file projection alike. At `6871d0d8` its selected
+field disagreed with the strict optional-surface contract and with Engine,
+which judges a selection only by membership and a visible placement:
+
+- a selected surface at index zero with a nonzero generation was refused on
+  both wires, although the same surface round tripped as a member and Engine
+  committed the selection;
+- no selection was encoded as `SurfaceId::INVALID`, bytes
+  `ff ff ff ff 00 00 00 00`, which the decoder refused, so a group without a
+  selection could not round trip; only a hand-written (0, 0) decoded as none;
+- a selected all-ones index with a nonzero generation passed the codec and
+  was refused only by Engine (RejectedInvalid), finding it among no members.
+
+`71fde5fb` pinned this on the legacy chunk, file projection and raw record
+paths, and pinned Engine's membership rule. The red `afbba8f2` un-ignored the
+two contract tests. The fix changes only `wm_tab_groups.rs`: no selection is
+encoded as `00 00 00 00 00 00 00 00`, a selection must be a valid surface in
+both directions, and (0, 0) still decodes as none. Exact compatibility
+changes: a selected index zero is now accepted, exactly the selections Engine
+already commits; no selection now round trips; a selected all-ones index is
+refused at the codec rather than at Engine, with the same end-to-end outcome.
+Generation zero and (u32::MAX, 0) remain refused. There is no sentinel
+exception, and Engine is unchanged. No production path sends Sophia-encoded
+projections, and the frozen byte fixtures (`policy-records-95b39662.bin`,
+`policy-scalars-f5235c04.bin`) are unchanged.
+
+Focused controls: the tab selection tests (4 passed), the two fixture suites,
+legacy `policy_wire`, record compatibility and the file arrays tests, all
+green, with Engine's tab targets (3 passed), strict protocol Clippy, fmt and
+diff checks. Evidence is in `.artifacts/tab-selected`.
+
 ## Connections
 
 - [WM file contract](../../sophia-wm-files.md) owns byte and custody semantics.
