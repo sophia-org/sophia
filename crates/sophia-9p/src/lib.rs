@@ -11,6 +11,9 @@
 //! owner decides admission, disclosure and revocation. Attach names, user
 //! names and peer credentials reach the owner as data and grant nothing here.
 //!
+//! [`journal`] holds the record-file custody exports share: an acknowledged
+//! event journal and write staging, with every bound chosen by the owner.
+//!
 //! [`client`] is a separate bounded, read-only client with its own codec; it
 //! shares only the protocol's value records with the server core.
 //!
@@ -19,6 +22,7 @@
 pub mod client;
 pub mod connection;
 pub mod export;
+pub mod journal;
 pub mod records;
 pub mod unix;
 pub mod wire;

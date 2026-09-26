@@ -493,7 +493,7 @@ impl<C: PolicyFileCodec> Export for WmFiles<C> {
                     return Err(EBUSY);
                 }
                 let id = self.qids.allocate(1)?;
-                self.staging = Some(Staging::new(id));
+                self.staging = Some(Staging::new(id, STAGING));
                 Ok(Handle::Transaction(id))
             }
             _ => Ok(Handle::Plain),

@@ -2,17 +2,19 @@
 use super::*;
 
 pub(in super::super) fn exhaust_sequence(journal: &mut Journal) {
-    journal.next = u64::MAX;
+    journal.0 = Custody::starting_at(journal.0.epoch(), u64::MAX, journal.0.size());
 }
 pub(in super::super) fn exhaust_tail(journal: &mut Journal) {
-    journal.tail = u64::MAX;
+    let next = journal.0.next_sequence();
+    journal.0 = Custody::starting_at(journal.0.epoch(), next, u64::MAX);
 }
 pub(in super::super) fn position(journal: &Journal) -> (u64, u64, usize, usize) {
+    let position = journal.0.position();
     (
-        journal.next,
-        journal.tail,
-        journal.records.len(),
-        journal.bytes,
+        position.next_sequence,
+        position.tail,
+        position.records,
+        position.bytes,
     )
 }
 

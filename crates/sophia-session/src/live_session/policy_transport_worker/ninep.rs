@@ -17,12 +17,11 @@ mod journal;
 mod owner;
 mod pending;
 mod runtime_adapter;
-mod staging;
 mod startup;
 mod typed_codec;
 use journal::Journal;
 pub(super) use owner::WmFiles;
-use staging::Staging;
+use sophia_9p::journal::{Staging, StagingBounds};
 
 #[path = "../../../tests/support/policy_selection_peer.rs"]
 pub(in crate::live_session) mod selection_peer;
@@ -52,7 +51,11 @@ impl super::PolicyTransportWorker {
 
 const EBUSY: Errno = Errno(16);
 const EALREADY: Errno = Errno(114);
-const ASSEMBLY_DEADLINE: Duration = Duration::from_millis(WM_FILE_ASSEMBLY_TIMEOUT_MILLIS as u64);
+const STAGING: StagingBounds = StagingBounds {
+    header_bytes: WM_FILE_HEADER_BYTES,
+    max_bytes: WM_FILE_MAX_BYTES,
+    assembly: Duration::from_millis(WM_FILE_ASSEMBLY_TIMEOUT_MILLIS as u64),
+};
 const SEND_DEADLINE: Duration = Duration::from_millis(WM_FILE_SEND_TIMEOUT_MILLIS as u64);
 
 fn check_publication(stopped: &AtomicBool, deadline: Instant) -> Result<(), Errno> {

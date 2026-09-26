@@ -117,7 +117,7 @@ pub(super) fn configuration_permit() -> PolicyReceivePermit {
 
 #[test]
 fn staging_retries_preserve_prefix_and_do_not_renew_expiry() {
-    let mut staging = Staging::new(1);
+    let mut staging = Staging::new(1, STAGING);
     let now = Instant::now();
     let bytes = record(9, WmFileKind::Configuration, 1, &[0]);
     staging.write(0, &bytes[..3], now).unwrap();

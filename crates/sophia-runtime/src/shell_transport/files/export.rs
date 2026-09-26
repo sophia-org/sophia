@@ -4,7 +4,7 @@
 //! shell owners, which the transport feeds from `take_inbound`.
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use sophia_9p::connection::ConnectionId;
 use sophia_9p::{
@@ -18,11 +18,19 @@ use sophia_protocol::{
 };
 
 use super::journal::{Journal, JournalBounds};
-use super::staging::Staging;
+use sophia_9p::journal::{Staging, StagingBounds};
 
 /// Not in `sophia-9p`'s set; the WM file owner defines the same values.
 const EBUSY: Errno = Errno(16);
 const EALREADY: Errno = Errno(114);
+
+/// One candidate record under assembly: at most one transaction, completed
+/// within the WM file assembly deadline.
+const STAGING: StagingBounds = StagingBounds {
+    header_bytes: SHELL_FILE_HEADER_BYTES,
+    max_bytes: SHELL_FILE_MAX_TRANSACTION_BYTES,
+    assembly: Duration::from_millis(SHELL_FILE_ASSEMBLY_TIMEOUT_MILLIS as u64),
+};
 
 /// At most this many accepted submissions wait for the owners, as the
 /// socket transport's inbox does.
@@ -827,7 +835,7 @@ impl Export for ShellFiles {
                     return Err(EBUSY);
                 }
                 let id = self.allocate_qid()?;
-                self.staging = Some(Staging::new(id));
+                self.staging = Some(Staging::new(id, STAGING));
                 Ok(Handle::Transaction(id))
             }
             _ => Ok(Handle::Plain),

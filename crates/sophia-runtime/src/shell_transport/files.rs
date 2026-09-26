@@ -13,7 +13,6 @@ use crate::ContentStoreProfile;
 
 mod export;
 mod journal;
-mod staging;
 
 pub(super) use export::{Inbound, ShellFiles};
 pub(super) use journal::JournalBounds;
