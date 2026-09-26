@@ -7,6 +7,7 @@ Current contracts are identified in the [documentation map](../../README.md).
 | --- | --- | --- |
 | [Separate desktop readiness from application proofs](../decisions/adr0001-separate-desktop-readiness-from-application-proofs.md) | Accepted, recorded retrospectively | Ordinary session lifecycle; physical acceptance remains pending |
 | [Session owns desktop composition](../decisions/adr0002-session-owns-desktop-composition.md) | Accepted, recorded retrospectively | Operator component selection and restart semantics |
+| [Adopt 9P2000.L as the target public interface](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md) | Accepted direction 2026-09-25; implementation reaffirmed 2026-09-26 | Progressive public desktop IPC replacement; WM implementation and acceptance in progress, other role contracts and the later application frontend remain open |
 
 | [Separate grab ownership from presentation evidence](../decisions/mbvdvhk5-separate-grab-ownership-from-presentation-evidence.md) | Accepted 2026-09-07 | Application grab ordering, readiness, and scope evidence; physical acceptance remains separate |
 | [Content capability design for sophia_shell_v1](../decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md) | Proposed 2026-09-12 | Content shell transport, budgets, pixel semantics, wire records, invariants, and conformance corpus |

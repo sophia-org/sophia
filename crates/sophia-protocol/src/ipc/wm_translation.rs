@@ -1,4 +1,4 @@
-use super::{IpcCodecError, WmV1ProjectionChunk};
+use super::{IpcCodecError, PolicyRecordSection, PolicyRecordSectionRef, WmV1ProjectionChunk};
 use crate::{OutputId, POLICY_MAX_OUTPUTS, POLICY_MAX_SURFACES, PolicyTranslationGroup, SurfaceId};
 
 pub const PROJECTION_TRANSLATION_GROUP_RECORD_KIND: u16 = 0xff03;
@@ -18,6 +18,34 @@ pub fn encode_wm_translation_groups(
     epoch: u64,
     ordinal: u16,
 ) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
+    super::wm_record_sections::projection_chunks(
+        encode_policy_translation_groups_records(groups)?,
+        epoch,
+        ordinal,
+        |kind| match kind {
+            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => {
+                Some(PROJECTION_TRANSLATION_GROUP_RECORD_LEN)
+            }
+            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => {
+                Some(PROJECTION_TRANSLATION_MEMBER_RECORD_LEN)
+            }
+            _ => None,
+        },
+    )
+    .map_err(|_| invalid())
+}
+
+pub fn decode_wm_translation_groups(
+    chunks: &[WmV1ProjectionChunk],
+) -> Result<Vec<PolicyTranslationGroup>, IpcCodecError> {
+    decode_policy_translation_groups_records(&super::wm_record_sections::projection_sections(
+        chunks,
+    ))
+}
+
+pub fn encode_policy_translation_groups_records(
+    groups: &[PolicyTranslationGroup],
+) -> Result<Vec<PolicyRecordSection>, IpcCodecError> {
     if groups.len() > POLICY_MAX_OUTPUTS
         || groups.iter().map(|g| g.members.len()).sum::<usize>() > POLICY_MAX_SURFACES
     {
@@ -39,42 +67,46 @@ pub fn encode_wm_translation_groups(
             members.extend(surface.generation().to_le_bytes());
         }
     }
-    let mut chunks = Vec::new();
+    let mut sections = Vec::new();
     for (kind, size, bytes) in [
-        (PROJECTION_TRANSLATION_GROUP_RECORD_KIND, 32, headers),
-        (PROJECTION_TRANSLATION_MEMBER_RECORD_KIND, 24, members),
+        (
+            PROJECTION_TRANSLATION_GROUP_RECORD_KIND,
+            PROJECTION_TRANSLATION_GROUP_RECORD_LEN,
+            headers,
+        ),
+        (
+            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND,
+            PROJECTION_TRANSLATION_MEMBER_RECORD_LEN,
+            members,
+        ),
     ] {
-        for data in bytes.chunks((65520 / size) * size) {
-            chunks.push(WmV1ProjectionChunk {
-                connection_epoch: epoch,
-                ordinal: ordinal
-                    .checked_add(chunks.len() as u16)
-                    .ok_or_else(invalid)?,
-                record_kind: kind,
-                item_count: (data.len() / size) as u32,
-                data: data.to_vec(),
+        if !bytes.is_empty() {
+            sections.push(PolicyRecordSection {
+                kind,
+                count: (bytes.len() / size) as u32,
+                bytes,
             });
         }
     }
-    Ok(chunks)
+    Ok(sections)
 }
 
-pub fn decode_wm_translation_groups(
-    chunks: &[WmV1ProjectionChunk],
+pub fn decode_policy_translation_groups_records(
+    sections: &[PolicyRecordSectionRef<'_>],
 ) -> Result<Vec<PolicyTranslationGroup>, IpcCodecError> {
     let mut groups = Vec::new();
     let mut counts = Vec::new();
     let mut members = Vec::new();
-    for chunk in chunks {
-        let size = match chunk.record_kind {
-            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => 32,
-            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => 24,
+    for chunk in sections {
+        let size = match chunk.kind {
+            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => PROJECTION_TRANSLATION_GROUP_RECORD_LEN,
+            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => PROJECTION_TRANSLATION_MEMBER_RECORD_LEN,
             _ => continue,
         };
-        if chunk.item_count == 0 || chunk.data.len() != chunk.item_count as usize * size {
+        if chunk.count == 0 || chunk.bytes.len() != chunk.count as usize * size {
             return Err(invalid());
         }
-        for b in chunk.data.chunks_exact(size) {
+        for b in chunk.bytes.chunks_exact(size) {
             let u64_at = |i| u64::from_le_bytes(b[i..i + 8].try_into().unwrap());
             let u32_at = |i| u32::from_le_bytes(b[i..i + 4].try_into().unwrap());
             if size == 32 {

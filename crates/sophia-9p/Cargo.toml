@@ -1,0 +1,13 @@
+[package]
+name = "sophia-9p"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustix = { workspace = true, features = ["event", "net", "pipe", "std"] }
+
+[lints]
+workspace = true

@@ -19,6 +19,21 @@ mod default_policy_catalog;
 #[path = "policy_presentation_lifecycle.rs"]
 mod policy_presentation_lifecycle;
 
+#[path = "policy_transport_selection.rs"]
+mod policy_transport_selection;
+
+#[path = "policy_combined_output.rs"]
+mod policy_combined_output;
+
+#[path = "policy_expectation_settlement.rs"]
+mod policy_expectation_settlement;
+
+#[path = "policy_inspection.rs"]
+mod policy_inspection;
+
+#[path = "inspection_profile_reload.rs"]
+mod inspection_profile_reload;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -39,6 +54,7 @@ impl ReloadFixture {
         activate_session_profile(&mut source.config);
         let config = &source.config;
         let PreparedPublicPolicyLaunch {
+            wm_filesystem_qids,
             profile_fragments,
             directory,
             policy_profile,
@@ -87,6 +103,9 @@ impl ReloadFixture {
             .into_iter()
             .collect::<BTreeMap<_, _>>();
         let public = LivePublicPolicyState {
+            inspection: None,
+            wm_transport: config.wm_transport,
+            wm_filesystem_qids,
             output_policy_keys: Default::default(),
             control_generation: 1,
             control_catalog_serial: 1,
@@ -557,7 +576,7 @@ fn rejected_policy_restores_the_exact_spec_fragments_and_commands() {
 }
 
 #[test]
-fn lom_panel_gate_admits_only_available_actions_from_hagias_complete_catalog() {
+fn lom_panel_gate_admits_only_available_actions_from_the_wm_catalog() {
     let core = include_str!("../../../../tools/fixtures/lom_panel_core.kdl");
     let arguments = [
         "--session-app=browser=/usr/bin/true",

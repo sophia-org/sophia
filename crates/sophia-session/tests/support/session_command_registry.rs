@@ -299,7 +299,7 @@ fn retained_command_spawns_literal_arguments_and_authorized_environment_without_
 shift
 {
     printf '%s\000' "$@"
-    printf '%s\000' "$DISPLAY" "$XAUTHORITY" "${SOPHIA_CONTROL_SOCKET-unset}" "${ENV+set}" "${BASH_ENV+set}"
+    printf '%s\000' "$DISPLAY" "$XAUTHORITY" "${SOPHIA_CONTROL_SOCKET-unset}" "${SOPHIA_WM_INSPECT_SOCKET-unset}" "${ENV+set}" "${BASH_ENV+set}"
     printf '%s\000' "$(pwd -P)"
 } > "$output"
 "#,
@@ -318,6 +318,7 @@ shift
         .unwrap();
     let xauthority = fixture.directory.join("authority with spaces");
     let control = fixture.directory.join("control.sock");
+    let inspection = fixture.directory.join("inspection.sock");
     let cwd = std::env::current_dir().unwrap().canonicalize().unwrap();
     let literals = [
         "$HOME",
@@ -327,7 +328,15 @@ shift
         "$(exit 9); *",
     ];
 
-    for (index, socket) in [Some(control.as_path()), None].into_iter().enumerate() {
+    for (index, (socket, inspection_socket)) in [
+        (Some(control.as_path()), None),
+        (None, Some(inspection.as_path())),
+        (Some(control.as_path()), Some(inspection.as_path())),
+        (None, None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let output = fixture.directory.join(format!("capture-{index}"));
         let mut command = original.named_command("capture").unwrap().clone();
         command.arguments = vec![
@@ -363,6 +372,7 @@ shift
                 ":private-no-connection",
                 &xauthority,
                 socket,
+                inspection_socket,
                 crate::diagnostics::application::LaunchContext {
                     source: crate::diagnostics::application::LaunchSource::Shortcut,
                     transaction: Some(transaction.raw()),
@@ -386,6 +396,7 @@ shift
             b":private-no-connection".as_slice(),
             xauthority.as_os_str().as_bytes(),
             socket.map_or(b"unset".as_slice(), |path| path.as_os_str().as_bytes()),
+            inspection_socket.map_or(b"unset".as_slice(), |path| path.as_os_str().as_bytes()),
             b"".as_slice(),
             b"".as_slice(),
             cwd.as_os_str().as_bytes(),
@@ -400,6 +411,7 @@ shift
                 ":private-no-connection",
                 &xauthority,
                 socket,
+                inspection_socket,
                 crate::diagnostics::application::LaunchContext {
                     source: crate::diagnostics::application::LaunchSource::Shortcut,
                     transaction: Some(transaction.raw()),

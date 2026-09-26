@@ -16,6 +16,7 @@ mod check;
 mod headless_client_gate;
 mod m3_acceptance;
 mod native_protocol_family;
+mod nine_p_conformance;
 mod panel;
 mod xterm_pointer_oracle;
 mod xtest_selection;
@@ -483,6 +484,11 @@ usage: cargo xtask <command>
       source; XTS5 and x11bench are each BLOCKED unless their checkout and manifest are supplied.
       --xts-admit-xtest=yes starts the XTS host with XTEST admitted, for a scenario whose
       purposes inject input (the event section).
+
+  check 9p-conformance [--self-test]
+      Serve the sophia-9p static test export and judge it with the independent Go oracle
+      (tools/9p-oracle, pinned hugelgupf/p9 v0.4.1); --self-test requires every harness
+      mutation to fail. Headless: no role, admission, mount or performance claim.
 
   check m6-evidence --output=/NEW/DIR --target-dir=/OWNED/TARGET [--timeout=SECONDS]
         [--core-report=/PATH/report.json] [--canonical-report=/PATH/report.json]

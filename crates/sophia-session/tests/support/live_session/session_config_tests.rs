@@ -1,5 +1,11 @@
 use super::*;
 
+#[path = "wm_transport_config.rs"]
+mod wm_transport_config;
+
+#[path = "inspection_environment.rs"]
+mod inspection_environment;
+
 #[test]
 fn dock_only_profile_requires_catalog_and_input_before_endpoint_construction() {
     use std::os::unix::fs::PermissionsExt;
@@ -689,7 +695,7 @@ fn mixed_output_gate_apps_satisfy_probe_profile() {
 }
 
 #[test]
-fn frame_fed_output_gate_admits_hagias_complete_session_operation_catalog() {
+fn frame_fed_output_gate_admits_the_complete_session_operation_catalog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let core = root.join("tools/config/sophia/core.kdl");
     let desktop = root.join("tools/fixtures/frame_fed_output_proof.kdl");

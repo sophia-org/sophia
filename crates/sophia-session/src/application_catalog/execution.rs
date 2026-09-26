@@ -12,6 +12,28 @@ pub struct CatalogProcessEnvironment<'a> {
     pub display: &'a str,
     pub xauthority: &'a Path,
     pub control_socket: Option<&'a Path>,
+    pub inspection_socket: Option<&'a Path>,
+}
+
+/// Host endpoints come only from this Session's startup permissions, never
+/// from an inherited environment or a protected role's grant set.
+pub(crate) fn configure_host_application_environment(
+    command: &mut Command,
+    control_socket: Option<&Path>,
+    inspection_socket: Option<&Path>,
+) {
+    for (name, socket) in [
+        (sophia_runtime::SOPHIA_CONTROL_SOCKET_ENV, control_socket),
+        (
+            sophia_runtime::SOPHIA_WM_INSPECT_SOCKET_ENV,
+            inspection_socket,
+        ),
+    ] {
+        command.env_remove(name);
+        if let Some(socket) = socket {
+            command.env(name, socket);
+        }
+    }
 }
 
 pub fn spawn_catalog_process(
@@ -27,20 +49,21 @@ pub(crate) fn spawn_catalog_process_with_transaction(
     transaction: Option<u64>,
 ) -> std::io::Result<Child> {
     let mut process = Command::new(&command.executable);
+    configure_host_application_environment(
+        &mut process,
+        environment.control_socket,
+        environment.inspection_socket,
+    );
     process
         .args(&command.arguments)
         .env("DISPLAY", environment.display)
         .env("XAUTHORITY", environment.xauthority)
-        .env_remove(sophia_runtime::SOPHIA_CONTROL_SOCKET_ENV)
         .env_remove("ENV")
         .env_remove("BASH_ENV")
         .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
-    if let Some(socket) = environment.control_socket {
-        process.env(sophia_runtime::SOPHIA_CONTROL_SOCKET_ENV, socket);
-    }
     if let Some(directory) = &command.working_directory {
         process.current_dir(directory);
     }

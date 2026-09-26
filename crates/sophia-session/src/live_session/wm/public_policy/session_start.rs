@@ -6,6 +6,7 @@ impl LiveWmSession {
         output_bootstrap: Option<LiveOutputAuthorityBootstrap>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let StartedPublicPolicyLaunch {
+            wm_filesystem_qids,
             profile_fragments,
             directory,
             policy_profile,
@@ -109,6 +110,9 @@ impl LiveWmSession {
             .map(|output| output.id)
             .collect::<BTreeSet<_>>();
         let mut public = LivePublicPolicyState {
+            inspection: None,
+            wm_transport: config.wm_transport,
+            wm_filesystem_qids,
             control_generation: 1,
             control_catalog_serial: 1,
             control_tickets: BTreeMap::new(),
@@ -223,7 +227,8 @@ impl LiveWmSession {
             crate::diagnostics::capture_process_identity("wm", pid, 1);
         }
         crate::session_println!(
-            "sophia_live_wm schema=4 status=ready adapter=sophia_wm_v1 socket=session_owned epoch=1 restarts=0"
+            "sophia_live_wm schema=4 status=ready adapter={} socket=session_owned epoch=1 restarts=0",
+            config.wm_transport.wire_name(),
         );
         Ok(session)
     }

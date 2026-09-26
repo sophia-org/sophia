@@ -16,6 +16,7 @@ fn environment() -> catalog::CatalogProcessEnvironment<'static> {
         display: ":unavailable",
         xauthority: std::path::Path::new("/nonexistent"),
         control_socket: None,
+        inspection_socket: None,
     }
 }
 

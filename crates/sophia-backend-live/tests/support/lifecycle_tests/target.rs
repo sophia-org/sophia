@@ -1,5 +1,5 @@
 pub(super) use super::super::composition_test_target::Target;
-use super::super::composition_test_target::{CopiedBacking, Device, copy_submission};
+use super::super::composition_test_target::{CopiedBacking, Device};
 use super::*;
 #[path = "mirror_completion_tests.rs"]
 mod mirror_completion_tests;

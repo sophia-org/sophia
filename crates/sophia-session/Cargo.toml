@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+sophia-9p = { path = "../sophia-9p", optional = true }
 sophia-backend-live = { path = "../sophia-backend-live", optional = true, default-features = false }
 sophia-broker = { path = "../sophia-broker" }
 sophia-config = { path = "../sophia-config" }
@@ -33,6 +34,7 @@ sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features 
 [features]
 default = []
 native-session = [
+    "dep:sophia-9p",
     "sophia-backend-live/gbm-probe",
     "sophia-backend-live/libdrm-events",
     "sophia-backend-live/drm-hotplug",

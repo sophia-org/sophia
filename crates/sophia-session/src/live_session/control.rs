@@ -1,13 +1,3 @@
-fn configure_control_environment(
-    command: &mut std::process::Command,
-    socket: Option<&std::path::Path>,
-) {
-    command.env_remove(sophia_runtime::SOPHIA_CONTROL_SOCKET_ENV);
-    if let Some(socket) = socket {
-        command.env(sophia_runtime::SOPHIA_CONTROL_SOCKET_ENV, socket);
-    }
-}
-
 struct LiveControlState {
     service: Option<sophia_runtime::ControlService>,
     catalog: std::sync::Arc<sophia_protocol::ControlCatalog>,

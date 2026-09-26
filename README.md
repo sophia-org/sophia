@@ -89,7 +89,9 @@ Investigations and design decisions live in the [development notebook](docs/note
 
 ## Status
 
-Sophia is a research prototype. X11 is the current application protocol, and the Rust frontend implements a subset of it. Application compatibility and end-to-end validation remain in progress. Other protocol frontends, including Wayland, remain future work.
+Sophia is a research prototype. X11 is the current application protocol, and the Rust frontend implements a subset of it. Application compatibility and end-to-end validation remain in progress.
+
+The accepted [9P2000.L direction](docs/sophia-9p-control-bus.md) targets common public interfaces for WMs, shells and administration, plus a 9P application frontend alongside X11. It preserves namespace isolation and separate authorities. The WM role has an opt-in direct 9P2000.L transport; current IPC remains the default. [Read-only WM inspection](docs/sophia-wm-inspection.md) has a separate host-domain permission and endpoint. Other role migrations and the application frontend remain later work; the existing native protocols remain supported. Other frontend candidates have not been promoted by this decision.
 
 ## License
 

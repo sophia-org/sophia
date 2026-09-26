@@ -60,8 +60,8 @@ impl LiveWmSession {
         if trigger {
             self.request_transport_restart("public_policy_proof_fault", Some(point.name()));
             crate::session_println!(
-                "sophia_live_wm schema=4 status=proof_fault_triggered adapter=sophia_wm_v1 phase={} preserved_layout=true",
-                point.name(),
+                "sophia_live_wm schema=4 status=proof_fault_triggered adapter={} phase={} preserved_layout=true",
+                self.policy_wire_name(), point.name(),
             );
         }
         trigger
@@ -85,8 +85,8 @@ impl LiveWmSession {
         public.proof_restart_triggered = true;
         self.request_transport_restart("public_policy_checkpoint_proof", None);
         crate::session_println!(
-            "sophia_live_wm schema=4 status=proof_restart_triggered adapter=sophia_wm_v1 phase=checkpoint_saved action={} preserved_layout=true",
-            action.raw(),
+            "sophia_live_wm schema=4 status=proof_restart_triggered adapter={} phase=checkpoint_saved action={} preserved_layout=true",
+            self.policy_wire_name(), action.raw(),
         );
         Ok(())
     }

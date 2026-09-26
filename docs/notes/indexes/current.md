@@ -36,9 +36,16 @@ map, not a list of every note or another roadmap.
 
 [Explicit scoped component grants](../concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md) describes integrated and modular shells; the linked candidate plan starts with a bar and independent launcher. This is not current multi-client support.
 
-## Session control plane
+## Public role IPC and mounting
 
-The [Plan 9 control-plane investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
-narrows the [9P control-bus proposal](../../sophia-9p-control-bus.md) to
-administration and observability on per-role sockets. It records that v9fs
-refuses unprivileged user-namespace mounts. This is not roadmap work.
+The [9P role replacement and mounting investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
+records the observed unprivileged-v9fs restriction and corrects its initial
+administration-only scope. The [accepted 9P direction](../../sophia-9p-control-bus.md)
+replaces public role IPC progressively, beginning with Hagia. Engine's internal
+interfaces stay unchanged; direct clients require no filesystem mount.
+
+The [desktop-role migration plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
+connects the working WM path to daily acceptance, the independent Lom/Bemenu/
+Provlita shell clients, and later output and administrative replacements.
+The [inspection investigation](../investigations/pp3pk4dd-read-only-wm-inspection-preserves-host-admission-and-writer-progress.md)
+records the separate HostDomain observer and the remaining workspace-gate limit.

@@ -8,13 +8,20 @@ mod broker_transport;
 #[cfg(target_os = "linux")]
 mod control;
 mod error;
+#[cfg(target_os = "linux")]
+mod host_domain;
+#[cfg(target_os = "linux")]
+pub mod inspection;
 mod output_ipc;
 #[cfg(target_os = "linux")]
 mod output_service;
 #[cfg(target_os = "linux")]
 mod output_transport;
+mod policy_capabilities;
 mod policy_ipc;
 mod policy_profile_handoff;
+#[cfg(target_os = "linux")]
+mod policy_profile_io;
 #[cfg(target_os = "linux")]
 mod policy_socket;
 #[cfg(target_os = "linux")]
@@ -45,13 +52,18 @@ pub use broker_transport::*;
 #[cfg(target_os = "linux")]
 pub use control::*;
 pub use error::*;
+#[cfg(target_os = "linux")]
+pub use inspection::SOPHIA_WM_INSPECT_SOCKET_ENV;
 pub use output_ipc::*;
 #[cfg(target_os = "linux")]
 pub use output_service::*;
 #[cfg(target_os = "linux")]
 pub use output_transport::*;
+pub use policy_capabilities::*;
 pub use policy_ipc::*;
 pub use policy_profile_handoff::*;
+#[cfg(target_os = "linux")]
+pub use policy_profile_io::*;
 #[cfg(target_os = "linux")]
 pub use policy_socket::*;
 #[cfg(target_os = "linux")]

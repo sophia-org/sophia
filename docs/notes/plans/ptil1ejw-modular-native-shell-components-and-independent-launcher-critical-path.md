@@ -6,6 +6,16 @@ tags: [plan, shell, architecture, native-components]
 ---
 # Modular native shell components and independent launcher critical path
 
+## Transport migration connection, 2026-09-26
+
+The [9P desktop-role plan](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
+names Lom, Bemenu and Provlita explicitly as independent migration clients,
+with Narthex retained as the descriptor reference. Its transport tasks reuse
+this plan's component authorities and acceptance evidence. The historical
+two-component retargeting below remains accurate for September 25; the new
+migration target includes the dock without claiming that its physical exit
+has passed. Existing t104–t108 product gaps are not closed by changing the wire.
+
 ## Selected desktop reconciliation, 2026-09-25
 
 niltempus [retargeted t081 and its t101 prerequisite](../milestones/a3j8o6g0-desktop-acceptance-retargeted-to-lom-and-bemenu.md)

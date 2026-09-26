@@ -1,7 +1,7 @@
 //! Fixed presentation extension records; connection and scene authority are
 //! validated by the projection owner after this bounded decoding step.
 use super::cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
-use super::{IpcCodecError, WmV1ProjectionChunk};
+use super::{IpcCodecError, PolicyRecordSection, PolicyRecordSectionRef, WmV1ProjectionChunk};
 use crate::*;
 
 pub const PROJECTION_PRESENTATION_RECORD_KIND: u16 = 0xff09;
@@ -57,6 +57,25 @@ pub fn encode_wm_presentation(
     epoch: u64,
     ordinal: u16,
 ) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
+    super::wm_record_sections::projection_chunks(
+        encode_policy_presentation_records(presentation, epoch)?,
+        epoch,
+        ordinal,
+        |kind| wm_presentation_record_layout(kind).map(|r| r.0),
+    )
+    .map_err(|_| invalid())
+}
+
+pub fn decode_wm_presentation(
+    chunks: &[WmV1ProjectionChunk],
+) -> Result<Option<PolicyPresentation>, IpcCodecError> {
+    decode_policy_presentation_records(&super::wm_record_sections::projection_sections(chunks))
+}
+
+pub fn encode_policy_presentation_records(
+    presentation: Option<&PolicyPresentation>,
+    epoch: u64,
+) -> Result<Vec<PolicyRecordSection>, IpcCodecError> {
     let Some(p) = presentation else {
         return Ok(Vec::new());
     };
@@ -113,7 +132,7 @@ pub fn encode_wm_presentation(
         push_u32(&mut bindings, b.keycode);
         push_u32(&mut bindings, b.modifiers.bits);
     }
-    let mut chunks = Vec::new();
+    let mut sections = Vec::new();
     for (kind, bytes) in [
         (PROJECTION_PRESENTATION_RECORD_KIND, header),
         (PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND, outputs),
@@ -122,42 +141,38 @@ pub fn encode_wm_presentation(
         (PROJECTION_PRESENTATION_BINDING_RECORD_KIND, bindings),
     ] {
         let (size, _, _) = wm_presentation_record_layout(kind).ok_or_else(invalid)?;
-        for data in bytes.chunks((65520 / size) * size) {
-            chunks.push(WmV1ProjectionChunk {
-                connection_epoch: epoch,
-                ordinal: ordinal
-                    .checked_add(u16::try_from(chunks.len()).map_err(|_| invalid())?)
-                    .ok_or_else(invalid)?,
-                record_kind: kind,
-                item_count: (data.len() / size) as u32,
-                data: data.to_vec(),
+        if !bytes.is_empty() {
+            sections.push(PolicyRecordSection {
+                kind,
+                count: (bytes.len() / size) as u32,
+                bytes,
             });
         }
     }
-    Ok(chunks)
+    Ok(sections)
 }
 
-pub fn decode_wm_presentation(
-    chunks: &[WmV1ProjectionChunk],
+pub fn decode_policy_presentation_records(
+    sections: &[PolicyRecordSectionRef<'_>],
 ) -> Result<Option<PolicyPresentation>, IpcCodecError> {
     let mut p = None;
     let mut counts = (0_usize, 0_usize, 0_usize, 0_usize);
     let mut last_kind = 0;
-    for chunk in chunks {
-        let Some((size, maximum, _)) = wm_presentation_record_layout(chunk.record_kind) else {
+    for chunk in sections {
+        let Some((size, maximum, _)) = wm_presentation_record_layout(chunk.kind) else {
             continue;
         };
-        if chunk.record_kind < last_kind
-            || chunk.item_count == 0
-            || chunk.item_count as usize > maximum
-            || chunk.data.len() != chunk.item_count as usize * size
+        if chunk.kind < last_kind
+            || chunk.count == 0
+            || chunk.count as usize > maximum
+            || chunk.bytes.len() != chunk.count as usize * size
         {
             return Err(invalid());
         }
-        last_kind = chunk.record_kind;
-        for data in chunk.data.chunks_exact(size) {
+        last_kind = chunk.kind;
+        for data in chunk.bytes.chunks_exact(size) {
             let mut c = Cursor::new(data);
-            if chunk.record_kind == PROJECTION_PRESENTATION_RECORD_KIND {
+            if chunk.kind == PROJECTION_PRESENTATION_RECORD_KIND {
                 if p.is_some() {
                     return Err(invalid());
                 }
@@ -187,7 +202,7 @@ pub fn decode_wm_presentation(
                 });
             } else {
                 let p = p.as_mut().ok_or_else(invalid)?;
-                match chunk.record_kind {
+                match chunk.kind {
                     PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND => {
                         if p.outputs.len() >= counts.0 {
                             return Err(invalid());

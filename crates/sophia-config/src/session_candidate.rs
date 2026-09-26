@@ -14,6 +14,13 @@ pub enum DesktopControlAccess {
     HostAdmin,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DesktopInspectionAccess {
+    #[default]
+    Disabled,
+    HostAdmin,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopSessionCandidate {
     pub generation: ConfigGeneration,
@@ -24,6 +31,7 @@ pub struct DesktopSessionCandidate {
     pub startup: Option<Vec<String>>,
     pub logout_enabled: Option<bool>,
     pub control: DesktopControlAccess,
+    pub inspection: DesktopInspectionAccess,
     pub components: crate::DesktopComponents,
     pub applications: Vec<crate::DesktopApplication>,
 }
@@ -153,6 +161,7 @@ pub fn prepare_desktop_session_candidate(
         startup: None,
         logout_enabled: None,
         control: DesktopControlAccess::Disabled,
+        inspection: DesktopInspectionAccess::Disabled,
         components: crate::DesktopComponents::default(),
         applications: Vec::new(),
     };
@@ -225,6 +234,21 @@ pub fn prepare_desktop_session_candidate(
                     Some("disabled") => DesktopControlAccess::Disabled,
                     Some("host-admin") => DesktopControlAccess::HostAdmin,
                     _ => return Err(schema_error("control must be disabled or host-admin")),
+                };
+            }
+            "inspection" => {
+                if node.entries().len() != 1
+                    || node.children().is_some()
+                    || node.ty().is_some()
+                    || node.entries()[0].name().is_some()
+                    || node.entries()[0].ty().is_some()
+                {
+                    return Err(schema_error("inspection requires one untyped access mode"));
+                }
+                prepared.inspection = match node.get(0).and_then(|value| value.as_string()) {
+                    Some("disabled") => DesktopInspectionAccess::Disabled,
+                    Some("host-admin") => DesktopInspectionAccess::HostAdmin,
+                    _ => return Err(schema_error("inspection must be disabled or host-admin")),
                 };
             }
             _ => return Err(schema_error("candidate contains a non-session setting")),

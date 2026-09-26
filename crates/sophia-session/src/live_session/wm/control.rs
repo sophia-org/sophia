@@ -40,6 +40,7 @@ impl LiveWmSession {
         }
         let epoch = public.next_connection_epoch;
         public.next_connection_epoch = epoch.checked_add(1).ok_or("WM epoch exhausted")?;
+        public.fence_inspection(0, self.supervisor.peer_id());
         let placeholder = ProcessSupervisor::new(
             self.supervisor.process(),
             self.supervisor.launch_spec().clone(),
@@ -50,6 +51,8 @@ impl LiveWmSession {
         let output_service = public.output_service.take();
         let endpoint = public.directory.endpoint_path();
         let profile_key = public.profile_key;
+        let wm_transport = public.wm_transport;
+        let wm_filesystem_qids = public.wm_filesystem_qids.clone();
         let native_presentation_capable = public.native_presentation_capable;
         let (state, command) = update_supervisor(
             self.supervisor_state.clone(),
@@ -72,17 +75,14 @@ impl LiveWmSession {
                 drop(old_worker);
                 drop(old_lifetime);
                 if let Some(service) = &output_service { abandoned_output = !service.pause_acceptance(Duration::from_secs(1))?.is_empty(); }
-                let uid = rustix::process::geteuid().as_raw();
-                let mut transport = if profile_key.is_some() {
-                    sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid_profile_activation(&endpoint, uid)
-                } else { sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(&endpoint, uid) }.map_err(|e| e.to_string())?;
+                let mut transport = bind_public_policy_endpoint(&endpoint, profile_key, wm_transport).map_err(|e| e.to_string())?;
                 let started = supervisor.apply(command).map_err(|e| e.to_string())?.ok_or("supervisor declined restart")?;
                 let pid = supervisor.peer_id().ok_or("replacement has no peer")?;
-                transport.authorize_supervised_pid(pid).map_err(|e| e.to_string())?;
+                transport.authorize(&supervisor).map_err(|e| e.to_string())?;
                 if let Some(service) = &output_service {
                     service.command(sophia_runtime::OutputTransportServiceCommand::ReplaceSupervisedPid { pid }).map_err(|_| "output service unavailable")?;
                 }
-                let worker = start_public_policy_worker(transport, epoch, profile_key, native_presentation_capable).map_err(|e| e.to_string())?;
+                let worker = start_public_policy_worker(transport, epoch, profile_key, native_presentation_capable, &supervisor, wm_filesystem_qids).map_err(|e| e.to_string())?;
                 Ok((worker, started))
             })();
             if result.is_err() { let _ = supervisor.terminate(); }
@@ -162,6 +162,7 @@ impl LiveWmSession {
                 public.expected_operation_slot = None;
                 public.deferred_command = None;
                 public.transport_unavailable = false;
+                public.fence_inspection(result.epoch, self.supervisor.peer_id());
                 public.actions.clear();
                 public.queue.clear();
                 public.pending_dirty_outputs.clear();

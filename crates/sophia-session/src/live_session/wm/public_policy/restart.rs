@@ -30,6 +30,9 @@ impl LiveWmSession {
         ) {
             PublicPolicyRestartDecision::Idle => return Ok(None),
             PublicPolicyRestartDecision::AbortSettlement => {
+                if let Some(public) = self.public.as_mut() {
+                    public.fence_inspection(0, self.supervisor.peer_id());
+                }
                 if !process_exited {
                     self.supervisor.terminate()?;
                 }
@@ -44,11 +47,15 @@ impl LiveWmSession {
                 self.force_transport_restart = true;
                 layout.force_pending_timeout();
                 crate::session_println!(
-                    "sophia_live_wm schema=4 status=settlement_aborting adapter=sophia_wm_v1 reason=transport_lost preserved_layout=true"
+                    "sophia_live_wm schema=4 status=settlement_aborting adapter={} reason=transport_lost preserved_layout=true",
+                    public.wm_transport.wire_name(),
                 );
                 return Ok(None);
             }
             PublicPolicyRestartDecision::Restart => {}
+        }
+        if let Some(public) = self.public.as_mut() {
+            public.fence_inspection(0, self.supervisor.peer_id());
         }
         if restart_requested && !process_exited {
             self.supervisor.terminate()?;
@@ -91,7 +98,7 @@ impl LiveWmSession {
             .next_connection_epoch
             .checked_add(1)
             .ok_or("public WM connection epoch exhausted")?;
-        let mut transport = bind_public_policy_transport(&public.directory, public.profile_key)?;
+        let mut transport = bind_public_policy_transport(&public.directory, public.profile_key, public.wm_transport)?;
         let (state, command) = update_supervisor(
             self.supervisor_state.clone(),
             SupervisorEvent::ProcessExited,
@@ -114,7 +121,8 @@ impl LiveWmSession {
                 self.degraded = true;
                 self.public = Some(public);
                 crate::session_println!(
-                    "sophia_live_wm schema=4 status=degraded adapter=sophia_wm_v1 reason=restart_failed preserved_layout=true error={error:?}"
+                    "sophia_live_wm schema=4 status=degraded adapter={} reason=restart_failed preserved_layout=true error={error:?}",
+                    self.policy_wire_name(),
                 );
                 return Ok(None);
             }
@@ -123,7 +131,7 @@ impl LiveWmSession {
             .supervisor
             .peer_id()
             .ok_or("restarted public WM has no supervised PID")?;
-        transport.authorize_supervised_pid(pid)?;
+        transport.authorize(&self.supervisor)?;
         crate::diagnostics::capture_process_identity("wm", pid, next_epoch);
         if let Some(output_service) = public.output_service.as_ref() {
             output_service
@@ -140,6 +148,8 @@ impl LiveWmSession {
             next_epoch,
             public.profile_key,
             public.native_presentation_capable,
+            &self.supervisor,
+            public.wm_filesystem_qids.clone(),
         )?);
         public.connection_epoch = next_epoch;
         public.presentation_capture.revoke();
@@ -159,6 +169,7 @@ impl LiveWmSession {
         public.expected_operation_slot = None;
         public.deferred_command = None;
         public.transport_unavailable = false;
+        public.fence_inspection(next_epoch, self.supervisor.peer_id());
         public.actions.clear();
         public.queue.clear();
         public.pending_dirty_outputs.clear();
@@ -174,8 +185,8 @@ impl LiveWmSession {
         });
         self.public = Some(public);
         crate::session_println!(
-            "sophia_live_wm schema=4 status=restarted adapter=sophia_wm_v1 epoch={next_epoch} restarts={} preserved_layout=true",
-            self.restarts
+            "sophia_live_wm schema=4 status=restarted adapter={} epoch={next_epoch} restarts={} preserved_layout=true",
+            self.policy_wire_name(), self.restarts
         );
         Ok(None)
     }

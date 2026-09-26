@@ -2,8 +2,7 @@ use core::mem::size_of;
 
 use crate::{
     LayoutNodeCapabilities, OutputId, PolicyActionRegistration, PolicyConfiguration,
-    PolicyDirtyRequest, PolicyInteractionAxis, PolicyInteractionKind, PolicyInteractionPhase,
-    PolicyOutputProjection, PolicyOutputSnapshot, PolicyPresentationState,
+    PolicyDirtyRequest, PolicyOutputProjection, PolicyOutputSnapshot, PolicyPresentationState,
     PolicyProjectionIndicator, PolicyProjectionOutcome, PolicyProjectionOutputStatus,
     PolicyProjectionProposal, PolicyRequestCause, PolicySceneSnapshot, PolicySessionOperation,
     PolicySessionOperationOutcome, PolicySessionOperationRequest, PolicySurfaceClassification,
@@ -18,15 +17,13 @@ use super::{
     IpcCodecError, PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_OUTPUT_RECORD_KIND,
     PROJECTION_OUTPUT_STATUS_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
     SNAPSHOT_ACTION_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
-    SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
-    SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
-    SOPHIA_WM_OUTCOME_REJECTED_INVALID, SOPHIA_WM_OUTCOME_REJECTED_STALE,
-    SOPHIA_WM_OUTCOME_TIMED_OUT, WmV1PolicyConfiguration, WmV1PolicyDirty, WmV1ProjectionBegin,
-    WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionIndicatorRecord, WmV1ProjectionOutcome,
-    WmV1ProjectionOutputRecord, WmV1ProjectionOutputStatusRecord, WmV1ProjectionPlacementRecord,
-    WmV1ProjectionRequest, WmV1SessionOperationOutcome, WmV1SessionOperationRequest,
-    WmV1SnapshotActionRecord, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd,
-    WmV1SnapshotOutputRecord, WmV1SnapshotSessionOperationRecord, WmV1SnapshotSurfaceRecord,
+    SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND, WmV1PolicyConfiguration,
+    WmV1PolicyDirty, WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd,
+    WmV1ProjectionIndicatorRecord, WmV1ProjectionOutcome, WmV1ProjectionOutputRecord,
+    WmV1ProjectionOutputStatusRecord, WmV1ProjectionPlacementRecord, WmV1ProjectionRequest,
+    WmV1SessionOperationOutcome, WmV1SessionOperationRequest, WmV1SnapshotActionRecord,
+    WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, WmV1SnapshotOutputRecord,
+    WmV1SnapshotSessionOperationRecord, WmV1SnapshotSurfaceRecord,
     decode_wm_v1_projection_indicator_records, decode_wm_v1_projection_output_records,
     decode_wm_v1_projection_output_status_records, decode_wm_v1_projection_placement_records,
     decode_wm_v1_snapshot_action_records, decode_wm_v1_snapshot_output_records,
@@ -69,13 +66,7 @@ pub struct WmV1SnapshotTransfer {
     pub end: WmV1SnapshotEnd,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WmV1DecodedSnapshot {
-    pub launch_origins: Vec<crate::PolicyLaunchContext>,
-    pub scene: PolicySceneSnapshot,
-    pub actions: Vec<PolicyActionRegistration>,
-    pub classifications: Vec<PolicySurfaceClassification>,
-}
+pub type WmV1DecodedSnapshot = super::PolicyDecodedSnapshot;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WmV1SnapshotSurfaceClassificationRecord {
@@ -178,9 +169,8 @@ fn decode_indicator_text(
     Ok(text.to_owned())
 }
 
-fn push_snapshot_chunk(
-    chunks: &mut Vec<WmV1SnapshotChunk>,
-    connection_epoch: u64,
+fn push_policy_section(
+    sections: &mut Vec<super::PolicyRecordSection>,
     record_kind: u16,
     count: usize,
     data: Vec<u8>,
@@ -188,15 +178,13 @@ fn push_snapshot_chunk(
     if count == 0 {
         return Ok(());
     }
-    chunks.push(WmV1SnapshotChunk {
-        connection_epoch,
-        ordinal: chunks.len() as u16,
-        record_kind,
-        item_count: u32::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
+    sections.push(super::PolicyRecordSection {
+        kind: record_kind,
+        count: u32::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
             count,
             max: u32::MAX as usize,
         })?,
-        data,
+        bytes: data,
     });
     Ok(())
 }
@@ -213,7 +201,7 @@ fn push_projection_chunk(
     }
     chunks.push(WmV1ProjectionChunk {
         connection_epoch,
-        ordinal: chunks.len() as u16,
+        ordinal: legacy_record_count_u16(chunks.len())?,
         record_kind,
         item_count: u32::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
             count,
@@ -400,39 +388,18 @@ fn decode_rgb(value: u32, field: &'static str) -> Result<WmRgb8, IpcCodecError> 
 }
 
 fn encode_outcome(outcome: PolicyProjectionOutcome) -> u16 {
-    match outcome {
-        PolicyProjectionOutcome::Committed => SOPHIA_WM_OUTCOME_COMMITTED,
-        PolicyProjectionOutcome::RejectedStale => SOPHIA_WM_OUTCOME_REJECTED_STALE,
-        PolicyProjectionOutcome::RejectedInvalid => SOPHIA_WM_OUTCOME_REJECTED_INVALID,
-        PolicyProjectionOutcome::TimedOut => SOPHIA_WM_OUTCOME_TIMED_OUT,
-        PolicyProjectionOutcome::Disconnected => SOPHIA_WM_OUTCOME_DISCONNECTED,
-    }
+    super::policy_projection_outcome_code(outcome)
 }
 
 fn decode_outcome(outcome: u16) -> Result<PolicyProjectionOutcome, IpcCodecError> {
-    match outcome {
-        SOPHIA_WM_OUTCOME_COMMITTED => Ok(PolicyProjectionOutcome::Committed),
-        SOPHIA_WM_OUTCOME_REJECTED_STALE => Ok(PolicyProjectionOutcome::RejectedStale),
-        SOPHIA_WM_OUTCOME_REJECTED_INVALID => Ok(PolicyProjectionOutcome::RejectedInvalid),
-        SOPHIA_WM_OUTCOME_TIMED_OUT => Ok(PolicyProjectionOutcome::TimedOut),
-        SOPHIA_WM_OUTCOME_DISCONNECTED => Ok(PolicyProjectionOutcome::Disconnected),
-        other => Err(invalid("policy_outcome", u32::from(other))),
-    }
+    super::policy_projection_outcome_from_code(outcome)
+        .ok_or_else(|| invalid("policy_outcome", u32::from(outcome)))
 }
 
 fn encode_output_ids(outputs: &[OutputId]) -> Result<Vec<u8>, IpcCodecError> {
-    if outputs.is_empty() || outputs.len() > crate::POLICY_MAX_OUTPUTS {
-        return Err(IpcCodecError::CountTooLarge {
-            count: outputs.len(),
-            max: crate::POLICY_MAX_OUTPUTS,
-        });
-    }
-    let mut seen = std::collections::BTreeSet::new();
+    super::validate_policy_affected_outputs(outputs)?;
     let mut encoded = Vec::with_capacity(outputs.len() * OUTPUT_ID_WIRE_SIZE);
     for output in outputs {
-        if !output.is_valid() || !seen.insert(*output) {
-            return Err(invalid("affected_output", output.raw() as u32));
-        }
         encoded.extend_from_slice(&output.raw().to_le_bytes());
     }
     Ok(encoded)
@@ -444,19 +411,16 @@ fn decode_output_ids(count: u16, bytes: &[u8]) -> Result<Vec<OutputId>, IpcCodec
     {
         return Err(invalid("affected_output_bytes", bytes.len() as u32));
     }
-    let mut seen = std::collections::BTreeSet::new();
-    bytes
+    let outputs = bytes
         .chunks_exact(OUTPUT_ID_WIRE_SIZE)
         .map(|bytes| {
-            let output = OutputId::from_raw(u64::from_le_bytes(
+            OutputId::from_raw(u64::from_le_bytes(
                 bytes.try_into().expect("fixed output-id chunk"),
-            ));
-            if !output.is_valid() || !seen.insert(output) {
-                return Err(invalid("affected_output", output.raw() as u32));
-            }
-            Ok(output)
+            ))
         })
-        .collect()
+        .collect::<Vec<_>>();
+    super::validate_policy_affected_outputs(&outputs)?;
+    Ok(outputs)
 }
 
 fn decode_presentation(
@@ -515,4 +479,17 @@ fn require_count(actual: usize, expected: usize) -> Result<(), IpcCodecError> {
 
 fn invalid(field: &'static str, value: u32) -> IpcCodecError {
     IpcCodecError::InvalidEnum { field, value }
+}
+
+include!("wm_v1_records/snapshot_records.rs");
+
+include!("wm_v1_records/projection_records.rs");
+
+include!("wm_v1_records/control_records.rs");
+
+fn legacy_record_count_u16(count: usize) -> Result<u16, IpcCodecError> {
+    u16::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
+        count,
+        max: u16::MAX as usize,
+    })
 }

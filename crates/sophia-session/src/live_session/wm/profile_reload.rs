@@ -131,6 +131,7 @@ impl PreparedDesktopLaunch {
             || active.application_catalog != requested.application_catalog
             || active.logout_enabled != requested.logout_enabled
             || active.control != requested.control
+            || active.inspection != requested.inspection
             || active.components != requested.components
         {
             crate::session_eprintln!(
@@ -204,6 +205,7 @@ impl LiveWmSession {
         public.actions = configuration.actions.clone();
         public.accepted_configuration = Some(configuration.clone());
         public.configured = true;
+        public.note_inspection_event(Some(InspectionEvent::ConfigurationChanged));
         self.command_registry = launch.commands;
         self.shortcuts = Some(WmShortcutRouter::new(registry));
         self.chrome = configuration.chrome;
@@ -260,6 +262,7 @@ impl LiveWmSession {
                 public.actions = configuration.actions.clone();
                 public.accepted_configuration = Some(configuration.clone());
                 public.configured = true;
+                public.note_inspection_event(Some(InspectionEvent::ConfigurationChanged));
                 self.chrome = configuration.chrome;
                 self.shortcuts = Some(WmShortcutRouter::new(registry));
                 self.stage_visual_chrome(self.candidate_chrome_style());

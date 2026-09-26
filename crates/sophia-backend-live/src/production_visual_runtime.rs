@@ -23,6 +23,10 @@ mod compositor_graphics;
 #[cfg(test)]
 #[path = "../tests/support/lifecycle_tests.rs"]
 mod lifecycle_tests;
+#[cfg(any(test, feature = "test-support"))]
+#[allow(dead_code)]
+#[path = "../tests/support/mirrored_composition_target.rs"]
+mod mirrored_composition_test_target;
 mod ordinary_repaint;
 mod output_composition;
 mod policy_presentation;
@@ -30,6 +34,10 @@ mod policy_presentation;
 #[doc(hidden)]
 #[path = "../tests/support/session_content_fixture.rs"]
 pub mod session_content_fixture;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+#[path = "../tests/support/session_policy_presentation_fixture.rs"]
+pub mod session_policy_presentation_fixture;
 use composition_target::NativeCompositionTarget;
 pub use policy_presentation::{
     LivePolicyPresentation, LivePolicyPresentationRefusal, LivePolicyPresentationRevocation,

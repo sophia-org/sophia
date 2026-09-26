@@ -7,6 +7,14 @@ COSMIC. It tells you which component owns what, which protocol each piece
 speaks, and how the pieces fit together. Each section links to the document
 that owns the details. This one owns the shape.
 
+**Current interfaces and target:** the native role protocols described below
+remain implemented and supported. The accepted
+[9P2000.L direction](sophia-9p-control-bus.md) targets their progressive public
+replacement, together with a separate 9P application frontend alongside X11.
+Its file API remains design work. The goal is independent WMs, shells and
+applications using generic 9P clients or mounted file I/O while retaining the
+same admission, metadata and lifetime boundaries.
+
 Panel UI is supplied by the user's chosen shell. Sophia does not add a built-in
 workspace bar or reserve a fixed strip merely because a WM publishes indicators.
 Engine validates and commits descriptors, composites pixels, and enforces input
@@ -89,8 +97,10 @@ applications use. An X11 application connects to the X Server Frontend; a
 native shell connects to its separately admitted shell endpoint. A future
 Wayland or native application frontend could translate into Engine's existing
 authority boundaries while the shell keeps speaking the same role protocol.
-Implementing another application frontend remains separate product work; X11
-is today's application path and development priority.
+The [9P application frontend](sophia-9p-authority.md) is an accepted target but
+remains separate implementation and acceptance work; X11 is today's application
+path. Choosing 9P for both desktop roles and applications does not combine their
+grants or make application content equivalent to shell content.
 
 Lom is the driving content client, using a downstream Xilem/Masonry/Vello
 adapter. Toolkit types, rendering integration and private configuration stay

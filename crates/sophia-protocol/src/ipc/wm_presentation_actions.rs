@@ -2,8 +2,8 @@
 //! grants no input authority; the presented owner supplies that identity.
 use super::*;
 use crate::{
-    OutputId, PolicyPresentationIdentity, PolicyPresentationOutcome, PolicyPresentationReceipt,
-    PolicyProjectionRequest, PolicyRequestCause, WmActionId,
+    OutputId, PolicyPresentationIdentity, PolicyPresentationReceipt, PolicyProjectionRequest,
+    PolicyRequestCause, WmActionId,
 };
 
 fn invalid() -> IpcCodecError {
@@ -24,8 +24,13 @@ pub fn encode_wm_presentation_action_request(
     else {
         return Err(invalid());
     };
-    if !crate::valid_policy_presentation_identity(identity)
-        || !request.affected_outputs.contains(&identity.output)
+    // The shared target check, first and under this wrapper's own label as
+    // it always was; identity, outputs and the action follow in the inner
+    // legacy encode below, in their historical order.
+    if let Err(IpcCodecError::InvalidEnum {
+        field: "presentation_action_cause",
+        ..
+    }) = super::validate_request_cause_scalars(&request.cause, &request.affected_outputs)
     {
         return Err(invalid());
     }
@@ -101,21 +106,14 @@ pub fn decode_wm_presentation_action_request(
 pub fn encode_wm_presentation_receipt(
     receipt: PolicyPresentationReceipt,
 ) -> Result<WmV1PresentationOutcome, IpcCodecError> {
-    if receipt.connection_epoch == 0
-        || receipt.publication_generation == 0
-        || !receipt.output.is_valid()
-        || receipt.output_generation == 0
-        || receipt.presentation_epoch == 0
-    {
-        return Err(invalid());
-    }
+    super::validate_policy_presentation_receipt(&receipt).map_err(|_| invalid())?;
     Ok(WmV1PresentationOutcome {
         connection_epoch: receipt.connection_epoch,
         publication_generation: receipt.publication_generation,
         output: receipt.output.raw(),
         output_generation: receipt.output_generation,
         presentation_epoch: receipt.presentation_epoch,
-        outcome: receipt.outcome as u16,
+        outcome: super::policy_presentation_outcome_code(receipt.outcome),
     })
 }
 
@@ -132,13 +130,8 @@ pub fn decode_wm_presentation_receipt(
         output: OutputId::from_raw(wire.output),
         output_generation: wire.output_generation,
         presentation_epoch: wire.presentation_epoch,
-        outcome: match wire.outcome {
-            1 => PolicyPresentationOutcome::Presented,
-            2 => PolicyPresentationOutcome::Revoked,
-            3 => PolicyPresentationOutcome::Withdrawn,
-            _ => return Err(invalid()),
-        },
+        outcome: super::policy_presentation_outcome_from_code(wire.outcome).ok_or_else(invalid)?,
     };
-    encode_wm_presentation_receipt(receipt)?;
+    super::validate_policy_presentation_receipt(&receipt).map_err(|_| invalid())?;
     Ok(receipt)
 }

@@ -101,9 +101,16 @@ fn spawn_secondary_xterm(
     terminal: &std::path::Path,
     display: &str,
     xauthority: &std::path::Path,
+    control_socket: Option<&std::path::Path>,
+    inspection_socket: Option<&std::path::Path>,
     input_proof: Option<&str>,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     let mut command = std::process::Command::new(terminal);
+    crate::application_catalog::configure_host_application_environment(
+        &mut command,
+        control_socket,
+        inspection_socket,
+    );
     command
         .env("DISPLAY", display)
         .env("XAUTHORITY", xauthority)
@@ -135,8 +142,16 @@ fn spawn_approved_application(
     program: &str,
     display: &str,
     xauthority: &std::path::Path,
+    control_socket: Option<&std::path::Path>,
+    inspection_socket: Option<&std::path::Path>,
 ) -> Result<Child, Box<dyn std::error::Error>> {
-    Ok(std::process::Command::new(program)
+    let mut command = std::process::Command::new(program);
+    crate::application_catalog::configure_host_application_environment(
+        &mut command,
+        control_socket,
+        inspection_socket,
+    );
+    Ok(command
         .env("DISPLAY", display)
         .env("XAUTHORITY", xauthority)
         .env_remove("ENV")

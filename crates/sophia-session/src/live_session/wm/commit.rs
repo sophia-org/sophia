@@ -181,7 +181,10 @@ impl LiveWmSession {
                 request_id: settlement.request_id,
                 scene_generation: public.reducer.scene().generation,
                 outcome,
-                expect_session_operation: settlement.expect_session_operation,
+                // Only a committed projection owes the operation its action names.
+                expect_session_operation: outcome
+                    == sophia_protocol::PolicyProjectionOutcome::Committed
+                    && settlement.expect_session_operation,
             })?;
         if let Some(request) = public.in_flight_request.as_ref()
             && let sophia_protocol::PolicyRequestCause::Action { activation_serial, action } | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, action, .. } = request.cause
@@ -235,8 +238,8 @@ impl LiveWmSession {
         {
             public.proof_restart_checkpoint_before = Some(before);
             crate::session_println!(
-                "sophia_live_wm schema=4 status=proof_restart_armed adapter=sophia_wm_v1 boundary=checkpoint_replace action={}",
-                action.raw(),
+                "sophia_live_wm schema=4 status=proof_restart_armed adapter={} boundary=checkpoint_replace action={}",
+                public.wm_transport.wire_name(), action.raw(),
             );
         }
         if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
@@ -266,6 +269,7 @@ impl LiveWmSession {
 
 impl Drop for LiveWmSession {
     fn drop(&mut self) {
+        self.service_inspection(true);
         self.control_restart.take();
         let _ = self.supervisor.terminate();
         self.control_lifetime.take();

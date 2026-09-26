@@ -1,30 +1,23 @@
 pub fn encode_wm_v1_policy_projection_request(
     request: &crate::PolicyProjectionRequest,
 ) -> Result<WmV1ProjectionRequest, IpcCodecError> {
-    if request.connection_epoch == 0
-        || request.request_id == 0
-        || request.scene_generation == 0
-        || request.policy_generation == 0
-    {
-        return Err(invalid("projection_request_identity", 0));
+    super::validate_projection_request_identity(
+        request.connection_epoch,
+        request.request_id,
+        request.scene_generation,
+        request.policy_generation,
+    )?;
+    let affected_outputs = encode_output_ids(&request.affected_outputs)?;
+    if matches!(
+        request.cause,
+        crate::PolicyRequestCause::OutputAction { .. }
+            | crate::PolicyRequestCause::PresentationAction { .. }
+    ) {
+        // A wire-only rule: this scalar message has no room for a target.
+        return Err(invalid("targeted_action_requires_separate_message", 0));
     }
-    if request.affected_outputs.is_empty()
-        || request.affected_outputs.len() > crate::POLICY_MAX_OUTPUTS
-    {
-        return Err(IpcCodecError::CountTooLarge {
-            count: request.affected_outputs.len(),
-            max: crate::POLICY_MAX_OUTPUTS,
-        });
-    }
-    let mut seen = std::collections::BTreeSet::new();
-    let mut affected_outputs =
-        Vec::with_capacity(request.affected_outputs.len() * OUTPUT_ID_WIRE_SIZE);
-    for output in &request.affected_outputs {
-        if !output.is_valid() || !seen.insert(*output) {
-            return Err(invalid("affected_output", output.raw() as u32));
-        }
-        affected_outputs.extend_from_slice(&output.raw().to_le_bytes());
-    }
+    super::validate_request_cause_scalars(&request.cause, &request.affected_outputs)?;
+    super::validate_request_cause_targets(&request.cause)?;
     let (
         cause_kind,
         interaction_phase,
@@ -44,11 +37,7 @@ pub fn encode_wm_v1_policy_projection_request(
         PolicyRequestCause::Action {
             activation_serial,
             action,
-        } => {
-            if activation_serial == 0 || !action.is_valid() {
-                return Err(invalid("action_cause", 0));
-            }
-            (
+        } => (
                 1,
                 0,
                 0,
@@ -58,13 +47,8 @@ pub fn encode_wm_v1_policy_projection_request(
                 0,
                 0,
                 Rect::default(),
-            )
-        }
-        PolicyRequestCause::Focus { target } => {
-            if !target.is_valid() {
-                return Err(invalid("focus_cause", 0));
-            }
-            (
+            ),
+        PolicyRequestCause::Focus { target } => (
                 2,
                 0,
                 0,
@@ -74,16 +58,8 @@ pub fn encode_wm_v1_policy_projection_request(
                 target.index(),
                 target.generation(),
                 Rect::default(),
-            )
-        }
-        PolicyRequestCause::PointerFocus { output, target } => {
-            if output.raw() == 0
-                || !request.affected_outputs.contains(&output)
-                || target.is_some_and(|target| !target.is_valid())
-            {
-                return Err(invalid("pointer_focus_cause", 0));
-            }
-            (
+            ),
+        PolicyRequestCause::PointerFocus { output, target } => (
                 4,
                 0,
                 0,
@@ -93,31 +69,24 @@ pub fn encode_wm_v1_policy_projection_request(
                 target.map_or(0, |t| t.index()),
                 target.map_or(0, |t| t.generation()),
                 Rect::default(),
-            )
-        }
+            ),
         PolicyRequestCause::Interaction {
             phase,
             kind,
             axis,
             target,
             geometry,
-        } => {
-            if !target.is_valid() || !valid_policy_interaction_payload(phase, kind, axis, geometry)
-            {
-                return Err(invalid("interaction_cause", 0));
-            }
-            (
+        } => (
                 3,
-                phase as u16,
-                kind as u16,
-                axis as u16,
+                super::policy_interaction_phase_code(phase),
+                super::policy_interaction_kind_code(kind),
+                super::policy_interaction_axis_code(axis),
                 0,
                 0,
                 target.index(),
                 target.generation(),
                 geometry,
-            )
-        }
+            ),
     };
     Ok(WmV1ProjectionRequest {
         connection_epoch: request.connection_epoch,
@@ -145,13 +114,12 @@ pub fn decode_wm_v1_policy_projection_request(
     request: &WmV1ProjectionRequest,
 ) -> Result<crate::PolicyProjectionRequest, IpcCodecError> {
     let count = usize::from(request.affected_output_count);
-    if request.connection_epoch == 0
-        || request.request_id == 0
-        || request.scene_generation == 0
-        || request.policy_generation == 0
-    {
-        return Err(invalid("projection_request_identity", 0));
-    }
+    super::validate_projection_request_identity(
+        request.connection_epoch,
+        request.request_id,
+        request.scene_generation,
+        request.policy_generation,
+    )?;
     if count == 0 || count > crate::POLICY_MAX_OUTPUTS {
         return Err(IpcCodecError::CountTooLarge {
             count,
@@ -164,17 +132,7 @@ pub fn decode_wm_v1_policy_projection_request(
             request.affected_outputs.len() as u32,
         ));
     }
-    let mut seen = std::collections::BTreeSet::new();
-    let mut affected_outputs = Vec::with_capacity(count);
-    for bytes in request.affected_outputs.chunks_exact(OUTPUT_ID_WIRE_SIZE) {
-        let output = OutputId::from_raw(u64::from_le_bytes(
-            bytes.try_into().expect("fixed output-id chunk"),
-        ));
-        if !output.is_valid() || !seen.insert(output) {
-            return Err(invalid("affected_output", output.raw() as u32));
-        }
-        affected_outputs.push(output);
-    }
+    let affected_outputs = decode_output_ids(request.affected_output_count, &request.affected_outputs)?;
     let target = || {
         decode_optional_surface(
             request.target_index,
@@ -253,26 +211,12 @@ pub fn decode_wm_v1_policy_projection_request(
             PolicyRequestCause::PointerFocus { output, target }
         }
         3 if request.activation_serial == 0 && request.action == 0 => {
-            let phase = match request.interaction_phase {
-                1 => PolicyInteractionPhase::Begin,
-                2 => PolicyInteractionPhase::Update,
-                3 => PolicyInteractionPhase::End,
-                4 => PolicyInteractionPhase::Cancel,
-                other => return Err(invalid("interaction_phase", u32::from(other))),
-            };
-            let kind = match request.interaction_kind {
-                1 => PolicyInteractionKind::Move,
-                2 => PolicyInteractionKind::Resize,
-                3 => PolicyInteractionKind::Drag,
-                4 => PolicyInteractionKind::Scroll,
-                other => return Err(invalid("interaction_kind", u32::from(other))),
-            };
-            let axis = match request.interaction_axis {
-                0 => PolicyInteractionAxis::None,
-                1 => PolicyInteractionAxis::Horizontal,
-                2 => PolicyInteractionAxis::Vertical,
-                other => return Err(invalid("interaction_axis", u32::from(other))),
-            };
+            let phase = super::policy_interaction_phase_from_code(request.interaction_phase)
+                .ok_or_else(|| invalid("interaction_phase", u32::from(request.interaction_phase)))?;
+            let kind = super::policy_interaction_kind_from_code(request.interaction_kind)
+                .ok_or_else(|| invalid("interaction_kind", u32::from(request.interaction_kind)))?;
+            let axis = super::policy_interaction_axis_from_code(request.interaction_axis)
+                .ok_or_else(|| invalid("interaction_axis", u32::from(request.interaction_axis)))?;
             let geometry = Rect {
                 x: request.interaction_x,
                 y: request.interaction_y,
@@ -292,6 +236,10 @@ pub fn decode_wm_v1_policy_projection_request(
         }
         other => return Err(invalid("projection_request_cause", u32::from(other))),
     };
+    // Shared cause semantics. The target validity of Focus and Interaction is
+    // deliberately not required here: this decoder has always accepted any
+    // target whose generation is nonzero, and it still does.
+    super::validate_request_cause_scalars(&cause, &affected_outputs)?;
     Ok(crate::PolicyProjectionRequest {
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
@@ -315,13 +263,7 @@ pub fn encode_wm_v1_policy_projection_outcome(
         connection_epoch,
         request_id,
         scene_generation,
-        outcome: match outcome {
-            PolicyProjectionOutcome::Committed => SOPHIA_WM_OUTCOME_COMMITTED,
-            PolicyProjectionOutcome::RejectedStale => SOPHIA_WM_OUTCOME_REJECTED_STALE,
-            PolicyProjectionOutcome::RejectedInvalid => SOPHIA_WM_OUTCOME_REJECTED_INVALID,
-            PolicyProjectionOutcome::TimedOut => SOPHIA_WM_OUTCOME_TIMED_OUT,
-            PolicyProjectionOutcome::Disconnected => SOPHIA_WM_OUTCOME_DISCONNECTED,
-        },
+        outcome: super::policy_projection_outcome_code(outcome),
     })
 }
 
@@ -331,54 +273,30 @@ pub fn decode_wm_v1_policy_projection_outcome(
     if outcome.connection_epoch == 0 || outcome.request_id == 0 || outcome.scene_generation == 0 {
         return Err(invalid("projection_outcome_identity", 0));
     }
-    match outcome.outcome {
-        SOPHIA_WM_OUTCOME_COMMITTED => Ok(PolicyProjectionOutcome::Committed),
-        SOPHIA_WM_OUTCOME_REJECTED_STALE => Ok(PolicyProjectionOutcome::RejectedStale),
-        SOPHIA_WM_OUTCOME_REJECTED_INVALID => Ok(PolicyProjectionOutcome::RejectedInvalid),
-        SOPHIA_WM_OUTCOME_TIMED_OUT => Ok(PolicyProjectionOutcome::TimedOut),
-        SOPHIA_WM_OUTCOME_DISCONNECTED => Ok(PolicyProjectionOutcome::Disconnected),
-        other => Err(invalid("projection_outcome", u32::from(other))),
-    }
+    super::policy_projection_outcome_from_code(outcome.outcome)
+        .ok_or_else(|| invalid("projection_outcome", u32::from(outcome.outcome)))
 }
 
 pub fn encode_wm_v1_policy_configuration(
     configuration: &PolicyConfiguration,
 ) -> Result<WmV1PolicyConfiguration, IpcCodecError> {
-    if configuration.connection_epoch == 0 || configuration.generation == 0 {
-        return Err(invalid("policy_configuration_identity", 0));
-    }
-    if configuration.actions.len() > crate::POLICY_MAX_BINDINGS {
-        return Err(IpcCodecError::CountTooLarge {
-            count: configuration.actions.len(),
-            max: crate::POLICY_MAX_BINDINGS,
-        });
-    }
-    validate_policy_configuration(configuration)?;
-    let records = configuration
-        .actions
-        .iter()
-        .map(|action| {
-            let (name_len, name) = encode_action_name(&action.name)?;
-            Ok(WmV1SnapshotActionRecord {
-                action: action.action.raw(),
-                session_operation_slot: action.session_operation_slot.unwrap_or(0),
-                name_len,
-                name,
-            })
-        })
-        .collect::<Result<Vec<_>, IpcCodecError>>()?;
+    let sections = encode_policy_configuration_records(configuration)?;
+    let actions = sections
+        .into_iter()
+        .next()
+        .map_or_else(Vec::new, |s| s.bytes);
     let chrome = configuration.chrome;
     Ok(WmV1PolicyConfiguration {
         connection_epoch: configuration.connection_epoch,
         configuration_generation: configuration.generation,
-        action_count: records.len() as u16,
+        action_count: configuration.actions.len() as u16,
         style_bits: u16::from(chrome.focus_ring.enabled) | u16::from(chrome.frame.enabled) << 1,
         focus_ring_width: chrome.focus_ring.width,
         focus_ring_color: encode_rgb(chrome.focus_ring.color),
         frame_width: chrome.frame.width,
         frame_focused_color: encode_rgb(chrome.frame.focused_color),
         frame_unfocused_color: encode_rgb(chrome.frame.unfocused_color),
-        actions: encode_wm_v1_snapshot_action_records(&records)?,
+        actions,
     })
 }
 
@@ -398,17 +316,7 @@ pub fn decode_wm_v1_policy_configuration(
     let configuration = PolicyConfiguration {
         connection_epoch: configuration.connection_epoch,
         generation: configuration.configuration_generation,
-        actions: records
-            .into_iter()
-            .map(|record| {
-                Ok(PolicyActionRegistration {
-                    action: WmActionId::from_raw(record.action),
-                    name: decode_action_name(record.name_len, &record.name)?,
-                    session_operation_slot: (record.session_operation_slot != 0)
-                        .then_some(record.session_operation_slot),
-                })
-            })
-            .collect::<Result<Vec<_>, IpcCodecError>>()?,
+        actions: decode_policy_action_rows(records)?,
         chrome: WmChromePolicy {
             focus_ring: WmFocusRingStyle {
                 enabled: configuration.style_bits & 1 != 0,
@@ -431,34 +339,6 @@ pub fn decode_wm_v1_policy_configuration(
     };
     validate_policy_configuration(&configuration)?;
     Ok(configuration)
-}
-
-fn validate_policy_configuration(configuration: &PolicyConfiguration) -> Result<(), IpcCodecError> {
-    let valid_style = |enabled: bool, width: u32| {
-        width <= 64 && ((enabled && width > 0) || (!enabled && width == 0))
-    };
-    if !valid_style(
-        configuration.chrome.focus_ring.enabled,
-        configuration.chrome.focus_ring.width,
-    ) || !valid_style(
-        configuration.chrome.frame.enabled,
-        configuration.chrome.frame.width,
-    ) {
-        return Err(invalid("policy_configuration_chrome", 0));
-    }
-
-    let mut action_ids = std::collections::BTreeSet::new();
-    let mut action_names = std::collections::BTreeSet::new();
-    for action in &configuration.actions {
-        if !action.action.is_valid()
-            || encode_action_name(&action.name).is_err()
-            || !action_ids.insert(action.action)
-            || !action_names.insert(action.name.as_str())
-        {
-            return Err(invalid("policy_configuration_action", 0));
-        }
-    }
-    Ok(())
 }
 
 fn encode_action_name(name: &str) -> Result<(u16, [u8; 128]), IpcCodecError> {
@@ -493,9 +373,7 @@ fn decode_action_name(length: u16, encoded: &[u8; 128]) -> Result<String, IpcCod
 pub fn encode_wm_v1_policy_dirty(
     request: &PolicyDirtyRequest,
 ) -> Result<WmV1PolicyDirty, IpcCodecError> {
-    if request.connection_epoch == 0 || request.policy_generation == 0 {
-        return Err(invalid("policy_dirty_identity", 0));
-    }
+    super::validate_dirty_identity(request.connection_epoch, request.policy_generation)?;
     let affected_outputs = encode_output_ids(&request.affected_outputs)?;
     Ok(WmV1PolicyDirty {
         connection_epoch: request.connection_epoch,
@@ -508,9 +386,7 @@ pub fn encode_wm_v1_policy_dirty(
 pub fn decode_wm_v1_policy_dirty(
     request: &WmV1PolicyDirty,
 ) -> Result<PolicyDirtyRequest, IpcCodecError> {
-    if request.connection_epoch == 0 || request.policy_generation == 0 {
-        return Err(invalid("policy_dirty_identity", 0));
-    }
+    super::validate_dirty_identity(request.connection_epoch, request.policy_generation)?;
     Ok(PolicyDirtyRequest {
         connection_epoch: request.connection_epoch,
         policy_generation: request.policy_generation,
@@ -524,9 +400,14 @@ pub fn decode_wm_v1_policy_dirty(
 pub fn encode_wm_v1_policy_session_operation_request(
     request: PolicySessionOperationRequest,
 ) -> Result<WmV1SessionOperationRequest, IpcCodecError> {
-    if request.connection_epoch == 0 || request.request_id == 0 || request.operation == 0 {
-        return Err(invalid("session_operation_identity", 0));
-    }
+    // The target is deliberately not checked: this encoder never has, and a
+    // caller of the legacy wire keeps that behaviour. A new transport uses
+    // validate_policy_session_operation_request.
+    super::validate_session_operation_identity(
+        request.connection_epoch,
+        request.request_id,
+        request.operation,
+    )?;
     let (target_index, target_generation) = request
         .target
         .map(|target| (target.index(), target.generation()))
@@ -543,9 +424,12 @@ pub fn encode_wm_v1_policy_session_operation_request(
 pub fn decode_wm_v1_policy_session_operation_request(
     request: &WmV1SessionOperationRequest,
 ) -> Result<PolicySessionOperationRequest, IpcCodecError> {
-    if request.connection_epoch == 0 || request.request_id == 0 || request.operation == 0 {
-        return Err(invalid("session_operation_identity", 0));
-    }
+    super::validate_session_operation_identity(
+        request.connection_epoch,
+        request.request_id,
+        request.operation,
+    )?;
+    // Legacy acceptance: any target whose generation is nonzero, valid or not.
     Ok(PolicySessionOperationRequest {
         connection_epoch: request.connection_epoch,
         request_id: request.request_id,
@@ -561,9 +445,7 @@ pub fn decode_wm_v1_policy_session_operation_request(
 pub fn encode_wm_v1_policy_session_operation_outcome(
     outcome: PolicySessionOperationOutcome,
 ) -> Result<WmV1SessionOperationOutcome, IpcCodecError> {
-    if outcome.connection_epoch == 0 || outcome.request_id == 0 {
-        return Err(invalid("session_operation_outcome_identity", 0));
-    }
+    super::validate_policy_session_operation_outcome(&outcome)?;
     Ok(WmV1SessionOperationOutcome {
         connection_epoch: outcome.connection_epoch,
         request_id: outcome.request_id,
@@ -574,9 +456,12 @@ pub fn encode_wm_v1_policy_session_operation_outcome(
 pub fn decode_wm_v1_policy_session_operation_outcome(
     outcome: &WmV1SessionOperationOutcome,
 ) -> Result<PolicySessionOperationOutcome, IpcCodecError> {
-    if outcome.connection_epoch == 0 || outcome.request_id == 0 {
-        return Err(invalid("session_operation_outcome_identity", 0));
-    }
+    // Identity first, then the code, as this decoder always ordered them.
+    super::validate_policy_session_operation_outcome(&PolicySessionOperationOutcome {
+        connection_epoch: outcome.connection_epoch,
+        request_id: outcome.request_id,
+        outcome: PolicyProjectionOutcome::Committed,
+    })?;
     Ok(PolicySessionOperationOutcome {
         connection_epoch: outcome.connection_epoch,
         request_id: outcome.request_id,

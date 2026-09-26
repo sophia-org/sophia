@@ -26,9 +26,6 @@ mod desktop_composition;
 #[path = "launch_origin_socket.rs"]
 mod launch_origin_socket;
 
-#[path = "policy_partial_projection_socket.rs"]
-mod policy_partial_projection_socket;
-
 #[cfg(feature = "native-session")]
 #[path = "glx_pixmap_export.rs"]
 mod glx_pixmap_export;

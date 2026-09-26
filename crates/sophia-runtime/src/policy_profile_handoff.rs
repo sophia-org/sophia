@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use sophia_protocol::{
-    TransactionId, WmV1ProfileCommand, WmV1ProfileCompletion, WmV1ProfileIdentity,
-    WmV1ProfileOutcome,
+    PolicyProfileCommand, PolicyProfileCompletion, PolicyProfileIdentity, PolicyProfileOutcome,
+    TransactionId,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,19 +29,19 @@ pub enum PolicyProfileHandoffPhase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PolicyProfileOutstanding {
     pub kind: PolicyProfileHandoffKind,
-    pub command: WmV1ProfileCommand,
+    pub command: PolicyProfileCommand,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyProfileHandoffModel {
-    identity: WmV1ProfileIdentity,
+    identity: PolicyProfileIdentity,
     phase: PolicyProfileHandoffPhase,
     outstanding: Option<PolicyProfileOutstanding>,
     used_transactions: BTreeSet<TransactionId>,
 }
 
 impl PolicyProfileHandoffModel {
-    pub fn new(identity: WmV1ProfileIdentity) -> Self {
+    pub fn new(identity: PolicyProfileIdentity) -> Self {
         Self {
             identity,
             phase: PolicyProfileHandoffPhase::Ready,
@@ -50,7 +50,7 @@ impl PolicyProfileHandoffModel {
         }
     }
 
-    pub const fn identity(&self) -> WmV1ProfileIdentity {
+    pub const fn identity(&self) -> PolicyProfileIdentity {
         self.identity
     }
 
@@ -71,7 +71,7 @@ pub enum PolicyProfileHandoffMsg {
     },
     Completion {
         kind: PolicyProfileHandoffKind,
-        completion: WmV1ProfileCompletion,
+        completion: PolicyProfileCompletion,
     },
     Disconnected,
 }
@@ -79,13 +79,13 @@ pub enum PolicyProfileHandoffMsg {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PolicyProfileHandoffEffect {
     pub kind: PolicyProfileHandoffKind,
-    pub command: WmV1ProfileCommand,
+    pub command: PolicyProfileCommand,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyProfileCompletionDisposition {
     Accepted,
-    Rejected(WmV1ProfileOutcome),
+    Rejected(PolicyProfileOutcome),
     Stale,
 }
 
@@ -172,7 +172,7 @@ fn begin(
         }
         _ => return Err(PolicyProfileHandoffError::InvalidPhase),
     };
-    let command = WmV1ProfileCommand {
+    let command = PolicyProfileCommand {
         transaction,
         identity: update.model.identity,
     };
@@ -186,7 +186,7 @@ fn begin(
 fn settle(
     update: &mut PolicyProfileHandoffUpdate,
     kind: PolicyProfileHandoffKind,
-    completion: WmV1ProfileCompletion,
+    completion: PolicyProfileCompletion,
 ) {
     let Some(outstanding) = update.model.outstanding else {
         update.completion = Some(PolicyProfileCompletionDisposition::Stale);
@@ -207,7 +207,7 @@ fn settle(
     }
 
     update.model.outstanding = None;
-    if completion.outcome == WmV1ProfileOutcome::Accepted {
+    if completion.outcome == PolicyProfileOutcome::Accepted {
         update.model.phase = match kind {
             PolicyProfileHandoffKind::Prepare => PolicyProfileHandoffPhase::Prepared,
             PolicyProfileHandoffKind::Activate => PolicyProfileHandoffPhase::Active,

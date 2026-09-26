@@ -940,6 +940,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
+name = "sophia-9p"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
 name = "sophia-9p-authority"
 version = "0.1.0"
 dependencies = [
@@ -982,6 +989,7 @@ name = "sophia-cli"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-9p",
  "sophia-backend-live",
  "sophia-broker",
  "sophia-config",
@@ -1075,6 +1083,10 @@ dependencies = [
 [[package]]
 name = "sophia-protocol"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "sophia-renderer-live"
@@ -1109,6 +1121,7 @@ name = "sophia-runtime"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-9p",
  "sophia-engine",
  "sophia-linux-peer",
  "sophia-protocol",
@@ -1124,6 +1137,7 @@ version = "0.1.0"
 dependencies = [
  "rustix",
  "sha2",
+ "sophia-9p",
  "sophia-backend-live",
  "sophia-broker",
  "sophia-config",

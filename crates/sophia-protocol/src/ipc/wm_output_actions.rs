@@ -26,7 +26,14 @@ pub fn encode_wm_output_action_request(
     else {
         return Err(invalid());
     };
-    if !output.is_valid() || output_generation == 0 || !request.affected_outputs.contains(&output) {
+    // The shared target check, first and under this wrapper's own label as
+    // it always was; identity, outputs and the action follow in the inner
+    // legacy encode below, in their historical order.
+    if let Err(IpcCodecError::InvalidEnum {
+        field: "output_action_cause",
+        ..
+    }) = super::validate_request_cause_scalars(&request.cause, &request.affected_outputs)
+    {
         return Err(invalid());
     }
     let mut legacy = request.clone();
@@ -91,8 +98,24 @@ pub fn append_wm_output_policy_keys(
     outputs: &[PolicyOutputSnapshot],
     capabilities: u64,
 ) -> Result<(), IpcCodecError> {
+    for section in encode_policy_output_key_records(outputs, capabilities)? {
+        transfer.chunks.push(WmV1SnapshotChunk {
+            connection_epoch: transfer.begin.connection_epoch,
+            ordinal: u16::try_from(transfer.chunks.len()).map_err(|_| invalid())?,
+            record_kind: section.kind,
+            item_count: section.count,
+            data: section.bytes,
+        });
+    }
+    Ok(())
+}
+
+pub fn encode_policy_output_key_records(
+    outputs: &[PolicyOutputSnapshot],
+    capabilities: u64,
+) -> Result<Vec<super::PolicyRecordSection>, IpcCodecError> {
     if capabilities & SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS == 0 {
-        return Ok(());
+        return Ok(Vec::new());
     }
     if outputs.len() > crate::POLICY_MAX_OUTPUTS {
         return Err(invalid());
@@ -115,36 +138,50 @@ pub fn append_wm_output_policy_keys(
             data.extend(key.to_le_bytes());
         }
     }
-    if !data.is_empty() {
-        transfer.chunks.push(WmV1SnapshotChunk {
-            connection_epoch: transfer.begin.connection_epoch,
-            ordinal: u16::try_from(transfer.chunks.len()).map_err(|_| invalid())?,
-            record_kind: SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND,
-            item_count: keys.len() as u32,
-            data,
-        });
-    }
-    Ok(())
+    Ok(if data.is_empty() {
+        Vec::new()
+    } else {
+        vec![super::PolicyRecordSection {
+            kind: SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND,
+            count: keys.len() as u32,
+            bytes: data,
+        }]
+    })
 }
 
 pub fn apply_wm_output_policy_keys(
     transfer: &WmV1SnapshotTransfer,
     outputs: &mut [PolicyOutputSnapshot],
 ) -> Result<(), IpcCodecError> {
-    let mut keys = BTreeSet::new();
-    let mut ids = BTreeSet::new();
-    for chunk in transfer
+    let sections = transfer
         .chunks
         .iter()
-        .filter(|c| c.record_kind == SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND)
+        .map(|c| super::PolicyRecordSectionRef {
+            kind: c.record_kind,
+            count: c.item_count,
+            bytes: &c.data,
+        })
+        .collect::<Vec<_>>();
+    apply_policy_output_key_records(&sections, outputs)
+}
+
+pub fn apply_policy_output_key_records(
+    sections: &[super::PolicyRecordSectionRef<'_>],
+    outputs: &mut [PolicyOutputSnapshot],
+) -> Result<(), IpcCodecError> {
+    let mut keys = BTreeSet::new();
+    let mut ids = BTreeSet::new();
+    for chunk in sections
+        .iter()
+        .filter(|c| c.kind == SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND)
     {
-        if chunk.item_count == 0
-            || chunk.item_count as usize > crate::POLICY_MAX_OUTPUTS
-            || chunk.data.len() != chunk.item_count as usize * 24
+        if chunk.count == 0
+            || chunk.count as usize > crate::POLICY_MAX_OUTPUTS
+            || chunk.bytes.len() != chunk.count as usize * 24
         {
             return Err(invalid());
         }
-        for record in chunk.data.chunks_exact(24) {
+        for record in chunk.bytes.chunks_exact(24) {
             let id = u64::from_le_bytes(record[0..8].try_into().unwrap());
             let generation = u64::from_le_bytes(record[8..16].try_into().unwrap());
             let key = u64::from_le_bytes(record[16..24].try_into().unwrap());

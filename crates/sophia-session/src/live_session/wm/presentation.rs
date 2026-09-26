@@ -355,6 +355,7 @@ impl LivePublicPolicyState {
                 self.reducer.revoke_presentation();
                 self.presentation_withdrawal_pending = true;
                 self.transport_unavailable = true;
+                self.fence_inspection(0, None);
                 return;
             }
             if withdrawing {
@@ -450,6 +451,7 @@ impl LivePublicPolicyState {
                 break;
             }
             self.presentation_receipts.pop_front();
+            self.note_inspection_event(Some(InspectionEvent::PresentationChanged));
             submitted = true;
         }
         Ok(submitted)

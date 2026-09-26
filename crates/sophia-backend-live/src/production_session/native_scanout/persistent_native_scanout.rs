@@ -13,7 +13,7 @@ pub(crate) use presentation_timing::{PresentedTimingHead, completed_timing};
 mod settled_mirror;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use composition_admission::{NativeCompositionOutput, prepare_native_composition_batch};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use composition_installation::{
     CompositionInstallation, CompositionInstaller, install_composition_generation,
     reserve_composition_lifecycle,
@@ -24,13 +24,13 @@ pub(crate) use composition_installation::{
 };
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use composition_queue::DeferredNativeCompositions;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use composition_queue::LiveProductionQueuedMirrorHeadFrame;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use mirror_completion::{MirrorCompletionWitness, complete_mirror_head};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use renderer_images::LiveProductionHeadCompositionContent;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use settled_mirror::{SettledMirrorHead, settled_mirror_checksum};
 mod composition_queue;
 mod cursor;

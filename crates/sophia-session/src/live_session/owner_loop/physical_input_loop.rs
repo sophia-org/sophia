@@ -93,6 +93,14 @@ let mut native_frame_service_deadline_armed = false;
 let mut native_frame_idle_service_cycles = 0_u8;
 let session_loop_result = (|| -> Result<(), Box<dyn std::error::Error>> {
     'session: loop {
+        // Flush the preceding turn before any early-continue path. Idle input
+        // waits are bounded by authority_wait_timeout (at most 25 ms).
+        if let Some(wm) = wm_session.as_mut() {
+            wm.service_inspection(logout_requested || session_quiescence.is_some());
+            if wm.public.as_ref().is_none_or(|public| public.inspection.is_none()) {
+                config.inspection_socket = None;
+            }
+        }
         *failure_phase = crate::diagnostics::SessionFailurePhase::OwnerLoop;
         if let Some(refresh_millihz) = native_scanout
             .as_ref()
@@ -608,5 +616,8 @@ if let Err(error) = session_loop_result {
     );
 }
 
+if let Some(wm) = wm_session.as_mut() {
+    wm.service_inspection(true);
+}
 include!("completion.rs")
 }

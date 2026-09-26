@@ -1205,6 +1205,67 @@ fn pointer_focus_requires_a_live_focusable_target_on_its_affected_output() {
     }
 }
 
+/// Engine judges a tab selection by membership and a visible placement only:
+/// it accepts a selected surface at index zero, refuses an all-ones index
+/// (never a member), and accepts no selection only for a group without
+/// members. The protocol codec now agrees on surface validity; see
+/// sophia-protocol tests/tab_group_selection.rs.
+#[test]
+fn tab_selection_is_judged_by_membership_not_by_index() {
+    let tab = |selected, members| sophia_protocol::PolicyTabGroup {
+        output: output(1),
+        group: 1,
+        geometry: Rect {
+            x: 0,
+            y: 0,
+            width: 80,
+            height: 24,
+        },
+        focused: true,
+        selected,
+        members,
+    };
+    let cases = [
+        (
+            Some(surface_id(0)),
+            vec![surface_id(0), surface_id(2)],
+            PolicyProjectionOutcome::Committed,
+        ),
+        (
+            Some(SurfaceId::new(u32::MAX, 1)),
+            vec![surface_id(0), surface_id(2)],
+            PolicyProjectionOutcome::RejectedInvalid,
+        ),
+        (None, Vec::new(), PolicyProjectionOutcome::Committed),
+        (
+            None,
+            vec![surface_id(0)],
+            PolicyProjectionOutcome::RejectedInvalid,
+        ),
+    ];
+    for (selected, members, expected) in cases {
+        let mut reducer =
+            PolicyProjectionReducer::new(scene(1, &[surface(0), surface(2)])).unwrap();
+        reducer.connect(1).unwrap();
+        let request = reducer.issue_request(vec![output(1)]).unwrap();
+        let mut p = proposal(
+            &request,
+            91,
+            vec![projected(
+                output(1),
+                vec![placed(surface_id(0), 1, rect(0, 24))],
+                Some(surface_id(0)),
+            )],
+        );
+        p.tab_groups = vec![tab(selected, members.clone())];
+        assert_eq!(
+            reducer.apply_proposal(&p),
+            expected,
+            "selected {selected:?} members {members:?}"
+        );
+    }
+}
+
 #[test]
 fn output_action_requires_exact_current_target_and_coverage() {
     for (target, generation, coverage, accepted) in [

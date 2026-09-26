@@ -166,9 +166,11 @@ impl LivePublicPolicyState {
             .worker
             .as_ref()
             .ok_or("public WM transport is unavailable")?;
+        let observation = inspection_command_event(&command);
         if let Err(command) = worker.try_command(command) {
             self.deferred_command = Some(command);
         }
+        self.note_inspection_event(observation);
         Ok(())
     }
 

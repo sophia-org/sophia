@@ -181,6 +181,9 @@ impl PublicPolicyFaultPoint {
 }
 
 struct LivePublicPolicyState {
+    inspection: Option<LivePolicyInspection>,
+    wm_transport: WmTransportSelection,
+    wm_filesystem_qids: policy_transport_worker::PolicyFilesystemQids,
     control_generation: u64,
     control_catalog_serial: u64,
     control_tickets: BTreeMap<u64, sophia_runtime::ControlTicket>,
@@ -263,6 +266,7 @@ struct LivePublicPolicyState {
 }
 
 struct PreparedPublicPolicyLaunch {
+    wm_filesystem_qids: policy_transport_worker::PolicyFilesystemQids,
     profile_fragments: sophia_config::DesktopProfileFragments,
     directory: PolicySessionDirectory,
     policy_profile: PreparedAuthorityFragment,
@@ -273,6 +277,7 @@ struct PreparedPublicPolicyLaunch {
 }
 
 struct StartedPublicPolicyLaunch {
+    wm_filesystem_qids: policy_transport_worker::PolicyFilesystemQids,
     runtime: StartedPublicPolicyRuntime,
     profile_fragments: sophia_config::DesktopProfileFragments,
     policy_profile: PreparedAuthorityFragment,
@@ -441,51 +446,7 @@ fn policy_profile_identity(
     .map_err(|error| format!("desktop profile identity is invalid: {error:?}").into())
 }
 
-fn bind_public_policy_transport(
-    directory: &PolicySessionDirectory,
-    profile_key: Option<sophia_config::DesktopProfileActivationKey>,
-) -> Result<sophia_runtime::PolicyWmSessionTransport, Box<dyn std::error::Error>> {
-    let expected_uid = rustix::process::geteuid().as_raw();
-    if profile_key.is_some() {
-        return Ok(
-            sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid_profile_activation(
-                directory.endpoint_path(),
-                expected_uid,
-            )?,
-        );
-    }
-    Ok(
-        sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
-            directory.endpoint_path(),
-            expected_uid,
-        )?,
-    )
-}
-
-fn start_public_policy_worker(
-    mut transport: sophia_runtime::PolicyWmSessionTransport,
-    connection_epoch: u64,
-    profile_key: Option<sophia_config::DesktopProfileActivationKey>,
-    native_scanout: bool,
-) -> Result<PolicyTransportWorker, Box<dyn std::error::Error>> {
-    if !native_scanout {
-        transport.limit_capabilities(!(sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
-            | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS))?;
-    }
-    match profile_key {
-        Some(key) => Ok(PolicyTransportWorker::new_profile_activated(
-            transport,
-            connection_epoch,
-            policy_profile_identity(connection_epoch, key)?,
-            TransactionId::from_raw(1),
-            TransactionId::from_raw(2),
-        )?),
-        None => Ok(PolicyTransportWorker::new(
-            transport,
-            connection_epoch,
-        )?),
-    }
-}
+include!("public_policy/transport.rs");
 
 impl PreparedPublicPolicyLaunch {
     fn new(config: &PersistentXtermSessionConfig) -> Result<Self, Box<dyn std::error::Error>> {
@@ -518,6 +479,7 @@ impl PreparedPublicPolicyLaunch {
             key,
         )?;
         Ok(Self {
+            wm_filesystem_qids: policy_transport_worker::PolicyFilesystemQids::new(),
             profile_fragments,
             directory,
             policy_profile,
@@ -533,7 +495,7 @@ impl PreparedPublicPolicyLaunch {
         process: &str,
         profile_key: Option<sophia_config::DesktopProfileActivationKey>,
     ) -> Result<StartedPublicPolicyRuntime, Box<dyn std::error::Error>> {
-        let mut transport = bind_public_policy_transport(&self.directory, profile_key)?;
+        let mut transport = bind_public_policy_transport(&self.directory, profile_key, config.wm_transport)?;
         let socket_path = transport.socket_path().to_path_buf();
         let mut output_transport = config
             .native_scanout
@@ -574,13 +536,13 @@ impl PreparedPublicPolicyLaunch {
         let child_pid = supervisor
             .peer_id()
             .ok_or("public WM supervisor did not retain Hagia's PID")?;
-        transport.authorize_supervised_pid(child_pid)?;
+        transport.authorize(&supervisor)?;
         if let Some(output_transport) = output_transport.as_mut() {
             output_transport.authorize_supervised_pid(child_pid)?;
         }
         let (state, _) = update_supervisor(supervisor_state, started, restart_policy);
         supervisor_state = state;
-        let worker = start_public_policy_worker(transport, 1, profile_key, config.native_scanout)?;
+        let worker = start_public_policy_worker(transport, 1, profile_key, config.native_scanout, &supervisor, self.wm_filesystem_qids.clone())?;
         Ok(StartedPublicPolicyRuntime {
             supervisor,
             supervisor_state,
@@ -598,6 +560,7 @@ impl PreparedPublicPolicyLaunch {
         profile_key: Option<sophia_config::DesktopProfileActivationKey>,
     ) -> StartedPublicPolicyLaunch {
         let Self {
+            wm_filesystem_qids,
             profile_fragments,
             directory,
             policy_profile,
@@ -606,6 +569,7 @@ impl PreparedPublicPolicyLaunch {
             broker_profile,
         } = self;
         StartedPublicPolicyLaunch {
+            wm_filesystem_qids,
             runtime,
             profile_fragments,
             policy_profile,
@@ -833,7 +797,7 @@ fn public_policy_launch_spec(
     output_socket_path: Option<&std::path::Path>,
 ) -> Result<ProcessLaunchSpec, sophia_runtime::ProtectionDomainSpecError> {
     let spec = ProcessLaunchSpec::new(process)
-        .env(sophia_runtime::SOPHIA_WM_SOCKET_ENV, socket_path)
+        .env(config.wm_transport.socket_env(), socket_path)
         .env("HAGIA_POLICY_CHECKPOINT", checkpoint_path)
         .env("HAGIA_POLICY_CANDIDATE", candidate_path)
         .process_group();

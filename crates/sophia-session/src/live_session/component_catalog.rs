@@ -104,6 +104,7 @@ impl ComponentCatalog {
                 display: &config.display,
                 xauthority,
                 control_socket: config.control_socket.as_deref(),
+                inspection_socket: config.inspection_socket.as_deref(),
             },
             now,
         );
