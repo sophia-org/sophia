@@ -7,6 +7,7 @@ pub mod capacity;
 pub mod cursor;
 pub mod geometry;
 pub mod ids;
+pub mod inspection;
 pub mod ipc;
 pub mod packets;
 pub mod policy_behavior;

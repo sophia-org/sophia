@@ -8,6 +8,10 @@ mod broker_transport;
 #[cfg(target_os = "linux")]
 mod control;
 mod error;
+#[cfg(target_os = "linux")]
+mod host_domain;
+#[cfg(target_os = "linux")]
+pub mod inspection;
 mod output_ipc;
 #[cfg(target_os = "linux")]
 mod output_service;
@@ -48,6 +52,8 @@ pub use broker_transport::*;
 #[cfg(target_os = "linux")]
 pub use control::*;
 pub use error::*;
+#[cfg(target_os = "linux")]
+pub use inspection::SOPHIA_WM_INSPECT_SOCKET_ENV;
 pub use output_ipc::*;
 #[cfg(target_os = "linux")]
 pub use output_service::*;

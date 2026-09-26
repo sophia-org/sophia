@@ -1082,6 +1082,10 @@ dependencies = [
 [[package]]
 name = "sophia-protocol"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "sophia-renderer-live"
@@ -1116,6 +1120,7 @@ name = "sophia-runtime"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-9p",
  "sophia-engine",
  "sophia-linux-peer",
  "sophia-protocol",
