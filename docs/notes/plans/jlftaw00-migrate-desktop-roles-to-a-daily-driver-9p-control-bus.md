@@ -211,6 +211,20 @@ over wire-neutral typed records, wire-neutral budgets, and a client seamed at
 typed values ([amendment 1 and the purge inventory](../../sophia-shell-files.md#amendment-1-2026-09-26-native-bodies-ipc-independent-records)).
 It lands before the role families, client and oracle build on the old rule.
 
+**Progress (2026-09-26, protocol/t252-shell-files).** Native records and
+codec: typed shell records and value encodings out of IPC (4c46ec24,
+f0d01d77, 4fb064a0), native whole `Candidate` (d2ec49db), self-contained KDL
+pinned by a conformance test with normative cross-field rules (a25783ba,
+f64d670e, bae4ec4a). Transport: shared journal/staging (f5f0dd43), candidates,
+pacing and actions over files (59c056d5). Clients: Rust client seamed at
+typed values (a753b343), pipelined write-capable 9P client with review-4
+fixes (ab1c4243, a8b3f7f1), and the C binding's native 9P file client for the
+base kinds by Codex (ba8c617b; `tools/check_shell_c_wire_files.sh`), proven
+against the production export without Bemenu adoption or r7 records yet.
+Remaining: the Rust client's file wire, B5 role families and owner handoff,
+Bemenu r7 on the C client, the Go oracle, measurements, merge and attended
+evidence.
+
 After t251, implement a Sophia adapter to the existing shell/component owners
 and independent clients. Development need not wait for t250's attended WM
 qualification; the daily combined configuration must use its accepted WM
