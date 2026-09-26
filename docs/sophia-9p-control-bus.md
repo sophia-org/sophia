@@ -155,8 +155,9 @@ caching and caller identity still need a Sophia-specific design. See
 Sophia's core, its independent oracle and these contracts are judged against
 that pinned revision (diod commit `de51d1ee1bd5`, `protocol.md` SHA-256
 `10c7d7de8108fd81af14ff9c59136349b00b20bef9f1e139647568838b913a2a`). A newer upstream text changes
-nothing here until the pin moves in a reviewed change. diod is GPL-2.0, so no
-copy is kept in this BSD-licensed repository.
+nothing here until the pin moves in a reviewed change. A verbatim copy is kept at
+[`references/diod-9p2000L-protocol.md`](references/diod-9p2000L-protocol.md);
+it remains diod's text under GPL-2.0, not this repository's BSD-3-Clause licence.
 The [host mounting investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
 observed v9fs refusing an unprivileged user-namespace mount; this is host evidence,
 not a portable kernel guarantee. Direct clients need no mount privilege. A
