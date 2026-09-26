@@ -2,8 +2,10 @@
 
 **Role:** accepted architectural direction and open interface design.
 
-**Status:** niltempus accepted this direction on 2026-09-25. The filesystem
-contract remains a discussion draft, not an implemented or frozen API.
+**Status:** niltempus accepted this direction on 2026-09-25 and reaffirmed public
+WM/shell protocol replacement on 2026-09-26. The broader filesystem design
+remains open; the [WM file contract](sophia-wm-files.md) governs the implemented
+Hagia development candidate.
 The [decision record](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
 records the acceptance basis and limits. Subsequently niltempus approved
 implementation of the [Hagia-first milestone](notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md):
@@ -41,6 +43,14 @@ The checked-in `sophia-9p-authority` crate is a scaffold. Its message and tree
 handlers do not establish Linux 9P2000.L conformance, an integrated application
 frontend, or a replacement WM/shell/control service. Existing clients and wire
 contracts remain supported until their replacements pass the migration criteria.
+
+Separately, `sophia-9p` supplies the bounded shared codec and connection core,
+and Session's WM export is integrated with Hagia's independent Nim client on
+the t249/h006 development branches. Opt-in launch, protected admission, real
+configuration, layout settlement and restart recovery have focused controls.
+These are development checkpoints, not complete role acceptance or a default
+switch. The [mounting investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
+records why direct clients do not depend on unprivileged v9fs support.
 
 The expected gain is a consistent, inspectable interface that reduces custom
 client plumbing. Developers could use ordinary file operations through a mount

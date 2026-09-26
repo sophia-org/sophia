@@ -79,11 +79,11 @@ release debt do not wait for 9P reply credit. New epochs refuse old handles and
 actions. Share semantic record validation without routing through the old
 socket, frame decoder or another reducer.
 
-The [WM file contract](../../sophia-wm-files.md) records reviewed file semantics
-and the binary envelope. Body layouts remain explicitly unfrozen until their
-shared semantic codec owner and independent Nim corpus are ready. Review
-already fixed bounded send failure, a single driver phase admission owner,
-prefix-preserving cancellation and immutable opened-snapshot metadata.
+The [WM file contract](../../sophia-wm-files.md) records reviewed file semantics,
+the binary envelope and complete body layouts. Shared Rust semantic codecs and
+the independent Nim corpus now cover those bodies. The export preserves
+bounded send failure, a single driver phase admission owner, prefix-preserving
+cancellation and immutable opened-snapshot metadata.
 
 Hagia h006 owns its independent Nim client and preserves reducer, projection,
 checkpoint, action, layout and overview behavior. Full acceptance covers every
@@ -133,9 +133,27 @@ controls and three compiled negative controls cover the file boundary; the
 joined protocol suite passes 210 tests. Its scalar follow-up defines typed cycle,
 dirty/session-operation, outcome and receipt bodies through the shared scalar
 owner; ten focused controls and three compiled negative controls pass, with
-232 joined protocol tests. Negotiation/profile bodies, independent Nim file
-corpus and the complete Session/Hagia integration are still incomplete. Existing WM
-semantics and output transport remain current IPC.
+232 joined protocol tests. These counts describe that historical scalar
+checkpoint, not the current full acceptance result.
+
+Later signed checkpoints added negotiation/profile bodies, independent Nim
+codecs, the common Hagia policy loop, protected Session admission and explicit
+production transport selection. Frozen normal Hagia has exercised real profile
+and catalog admission, Session layout commit and managed timeout, the CPU
+production join, accepted session-operation intent, and paired current-IPC/file
+behavior and layout controls. Automatic and control restart recovery now
+exercise real checkpoint restore and restore-triggered Dirty through both
+transports. The [typed-driver investigation](../investigations/uf2wya88-typed-wm-driver-preserves-current-ipc-phase-and-shutdown-ownership.md)
+retains exact source and evidence limits; recovery `e5105ff1` is joined as
+`65c460ea3`, with its durable report under
+`~/.local/state/sophia/development-evidence/t249-hagia-recovery-e5105ff1`.
+
+On September 26 niltempus reaffirmed public role protocol replacement after a
+separate investigation suggested administration-only 9P. That restriction does
+not govern this approved work. Continue with real profile rejection/rollback,
+remaining behavior and presentation-owner joins, reproducible measurements and
+an exact-source acceptance runner. Current IPC remains the installed default;
+output-role migration, physical acceptance and a default switch remain separate.
 
 ## Connections
 

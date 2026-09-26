@@ -18,30 +18,42 @@ help namespaces and portals?
 
 ## In a nutshell
 
-Plan 9 is the model for **sophia-session's control plane**: administration,
-observability and scripting served as a synthetic file tree over 9P2000.L.
-It is not the model for Sophia Engine, and it does not displace X.
+Plan 9 informs Sophia's **public role interfaces**. 9P2000.L progressively
+replaces the separate WM, shell and administrative IPC protocols while the
+existing role owners retain their semantics and authority. Engine's internal
+typed transactions, rendering and device interfaces stay unchanged.
+
+This note initially proposed administration and observation only, without
+accounting for the accepted Hagia-first work. On September 26 niltempus
+reaffirmed that replacing the separate public role protocols is the point of
+the migration. The [accepted ADR](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
+and [execution plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md)
+govern that scope; the earlier read-only WM restriction is withdrawn. The host
+mount observation below remains useful and does not require changing transport.
 
 - **Engine stays untouched.** Sophia Engine remains a protocol-neutral
   transactional compositor over client buffers, damage and atomic commits. Its
   model is Core Animation's transaction, not libdraw's server-side drawing.
-- **X stays the sole active application authority.** The control plane serves
-  facts and admin actions and creates no surfaces, so it does not conflict with
-  that rule. [`sophia-9p-authority`](../../sophia-9p-authority.md) remains a
-  non-normative research stub.
-- **First scope:** `control/` plus read-only `wm/snapshot` and `wm/events`,
-  replacing `sophia msg`. Hagia keeps the binary `sophia_wm_v1` fast path and
-  its formal bounds.
-- **Per-role sockets are the capability.** Each role reaches only its own 9P
-  socket, and the server's attach serves only that role's tree. Put
-  WM-directed actions (`focus-next`, `toggle-fullscreen`) on `control`, so the
-  WM-facing socket is read-only by construction.
+- **X stays the sole active application authority.** The WM migration creates
+  no application surfaces. [`sophia-9p-authority`](../../sophia-9p-authority.md)
+  remains a separate future frontend; this work does not activate it.
+- **First scope:** the admitted Hagia WM role over direct Unix-socket
+  9P2000.L, including complete binary snapshots, proposals and outcomes.
+  Current IPC remains the default and explicit rollback choice during
+  validation. It is not retained as a permanent compiled-client fast path.
+- **Per-role sockets preserve reach boundaries.** Session still authenticates
+  the supervised protected peer and authorizes operations, including retained
+  handles. Socket reach, attach names, fids and qids alone grant no authority.
+  The admitted WM may submit bounded proposals through its role contract;
+  administrative actions remain owned by the administrative role.
 - **The session serves; the sandbox mounts.** This extends the
   [socket-directory contract](../../namespaces-and-portals.md#socket-directories)
   unchanged. Unprivileged clients use `9pfuse` or a userspace 9P client; v9fs
   is an option only where a privileged mounter already exists.
-- **Text files are still a protocol.** A line such as `0 0 960 1080` needs a
-  documented grammar and versioning, even without generated bindings.
+- **File contents are still a protocol.** Hagia uses compact binary runtime
+  records with documented bounds and independent codecs. Readable inspection
+  can be derived from those records. Text interfaces also require a grammar
+  and versioning; they do not replace semantic validation.
 
 ## Evidence
 
@@ -75,8 +87,10 @@ execution transport. File handoff fits, with Flatpak's FUSE document portal as
 prior art. Plain-text clipboard access for scripts is plausible if it runs
 through the same grant lifecycle. The rest fits poorly. Approval waits become
 blocking syscalls with `Tflush` and `EINTR`. X selections need TARGETS
-negotiation and lazy conversion. 9P cannot pass file descriptors. Synthetic
-files need `cache=none` and report zero length.
+negotiation and lazy conversion. 9P does not natively transfer file descriptors.
+Cache and length rules must follow each file's contract: the current WM export
+reports exact pinned object sizes and retained journal bounds. A mounted client
+cannot infer the right caching policy merely from the word "synthetic".
 
 ### Claims rejected from the circulated write-up
 
@@ -93,25 +107,27 @@ a 9P tree driven by `wmiir` scripts.
 
 ## Finding and resolution
 
-Adopt Plan 9 as the session control-plane idiom, served on per-role sockets, and
-leave mounting to the sandbox. The "universal bus" framing and v9fs mount
-examples in the [control-bus proposal](../../sophia-9p-control-bus.md) need
-revision before that proposal becomes an ADR. Its §7 shell examples assume a
-kernel mount the session cannot make.
+Use 9P at the public role boundary, served on separately admitted endpoints,
+and leave optional mounting to the sandbox. The accepted
+[public-interface design](../../sophia-9p-control-bus.md) already preserves
+Engine ownership and direct clients. Neither v9fs nor FUSE is required by the
+Hagia implementation. The inability to mount v9fs unprivileged therefore does
+not block the approved migration or justify a permanent IPC/9P split.
 
 ## Validation and remaining work
 
-This is a design conclusion and one host observation. Nothing is implemented,
-and no task is admitted to `todo.md`. Before any promotion:
-
-- Revise the control-bus proposal to per-role sockets and sandbox-chosen mounts.
-- Specify the text grammar and versioning for `control/` and `wm/` files.
-- Write a proposed ADR if the control plane is promoted to roadmap work.
+The v9fs result is one host observation, not a portable kernel guarantee. The
+Hagia-first development branches already contain an independent Nim client,
+Session export and opt-in launch selection, with real-Hagia settlement and
+restart controls. Their evidence and remaining acceptance gates are recorded
+in the [typed-driver investigation](uf2wya88-typed-wm-driver-preserves-current-ipc-phase-and-shutdown-ownership.md).
+This correction creates no new task, changes no default, and authorizes no live
+session or physical-device test. Other role migrations remain later milestones.
 
 ## Connections
 
-- The [control-bus proposal](../../sophia-9p-control-bus.md) is the design this
-  note narrows.
+- The [public-interface design](../../sophia-9p-control-bus.md) owns the accepted
+  migration direction; this note records the mounting constraint.
 - The [namespaces and portals contract](../../namespaces-and-portals.md) supplies
   the socket-directory and portal rules the conclusion reuses.
 - The [9P frontend proposal](../../sophia-9p-authority.md) stays a separate

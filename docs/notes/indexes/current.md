@@ -39,6 +39,7 @@ map, not a list of every note or another roadmap.
 ## Session control plane
 
 The [Plan 9 control-plane investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
-narrows the [9P control-bus proposal](../../sophia-9p-control-bus.md) to
-administration and observability on per-role sockets. It records that v9fs
-refuses unprivileged user-namespace mounts. This is not roadmap work.
+records the observed unprivileged-v9fs restriction and corrects its initial
+administration-only scope. The [accepted 9P direction](../../sophia-9p-control-bus.md)
+replaces public role IPC progressively, beginning with Hagia. Engine's internal
+interfaces stay unchanged; direct clients require no filesystem mount.

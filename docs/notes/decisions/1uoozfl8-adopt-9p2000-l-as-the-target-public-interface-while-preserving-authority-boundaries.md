@@ -78,6 +78,12 @@ milestone. The [execution plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-a
 records that narrower implementation authorization. The initial pause above
 remains the history of this ADR's acceptance, not the current execution state.
 
+On 2026-09-26 niltempus reaffirmed that the goal is replacing the separate
+public WM, shell and other role protocols with 9P. An investigation written
+without the Hagia development context had proposed administration-only 9P and
+permanent WM IPC; its scope was corrected. Engine's internal interfaces,
+per-role admission and separate physical acceptance remain unchanged.
+
 - [Public 9P interface design](../../sophia-9p-control-bus.md) owns the evolving
   design, migration criteria and open questions.
 - [9P application frontend](../../sophia-9p-authority.md) separates application
