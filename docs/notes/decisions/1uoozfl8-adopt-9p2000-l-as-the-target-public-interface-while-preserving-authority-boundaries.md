@@ -72,6 +72,12 @@ brainstorming. Acceptance covers architectural direction; it does not freeze an
 API or resume implementation, builds, gates or live-session work. No task is
 closed or reprioritized by this record.
 
+Later on 2026-09-25, niltempus approved compact binary runtime records with
+readable inspection and instructed "Implement the plan" for the Hagia-first
+milestone. The [execution plan](../plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md)
+records that narrower implementation authorization. The initial pause above
+remains the history of this ADR's acceptance, not the current execution state.
+
 - [Public 9P interface design](../../sophia-9p-control-bus.md) owns the evolving
   design, migration criteria and open questions.
 - [9P application frontend](../../sophia-9p-authority.md) separates application

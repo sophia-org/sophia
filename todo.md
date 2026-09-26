@@ -1,5 +1,11 @@
 # One task per line, a blank line between tasks: keep it that way so the file reads as a list. A row is `(priority) date text ... @context id:tNNN order:NNN [details](note)`; closed rows move to done-YYYY-MM.md.
 
+(A) 2026-09-25 Build a bounded domain-neutral 9P2000.L codec and per-connection driver with independent direct-socket conformance and cancellation controls. +critical @development id:t247 order:000.000001 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t247)
+
+(B) 2026-09-25 Extract the typed WM transport adapter boundary while preserving current IPC profile, phase, queue and shutdown behavior. +parallel @development id:t248 order:000.000002 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t248)
+
+(A) 2026-09-25 Specify and join the binary WM file contract with existing Session owners and independent Hagia; accept an opt-in 9P WM path while output control remains current IPC. +critical @development id:t249 order:000.000003 depends:t247,t248 peer:hagia/h006 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249)
+
 (B) 2026-09-20 Replace the remaining wall-clock waits outside the private-input controls with progress-bounded ones and generated failure text: x11_socket/tests/routing.rs (12), tests/support/m3_acceptance_c.rs (9), tests/connection_wait.rs (6), the desktop comparison workload.rs (6), the xterm command (6) and the shell launcher (5), plus the fixed-step class such as state_only_frozen_release_retains_original_request_then_applies_once_after_exact_thaw, which pumps a fixed count and cannot say whether it waited long enough. +development @development id:t131 order:000.00022 [details](docs/notes/investigations/yo5l2jui-private-input-controls-fail-on-a-wall-clock-deadline-under-load.md)
 
 (B) 2026-09-20 Find why rejected_profile_admission_fails_before_negotiated saw a second event after Failed under load: it asserts try_event() is Err once the failure event is read, and one run in six under 64 spinners found another event there; establish what the worker emits after a rejected admission and whether the control or the worker is wrong. +development @development id:t132 order:000.00023 [details](docs/notes/investigations/yo5l2jui-private-input-controls-fail-on-a-wall-clock-deadline-under-load.md)

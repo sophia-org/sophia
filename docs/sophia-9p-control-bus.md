@@ -5,8 +5,11 @@
 **Status:** niltempus accepted this direction on 2026-09-25. The filesystem
 contract remains a discussion draft, not an implemented or frozen API.
 The [decision record](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
-records the acceptance basis and limits. This documentation revision does not
-resume implementation, gates, installation or live-session work.
+records the acceptance basis and limits. Subsequently niltempus approved
+implementation of the [Hagia-first milestone](notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md):
+direct sockets, compact binary WM records, and existing Session owners. This
+does not authorize installation or live-session work, and other roles remain
+later milestones.
 
 ## Agreed direction
 
@@ -236,9 +239,11 @@ old interface until resolved or explicitly reviewed.
 
 ## Migration and evidence
 
-The accepted destination is common public 9P interfaces. The implementation
-sequence and schedule remain to be planned through the existing queue after
-brainstorming; this document is not a second execution queue.
+The accepted destination is common public 9P interfaces. The first admitted
+implementation is Sophia t247-t249 paired with Hagia h006. Runtime WM records
+are compact binary, with text discovery and derived inspection; no KDL runtime
+payload is required. The output role remains current IPC in this first milestone.
+Task state and order belong in the existing queues, not this document.
 
 Before an old interface is retired, demonstrate:
 
@@ -263,7 +268,8 @@ and open desktop exits are not closed by this architectural decision.
 
 - What is the smallest useful file vocabulary for each role, and how are its
   version and effective capabilities discovered?
-- Which values should be human-readable, and which need compact bulk encoding?
+- What are the later shell/application content formats? WM runtime records are
+  now binary, with text discovery and derived inspection.
 - How do transaction handles, event streams and outcomes work equally well for
   direct clients and mounted clients under fragmentation and cancellation?
 - How are exported views bound to admissions, and how are retained handles and

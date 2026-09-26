@@ -6,7 +6,9 @@
 unimplemented. The checked-in crate is a scaffold, not conformance evidence.
 See the [public interface design](sophia-9p-control-bus.md) and its
 [accepted direction](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md).
-Documentation work continues while implementation and gates remain paused.
+The admitted [Hagia-first implementation](notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md)
+builds shared transport and the WM role; this application frontend remains a
+later milestone and is not activated by that work.
 
 ## Purpose and scope
 
