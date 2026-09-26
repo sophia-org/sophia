@@ -152,8 +152,21 @@ preserved. The session log shows the WM ready at epoch 1, one requested restart
 to epoch 2 with `preserved_layout=true`, and no degraded or failure records.
 Single head per output as configured; multi-output acceptance is not claimed.
 
-Remaining for t250: the t249 release latency verdict (armed overnight) and the
-operator's default-selection decision.
+**Default selection (2026-09-26).** After the attended session the operator
+chose 9P2000.L as the WM default ahead of the t249 release latency verdict. The
+personal installer (chezmoi `2675ac0`) now makes the plain "Sophia niltempus
+Desktop" entry run Hagia with `--wm-transport=9p2000.L`; "Sophia niltempus
+Desktop (current IPC)" is the explicit rollback with the same Hagia, and install
+removes the retired "(9P WM)" entry. First release with this default:
+`niltempus-e587da65514ead64d34a` (Sophia `cb50f447`, Hagia `5af36ac7`, the
+attended session's Hagia binary `464ae2fc`). Only the WM role moves; shell and
+output stay on current IPC. The product default in
+`WmTransportSelection` is unchanged until t255.
+
+Remaining for t250: the t249 release latency verdict (armed overnight). A
+refused budget does not silently stand: the operator then decides between
+keeping the default under a recorded limitation and rolling back to the
+current-IPC entry.
 
 ### t251 — Specify the shell file contract
 
