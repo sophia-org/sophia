@@ -73,12 +73,29 @@ record() {
         "$1" "$2" "$3" "$4" >>"$phases"
 }
 
+# A WM replacement briefly withdraws the session operations from the catalog;
+# wait for them to be advertised again, as any client must rediscover.
+ready() {
+    local deadline=$((SECONDS + 30))
+    until "$sophia" msg --socket "$socket" commands 2>/dev/null | grep -q 'reload-profile'; do
+        ((SECONDS < deadline)) || return 1
+        sleep 0.5
+    done
+}
+
 # One control invocation with its own bound; the observed outcome is the first
 # word sophia msg prints, or the failure it reports.
 phase() {
-    local name=$1 expected=$2 observed
+    local name=$1 expected=$2 observed reply
     shift 2
-    observed=$(timeout -s KILL 20 "$sophia" msg --socket "$socket" "$@" 2>&1 | head -n 1 | cut -d: -f1) || true
+    if ! ready; then
+        record "$name" "$expected" "not ready" false
+        failed=true
+        return
+    fi
+    reply=$(timeout -s KILL 20 "$sophia" msg --socket "$socket" "$@" 2>&1 | head -n 1) || true
+    printf '%s\t%s\n' "$name" "$reply" >>"$evidence/replies.tsv"
+    observed=${reply%%:*}
     if [[ "$observed" == "$expected" ]]; then
         record "$name" "$expected" "$observed" true
     else
@@ -132,7 +149,9 @@ export PATH="/opt/sophia-niltempus-desktop/bin:$PATH"
 status=0
 "$release/bin/sophia-hagia-session" "--wm-process=$hagia" "--wm-transport=$wire" \
     >"$evidence/session.log" 2>&1 || status=$?
-wait "$driver" || true
+# The session has ended: the driver's fallback logout is no longer needed.
+kill "$driver" 2>/dev/null || true
+wait "$driver" 2>/dev/null || true
 printf 'session_exit=%s\n' "$status" >>"$evidence/candidate.txt"
 
 passed=$(grep -c '"pass":true' "$phases" 2>/dev/null || true)
