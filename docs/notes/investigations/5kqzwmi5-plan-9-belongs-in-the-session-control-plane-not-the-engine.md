@@ -102,8 +102,38 @@ cannot infer the right caching policy merely from the word "synthetic".
 - The Wayland clipboard is `wl_data_device`; xdg-desktop-portal serves
   sandboxed applications.
 
-Prior art for the control-plane use is wmii, which served its window manager as
-a 9P tree driven by `wmiir` scripts.
+### wmii: a concrete filesystem interface reference
+
+On September 26 niltempus pointed to the local `~/src/wmii` checkout. Read-only
+inspection covered revision `4cae1dc7e8ae2f7a603ab3565493e035f054a3f4` from
+`0intro/wmii`; no build, installation or desktop run was performed.
+
+The useful reference is the exposed interface, not a disk filesystem:
+
+- `man/wmii.man1` (Filesystem/Hierarchy) describes a wholly synthetic in-memory
+  tree: `/ctl`, `/client/*/ctl`, `/tag/*/ctl`, bar files and `/event`.
+- `cmd/wmii/fs.c` maps those paths to live reads, command handlers and pending
+  event reads. Files represent operations and current state; no backing disk
+  file is required.
+- `man/wmiir.man1` and `cmd/wmiir.c` provide a small direct 9P client with
+  `ls`, `read`, `write` and `xwrite`. Kernel mounting is optional.
+- `doc/customizing.tex` consumes line-oriented events in an ordinary shell
+  loop. This makes the interface useful outside its compiled primary client.
+
+For Sophia, this supports readable derived views, discoverable role paths and
+a small direct client as interface goals. The captured Snapshot/event inspector
+is an initial diagnostic tool, not wmii-style live scripting. A live reader must
+still have its own admitted observation contract without consuming the WM's
+ACK floor or granting writer authority. Binary atomic candidates and explicit
+semantic settlement remain the WM contract; text readability does not replace
+them.
+
+wmii also combines WM policy, direct X access and bar control. Sophia keeps
+those authorities separate and does not copy wmii's client metadata exposure,
+mutable control vocabulary or broadcast-event authority. Its libixp client has
+not been verified against Sophia's strict 9P2000.L endpoint. This source reading
+establishes design precedent, not dialect interoperability, performance or
+security acceptance.
 
 ## Finding and resolution
 

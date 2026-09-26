@@ -888,6 +888,63 @@ relocation and formatting. A preliminary feature-omitting zero-test run is not
 evidence. The new Hagia presentation join remains uncompiled at this checkpoint;
 source review alone is not pairing evidence.
 
+## External pairing and the remaining legacy fixtures
+
+Hagia checkpoint `2294385dfb194187f45d5233311d2fe120e8686a` owns the optional
+Rust pairing runner and the external fixture family. Its restored `run-4`
+passes twelve individually listed owner cases, protocol checks, strict native
+Session, fresh xtask layout and direct fixture formatting. The test executable
+is selected once, hashed, and invoked directly for every case. Source evidence
+names Sophia `0319356db` plus a recorded overlay, never an unmodified checkout.
+Hagia's `aoivl2yn` note and durable `h006-pairing-2294385` bundle retain earlier
+strict/format failures and the exact source and executable identities.
+
+This includes the first real profile replacement/rejection pair: the frozen
+normal executable accepts view-count 8, rejects 10, and existing Session reload
+owners restore the prior immutable profile at a fresh epoch. The presentation
+case derives receipts from production retired-frame owners after simulated
+device/copy/flip completion. It runs both wires through the same assertions,
+without asserting full observation equality. Presented is a no-op in Hagia's
+model; ordered delivery does not prove a receipt-dependent model change.
+
+Signed `8bc5da5aa` and `6991101b4` complete the coordinated relocation of the
+older real-Hagia fixtures. Runtime pointer-focus/presentation, protected profile
+admission, Hagia launch-origin, targeted-click and partial-projection fixtures
+now live in Hagia's optional legacy overlay. Generic X-origin and production
+owner controls remain. No production API or authority behavior changed.
+
+The neutral-tree listing removes exactly eight runtime cases and six Session
+cases, with three name-only generic renames. The independent-target listing
+supersedes an invalid first comparison that reused a stale shared-target binary.
+Restored runtime tests pass 6/0 and native Session tests 667/0 with 21 ignored;
+strict runtime/Session, layout and format checks pass. The first native Session
+run had three reconnect failures (664/3/21); repeated focused and full runs did
+not reproduce them. These remain intermittent and unresolved, not established
+as pre-existing or disproved by reruns. Logs and the initial listing error are
+retained in `sophia-legacy/.artifacts/neutral-validation`. Direct formatting debt
+in the existing desktop reload mount has the same twelve hunks at base and head
+and was left untouched. The external overlay's combined legacy acceptance is a
+separate gate; source composition and neutral-tree tests do not establish it.
+
+## Captured-record inspection
+
+`fcc3ff91` (joined as `f9f54aa6e`) adds the WM-neutral `wm_file_inspect` protocol
+example and external tests, without library, Session or decoder changes. It
+validates one bounded Snapshot or a contiguous captured event window with the
+public codecs before emitting text. Supplied epoch/capability values are
+unauthenticated context; it does not replay phase, ACK, attach or infer capture
+completeness. Submitted custody is labelled separately from reported outcomes.
+
+Eight focused controls, strict protocol all-target Clippy, the example build,
+fresh xtask layout and formatting pass. CLI runs on real codec-generated
+Snapshot/events pass; a malformed suffix returns nonzero with empty stdout.
+The first fixture run mismatched launch-origin epoch 2 and header 3 (five passed,
+two failed); only the supplied fixture epoch was corrected. The eighth control
+pins the absence of negotiation/phase inference. The durable
+`t249-wm-inspect-fcc3ff91` bundle retains the red, corrected source, encoded
+captures, runnable tool and checksums. This closes the captured-text tool slice,
+not admitted live or mounted inspection.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

@@ -338,14 +338,31 @@ have a neutral codec owner shared by both transports. The new adapter must not b
 frames or feed files through the old transport. Hagia implements the published
 layouts independently in Nim; Sophia source is not a Hagia dependency.
 
-Readable snapshot and event inspection is a required development exit, currently
-unimplemented. The view must derive from the same validated neutral records,
-retain their epoch, transaction/sequence and outcome distinctions, and stay
-bounded. A documented read-only inspection command may render captured records
-as text; live inspection additionally needs an admitted read path and must not
-consume the WM's event acknowledgements or acquire writer authority. Raw binary
-records are not a `cat`-readable interface, and an offline dump must not be
-advertised as live mounted inspection. No additional client metadata is exposed.
+Readable snapshot and event inspection is a required development exit. The
+`wm_file_inspect` protocol example renders captured records through the same
+public decoders as the role, preserving identities and distinguishing Submitted
+custody from reported outcomes:
+
+```sh
+cargo run --offline --locked -p sophia-protocol --example wm_file_inspect -- \
+  snapshot --path=/absolute/captured-snapshot.bin --epoch=3 --capabilities=0x3dfff
+cargo run --offline --locked -p sophia-protocol --example wm_file_inspect -- \
+  events --path=/absolute/captured-events.bin --epoch=3 --capabilities=0x3dfff
+```
+
+The caller supplies the expected epoch and capability context; these example
+values are not discovery or authenticated admission. Snapshot mode accepts
+exactly one object. Events mode accepts an empty capture or at most 64 complete,
+contiguous event records starting at any nonzero sequence, bounded to one MiB
+in total. It does not infer phase or historical completeness. A malformed suffix
+refuses the whole capture before text is emitted. Unknown supplied capability
+bits retain the public decoders' semantics.
+
+This is offline inspection of a regular captured file. It opens no socket,
+mount or writer, sends no ACK, and provides no atomic live capture mechanism.
+Live inspection still needs an admitted read path that cannot consume the WM's
+acknowledgements or acquire writer authority. Raw binary records are not a
+`cat`-readable interface. No additional client metadata is exposed.
 
 ## Required evidence
 

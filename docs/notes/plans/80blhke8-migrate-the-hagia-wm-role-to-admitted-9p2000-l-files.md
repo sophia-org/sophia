@@ -179,14 +179,21 @@ retains exact source and evidence limits; recovery `e5105ff1` is joined as
 
 On September 26 niltempus reaffirmed public role protocol replacement after a
 separate investigation suggested administration-only 9P. That restriction does
-not govern this approved work. Continue with real profile rejection/rollback,
-remaining behavior and presentation-owner joins, reproducible measurements and
-an exact-source acceptance runner. Current IPC remains the installed default;
+not govern this approved work. Hagia's optional source-overlay runner now keeps
+policy-specific acceptance outside Sophia, with exact base, fixture and binary
+identities. Its twelve owner cases include real profile rejection/rollback and
+the mirrored presentation-owner join with simulated device completions.
+Older interoperability cases are relocated with their gate references; their
+combined optional run remains separately recorded. Bounded captured-record text
+inspection uses Sophia's WM-neutral public decoders. Remaining work includes
+reproducible measurements and the separately admitted live/physical gates.
+Current IPC remains the installed default;
 output-role migration, physical acceptance and a default switch remain separate.
 
 ## Connections
 
 - [Public-interface direction](../../sophia-9p-control-bus.md).
+- [wmii filesystem/tooling reference and mounting limits](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md).
 - [9P application frontend](../../sophia-9p-authority.md), a later role.
 - [Current native protocol family](../../sophia-policy-ipc.md), still supported.
 - [Namespaces and portals](../../namespaces-and-portals.md), unchanged authority.
