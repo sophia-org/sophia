@@ -162,6 +162,5 @@ const POLICY_CLIENT_RESPONSE_DEADLINE: Duration = Duration::from_secs(12);
 #[path = "../../tests/support/control_worker_shutdown.rs"]
 mod control_worker_shutdown;
 
-#[cfg(test)]
 #[path = "../../tests/support/policy_adapter_driver.rs"]
 mod adapter_driver_tests;

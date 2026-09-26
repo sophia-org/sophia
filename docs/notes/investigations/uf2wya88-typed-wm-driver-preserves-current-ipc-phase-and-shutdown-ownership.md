@@ -47,7 +47,14 @@ and existing queue shutdown control also pass.
 
 Focused worker controls: 9 passed. Full native-session lib: 620 passed,
 0 failed, 18 ignored. Strict Session native-session all-target Clippy passed;
-format, layout and diff checks passed. These are affected-owner checks, not a full
+format and diff checks passed. The initial cached layout command also returned
+success, but the freshly rebuilt t249 xtask later flagged the production-file
+`#[cfg(test)]` mount as inline tests. That earlier result is insufficient for
+layout acceptance. Matching the existing shutdown fixture, the attribute now
+lives inside the external test-support file; no test body or ledger changed.
+Fresh-root layout then passed; both logs are retained in the t249 evidence.
+No additional worker suite was run for that attribute-only relocation before
+releasing the serial build slot. These are affected-owner checks, not a full
 workspace or paired Hagia acceptance claim.
 
 The first focused run was 8 passed and 1 failed: the new refusal fixture observed

@@ -1,5 +1,7 @@
 //! Scripted semantic peer, exercising the real worker/driver and bounded
 //! channels. This is not wire, protected admission or presentation evidence.
+#![cfg(test)]
+
 use super::adapter::{PolicyAdapter, PolicyAdapterEvent, PolicyProfileAdmission};
 use super::*;
 use sophia_protocol::*;
