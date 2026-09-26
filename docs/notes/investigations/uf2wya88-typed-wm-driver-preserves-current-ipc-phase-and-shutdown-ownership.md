@@ -308,6 +308,67 @@ passes, and the freshly rebuilt worktree layout gate, format and diff checks
 pass. Builds use the exclusive disk target, two jobs, nice 19 and the same
 device-hidden wrapper. No physical, device or production endpoint run occurred.
 
+## Complete private adapter on a supplied stream
+
+The next checkpoint implements every `PolicyAdapter` command through the
+private `NinePPolicyAdapter`, retaining the existing driver as phase owner and
+the existing profile reducer as handoff owner. It introduces no launch selector,
+protected admission, default transport change, output-role migration or second
+semantic reducer. Outcomes and receipts in these controls are scripted owner
+inputs, not proof of Engine settlement or native presentation.
+
+Snapshot and Cycle publication share a borrowing journal reservation. Validation,
+event credit, encoding, sequence/tail exhaustion, cancellation and the fixed
+send deadline precede Qid allocation. Qid allocation is the last fallible step;
+snapshot replacement and journal commit then occur without a reactor turn.
+Dropping a reservation changes neither journal nor old snapshot. A failed
+allocation spends no identity. Existing opened snapshots keep their immutable
+bytes and metadata.
+
+The adapter temporarily clones the typed scene, actions, classifications,
+launch origins and request before event-credit checking. This is additional
+memory beside the current snapshot and at most one older opened pin. Only
+after event credit does it encode a fresh snapshot candidate, bounded to the
+one-MiB file-object limit; it does not retain per-event snapshot copies or add
+another command queue. This is not a claim of zero transient typed copying.
+
+All Stop handles share one transport-local flag and wake the same reactor.
+Cancellation is checked before and after encoding. Stop racing after the final
+check may linearize after publication; no retroactive undo or wall-clock
+guarantee that publication cannot follow `stop()` returning is claimed. Later
+operations refuse, and worker cleanup revokes and drops the supplied stream.
+The actual `expect_session_operation` value is encoded with its capability
+check; the file owner neither infers nor owns the resulting driver phase.
+
+Evidence is retained in `.artifacts/t249-complete-adapter`. Named compiled
+controls remove the operation flag, the post-encoding cancellation check, or
+move Qid allocation before validation. Each fails its intended assertion;
+restored source is checked again. The first focused run retained a deadline
+diagnostic mismatch (`Errno(110)` instead of the existing deadline text), and
+strict Clippy retained unused wrappers and duplicate fixture-module imports.
+The deadline text is preserved, unused wrappers removed, and tests now share
+one existing semantic fixture module.
+
+The final restored focused run passes 41 controls, fails none and explicitly
+ignores the two external-peer controls. Strict native-session all-target
+Session Clippy, fresh worktree-root layout, format and diff checks pass. The
+exclusive disk cache, device-hidden wrapper, two jobs and nice 19 are retained.
+No broader owner suite or production endpoint is claimed by this checkpoint.
+
+Two external peer controls remain explicitly ignored until a prebuilt Nim
+executable and exact SHA256 are supplied. They require a fresh evidence case
+directory, bound accept/startup/exit waits, retain child logs and start/end
+binary hashes, and kill/reap the child on failure within the stated fixture
+bounds. The test socket is supplied admission, not production authentication;
+artifact hashes are not TOCTOU-free launch authority. Fixed profile identity is
+epoch 9, generation 3 and digest `[7;32]`, with prepare/activate transactions
+40/41. Cycle uses snapshot/request transactions 100/101, request 55, scene 7
+and policy 3. The bridge asserts independently decoded proposal transaction 11,
+output 1, focus `(3,1)` and its one state-generation-8 placement at `(0,0,100,100)`.
+Scripted operation and receipt completion does not establish physical or
+independent application acceptance. No independent executable pass is claimed
+by the ordinary focused suite.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

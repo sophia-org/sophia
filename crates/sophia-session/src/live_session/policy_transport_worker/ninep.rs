@@ -9,11 +9,13 @@ use sophia_9p::{
 };
 use sophia_protocol::wm_files::*;
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod journal;
 mod owner;
+mod runtime_adapter;
 mod staging;
 mod startup;
 mod typed_codec;
@@ -25,6 +27,16 @@ const EBUSY: Errno = Errno(16);
 const EALREADY: Errno = Errno(114);
 const ASSEMBLY_DEADLINE: Duration = Duration::from_millis(WM_FILE_ASSEMBLY_TIMEOUT_MILLIS as u64);
 const SEND_DEADLINE: Duration = Duration::from_millis(WM_FILE_SEND_TIMEOUT_MILLIS as u64);
+
+fn check_publication(stopped: &AtomicBool, deadline: Instant) -> Result<(), Errno> {
+    if stopped.load(Ordering::SeqCst) {
+        return Err(Errno(125));
+    }
+    if Instant::now() >= deadline {
+        return Err(Errno(110));
+    }
+    Ok(())
+}
 
 /// Supplied by the logical Session WM filesystem owner and continued across
 /// supervised reconnects. Socket paths and admitted epochs are not qid hashes.
@@ -65,12 +77,17 @@ pub(super) trait PolicyFileCodec {
 
 pub(super) struct NinePReactor<C: PolicyFileCodec> {
     server: Server<WmFiles<C>>,
+    stopped: Arc<AtomicBool>,
 }
 
-struct NinePStop(Wake);
+struct NinePStop {
+    wake: Wake,
+    stopped: Arc<AtomicBool>,
+}
 impl PolicyAdapterStop for NinePStop {
     fn stop(&self) {
-        self.0.stop();
+        self.stopped.store(true, Ordering::SeqCst);
+        self.wake.stop();
     }
 }
 
@@ -86,16 +103,26 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         .map_err(|e| e.to_string())?;
         let connection = server.adopt(stream).map_err(|e| e.error.to_string())?;
         server.export_mut().bind_connection(connection);
-        Ok(Self { server })
+        Ok(Self {
+            server,
+            stopped: Arc::new(AtomicBool::new(false)),
+        })
     }
     pub(super) fn stop_handle(&self) -> Box<dyn PolicyAdapterStop> {
-        Box::new(NinePStop(self.server.wake()))
+        Box::new(NinePStop {
+            wake: self.server.wake(),
+            stopped: self.stopped.clone(),
+        })
     }
     pub(super) fn owner_mut(&mut self) -> &mut WmFiles<C> {
         self.server.export_mut()
     }
 
     fn turn(&mut self, timeout: Duration) -> Result<(), String> {
+        if self.stopped.load(Ordering::SeqCst) {
+            self.server.export_mut().revoke();
+            return Err("WM file stopped".into());
+        }
         // Staging expiry is another wake deadline, not progress-based renewal.
         let timeout = self.server.export_mut().next_wait(timeout);
         if !self.server.turn(Some(timeout)).map_err(|e| e.to_string())?
@@ -147,17 +174,28 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         kind: WmFileKind,
         encode: impl Fn(WmFileHeader) -> Result<Vec<u8>, Errno>,
     ) -> Result<(), String> {
-        let deadline = Instant::now() + SEND_DEADLINE;
+        self.send_encoded_before(kind, Instant::now() + SEND_DEADLINE, encode)
+    }
+
+    fn send_encoded_before(
+        &mut self,
+        kind: WmFileKind,
+        deadline: Instant,
+        encode: impl Fn(WmFileHeader) -> Result<Vec<u8>, Errno>,
+    ) -> Result<(), String> {
         loop {
-            if Instant::now() >= deadline {
-                return Err("WM file send deadline expired".into());
-            }
-            match self.server.export_mut().append_encoded_event(kind, &encode) {
+            let stopped = &self.stopped;
+            match self
+                .server
+                .export_mut()
+                .append_encoded_event_checked(kind, &encode, stopped, deadline)
+            {
                 Ok(_) => {
                     self.server.wake().wake();
                     return Ok(());
                 }
                 Err(Errno::EAGAIN) => {}
+                Err(Errno(110)) => return Err("WM file send deadline expired".into()),
                 Err(error) => return Err(format!("WM file send: {error:?}")),
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -166,6 +204,29 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
             }
             // One reactor thread owns all export mutation; no lock spans this wait.
             self.turn(remaining)?;
+        }
+    }
+
+    fn send_cycle(
+        &mut self,
+        snapshot: &WmFileSnapshot,
+        cycle: &WmFileCycle,
+        deadline: Instant,
+    ) -> Result<(), String> {
+        loop {
+            match self
+                .server
+                .export_mut()
+                .publish_cycle(snapshot, cycle, &self.stopped, deadline)
+            {
+                Ok(_) => {
+                    self.server.wake().wake();
+                    return Ok(());
+                }
+                Err(Errno::EAGAIN) => {}
+                Err(error) => return Err(format!("WM file cycle: {error:?}")),
+            }
+            self.turn(deadline.saturating_duration_since(Instant::now()))?;
         }
     }
 }

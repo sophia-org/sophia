@@ -21,6 +21,24 @@ pub(super) struct FileStartup {
     limits: WmFileLimits,
 }
 impl FileStartup {
+    pub(super) fn epoch(&self) -> u64 {
+        self.epoch
+    }
+    pub(super) fn reactor(&self) -> Result<&NinePReactor<TypedFileCodec>, String> {
+        self.reactor
+            .as_ref()
+            .ok_or_else(|| "WM file connection closed".into())
+    }
+    pub(super) fn reactor_mut(&mut self) -> Result<&mut NinePReactor<TypedFileCodec>, String> {
+        self.reactor
+            .as_mut()
+            .ok_or_else(|| "WM file connection closed".into())
+    }
+    pub(super) fn close(&mut self) {
+        if let Some(mut reactor) = self.reactor.take() {
+            reactor.owner_mut().revoke();
+        }
+    }
     pub(super) fn adopt(
         stream: UnixStream,
         epoch: u64,
@@ -46,9 +64,7 @@ impl FileStartup {
         let result = self.admit_inner(admission, profile);
         if result.is_err() {
             // Drop the adopted socket as well as revoking all retained fids.
-            if let Some(mut reactor) = self.reactor.take() {
-                reactor.owner_mut().revoke();
-            }
+            self.close();
         }
         result
     }
@@ -177,4 +193,4 @@ impl PolicyProfileHandoffIo for FileProfileIo<'_> {
 }
 
 #[path = "../../../../tests/support/policy_file_startup.rs"]
-mod tests;
+pub(super) mod tests;

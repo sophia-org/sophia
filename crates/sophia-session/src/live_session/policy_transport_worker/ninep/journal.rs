@@ -7,6 +7,9 @@ struct Record {
     bytes: Vec<u8>,
 }
 
+#[path = "../../../../tests/support/policy_file_journal_reservation.rs"]
+pub(super) mod reservation_tests;
+
 pub(super) struct Journal {
     epoch: u64,
     records: VecDeque<Record>,
@@ -17,11 +20,34 @@ pub(super) struct Journal {
     acknowledged: u64,
 }
 
+/// Local reservation only. The mutable borrow forbids another journal change
+/// before commit; dropping it publishes nothing and spends no identity.
+pub(super) struct PreparedEvent<'a> {
+    journal: &'a mut Journal,
+    bytes: Vec<u8>,
+    next: u64,
+    tail: u64,
+}
+impl PreparedEvent<'_> {
+    pub(super) fn commit(self) -> u64 {
+        let sequence = self.journal.next;
+        self.journal.bytes += self.bytes.len();
+        self.journal.records.push_back(Record {
+            sequence,
+            start: self.journal.tail,
+            bytes: self.bytes,
+        });
+        self.journal.next = self.next;
+        self.journal.tail = self.tail;
+        sequence
+    }
+}
+
 impl Journal {
     pub(super) fn new(epoch: u64) -> Self {
         Self {
             epoch,
-            records: VecDeque::new(),
+            records: VecDeque::with_capacity(usize::from(WM_FILE_MAX_JOURNAL_RECORDS)),
             bytes: 0,
             tail: 0,
             floor: 0,
@@ -58,11 +84,11 @@ impl Journal {
         self.commit(bytes)
     }
 
-    pub(super) fn append_encoded(
+    pub(super) fn prepare_encoded(
         &mut self,
         kind: WmFileKind,
         encode: impl FnOnce(WmFileHeader) -> Result<Vec<u8>, Errno>,
-    ) -> Result<u64, Errno> {
+    ) -> Result<PreparedEvent<'_>, Errno> {
         if wm_file_class(kind) != WmFileClass::Event {
             return Err(Errno::EINVAL);
         }
@@ -81,10 +107,14 @@ impl Journal {
         if record.header != header {
             return Err(Errno::EINVAL);
         }
-        self.commit(bytes)
+        self.prepare(bytes)
     }
 
     fn commit(&mut self, bytes: Vec<u8>) -> Result<u64, Errno> {
+        Ok(self.prepare(bytes)?.commit())
+    }
+
+    fn prepare(&mut self, bytes: Vec<u8>) -> Result<PreparedEvent<'_>, Errno> {
         let size = bytes.len();
         if size > WM_FILE_MAX_BYTES {
             return Err(Errno::EINVAL);
@@ -96,16 +126,12 @@ impl Journal {
         }
         let next = self.next.checked_add(1).ok_or(Errno::ENOSPC)?;
         let tail = self.tail.checked_add(size as u64).ok_or(Errno::ENOSPC)?;
-        let sequence = self.next;
-        self.records.push_back(Record {
-            sequence,
-            start: self.tail,
+        Ok(PreparedEvent {
+            journal: self,
             bytes,
-        });
-        self.next = next;
-        self.tail = tail;
-        self.bytes += size;
-        Ok(sequence)
+            next,
+            tail,
+        })
     }
 
     pub(super) fn read(&self, offset: u64, count: u32) -> Result<ReadOutcome, Errno> {

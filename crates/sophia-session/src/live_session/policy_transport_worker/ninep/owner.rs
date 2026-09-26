@@ -1,6 +1,9 @@
 use super::*;
 use sophia_9p::connection::ConnectionId;
 
+#[path = "../../../../tests/support/policy_file_atomic_cycle.rs"]
+mod atomic_tests;
+
 const API: &[u8] = b"sophia-wm-files version=1 output_transport=current_ipc\n";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -185,15 +188,84 @@ impl<C: PolicyFileCodec> WmFiles<C> {
         }
         self.journal.append(kind, body)
     }
-    pub(super) fn append_encoded_event(
+    pub(super) fn append_encoded_event_checked(
         &mut self,
         kind: WmFileKind,
         encode: impl FnOnce(WmFileHeader) -> Result<Vec<u8>, Errno>,
+        stopped: &AtomicBool,
+        deadline: Instant,
     ) -> Result<u64, Errno> {
-        if self.revoked {
-            return Err(Errno::ESTALE);
+        let result = (|| {
+            if self.revoked {
+                return Err(Errno::ESTALE);
+            }
+            check_publication(stopped, deadline)?;
+            let prepared = self.journal.prepare_encoded(kind, encode)?;
+            check_publication(stopped, deadline)?;
+            Ok(prepared.commit())
+        })();
+        if stopped.load(Ordering::SeqCst) {
+            self.revoke();
         }
-        self.journal.append_encoded(kind, encode)
+        result
+    }
+
+    /// The only composite publication. Qid allocation is the last fallible
+    /// operation; no core turn intervenes before both publications commit.
+    pub(super) fn publish_cycle(
+        &mut self,
+        snapshot: &WmFileSnapshot,
+        cycle: &WmFileCycle,
+        stopped: &AtomicBool,
+        deadline: Instant,
+    ) -> Result<u64, Errno> {
+        let result = (|| {
+            if self.revoked {
+                return Err(Errno::ESTALE);
+            }
+            check_publication(stopped, deadline)?;
+            let selected = self.selected_capabilities.ok_or(Errno::EACCES)?;
+            if cycle.request.connection_epoch != self.epoch {
+                return Err(Errno::ESTALE);
+            }
+            if snapshot.transaction != cycle.snapshot_transaction
+                || snapshot.snapshot.scene.generation != cycle.request.scene_generation
+            {
+                return Err(Errno::EINVAL);
+            }
+            // Establish event credit before allocating the fresh snapshot byte
+            // buffer. This local borrow cannot cross a retry or reactor turn.
+            let prepared = self.journal.prepare_encoded(WmFileKind::Cycle, |header| {
+                encode_wm_file_cycle(header, cycle, selected)
+                    .map_err(super::typed_codec::codec_error)
+            })?;
+            let bytes = encode_wm_file_snapshot(
+                WmFileHeader {
+                    kind: WmFileKind::Snapshot,
+                    connection_epoch: self.epoch,
+                    submission_id: 0,
+                    sequence: 0,
+                },
+                snapshot,
+                selected,
+            )
+            .map_err(super::typed_codec::codec_error)?;
+            // Allocate storage before the Qid is spent. The zero is private to
+            // construction and can never be observed through an opened handle.
+            let mut next_snapshot = Arc::new(Snapshot { qid: 0, bytes });
+            check_publication(stopped, deadline)?;
+            let qid = self.qids.allocate(1)?;
+            Arc::get_mut(&mut next_snapshot)
+                .expect("unpublished unique snapshot")
+                .qid = qid;
+            self.snapshot = Some(next_snapshot);
+            prepared.commit();
+            Ok(qid)
+        })();
+        if stopped.load(Ordering::SeqCst) {
+            self.revoke();
+        }
+        result
     }
     pub(super) fn expire(&mut self) {
         if self

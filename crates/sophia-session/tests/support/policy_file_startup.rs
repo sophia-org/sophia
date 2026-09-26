@@ -14,9 +14,9 @@ use std::sync::mpsc::sync_channel;
 
 #[allow(dead_code)]
 #[path = "../../../sophia-protocol/tests/support/policy_record_fixture.rs"]
-mod array_fixture;
+pub(in super::super) mod array_fixture;
 
-fn admission() -> PolicyAdmissionPermit {
+pub(in super::super) fn admission() -> PolicyAdmissionPermit {
     struct Capture(Option<PolicyAdmissionPermit>);
     impl PolicyAdapter for Capture {
         fn admit(
@@ -56,14 +56,28 @@ fn admission() -> PolicyAdmissionPermit {
     capture.0.unwrap()
 }
 
-struct Peer {
+pub(in super::super) struct Peer {
     stream: UnixStream,
     tag: u16,
     offset: u64,
     queued: VecDeque<Vec<u8>>,
 }
 impl Peer {
-    fn rpc(&mut self, kind: u8, body: &[u8]) -> io::Result<(u8, Vec<u8>)> {
+    pub(in super::super) fn from_stream(stream: UnixStream) -> Self {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        Self {
+            stream,
+            tag: 0,
+            offset: 0,
+            queued: VecDeque::new(),
+        }
+    }
+    pub(in super::super) fn rpc(&mut self, kind: u8, body: &[u8]) -> io::Result<(u8, Vec<u8>)> {
         let tag = if kind == 100 {
             u16::MAX
         } else {
@@ -104,7 +118,7 @@ impl Peer {
         self.open(3, b"submit", 1);
         self.open(4, b"ack", 1);
     }
-    fn open(&mut self, fid: u32, name: &[u8], mode: u32) {
+    pub(in super::super) fn open(&mut self, fid: u32, name: &[u8], mode: u32) {
         let walk = [
             1u32.to_le_bytes().as_slice(),
             &fid.to_le_bytes(),
@@ -121,7 +135,7 @@ impl Peer {
             13
         );
     }
-    fn write(&mut self, fid: u32, bytes: &[u8]) -> io::Result<(u8, Vec<u8>)> {
+    pub(in super::super) fn write(&mut self, fid: u32, bytes: &[u8]) -> io::Result<(u8, Vec<u8>)> {
         self.rpc(
             118,
             &[
@@ -133,7 +147,7 @@ impl Peer {
             .concat(),
         )
     }
-    fn submit(&mut self, bytes: &[u8]) -> io::Result<(u8, Vec<u8>)> {
+    pub(in super::super) fn submit(&mut self, bytes: &[u8]) -> io::Result<(u8, Vec<u8>)> {
         let record = decode_wm_file_record(bytes, WmFileClass::Candidate).unwrap();
         self.open(5, b"transaction", 2);
         assert_eq!(self.write(5, bytes)?.0, 119);
@@ -141,10 +155,10 @@ impl Peer {
             super::super::custody_tests::submit(9, record.header.submission_id, bytes.len());
         self.write(3, &submit)
     }
-    fn clear_transaction(&mut self) {
+    pub(in super::super) fn clear_transaction(&mut self) {
         assert_eq!(self.rpc(120, &5u32.to_le_bytes()).unwrap().0, 121);
     }
-    fn next_event(&mut self) -> Vec<u8> {
+    pub(in super::super) fn next_event(&mut self) -> Vec<u8> {
         if let Some(bytes) = self.queued.pop_front() {
             return bytes;
         }
@@ -171,7 +185,7 @@ impl Peer {
         }
         self.queued.pop_front().expect("nonempty read")
     }
-    fn ack(&mut self, bytes: &[u8]) {
+    pub(in super::super) fn ack(&mut self, bytes: &[u8]) {
         let record = decode_wm_file_record(bytes, WmFileClass::Event).unwrap();
         assert_eq!(
             self.write(
@@ -184,7 +198,7 @@ impl Peer {
         );
     }
 }
-fn header(kind: WmFileKind, id: u64) -> WmFileHeader {
+pub(in super::super) fn header(kind: WmFileKind, id: u64) -> WmFileHeader {
     WmFileHeader {
         kind,
         connection_epoch: 9,
@@ -219,7 +233,7 @@ fn pair(profile: bool, ceiling: u64) -> (FileStartup, Peer) {
         },
     )
 }
-fn profile() -> PolicyProfileAdmission {
+pub(in super::super) fn profile() -> PolicyProfileAdmission {
     PolicyProfileAdmission {
         connection_epoch: 9,
         generation: 3,
@@ -228,7 +242,7 @@ fn profile() -> PolicyProfileAdmission {
         activate_transaction: TransactionId::from_raw(41),
     }
 }
-fn negotiate(peer: &mut Peer, caps: u64) {
+pub(in super::super) fn negotiate(peer: &mut Peer, caps: u64) {
     peer.setup();
     let offer = encode_wm_file_negotiate(
         header(WmFileKind::Negotiate, 1),
