@@ -156,7 +156,12 @@ fn rejected_profile_admission_fails_before_negotiated() {
         panic!("rejected profile admission must fail before negotiation")
     };
     assert!(error.contains("RejectedIdentity"));
-    assert!(matches!(worker.try_event(), Err(())));
+    // The worker still disconnects its transport after reporting Failed, so
+    // the channel closes a moment later: no further event, then termination.
+    assert!(matches!(
+        worker.event_timeout(Duration::from_secs(2)),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+    ));
     client.join().unwrap();
 }
 
