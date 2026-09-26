@@ -638,6 +638,35 @@ settlement through real Hagia's file loop. They do not execute HeadlessEngine
 surface prepare/apply, output-role bootstrap, native completion or presentation
 receipts. Existing stuck-kernel cleanup and path-hash execution limits remain.
 
+### F1 correction: coherent historical admission and managed rollback
+
+Independent review found that checkpoint `7236b478` called the Engine admission
+table's `mark_managed` without completing Session's mirrored transition. Its
+planning/unmanaged sets and layout-epoch admission state were inconsistent.
+The retained earlier logs establish real Hagia outcome/continuation and the P1
+negative, but their timeout took admission fencing; they do not establish
+ordinary managed resize rollback. Source and the original durable bundle remain
+preserved, with that limit superseding the broader wording above.
+
+The separate test-only correction supplies a historical candidate (transaction
+700, surface 3/1, CPU buffer 700), arms retirement through the existing admission
+owner and calls production `complete_admission_retirement`. It does not claim
+the original native completion was observed. The fixture now asserts Managed
+in both admission tables, absence from planning/unmanaged sets, and absence of
+pending target/recovery extent before each case. After managed expiry it asserts
+the same invariants, an outstanding rollback and exactly one actual queued
+ConfigureSurface routed to the retained surface/client and old geometry. No
+pending flags or returned proposal are edited to obtain these results.
+
+The corrected A/B controls pass 3/0. The P1 compiled negative and restored
+controls are repeated against this coherent baseline. Evidence remains separate
+under `.artifacts/t249-hagia-f1`; the initial fixture failures remain in the
+earlier bundle. A direct `rustfmt --check --edition 2024` on the two touched
+support files failed, despite the earlier workspace format pass: cargo fmt did
+not visit those included test mounts. The direct failure is retained; only
+`policy_hagia_layout.rs` and `policy_hagia_session.rs` were directly formatted,
+and the direct check now passes. No existing production include was formatted.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

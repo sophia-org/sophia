@@ -22,7 +22,10 @@ fn binary_hash(path: &Path) -> String {
 #[ignore = "requires exact frozen normal Hagia and explicit fresh evidence inputs"]
 fn protected_normal_hagia_admits_profile_configuration_and_catalog_over_files() {
     with_normal_hagia("protected-startup", |_, _, _, _, checkpoint, _| {
-        assert!(!checkpoint.exists(), "startup must not write a layout checkpoint");
+        assert!(
+            !checkpoint.exists(),
+            "startup must not write a layout checkpoint"
+        );
     });
 }
 
@@ -196,7 +199,14 @@ fn with_normal_hagia(
         wm.settle_desktop_reload(&mut source.config, true).unwrap();
         assert_eq!(wm.public.as_ref().unwrap().selected_capabilities, selected);
     }
-    exercise(&mut wm, &mut layout, &mut source, output, &checkpoint, &mut identity);
+    exercise(
+        &mut wm,
+        &mut layout,
+        &mut source,
+        output,
+        &checkpoint,
+        &mut identity,
+    );
     let stopped = Instant::now();
     wm.public.as_mut().unwrap().worker.take(); // Existing worker Drop/Stop owner.
     wm.supervisor.request_termination().unwrap();
@@ -220,7 +230,10 @@ fn with_normal_hagia(
     .unwrap();
     assert_eq!(binary_hash(&binary), expected);
     if case == "protected-startup" {
-        assert!(!checkpoint.exists(), "startup alone must not produce a layout checkpoint");
+        assert!(
+            !checkpoint.exists(),
+            "startup alone must not produce a layout checkpoint"
+        );
     }
     std::fs::write(
         evidence.join("result.txt"),
