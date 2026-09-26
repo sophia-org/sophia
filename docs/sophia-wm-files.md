@@ -174,14 +174,34 @@ translation groups, output actions, generic presentation and exact presented
 action identities. Large arrays are sections of one complete object; 9P
 fragments file bytes and never defines array or commit boundaries.
 
-The bounded envelope checkpoint is specified in
+The bounded envelope and complete-array bodies are specified in
 [`sophia-wm-files-v1.kdl`](../protocol/sophia-wm-files-v1.kdl). It includes the
 kind table, 32-byte header, 16-byte section header, 24-byte submit and 16-byte
 ack. Sections have unique ascending nonzero kinds, nonzero row count and byte
 length, and zero reserved fields. Context-specific row sizes and aggregate
 bounds remain in the shared neutral record codec, which checks them before
-row allocation. The envelope exposes only borrowed raw bodies and sections;
-this is not semantic validation or a usable WM file export.
+row allocation. The envelope exposes borrowed raw bodies and sections. The
+typed array entry points use the shared neutral codecs for Snapshot,
+Projection and Configuration; they do not construct old IPC transfer frames.
+
+Their body prefixes are respectively 32, 40 and 48 bytes after the common
+header, followed by complete sections. The schema pins every field offset.
+Snapshot includes the domain transaction, scene generation and active output.
+Projection includes the domain transaction, request, base generation and
+active output. Configuration includes the domain transaction, policy generation
+and chrome styles. Chrome colours use `0x00RRGGBB`; the legacy scalar frame's
+`0xff` alpha byte is not part of this file representation. Snapshot and
+Projection require an output section, and a snapshot's active output must
+occur in it. Session still validates complete output coverage and scene truth.
+
+The file path refuses unnegotiated sections even where the legacy path did not
+enforce those capability bits. Snapshot encoding omits unselected extensions;
+WM candidates must omit them themselves, or submission refuses. Hagia must
+honour the selected set, not merely the capabilities it offered. Capability
+requirements within individual rows and final authority checks remain with
+Session. A transport Submitted event names the submission ID; policy settlement
+names the original domain transaction/request identities. Neither substitutes
+for the other.
 
 Staging belongs to the per-attach file owner. It enforces the 1 MiB total and
 requires submit length to equal the actual complete staged length. If the
@@ -190,9 +210,9 @@ per connection, this would permit at most sixteen MiB of candidate staging;
 the WM endpoint instead admits only its one supervised writer. Snapshot/event
 retention and server output queues have their separate stated bounds.
 
-The next codec checkpoint fixes each body layout and publishes cross-language
-valid/malformed binary corpora. Existing record-array layouts may be extracted into a neutral
-codec owner shared by both transports. The new adapter must not build old IPC
+The remaining codec checkpoint fixes scalar body layouts and publishes
+cross-language valid/malformed binary corpora. Record-array layouts already
+have a neutral codec owner shared by both transports. The new adapter must not build old IPC
 frames or feed files through the old transport. Hagia implements the published
 layouts independently in Nim; Sophia source is not a Hagia dependency.
 

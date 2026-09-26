@@ -126,8 +126,13 @@ joined protocol suite passes 200 tests; strict protocol all-target Clippy,
 formatting and a freshly built local xtask layout pass. Four compiled envelope
 mutations fail class, ordering and reserved-field controls; the restored suite
 passes. Evidence is under `sophia-overview/.artifacts/t249-envelope`.
-Record bodies, independent Nim file corpus and production Session export are
-still incomplete. Existing WM semantics and output transport remain current IPC.
+The [complete-array checkpoint](../investigations/ir7e7zcv-complete-wm-file-arrays-share-neutral-validation-and-keep-submission-identities-separate.md)
+adds typed Snapshot, Projection and Configuration bodies with shared neutral
+validation, exact identities and selected capability refusal. Nine focused
+controls and three compiled negative controls cover the file boundary; the
+joined protocol suite passes 210 tests. Scalar bodies, independent Nim file
+corpus and production Session export are still incomplete. Existing WM
+semantics and output transport remain current IPC.
 
 ## Connections
 

@@ -1,5 +1,5 @@
-// Envelope checkpoint only. Record bodies and role integration remain under
-// t249/h006 review; this schema does not define a usable WM transport yet.
+// Envelope and complete-array bodies. Remaining scalar bodies and role
+// integration remain under t249/h006 review; this is not a usable WM transport.
 protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=1048576 max-sections=32 {
     header size=32 {
         field "total_bytes" type="u32" offset=0
@@ -33,6 +33,37 @@ protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=10
     candidate "Dirty" kind=261
     candidate "Projection" kind=262
     candidate "SessionOperation" kind=263
+
+    // Prefix offsets start after the common header. Domain transaction ids
+    // do not alias the candidate submission id. Sections immediately follow.
+    body-prefix "Snapshot" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "scene_generation" type="u64" offset=8 nonzero=true
+        field "active_output" type="u64" offset=16 nonzero=true
+        field "section_count" type="u16" offset=24 max=32
+        field "reserved" type="bytes" offset=26 size=6 value=0
+    }
+    body-prefix "Projection" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "request_id" type="u64" offset=8 nonzero=true
+        field "base_generation" type="u64" offset=16 nonzero=true
+        field "active_output" type="u64" offset=24 nonzero=true
+        field "section_count" type="u16" offset=32 max=32
+        field "reserved" type="bytes" offset=34 size=6 value=0
+    }
+    body-prefix "Configuration" size=48 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "generation" type="u64" offset=8 nonzero=true
+        field "style_bits" type="u16" offset=16 mask=3
+        field "section_count" type="u16" offset=18 max=32
+        field "focus_width" type="u32" offset=20
+        // Colours are 0x00RRGGBB, unlike the legacy scalar frame's alpha byte.
+        field "focus_rgb" type="u32" offset=24 max=16777215
+        field "frame_width" type="u32" offset=28
+        field "frame_focused_rgb" type="u32" offset=32 max=16777215
+        field "frame_unfocused_rgb" type="u32" offset=36 max=16777215
+        field "reserved" type="u64" offset=40 value=0
+    }
 
     // Complete row sections, strictly ascending unique nonzero kinds. No
     // empty sections, transfer ordinals, chunk bounds or old IPC envelopes.

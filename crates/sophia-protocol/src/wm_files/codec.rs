@@ -8,15 +8,15 @@ fn field<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], WmFileC
         .ok_or(WmFileCodecError::Length)
 }
 
-fn u16_at(bytes: &[u8], offset: usize) -> Result<u16, WmFileCodecError> {
+pub(super) fn u16_at(bytes: &[u8], offset: usize) -> Result<u16, WmFileCodecError> {
     Ok(u16::from_le_bytes(field(bytes, offset)?))
 }
 
-fn u32_at(bytes: &[u8], offset: usize) -> Result<u32, WmFileCodecError> {
+pub(super) fn u32_at(bytes: &[u8], offset: usize) -> Result<u32, WmFileCodecError> {
     Ok(u32::from_le_bytes(field(bytes, offset)?))
 }
 
-fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, WmFileCodecError> {
+pub(super) fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, WmFileCodecError> {
     Ok(u64::from_le_bytes(field(bytes, offset)?))
 }
 
@@ -70,7 +70,7 @@ pub fn wm_file_class(kind: WmFileKind) -> WmFileClass {
     }
 }
 
-fn validate_header(header: WmFileHeader) -> Result<(), WmFileCodecError> {
+pub(super) fn validate_header(header: WmFileHeader) -> Result<(), WmFileCodecError> {
     let valid = header.connection_epoch != 0
         && match wm_file_class(header.kind) {
             WmFileClass::Object => header.submission_id == 0 && header.sequence == 0,

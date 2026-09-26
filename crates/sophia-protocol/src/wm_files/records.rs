@@ -85,3 +85,27 @@ pub enum WmFileCodecError {
     Reserved,
     Sections,
 }
+
+pub const WM_FILE_SNAPSHOT_PREFIX_BYTES: usize = 32;
+pub const WM_FILE_PROJECTION_PREFIX_BYTES: usize = 40;
+pub const WM_FILE_CONFIGURATION_PREFIX_BYTES: usize = 48;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmFileSnapshot {
+    pub transaction: crate::TransactionId,
+    pub snapshot: crate::PolicyDecodedSnapshot,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WmFileConfiguration {
+    pub transaction: crate::TransactionId,
+    pub configuration: crate::PolicyConfiguration,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WmFilePayloadError {
+    Envelope(WmFileCodecError),
+    Records(crate::IpcCodecError),
+    Identity,
+    Capabilities { missing: u64 },
+}
