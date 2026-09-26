@@ -540,6 +540,50 @@ ignored. Strict native-session all-target Session Clippy, layout, format and
 diff checks pass. Production files remain byte-identical to the parent
 selection checkpoint; only external test support and this note change.
 
+## Protected normal Hagia startup (Phase A)
+
+The next test-only checkpoint launches the frozen normal Hagia executable from
+source `7455c3edd713770ed43630d0989073d2f14ba623`, not the scripted socket peer.
+The required path is
+`/home/niltempus/dev/hagia-overview-fix/.artifacts/h006-endpoint/hagia-7455c3e`,
+SHA256 `0419e09e224676c4d925438f80b22df9532c1653ec339507637edbe01ea52f5f`.
+The explicitly ignored fixture requires that path, hash and a fresh evidence
+parent through `SOPHIA_HAGIA_FILE_BIN`, `SOPHIA_HAGIA_FILE_SHA256` and
+`SOPHIA_HAGIA_FILE_EVIDENCE`. Selecting the test without inputs fails, rather
+than reporting a skipped prerequisite as acceptance.
+
+The fixture uses the protected production factory and actual staged profile
+activation. `poll_public_request` receives real configuration, while
+`settle_desktop_reload` performs the existing idle-input catalog publication.
+Both configured and transport-ready must become true within the bounded wait;
+the fixture does not set these fields or send scripted profile completions.
+It verifies the independently retained profile key, epoch 1, catalog generation
+1, exact explicit environment set and required profile flag. The native mode
+is false, output bootstrap is absent, no overview actions are admitted, and
+selected capabilities remain within the immutable supplied ceiling across
+subsequent polls. No Cycle is issued and no layout checkpoint is written.
+
+The first run passed 1/0 in 0.46 seconds, admitting 175 catalog actions and
+selected capabilities 253951 under ceiling 262143. Its supervisor/peer PIDs
+were 299/300 within the isolated test environment. That identity record is
+the actual supervisor's protected-launch evidence, not an independent namespace
+inventory. Binary path hashes before and after match; the hash-then-exec
+window remains, so this is not descriptor-pinned execution.
+
+Existing worker Stop and supervisor request/poll termination own cleanup. The
+successful run reaped the child in the measured five milliseconds; Hagia
+reported connection reset after fixture shutdown. This is not a claim of exit
+code zero or a hard total reap bound under a stuck kernel. The fixture's
+normal-path wait is bounded, while the existing supervisor Drop limitation
+remains unchanged. No production repair was needed.
+
+Evidence is in `.artifacts/t249-hagia-startup`, including the selected
+missing-input refusal, source/binary identities and startup output. Strict
+native-session all-target Session Clippy, layout, format and diff checks pass.
+This proves real protected Hagia admission/configuration/catalog, not Session
+layout settlement, surface-transaction prepare/apply, native completion, or
+presentation receipts. Phase B remains separate.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
