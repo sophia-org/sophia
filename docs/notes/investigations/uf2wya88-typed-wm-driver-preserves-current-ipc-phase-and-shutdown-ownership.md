@@ -448,6 +448,60 @@ nice 19, two jobs and the exclusive disk target. The compile slot is released
 after all processes are collected; production endpoint selection remains a
 separate reviewed checkpoint.
 
+## Explicit production transport selection
+
+The next checkpoint adds `--wm-transport=current-ipc|9p2000.L` to the existing
+public WM Session path. Current IPC remains the default. This choice does not
+add an interface or reducer, and attach cannot change it. A private factory
+binds and starts the selected transport at initial launch, automatic replacement
+and controlled restart. File transport requires the supervisor's protected
+launch evidence; the existing IPC authorization and profile constructor order
+remain intact. File diagnostics name `sophia_wm_fs_v1`.
+
+The launch specification includes only the selected `SOPHIA_WM_SOCKET` or
+`SOPHIA_WM_9P_SOCKET` key. The existing protected launch's `--clearenv` excludes
+an inherited counterpart. Profile/checkpoint grants and the separate output
+socket remain unchanged. The native-retirement capability ceiling applies
+before file Limits are exposed. There is no reconnect fallback or default
+change. One Qid allocator moves from prepared launch into the live Session and
+is cloned into each worker; replacing a socket or connection epoch does not
+replace that allocator.
+
+The new external control invokes the actual prepare/activate startup, automatic
+restart and control restart methods. A genuinely supervised protected Rust
+child negotiates and completes a scripted profile exchange. It checks each
+command against a parent-pinned expected generation/digest written before
+launch, and validates the separately staged profile fragment using that key.
+It retains the connection until the parent replaces it. Epochs 1, 2 and 3 each
+reach this exchange and expose increasing Limits Qids. No Hagia semantics,
+configuration promotion, projection settlement or native completion is claimed.
+The fixture explicitly has `output_service=None`; separate existing output
+service controls cover the pause/ReplaceSupervisedPid barrier, not a combined
+native WM/output restart. Profile rollback coverage checks the existing reload
+owner's retained selection and exact launch specification, not a protected
+replacement process during profile rollback.
+
+Evidence is retained under `.artifacts/t249-selection`. The first entry fixture
+closed after Limits and therefore failed the real initial profile-admission
+wait. After adding the exchange, a non-atomic marker write exposed an empty
+file to the parent; atomic rename fixes that fixture race. Strict Clippy then
+required boxing the larger IPC variant of the private factory enum. All three
+failed logs remain. A compiled negative resetting Qids in every new worker
+fails the actual restart control at `second > first`; the restored source is
+rerun. These are headless, device-hidden controls on the exclusive disk target,
+with nice 19 and two jobs. Broad integration gates and protected independent
+Hagia pairing remain later checkpoints owned by the director.
+
+Final focused results are 54 worker/selection controls passed, none failed and
+four explicit fixtures ignored; configuration controls 49/0; existing output
+service controls 7/0. The ignored entries are two separately pinned Nim supplied
+peers and two protected Rust child entrypoints invoked by their parent controls.
+Strict native-session all-target Clippy for Session and CLI, worktree layout,
+format and diff checks pass. Layout first rejected test-only helper placement
+and a configuration test file crossing its limit; helpers now reside in
+external test support and transport configuration controls have their own
+module. The failed layout log is retained without a debt-ledger adjustment.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

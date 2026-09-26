@@ -24,6 +24,32 @@ use journal::Journal;
 pub(super) use owner::WmFiles;
 use staging::Staging;
 
+#[path = "../../../tests/support/policy_selection_peer.rs"]
+pub(in crate::live_session) mod selection_peer;
+
+impl super::PolicyTransportWorker {
+    pub(in crate::live_session) fn new_files(
+        endpoint: sophia_runtime::PolicyRoleEndpoint,
+        supervisor: &sophia_runtime::ProcessSupervisor,
+        epoch: u64,
+        limits: WmFileLimits,
+        qids: super::PolicyFilesystemQids,
+        identity: Option<sophia_protocol::PolicyProfileIdentity>,
+    ) -> Result<Self, String> {
+        let adapter = runtime_adapter::NinePPolicyAdapter::pending(
+            endpoint, supervisor, epoch, limits, qids.0,
+        )?;
+        let profile = identity.map(|identity| super::adapter::PolicyProfileAdmission {
+            connection_epoch: identity.connection_epoch,
+            generation: identity.profile_generation,
+            digest: identity.profile_digest,
+            prepare_transaction: sophia_protocol::TransactionId::from_raw(1),
+            activate_transaction: sophia_protocol::TransactionId::from_raw(2),
+        });
+        Self::spawn(adapter, epoch, profile).map_err(|e| e.to_string())
+    }
+}
+
 const EBUSY: Errno = Errno(16);
 const EALREADY: Errno = Errno(114);
 const ASSEMBLY_DEADLINE: Duration = Duration::from_millis(WM_FILE_ASSEMBLY_TIMEOUT_MILLIS as u64);

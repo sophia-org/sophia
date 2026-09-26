@@ -56,6 +56,117 @@ pub(in super::super) fn admission() -> PolicyAdmissionPermit {
     capture.0.unwrap()
 }
 
+pub(in super::super) fn selected_transport_startup(
+    stream: UnixStream,
+) -> (WmFileLimits, u64, u64, UnixStream) {
+    let mut peer = Peer::from_stream(stream);
+    peer.setup();
+    let walk = [
+        1u32.to_le_bytes().as_slice(),
+        &6u32.to_le_bytes(),
+        &1u16.to_le_bytes(),
+        &6u16.to_le_bytes(),
+        b"limits",
+    ]
+    .concat();
+    assert_eq!(peer.rpc(110, &walk).unwrap().0, 111);
+    let opened = peer
+        .rpc(12, &[6u32.to_le_bytes(), 0u32.to_le_bytes()].concat())
+        .unwrap();
+    assert_eq!(opened.0, 13);
+    let qid = u64::from_le_bytes(opened.1[5..13].try_into().unwrap());
+    let response = peer
+        .rpc(
+            116,
+            &[
+                6u32.to_le_bytes().as_slice(),
+                &0u64.to_le_bytes(),
+                &4096u32.to_le_bytes(),
+            ]
+            .concat(),
+        )
+        .unwrap();
+    assert_eq!(response.0, 117);
+    let size = u32::from_le_bytes(response.1[..4].try_into().unwrap()) as usize;
+    assert_eq!(size, response.1.len() - 4);
+    let record = decode_wm_file_record(&response.1[4..], WmFileClass::Object).unwrap();
+    let limits = decode_wm_file_limits(&response.1[4..]).unwrap();
+    let epoch = record.header.connection_epoch;
+    let caps = SOPHIA_WM_CAPABILITY_CONFIGURATION | SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION;
+    let candidate_header = |kind, submission_id| WmFileHeader {
+        kind,
+        submission_id,
+        connection_epoch: epoch,
+        sequence: 0,
+    };
+    let offer = encode_wm_file_negotiate(
+        candidate_header(WmFileKind::Negotiate, 1),
+        WmFileNegotiationOffer {
+            required_capabilities: caps,
+            optional_capabilities: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(peer.submit(&offer).unwrap().0, 119);
+    let submitted = peer.next_event();
+    assert_eq!(
+        decode_wm_file_submitted(&submitted).unwrap().submission_id,
+        1
+    );
+    peer.ack(&submitted);
+    peer.clear_transaction();
+    let negotiated = peer.next_event();
+    assert_eq!(decode_wm_file_negotiated(&negotiated).unwrap(), caps);
+    peer.ack(&negotiated);
+    // Independent parent fixture key, written before launch; never derive the
+    // expected profile from the server command under validation.
+    let checkpoint = std::path::PathBuf::from(std::env::var_os("HAGIA_POLICY_CHECKPOINT").unwrap());
+    let expected = std::fs::read(checkpoint.parent().unwrap().join("expected-profile")).unwrap();
+    assert_eq!(expected.len(), 40);
+    let expected_generation = u64::from_le_bytes(expected[..8].try_into().unwrap());
+    let expected_digest: [u8; 32] = expected[8..].try_into().unwrap();
+    let expected_identity =
+        PolicyProfileIdentity::new(epoch, expected_generation, expected_digest).unwrap();
+    for (id, kind, completion_kind) in [
+        (2, WmFileKind::ProfilePrepare, WmFileKind::ProfilePrepared),
+        (3, WmFileKind::ProfileActivate, WmFileKind::ProfileActive),
+    ] {
+        let event = peer.next_event();
+        let command = decode_wm_file_profile_command(&event, kind, caps).unwrap();
+        assert_eq!(command.identity, expected_identity);
+        let path = std::env::var_os("HAGIA_POLICY_CANDIDATE").unwrap();
+        sophia_config::load_desktop_authority_fragment(
+            std::path::Path::new(&path),
+            sophia_config::DesktopAuthority::Policy,
+            sophia_config::DesktopProfileActivationKey::new(
+                sophia_config::ConfigGeneration::from_raw(expected_generation),
+                sophia_config::ConfigDigest::new(expected_digest),
+            ),
+        )
+        .unwrap();
+        peer.ack(&event);
+        let completion = encode_wm_file_profile_completion(
+            candidate_header(completion_kind, id),
+            PolicyProfileCompletion {
+                transaction: command.transaction,
+                identity: command.identity,
+                outcome: PolicyProfileOutcome::Accepted,
+            },
+            caps,
+        )
+        .unwrap();
+        assert_eq!(peer.submit(&completion).unwrap().0, 119);
+        let submitted = peer.next_event();
+        assert_eq!(
+            decode_wm_file_submitted(&submitted).unwrap().submission_id,
+            id
+        );
+        peer.ack(&submitted);
+        peer.clear_transaction();
+    }
+    (limits, epoch, qid, peer.stream)
+}
+
 pub(in super::super) struct Peer {
     stream: UnixStream,
     tag: u16,
@@ -151,8 +262,11 @@ impl Peer {
         let record = decode_wm_file_record(bytes, WmFileClass::Candidate).unwrap();
         self.open(5, b"transaction", 2);
         assert_eq!(self.write(5, bytes)?.0, 119);
-        let submit =
-            super::super::custody_tests::submit(9, record.header.submission_id, bytes.len());
+        let submit = super::super::custody_tests::submit(
+            record.header.connection_epoch,
+            record.header.submission_id,
+            bytes.len(),
+        );
         self.write(3, &submit)
     }
     pub(in super::super) fn clear_transaction(&mut self) {
@@ -190,7 +304,11 @@ impl Peer {
         assert_eq!(
             self.write(
                 4,
-                &[9u64.to_le_bytes(), record.header.sequence.to_le_bytes()].concat()
+                &[
+                    record.header.connection_epoch.to_le_bytes(),
+                    record.header.sequence.to_le_bytes()
+                ]
+                .concat()
             )
             .unwrap()
             .0,

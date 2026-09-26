@@ -18,6 +18,23 @@ mod session_profile;
 mod wm_proof;
 use firefox_stage::FirefoxM8StageProof;
 use input_profile::PreparedInputProfile;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum WmTransportSelection {
+    #[default]
+    CurrentIpc,
+    NineP2000L,
+}
+impl WmTransportSelection {
+    const fn wire_name(self) -> &'static str {
+        match self { Self::CurrentIpc => "sophia_wm_v1", Self::NineP2000L => "sophia_wm_fs_v1" }
+    }
+    const fn socket_env(self) -> &'static str {
+        match self {
+            Self::CurrentIpc => sophia_runtime::SOPHIA_WM_SOCKET_ENV,
+            Self::NineP2000L => "SOPHIA_WM_9P_SOCKET",
+        }
+    }
+}
 use crate::desktop_output_publication::{
     output_topology_from_authority_at_generation, prepare_output_topology_publication,
 };
@@ -94,6 +111,7 @@ struct PersistentXtermSessionConfig {
     shell_gpu_mode: sophia_config::ShellGpuMode,
     shell_proof_restart_after_visible: Option<u32>,
     wm_interface: sophia_config::ExternalWmInterface,
+    wm_transport: WmTransportSelection,
     wm_public_fault_after: Option<PublicPolicyFaultPoint>,
     wm_public_restart_after_action: Option<WmActionId>,
     output_proof_rollback_after_apply: bool,

@@ -19,6 +19,9 @@ mod default_policy_catalog;
 #[path = "policy_presentation_lifecycle.rs"]
 mod policy_presentation_lifecycle;
 
+#[path = "policy_transport_selection.rs"]
+mod policy_transport_selection;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -39,6 +42,7 @@ impl ReloadFixture {
         activate_session_profile(&mut source.config);
         let config = &source.config;
         let PreparedPublicPolicyLaunch {
+            wm_filesystem_qids,
             profile_fragments,
             directory,
             policy_profile,
@@ -87,6 +91,8 @@ impl ReloadFixture {
             .into_iter()
             .collect::<BTreeMap<_, _>>();
         let public = LivePublicPolicyState {
+            wm_transport: config.wm_transport,
+            wm_filesystem_qids,
             output_policy_keys: Default::default(),
             control_generation: 1,
             control_catalog_serial: 1,

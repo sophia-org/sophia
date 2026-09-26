@@ -503,6 +503,16 @@ impl PersistentXtermSessionConfig {
         if wm_process.is_none() && arg_value(args, "--wm-interface").is_some() {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
+        let wm_transport = match arg_value(args, "--wm-transport").as_deref() {
+            None | Some("current-ipc") => WmTransportSelection::CurrentIpc,
+            Some("9p2000.L") => WmTransportSelection::NineP2000L,
+            Some(other) => return Err(format!("--wm-transport expects current-ipc or 9p2000.L, got {other:?}").into()),
+        };
+        if arg_value(args, "--wm-transport").is_some()
+            && (wm_process.is_none() || wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1)
+        {
+            return Err("--wm-transport requires --wm-process and the public policy interface".into());
+        }
         let independent_shell = !components.shell_components.is_empty();
         let component_bar = components.shell_components.iter()
             .any(|entry| entry.role == sophia_config::ShellComponentRole::Bar);
@@ -878,6 +888,7 @@ impl PersistentXtermSessionConfig {
             shell_gpu_mode,
             shell_proof_restart_after_visible,
             wm_interface,
+            wm_transport,
             wm_public_fault_after,
             wm_public_restart_after_action,
             output_proof_rollback_after_apply,

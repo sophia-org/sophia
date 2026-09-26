@@ -12,11 +12,21 @@ use sophia_protocol::{
 mod adapter;
 mod current_ipc;
 mod driver;
-// Supplied-stream custody checkpoint; launch selection remains on current IPC.
+// File transport remains explicitly selected by the Session owner.
 #[cfg_attr(not(test), allow(dead_code))]
-mod ninep;
+pub(super) mod ninep;
 use adapter::{PolicyAdapter, PolicyAdapterStop, PolicyProfileAdmission};
 use driver::run_policy_transport;
+
+/// Opaque logical filesystem identity custody; retained by Session across
+/// worker replacement, never reconstructed from an endpoint path or epoch.
+#[derive(Clone)]
+pub(super) struct PolicyFilesystemQids(ninep::WmQids);
+impl PolicyFilesystemQids {
+    pub(super) fn new() -> Self {
+        Self(ninep::WmQids::new())
+    }
+}
 
 const POLICY_TRANSPORT_CAPACITY: usize = 1;
 

@@ -235,8 +235,8 @@ impl LiveWmSession {
         {
             public.proof_restart_checkpoint_before = Some(before);
             crate::session_println!(
-                "sophia_live_wm schema=4 status=proof_restart_armed adapter=sophia_wm_v1 boundary=checkpoint_replace action={}",
-                action.raw(),
+                "sophia_live_wm schema=4 status=proof_restart_armed adapter={} boundary=checkpoint_replace action={}",
+                public.wm_transport.wire_name(), action.raw(),
             );
         }
         if outcome == sophia_protocol::PolicyProjectionOutcome::Committed {
