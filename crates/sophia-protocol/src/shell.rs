@@ -29,13 +29,5 @@ pub use native_launcher::*;
 
 /// A validation failure in the typed record model, independent of any codec.
 ///
-/// The wire codec maps this into its own error type at the boundary; nothing
-/// in this module needs to know that mapping exists.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidRecord(pub &'static str);
-
-impl From<InvalidRecord> for crate::IpcCodecError {
-    fn from(err: InvalidRecord) -> Self {
-        crate::IpcCodecError::InvalidRecord(err.0)
-    }
-}

@@ -3,6 +3,7 @@ mod broker_v1;
 mod control_v1;
 mod cursor;
 mod frame;
+mod neutral_errors;
 mod output_v1;
 mod policy_records;
 mod policy_scalars;

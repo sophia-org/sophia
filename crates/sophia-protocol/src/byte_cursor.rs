@@ -1,13 +1,6 @@
-//! The little-endian cursor and writer primitives shared by every wire codec
-//! in this crate: IPC frame headers, every `wm_*`/`policy_*`/`control`/
-//! `output`/`broker` family, and the neutral shell value encodings in
-//! `crate::shell::encoding`.
-//!
-//! This module has no IPC dependency: its own error type, [`CursorError`],
-//! is small and neutral. `crate::ipc` and `crate::shell::encoding` each map
-//! it into their own error type at the boundary, so a decode failure here
-//! still surfaces as the identical `IpcCodecError` (or `ValueError`) value
-//! every existing caller already expects.
+//! The little-endian cursor and writer shared by every codec in this crate.
+//! Its error, [`CursorError`], names no codec; each codec converts it into
+//! its own error type.
 
 pub(crate) fn push_u8(out: &mut Vec<u8>, value: u8) {
     out.push(value);
@@ -36,15 +29,6 @@ pub(crate) fn push_i32(out: &mut Vec<u8>, value: i32) {
 pub(crate) enum CursorError {
     Truncated,
     TrailingBytes(usize),
-}
-
-impl From<CursorError> for crate::IpcCodecError {
-    fn from(err: CursorError) -> Self {
-        match err {
-            CursorError::Truncated => crate::IpcCodecError::Truncated,
-            CursorError::TrailingBytes(remaining) => crate::IpcCodecError::TrailingBytes(remaining),
-        }
-    }
 }
 
 pub(crate) struct Cursor<'a> {

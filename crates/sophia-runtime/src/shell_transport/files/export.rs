@@ -464,7 +464,8 @@ impl ShellFiles {
             let transaction = candidate.transaction;
             self.candidate_parts.extend(
                 candidate
-                    .records()
+                    .candidate
+                    .parts()
                     .into_iter()
                     .map(|record| (transaction, record)),
             );

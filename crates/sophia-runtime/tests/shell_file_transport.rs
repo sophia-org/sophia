@@ -776,21 +776,13 @@ fn paced_candidate(with_action: bool) {
             candidate(ShellFileKind::Candidate, 1, 6),
             &ShellFileCandidate {
                 transaction: TransactionId::from_raw(20),
-                begin: ContentCandidateBegin {
+                candidate: ContentCandidate {
                     grant,
                     candidate_generation: generation,
                     output: permit.output,
                     facts_generation: facts.facts_generation,
                     pacing_permit: permit.permit_id,
                     interaction_generation: 4,
-                    surface_count: 1,
-                    placement_count: 1,
-                    target_count: 1,
-                },
-                chunk: ContentCandidateChunk {
-                    grant,
-                    candidate_generation: generation,
-                    chunk_ordinal: 0,
                     surfaces: vec![ContentSurface {
                         allocation: allocation.allocation,
                         scale_generation: allocation.scale_generation,
@@ -820,13 +812,6 @@ fn paced_candidate(with_action: bool) {
                             height: 1,
                         },
                     }],
-                },
-                end: ContentCandidateEnd {
-                    grant,
-                    candidate_generation: generation,
-                    surface_count: 1,
-                    placement_count: 1,
-                    target_count: 1,
                 },
             },
         )
@@ -1096,31 +1081,16 @@ fn a_candidate_without_its_permit_is_rejected_through_its_outcome() {
             candidate(ShellFileKind::Candidate, 1, 3),
             &ShellFileCandidate {
                 transaction: TransactionId::from_raw(20),
-                begin: ContentCandidateBegin {
+                candidate: ContentCandidate {
                     grant,
                     candidate_generation: 1,
                     output,
                     facts_generation: 1,
                     pacing_permit: wrong_permit,
                     interaction_generation: 1,
-                    surface_count: 0,
-                    placement_count: 0,
-                    target_count: 0,
-                },
-                chunk: ContentCandidateChunk {
-                    grant,
-                    candidate_generation: 1,
-                    chunk_ordinal: 0,
                     surfaces: vec![],
                     placements: vec![],
                     targets: vec![],
-                },
-                end: ContentCandidateEnd {
-                    grant,
-                    candidate_generation: 1,
-                    surface_count: 0,
-                    placement_count: 0,
-                    target_count: 0,
                 },
             },
         )
@@ -1313,7 +1283,7 @@ fn candidate_records_are_refused_at_submit_before_negotiation() {
             candidate(ShellFileKind::Candidate, 1, 2),
             &ShellFileCandidate {
                 transaction: TransactionId::from_raw(20),
-                begin: ContentCandidateBegin {
+                candidate: ContentCandidate {
                     grant,
                     candidate_generation: 1,
                     output: ContentOutputId {
@@ -1323,24 +1293,9 @@ fn candidate_records_are_refused_at_submit_before_negotiation() {
                     facts_generation: 1,
                     pacing_permit: 1,
                     interaction_generation: 1,
-                    surface_count: 0,
-                    placement_count: 0,
-                    target_count: 0,
-                },
-                chunk: ContentCandidateChunk {
-                    grant,
-                    candidate_generation: 1,
-                    chunk_ordinal: 0,
                     surfaces: vec![],
                     placements: vec![],
                     targets: vec![],
-                },
-                end: ContentCandidateEnd {
-                    grant,
-                    candidate_generation: 1,
-                    surface_count: 0,
-                    placement_count: 0,
-                    target_count: 0,
                 },
             },
         )
@@ -1392,7 +1347,7 @@ fn a_malformed_candidate_record_is_refused_at_submit() {
             candidate(ShellFileKind::Candidate, 1, 2),
             &ShellFileCandidate {
                 transaction: TransactionId::from_raw(20),
-                begin: ContentCandidateBegin {
+                candidate: ContentCandidate {
                     grant,
                     candidate_generation: 1,
                     output: ContentOutputId {
@@ -1402,44 +1357,26 @@ fn a_malformed_candidate_record_is_refused_at_submit() {
                     facts_generation: 1,
                     pacing_permit: 1,
                     interaction_generation: 1,
-                    surface_count: 0,
-                    placement_count: 0,
-                    target_count: 0,
-                },
-                chunk: ContentCandidateChunk {
-                    grant,
-                    candidate_generation: 1,
-                    chunk_ordinal: 0,
                     surfaces: vec![],
                     placements: vec![],
                     targets: vec![],
                 },
-                end: ContentCandidateEnd {
-                    grant,
-                    candidate_generation: 1,
-                    surface_count: 0,
-                    placement_count: 0,
-                    target_count: 0,
-                },
             },
         )
         .unwrap();
-        // Patch the encoded Chunk's ordinal from 0 to 1 in place. The body
-        // (after the header) is tx:8 + begin_len:4 + chunk_len:4 + Begin +
-        // Chunk + End, and the Chunk payload opens with grant:16 +
-        // candidate_generation:8 before chunk_ordinal:4
-        // (crates/sophia-protocol/src/ipc/shell_content/codec.rs).
-        let begin_len = u32::from_le_bytes(
-            bytes[SHELL_FILE_HEADER_BYTES + 8..SHELL_FILE_HEADER_BYTES + 12]
-                .try_into()
-                .unwrap(),
-        ) as usize;
-        let ordinal_at = SHELL_FILE_HEADER_BYTES + 16 + begin_len + 16 + 8;
+        // Patch the encoded candidate's reserved u16 in place. Record offset
+        // = 32 (header) + 8 (tx) + 70 (candidate header bytes before the
+        // reserved field: grant 16 + candidate_generation 8 + output 16 +
+        // facts_generation 8 + pacing_permit 8 + interaction_generation 8 +
+        // three u16 counts 6) = 110
+        // (crates/sophia-protocol/src/shell/encoding/content.rs
+        // `encode_content_candidate`/`decode_content_candidate`).
+        let reserved_at = SHELL_FILE_HEADER_BYTES + 8 + 70;
         assert_eq!(
-            u32::from_le_bytes(bytes[ordinal_at..ordinal_at + 4].try_into().unwrap()),
+            u16::from_le_bytes(bytes[reserved_at..reserved_at + 2].try_into().unwrap()),
             0
         );
-        bytes[ordinal_at..ordinal_at + 4].copy_from_slice(&1u32.to_le_bytes());
+        bytes[reserved_at..reserved_at + 2].copy_from_slice(&1u16.to_le_bytes());
 
         assert_eq!(errno(peer.submit(&bytes)), EINVAL);
         peer.clear();

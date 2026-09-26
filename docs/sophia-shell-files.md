@@ -440,16 +440,51 @@ frame.
 Candidates, pacing and content actions follow the same pattern.
 `FrameDemand`, `FrameDemandCancel` and `ActionAck` are submitted records, and
 `FramePermit`, `CandidateOutcome` and `Action` are events. Each is its
-transaction ID followed by the unchanged payload. A `Candidate` record is one
-whole candidate. Its body is the transaction ID, the Begin payload length
-(`u32`) and the Chunk payload length (`u32`), then the Begin, exactly one Chunk
-(ordinal 0) and the End. All three share the transaction, grant and candidate
-generation, and the record is at most 8192 bytes, header included. A candidate
-at the prototype maxima (8 surfaces, 32 placements, 64 targets) fits. The
-candidate owner receives Begin, Chunk and End in that order, so the permit,
-assembly, deadline and outcome rules are the socket path's, unchanged. A
-malformed or incoherent record is refused at `submit` with `EINVAL`, and
-nothing reaches the owner.
+transaction ID followed by the record's value. A `Candidate` record is one
+whole candidate: the transaction ID, the candidate header (grant, candidate
+generation, output, facts generation, pacing permit, interaction generation),
+the surface, placement and target counts as `u16` with one reserved `u16`, then
+the rows. There are no chunk ordinals and no repeated counts or identities. The
+record is at most 8192 bytes, header included; a candidate at the prototype
+maxima (8 surfaces, 32 placements, 64 targets) fits. The candidate owner
+receives Begin, Chunk and End in that order, so the permit, assembly, deadline
+and outcome rules are the socket path's, unchanged. A malformed record, or
+one whose parts the existing validators refuse, is refused at `submit` with
+`EINVAL`, and nothing reaches the owner.
+
+### Role family kinds (t252 B5, draft)
+
+The launcher, dock and bar families follow the same rule: whole typed values,
+no transfer shapes. Kind numbers are reserved here before implementation:
+
+| Class | Kind | Replaces | Value |
+| --- | --- | --- | --- |
+| Object | `Catalog` 3 | 114-116 transfer, and 202 identities for r8 | The whole application catalog; for the dock, each entry with its r8 identity. Cap 4 MiB |
+| Object | `Indicators` 4 | 181-184 transfer | The whole indicator snapshot: active output, output statuses, indicators. Cap 32 KiB |
+| Event | `NativeOpening` 38 | 187 | Opening, catalog generation, state revision |
+| Event | `NativeFocus` 39 | 191 | The focus lease binding, minted only after an actual Presented |
+| Event | `NativeFocusRevoked` 40 | 192 | Binding and reason |
+| Event | `NativeInput` 41 | 193 | Semantic input event with its text |
+| Event | `NativeActivationOutcome` 42 | 196 | Activation, status and reason; admitted means a queue slot only |
+| Event | `NativeClosed` 43 | 197 | Opening and reason |
+| Event | `CatalogActivationOutcome` 44 | 201 | Activation, status and reason |
+| Event | `IndicatorActivationOutcome` 45 | 186 | The exact activation echo, status and reason |
+| Candidate | `NativeAllocationRequest` 266 | 188 | Parentless allocation, no reservation |
+| Candidate | `NativeCandidate` 267 | 189, 190 and 174 | A whole candidate plus opening, catalog generation, state revision, selection and rows |
+| Candidate | `NativeInputAck` 268 | 194 | Event and disposition |
+| Candidate | `NativeActivate` 269 | 195 | Event, cause and slot |
+| Candidate | `CatalogCandidate` 270 | 198, 199 and 174 | A whole candidate plus the catalog generation it presents |
+| Candidate | `CatalogActivate` 271 | 200 | The content action and catalog generation, never a command |
+| Candidate | `IndicatorActivate` 272 | 185 | Snapshot generation, output, indicator, action and event |
+
+The legacy descriptor profile's feeds (`descriptors`, `tabs`, `shortcuts`)
+and records get kinds when that profile moves to files; until then it stays
+on its socket, and the purge inventory lists it.
+
+Objects are published as `outputs` is: fits-then-qid-then-announce, pinned on
+open, `EBUSY` for a second pin, a fresh qid whenever the bytes change. Each
+owner hands its records to the wire as typed values; no owner queues a socket
+frame on a file-wire component.
 
 ## Multiple writers, isolation and revocation
 

@@ -279,3 +279,58 @@ pub enum ShellContentRecord {
     Action(ContentAction),
     ActionAck(ContentActionAck),
 }
+
+/// One complete candidate as a whole value: what a content client proposes
+/// for one output, with every row. Transports that carry it in parts
+/// reassemble it; the candidate owner receives it as Begin, Chunk and End.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentCandidate {
+    pub grant: ContentGrant,
+    pub candidate_generation: u64,
+    pub output: ContentOutputId,
+    pub facts_generation: u64,
+    pub pacing_permit: u64,
+    pub interaction_generation: u64,
+    pub surfaces: Vec<ContentSurface>,
+    pub placements: Vec<ContentPlacement>,
+    pub targets: Vec<ContentTarget>,
+}
+
+impl ContentCandidate {
+    /// The candidate as the owner's Begin, single Chunk (ordinal 0) and End.
+    pub fn parts(&self) -> [ShellContentRecord; 3] {
+        let (surfaces, placements, targets) = (
+            self.surfaces.len() as u32,
+            self.placements.len() as u32,
+            self.targets.len() as u32,
+        );
+        [
+            ShellContentRecord::CandidateBegin(ContentCandidateBegin {
+                grant: self.grant,
+                candidate_generation: self.candidate_generation,
+                output: self.output,
+                facts_generation: self.facts_generation,
+                pacing_permit: self.pacing_permit,
+                interaction_generation: self.interaction_generation,
+                surface_count: surfaces,
+                placement_count: placements,
+                target_count: targets,
+            }),
+            ShellContentRecord::CandidateChunk(ContentCandidateChunk {
+                grant: self.grant,
+                candidate_generation: self.candidate_generation,
+                chunk_ordinal: 0,
+                surfaces: self.surfaces.clone(),
+                placements: self.placements.clone(),
+                targets: self.targets.clone(),
+            }),
+            ShellContentRecord::CandidateEnd(ContentCandidateEnd {
+                grant: self.grant,
+                candidate_generation: self.candidate_generation,
+                surface_count: surfaces,
+                placement_count: placements,
+                target_count: targets,
+            }),
+        ]
+    }
+}

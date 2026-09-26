@@ -3,6 +3,7 @@
 //! transaction kinds (`FrameDemand`, `FrameDemandCancel`, `ActionAck`,
 //! `CandidateOutcome`, `FramePermit`, `Action`) and the composite `Candidate`
 //! record (Begin + one Chunk + End under one transaction).
+use sophia_protocol::shell::encoding::ValueError;
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 
@@ -410,172 +411,179 @@ fn target_row(surface_index: u16, index: u32) -> ContentTarget {
     }
 }
 
-/// A coherent candidate: one grant and candidate generation shared by the
-/// Begin, its ordinal-0 Chunk and the End, with `surfaces`/`placements`/
-/// `targets` rows matching the declared counts on Begin and End.
-fn candidate_with_counts(
+/// One whole candidate value: the header fields shared by the owner's
+/// Begin/Chunk/End, plus `surfaces`/`placements`/`targets` rows. Since
+/// `ContentCandidate` stores each row vector once, the counts `parts()`
+/// reports on Begin/End are always in lock-step with the Chunk's rows -- a
+/// count mismatch between parts is no longer representable.
+fn content_candidate_with_counts(surfaces: u32, placements: u32, targets: u32) -> ContentCandidate {
+    let surface_span = surfaces.max(1);
+    ContentCandidate {
+        grant: grant(),
+        candidate_generation: 1,
+        output: output_id(),
+        facts_generation: 3,
+        pacing_permit: 1,
+        interaction_generation: 4,
+        surfaces: (0..surfaces).map(surface_row).collect(),
+        placements: (0..placements)
+            .map(|i| placement_row((i % surface_span) as u16, i))
+            .collect(),
+        targets: (0..targets)
+            .map(|i| target_row((i % surface_span) as u16, i))
+            .collect(),
+    }
+}
+
+fn shell_file_candidate_with_counts(
     transaction: TransactionId,
     surfaces: u32,
     placements: u32,
     targets: u32,
 ) -> ShellFileCandidate {
-    let grant = grant();
-    let candidate_generation = 1;
-    let surface_span = surfaces.max(1);
     ShellFileCandidate {
         transaction,
-        begin: ContentCandidateBegin {
-            grant,
-            candidate_generation,
-            output: output_id(),
-            facts_generation: 3,
-            pacing_permit: 1,
-            interaction_generation: 4,
-            surface_count: surfaces,
-            placement_count: placements,
-            target_count: targets,
-        },
-        chunk: ContentCandidateChunk {
-            grant,
-            candidate_generation,
-            chunk_ordinal: 0,
-            surfaces: (0..surfaces).map(surface_row).collect(),
-            placements: (0..placements)
-                .map(|i| placement_row((i % surface_span) as u16, i))
-                .collect(),
-            targets: (0..targets)
-                .map(|i| target_row((i % surface_span) as u16, i))
-                .collect(),
-        },
-        end: ContentCandidateEnd {
-            grant,
-            candidate_generation,
-            surface_count: surfaces,
-            placement_count: placements,
-            target_count: targets,
-        },
+        candidate: content_candidate_with_counts(surfaces, placements, targets),
     }
 }
 
 #[test]
-fn candidate_records_return_begin_chunk_end_in_order() {
-    let candidate = candidate_with_counts(TransactionId::from_raw(50), 1, 1, 1);
-    let records = candidate.records();
-    assert!(matches!(records[0], ShellContentRecord::CandidateBegin(_)));
-    assert!(matches!(records[1], ShellContentRecord::CandidateChunk(_)));
-    assert!(matches!(records[2], ShellContentRecord::CandidateEnd(_)));
+fn content_candidate_parts_return_begin_chunk_end_in_order() {
+    let candidate = content_candidate_with_counts(2, 3, 4);
+    let parts = candidate.parts();
+
+    let begin = match &parts[0] {
+        ShellContentRecord::CandidateBegin(v) => v,
+        other => panic!("expected CandidateBegin, got {other:?}"),
+    };
+    let chunk = match &parts[1] {
+        ShellContentRecord::CandidateChunk(v) => v,
+        other => panic!("expected CandidateChunk, got {other:?}"),
+    };
+    let end = match &parts[2] {
+        ShellContentRecord::CandidateEnd(v) => v,
+        other => panic!("expected CandidateEnd, got {other:?}"),
+    };
+
+    assert_eq!(chunk.chunk_ordinal, 0);
+    assert_eq!(chunk.surfaces.len(), 2);
+    assert_eq!(chunk.placements.len(), 3);
+    assert_eq!(chunk.targets.len(), 4);
+    for (label, s, p, t) in [
+        (
+            "begin",
+            begin.surface_count,
+            begin.placement_count,
+            begin.target_count,
+        ),
+        (
+            "end",
+            end.surface_count,
+            end.placement_count,
+            end.target_count,
+        ),
+    ] {
+        assert_eq!((s, p, t), (2, 3, 4), "{label} counts");
+    }
+
+    // The grant and candidate_generation are shared, not per-part state.
+    for label_grant in [begin.grant, chunk.grant, end.grant] {
+        assert_eq!(label_grant, candidate.grant);
+    }
+    for label_gen in [
+        begin.candidate_generation,
+        chunk.candidate_generation,
+        end.candidate_generation,
+    ] {
+        assert_eq!(label_gen, candidate.candidate_generation);
+    }
 }
 
 #[test]
-fn candidate_round_trips_with_layout_offsets() {
+fn candidate_round_trips() {
     let header = candidate_header();
-    let candidate = candidate_with_counts(TransactionId::from_raw(60), 1, 1, 1);
+    let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(60), 2, 3, 4);
     let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
     assert_eq!(decode_shell_file_candidate(&encoded).unwrap(), candidate);
+}
 
-    // Body bytes 8..12 and 12..16 are the Begin and Chunk payload lengths.
+#[test]
+fn candidate_layout_offsets_are_exact() {
+    let header = candidate_header();
+    let candidate = ShellFileCandidate {
+        transaction: TransactionId::from_raw(0xABCD),
+        candidate: ContentCandidate {
+            grant: ContentGrant {
+                connection_epoch: 0x1111_1111_1111_1111,
+                content_grant_epoch: 0x2222_2222_2222_2222,
+            },
+            candidate_generation: 0x3333_3333_3333_3333,
+            output: ContentOutputId {
+                id: 0x4444_4444_4444_4444,
+                generation: 0x5555_5555_5555_5555,
+            },
+            facts_generation: 0x6666_6666_6666_6666,
+            pacing_permit: 0x7777_7777_7777_7777,
+            interaction_generation: 0x8888_8888_8888_8888,
+            surfaces: vec![surface_row(0)],
+            placements: vec![placement_row(0, 0)],
+            targets: vec![target_row(0, 0)],
+        },
+    };
+    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
+    // Body layout: tx (8) then the candidate header (grant, candidate_generation,
+    // output, facts_generation, pacing_permit, interaction_generation, three
+    // row counts, one reserved u16) at the offsets
+    // `encode_content_candidate`/`decode_content_candidate` document.
     let body = &encoded[32..];
-    let begin_len = u32::from_le_bytes(body[8..12].try_into().unwrap()) as usize;
-    let chunk_len = u32::from_le_bytes(body[12..16].try_into().unwrap()) as usize;
-    let begin_frame = encode_shell_content_frame(
-        candidate.transaction,
-        &ShellContentRecord::CandidateBegin(candidate.begin.clone()),
-    )
-    .unwrap();
-    let chunk_frame = encode_shell_content_frame(
-        candidate.transaction,
-        &ShellContentRecord::CandidateChunk(candidate.chunk.clone()),
-    )
-    .unwrap();
-    assert_eq!(begin_len, begin_frame.len() - SOPHIA_IPC_HEADER_LEN);
-    assert_eq!(chunk_len, chunk_frame.len() - SOPHIA_IPC_HEADER_LEN);
-    // 16 (tx + two length fields) + begin + chunk + end must equal the body.
-    let end_frame = encode_shell_content_frame(
-        candidate.transaction,
-        &ShellContentRecord::CandidateEnd(candidate.end.clone()),
-    )
-    .unwrap();
-    let end_len = end_frame.len() - SOPHIA_IPC_HEADER_LEN;
-    assert_eq!(16 + begin_len + chunk_len + end_len, body.len());
-}
-
-/// The absolute byte offset of the Chunk payload within a full candidate
-/// encoding: 32-byte header + 8-byte tx + 4+4 length fields + Begin payload.
-fn chunk_payload_offset(encoded: &[u8]) -> usize {
-    let begin_len = u32::from_le_bytes(encoded[40..44].try_into().unwrap()) as usize;
-    48 + begin_len
-}
-
-#[test]
-fn candidate_refuses_nonzero_chunk_ordinal() {
-    let header = candidate_header();
-    let mut candidate = candidate_with_counts(TransactionId::from_raw(61), 1, 1, 1);
-    candidate.chunk.chunk_ordinal = 1;
     assert_eq!(
-        encode_shell_file_candidate(header, &candidate).unwrap_err(),
-        ShellFilePayloadError::Identity
+        &body[0..8],
+        candidate.transaction.raw().to_le_bytes().as_slice()
     );
-
-    candidate.chunk.chunk_ordinal = 0;
-    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
-    let chunk_at = chunk_payload_offset(&encoded);
-    let mut bad_bytes = encoded.clone();
-    // chunk_ordinal sits 24 bytes into the Chunk payload (grant + generation).
-    bad_bytes[chunk_at + 24..chunk_at + 28].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        decode_shell_file_candidate(&bad_bytes).unwrap_err(),
-        ShellFilePayloadError::Identity
+        &body[8..16],
+        0x1111_1111_1111_1111u64.to_le_bytes().as_slice()
     );
-}
-
-#[test]
-fn candidate_refuses_mismatched_grant() {
-    let header = candidate_header();
-    let mut candidate = candidate_with_counts(TransactionId::from_raw(62), 1, 1, 1);
-    candidate.chunk.grant.connection_epoch = 2;
     assert_eq!(
-        encode_shell_file_candidate(header, &candidate).unwrap_err(),
-        ShellFilePayloadError::Identity
+        &body[16..24],
+        0x2222_2222_2222_2222u64.to_le_bytes().as_slice()
     );
-
-    candidate.chunk.grant.connection_epoch = 1;
-    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
-    let chunk_at = chunk_payload_offset(&encoded);
-    let mut bad_bytes = encoded.clone();
-    // grant.connection_epoch is the first 8 bytes of the Chunk payload.
-    bad_bytes[chunk_at..chunk_at + 8].copy_from_slice(&2u64.to_le_bytes());
     assert_eq!(
-        decode_shell_file_candidate(&bad_bytes).unwrap_err(),
-        ShellFilePayloadError::Identity
+        &body[24..32],
+        0x3333_3333_3333_3333u64.to_le_bytes().as_slice()
     );
-}
-
-#[test]
-fn candidate_refuses_mismatched_candidate_generation() {
-    let header = candidate_header();
-    let mut candidate = candidate_with_counts(TransactionId::from_raw(63), 1, 1, 1);
-    candidate.chunk.candidate_generation = 2;
     assert_eq!(
-        encode_shell_file_candidate(header, &candidate).unwrap_err(),
-        ShellFilePayloadError::Identity
+        &body[32..40],
+        0x4444_4444_4444_4444u64.to_le_bytes().as_slice()
     );
-
-    candidate.chunk.candidate_generation = 1;
-    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
-    let chunk_at = chunk_payload_offset(&encoded);
-    let mut bad_bytes = encoded.clone();
-    // candidate_generation sits 16 bytes into the Chunk payload (after grant).
-    bad_bytes[chunk_at + 16..chunk_at + 24].copy_from_slice(&2u64.to_le_bytes());
     assert_eq!(
-        decode_shell_file_candidate(&bad_bytes).unwrap_err(),
-        ShellFilePayloadError::Identity
+        &body[40..48],
+        0x5555_5555_5555_5555u64.to_le_bytes().as_slice()
     );
+    assert_eq!(
+        &body[48..56],
+        0x6666_6666_6666_6666u64.to_le_bytes().as_slice()
+    );
+    assert_eq!(
+        &body[56..64],
+        0x7777_7777_7777_7777u64.to_le_bytes().as_slice()
+    );
+    assert_eq!(
+        &body[64..72],
+        0x8888_8888_8888_8888u64.to_le_bytes().as_slice()
+    );
+    assert_eq!(&body[72..74], 1u16.to_le_bytes().as_slice()); // surface_count
+    assert_eq!(&body[74..76], 1u16.to_le_bytes().as_slice()); // placement_count
+    assert_eq!(&body[76..78], 1u16.to_le_bytes().as_slice()); // target_count
+    assert_eq!(&body[78..80], 0u16.to_le_bytes().as_slice()); // reserved
+
+    assert_eq!(decode_shell_file_candidate(&encoded).unwrap(), candidate);
 }
 
 #[test]
 fn candidate_refuses_zero_transaction() {
     let header = candidate_header();
-    let mut candidate = candidate_with_counts(TransactionId::from_raw(64), 1, 1, 1);
+    let mut candidate = shell_file_candidate_with_counts(TransactionId::from_raw(64), 1, 1, 1);
     candidate.transaction = TransactionId::INVALID;
     assert_eq!(
         encode_shell_file_candidate(header, &candidate).unwrap_err(),
@@ -586,34 +594,100 @@ fn candidate_refuses_zero_transaction() {
     let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
     let mut bad_bytes = encoded.clone();
     bad_bytes[32..40].fill(0);
-    let err = decode_shell_file_candidate(&bad_bytes).unwrap_err();
-    // `decode_shell_file_transaction` (the single-payload sibling) has an
-    // explicit `transaction.is_valid()` guard before it calls into the IPC
-    // decoder, so a zero transaction there always comes back as `Identity`,
-    // matching the encode-side rejection above. `decode_shell_file_candidate`
-    // has no equivalent guard: it hands the zero transaction straight to
-    // `decode_shell_content_payload` for the Begin part, which rejects it at
-    // the IPC layer as `InvalidTransaction(0)` before `coherent()` ever runs.
-    // That looks like a real asymmetry/bug in candidates.rs; see the report.
+    // `decode_shell_file_candidate` checks `transaction.is_valid()` directly
+    // after reading the raw u64, the same guard `decode_shell_file_transaction`
+    // uses for the single-payload kinds, so both sides now agree on
+    // `Identity` -- the encode/decode asymmetry the old Begin/Chunk/End
+    // layout had here is gone under the native layout.
     assert_eq!(
-        err,
-        ShellFilePayloadError::Identity,
-        "expected Identity (matching encode and the single-payload sibling), got {err:?}"
+        decode_shell_file_candidate(&bad_bytes).unwrap_err(),
+        ShellFilePayloadError::Identity
     );
 }
 
 #[test]
-fn candidate_decode_refuses_lengths_past_the_body() {
+fn candidate_refuses_reserved_nonzero() {
     let header = candidate_header();
-    let candidate = candidate_with_counts(TransactionId::from_raw(65), 1, 1, 1);
+    let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(66), 1, 1, 1);
     let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
     let mut bad_bytes = encoded.clone();
-    // Inflate the Chunk length field (body bytes 12..16, absolute 44..48)
-    // far past what the record actually holds.
-    bad_bytes[44..48].copy_from_slice(&u32::MAX.to_le_bytes());
+    // The candidate header's reserved u16 sits at body offset 78 (8-byte tx
+    // + 70-byte candidate header prefix); record offset 32 + 78 = 110.
+    bad_bytes[110..112].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
         decode_shell_file_candidate(&bad_bytes).unwrap_err(),
-        ShellFileCodecError::Length.into()
+        ShellFilePayloadError::Records(ValueError::ReservedNonZero(1))
+    );
+}
+
+#[test]
+fn candidate_refuses_count_above_maximum() {
+    let header = candidate_header();
+    let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(67), 1, 1, 1);
+    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
+    let mut bad_bytes = encoded.clone();
+    // surface_count sits at body offset 72, record offset 32 + 72 = 104; the
+    // maximum is 8.
+    bad_bytes[104..106].copy_from_slice(&9u16.to_le_bytes());
+    assert_eq!(
+        decode_shell_file_candidate(&bad_bytes).unwrap_err(),
+        ShellFilePayloadError::Records(ValueError::CountTooLarge { count: 9, max: 8 })
+    );
+}
+
+#[test]
+fn candidate_refuses_count_exceeding_rows_present() {
+    let header = candidate_header();
+    // Zero rows in every table is itself a valid candidate (the validators
+    // only enforce maximums), so the encoded body ends right after the
+    // 72-byte candidate header with no row bytes at all.
+    let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(68), 0, 0, 0);
+    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
+    let mut bad_bytes = encoded.clone();
+    // Claim one surface row (record offset 104..106) that was never written.
+    bad_bytes[104..106].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        decode_shell_file_candidate(&bad_bytes).unwrap_err(),
+        ShellFilePayloadError::Records(ValueError::Truncated)
+    );
+}
+
+#[test]
+fn candidate_refuses_trailing_bytes() {
+    let header = candidate_header();
+    let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(69), 1, 1, 1);
+    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
+    let mut trailing = encoded.clone();
+    trailing.push(0);
+    let trailing_len = trailing.len() as u32;
+    trailing[0..4].copy_from_slice(&trailing_len.to_le_bytes());
+    assert_eq!(
+        decode_shell_file_candidate(&trailing).unwrap_err(),
+        ShellFilePayloadError::Records(ValueError::TrailingBytes(1))
+    );
+}
+
+#[test]
+fn candidate_refuses_invalid_row_content() {
+    let header = candidate_header();
+    let mut candidate = shell_file_candidate_with_counts(TransactionId::from_raw(71), 1, 1, 1);
+    // A zero `pacing_permit` fails the `content candidate begin` validator
+    // (every part is validated on encode, before any bytes are written).
+    candidate.candidate.pacing_permit = 0;
+    assert_eq!(
+        encode_shell_file_candidate(header, &candidate).unwrap_err(),
+        ShellFilePayloadError::Records(ValueError::InvalidRecord("content candidate begin"))
+    );
+
+    // The same validator runs again on decode: patch a validly encoded
+    // candidate's pacing_permit (body offset 56, record offset 88) to 0.
+    candidate.candidate.pacing_permit = 1;
+    let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
+    let mut bad_bytes = encoded.clone();
+    bad_bytes[88..96].fill(0);
+    assert_eq!(
+        decode_shell_file_candidate(&bad_bytes).unwrap_err(),
+        ShellFilePayloadError::Records(ValueError::InvalidRecord("content candidate begin"))
     );
 }
 
@@ -630,14 +704,18 @@ fn candidate_decode_refuses_bytes_over_the_max_cap() {
 
 #[test]
 fn maximal_candidate_fits_within_the_cap() {
-    // The IPC validators' maximum candidate shape: 8 surfaces, 32
-    // placements, 64 targets (crates/sophia-protocol/src/ipc/shell_content/
+    // The content validators' maximum candidate shape: 8 surfaces, 32
+    // placements, 64 targets (crates/sophia-protocol/src/shell/content/
     // validation.rs `counts()` and `validate_candidate_chunk_profile`).
     let header = candidate_header();
-    let candidate = candidate_with_counts(TransactionId::from_raw(70), 8, 32, 64);
+    let candidate = shell_file_candidate_with_counts(TransactionId::from_raw(70), 8, 32, 64);
     let encoded = encode_shell_file_candidate(header, &candidate).unwrap();
     assert!(encoded.len() <= SHELL_FILE_MAX_CANDIDATE_BYTES);
     assert_eq!(decode_shell_file_candidate(&encoded).unwrap(), candidate);
+    // 32-byte record header + 8-byte tx + 72-byte candidate header
+    // + 8 surface rows (64 B each) + 32 placement rows (32 B each)
+    // + 64 target rows (48 B each) = 4720 bytes, well under the 8192 cap.
+    assert_eq!(encoded.len(), 4720);
 }
 
 #[test]

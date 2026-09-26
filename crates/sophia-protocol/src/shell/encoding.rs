@@ -1,13 +1,9 @@
 //! Wire-neutral value encodings for the typed shell record model in
 //! `crate::shell`.
 //!
-//! Everything here encodes or decodes ONE record's byte body: little-endian
-//! integers, reserved padding, table counts, and per-variant record shapes.
-//! It never touches frame headers, the frame codec's message-kind enum,
-//! multi-frame transfer assembly, or transaction-id rules — those stay with
-//! the frame codec, which maps its own message kinds onto the neutral
-//! `*ValueKind` enums here and wraps [`ValueError`] into its own error type
-//! at the boundary (see the bridge `impl` at the bottom of this file).
+//! Each function encodes or decodes one record value: little-endian fields,
+//! reserved padding, row counts and rows. Frames, message kinds, transfers
+//! and transaction rules belong to the codecs that carry these values.
 
 use crate::InvalidRecord;
 use crate::byte_cursor::{Cursor, CursorError};
@@ -16,10 +12,7 @@ pub mod catalog_actions;
 pub mod content;
 pub mod native_launcher;
 
-/// A value-encoding failure, independent of frames, message kinds or
-/// transaction-id rules. The frame codec maps this into the identical
-/// error value every existing caller already expects (see the bridge
-/// `impl` below).
+/// A value-encoding failure, independent of any codec that carries values.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValueError {
     Truncated,
@@ -42,23 +35,6 @@ impl From<CursorError> for ValueError {
 impl From<InvalidRecord> for ValueError {
     fn from(err: InvalidRecord) -> Self {
         ValueError::InvalidRecord(err.0)
-    }
-}
-
-impl From<ValueError> for crate::IpcCodecError {
-    fn from(err: ValueError) -> Self {
-        match err {
-            ValueError::Truncated => crate::IpcCodecError::Truncated,
-            ValueError::TrailingBytes(remaining) => crate::IpcCodecError::TrailingBytes(remaining),
-            ValueError::ReservedNonZero(word) => crate::IpcCodecError::ReservedNonZero(word),
-            ValueError::CountTooLarge { count, max } => {
-                crate::IpcCodecError::CountTooLarge { count, max }
-            }
-            ValueError::InvalidEnum { field, value } => {
-                crate::IpcCodecError::InvalidEnum { field, value }
-            }
-            ValueError::InvalidRecord(field) => crate::IpcCodecError::InvalidRecord(field),
-        }
     }
 }
 

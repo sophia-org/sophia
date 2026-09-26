@@ -1,12 +1,12 @@
 //! Candidates, pacing and content actions. Each record is its transaction ID
-//! followed by the unchanged `sophia_shell_v1` payload, except `Candidate`:
-//! its Begin, one Chunk and End share one record, so a submitted candidate is
-//! complete or absent.
-use super::codec::{u32_at, u64_at};
+//! followed by the record's value; a `Candidate` is one whole candidate, so a
+//! submitted candidate is complete or absent.
+use super::codec::u64_at;
 use super::payload::*;
 use super::*;
 use crate::shell::encoding::content::{
-    ShellContentValueKind, decode_shell_content_value, encode_shell_content_value,
+    ShellContentValueKind, decode_content_candidate, decode_shell_content_value,
+    encode_content_candidate, encode_shell_content_value,
 };
 use crate::*;
 
@@ -83,60 +83,28 @@ pub fn decode_shell_file_transaction(
     })
 }
 
-/// One complete candidate: the Begin, its only Chunk (ordinal 0) and the End,
-/// under one transaction and one grant and candidate generation.
+/// One complete candidate under its transaction.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShellFileCandidate {
     pub transaction: TransactionId,
-    pub begin: ContentCandidateBegin,
-    pub chunk: ContentCandidateChunk,
-    pub end: ContentCandidateEnd,
+    pub candidate: ContentCandidate,
 }
 
-impl ShellFileCandidate {
-    fn coherent(&self) -> bool {
-        self.transaction.is_valid()
-            && self.chunk.chunk_ordinal == 0
-            && self.chunk.grant == self.begin.grant
-            && self.end.grant == self.begin.grant
-            && self.chunk.candidate_generation == self.begin.candidate_generation
-            && self.end.candidate_generation == self.begin.candidate_generation
-    }
-
-    /// The records the candidate owner receives, in wire order.
-    pub fn records(self) -> [ShellContentRecord; 3] {
-        [
-            ShellContentRecord::CandidateBegin(self.begin),
-            ShellContentRecord::CandidateChunk(self.chunk),
-            ShellContentRecord::CandidateEnd(self.end),
-        ]
-    }
-}
-
-/// Body: transaction `u64`, Begin length `u32`, Chunk length `u32`, then the
-/// Begin, Chunk and End payloads. The whole record stays within
+/// Body: the transaction `u64`, then the whole candidate value (header, row
+/// counts, rows). The whole record stays within
 /// [`SHELL_FILE_MAX_CANDIDATE_BYTES`].
 pub fn encode_shell_file_candidate(
     header: ShellFileHeader,
-    candidate: &ShellFileCandidate,
+    value: &ShellFileCandidate,
 ) -> Result<Vec<u8>, ShellFilePayloadError> {
     header_kind(header, ShellFileKind::Candidate)?;
-    if !candidate.coherent() {
+    if !value.transaction.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let tx = candidate.transaction;
-    let begin =
-        encode_shell_content_value(&ShellContentRecord::CandidateBegin(candidate.begin.clone()))?;
-    let chunk =
-        encode_shell_content_value(&ShellContentRecord::CandidateChunk(candidate.chunk.clone()))?;
-    let end = encode_shell_content_value(&ShellContentRecord::CandidateEnd(candidate.end.clone()))?;
-    let mut body = Vec::with_capacity(16 + begin.len() + chunk.len() + end.len());
-    body.extend(tx.raw().to_le_bytes());
-    body.extend((begin.len() as u32).to_le_bytes());
-    body.extend((chunk.len() as u32).to_le_bytes());
-    body.extend_from_slice(&begin);
-    body.extend_from_slice(&chunk);
-    body.extend_from_slice(&end);
+    let candidate = encode_content_candidate(&value.candidate)?;
+    let mut body = Vec::with_capacity(8 + candidate.len());
+    body.extend(value.transaction.raw().to_le_bytes());
+    body.extend_from_slice(&candidate);
     let bytes = encode_shell_file_record(header, &body)?;
     if bytes.len() > SHELL_FILE_MAX_CANDIDATE_BYTES {
         return Err(ShellFileCodecError::Length.into());
@@ -150,41 +118,13 @@ pub fn decode_shell_file_candidate(
     if bytes.len() > SHELL_FILE_MAX_CANDIDATE_BYTES {
         return Err(ShellFileCodecError::Length.into());
     }
-    let r = record(bytes, ShellFileKind::Candidate, 16)?;
+    let r = record(bytes, ShellFileKind::Candidate, 8)?;
     let transaction = TransactionId::from_raw(u64_at(r.body, 0)?);
     if !transaction.is_valid() {
         return Err(ShellFilePayloadError::Identity);
     }
-    let begin_len = u32_at(r.body, 8)? as usize;
-    let chunk_len = u32_at(r.body, 12)? as usize;
-    let chunk_at = 16usize
-        .checked_add(begin_len)
-        .ok_or(ShellFileCodecError::Length)?;
-    let end_at = chunk_at
-        .checked_add(chunk_len)
-        .filter(|end_at| *end_at <= r.body.len())
-        .ok_or(ShellFileCodecError::Length)?;
-    let part =
-        |kind, range: std::ops::Range<usize>| decode_shell_content_value(kind, &r.body[range]);
-    let begin = part(ShellContentValueKind::CandidateBegin, 16..chunk_at)?;
-    let chunk = part(ShellContentValueKind::CandidateChunk, chunk_at..end_at)?;
-    let end = part(ShellContentValueKind::CandidateEnd, end_at..r.body.len())?;
-    let (
-        ShellContentRecord::CandidateBegin(begin),
-        ShellContentRecord::CandidateChunk(chunk),
-        ShellContentRecord::CandidateEnd(end),
-    ) = (begin, chunk, end)
-    else {
-        return Err(ShellFileCodecError::Kind.into());
-    };
-    let candidate = ShellFileCandidate {
+    Ok(ShellFileCandidate {
         transaction,
-        begin,
-        chunk,
-        end,
-    };
-    if !candidate.coherent() {
-        return Err(ShellFilePayloadError::Identity);
-    }
-    Ok(candidate)
+        candidate: decode_content_candidate(&r.body[8..])?,
+    })
 }

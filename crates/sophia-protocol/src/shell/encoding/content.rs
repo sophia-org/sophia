@@ -165,3 +165,78 @@ pub fn decode_shell_content_value(
     crate::shell::content::validation::validate(&record)?;
     Ok(record)
 }
+
+/// Encodes one whole candidate: its header, the three row counts as `u16`
+/// and one reserved `u16`, then the surface, placement and target rows. Each
+/// part the owner will receive is validated first.
+pub fn encode_content_candidate(candidate: &ContentCandidate) -> Result<Vec<u8>, ValueError> {
+    for part in candidate.parts() {
+        crate::shell::content::validation::validate(&part)?;
+    }
+    let mut bytes = Vec::new();
+    candidate.grant.put(&mut bytes);
+    candidate.candidate_generation.put(&mut bytes);
+    candidate.output.put(&mut bytes);
+    candidate.facts_generation.put(&mut bytes);
+    candidate.pacing_permit.put(&mut bytes);
+    candidate.interaction_generation.put(&mut bytes);
+    (candidate.surfaces.len() as u16).put(&mut bytes);
+    (candidate.placements.len() as u16).put(&mut bytes);
+    (candidate.targets.len() as u16).put(&mut bytes);
+    0u16.put(&mut bytes);
+    for row in &candidate.surfaces {
+        row.put(&mut bytes);
+    }
+    for row in &candidate.placements {
+        row.put(&mut bytes);
+    }
+    for row in &candidate.targets {
+        row.put(&mut bytes);
+    }
+    Ok(bytes)
+}
+
+pub fn decode_content_candidate(bytes: &[u8]) -> Result<ContentCandidate, ValueError> {
+    let mut cursor = Cursor::new(bytes);
+    let grant = ContentGrant::take(&mut cursor)?;
+    let candidate_generation = u64::take(&mut cursor)?;
+    let output = ContentOutputId::take(&mut cursor)?;
+    let facts_generation = u64::take(&mut cursor)?;
+    let pacing_permit = u64::take(&mut cursor)?;
+    let interaction_generation = u64::take(&mut cursor)?;
+    let surfaces = table_count(&mut cursor, 8)?;
+    let placements = table_count(&mut cursor, 32)?;
+    let targets = table_count(&mut cursor, 64)?;
+    super::reserved::<u16>(&mut cursor)?;
+    let candidate = ContentCandidate {
+        grant,
+        candidate_generation,
+        output,
+        facts_generation,
+        pacing_permit,
+        interaction_generation,
+        surfaces: rows(&mut cursor, surfaces)?,
+        placements: rows(&mut cursor, placements)?,
+        targets: rows(&mut cursor, targets)?,
+    };
+    cursor.finish()?;
+    for part in candidate.parts() {
+        crate::shell::content::validation::validate(&part)?;
+    }
+    Ok(candidate)
+}
+
+fn table_count(cursor: &mut Cursor<'_>, maximum: usize) -> Result<usize, ValueError> {
+    let value = usize::from(u16::take(cursor)?);
+    if value > maximum {
+        return Err(ValueError::CountTooLarge {
+            count: value,
+            max: maximum,
+        });
+    }
+    Ok(value)
+}
+
+fn rows<T: Wire>(cursor: &mut Cursor<'_>, count: usize) -> Result<Vec<T>, ValueError> {
+    (0..count).map(|_| T::take(cursor)).collect()
+}

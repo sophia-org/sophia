@@ -111,16 +111,23 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "transaction" type="u64" offset=0 nonzero=true
         field "payload" type="sophia-shell-v1" record="ShellContentResourceReleased" offset=8
     }
-    // One complete candidate: Begin, its only Chunk (ordinal 0) and End share
-    // the transaction, grant and candidate generation. The End payload runs
-    // to the end of the body.
-    body "Candidate" {
+    // One complete candidate as a whole value. Rows follow the prefix in
+    // order: surface_count ContentSurface, placement_count ContentPlacement,
+    // target_count ContentTarget rows. No chunk ordinals or repeated counts.
+    body-prefix "Candidate" size=80 max-bytes=8192 {
         field "transaction" type="u64" offset=0 nonzero=true
-        field "begin_bytes" type="u32" offset=8
-        field "chunk_bytes" type="u32" offset=12
-        field "begin" type="sophia-shell-v1" record="ShellContentCandidateBegin" offset=16 size="begin_bytes"
-        field "chunk" type="sophia-shell-v1" record="ShellContentCandidateChunk" offset="16+begin_bytes" size="chunk_bytes"
-        field "end" type="sophia-shell-v1" record="ShellContentCandidateEnd" offset="16+begin_bytes+chunk_bytes"
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=true
+        field "candidate_generation" type="u64" offset=24 nonzero=true
+        field "output_id" type="u64" offset=32
+        field "output_generation" type="u64" offset=40
+        field "facts_generation" type="u64" offset=48
+        field "pacing_permit" type="u64" offset=56
+        field "interaction_generation" type="u64" offset=64
+        field "surface_count" type="u16" offset=72 max=8
+        field "placement_count" type="u16" offset=74 max=32
+        field "target_count" type="u16" offset=76 max=64
+        field "reserved" type="u16" offset=78 value=0
     }
     body "FrameDemand" {
         field "transaction" type="u64" offset=0 nonzero=true
