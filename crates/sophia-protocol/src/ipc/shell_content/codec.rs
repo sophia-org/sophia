@@ -1,6 +1,6 @@
 use crate::TransactionId;
 use crate::shell::encoding::content::{
-    ShellContentValueKind, decode_shell_content_value, encode_shell_content_value,
+    ShellContentValueKind, encode_shell_content_value, parse_shell_content_value,
     shell_content_value_kind,
 };
 use crate::{IpcCodecError, IpcMessageKind, ShellContentRecord, decode_frame, encode_frame};
@@ -14,8 +14,11 @@ pub(crate) fn decode_shell_content_payload(
 ) -> Result<ShellContentRecord, IpcCodecError> {
     let value_kind = value_kind_from_ipc(kind)
         .ok_or(IpcCodecError::InvalidRecord("not a shell content record"))?;
-    let record = decode_shell_content_value(value_kind, payload)?;
+    // Structure, then the frame's transaction rule, then semantics: the
+    // order callers have always observed.
+    let record = parse_shell_content_value(value_kind, payload)?;
     validate_transaction(transaction, &record)?;
+    crate::shell::content::validation::validate(&record)?;
     Ok(record)
 }
 

@@ -101,10 +101,20 @@ pub fn encode_shell_content_value(record: &ShellContentRecord) -> Result<Vec<u8>
     Ok(bytes)
 }
 
-/// Decodes one record's value body for the given kind. Rejects trailing
-/// bytes and then validates, exactly as the IPC payload codec did before
-/// this split.
+/// Decodes and validates one record's value body for the given kind.
 pub fn decode_shell_content_value(
+    kind: ShellContentValueKind,
+    payload: &[u8],
+) -> Result<ShellContentRecord, ValueError> {
+    let record = parse_shell_content_value(kind, payload)?;
+    crate::shell::content::validation::validate(&record)?;
+    Ok(record)
+}
+
+/// The structural half of [`decode_shell_content_value`]: fields, reserved
+/// bytes, counts and no trailing bytes, without semantic validation, so a
+/// carrier can check its own framing rules in between.
+pub(crate) fn parse_shell_content_value(
     kind: ShellContentValueKind,
     payload: &[u8],
 ) -> Result<ShellContentRecord, ValueError> {
@@ -162,7 +172,6 @@ pub fn decode_shell_content_value(
         V::ActionAck => ShellContentRecord::ActionAck(ContentActionAck::take(&mut cursor)?),
     };
     cursor.finish()?;
-    crate::shell::content::validation::validate(&record)?;
     Ok(record)
 }
 
