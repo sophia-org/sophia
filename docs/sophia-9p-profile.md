@@ -41,7 +41,7 @@ the difference is deliberate.
 | --- | --- | --- |
 | `Tversion` | `Rversion` | As above. |
 | `Tattach` | `Rattach` | `afid` must be `NOFID` (no protocol authentication; `EINVAL` otherwise). A fid already in use or `NOFID` is `EBADF`; the fid table bound is `EMFILE`. `uname`, `aname` and `n_uname` reach the export as data and grant nothing; the export decides admission. |
-| `Twalk` | `Rwalk` | At most 16 names. `.`/empty names, and names containing `/` or NUL, are `ENOENT`. Walking from a file is `ENOTDIR`. |
+| `Twalk` | `Rwalk` | At most 16 names. `..` asks the export for the parent, and from the attach root it stays at the root, as 9P requires. `.`/empty names, and names containing `/` or NUL, are `ENOENT`. Walking from a file is `ENOTDIR`. |
 | `Tlopen` | `Rlopen` | Accepted flags: the access mode (read, write, read/write; mode 3 is `EINVAL`), `O_TRUNC`, `O_APPEND`, `O_DIRECTORY`, and `O_NOCTTY`, `O_NONBLOCK`, `O_LARGEFILE` and `O_CLOEXEC`, which change nothing. Any other bit is `EINVAL`. Opening a directory for writing is `EISDIR`; `O_DIRECTORY` on a file is `ENOTDIR`. The export decides each open. |
 | `Tread` | `Rread` | May wait: a read at an event file's end is answered when data arrives, or never if flushed. Waiting requests are bounded (default 32). |
 | `Twrite` | `Rwrite` | The export decides what a write means and how much it accepts. |
