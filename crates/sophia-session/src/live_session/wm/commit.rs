@@ -181,7 +181,10 @@ impl LiveWmSession {
                 request_id: settlement.request_id,
                 scene_generation: public.reducer.scene().generation,
                 outcome,
-                expect_session_operation: settlement.expect_session_operation,
+                // Only a committed projection owes the operation its action names.
+                expect_session_operation: outcome
+                    == sophia_protocol::PolicyProjectionOutcome::Committed
+                    && settlement.expect_session_operation,
             })?;
         if let Some(request) = public.in_flight_request.as_ref()
             && let sophia_protocol::PolicyRequestCause::Action { activation_serial, action } | sophia_protocol::PolicyRequestCause::OutputAction { activation_serial, action, .. } = request.cause
