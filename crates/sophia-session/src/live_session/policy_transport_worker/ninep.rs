@@ -15,14 +15,16 @@ use std::time::{Duration, Instant};
 mod journal;
 mod owner;
 mod staging;
+mod startup;
+mod typed_codec;
 use journal::Journal;
 pub(super) use owner::WmFiles;
 use staging::Staging;
 
 const EBUSY: Errno = Errno(16);
 const EALREADY: Errno = Errno(114);
-const ASSEMBLY_DEADLINE: Duration = Duration::from_secs(12);
-const SEND_DEADLINE: Duration = Duration::from_secs(4);
+const ASSEMBLY_DEADLINE: Duration = Duration::from_millis(WM_FILE_ASSEMBLY_TIMEOUT_MILLIS as u64);
+const SEND_DEADLINE: Duration = Duration::from_millis(WM_FILE_SEND_TIMEOUT_MILLIS as u64);
 
 /// Supplied by the logical Session WM filesystem owner and continued across
 /// supervised reconnects. Socket paths and admitted epochs are not qid hashes.
@@ -135,12 +137,22 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
     /// Caller retains its single in-flight semantic command throughout this
     /// borrowed send. No journal bytes or sequence are spent before capacity.
     pub(super) fn send_event(&mut self, kind: WmFileKind, body: &[u8]) -> Result<(), String> {
+        self.send_encoded(kind, |header| {
+            encode_wm_file_record(header, body).map_err(|_| Errno::EINVAL)
+        })
+    }
+
+    fn send_encoded(
+        &mut self,
+        kind: WmFileKind,
+        encode: impl Fn(WmFileHeader) -> Result<Vec<u8>, Errno>,
+    ) -> Result<(), String> {
         let deadline = Instant::now() + SEND_DEADLINE;
         loop {
             if Instant::now() >= deadline {
                 return Err("WM file send deadline expired".into());
             }
-            match self.server.export_mut().append_event(kind, body) {
+            match self.server.export_mut().append_encoded_event(kind, &encode) {
                 Ok(_) => {
                     self.server.wake().wake();
                     return Ok(());

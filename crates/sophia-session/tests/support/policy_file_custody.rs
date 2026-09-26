@@ -75,7 +75,12 @@ pub(super) fn submit(epoch: u64, id: u64, size: usize) -> Vec<u8> {
 pub(super) fn configuration_permit() -> PolicyReceivePermit {
     struct Capture(Option<PolicyReceivePermit>);
     impl PolicyAdapter for Capture {
-        fn admit(&mut self, _: u64, _: Option<PolicyProfileAdmission>) -> Result<(), String> {
+        fn admit(
+            &mut self,
+            _: crate::live_session::policy_transport_worker::driver::PolicyAdmissionPermit,
+            _: u64,
+            _: Option<PolicyProfileAdmission>,
+        ) -> Result<(), String> {
             Ok(())
         }
         fn selected_capabilities(&self) -> u64 {

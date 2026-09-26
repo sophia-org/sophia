@@ -1,6 +1,6 @@
 //! Transport boundary for the existing WM driver. These are semantic records;
 //! adapters own framing/assembly, not proposal settlement or scene state.
-use super::driver::PolicyReceivePermit;
+use super::driver::{PolicyAdmissionPermit, PolicyReceivePermit};
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,6 +13,11 @@ pub(super) struct PolicyProfileAdmission {
 }
 
 pub(super) enum PolicyAdapterEvent {
+    Negotiation(sophia_protocol::wm_files::WmFileNegotiationOffer),
+    ProfileCompletion {
+        kind: sophia_runtime::PolicyProfileHandoffKind,
+        completion: sophia_protocol::PolicyProfileCompletion,
+    },
     ProjectionPending,
     Projection(Box<PolicyProjectionProposal>),
     /// Completed bytes failed semantic decoding. The driver still owns phase
@@ -36,6 +41,7 @@ pub(super) trait PolicyAdapter: Send + 'static {
     /// cannot publish Negotiated before this admission finishes.
     fn admit(
         &mut self,
+        admission: PolicyAdmissionPermit,
         connection_epoch: u64,
         profile: Option<PolicyProfileAdmission>,
     ) -> Result<(), String>;

@@ -91,6 +91,7 @@ fn decode_event(event: PolicyClientEvent) -> PolicyAdapterEvent {
 impl PolicyAdapter for CurrentPolicyIpc {
     fn admit(
         &mut self,
+        _: super::driver::PolicyAdmissionPermit,
         connection_epoch: u64,
         profile: Option<PolicyProfileAdmission>,
     ) -> Result<(), String> {

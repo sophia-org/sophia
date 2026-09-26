@@ -30,7 +30,12 @@ struct ScriptedAdapter {
     permits: Arc<std::sync::Mutex<Vec<(PolicyReceiveKind, bool)>>>,
 }
 impl PolicyAdapter for ScriptedAdapter {
-    fn admit(&mut self, epoch: u64, profile: Option<PolicyProfileAdmission>) -> Result<(), String> {
+    fn admit(
+        &mut self,
+        _: crate::live_session::policy_transport_worker::driver::PolicyAdmissionPermit,
+        epoch: u64,
+        profile: Option<PolicyProfileAdmission>,
+    ) -> Result<(), String> {
         self.trace.send(Trace::Admission(epoch, profile)).unwrap();
         if self.reject_profile {
             Err("profile refused".into())

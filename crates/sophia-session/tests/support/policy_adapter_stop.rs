@@ -26,7 +26,12 @@ struct WaitingAdapter {
     disconnected: SyncSender<()>,
 }
 impl PolicyAdapter for WaitingAdapter {
-    fn admit(&mut self, _: u64, _: Option<PolicyProfileAdmission>) -> Result<(), String> {
+    fn admit(
+        &mut self,
+        _: crate::live_session::policy_transport_worker::driver::PolicyAdmissionPermit,
+        _: u64,
+        _: Option<PolicyProfileAdmission>,
+    ) -> Result<(), String> {
         Ok(())
     }
     fn selected_capabilities(&self) -> u64 {

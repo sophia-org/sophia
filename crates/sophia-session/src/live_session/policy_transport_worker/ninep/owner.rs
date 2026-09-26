@@ -33,7 +33,8 @@ struct Accepted {
 
 pub(in super::super) struct WmFiles<C> {
     epoch: u64,
-    capabilities: u64,
+    capability_ceiling: u64,
+    selected_capabilities: Option<u64>,
     connection: Option<ConnectionId>,
     attached: bool,
     revoked: bool,
@@ -85,7 +86,8 @@ impl<C: PolicyFileCodec> WmFiles<C> {
         let base = qids.allocate(8)?;
         Ok(Self {
             epoch,
-            capabilities,
+            capability_ceiling: capabilities,
+            selected_capabilities: Some(capabilities),
             connection: None,
             attached: false,
             revoked: false,
@@ -103,6 +105,43 @@ impl<C: PolicyFileCodec> WmFiles<C> {
             permit: None,
             delivery: None,
         })
+    }
+
+    pub(super) fn awaiting_negotiation(
+        epoch: u64,
+        limits: WmFileLimits,
+        qids: WmQids,
+        codec: C,
+    ) -> Result<Self, Errno> {
+        let bytes = encode_wm_file_limits(
+            WmFileHeader {
+                kind: WmFileKind::Limits,
+                connection_epoch: epoch,
+                submission_id: 0,
+                sequence: 0,
+            },
+            limits,
+        )
+        .map_err(|_| Errno::EINVAL)?;
+        let mut owner = Self::new(epoch, limits.capability_ceiling, bytes, qids, codec)?;
+        owner.selected_capabilities = None;
+        Ok(owner)
+    }
+    pub(super) fn bind_selected(&mut self, selected: u64) -> Result<(), Errno> {
+        if self.revoked {
+            return Err(Errno::ESTALE);
+        }
+        if self.selected_capabilities.is_some() {
+            return Err(EALREADY);
+        }
+        if selected & !self.capability_ceiling != 0 {
+            return Err(Errno::EACCES);
+        }
+        self.selected_capabilities = Some(selected);
+        Ok(())
+    }
+    pub(super) fn selected_capabilities(&self) -> Option<u64> {
+        self.selected_capabilities
     }
 
     pub(super) fn bind_connection(&mut self, connection: ConnectionId) {
@@ -145,6 +184,16 @@ impl<C: PolicyFileCodec> WmFiles<C> {
             return Err(Errno::ESTALE);
         }
         self.journal.append(kind, body)
+    }
+    pub(super) fn append_encoded_event(
+        &mut self,
+        kind: WmFileKind,
+        encode: impl FnOnce(WmFileHeader) -> Result<Vec<u8>, Errno>,
+    ) -> Result<u64, Errno> {
+        if self.revoked {
+            return Err(Errno::ESTALE);
+        }
+        self.journal.append_encoded(kind, encode)
     }
     pub(super) fn expire(&mut self) {
         if self
@@ -198,8 +247,8 @@ impl<C: PolicyFileCodec> WmFiles<C> {
         }
         let decoded = self
             .codec
-            .decode_candidate(&staging.bytes, self.capabilities)?;
-        if decoded.required_capabilities & !self.capabilities != 0 {
+            .decode_candidate(&staging.bytes, self.selected_capabilities.unwrap_or(0))?;
+        if decoded.required_capabilities & !self.selected_capabilities.unwrap_or(0) != 0 {
             return Err(Errno::EACCES);
         }
         if self.delivery.is_some()

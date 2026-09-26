@@ -40,11 +40,11 @@ impl Journal {
         if size > WM_FILE_MAX_BYTES {
             return Err(Errno::EINVAL);
         }
-        if self.records.len() == 64 || size > WM_FILE_MAX_BYTES - self.bytes {
+        if self.records.len() == usize::from(WM_FILE_MAX_JOURNAL_RECORDS)
+            || size > WM_FILE_MAX_BYTES - self.bytes
+        {
             return Err(Errno::EAGAIN);
         }
-        let next = self.next.checked_add(1).ok_or(Errno::ENOSPC)?;
-        let tail = self.tail.checked_add(size as u64).ok_or(Errno::ENOSPC)?;
         let bytes = encode_wm_file_record(
             WmFileHeader {
                 kind,
@@ -55,6 +55,47 @@ impl Journal {
             body,
         )
         .map_err(|_| Errno::EINVAL)?;
+        self.commit(bytes)
+    }
+
+    pub(super) fn append_encoded(
+        &mut self,
+        kind: WmFileKind,
+        encode: impl FnOnce(WmFileHeader) -> Result<Vec<u8>, Errno>,
+    ) -> Result<u64, Errno> {
+        if wm_file_class(kind) != WmFileClass::Event {
+            return Err(Errno::EINVAL);
+        }
+        if self.records.len() == usize::from(WM_FILE_MAX_JOURNAL_RECORDS) {
+            return Err(Errno::EAGAIN);
+        }
+        let header = WmFileHeader {
+            kind,
+            connection_epoch: self.epoch,
+            submission_id: 0,
+            sequence: self.next,
+        };
+        let bytes = encode(header)?;
+        let record =
+            decode_wm_file_record(&bytes, WmFileClass::Event).map_err(|_| Errno::EINVAL)?;
+        if record.header != header {
+            return Err(Errno::EINVAL);
+        }
+        self.commit(bytes)
+    }
+
+    fn commit(&mut self, bytes: Vec<u8>) -> Result<u64, Errno> {
+        let size = bytes.len();
+        if size > WM_FILE_MAX_BYTES {
+            return Err(Errno::EINVAL);
+        }
+        if self.records.len() == usize::from(WM_FILE_MAX_JOURNAL_RECORDS)
+            || size > WM_FILE_MAX_BYTES - self.bytes
+        {
+            return Err(Errno::EAGAIN);
+        }
+        let next = self.next.checked_add(1).ok_or(Errno::ENOSPC)?;
+        let tail = self.tail.checked_add(size as u64).ok_or(Errno::ENOSPC)?;
         let sequence = self.next;
         self.records.push_back(Record {
             sequence,

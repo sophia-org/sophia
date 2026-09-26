@@ -90,7 +90,7 @@ fn files(epoch: u64, qids: WmQids) -> WmFiles<Codec> {
 
 // Only the existing driver creates permits. Script its normal configuration
 // outcome and the corresponding control command, then retain the issued permit.
-fn permit(kind: WmFileKind) -> PolicyReceivePermit {
+pub(super) fn permit(kind: WmFileKind) -> PolicyReceivePermit {
     if kind == WmFileKind::Configuration {
         return configuration_permit();
     }
@@ -99,7 +99,12 @@ fn permit(kind: WmFileKind) -> PolicyReceivePermit {
         captured: Option<PolicyReceivePermit>,
     }
     impl PolicyAdapter for Capture {
-        fn admit(&mut self, _: u64, _: Option<PolicyProfileAdmission>) -> Result<(), String> {
+        fn admit(
+            &mut self,
+            _: crate::live_session::policy_transport_worker::driver::PolicyAdmissionPermit,
+            _: u64,
+            _: Option<PolicyProfileAdmission>,
+        ) -> Result<(), String> {
             Ok(())
         }
         fn selected_capabilities(&self) -> u64 {

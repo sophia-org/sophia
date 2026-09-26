@@ -244,6 +244,70 @@ ceiling, profile-mode gating, and revision/refusal state order.
 Strict runtime all-target Clippy, rebuilt worktree layout, format and diff
 checks pass on the same source; the exclusive target and isolation are unchanged.
 
+## Private supplied-stream startup
+
+The next bounded join is `FileStartup`, not a complete `PolicyAdapter` or a
+production endpoint. Its input stream and epoch are already admitted by the
+caller. The logical filesystem Qid allocator and immutable mechanism ceiling
+are also supplied. Nothing here authenticates a process, selects a launch
+transport or migrates the separately admitted output-role channel.
+
+The existing driver supplies one non-Clone admission token. Consuming it
+derives a single Negotiate receive permit and permission to derive a completion
+permit from an exact existing profile-reducer Send effect. Runtime permits
+accept neither offers nor profile completions. The file owner has no profile
+phase enum. Shared full-value codecs decode candidates; the owner supplies the
+selected capabilities, checks the admitted epoch and retains submission
+custody. Required capabilities are checked after the shared selection function
+has applied both dependency reductions. Selection binds once within the supplied
+ceiling and remains readable from that canonical owner; Limits stays immutable.
+
+File Negotiated is journaled before optional prepare/activate exchange. The
+existing `PolicyProfileHandoffIo` executor and reducer retain exact command,
+transaction, generation, digest and outcome correlation. A wrong header epoch
+is refused before custody, as is a wrong completion kind; both preserve staged
+bytes. Under the admitted epoch and exact completion kind, a wrong transaction,
+generation or digest reaches the reducer and is terminal. Every fatal startup
+return revokes the file owner before dropping the adopted stream. Stop wakes
+the same reactor during offer/completion waits and journal-credit waits.
+
+Offer and each completion have the existing twelve-second driver response
+budget as an absolute deadline, not a per-read timeout; fragments and ACKs
+cannot renew it. Event sends have the shared four-second absolute budget.
+Journal encoders receive the real owner-issued sequence/epoch header, and only
+complete records consume journal custody. Shared API constants govern the
+64-record/1-MiB journal and twelve-second candidate assembly bound.
+
+The private helper deliberately does not implement runtime `send(Cycle)`.
+Snapshot bytes, a new Qid and the matching Cycle event still need one atomic
+reservation/publication join before a complete adapter can be claimed. Internal
+driver Negotiated remains after the entire `admit` call; current IPC ignores
+the new private token and retains its existing behavior.
+
+Evidence in `.artifacts/t249-file-startup` includes eight new controls plus
+the twenty-six retained driver, IPC, custody and replay controls. The raw-wire
+Rust peer negotiates the actual adopted .L stream, retries accepted custody,
+observes file Negotiated before exact prepare/activate exchange, and checks
+wrong-epoch and wrong-kind retained staging separately from terminal wrong-tx
+reducer rejection. Stop during offer/profile receives closes the adopted
+stream. Other controls pin immutable Limits and one-time selected-set binding,
+runtime-permit exclusion of startup messages, and unnegotiated extension
+refusal in the typed codec. This is neither protected-peer authentication nor
+an independent Hagia executable run; full runtime adapter, snapshot/Cycle
+publication and supervisor reconnect acceptance remain subsequent work.
+
+Two compiled negatives remove the missing-required check after dependency
+selection, or decode projections with all capabilities instead of the selected
+set. Each fails its named control; both source files are restored for the
+passing rerun. Initial logs retain two fixture setup failures (a nonexistent
+submit encoder assumption, and changing a fixture's outer epoch without its
+embedded launch-origin identities) and a strict test-expression lint. None is
+reported as a production failure or discarded as acceptance evidence.
+The final focused run passes 34/0, strict native-session all-target Clippy
+passes, and the freshly rebuilt worktree layout gate, format and diff checks
+pass. Builds use the exclusive disk target, two jobs, nice 19 and the same
+device-hidden wrapper. No physical, device or production endpoint run occurred.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

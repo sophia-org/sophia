@@ -3,10 +3,37 @@ use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PolicyReceiveKind {
+    Negotiate,
+    ProfileCompletion(sophia_runtime::PolicyProfileHandoffEffect),
     Configuration,
     DirtyOnly,
     Projection { allow_dirty: bool },
     SessionOperation,
+}
+
+/// One driver invocation grants one offer receive. Profile permissions can
+/// subsequently be derived only from the existing reducer's exact Send effect.
+pub(super) struct PolicyAdmissionPermit(());
+pub(super) struct PolicyProfilePermit(());
+impl PolicyAdmissionPermit {
+    pub(super) fn negotiate(self) -> (PolicyReceivePermit, PolicyProfilePermit) {
+        (
+            PolicyReceivePermit {
+                kind: PolicyReceiveKind::Negotiate,
+            },
+            PolicyProfilePermit(()),
+        )
+    }
+}
+impl PolicyProfilePermit {
+    pub(super) fn completion(
+        &self,
+        effect: sophia_runtime::PolicyProfileHandoffEffect,
+    ) -> PolicyReceivePermit {
+        PolicyReceivePermit {
+            kind: PolicyReceiveKind::ProfileCompletion(effect),
+        }
+    }
 }
 
 /// Issued only at the driver's existing wait sites. Not Clone/Copy: a file
@@ -24,9 +51,20 @@ impl PolicyReceivePermit {
     }
 
     pub(super) fn allows(&self, event: &PolicyAdapterEvent) -> bool {
+        if let (
+            PolicyReceiveKind::ProfileCompletion(effect),
+            PolicyAdapterEvent::ProfileCompletion { kind, .. },
+        ) = (self.kind, event)
+        {
+            // The shared reducer retains exact identity/outcome correlation.
+            return effect.kind == *kind;
+        }
         matches!(
             (self.kind, event),
             (
+                PolicyReceiveKind::Negotiate,
+                PolicyAdapterEvent::Negotiation(_)
+            ) | (
                 PolicyReceiveKind::Configuration,
                 PolicyAdapterEvent::Configuration { .. }
             ) | (PolicyReceiveKind::DirtyOnly, PolicyAdapterEvent::Dirty(_))
@@ -54,7 +92,11 @@ pub(super) fn run_policy_transport(
     commands: &Receiver<PolicyTransportCommand>,
     events: &SyncSender<PolicyTransportEvent>,
 ) -> Result<(), String> {
-    transport.admit(connection_epoch, profile_admission)?;
+    transport.admit(
+        PolicyAdmissionPermit(()),
+        connection_epoch,
+        profile_admission,
+    )?;
     events
         .send(PolicyTransportEvent::Negotiated)
         .map_err(|_| "policy owner event channel disconnected".to_owned())?;
