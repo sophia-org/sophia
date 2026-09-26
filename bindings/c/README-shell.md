@@ -1,5 +1,70 @@
 # C shell wire foundation
 
+## Native 9P file backend (t252 B7 base)
+
+`sophia_9p_client.h` with `nine_p/*.c` implements version, attach, walk,
+lopen, read, write, clunk and flush over an already admitted stream fd.
+`sophia_shell_files.h`, `sophia_shell_files_content.h` and `shell_files/*.c`
+provide the independent base file records and `sophia_shell_files_client.h`
+orchestrates a file session. Compile these C99 sources together. They do not
+link the existing `shell_wire` sources or translate IPC frames.
+
+Reference inputs are the shell file KDL at `bae4ec4a9` (including the Limits
+rules from `f64d670e0`), profile blob `de101e3d` and diod reference blob
+`48d63c80` (upstream `de51d1ee1bd5`). The KDL alone supplies record layouts
+and validation. Session's launch owner supplies the epoch, revision range,
+capability mask and fd. Bemenu can select this backend explicitly at startup
+and own a `sophia_sf_client`; it must continue consuming events and servicing
+the fd. There is no endpoint discovery or automatic backend selection.
+
+Transport memory is caller-owned: `(2 * requests + 1) * msize`, with 1–32
+requests and msize 4096–16777216. Each request reserves its completion storage
+and a paired flush slot. Completed replies, including empty ones, retain their
+tag until consumption and any Rflush. Handles include a monotonically increasing
+serial so stale handles cannot consume a reused slot. Flushing a clunk is refused.
+An unanswered flushed attach/walk releases its reserved fid; a reply preceding
+Rflush preserves its effects. Each service call performs at most 32 send and
+32 receive attempts with separate byte budgets. A clean EOF allows validated
+completions to drain; malformed replies poison the connection. The caller closes
+the fd and disposes of all storage. No reconnect or replay is implicit.
+
+The session requires at least eight request slots and enough fids for the root,
+four service files and temporary object/upload pins (32 is a suitable setting).
+It holds at most one staged submission, one decoded event, one object fetch and
+one upload. An events read can remain outstanding while other operations run.
+Call `service`, inspect and consume events, and explicitly call `ack` after
+processing them. Submitted proves custody, not semantic acceptance. Positive
+short writes advance the acknowledged cursor; submit EAGAIN retries the same
+submission. Every completed submission closes and reopens its transaction fid.
+The client validates the selected revision and required capabilities.
+
+Negotiation starts a Limits fetch when announced. Drain `object_result` after
+it completes. Subsequent Limits/Outputs fetches use fresh pins and compare the
+announced generation and qid; a superseded pin reports AGAIN. The returned
+object pointer remains borrowed until the next fetch. Unknown record kinds
+fail closed, leaving a clear extension point for the reserved launcher records.
+
+Use `upload_begin`, then wait for status 1 and the upload writer to open before
+calling `upload_chunk`. The chunk pointer remains borrowed until acknowledged
+or terminal status cleanup; the client advances it across short writes. It
+supports one transfer at a time within the granted slot count. Consume pending
+events before continuing uploads. End requires every declared byte to have been
+acknowledged. Cancel waits for the writer to open and returns BUSY while writes
+remain outstanding; retrying follows them in order. Status 2 accepts, 3 rejects
+and 4 cancels; terminal
+status closes the writer before the slot is reused. The application still owns
+allocation, permit, action and presentation lifecycle decisions.
+
+Run `sh tools/check_shell_c_wire_files.sh`. The Rust test harness compiles the
+independent C tests and exercises the production export with supplied protection
+evidence. Coverage includes R4-1 through R4-7, tag wrap, reply poisoning, clean
+EOF, 22 KDL-derived literal vectors, negotiation, rejected allocation, a split
+64 KiB upload, cancellation and explicit acknowledgements. It does not start a
+desktop or prove protected launch. Base records include native whole Candidate
+rows, but r7 launcher records and Bemenu adoption remain separate work.
+
+## Existing socket backend
+
 `sophia_shell_wire.h` and `shell_wire/{frame,io,negotiation}.c` implement the
 published revision 1–8 envelope and negotiation without linking Rust. Compile
 those three C99 sources into the client. `sh tools/check_shell_c_wire.sh` runs
