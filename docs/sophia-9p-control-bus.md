@@ -166,6 +166,17 @@ not a portable kernel guarantee. Direct clients need no mount privilege. A
 userspace `9pfuse` path is a later option requiring its own admission, caching
 and lifecycle checks, not an already supported access path.
 
+**Decision (2026-09-26): plain 9P2000.L, no Sophia extension.** Desktop
+meaning lives in each role's file namespace (events as blocking reads,
+transactions as submit records, snapshots as pinned objects, uploads as fixed
+slots, revocation as the export's check), never in new message types, so any
+9P2000.L client can drive a role. Role contracts use only operations that
+plain 9P2000 also has (version, attach, walk, open, read, write, clunk, flush,
+attributes and directory reads), which keeps a later dual-dialect core cheap.
+Descriptor passing, if a role needs it, stays an optional out-of-band
+capability on the socket, not a protocol extension. Portability beyond Linux
+is deferred (t256).
+
 Classic 9P2000 fallback is a separate compatibility question. Supporting `.L`
 does not make existing Plan 9 or plan9port applications work unchanged. Graphics,
 input, runtime and service conventions need separate compatibility evidence.
