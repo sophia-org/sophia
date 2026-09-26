@@ -18,6 +18,27 @@
 //! `crate::client_codec` module; it shares only the protocol's value records
 //! with the server core, exactly as `Client` does.
 //!
+//! A tag or a fid is reserved from the moment its request is queued until
+//! every trace of it is gone. A tag is reused only once its slot has both
+//! matched a reply (or been dropped by a settling `Rflush`) *and* that
+//! reply, if any, has been taken by [`Pipeline::take_reply`]/[`Pipeline::wait`]
+//! -- never earlier, so a stale, undrained reply can never be handed back
+//! for a request that reused its number. A fid an attach or walk would
+//! create is reserved the same way, released if the walk turns out partial
+//! or either request errors. Flushing follows flush(5)
+//! <https://9p.io/magic/man2html/5/flush>: a flushed tag's own reply, if it
+//! beats the `Rflush`, is still delivered normally; either way the tag is
+//! not reused before that `Rflush`, and `Rlerror` answering a `Tflush` is a
+//! protocol violation (flush can never fail). A clunk frees its fid the
+//! moment it is queued (clunk(5) <https://9p.io/magic/man2html/5/clunk>: a
+//! clunk always releases the fid), so flushing an unanswered clunk would
+//! leave this pipeline and the server unable to agree on whether the fid
+//! still exists; [`Pipeline::flush`] refuses to try. A flush is otherwise
+//! never starved: every non-flush request reserves one flush's worth of tag
+//! space, output bytes and reply-byte budget for it, so a flush can always
+//! be queued even at the ordinary budget's limit (see
+//! [`PipelineLimits::validate`]).
+//!
 //! WHAT IT DOES NOT. It never resynchronises a stream it cannot trust: a
 //! reply with an unmatched tag, a type that does not fit the request it
 //! answers, a malformed body, an I/O error, or a `Tflush` answered with
@@ -48,36 +69,47 @@ const IO_BYTE_BUDGET: usize = 256 * 1024;
 const IO_SYSCALL_BUDGET: usize = 64;
 /// One `read(2)`'s buffer.
 const READ_CHUNK: usize = 4096;
+/// `size[4] type[1] tag[2] oldtag[2]`: the whole `Tflush` frame.
+const FLUSH_FRAME_SIZE: usize = HEADER + 2;
+/// `fid[4] offset[8] count[4]`, plus the frame header: every `Twrite`'s
+/// overhead before its data.
+const WRITE_OVERHEAD: usize = HEADER + 4 + 8 + 4;
+/// A floor charged against every completed reply, payload or not: roughly
+/// the `Tag`, enum discriminant and `Vec` header it costs to hold one, so a
+/// flood of zero-payload replies (`Rclunk`, `Rflush`, `Rlerror`, an empty
+/// `Rread`) still counts toward `max_buffered_input`.
+const REPLY_BASE_COST: usize = 16;
+/// One `Rwalk` qid on the wire.
+const QID_SIZE: usize = 13;
 
 /// Bounds a pipeline holds itself to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PipelineLimits {
     /// Offered at version; the server may answer smaller.
     pub msize: u32,
-    /// Tags in flight at once: queued or sent but not yet matched to a
-    /// reply. A tag is freed the moment its reply is matched -- whether or
-    /// not [`Pipeline::take_reply`] has drained it yet -- except a flushed
-    /// tag, kept reserved until the `Rflush` that settles it (see
-    /// [`Pipeline::flush`]).
+    /// Ordinary (non-flush) tags in flight or completed-but-undrained at
+    /// once. Every one of them also reserves room for one flush of its own,
+    /// so a flush can never be starved; see the module doc.
     pub max_outstanding: u16,
     /// Fids reserved at once. An attach or walk reserves its new fid the
     /// moment the request is queued, before any reply arrives, and frees it
     /// again if the reply turns out to be a partial walk or an error.
     pub max_fids: u32,
-    /// Request bytes queued but not yet written to the socket.
+    /// Request bytes queued but not yet written to the socket, plus a
+    /// flush's own small reserved allowance (see the module doc).
     pub max_buffered_output: usize,
-    /// Reply payload bytes matched but not yet taken by
-    /// [`Pipeline::take_reply`]. Past this, [`Pipeline::poll`] stops reading
-    /// further replies off the socket until some are taken; nothing is lost,
-    /// progress just waits for the caller to drain.
+    /// The worst-case footprint of every outstanding reply, reserved the
+    /// moment its request is queued and trued up once the reply arrives, is
+    /// bounded by this (plus a flush's own small reserved allowance). Past
+    /// it, [`Pipeline::poll`] stops reading further replies off the socket
+    /// until [`Pipeline::take_reply`] drains some; nothing is lost.
     pub max_buffered_input: usize,
 }
 
 impl PipelineLimits {
     pub const MIN_MSIZE: u32 = client_codec::MIN_MSIZE;
     pub const MAX_MSIZE: u32 = client_codec::MAX_MSIZE;
-    /// One less than the tag space: `NOTAG` can never be a real tag, so no
-    /// more than this many can be outstanding at once.
+    /// One less than the tag space: `NOTAG` can never be a real tag.
     pub const MAX_OUTSTANDING: u16 = u16::MAX - 1;
 
     fn validate(&self) -> Result<(), PipelineError> {
@@ -87,8 +119,13 @@ impl PipelineLimits {
         if self.max_outstanding == 0 {
             return Err(PipelineError::Limit("no outstanding requests"));
         }
-        if self.max_outstanding > Self::MAX_OUTSTANDING {
-            return Err(PipelineError::Limit("max_outstanding too large"));
+        // Every outstanding request reserves a flush of its own on top of
+        // the ordinary budget (see the module doc), so twice as many tags
+        // must fit the tag space.
+        if u32::from(self.max_outstanding) * 2 > u32::from(Self::MAX_OUTSTANDING) {
+            return Err(PipelineError::Limit(
+                "max_outstanding too large: 2x must fit the tag space",
+            ));
         }
         if self.max_fids == 0 {
             return Err(PipelineError::Limit("no fids"));
@@ -162,34 +199,58 @@ pub enum Reply {
     Error(Errno),
 }
 
-/// What a still-unanswered tag is waiting for, and enough of its request to
-/// validate the reply's shape and settle fid bookkeeping.
+/// What a still-unanswered tag is waiting for, and enough of its request
+/// (the fid it reserved, the names it walked, the count it read or sent) to
+/// validate the reply's shape, settle fid bookkeeping, and true up the
+/// worst-case byte reservation [`reply_bound`] made for it at admission.
+/// `Settled` is not a request: `old`'s own answer already arrived and was
+/// delivered through the ordinary path, its fid and byte bookkeeping already
+/// settled there; the tag stays reserved -- unusable by
+/// [`Pipeline::candidate_tag`] -- until the `Rflush` that settles it frees it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Outstanding {
-    Attach {
-        fid: u32,
-    },
-    Walk {
-        newfid: u32,
-        names: u16,
-    },
+    Attach(u32),
+    Walk(u32, u16),
     Lopen,
-    Read {
-        count: u32,
-    },
-    Write {
-        sent: u32,
-    },
+    Read(u32),
+    Write(u32),
     Clunk,
-    Flush {
-        old: u16,
-    },
-    /// `old`'s own answer already arrived and was delivered through the
-    /// ordinary path; the tag stays reserved -- unusable by
-    /// [`Pipeline::candidate_tag`] -- until the `Rflush` that settles it
-    /// frees it. flush(5): a client must not reuse a flushed tag before it
-    /// is answered.
+    Flush(u16),
     Settled,
+}
+
+/// The worst-case footprint of `outstanding`'s eventual reply, reserved
+/// against `max_buffered_input` the instant the request is admitted (see
+/// [`Pipeline::submit`]) and released once the real reply is known, so
+/// admission alone can never oversubscribe the budget.
+fn reply_bound(outstanding: &Outstanding) -> usize {
+    REPLY_BASE_COST
+        + match outstanding {
+            Outstanding::Read(count) => *count as usize,
+            Outstanding::Walk(_, names) => usize::from(*names) * QID_SIZE,
+            Outstanding::Attach(_)
+            | Outstanding::Lopen
+            | Outstanding::Write(_)
+            | Outstanding::Clunk
+            | Outstanding::Flush(_)
+            | Outstanding::Settled => 0,
+        }
+}
+
+/// The actual footprint a completed `reply` charges against
+/// `max_buffered_input` while it sits, undrained, in `completed`.
+fn reply_footprint(reply: &Reply) -> usize {
+    REPLY_BASE_COST
+        + match reply {
+            Reply::Read(data) => data.len(),
+            Reply::Walk(qids) => qids.len() * QID_SIZE,
+            Reply::Attach(_)
+            | Reply::Lopen { .. }
+            | Reply::Write(_)
+            | Reply::Clunk
+            | Reply::Flush
+            | Reply::Error(_) => 0,
+        }
 }
 
 pub struct Pipeline {
@@ -203,8 +264,17 @@ pub struct Pipeline {
     /// Old tags a `Tflush` has been sent for and not yet settled.
     flushed: BTreeSet<u16>,
     completed: VecDeque<(Tag, Reply)>,
-    /// Bytes of `Reply::Read` payloads sitting in `completed`.
-    buffered_reply_bytes: usize,
+    /// Tags with an undrained reply sitting in `completed`; disjoint from
+    /// `in_flight` except a `Settled` tag, present in both until its
+    /// `Rflush` and its drain have each happened.
+    completed_tags: BTreeSet<u16>,
+    /// `|in_flight.keys() ∪ completed_tags|`: every tag currently
+    /// unavailable to [`Self::candidate_tag`], kept as a running count so
+    /// admission never has to recompute the union.
+    reserved_tags: usize,
+    /// The worst-case footprint reserved for every outstanding reply, trued
+    /// up to its real footprint once matched, released once drained.
+    reserved_reply_bytes: usize,
     out_buf: Vec<u8>,
     in_buf: Vec<u8>,
     poisoned: bool,
@@ -249,7 +319,9 @@ impl Pipeline {
             in_flight: BTreeMap::new(),
             flushed: BTreeSet::new(),
             completed: VecDeque::new(),
-            buffered_reply_bytes: 0,
+            completed_tags: BTreeSet::new(),
+            reserved_tags: 0,
+            reserved_reply_bytes: 0,
             out_buf: Vec::new(),
             in_buf: Vec::new(),
             poisoned: false,
@@ -264,10 +336,10 @@ impl Pipeline {
         self.poisoned
     }
 
-    /// Tags currently outstanding (queued, sent, or reserved by a flush not
-    /// yet settled).
+    /// Tags currently unavailable for reuse: queued, sent, or matched to a
+    /// reply [`Pipeline::take_reply`]/[`Pipeline::wait`] has not drained yet.
     pub fn outstanding(&self) -> usize {
-        self.in_flight.len()
+        self.reserved_tags
     }
 
     /// Fids currently reserved (attached or walked to, not yet clunked or
@@ -279,17 +351,14 @@ impl Pipeline {
     /// Queues an attach to the root the server gives this connection (`afid`
     /// is always `NOFID`: neither side authenticates through the protocol).
     pub fn attach(&mut self, uname: &[u8], aname: &[u8]) -> Result<(Tag, Fid), PipelineError> {
-        self.check_capacity(true)?;
         let fid = self.candidate_fid();
+        let outstanding = Outstanding::Attach(fid);
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(true, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::attach_body(fid, client_codec::NOFID, uname, aname)
             .map_err(PipelineError::Limit)?;
-        self.submit(
-            client_codec::TATTACH,
-            tag,
-            body,
-            Outstanding::Attach { fid },
-        )?;
+        self.submit(client_codec::TATTACH, tag, body, outstanding, bound, 0)?;
         self.fids.insert(fid);
         self.commit_fid(fid);
         self.commit_tag(tag);
@@ -303,17 +372,13 @@ impl Pipeline {
         if names.len() > client_codec::MAX_WALK {
             return Err(PipelineError::Limit("more than sixteen names"));
         }
-        self.check_capacity(true)?;
         let newfid = self.candidate_fid();
+        let outstanding = Outstanding::Walk(newfid, names.len() as u16);
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(true, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::walk_body(from.0, newfid, names).map_err(PipelineError::Limit)?;
-        let names = names.len() as u16;
-        self.submit(
-            client_codec::TWALK,
-            tag,
-            body,
-            Outstanding::Walk { newfid, names },
-        )?;
+        self.submit(client_codec::TWALK, tag, body, outstanding, bound, 0)?;
         self.fids.insert(newfid);
         self.commit_fid(newfid);
         self.commit_tag(tag);
@@ -322,10 +387,12 @@ impl Pipeline {
 
     /// Queues an open of `fid`.
     pub fn lopen(&mut self, fid: Fid, flags: u32) -> Result<Tag, PipelineError> {
-        self.check_capacity(false)?;
+        let outstanding = Outstanding::Lopen;
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::lopen_body(fid.0, flags);
-        self.submit(client_codec::TLOPEN, tag, body, Outstanding::Lopen)?;
+        self.submit(client_codec::TLOPEN, tag, body, outstanding, bound, 0)?;
         self.commit_tag(tag);
         Ok(Tag(tag))
     }
@@ -333,66 +400,84 @@ impl Pipeline {
     /// Queues a read, clamped to what one reply can carry (`msize -
     /// READ_OVERHEAD`), like [`crate::client::Client::read`]'s own clamp.
     pub fn read(&mut self, fid: Fid, offset: u64, count: u32) -> Result<Tag, PipelineError> {
-        self.check_capacity(false)?;
         let count = count.min(self.msize - client_codec::READ_OVERHEAD);
+        let outstanding = Outstanding::Read(count);
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::io_body(fid.0, offset, count);
-        self.submit(client_codec::TREAD, tag, body, Outstanding::Read { count })?;
+        self.submit(client_codec::TREAD, tag, body, outstanding, bound, 0)?;
         self.commit_tag(tag);
         Ok(Tag(tag))
     }
 
-    /// Queues a write. `data` must fit `msize`; a `data` that would not is
-    /// refused here, before anything is queued.
+    /// Queues a write. Preflighted against `msize` and the output budget
+    /// before `data` is ever copied into a request body, so an oversized
+    /// `data` is refused cheaply.
     pub fn write(&mut self, fid: Fid, offset: u64, data: &[u8]) -> Result<Tag, PipelineError> {
+        let frame_len = WRITE_OVERHEAD
+            .checked_add(data.len())
+            .filter(|len| *len <= self.msize as usize)
+            .ok_or(PipelineError::Limit("request larger than msize"))?;
+        if self.out_buf.len() + frame_len > self.limits.max_buffered_output {
+            return Err(PipelineError::Limit("output buffer full"));
+        }
         let sent = u32::try_from(data.len())
-            .map_err(|_| PipelineError::Limit("write larger than msize"))?;
-        self.check_capacity(false)?;
+            .map_err(|_| PipelineError::Limit("request larger than msize"))?;
+        let outstanding = Outstanding::Write(sent);
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::write_body(fid.0, offset, sent, data);
-        self.submit(client_codec::TWRITE, tag, body, Outstanding::Write { sent })?;
+        self.submit(client_codec::TWRITE, tag, body, outstanding, bound, 0)?;
         self.commit_tag(tag);
         Ok(Tag(tag))
     }
 
-    /// Queues a clunk. 9P requires a clunk to release the fid whatever the
-    /// server later answers (clunk(5)); this pipeline frees the fid the
-    /// moment the request is queued, not when the reply arrives, matching
+    /// Queues a clunk, freeing the fid the moment it is queued (clunk(5)),
+    /// not when the reply arrives, matching
     /// [`crate::client::Client::clunk`]'s own choice.
     pub fn clunk(&mut self, fid: Fid) -> Result<Tag, PipelineError> {
-        self.check_capacity(false)?;
+        let outstanding = Outstanding::Clunk;
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(false, bound, false)?;
         let tag = self.candidate_tag();
         let body = client_codec::clunk_body(fid.0);
-        self.submit(client_codec::TCLUNK, tag, body, Outstanding::Clunk)?;
+        self.submit(client_codec::TCLUNK, tag, body, outstanding, bound, 0)?;
         self.fids.remove(&fid.0);
         self.commit_tag(tag);
         Ok(Tag(tag))
     }
 
-    /// Queues a flush of `old`, which must currently be outstanding (queued
-    /// or sent, not itself a flush, not already settled, and not already
-    /// being flushed). `old`'s own reply, if it arrives before this
-    /// flush's `Rflush`, is still delivered through [`Self::take_reply`];
-    /// if it never arrives, `old` is freed, unanswered, when `Rflush`
-    /// arrives. Either way `old` cannot be reused until then. See flush(5).
+    /// Queues a flush of `old`, which must currently be outstanding: sent,
+    /// not itself a flush or a clunk (see the module doc), not settled, and
+    /// not already being flushed. Always has room to be queued.
     pub fn flush(&mut self, old: Tag) -> Result<Tag, PipelineError> {
-        self.check_capacity(false)?;
         match self.in_flight.get(&old.0) {
-            None | Some(Outstanding::Flush { .. }) | Some(Outstanding::Settled) => {
+            None | Some(Outstanding::Flush(_)) | Some(Outstanding::Settled) => {
                 return Err(PipelineError::Limit("tag not outstanding"));
+            }
+            Some(Outstanding::Clunk) => {
+                return Err(PipelineError::Limit("cannot flush a clunk"));
             }
             Some(_) => {}
         }
         if self.flushed.contains(&old.0) {
             return Err(PipelineError::Limit("tag already being flushed"));
         }
+        let outstanding = Outstanding::Flush(old.0);
+        let bound = reply_bound(&outstanding);
+        self.check_capacity(false, bound, true)?;
         let tag = self.candidate_tag();
         let body = client_codec::flush_body(old.0);
+        let headroom = usize::from(self.limits.max_outstanding) * FLUSH_FRAME_SIZE;
         self.submit(
             client_codec::TFLUSH,
             tag,
             body,
-            Outstanding::Flush { old: old.0 },
+            outstanding,
+            bound,
+            headroom,
         )?;
         self.flushed.insert(old.0);
         self.commit_tag(tag);
@@ -414,9 +499,7 @@ impl Pipeline {
     /// The next completed reply, in the order its frame arrived.
     pub fn take_reply(&mut self) -> Option<(Tag, Reply)> {
         let entry = self.completed.pop_front()?;
-        if let (_, Reply::Read(data)) = &entry {
-            self.buffered_reply_bytes = self.buffered_reply_bytes.saturating_sub(data.len());
-        }
+        self.drained(entry.0.0, &entry.1);
         Some(entry)
     }
 
@@ -428,10 +511,7 @@ impl Pipeline {
         loop {
             if let Some(index) = self.completed.iter().position(|(found, _)| *found == tag) {
                 let (_, reply) = self.completed.remove(index).unwrap();
-                if let Reply::Read(data) = &reply {
-                    self.buffered_reply_bytes =
-                        self.buffered_reply_bytes.saturating_sub(data.len());
-                }
+                self.drained(tag.0, &reply);
                 return Ok(reply);
             }
             if self.poisoned {
@@ -450,29 +530,62 @@ impl Pipeline {
                 Err(rustix::io::Errno::INTR) => continue,
                 Err(errno) => return Err(self.poison(io_err(io::Error::from(errno)))),
             }
-            self.poll()?;
+            // A peer may answer and then close; the answer still counts.
+            if let Err(error) = self.poll() {
+                if let Some(index) = self.completed.iter().position(|(found, _)| *found == tag) {
+                    let (_, reply) = self.completed.remove(index).unwrap();
+                    self.drained(tag.0, &reply);
+                    return Ok(reply);
+                }
+                return Err(error);
+            }
         }
     }
 
-    fn check_capacity(&self, needs_fid: bool) -> Result<(), PipelineError> {
+    /// `is_flush` uses the flush's own reserved tag space and byte headroom
+    /// instead of the ordinary budget (see the module doc).
+    fn check_capacity(
+        &self,
+        needs_fid: bool,
+        reply_bound: usize,
+        is_flush: bool,
+    ) -> Result<(), PipelineError> {
         if self.poisoned {
             return Err(PipelineError::Poisoned);
         }
-        if self.in_flight.len() >= self.limits.max_outstanding as usize {
+        let max_outstanding = usize::from(self.limits.max_outstanding);
+        let scale = if is_flush { 2 } else { 1 };
+        if self.reserved_tags >= scale * max_outstanding {
             return Err(PipelineError::Limit("max outstanding requests reached"));
         }
         if needs_fid && self.fids.len() >= self.limits.max_fids as usize {
             return Err(PipelineError::Limit("max fids reached"));
+        }
+        let headroom = if is_flush {
+            max_outstanding * REPLY_BASE_COST
+        } else {
+            0
+        };
+        let budget = self.limits.max_buffered_input + headroom;
+        if self.reserved_reply_bytes + reply_bound > budget {
+            return Err(PipelineError::Limit(
+                "reply would not fit max_buffered_input",
+            ));
         }
         Ok(())
     }
 
     /// The tag [`Self::commit_tag`] would make live, without reserving it:
     /// nothing changes until the request that uses it is actually queued.
+    /// Skips a tag with an undrained reply as well as one in flight, so a
+    /// reused number can never be handed a stale, already-delivered reply.
     fn candidate_tag(&self) -> u16 {
         let mut tag = self.next_tag;
         loop {
-            if tag != client_codec::NOTAG && !self.in_flight.contains_key(&tag) {
+            if tag != client_codec::NOTAG
+                && !self.in_flight.contains_key(&tag)
+                && !self.completed_tags.contains(&tag)
+            {
                 return tag;
             }
             tag = if tag >= client_codec::NOTAG - 1 {
@@ -504,22 +617,25 @@ impl Pipeline {
         self.next_fid = fid.wrapping_add(1);
     }
 
-    /// Checks the frame fits `msize` and the output buffer, then queues it
-    /// and records `outstanding`. Nothing here is undone on failure because
-    /// nothing before it mutated anything: a caller reserves a fid slot only
-    /// by inserting into `self.fids`, which it does after this succeeds.
+    /// Checks the frame fits `msize` and the output budget (plus
+    /// `output_headroom`, nonzero only for a flush), then queues it and
+    /// reserves `outstanding`'s tag and `reply_bound` bytes. Nothing mutates
+    /// on failure: a fid slot is reserved only by the caller, after this
+    /// succeeds.
     fn submit(
         &mut self,
         kind: u8,
         tag: u16,
         body: Vec<u8>,
         outstanding: Outstanding,
+        reply_bound: usize,
+        output_headroom: usize,
     ) -> Result<(), PipelineError> {
         let frame_len = HEADER + body.len();
         if frame_len > self.msize as usize {
             return Err(PipelineError::Limit("request larger than msize"));
         }
-        if self.out_buf.len() + frame_len > self.limits.max_buffered_output {
+        if self.out_buf.len() + frame_len > self.limits.max_buffered_output + output_headroom {
             return Err(PipelineError::Limit("output buffer full"));
         }
         self.out_buf.reserve(frame_len);
@@ -529,6 +645,8 @@ impl Pipeline {
         self.out_buf.extend_from_slice(&tag.to_le_bytes());
         self.out_buf.extend_from_slice(&body);
         self.in_flight.insert(tag, outstanding);
+        self.reserved_tags += 1;
+        self.reserved_reply_bytes += reply_bound;
         Ok(())
     }
 
@@ -557,7 +675,7 @@ impl Pipeline {
         let mut budget = IO_BYTE_BUDGET;
         for _ in 0..IO_SYSCALL_BUDGET {
             self.drain_frames()?;
-            if budget == 0 || self.buffered_reply_bytes >= self.limits.max_buffered_input {
+            if budget == 0 || self.reserved_reply_bytes >= self.limits.max_buffered_input {
                 break;
             }
             let mut chunk = [0u8; READ_CHUNK];
@@ -615,40 +733,40 @@ impl Pipeline {
                         self.poison(PipelineError::Protocol("reply to an already-settled tag"))
                     );
                 }
-                // Tflush can never fail (flush(5)): an Rlerror answering one
-                // is itself a protocol violation.
-                Outstanding::Flush { .. } => {
+                // flush(5): a Tflush can never fail, so an Rlerror answering
+                // one is itself a protocol violation.
+                Outstanding::Flush(_) => {
                     return Err(self.poison(PipelineError::Protocol("Rlerror answering Tflush")));
                 }
-                Outstanding::Attach { fid } => {
+                Outstanding::Attach(fid) => {
                     self.fids.remove(&fid);
                 }
-                Outstanding::Walk { newfid, .. } => {
+                Outstanding::Walk(newfid, _) => {
                     self.fids.remove(&newfid);
                 }
                 Outstanding::Lopen
-                | Outstanding::Read { .. }
-                | Outstanding::Write { .. }
+                | Outstanding::Read(_)
+                | Outstanding::Write(_)
                 | Outstanding::Clunk => {}
             }
-            self.resolve(tag, Reply::Error(errno));
+            self.resolve(tag, outstanding, Reply::Error(errno));
             return Ok(());
         }
         match outstanding {
             Outstanding::Settled => {
                 Err(self.poison(PipelineError::Protocol("reply to an already-settled tag")))
             }
-            Outstanding::Attach { .. } => {
+            Outstanding::Attach(_) => {
                 if kind != client_codec::RATTACH {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
                 let Some(qid) = client_codec::decode_rattach(&body) else {
                     return Err(self.poison(PipelineError::Protocol("Rattach shape")));
                 };
-                self.resolve(tag, Reply::Attach(qid));
+                self.resolve(tag, outstanding, Reply::Attach(qid));
                 Ok(())
             }
-            Outstanding::Walk { newfid, names } => {
+            Outstanding::Walk(newfid, names) => {
                 if kind != client_codec::RWALK {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
@@ -658,10 +776,20 @@ impl Pipeline {
                 if qids.len() > names as usize {
                     return Err(self.poison(PipelineError::Protocol("Rwalk count")));
                 }
+                // walk(5) <https://9p.io/magic/man2html/5/walk>: nwqid == 0
+                // is valid only for nwname == 0 (a clone). A failure at the
+                // first name must instead be Rlerror, so an empty Rwalk
+                // answering a nonempty walk cannot be a genuine partial walk
+                // and is a protocol violation, not a walk that stopped short.
+                if qids.is_empty() && names > 0 {
+                    return Err(
+                        self.poison(PipelineError::Protocol("empty Rwalk for a nonempty walk"))
+                    );
+                }
                 if qids.len() < names as usize {
                     self.fids.remove(&newfid);
                 }
-                self.resolve(tag, Reply::Walk(qids));
+                self.resolve(tag, outstanding, Reply::Walk(qids));
                 Ok(())
             }
             Outstanding::Lopen => {
@@ -671,10 +799,10 @@ impl Pipeline {
                 let Some((qid, iounit)) = client_codec::decode_rlopen(&body) else {
                     return Err(self.poison(PipelineError::Protocol("Rlopen shape")));
                 };
-                self.resolve(tag, Reply::Lopen { qid, iounit });
+                self.resolve(tag, outstanding, Reply::Lopen { qid, iounit });
                 Ok(())
             }
-            Outstanding::Read { count } => {
+            Outstanding::Read(count) => {
                 if kind != client_codec::RREAD {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
@@ -684,10 +812,10 @@ impl Pipeline {
                 if data.len() > count as usize {
                     return Err(self.poison(PipelineError::Protocol("Rread count")));
                 }
-                self.resolve(tag, Reply::Read(data));
+                self.resolve(tag, outstanding, Reply::Read(data));
                 Ok(())
             }
-            Outstanding::Write { sent } => {
+            Outstanding::Write(sent) => {
                 if kind != client_codec::RWRITE {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
@@ -697,7 +825,7 @@ impl Pipeline {
                 if count > sent {
                     return Err(self.poison(PipelineError::Protocol("Rwrite count")));
                 }
-                self.resolve(tag, Reply::Write(count));
+                self.resolve(tag, outstanding, Reply::Write(count));
                 Ok(())
             }
             Outstanding::Clunk => {
@@ -707,40 +835,89 @@ impl Pipeline {
                 let Some(()) = client_codec::decode_rclunk(&body) else {
                     return Err(self.poison(PipelineError::Protocol("Rclunk shape")));
                 };
-                self.resolve(tag, Reply::Clunk);
+                self.resolve(tag, outstanding, Reply::Clunk);
                 Ok(())
             }
-            Outstanding::Flush { old } => {
+            Outstanding::Flush(old) => {
                 if kind != client_codec::RFLUSH {
                     return Err(self.poison(PipelineError::Protocol("unexpected reply type")));
                 }
                 let Some(()) = client_codec::decode_rflush(&body) else {
                     return Err(self.poison(PipelineError::Protocol("Rflush shape")));
                 };
-                // Whether `old` was already `Settled` (its own reply arrived
-                // first) or is still its original entry (never answered),
-                // this `Rflush` is what frees it either way.
-                self.flushed.remove(&old);
-                self.in_flight.remove(&old);
-                self.resolve(tag, Reply::Flush);
+                self.settle_flushed(old);
+                self.resolve(tag, outstanding, Reply::Flush);
                 Ok(())
             }
         }
     }
 
-    /// Delivers `reply` for `tag`, in arrival order. A tag under an
-    /// outstanding flush is not freed here: it is marked [`Outstanding::Settled`]
-    /// instead, so it stays unusable until that flush's `Rflush` frees it.
-    fn resolve(&mut self, tag: u16, reply: Reply) {
+    /// What `old`'s `Rflush` undoes: nothing, if `old`'s own reply already
+    /// arrived and settled its fid and byte bookkeeping (`Settled`);
+    /// otherwise `old` never took hold, so its fid reservation and its
+    /// worst-case byte reservation are both released here, since no actual
+    /// reply will ever true them up.
+    fn settle_flushed(&mut self, old: u16) {
+        self.flushed.remove(&old);
+        if let Some(unanswered) = self.in_flight.remove(&old) {
+            match unanswered {
+                Outstanding::Settled => {}
+                Outstanding::Attach(fid) => {
+                    self.fids.remove(&fid);
+                }
+                Outstanding::Walk(newfid, _) => {
+                    self.fids.remove(&newfid);
+                }
+                Outstanding::Lopen
+                | Outstanding::Read(_)
+                | Outstanding::Write(_)
+                | Outstanding::Clunk
+                | Outstanding::Flush(_) => {}
+            }
+            if !matches!(unanswered, Outstanding::Settled) {
+                self.reserved_reply_bytes = self
+                    .reserved_reply_bytes
+                    .saturating_sub(reply_bound(&unanswered));
+            }
+        }
+        self.release_if_free(old);
+    }
+
+    /// Delivers `reply` for `tag`, in arrival order, truing up its byte
+    /// reservation from `outstanding`'s worst case to `reply`'s actual
+    /// footprint. A tag under an outstanding flush is not freed here: it is
+    /// marked [`Outstanding::Settled`] instead, so it stays unusable until
+    /// that flush's `Rflush` frees it.
+    fn resolve(&mut self, tag: u16, outstanding: Outstanding, reply: Reply) {
+        self.reserved_reply_bytes = self
+            .reserved_reply_bytes
+            .saturating_sub(reply_bound(&outstanding))
+            .saturating_add(reply_footprint(&reply));
         if self.flushed.contains(&tag) {
             self.in_flight.insert(tag, Outstanding::Settled);
         } else {
             self.in_flight.remove(&tag);
         }
-        if let Reply::Read(data) = &reply {
-            self.buffered_reply_bytes += data.len();
-        }
+        self.completed_tags.insert(tag);
         self.completed.push_back((Tag(tag), reply));
+    }
+
+    /// Common tail of [`Self::take_reply`] and [`Self::wait`]: releases
+    /// `reply`'s byte reservation and its tag once nothing else references it.
+    fn drained(&mut self, tag: u16, reply: &Reply) {
+        self.reserved_reply_bytes = self
+            .reserved_reply_bytes
+            .saturating_sub(reply_footprint(reply));
+        self.completed_tags.remove(&tag);
+        self.release_if_free(tag);
+    }
+
+    /// Frees `tag`'s reservation once it is referenced by neither
+    /// `in_flight` nor `completed_tags`.
+    fn release_if_free(&mut self, tag: u16) {
+        if !self.in_flight.contains_key(&tag) && !self.completed_tags.contains(&tag) {
+            self.reserved_tags = self.reserved_tags.saturating_sub(1);
+        }
     }
 
     /// Marks the pipeline unusable and closes its socket.
@@ -787,22 +964,25 @@ fn remaining(deadline: Instant) -> Result<Duration, PipelineError> {
 
 /// The blocking version negotiation `connect`/`over` do before switching the
 /// stream to nonblocking, applying [`client_codec::accept_rversion`]'s rules
-/// -- the same ones [`crate::client::Client::over`] applies.
+/// -- the same ones [`crate::client::Client::over`] applies. The blocking
+/// send/receive themselves live in `client_codec`, alongside `connect_by`.
 fn negotiate(
     stream: &mut UnixStream,
     offered_msize: u32,
     deadline: Instant,
 ) -> Result<u32, PipelineError> {
     let body = client_codec::version_body(offered_msize);
-    send_blocking(
+    client_codec::send_blocking(
         stream,
         client_codec::TVERSION,
         client_codec::NOTAG,
         &body,
         deadline,
         offered_msize,
-    )?;
-    let (kind, tag, body) = receive_blocking(stream, deadline, offered_msize)?;
+    )
+    .map_err(connect_error)?;
+    let (kind, tag, body) =
+        client_codec::receive_blocking(stream, deadline, offered_msize).map_err(connect_error)?;
     if tag != client_codec::NOTAG || kind != client_codec::RVERSION {
         return Err(PipelineError::Protocol("Rversion shape"));
     }
@@ -810,86 +990,4 @@ fn negotiate(
         return Err(PipelineError::Protocol("Rversion shape"));
     };
     client_codec::accept_rversion(offered_msize, msize, version).map_err(PipelineError::Protocol)
-}
-
-fn send_blocking(
-    stream: &mut UnixStream,
-    kind: u8,
-    tag: u16,
-    body: &[u8],
-    deadline: Instant,
-    msize: u32,
-) -> Result<(), PipelineError> {
-    let size = HEADER
-        .checked_add(body.len())
-        .filter(|size| *size <= msize as usize)
-        .ok_or(PipelineError::Limit("request larger than msize"))?;
-    let mut frame = Vec::with_capacity(size);
-    frame.extend_from_slice(&(size as u32).to_le_bytes());
-    frame.push(kind);
-    frame.extend_from_slice(&tag.to_le_bytes());
-    frame.extend_from_slice(body);
-    let mut written = 0;
-    while written < frame.len() {
-        let left = remaining(deadline)?;
-        stream.set_write_timeout(Some(left)).map_err(io_err)?;
-        match stream.write(&frame[written..]) {
-            Ok(0) => return Err(PipelineError::Io(io::ErrorKind::WriteZero)),
-            Ok(count) => written += count,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                ) =>
-            {
-                return Err(PipelineError::Timeout);
-            }
-            Err(error) => return Err(io_err(error)),
-        }
-    }
-    Ok(())
-}
-
-fn receive_blocking(
-    stream: &mut UnixStream,
-    deadline: Instant,
-    msize: u32,
-) -> Result<(u8, u16, Vec<u8>), PipelineError> {
-    let mut buffer = Vec::new();
-    loop {
-        let wanted = if buffer.len() < 4 {
-            4
-        } else {
-            let size = u32::from_le_bytes(buffer[..4].try_into().unwrap()) as usize;
-            if size < HEADER || size > msize as usize {
-                return Err(PipelineError::Protocol("reply frame size"));
-            }
-            size
-        };
-        if buffer.len() == wanted && wanted >= HEADER {
-            return Ok((
-                buffer[4],
-                u16::from_le_bytes([buffer[5], buffer[6]]),
-                buffer[HEADER..].to_vec(),
-            ));
-        }
-        let left = remaining(deadline)?;
-        stream.set_read_timeout(Some(left)).map_err(io_err)?;
-        let mut chunk = vec![0u8; wanted - buffer.len()];
-        match stream.read(&mut chunk) {
-            Ok(0) => return Err(PipelineError::Io(io::ErrorKind::UnexpectedEof)),
-            Ok(count) => buffer.extend_from_slice(&chunk[..count]),
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                ) =>
-            {
-                return Err(PipelineError::Timeout);
-            }
-            Err(error) => return Err(io_err(error)),
-        }
-    }
 }

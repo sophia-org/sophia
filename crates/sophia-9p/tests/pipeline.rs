@@ -192,7 +192,10 @@ fn flush_of_an_outstanding_read_frees_its_tag_without_a_reply() {
     let flush_tag = pipeline.flush(read_tag).unwrap();
     assert_eq!(pipeline.wait(flush_tag, deadline()).unwrap(), Reply::Flush);
 
-    assert_eq!(pipeline.outstanding(), 0, "both tags are free again");
+    // The earlier attach/walk/lopen replies are still sitting undrained (and
+    // so still counted as outstanding: R4-1), so drain everything before
+    // checking that every tag -- including the flushed read's and the
+    // flush's own -- is free again.
     let mut drained = Vec::new();
     while let Some(entry) = pipeline.take_reply() {
         drained.push(entry);
@@ -201,6 +204,7 @@ fn flush_of_an_outstanding_read_frees_its_tag_without_a_reply() {
         drained.iter().all(|(tag, _)| *tag != read_tag),
         "the flushed read was answered: {drained:?}"
     );
+    assert_eq!(pipeline.outstanding(), 0, "every tag is free again");
 
     // The event was never consumed, so a fresh read on the same fid still
     // sees it, and the freed tag is usable again.
@@ -393,6 +397,177 @@ fn invalid_pipeline_limits_are_refused_before_connecting() {
     );
 }
 
+// ---- regression tests for the Codex review of ab1c4243a (R4-1..R4-7) ----
+
+/// R4-2: a worst-case byte reservation is made at admission time (before any
+/// reply exists), not just once bytes actually arrive, so undrained replies
+/// -- even the small, mostly zero-payload kind this flags -- cannot grow
+/// `completed`'s memory past `max_buffered_input`. Sixteen-name walks are
+/// the heaviest fixed-shape request (16*13 + the base cost per reply, on
+/// top of whatever a real reply turns out to need), so a tiny
+/// `max_buffered_input` bounds how many can be admitted at once, far below
+/// the generous outstanding-count ceiling.
+#[test]
+fn undrained_replies_are_bounded_by_bytes_not_only_by_count() {
+    let limits = PipelineLimits {
+        max_outstanding: 10_000,
+        max_fids: 10_000,
+        msize: PipelineLimits::MIN_MSIZE,
+        max_buffered_input: PipelineLimits::MIN_MSIZE as usize,
+        ..PipelineLimits::default()
+    };
+    let (_served, mut pipeline) = pipeline_with(limits);
+    let (attach_tag, root) = pipeline.attach(b"", b"").unwrap();
+    assert!(matches!(
+        pipeline.wait(attach_tag, deadline()).unwrap(),
+        Reply::Attach(_)
+    ));
+
+    let names: Vec<&[u8]> = vec![b"a"; 16];
+    let mut tags = Vec::new();
+    loop {
+        match pipeline.walk(root, &names) {
+            Ok((tag, _fid)) => tags.push(tag),
+            Err(PipelineError::Limit("reply would not fit max_buffered_input")) => break,
+            Err(other) => panic!("unexpected refusal: {other:?}"),
+        }
+        assert!(tags.len() <= 1000, "never hit the byte budget");
+    }
+    let admitted = tags.len();
+    assert!(admitted > 0, "the first walk alone should have fit");
+    assert!(
+        admitted < 1000,
+        "admitted {admitted} walks: the byte budget, not the 10,000 outstanding \
+         ceiling, should have bound this"
+    );
+    assert_eq!(pipeline.outstanding(), admitted);
+
+    // Answering them (Rlerror ENOENT: "a" is not root's child) trues each
+    // reservation down from the worst case to Rlerror's small floor,
+    // freeing room for more even though nothing has been drained yet.
+    for &tag in &tags {
+        assert_eq!(
+            pipeline.wait(tag, deadline()).unwrap(),
+            Reply::Error(Errno::ENOENT)
+        );
+    }
+    assert!(
+        pipeline.walk(root, &names).is_ok(),
+        "truing up down to Rlerror's small footprint should free room for more"
+    );
+}
+
+/// R4-3 (clunk half): flushing a clunk's tag is refused before queueing,
+/// since a clunk already released its fid locally the moment it was sent
+/// (clunk(5)); if the clunk were then flushed away unanswered, this pipeline
+/// and the server could disagree forever about whether the fid still
+/// exists.
+#[test]
+fn flush_of_a_clunk_is_refused_before_queueing() {
+    let (_served, mut pipeline) = pipeline_with(PipelineLimits::default());
+    let (attach_tag, root) = pipeline.attach(b"", b"").unwrap();
+    assert!(matches!(
+        pipeline.wait(attach_tag, deadline()).unwrap(),
+        Reply::Attach(_)
+    ));
+    let clunk_tag = pipeline.clunk(root).unwrap();
+    assert_eq!(
+        pipeline.flush(clunk_tag),
+        Err(PipelineError::Limit("cannot flush a clunk"))
+    );
+    assert_eq!(pipeline.outstanding(), 1, "no side effect from the refusal");
+    assert_eq!(pipeline.wait(clunk_tag, deadline()).unwrap(), Reply::Clunk);
+}
+
+/// R4-4: even sitting exactly at the ordinary outstanding limit, a flush of
+/// the one request occupying it can always be queued -- it draws on its own
+/// reserved tag space, output bytes and reply-byte budget (see the module
+/// doc) -- so a stuck request (here, a read waiting forever on `events`) is
+/// never uncancellable.
+#[test]
+fn a_flush_is_always_queueable_at_the_outstanding_limit() {
+    let limits = PipelineLimits {
+        max_outstanding: 1,
+        ..PipelineLimits::default()
+    };
+    let (served, mut pipeline) = pipeline_with(limits);
+    let (attach_tag, root) = pipeline.attach(b"", b"").unwrap();
+    assert!(matches!(
+        pipeline.wait(attach_tag, deadline()).unwrap(),
+        Reply::Attach(_)
+    ));
+    let (walk_tag, events) = pipeline.walk(root, &[b"events"]).unwrap();
+    assert!(matches!(
+        pipeline.wait(walk_tag, deadline()).unwrap(),
+        Reply::Walk(_)
+    ));
+    let lopen_tag = pipeline.lopen(events, 0).unwrap();
+    assert!(matches!(
+        pipeline.wait(lopen_tag, deadline()).unwrap(),
+        Reply::Lopen { .. }
+    ));
+
+    let read_tag = pipeline.read(events, 0, 64).unwrap();
+    assert_eq!(pipeline.outstanding(), 1, "at the ordinary limit already");
+    let flush_tag = pipeline.flush(read_tag).unwrap();
+    assert_eq!(pipeline.wait(flush_tag, deadline()).unwrap(), Reply::Flush);
+    assert_eq!(pipeline.outstanding(), 0, "both freed once settled");
+
+    // The read was genuinely cancelled server-side too, not just locally: a
+    // fresh read still waits for a fresh event.
+    served.export.push_event(b"kept");
+    let again = pipeline.read(events, 0, 64).unwrap();
+    assert_eq!(
+        pipeline.wait(again, deadline()).unwrap(),
+        Reply::Read(b"kept".to_vec())
+    );
+}
+
+/// R4-5: an oversized `data` is refused on a cheap preflight (frame size vs
+/// `msize`) before it is ever copied into a request body. A copy of a slice
+/// this size would be measurable; a preflight-only check is not.
+#[test]
+fn a_huge_write_is_refused_without_copying_its_data() {
+    let (_served, mut pipeline) = pipeline_with(PipelineLimits::default());
+    let huge = vec![0u8; 64 << 20];
+    let started = Instant::now();
+    assert_eq!(
+        pipeline.write(Fid(0), 0, &huge),
+        Err(PipelineError::Limit("request larger than msize"))
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(200),
+        "took {:?} to refuse a 64 MiB write: looks copied first",
+        started.elapsed()
+    );
+    assert_eq!(pipeline.outstanding(), 0, "nothing was queued");
+    assert!(!pipeline.is_poisoned());
+
+    let (attach_tag, _root) = pipeline.attach(b"", b"").unwrap();
+    assert!(matches!(
+        pipeline.wait(attach_tag, deadline()).unwrap(),
+        Reply::Attach(_)
+    ));
+}
+
+/// R4-7 (clone half): a genuine zero-name walk still works against the real
+/// server core -- the empty-`Rwalk`-is-a-violation rule below applies only
+/// to a nonempty walk.
+#[test]
+fn a_zero_name_walk_still_clones_the_fid() {
+    let (_served, mut pipeline) = pipeline_with(PipelineLimits::default());
+    let (_, root) = pipeline.attach(b"", b"").unwrap();
+    let (clone_tag, cloned) = pipeline.walk(root, &[]).unwrap();
+    assert_eq!(
+        pipeline.wait(clone_tag, deadline()).unwrap(),
+        Reply::Walk(vec![])
+    );
+    assert_ne!(
+        cloned, root,
+        "still a distinct fid, even though it names the same node"
+    );
+}
+
 // ---- a scripted server, written from the specification ----
 
 /// One request as the scripted server reads it: type, tag and body.
@@ -446,6 +621,182 @@ fn scripted(
 fn versioned(stream: &mut UnixStream) {
     request(stream);
     stream.write_all(&rversion(65536, b"9P2000.L")).unwrap();
+}
+
+/// R4-1: a tag survives a full wrap of the tag space while its own reply
+/// sits undrained. `candidate_tag` used to check only `in_flight`, which
+/// `resolve` had already removed the tag from the moment a reply matched --
+/// so once every other tag had cycled through and come back around, a new
+/// request could be handed the same number and `wait` on it would return
+/// the stale, unrelated old reply before the new request was even written.
+/// Well past the ~65535-tag space guarantees at least one full wrap.
+const WRAP_TOTAL: usize = 66_000;
+
+#[test]
+fn a_completed_but_undrained_tag_survives_a_full_tag_wrap() {
+    // The client sends t0, t1, `WRAP_TOTAL` more, then one "reused" clunk:
+    // `WRAP_TOTAL + 3` real requests. One further iteration the client never
+    // uses leaves the server blocked reading a request that never comes,
+    // rather than closing the socket right after its last real reply --
+    // which would race the pipeline's own greedy read-ahead into a spurious
+    // EOF even though the reply it wanted had already arrived.
+    let (client, thread) = scripted(|stream| {
+        versioned(stream);
+        for _ in 0..(WRAP_TOTAL + 4) {
+            let (_, tag, _) = request(stream);
+            stream.write_all(&reply(121, tag, &[])).unwrap();
+        }
+    });
+    let mut pipeline = client.unwrap();
+
+    let t0 = pipeline.clunk(Fid(0)).unwrap();
+    // A second clunk, waited for, guarantees (FIFO, one connection) that
+    // t0's own Rclunk already arrived and is sitting undrained.
+    let t1 = pipeline.clunk(Fid(0)).unwrap();
+    assert_eq!(pipeline.wait(t1, deadline()).unwrap(), Reply::Clunk);
+
+    let mut saw_t0_again = false;
+    for _ in 0..WRAP_TOTAL {
+        let tag = pipeline.clunk(Fid(0)).unwrap();
+        if tag == t0 {
+            saw_t0_again = true;
+        }
+        assert_eq!(pipeline.wait(tag, deadline()).unwrap(), Reply::Clunk);
+    }
+    assert!(
+        !saw_t0_again,
+        "t0's tag was handed to a new request while its reply was still undrained"
+    );
+
+    // Only draining t0 itself frees its number.
+    assert_eq!(pipeline.take_reply(), Some((t0, Reply::Clunk)));
+    let reused = pipeline.clunk(Fid(0)).unwrap();
+    assert_eq!(pipeline.wait(reused, deadline()).unwrap(), Reply::Clunk);
+    // Dropping the pipeline closes its socket, unblocking the server's
+    // extra, never-satisfied read; only then is the thread's exit awaited.
+    drop(pipeline);
+    let _ = thread.join();
+}
+
+/// R4-3 (the two `Rflush` orderings): whichever answer wins decides whether
+/// the attach's fid is kept or released, and either way the flush's own
+/// `Rflush` is what settles it.
+#[test]
+fn flush_keeps_or_frees_the_fid_depending_on_which_answer_wins() {
+    // The attach's own Rattach beats the flush's Rflush: its reply is still
+    // delivered normally, and its fid is kept. A trailing phantom request
+    // the client never sends leaves the server blocked afterward, rather
+    // than closing the socket right behind its last reply -- which would
+    // race the pipeline's own greedy read-ahead into a spurious EOF even
+    // though the reply it wanted had already arrived.
+    let (client, thread) = scripted(|stream| {
+        versioned(stream);
+        let (_, attach_tag, _) = request(stream);
+        let (_, flush_tag, _) = request(stream);
+        stream.write_all(&reply(105, attach_tag, &QID_DIR)).unwrap();
+        stream.write_all(&reply(109, flush_tag, &[])).unwrap();
+        request(stream);
+    });
+    let mut pipeline = client.unwrap();
+    let (attach_tag, _root) = pipeline.attach(b"", b"").unwrap();
+    let flush_tag = pipeline.flush(attach_tag).unwrap();
+    assert_eq!(pipeline.wait(flush_tag, deadline()).unwrap(), Reply::Flush);
+    assert_eq!(
+        pipeline.fid_count(),
+        1,
+        "the attach won the race, so its fid is kept"
+    );
+    match pipeline.take_reply() {
+        Some((tag, Reply::Attach(qid))) => {
+            assert_eq!(tag, attach_tag);
+            assert_eq!(qid.kind, QidKind::Directory);
+        }
+        other => panic!("expected the attach's own reply, got {other:?}"),
+    }
+    drop(pipeline);
+    let _ = thread.join();
+
+    // Only the Rflush ever arrives: the attach never took hold, and its fid
+    // reservation is released.
+    let (client, thread) = scripted(|stream| {
+        versioned(stream);
+        let (_, _attach_tag, _) = request(stream);
+        let (_, flush_tag, _) = request(stream);
+        stream.write_all(&reply(109, flush_tag, &[])).unwrap();
+        request(stream);
+    });
+    let mut pipeline = client.unwrap();
+    let (attach_tag, _root) = pipeline.attach(b"", b"").unwrap();
+    let flush_tag = pipeline.flush(attach_tag).unwrap();
+    assert_eq!(pipeline.wait(flush_tag, deadline()).unwrap(), Reply::Flush);
+    assert_eq!(
+        pipeline.fid_count(),
+        0,
+        "unanswered: the attach never took hold"
+    );
+    assert!(
+        pipeline.take_reply().is_none(),
+        "the flushed attach was never answered"
+    );
+    drop(pipeline);
+    let _ = thread.join();
+}
+
+/// R4-6: a declared qid count far past `MAX_WALK`, with a body far too short
+/// to carry it, is rejected on that shape check -- before anything is
+/// allocated from the count -- and poisons like any other malformed reply.
+#[test]
+fn an_rwalk_declaring_far_more_qids_than_it_carries_poisons() {
+    let (client, thread) = scripted(|stream| {
+        versioned(stream);
+        let (_, attach_tag, _) = request(stream);
+        stream.write_all(&reply(105, attach_tag, &QID_DIR)).unwrap();
+        let (_, walk_tag, _) = request(stream);
+        // nwqid = 65535, no qids following: nine bytes total.
+        let _ = stream.write_all(&reply(111, walk_tag, &65535u16.to_le_bytes()));
+    });
+    let mut pipeline = client.unwrap();
+    let (attach_tag, root) = pipeline.attach(b"", b"").unwrap();
+    assert!(matches!(
+        pipeline.wait(attach_tag, deadline()).unwrap(),
+        Reply::Attach(_)
+    ));
+    let (walk_tag, _reserved) = pipeline.walk(root, &[b"x"]).unwrap();
+    assert_eq!(
+        pipeline.wait(walk_tag, deadline()),
+        Err(PipelineError::Protocol("Rwalk shape"))
+    );
+    assert!(pipeline.is_poisoned());
+    thread.join().unwrap();
+}
+
+/// R4-7 (the violation half; the clone half is
+/// `a_zero_name_walk_still_clones_the_fid`): walk(5) allows `nwqid == 0`
+/// only for a zero-name clone. A failure at the first name must instead be
+/// `Rlerror`, so an empty `Rwalk` answering a nonempty walk cannot be a
+/// genuine partial walk and is a protocol violation.
+#[test]
+fn an_empty_rwalk_for_a_nonempty_walk_poisons() {
+    let (client, thread) = scripted(|stream| {
+        versioned(stream);
+        let (_, attach_tag, _) = request(stream);
+        stream.write_all(&reply(105, attach_tag, &QID_DIR)).unwrap();
+        let (_, walk_tag, _) = request(stream);
+        let _ = stream.write_all(&reply(111, walk_tag, &0u16.to_le_bytes()));
+    });
+    let mut pipeline = client.unwrap();
+    let (attach_tag, root) = pipeline.attach(b"", b"").unwrap();
+    assert!(matches!(
+        pipeline.wait(attach_tag, deadline()).unwrap(),
+        Reply::Attach(_)
+    ));
+    let (walk_tag, _reserved) = pipeline.walk(root, &[b"x"]).unwrap();
+    assert_eq!(
+        pipeline.wait(walk_tag, deadline()),
+        Err(PipelineError::Protocol("empty Rwalk for a nonempty walk"))
+    );
+    assert!(pipeline.is_poisoned());
+    thread.join().unwrap();
 }
 
 #[test]
@@ -523,5 +874,21 @@ fn a_closed_server_surfaces_as_an_io_error() {
         other => panic!("expected an Io error, got {other:?}"),
     }
     assert!(pipeline.is_poisoned());
+    thread.join().unwrap();
+}
+
+#[test]
+fn a_reply_followed_at_once_by_close_is_still_delivered() {
+    let (client, thread) = scripted(|stream| {
+        versioned(stream);
+        let (_, tag, _) = request(stream);
+        stream.write_all(&reply(105, tag, &QID_DIR)).unwrap();
+    });
+    let mut pipeline = client.unwrap();
+    let (tag, _fid) = pipeline.attach(b"", b"").unwrap();
+    assert!(matches!(
+        pipeline.wait(tag, deadline()),
+        Ok(Reply::Attach(_))
+    ));
     thread.join().unwrap();
 }

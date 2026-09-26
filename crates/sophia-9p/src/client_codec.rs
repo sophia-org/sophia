@@ -16,7 +16,7 @@
 //! call site and stays there. This module hands back `Option`/`Result`
 //! values a caller narrates in its own words.
 
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -229,12 +229,18 @@ pub(crate) fn decode_rattach(body: &[u8]) -> Option<Qid> {
 }
 
 /// `Rwalk nwqid[2] nwqid*(wqid[13])`, every qid decoded or none at all: a
-/// short count, an unknown qid type, or trailing bytes are alike `None`. A
-/// caller that must tell these apart (their exact count against what it
-/// asked for, in particular) does not use this and decodes the shape itself.
+/// short count, a count over [`MAX_WALK`], a body whose length is not
+/// exactly `2 + 13*nwqid`, an unknown qid type, or trailing bytes are alike
+/// `None` -- checked, and nothing allocated, before any qid is read, so a
+/// bogus declared count cannot drive an allocation sized from it. A caller
+/// that must tell these apart (their exact count against what it asked for,
+/// in particular) does not use this and decodes the shape itself.
 pub(crate) fn decode_rwalk(body: &[u8]) -> Option<Vec<Qid>> {
     let mut fields = Fields(body);
     let count = usize::from(fields.u16()?);
+    if count > MAX_WALK || fields.0.len() != count * 13 {
+        return None;
+    }
     let mut qids = Vec::with_capacity(count);
     for _ in 0..count {
         qids.push(fields.qid()?.ok()?);
@@ -302,6 +308,96 @@ fn connect_errno(errno: rustix::io::Errno) -> ConnectError {
     match io::Error::from(errno).kind() {
         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => ConnectError::Timeout,
         kind => ConnectError::Io(kind),
+    }
+}
+
+/// Writes one whole frame within `deadline`, a `set_write_timeout` per
+/// attempt. Used for the blocking version handshake, before a stream
+/// switches to nonblocking (`Client`'s own request/reply loop, already
+/// nonblocking-aware through timeouts, does not need this).
+pub(crate) fn send_blocking(
+    stream: &mut UnixStream,
+    kind: u8,
+    tag: u16,
+    body: &[u8],
+    deadline: Instant,
+    msize: u32,
+) -> Result<(), ConnectError> {
+    let size = HEADER
+        .checked_add(body.len())
+        .filter(|size| *size <= msize as usize)
+        .ok_or(ConnectError::Limit("request larger than msize"))?;
+    let mut frame = Vec::with_capacity(size);
+    frame.extend_from_slice(&(size as u32).to_le_bytes());
+    frame.push(kind);
+    frame.extend_from_slice(&tag.to_le_bytes());
+    frame.extend_from_slice(body);
+    let mut written = 0;
+    while written < frame.len() {
+        stream
+            .set_write_timeout(Some(time_left(deadline)?))
+            .map_err(|e| ConnectError::Io(e.kind()))?;
+        match stream.write(&frame[written..]) {
+            Ok(0) => return Err(ConnectError::Io(io::ErrorKind::WriteZero)),
+            Ok(count) => written += count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                return Err(ConnectError::Timeout);
+            }
+            Err(error) => return Err(ConnectError::Io(error.kind())),
+        }
+    }
+    Ok(())
+}
+
+/// Reads one whole frame within `deadline`, a `set_read_timeout` per
+/// attempt. See [`send_blocking`].
+pub(crate) fn receive_blocking(
+    stream: &mut UnixStream,
+    deadline: Instant,
+    msize: u32,
+) -> Result<(u8, u16, Vec<u8>), ConnectError> {
+    let mut buffer = Vec::new();
+    loop {
+        let wanted = if buffer.len() < 4 {
+            4
+        } else {
+            let size = u32::from_le_bytes(buffer[..4].try_into().unwrap()) as usize;
+            if size < HEADER || size > msize as usize {
+                return Err(ConnectError::Limit("reply frame size"));
+            }
+            size
+        };
+        if buffer.len() == wanted && wanted >= HEADER {
+            return Ok((
+                buffer[4],
+                u16::from_le_bytes([buffer[5], buffer[6]]),
+                buffer[HEADER..].to_vec(),
+            ));
+        }
+        stream
+            .set_read_timeout(Some(time_left(deadline)?))
+            .map_err(|e| ConnectError::Io(e.kind()))?;
+        let mut chunk = vec![0u8; wanted - buffer.len()];
+        match stream.read(&mut chunk) {
+            Ok(0) => return Err(ConnectError::Io(io::ErrorKind::UnexpectedEof)),
+            Ok(count) => buffer.extend_from_slice(&chunk[..count]),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                return Err(ConnectError::Timeout);
+            }
+            Err(error) => return Err(ConnectError::Io(error.kind())),
+        }
     }
 }
 
