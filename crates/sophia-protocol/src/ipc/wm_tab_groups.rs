@@ -1,4 +1,4 @@
-use super::{IpcCodecError, WmV1ProjectionChunk};
+use super::{IpcCodecError, PolicyRecordSection, PolicyRecordSectionRef, WmV1ProjectionChunk};
 use crate::{
     OutputId, POLICY_MAX_TAB_GROUPS, POLICY_MAX_TAB_MEMBERS, PolicyTabGroup, Rect, SurfaceId,
 };
@@ -20,6 +20,28 @@ pub fn encode_wm_tab_groups(
     epoch: u64,
     ordinal: u16,
 ) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
+    super::wm_record_sections::projection_chunks(
+        encode_policy_tab_groups_records(groups)?,
+        epoch,
+        ordinal,
+        |kind| match kind {
+            PROJECTION_TAB_GROUP_RECORD_KIND => Some(48),
+            PROJECTION_TAB_MEMBER_RECORD_KIND => Some(24),
+            _ => None,
+        },
+    )
+    .map_err(|_| invalid())
+}
+
+pub fn decode_wm_tab_groups(
+    chunks: &[WmV1ProjectionChunk],
+) -> Result<Vec<PolicyTabGroup>, IpcCodecError> {
+    decode_policy_tab_groups_records(&super::wm_record_sections::projection_sections(chunks))
+}
+
+pub fn encode_policy_tab_groups_records(
+    groups: &[PolicyTabGroup],
+) -> Result<Vec<PolicyRecordSection>, IpcCodecError> {
     if groups.len() > POLICY_MAX_TAB_GROUPS
         || groups.iter().map(|g| g.members.len()).sum::<usize>() > POLICY_MAX_TAB_MEMBERS
     {
@@ -50,42 +72,38 @@ pub fn encode_wm_tab_groups(
             members.extend(s.generation().to_le_bytes());
         }
     }
-    let mut chunks = Vec::new();
+    let mut sections = Vec::new();
     for (kind, size, data) in [
         (PROJECTION_TAB_GROUP_RECORD_KIND, 48, headers),
         (PROJECTION_TAB_MEMBER_RECORD_KIND, 24, members),
     ] {
-        for bytes in data.chunks((65520 / size) * size) {
-            chunks.push(WmV1ProjectionChunk {
-                connection_epoch: epoch,
-                ordinal: ordinal
-                    .checked_add(chunks.len() as u16)
-                    .ok_or_else(invalid)?,
-                record_kind: kind,
-                item_count: (bytes.len() / size) as u32,
-                data: bytes.to_vec(),
+        if !data.is_empty() {
+            sections.push(PolicyRecordSection {
+                kind,
+                count: (data.len() / size) as u32,
+                bytes: data,
             });
         }
     }
-    Ok(chunks)
+    Ok(sections)
 }
 
-pub fn decode_wm_tab_groups(
-    chunks: &[WmV1ProjectionChunk],
+pub fn decode_policy_tab_groups_records(
+    sections: &[PolicyRecordSectionRef<'_>],
 ) -> Result<Vec<PolicyTabGroup>, IpcCodecError> {
     let mut groups = Vec::new();
     let mut expected = Vec::new();
     let mut member_records = Vec::new();
-    for c in chunks {
-        let size = match c.record_kind {
+    for c in sections {
+        let size = match c.kind {
             PROJECTION_TAB_GROUP_RECORD_KIND => 48,
             PROJECTION_TAB_MEMBER_RECORD_KIND => 24,
             _ => continue,
         };
-        if c.item_count == 0 || c.data.len() != c.item_count as usize * size {
+        if c.count == 0 || c.bytes.len() != c.count as usize * size {
             return Err(invalid());
         }
-        for b in c.data.chunks_exact(size) {
+        for b in c.bytes.chunks_exact(size) {
             let u64_at = |i| u64::from_le_bytes(b[i..i + 8].try_into().unwrap());
             let u32_at = |i| u32::from_le_bytes(b[i..i + 4].try_into().unwrap());
             if size == 48 {

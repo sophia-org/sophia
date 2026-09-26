@@ -69,13 +69,7 @@ pub struct WmV1SnapshotTransfer {
     pub end: WmV1SnapshotEnd,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WmV1DecodedSnapshot {
-    pub launch_origins: Vec<crate::PolicyLaunchContext>,
-    pub scene: PolicySceneSnapshot,
-    pub actions: Vec<PolicyActionRegistration>,
-    pub classifications: Vec<PolicySurfaceClassification>,
-}
+pub type WmV1DecodedSnapshot = super::PolicyDecodedSnapshot;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WmV1SnapshotSurfaceClassificationRecord {
@@ -178,9 +172,8 @@ fn decode_indicator_text(
     Ok(text.to_owned())
 }
 
-fn push_snapshot_chunk(
-    chunks: &mut Vec<WmV1SnapshotChunk>,
-    connection_epoch: u64,
+fn push_policy_section(
+    sections: &mut Vec<super::PolicyRecordSection>,
     record_kind: u16,
     count: usize,
     data: Vec<u8>,
@@ -188,15 +181,13 @@ fn push_snapshot_chunk(
     if count == 0 {
         return Ok(());
     }
-    chunks.push(WmV1SnapshotChunk {
-        connection_epoch,
-        ordinal: chunks.len() as u16,
-        record_kind,
-        item_count: u32::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
+    sections.push(super::PolicyRecordSection {
+        kind: record_kind,
+        count: u32::try_from(count).map_err(|_| IpcCodecError::CountTooLarge {
             count,
             max: u32::MAX as usize,
         })?,
-        data,
+        bytes: data,
     });
     Ok(())
 }
@@ -516,3 +507,9 @@ fn require_count(actual: usize, expected: usize) -> Result<(), IpcCodecError> {
 fn invalid(field: &'static str, value: u32) -> IpcCodecError {
     IpcCodecError::InvalidEnum { field, value }
 }
+
+include!("wm_v1_records/snapshot_records.rs");
+
+include!("wm_v1_records/projection_records.rs");
+
+include!("wm_v1_records/control_records.rs");

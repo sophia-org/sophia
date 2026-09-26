@@ -4,12 +4,14 @@ mod control_v1;
 mod cursor;
 mod frame;
 mod output_v1;
+mod policy_records;
 mod portal;
 mod primitives;
 mod shell_tabs;
 mod shell_v1;
 mod types;
 mod wm_presentation;
+mod wm_record_sections;
 mod wm_tab_groups;
 mod wm_v1;
 mod wm_v1_profile;
@@ -20,6 +22,7 @@ pub use broker_v1::*;
 pub use control_v1::*;
 pub use frame::{decode_frame, encode_frame};
 pub use output_v1::*;
+pub use policy_records::*;
 pub use portal::{
     decode_portal_broker_request_frame, decode_portal_broker_response_frame,
     decode_portal_clipboard_payload_frame, encode_portal_broker_request_frame,

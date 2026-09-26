@@ -19,6 +19,24 @@ pub fn encode_wm_output_launch_contexts(
     epoch: u64,
     ordinal: u16,
 ) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
+    Ok(
+        encode_policy_output_launch_contexts_records(records, epoch)?
+            .into_iter()
+            .map(|s| WmV1ProjectionChunk {
+                connection_epoch: epoch,
+                ordinal,
+                record_kind: s.kind,
+                item_count: s.count,
+                data: s.bytes,
+            })
+            .collect(),
+    )
+}
+
+pub fn encode_policy_output_launch_contexts_records(
+    records: &[PolicyOutputLaunchContext],
+    epoch: u64,
+) -> Result<Vec<super::PolicyRecordSection>, IpcCodecError> {
     if records.len() > POLICY_MAX_OUTPUTS {
         return Err(invalid());
     }
@@ -41,12 +59,10 @@ pub fn encode_wm_output_launch_contexts(
     Ok(if records.is_empty() {
         Vec::new()
     } else {
-        vec![WmV1ProjectionChunk {
-            connection_epoch: epoch,
-            ordinal,
-            record_kind: PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND,
-            item_count: records.len() as u32,
-            data,
+        vec![super::PolicyRecordSection {
+            kind: PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND,
+            count: records.len() as u32,
+            bytes: data,
         }]
     })
 }
@@ -54,21 +70,38 @@ pub fn encode_wm_output_launch_contexts(
 pub fn decode_wm_output_launch_contexts(
     chunks: &[WmV1ProjectionChunk],
 ) -> Result<Vec<PolicyOutputLaunchContext>, IpcCodecError> {
-    let mut records = Vec::new();
     let mut epoch = None;
     for c in chunks
         .iter()
         .filter(|c| c.record_kind == PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND)
     {
-        if c.item_count == 0
-            || c.item_count as usize > POLICY_MAX_OUTPUTS.saturating_sub(records.len())
-            || c.data.len() != c.item_count as usize * OUTPUT_LAUNCH_CONTEXT_RECORD_LEN
-            || epoch.is_some_and(|e| e != c.connection_epoch)
-        {
+        if epoch.is_some_and(|e| e != c.connection_epoch) {
             return Err(invalid());
         }
         epoch = Some(c.connection_epoch);
-        for b in c.data.chunks_exact(OUTPUT_LAUNCH_CONTEXT_RECORD_LEN) {
+    }
+    decode_policy_output_launch_contexts_records(
+        epoch.unwrap_or(0),
+        &super::wm_record_sections::projection_sections(chunks),
+    )
+}
+
+pub fn decode_policy_output_launch_contexts_records(
+    epoch: u64,
+    sections: &[super::PolicyRecordSectionRef<'_>],
+) -> Result<Vec<PolicyOutputLaunchContext>, IpcCodecError> {
+    let mut records = Vec::new();
+    for c in sections
+        .iter()
+        .filter(|c| c.kind == PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND)
+    {
+        if c.count == 0
+            || c.count as usize > POLICY_MAX_OUTPUTS.saturating_sub(records.len())
+            || c.bytes.len() != c.count as usize * OUTPUT_LAUNCH_CONTEXT_RECORD_LEN
+        {
+            return Err(invalid());
+        }
+        for b in c.bytes.chunks_exact(OUTPUT_LAUNCH_CONTEXT_RECORD_LEN) {
             let read = |i| u64::from_le_bytes(b[i..i + 8].try_into().unwrap());
             records.push(PolicyOutputLaunchContext {
                 output: OutputId::from_raw(read(0)),
@@ -78,6 +111,6 @@ pub fn decode_wm_output_launch_contexts(
             });
         }
     }
-    encode_wm_output_launch_contexts(&records, epoch.unwrap_or(0), 0)?;
+    encode_policy_output_launch_contexts_records(&records, epoch)?;
     Ok(records)
 }
