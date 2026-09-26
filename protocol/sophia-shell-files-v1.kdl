@@ -144,12 +144,17 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "scale_denominator" type="u32" offset=28 min=1 max=4
         field "scale_generation" type="u64" offset=32 nonzero=#true
     }
+    // Normative: 1 <= minimum_revision <= maximum_revision.
     body "Negotiate" size=16 {
         field "minimum_revision" type="u16" offset=0
         field "maximum_revision" type="u16" offset=2
         field "reserved" type="u32" offset=4 value=0
         field "required_capabilities" type="u64" offset=8
     }
+    // Normative: selected_revision != 0; connection_epoch != 0 and equal to
+    // the record header's epoch; limits_published is 0 or 1. The CLIENT also
+    // refuses a selection outside the range it offered, or capabilities that
+    // lack a bit it required; the exact role profile is Session's decision.
     body "Negotiated" size=32 {
         field "selected_revision" type="u16" offset=0
         field "reserved" type="u16" offset=2 value=0
@@ -179,13 +184,17 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "qid" type="u64" offset=16 nonzero=#true
     }
     // operation 1 acquire, 2 modify, 3 release; role 1 panel, 2 popout; edge
-    // 1-4. On release (operation=3) parent, parent_presentation_epoch, the
-    // anchor rectangle, desired_width/height and every margin are all zero.
-    // On acquire/modify, desired_width/height are nonzero; a panel (role=1)
-    // carries no parent or anchor, a popout (role=2) requires
-    // parent_presentation_epoch>0 and a valid nonzero anchor rectangle.
-    // prior may be zero only when operation=1 (acquire); parent may be zero
-    // unless role=2 while acquiring or modifying.
+    // 1-4; allocation_request_id != 0. Normative rules (a reader refuses
+    // otherwise). An identity pair (id, generation) is either both nonzero or,
+    // where zero is allowed, both zero; never mixed.
+    //   prior: operation=1 requires (0,0); operation 2 or 3 requires nonzero.
+    //   operation=3: parent (0,0), parent_presentation_epoch 0, anchor all
+    //     zero, desired_width/height 0 and every margin 0.
+    //   operation 1 or 2: desired_width and desired_height != 0, and
+    //     role=1: parent (0,0), parent_presentation_epoch 0, anchor all zero;
+    //     role=2: parent nonzero, parent_presentation_epoch != 0, and a valid
+    //     anchor: width > 0, height > 0, x >= 0, y >= 0,
+    //     x + width <= 2147483647, y + height <= 2147483647 (as i64).
     body "AllocationRequest" size=128 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -213,13 +222,19 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "margin_bottom" type="i16" offset=124 min=-512 max=512
         field "margin_left" type="i16" offset=126 min=-512 max=512
     }
-    // status 1 Granted, 2 Rejected, 3 Released, 4 Invalidated
-    // (allocation_request_id=0 iff status=4). output is always a live
-    // identity. allocation may be zero only when status=2; parent is zero as
-    // a pair or nonzero as a pair, never mixed. On status=1 the scale,
-    // geometry, allowed_reservation_extent and acknowledged_anchor fields are
-    // populated (a valid reduced scale fraction, nonzero pixel/logical
-    // extents); on status=2 or 3 they are all zero.
+    // status 1 Granted, 2 Rejected, 3 Released, 4 Invalidated. Normative:
+    //   allocation_request_id == 0 exactly when status == 4 (Session-initiated).
+    //   output nonzero; reason <= 12; margins in -512..=512.
+    //   allocation nonzero, except (0,0) is allowed only when status == 2.
+    //   parent is (0,0) or nonzero, never mixed.
+    //   status 1: reason 0; scale_numerator 1..=32, scale_denominator 1..=4,
+    //     gcd(numerator, denominator) == 1; scale_generation != 0; pixel and
+    //     logical width and height != 0; allowed_reservation_extent <= 512.
+    //     acknowledged_anchor carries no further constraint.
+    //   status 2 or 3: pixel, logical, scale fields, scale_generation,
+    //     allowed_reservation_extent, margins and acknowledged_anchor all 0.
+    //   status 4: no constraint beyond the general rules above; its geometry
+    //     fields carry no meaning and a client must ignore them.
     body "AllocationResult" size=168 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -302,8 +317,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "resource_id" type="u64" offset=24 nonzero=#true
         field "resource_generation" type="u64" offset=32 nonzero=#true
     }
-    // status 1 Admitted, 2 Rejected, 3 Accepted, 4 Incomplete; reason is 0
-    // unless status>2.
+    // status 1 Admitted (transfer admitted; upload may start), 2 Accepted
+    // (validated and stored), 3 Rejected, 4 Cancelled. Normative: reason is 0
+    // for status 1 and 2 and <= 12 for status 3 and 4; admitted_bytes <= 4 MiB.
     body "ResourceStatus" size=56 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -416,9 +432,12 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "demand_id" type="u64" offset=40 nonzero=#true
         field "permit_id" type="u64" offset=48
     }
-    // state 1 Granted, 2-4 a refusal kind; reason is 0 when state=1.
-    // permit_id, ttl_ms (1-250) and a nonzero max_candidate_bytes are only
-    // meaningful when state=1.
+    // state 1 Granted, 2-4 not granted (expiry, cancellation, refusal).
+    // Normative: demand_id != 0; reason <= 12; max_candidate_bytes <= 8192.
+    //   state 1: permit_id != 0, ttl_ms 1..=250, max_candidate_bytes != 0,
+    //     reason 0.
+    //   state 2-4: permit_id, ttl_ms and max_candidate_bytes carry no further
+    //     constraint and no meaning beyond naming the permit, if any.
     body "FramePermit" size=72 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
