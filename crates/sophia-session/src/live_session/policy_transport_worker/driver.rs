@@ -1,6 +1,10 @@
 use super::adapter::{PolicyAdapter, PolicyAdapterEvent, PolicyProfileAdmission};
 use super::*;
 
+// Liveness bound only. File traffic and commands are serviced by readiness,
+// not by a latency timer. Staging expiry can shorten the reactor's wait.
+const POLICY_FILE_IDLE_LIVENESS_CAP: Duration = POLICY_CLIENT_RESPONSE_DEADLINE;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PolicyReceiveKind {
     Negotiate,
@@ -121,25 +125,56 @@ pub(super) fn run_policy_transport(
         })
         .map_err(|_| "policy owner event channel disconnected".to_owned())?;
 
+    let readiness_idle = transport.command_wake_handle().is_some();
     loop {
-        let command = match commands.recv_timeout(Duration::from_millis(10)) {
-            Ok(command) => command,
-            Err(RecvTimeoutError::Timeout) => {
-                match transport.try_receive(PolicyReceivePermit {
-                    kind: PolicyReceiveKind::DirtyOnly,
-                })? {
-                    Some(PolicyAdapterEvent::Dirty(request)) => events
-                        .send(PolicyTransportEvent::Dirty(request))
-                        .map_err(|_| "policy owner event channel disconnected".to_owned())?,
-                    Some(_) => {
-                        return Err("policy client sent an out-of-phase control message".to_owned());
-                    }
-                    None => {}
+        let command = if readiness_idle {
+            match commands.try_recv() {
+                Ok(command) => command,
+                Err(TryRecvError::Disconnected) => {
+                    return Err("policy owner command channel disconnected".to_owned());
                 }
-                continue;
+                Err(TryRecvError::Empty) => {
+                    match transport.idle_receive(
+                        PolicyReceivePermit {
+                            kind: PolicyReceiveKind::DirtyOnly,
+                        },
+                        POLICY_FILE_IDLE_LIVENESS_CAP,
+                    )? {
+                        Some(PolicyAdapterEvent::Dirty(request)) => events
+                            .send(PolicyTransportEvent::Dirty(request))
+                            .map_err(|_| "policy owner event channel disconnected".to_owned())?,
+                        Some(_) => {
+                            return Err(
+                                "policy client sent an out-of-phase control message".to_owned()
+                            );
+                        }
+                        None => {}
+                    }
+                    continue;
+                }
             }
-            Err(RecvTimeoutError::Disconnected) => {
-                return Err("policy owner command channel disconnected".to_owned());
+        } else {
+            match commands.recv_timeout(Duration::from_millis(10)) {
+                Ok(command) => command,
+                Err(RecvTimeoutError::Timeout) => {
+                    match transport.try_receive(PolicyReceivePermit {
+                        kind: PolicyReceiveKind::DirtyOnly,
+                    })? {
+                        Some(PolicyAdapterEvent::Dirty(request)) => events
+                            .send(PolicyTransportEvent::Dirty(request))
+                            .map_err(|_| "policy owner event channel disconnected".to_owned())?,
+                        Some(_) => {
+                            return Err(
+                                "policy client sent an out-of-phase control message".to_owned()
+                            );
+                        }
+                        None => {}
+                    }
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err("policy owner command channel disconnected".to_owned());
+                }
             }
         };
         if matches!(command, PolicyTransportCommand::Stop) {

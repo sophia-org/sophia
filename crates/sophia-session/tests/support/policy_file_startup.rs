@@ -12,6 +12,9 @@ use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::sync::mpsc::sync_channel;
 
+#[path = "policy_file_idle.rs"]
+mod idle_tests;
+
 #[allow(dead_code)]
 #[path = "../../../sophia-protocol/tests/support/policy_record_fixture.rs"]
 pub(in super::super) mod array_fixture;

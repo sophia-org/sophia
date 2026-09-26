@@ -72,6 +72,9 @@ impl FileStartup {
     pub(super) fn stop_handle(&self) -> Box<dyn PolicyAdapterStop> {
         self.cancellation.handle()
     }
+    pub(super) fn command_wake_handle(&self) -> Box<dyn PolicyAdapterCommandWake> {
+        self.cancellation.command_handle()
+    }
     pub(super) fn pending(
         endpoint: sophia_runtime::PolicyRoleEndpoint,
         supervisor: &sophia_runtime::ProcessSupervisor,

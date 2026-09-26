@@ -17,6 +17,7 @@ pub(in crate::live_session) fn capturing_worker() -> (
             events: received,
             thread: None,
             stop: None,
+            command_wake: None,
         },
         submitted,
         events,

@@ -61,9 +61,30 @@ pub(super) trait PolicyAdapter: Send + 'static {
     fn stop_handle(&self) -> Option<Box<dyn PolicyAdapterStop>> {
         None
     }
+    /// Opts into socket/readiness-driven idle service. The bell only wakes
+    /// the driver; accepted commands remain in its existing bounded queue.
+    /// None preserves current IPC's recv_timeout/try_receive path.
+    /// Returning Some requires overriding idle_receive with a blocking single
+    /// turn. An incomplete opt-in fails closed instead of busy-polling.
+    fn command_wake_handle(&self) -> Option<Box<dyn PolicyAdapterCommandWake>> {
+        None
+    }
+    /// Exactly one blocking transport turn, then return to the command queue
+    /// even when no semantic event was delivered. Never an active response wait.
+    fn idle_receive(
+        &mut self,
+        _permit: PolicyReceivePermit,
+        _cap: Duration,
+    ) -> Result<Option<PolicyAdapterEvent>, String> {
+        Err("adapter does not support readiness-driven idle".into())
+    }
     fn disconnect(&mut self);
 }
 
 pub(super) trait PolicyAdapterStop: Send + Sync {
     fn stop(&self);
+}
+
+pub(super) trait PolicyAdapterCommandWake: Send + Sync {
+    fn wake(&self);
 }

@@ -15,7 +15,7 @@ mod driver;
 // File transport remains explicitly selected by the Session owner.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) mod ninep;
-use adapter::{PolicyAdapter, PolicyAdapterStop, PolicyProfileAdmission};
+use adapter::{PolicyAdapter, PolicyAdapterCommandWake, PolicyAdapterStop, PolicyProfileAdmission};
 use driver::run_policy_transport;
 
 /// Opaque logical filesystem identity custody; retained by Session across
@@ -89,6 +89,7 @@ pub(super) struct PolicyTransportWorker {
     events: Receiver<PolicyTransportEvent>,
     thread: Option<JoinHandle<()>>,
     stop: Option<Box<dyn PolicyAdapterStop>>,
+    command_wake: Option<Box<dyn PolicyAdapterCommandWake>>,
 }
 
 impl PolicyTransportWorker {
@@ -98,6 +99,7 @@ impl PolicyTransportWorker {
         profile_admission: Option<PolicyProfileAdmission>,
     ) -> Result<Self, std::io::Error> {
         let stop = transport.stop_handle();
+        let command_wake = transport.command_wake_handle();
         let (command_sender, command_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
         let (event_sender, event_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
         let thread = std::thread::Builder::new()
@@ -120,6 +122,7 @@ impl PolicyTransportWorker {
             events: event_receiver,
             thread: Some(thread),
             stop,
+            command_wake,
         })
     }
 
@@ -127,9 +130,8 @@ impl PolicyTransportWorker {
         &self,
         command: PolicyTransportCommand,
     ) -> Result<(), PolicyTransportCommand> {
-        if matches!(command, PolicyTransportCommand::Stop)
-            && let Some(stop) = &self.stop
-        {
+        let is_stop = matches!(command, PolicyTransportCommand::Stop);
+        if is_stop && let Some(stop) = &self.stop {
             stop.stop();
             return Ok(());
         }
@@ -137,7 +139,15 @@ impl PolicyTransportWorker {
             return Err(command);
         };
         match commands.try_send(command) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                // Publish custody before ringing. A ring between the driver's
+                // empty check and poll remains readable; Full/Disconnected
+                // never ring. Stop retains its independent cancellation owner.
+                if !is_stop && let Some(wake) = &self.command_wake {
+                    wake.wake();
+                }
+                Ok(())
+            }
             Err(TrySendError::Full(command) | TrySendError::Disconnected(command)) => Err(command),
         }
     }

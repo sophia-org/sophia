@@ -215,6 +215,16 @@ impl PolicyAdapter for NinePPolicyAdapter {
     fn stop_handle(&self) -> Option<Box<dyn PolicyAdapterStop>> {
         Some(self.startup.stop_handle())
     }
+    fn command_wake_handle(&self) -> Option<Box<dyn PolicyAdapterCommandWake>> {
+        Some(self.startup.command_wake_handle())
+    }
+    fn idle_receive(
+        &mut self,
+        permit: PolicyReceivePermit,
+        cap: Duration,
+    ) -> Result<Option<PolicyAdapterEvent>, String> {
+        self.run(|reactor| reactor.idle_receive(permit, cap))
+    }
     fn disconnect(&mut self) {
         self.startup.close();
     }

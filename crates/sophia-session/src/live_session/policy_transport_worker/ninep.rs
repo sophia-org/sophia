@@ -1,6 +1,6 @@
 //! Bounded file custody on a stream the Session admission owner already
 //! authenticated. Scalar bodies stay behind the typed codec boundary.
-use super::adapter::{PolicyAdapterEvent, PolicyAdapterStop};
+use super::adapter::{PolicyAdapterCommandWake, PolicyAdapterEvent, PolicyAdapterStop};
 use super::driver::PolicyReceivePermit;
 use sophia_9p::{
     export::*,
@@ -133,6 +133,20 @@ impl NinePCancellation {
     fn handle(self: &Arc<Self>) -> Box<dyn PolicyAdapterStop> {
         Box::new(NinePStop(self.clone()))
     }
+    fn command_handle(self: &Arc<Self>) -> Box<dyn PolicyAdapterCommandWake> {
+        Box::new(NinePCommandWake(self.clone()))
+    }
+}
+struct NinePCommandWake(Arc<NinePCancellation>);
+impl PolicyAdapterCommandWake for NinePCommandWake {
+    fn wake(&self) {
+        // Registration lock only; no poll or I/O while held. Before adoption
+        // the channel retains the command for the driver's first try_recv.
+        let wake = self.0.wake.lock().ok().and_then(|wake| wake.clone());
+        if let Some(wake) = wake {
+            wake.wake();
+        }
+    }
 }
 struct NinePStop(Arc<NinePCancellation>);
 impl PolicyAdapterStop for NinePStop {
@@ -220,6 +234,25 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
                 }
             }
         })();
+        self.server.export_mut().withdraw_permit();
+        result
+    }
+
+    fn idle_receive(
+        &mut self,
+        permit: PolicyReceivePermit,
+        cap: Duration,
+    ) -> Result<Option<PolicyAdapterEvent>, String> {
+        self.server
+            .export_mut()
+            .offer(permit)
+            .map_err(|e| format!("WM file receive: {e:?}"))?;
+        // Unlike active receive, any readiness returns control to the driver.
+        // The shared pipe may mean a command, journal append or Stop: never
+        // interpret it as a semantic event or renew an active response budget.
+        let result = self
+            .turn(cap)
+            .map(|()| self.server.export_mut().take_delivery());
         self.server.export_mut().withdraw_permit();
         result
     }

@@ -22,6 +22,7 @@ fn shutdown_disconnects_a_full_event_queue_before_joining() {
         events: receiver,
         thread: Some(producer),
         stop: None,
+        command_wake: None,
     };
     let (done, completion) = sync_channel(1);
     std::thread::spawn(move || {
