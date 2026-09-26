@@ -305,6 +305,12 @@ submission ID and candidate kind. It has no commit outcome or presentation
 identity. The journal supplies its actual epoch and sequence; no placeholder
 event header is needed to encode that body.
 
+ProjectionOutcome's `expect_session_operation` describes the next permitted
+semantic exchange: it is true only when the projection committed and its
+action requires a session operation. Every non-committed outcome carries false.
+Hagia checks this against its pending intent before settlement, checkpointing
+or sending an operation. Submitted custody does not create that obligation.
+
 Staging belongs to the per-attach file owner. It enforces the 1 MiB total and
 requires submit length to equal the actual complete staged length. If the
 generic listener's sixteen-connection limit were used with one staging attach
