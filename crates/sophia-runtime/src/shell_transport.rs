@@ -832,7 +832,14 @@ impl ShellComponentTransport {
             let Some((kind, body, credited)) = self.output.front_file() else {
                 return Err(ShellTransportError::WrongContentRecord);
             };
-            if !files.append(kind, body, credited)? {
+            let taken = if sophia_protocol::shell_files::shell_file_class(kind)
+                == sophia_protocol::shell_files::ShellFileClass::Object
+            {
+                files.publish(kind, body, credited)?
+            } else {
+                files.append(kind, body, credited)?
+            };
+            if !taken {
                 blocked = true;
                 break;
             }

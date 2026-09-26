@@ -156,21 +156,24 @@ impl ShellComponentTransport {
         if content_admission::record_grant(record) != Some(grant) {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        let (bytes, file_kind, size) = if self.files.is_some() {
+        let (bytes, file_kind, size, charged) = if self.files.is_some() {
             let (kind, body) = super::files::encode_content_event(transaction, record)?;
             let size = body.len() + sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES;
-            (body, Some(kind), size)
+            // Producers charged the socket frame: its header and the payload,
+            // which is this body less its leading transaction ID.
+            let charged = sophia_protocol::SOPHIA_IPC_HEADER_LEN + body.len() - 8;
+            (body, Some(kind), size, charged)
         } else {
             let frame = sophia_protocol::encode_shell_content_frame(transaction, record)?;
             let size = frame.len();
-            (frame, None, size)
+            (frame, None, size, size)
         };
         let bulk = matches!(
             record,
             ShellContentRecord::Limits(_) | ShellContentRecord::OutputFacts(_)
         );
         if (!bulk && size > super::control_budget::CONTROL_FRAME_BYTES)
-            || !self.frame_capacity_available(epochs, size, !bulk, reserved)
+            || !self.transfer_capacity_available(epochs, size, charged, !bulk, reserved)
         {
             return Err(ShellTransportError::ContentQueueSaturated);
         }

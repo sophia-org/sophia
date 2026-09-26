@@ -3,6 +3,7 @@
 //! Admission, negotiation and every content decision stay with the existing
 //! shell owners, which the transport feeds from `take_inbound`.
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::time::Instant;
 
 use sophia_9p::connection::ConnectionId;
@@ -24,9 +25,10 @@ const EALREADY: Errno = Errno(114);
 /// socket transport's inbox does.
 pub(in crate::shell_transport) const INBOUND_RECORDS: usize = 64;
 
-const ROOT_ENTRIES: [(&[u8], Node); 6] = [
+const ROOT_ENTRIES: [(&[u8], Node); 7] = [
     (b"api", Node::Api),
     (b"limits", Node::Limits),
+    (b"outputs", Node::Outputs),
     (b"events", Node::Events),
     (b"transaction", Node::Transaction),
     (b"submit", Node::Submit),
@@ -38,6 +40,7 @@ pub(in crate::shell_transport) enum Node {
     Root,
     Api,
     Limits,
+    Outputs,
     Events,
     Transaction,
     Submit,
@@ -47,6 +50,15 @@ pub(in crate::shell_transport) enum Node {
 pub(in crate::shell_transport) enum Handle {
     Plain,
     Transaction(u64),
+    /// A pinned snapshot object: immutable, whatever is published later.
+    Object(Arc<Object>),
+}
+
+/// One published snapshot object. A new publication never edits it; it
+/// lives while it is current or pinned by an open fid.
+pub(in crate::shell_transport) struct Object {
+    qid: u64,
+    bytes: Vec<u8>,
 }
 
 /// A submission whose custody the export has taken; the owners decide it.
@@ -75,6 +87,8 @@ pub(in crate::shell_transport) struct ShellFiles {
     qid_base: u64,
     next_qid: u64,
     limits: Option<Vec<u8>>,
+    outputs: Option<Arc<Object>>,
+    outputs_pinned: bool,
     staging: Option<Staging>,
     accepted: Option<Accepted>,
     submission_watermark: u64,
@@ -115,6 +129,8 @@ impl ShellFiles {
             qid_base,
             next_qid: qid_base + 8,
             limits: None,
+            outputs: None,
+            outputs_pinned: false,
             staging: None,
             accepted: None,
             submission_watermark: 0,
@@ -155,6 +171,52 @@ impl ShellFiles {
         self.limits = limits;
         self.negotiated = true;
         Ok(())
+    }
+
+    /// Makes one snapshot object current and journals its publication, as one
+    /// step: the event's room is checked before a qid is spent, and nothing
+    /// changes on refusal. `Ok(false)` means the journal has no room yet.
+    pub(in crate::shell_transport) fn publish_object(
+        &mut self,
+        kind: ShellFileKind,
+        body: &[u8],
+        credited: bool,
+    ) -> Result<bool, Errno> {
+        if self.revoked {
+            return Err(Errno::ESTALE);
+        }
+        if kind != ShellFileKind::Outputs {
+            return Err(Errno::EINVAL);
+        }
+        let bytes = encode_shell_file_record(
+            ShellFileHeader {
+                kind,
+                connection_epoch: self.epoch,
+                submission_id: 0,
+                sequence: 0,
+            },
+            body,
+        )
+        .map_err(|_| Errno::EINVAL)?;
+        let facts = decode_shell_file_outputs(&bytes).map_err(|_| Errno::EINVAL)?;
+        let sophia_protocol::ShellContentRecord::OutputFacts(facts) = facts.record else {
+            return Err(Errno::EINVAL);
+        };
+        let event = SHELL_FILE_HEADER_BYTES + 24;
+        if !self.journal.fits(event, credited) {
+            return Ok(false);
+        }
+        let qid = self.allocate_qid()?;
+        let published = encode_shell_file_object_published_body(ShellFileObjectPublished {
+            object: kind,
+            generation: facts.facts_generation,
+            qid,
+        })
+        .map_err(|_| Errno::EINVAL)?;
+        self.journal
+            .append(ShellFileKind::ObjectPublished, &published, credited)?;
+        self.outputs = Some(Arc::new(Object { qid, bytes }));
+        Ok(true)
     }
 
     pub(in crate::shell_transport) fn journal(&self) -> &Journal {
@@ -330,12 +392,22 @@ impl Export for ShellFiles {
 
     fn describe(&self, node: &Node, handle: Option<&Handle>) -> Entry {
         let mut qid_path = self.qid_base + *node as u64;
-        if let Some(Handle::Transaction(id)) = handle {
-            qid_path = *id;
+        match handle {
+            Some(Handle::Transaction(id)) => qid_path = *id,
+            Some(Handle::Object(object)) => qid_path = object.qid,
+            _ => {
+                if *node == Node::Outputs
+                    && let Some(object) = &self.outputs
+                {
+                    qid_path = object.qid;
+                }
+            }
         }
         let size = match (node, handle) {
             (Node::Api, _) => self.api.len() as u64,
             (Node::Limits, _) => self.limits.as_ref().map_or(0, |l| l.len() as u64),
+            (Node::Outputs, Some(Handle::Object(object))) => object.bytes.len() as u64,
+            (Node::Outputs, _) => self.outputs.as_ref().map_or(0, |o| o.bytes.len() as u64),
             (Node::Events, _) => self.journal.size(),
             (Node::Transaction, Some(Handle::Transaction(id))) => self
                 .staging
@@ -381,6 +453,15 @@ impl Export for ShellFiles {
         }
         match node {
             Node::Limits if self.limits.is_none() => Err(Errno::EAGAIN),
+            Node::Outputs => {
+                // One pin per feed per attach; publication continues meanwhile.
+                if self.outputs_pinned {
+                    return Err(EBUSY);
+                }
+                let object = self.outputs.clone().ok_or(Errno::EAGAIN)?;
+                self.outputs_pinned = true;
+                Ok(Handle::Object(object))
+            }
             Node::Transaction => {
                 self.expire();
                 if self.staging.is_some() || self.accepted.is_some() {
@@ -408,6 +489,7 @@ impl Export for ShellFiles {
                 .as_ref()
                 .map(|limits| slice(limits, offset, count))
                 .ok_or(Errno::EAGAIN),
+            (Node::Outputs, Handle::Object(object)) => Ok(slice(&object.bytes, offset, count)),
             (Node::Events, _) => self.journal.read(offset, count),
             (Node::Transaction, Handle::Transaction(id)) => {
                 self.expire();
@@ -492,10 +574,14 @@ impl Export for ShellFiles {
     }
 
     fn release(&mut self, _node: Node, handle: Option<Handle>) {
-        if let Some(Handle::Transaction(id)) = handle
-            && self.staging.as_ref().is_some_and(|s| s.handle == id)
-        {
-            self.staging = None;
+        match handle {
+            Some(Handle::Transaction(id))
+                if self.staging.as_ref().is_some_and(|s| s.handle == id) =>
+            {
+                self.staging = None
+            }
+            Some(Handle::Object(_)) => self.outputs_pinned = false,
+            _ => {}
         }
     }
 }

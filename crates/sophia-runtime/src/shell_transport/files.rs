@@ -116,6 +116,25 @@ impl ShellFileWire {
         }
     }
 
+    /// Publishes one snapshot object with its journaled announcement, and
+    /// wakes waiting reads. `Ok(false)` leaves it queued.
+    pub(super) fn publish(
+        &mut self,
+        kind: ShellFileKind,
+        body: &[u8],
+        credited: bool,
+    ) -> Result<bool, ShellTransportError> {
+        let published = self
+            .server
+            .export_mut()
+            .publish_object(kind, body, credited)
+            .map_err(|error| ShellTransportError::Io(format!("shell object: {error:?}")))?;
+        if published {
+            self.server.wake().wake();
+        }
+        Ok(published)
+    }
+
     /// A reader that leaves queued events blocked without acknowledging for
     /// the deadline is closed; the owner revokes only this component.
     pub(super) fn check_ack_progress(
@@ -184,8 +203,17 @@ pub(super) fn encode_content_event(
     use sophia_protocol::ShellContentRecord;
     use sophia_protocol::shell_files::{
         ShellFileTransactionRecord, encode_shell_file_allocation_result_body,
+        encode_shell_file_outputs_body,
     };
     match record {
+        ShellContentRecord::OutputFacts(_) => {
+            let body = encode_shell_file_outputs_body(&ShellFileTransactionRecord {
+                transaction,
+                record: record.clone(),
+            })
+            .map_err(|_| ShellTransportError::WrongContentRecord)?;
+            Ok((ShellFileKind::Outputs, body))
+        }
         ShellContentRecord::AllocationResult(_) => {
             let body = encode_shell_file_allocation_result_body(&ShellFileTransactionRecord {
                 transaction,

@@ -407,8 +407,8 @@ the operations t252 implements:
 
 | Class | Kinds |
 | --- | --- |
-| Object | `Limits` 1 |
-| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `AllocationResult` 32 |
+| Object | `Limits` 1, `Outputs` 2 |
+| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `ObjectPublished` 19, `AllocationResult` 32 |
 | Candidate | `Negotiate` 256, `AllocationRequest` 257 |
 
 As in the WM contract, the header never carries a domain identity: events
@@ -417,7 +417,15 @@ transaction ID, followed by the existing `sophia_shell_v1` payload bytes of the
 same record, so every existing record check applies unchanged. The owner's
 event for that transaction carries the same ID back. The transaction ID is the
 domain correlation, independent of the submission ID, which records custody
-only. A record family not yet in the table is not carried: a component on the
+only.
+
+Output facts are the `outputs` object (at most 1 KiB: sixteen outputs fit),
+not a journal event. Each publication gets a fresh qid and is announced by one
+`ObjectPublished` event carrying the object kind, the facts generation and
+that qid; the object and its announcement commit together, and the event's
+journal room is checked before a qid is spent. Opening `outputs` pins the
+current object; a second open on the same attach is `EBUSY`, and a pinned
+read never changes while newer objects are published. A record family not yet in the table is not carried: a component on the
 file wire whose owner queues such a record is closed rather than sent an IPC
 frame.
 

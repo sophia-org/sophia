@@ -306,3 +306,113 @@ fn content_before_negotiation_and_a_second_negotiate_are_refused_at_submit() {
     transport.disconnect(&mut registry).unwrap();
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+fn facts(width: u32) -> Vec<ContentOutputFactsEntry> {
+    vec![ContentOutputFactsEntry {
+        output: ContentOutputId {
+            id: 2,
+            generation: 1,
+        },
+        local_width: width,
+        local_height: 64,
+        scale_numerator: 1,
+        scale_denominator: 1,
+        scale_generation: 1,
+    }]
+}
+
+#[test]
+fn output_facts_are_pinned_objects_announced_by_publication() {
+    const EBUSY: u32 = 16;
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let (mut transport, directory) = transport();
+    transport.reserve_content(&mut registry, limits(1)).unwrap();
+    let socket = transport.socket_path().to_owned();
+    let (published_tx, published) = std::sync::mpsc::channel::<()>();
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+        let offer = encode_shell_file_negotiate(candidate(ShellFileKind::Negotiate, 1, 1), hello())
+            .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        peer.ack(&negotiated);
+        // First publication: announced, then read through a pin.
+        let event = peer.next_event();
+        let first = decode_shell_file_object_published(&event).unwrap();
+        assert_eq!(
+            (first.object, first.generation),
+            (ShellFileKind::Outputs, 1)
+        );
+        peer.ack(&event);
+        peer.open(6, b"outputs", 0);
+        let pinned = peer.read(6, 0);
+        let ShellContentRecord::OutputFacts(value) =
+            decode_shell_file_outputs(&pinned).unwrap().record
+        else {
+            panic!("output facts");
+        };
+        assert_eq!(value.outputs[0].local_width, 64);
+        // One pin per feed per attach.
+        peer.walk(7, b"outputs");
+        let second = peer
+            .rpc(12, &[7u32.to_le_bytes(), 0u32.to_le_bytes()].concat())
+            .unwrap();
+        assert_eq!(errno(second), EBUSY);
+        published_tx.send(()).unwrap();
+        // A later publication has a fresh qid; the pin still reads its object.
+        let event = peer.next_event();
+        let next = decode_shell_file_object_published(&event).unwrap();
+        assert_eq!(next.generation, 2);
+        assert_ne!(next.qid, first.qid);
+        peer.ack(&event);
+        assert_eq!(peer.read(6, 0), pinned);
+        // After the pin is clunked, a new open sees the current object.
+        assert_eq!(peer.rpc(120, &6u32.to_le_bytes()).unwrap().0, 121);
+        peer.open(8, b"outputs", 0);
+        let ShellContentRecord::OutputFacts(value) =
+            decode_shell_file_outputs(&peer.read(8, 0)).unwrap().record
+        else {
+            panic!("output facts");
+        };
+        assert_eq!(value.outputs[0].local_width, 128);
+    });
+    negotiate(
+        &mut transport,
+        &mut registry,
+        1,
+        ShellContentAdmissionPolicy::Granted {
+            discrete_input: false,
+        },
+        &peer,
+    )
+    .unwrap()
+    .expect("negotiated");
+    transport
+        .publish_content_output_facts(&mut registry, TransactionId::from_raw(39), 1, facts(64))
+        .unwrap();
+    let start = Instant::now();
+    let mut second = false;
+    while !peer.is_finished() {
+        if !second && published.try_recv().is_ok() {
+            transport
+                .publish_content_output_facts(
+                    &mut registry,
+                    TransactionId::from_raw(41),
+                    2,
+                    facts(128),
+                )
+                .unwrap();
+            second = true;
+        }
+        match transport.poll_io(&mut registry) {
+            Ok(()) | Err(ShellTransportError::NotConnected) => {}
+            Err(error) => panic!("poll: {error}"),
+        }
+        assert!(start.elapsed() < Duration::from_secs(3));
+        std::thread::yield_now();
+    }
+    peer.join().unwrap();
+    transport.disconnect(&mut registry).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+}

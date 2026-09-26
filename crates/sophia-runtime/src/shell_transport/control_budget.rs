@@ -49,6 +49,21 @@ impl ShellComponentTransport {
         control: bool,
         transfer: bool,
     ) -> bool {
+        self.transfer_capacity_available(epochs, bytes, bytes, control, transfer)
+    }
+
+    /// As `frame_capacity_available`, where the producer charged `charged`
+    /// bytes for the record now encoded as `bytes`. The owners charge bulk
+    /// records in socket framing; a file record carries its 32-byte header and
+    /// correlation, so its wire size differs from the released charge.
+    pub(super) fn transfer_capacity_available(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+        bytes: usize,
+        charged: usize,
+        control: bool,
+        transfer: bool,
+    ) -> bool {
         let Some(limits) = &self.content_limits else {
             return false;
         };
@@ -66,7 +81,8 @@ impl ShellComponentTransport {
         else {
             return false;
         };
-        let Some(bulk_bytes) = bulk_bytes.checked_sub(if transfer && !control { bytes } else { 0 })
+        let Some(bulk_bytes) =
+            bulk_bytes.checked_sub(if transfer && !control { charged } else { 0 })
         else {
             return false;
         };

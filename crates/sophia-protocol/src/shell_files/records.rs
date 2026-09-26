@@ -9,14 +9,18 @@ pub const SHELL_FILE_MAX_JOURNAL_BYTES: u32 = 1_048_576;
 pub const SHELL_FILE_ASSEMBLY_TIMEOUT_MILLIS: u32 = 12_000;
 pub const SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS: u32 = 2_000;
 pub const SHELL_FILE_MAX_OBJECT_BYTES: usize = 4_194_304;
+/// The `outputs` object cap (docs/sophia-shell-files.md, snapshot objects).
+pub const SHELL_FILE_OUTPUTS_MAX_BYTES: usize = 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]
 pub enum ShellFileKind {
     Limits = 1,
+    Outputs = 2,
     Negotiated = 16,
     Refused = 17,
     Submitted = 18,
+    ObjectPublished = 19,
     AllocationResult = 32,
     Negotiate = 256,
     AllocationRequest = 257,

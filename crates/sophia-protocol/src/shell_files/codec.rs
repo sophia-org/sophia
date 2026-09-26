@@ -22,11 +22,12 @@ pub(super) fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, ShellFileCodecE
 
 pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
     match kind {
-        ShellFileKind::Limits => ShellFileClass::Object,
+        ShellFileKind::Limits | ShellFileKind::Outputs => ShellFileClass::Object,
         ShellFileKind::Negotiate | ShellFileKind::AllocationRequest => ShellFileClass::Candidate,
         ShellFileKind::Negotiated
         | ShellFileKind::Refused
         | ShellFileKind::Submitted
+        | ShellFileKind::ObjectPublished
         | ShellFileKind::AllocationResult => ShellFileClass::Event,
     }
 }
@@ -34,9 +35,11 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
 pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
     Ok(match value {
         1 => ShellFileKind::Limits,
+        2 => ShellFileKind::Outputs,
         16 => ShellFileKind::Negotiated,
         17 => ShellFileKind::Refused,
         18 => ShellFileKind::Submitted,
+        19 => ShellFileKind::ObjectPublished,
         32 => ShellFileKind::AllocationResult,
         256 => ShellFileKind::Negotiate,
         257 => ShellFileKind::AllocationRequest,

@@ -567,3 +567,94 @@ fn submit_and_ack() {
         ShellFileCodecError::Length
     );
 }
+
+fn output_facts(count: u32) -> ShellContentRecord {
+    ShellContentRecord::OutputFacts(ContentOutputFacts {
+        grant: grant(),
+        facts_generation: 3,
+        outputs: (1..=count)
+            .map(|id| ContentOutputFactsEntry {
+                output: ContentOutputId {
+                    id: u64::from(id),
+                    generation: 1,
+                },
+                local_width: 1920,
+                local_height: 1080,
+                scale_numerator: 1,
+                scale_denominator: 1,
+                scale_generation: 1,
+            })
+            .collect(),
+    })
+}
+
+#[test]
+fn outputs_object_round_trips_within_its_cap() {
+    let header = ShellFileHeader {
+        kind: ShellFileKind::Outputs,
+        connection_epoch: 1,
+        submission_id: 0,
+        sequence: 0,
+    };
+    // Sixteen outputs, the record's validated maximum, fit the 1 KiB cap.
+    let value = ShellFileTransactionRecord {
+        transaction: TransactionId::from_raw(39),
+        record: output_facts(16),
+    };
+    let bytes = encode_shell_file_outputs(header, &value).unwrap();
+    assert!(bytes.len() <= SHELL_FILE_OUTPUTS_MAX_BYTES);
+    assert_eq!(decode_shell_file_outputs(&bytes).unwrap(), value);
+    let frame = encode_shell_content_frame(value.transaction, &value.record).unwrap();
+    assert_eq!(&bytes[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
+    assert_eq!(encode_shell_file_outputs_body(&value).unwrap(), bytes[32..]);
+    let mut zero = bytes.clone();
+    zero[32..40].fill(0);
+    assert_eq!(
+        decode_shell_file_outputs(&zero).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    // An outputs object is not an event or a candidate.
+    assert!(decode_shell_file_record(&bytes, ShellFileClass::Event).is_err());
+    let wrong = ShellFileTransactionRecord {
+        transaction: TransactionId::from_raw(39),
+        record: allocation_request(),
+    };
+    assert!(encode_shell_file_outputs_body(&wrong).is_err());
+}
+
+#[test]
+fn object_published_names_an_object_kind_and_a_nonzero_qid() {
+    let header = ShellFileHeader {
+        kind: ShellFileKind::ObjectPublished,
+        connection_epoch: 1,
+        submission_id: 0,
+        sequence: 4,
+    };
+    let value = ShellFileObjectPublished {
+        object: ShellFileKind::Outputs,
+        generation: 3,
+        qid: 17,
+    };
+    let body = encode_shell_file_object_published_body(value).unwrap();
+    let bytes = encode_shell_file_record(header, &body).unwrap();
+    assert_eq!(bytes.len(), 56);
+    assert_eq!(decode_shell_file_object_published(&bytes).unwrap(), value);
+    for bad in [
+        ShellFileObjectPublished {
+            object: ShellFileKind::Submitted,
+            ..value
+        },
+        ShellFileObjectPublished { qid: 0, ..value },
+    ] {
+        assert!(encode_shell_file_object_published_body(bad).is_err());
+    }
+    let mut reserved = bytes.clone();
+    reserved[34] = 1;
+    assert_eq!(
+        decode_shell_file_object_published(&reserved).unwrap_err(),
+        ShellFileCodecError::Reserved.into()
+    );
+    let mut event_kind = bytes.clone();
+    event_kind[32..34].copy_from_slice(&(ShellFileKind::Negotiated as u16).to_le_bytes());
+    assert!(decode_shell_file_object_published(&event_kind).is_err());
+}

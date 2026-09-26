@@ -10,15 +10,23 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     }
 
     object "Limits" kind=1
+    object "Outputs" kind=2 max-bytes=1024
     event "Negotiated" kind=16
     event "Refused" kind=17
     event "Submitted" kind=18
+    event "ObjectPublished" kind=19
     event "AllocationResult" kind=32
     candidate "Negotiate" kind=256
     candidate "AllocationRequest" kind=257
 
-    body "Limits" size=80 {
-        field "dynamic" type="bytes" offset=0
+    // Payload bodies are the unchanged sophia-shell-v1 record payload of the
+    // named kind, validated by that record's existing codec; no fixed size.
+    body "Limits" {
+        field "payload" type="sophia-shell-v1" record="ShellContentLimits" offset=0
+    }
+    body "Outputs" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentOutputFacts" offset=8
     }
     body "Negotiate" size=16 {
         field "minimum_revision" type="u16" offset=0
@@ -48,13 +56,19 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "candidate_kind" type="u16" offset=8 min=256 max=257
         field "reserved" type="bytes" offset=10 size=6 value=0
     }
-    body "AllocationRequest" size=72 {
-        field "transaction" type="u64" offset=0 nonzero=true
-        field "dynamic" type="bytes" offset=8
+    body "ObjectPublished" size=24 {
+        field "object_kind" type="u16" offset=0 min=1 max=2
+        field "reserved" type="bytes" offset=2 size=6 value=0
+        field "generation" type="u64" offset=8
+        field "qid" type="u64" offset=16 nonzero=true
     }
-    body "AllocationResult" size=80 {
+    body "AllocationRequest" {
         field "transaction" type="u64" offset=0 nonzero=true
-        field "dynamic" type="bytes" offset=8
+        field "payload" type="sophia-shell-v1" record="ShellContentAllocationRequest" offset=8
+    }
+    body "AllocationResult" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentAllocationResult" offset=8
     }
 
     submit size=24 {
