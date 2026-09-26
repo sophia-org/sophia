@@ -380,12 +380,15 @@ shared 4 MiB build scratch.
 | Bar (Lom, r6) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `upload/N`; `indicators` with bit 9 | outputs 1 KiB; indicators 32 KiB | AllocationResult, 192 B (`crates/sophia-protocol/src/ipc/shell_content/fields.rs:332-351`) | 65,536 (256 x 192 = 49,152, rounded) | 12,288 | 4,261,888 |
 | Launcher (Bemenu, r7) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB | native Input, up to 420 B (`crates/sophia-protocol/src/ipc/shell_native_launcher/records.rs:100`) | 131,072 (256 x 420 = 107,520, rounded) | 26,880 | 12,584,960 |
 | Dock (Provlita, r8) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB with r8 identities | AllocationResult, 192 B | 65,536 | 12,288 | 12,584,960 |
-| Legacy descriptor (Narthex, r1-r8) | `api`, `events`, `transaction`, `submit`, `ack`, `descriptors`, `tabs`, `shortcuts`; `catalog` when r4 and bit 5 are selected | descriptors 4 KiB; tabs 1 MiB; shortcuts 128 KiB; catalog 4 MiB when selected | Not yet derived | Derived by the same rule before implementation, at most 1 MiB | 64 x largest terminal record | 6,561,792; 14,950,400 with catalog |
+| Legacy descriptor (Narthex, r1-r8) | `api`, `events`, `transaction`, `submit`, `ack`, `descriptors`, `tabs`, `shortcuts`; `catalog` when r4 and bit 5 are selected | descriptors 4 KiB; tabs 1 MiB; shortcuts 128 KiB; catalog 4 MiB when selected | LauncherRequest, 342 B (`crates/sophia-protocol/src/ipc/shell_launcher.rs:130-146`; query at most 256 B, `crates/sophia-protocol/src/packets/shell_launcher.rs:8`) | 131,072 (256 x 342 = 87,552, rounded) | 21,888 | 6,561,792; 14,950,400 with catalog |
 
 The bar and dock record sizes come from the terminal-debt inventory (184-byte
 AllocationResult and up to 412-byte native Input in today's framing, plus 8).
-The legacy descriptor profile's largest record must be derived from its codec
-before its byte bound is fixed; the rule, not a guessed number, is the decision.
+For the legacy descriptor profile, the records that become snapshot objects
+(descriptor snapshots of at most 3,084 bytes framed, tabs, shortcut and application
+entries, catalog identities) are excluded; the largest record that stays a journal
+event is the launcher request. Its reserve is sized on that record rather than on a
+separately derived terminal record, which over-reserves.
 
 Note: The component bar's inert bit 0 discloses no descriptor, tab, or shortcut feed.
 
@@ -548,5 +551,3 @@ with the same client, workload and output on both transports.
   and uses the non-reserve journal space. A guaranteed variant would reserve +16
   (`max_allocations_total`).
 - The numeric budgets above are pending acceptance.
-- The legacy descriptor profile's largest Session-to-client record, and so its journal
-  byte bound and terminal reserve, derived from its codec by the rule above.
