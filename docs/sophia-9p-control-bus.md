@@ -4,6 +4,10 @@
 
 **Status:** proposal and discussion draft; non-normative.
 
+The [control-plane investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
+narrows this proposal: per-role sockets, mounts chosen by the sandbox, and no
+unprivileged v9fs mount. Revise the sections below before any ADR.
+
 ## 1. Executive Summary
 
 Sophia currently exposes its desktop roles—window management policy, desktop

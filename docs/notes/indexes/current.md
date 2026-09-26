@@ -35,3 +35,10 @@ map, not a list of every note or another roadmap.
 ## Native shell component proposal
 
 [Explicit scoped component grants](../concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md) describes integrated and modular shells; the linked candidate plan starts with a bar and independent launcher. This is not current multi-client support.
+
+## Session control plane
+
+The [Plan 9 control-plane investigation](../investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
+narrows the [9P control-bus proposal](../../sophia-9p-control-bus.md) to
+administration and observability on per-role sockets. It records that v9fs
+refuses unprivileged user-namespace mounts. This is not roadmap work.
