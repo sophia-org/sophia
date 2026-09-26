@@ -15,16 +15,16 @@ pub(super) fn outputs(text: &str) -> Result<BTreeMap<&'static str, String>, Stri
     if string_arg(protocol, 0)? != "sophia_control_v1"
         || integer_property(protocol, "frame-version")? != 1
         || integer_property(protocol, "interface-major")? != 1
-        || integer_property(protocol, "interface-revision")? != 1
+        || integer_property(protocol, "interface-revision")? != 2
         || integer_property(protocol, "max-payload")? != 65536
-        || integer_property(protocol, "max-commands")? != 258
+        || integer_property(protocol, "max-commands")? != 259
         || integer_property(protocol, "max-name-bytes")? != 128
     {
         return Err("control envelope/revision bounds drifted".into());
     }
     let mut doc = String::from(
         "# sophia_control_v1 wire tables\n\nGenerated from `protocol/sophia-control-v1.kdl`; do not edit.\n\n\
-         Experimental major 1, revision 1. [Normative semantics](../sophia-control-v1.md).\n\n\
+         Experimental major 1, revision 2 (revision 1 remains negotiable). [Normative semantics](../sophia-control-v1.md).\n\n\
          All offsets are payload-relative; integers are little endian, with no alignment padding.\n",
     );
     let mut valid =

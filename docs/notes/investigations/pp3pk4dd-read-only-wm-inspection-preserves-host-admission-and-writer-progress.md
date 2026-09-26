@@ -38,8 +38,10 @@ The observer's verified 51-file bundle is
 `~/.local/state/sophia/development-evidence/t249-wm-observer-f2a9d033`;
 its `SHA256SUMS` digest is
 `a28ecbc43c604c98c1ef0bf9e56ec14102f8afcf6bfcd4883da98455a5b44266`.
-The shared core/client bundle remains
-`~/dev/sophia-readdir/.artifacts/readdir-client.bundle`, SHA256
+The shared core/client bundle was
+`~/dev/sophia-readdir/.artifacts/readdir-client.bundle` (removed with that
+worktree on 2026-09-26; its commits are in master, and the branch tip is in
+`development-evidence/branch-archive-2026-09-26/sophia-branches.bundle`), SHA256
 `9183d934e0aad12ddafafce59d7774a1282e7868b6d93ac5946210f7af86c6f5`.
 Combined integration logs are retained under
 `sophia-overview/.artifacts/wm-inspection`.

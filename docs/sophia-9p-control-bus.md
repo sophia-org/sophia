@@ -13,6 +13,10 @@ direct sockets, compact binary WM records, and existing Session owners. This
 does not authorize installation or live-session work, and other roles remain
 later milestones.
 
+The [control-plane investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
+records the reach and mount limits that still apply: per-role sockets, mounts
+chosen by the sandbox, and no unprivileged v9fs mount.
+
 ## Agreed direction
 
 9P2000.L is the target common public protocol for Sophia's replaceable desktop

@@ -114,11 +114,27 @@ class CodecTests(unittest.TestCase):
         self.assertEqual(len(raw) - 24, 35100)
         self.assertEqual(len(wire.decode_frame(raw)["commands"]), 258)
 
+    def test_revision_two_welcome_capacity_and_logout(self):
+        def welcome(revision, count):
+            return frame(129, 0, wire.WELCOME.pack(revision, 0, 1, 2, 1, 0, 65536, count, 128, 10000, 2000, 60000))
+        self.assertEqual(wire.decode_frame(welcome(1, 258))["kind"], 129)
+        self.assertEqual(wire.decode_frame(welcome(2, 259))["kind"], 129)
+        for revision, count in ((2, 258), (1, 259), (3, 260), (0, 258)):
+            with self.subTest(revision=revision, count=count), self.assertRaises(wire.ProtocolViolation):
+                wire.decode_frame(welcome(revision, count))
+        entries = [entry(1, f"action-{i:03d}") for i in range(256)]
+        entries += [entry(2, "logout"), entry(2, "reload-profile"), entry(2, "restart-wm")]
+        raw = frame(131, 1, struct.pack("<QHH", 1, len(entries), 0) + b"".join(entries))
+        self.assertEqual(len(wire.decode_frame(raw)["commands"]), 259)
+        unknown = frame(131, 1, struct.pack("<QHH", 1, 1, 0) + entry(2, "shutdown"))
+        with self.assertRaises(wire.ProtocolViolation):
+            wire.decode_frame(unknown)
+
     def test_strict_payload_fields(self):
         cases = [
             changed(VALID["ClientHello"], 24, 0),
-            changed(VALID["ClientHello"], 24, 2),
-            changed(VALID["ServerWelcome"], 24, 2),
+            changed(VALID["ClientHello"], 24, 3),
+            changed(VALID["ServerWelcome"], 24, 3),
             changed(VALID["ServerWelcome"], 26, 1),
             changed(VALID["ServerWelcome"], 52, 1, "Q"),
             changed(VALID["ServerWelcome"], 60, 65535, "I"),

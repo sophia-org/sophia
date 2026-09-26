@@ -129,6 +129,45 @@ deployment/rollback, based on that record. It need not wait for shell migration.
 Inspection remains a separate optional permission; it is not required for the
 WM to operate.
 
+**Rehearsal record (2026-09-26).** Candidate: personal release
+`niltempus-81b687e08030f1d7b55e` (Sophia `06efcfda`, Hagia `5af36ac7`, Lom
+`ad349869`, Bemenu `7d2d2399`, Narthex `50b9014d`), installed with the new
+"Sophia niltempus Desktop (9P WM)" entry (sealed Hagia, `--wm-transport=9p2000.L`)
+beside the unchanged current-IPC entry. `tools/rehearse_wm_9p.sh` on tty4, run by
+the operator, passed 7/7 phases on both wires, session exit 0: startup ready,
+`restart-wm` completed, reload unchanged, a Hagia-rejected profile (view-count 10)
+rejected with rollback, the restored profile unchanged, restart after the
+rollback completed, logout completed. Evidence:
+`development-evidence/t250-rehearsal-niltempus-81b687e08030f1d7b55e-{9p2000.L-20260926T193548Z,current-ipc-20260926T193602Z}`.
+The first attempt's post-rollback phases failed on the script's own readiness
+race (fixed in `0cd03eab`) and are retained beside them. Rehearsals use a copy
+of the release profile so the rejection can be swapped in; binaries are sealed.
+**Attended session (2026-09-26).** The operator logged in through the installed
+"Sophia niltempus Desktop (9P WM)" entry (session
+`00000001790451452784-210136aa`, release commit `06efcfda`, Hagia over
+`--wm-transport=9p2000.L`) and used it as the ordinary desktop, including this
+development session. Operator report: layout, focus, move/resize and overview
+behave normally; a Ctrl+Alt+Shift+R WM restart came back with the layout
+preserved. The session log shows the WM ready at epoch 1, one requested restart
+to epoch 2 with `preserved_layout=true`, and no degraded or failure records.
+Single head per output as configured; multi-output acceptance is not claimed.
+
+**Default selection (2026-09-26).** After the attended session the operator
+chose 9P2000.L as the WM default ahead of the t249 release latency verdict. The
+personal installer (chezmoi `2675ac0`) now makes the plain "Sophia niltempus
+Desktop" entry run Hagia with `--wm-transport=9p2000.L`; "Sophia niltempus
+Desktop (current IPC)" is the explicit rollback with the same Hagia, and install
+removes the retired "(9P WM)" entry. First release with this default:
+`niltempus-e587da65514ead64d34a` (Sophia `cb50f447`, Hagia `5af36ac7`, the
+attended session's Hagia binary `464ae2fc`). Only the WM role moves; shell and
+output stay on current IPC. The product default in
+`WmTransportSelection` is unchanged until t255.
+
+Remaining for t250: the t249 release latency verdict (armed overnight). A
+refused budget does not silently stand: the operator then decides between
+keeping the default under a recorded limitation and rolling back to the
+current-IPC entry.
+
 ### t251 — Specify the shell file contract
 
 This is the immediate parallel planning lane while WM acceptance finishes.

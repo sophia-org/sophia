@@ -71,8 +71,9 @@ invalid envelopes/duplicate options and a stalled checker. Four existing
 desktop-config tests and 22 launcher-safety tests pass. The disposable-PTY
 fixture still proves that preflight refusal happens before TTY-mode queries or
 privileged handoff. Clippy passes for all CLI targets with and without native
-features. Logs are retained in the sibling owned build cache under
-`../sophia-t027/.artifacts/t027-*.log`.
+features. Logs were kept in the sibling build cache `../sophia-t027/.artifacts/t027-*.log`,
+removed with that worktree on 2026-09-26; the retained copies are
+`~/.local/state/sophia/development-evidence/t027-preparation-3f446e04/t027-*.log`.
 The native-feature normal-session lifecycle test also passes with devices and
 installed session sockets hidden (one test, five session-start variants).
 Formatting and the layout gate pass.

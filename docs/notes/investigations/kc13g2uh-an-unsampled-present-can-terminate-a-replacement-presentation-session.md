@@ -160,7 +160,9 @@ source hashes: `present-unsampled-refused`, `present-always-released`,
 `hidden-first-released`, and `uncaptured-no-repaint`. Each exits 101 with a test
 failure; the last two establish that the hidden hold and clearing repaint are
 observed by the controls. Their original provenance is
-`/home/niltempus/dev/sophia-t196/.artifacts/t244-controls/controls.json`.
+`/home/niltempus/dev/sophia-t196/.artifacts/t244-controls/controls.json`; that
+worktree was removed on 2026-09-26, and the retained controls are
+`~/.local/state/sophia/development-evidence/rendering-6251aa79/t244-controls/`.
 
 The session review has not established a separate session source defect. The
 director accepted the bounded headless scope. The separate Hagia clipped-border

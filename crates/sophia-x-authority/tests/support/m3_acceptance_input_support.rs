@@ -262,6 +262,30 @@ fn b_observed_input(
     observed.recv_timeout(Duration::from_secs(5)).unwrap()
 }
 
+/// `Saturated` is the ingress's documented retry answer and hands the route
+/// back unaccepted. Earlier observed inputs release their settlement on service
+/// turns the test does not schedule, so wait for room within a bound; any other
+/// refusal, or saturation past the bound, still fails the test.
+fn b_submit_when_admitted(
+    service: &LifecycleService,
+    ingress: &PrivateIngress,
+    mut route: XAuthorityRoutedInput,
+) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match ingress.submit(&service.owner.lease(), route) {
+            Ok(_) => return,
+            Err(crate::PrivateSendError::Saturated(back))
+                if std::time::Instant::now() < deadline =>
+            {
+                route = back;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("keyed input refused: {error:?}"),
+        }
+    }
+}
+
 fn b_history_refusals(
     service: &LifecycleService,
     ingress: &PrivateIngress,

@@ -22,7 +22,9 @@ OUTCOMES = dict(enumerate(("committed", "completed", "unchanged", "rejected",
                           "stale", "denied", "unavailable", "overloaded",
                           "timed-out", "indeterminate"), 1))
 ERRORS = {1: "malformed", 2: "sequence", 3: "revision", 4: "features"}
-SESSION_NAMES = {"reload-profile", "restart-wm"}
+SESSION_NAMES = {"logout", "reload-profile", "restart-wm"}
+# Catalog capacity per revision: 256 WM actions plus that revision's session operations.
+MAX_COMMANDS = {1: 258, 2: 259}
 
 
 class ProtocolViolation(ValueError):
@@ -78,16 +80,16 @@ def decode_frame(raw):
         result.update(minimum_revision=minimum, maximum_revision=maximum, required_features=features)
     elif kind == 129:
         revision, reserved, low, high, connection, features, limit, count, names, command, frame, idle = WELCOME.unpack(payload)
-        require(revision == 1 and reserved == 0 and features == 0, "welcome negotiation")
+        require(revision in MAX_COMMANDS and reserved == 0 and features == 0, "welcome negotiation")
         require((low or high) and connection > 0, "welcome identity")
-        require((limit, count, names) == (65536, 258, 128), "welcome capacities")
+        require((limit, count, names) == (65536, MAX_COMMANDS[revision], 128), "welcome capacities")
         require(0 < command <= 10000 and 0 < frame <= 2000 and 0 < idle <= 60000, "welcome deadlines")
         result.update(session_id=[low, high], connection_id=connection,
                       command_timeout_ms=command, frame_timeout_ms=frame, idle_timeout_ms=idle)
     elif kind == 131:
         require(length >= 12, "catalog prefix")
         generation, count, reserved = struct.unpack_from("<QHH", payload)
-        require(generation > 0 and count <= 258 and reserved == 0 and length == 12 + 136 * count, "catalog shape")
+        require(generation > 0 and count <= max(MAX_COMMANDS.values()) and reserved == 0 and length == 12 + 136 * count, "catalog shape")
         entries = []
         previous = None
         for offset in range(12, length, 136):
@@ -120,7 +122,7 @@ def decode_frame(raw):
 
 def encode_request(kind, request_id, generation=None, owner=None, name=None):
     if kind == 128:
-        payload = struct.pack("<HHQ", 1, 1, 0)
+        payload = struct.pack("<HHQ", 1, 2, 0)
     elif kind == 130:
         payload = b""
     elif kind == 132:

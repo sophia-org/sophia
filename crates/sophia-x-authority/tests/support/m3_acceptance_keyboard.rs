@@ -288,12 +288,11 @@ fn b_shared_hold() {
     // Continuing A uses the held Shift; any duplicate key output would
     // appear before these independently expected frames.
     for (id, pressed) in [(112027, true), (112028, false)] {
-        ingress
-            .submit(
-                &service.owner.lease(),
-                key_service_route(first.surface, id, 30, pressed),
-            )
-            .unwrap();
+        b_submit_when_admitted(
+            &service,
+            &ingress,
+            key_service_route(first.surface, id, 30, pressed),
+        );
         assert_eq!(
             read_event(&mut first.peer, 3),
             Some(expected_key_service_event(

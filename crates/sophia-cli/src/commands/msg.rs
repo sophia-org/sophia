@@ -44,7 +44,7 @@ pub(super) fn run(args: &[String]) -> i32 {
             }
             "--help" | "-h" => {
                 println!(
-                    "sophia msg [--socket PATH] [--json] commands\nsophia msg [--socket PATH] [--json] policy <registered-name>\nsophia msg [--socket PATH] [--json] session restart-wm"
+                    "sophia msg [--socket PATH] [--json] commands\nsophia msg [--socket PATH] [--json] policy <registered-name>\nsophia msg [--socket PATH] [--json] session restart-wm|reload-profile|logout"
                 );
                 return 0;
             }
@@ -65,7 +65,7 @@ pub(super) fn run(args: &[String]) -> i32 {
         }),
         _ => {
             return failure(
-                "expected commands, policy <registered-name>, or session restart-wm",
+                "expected commands, policy <registered-name>, or session restart-wm|reload-profile|logout",
                 false,
                 json,
             );

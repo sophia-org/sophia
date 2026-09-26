@@ -222,6 +222,7 @@ impl LiveWmSession {
     /// state was never replaced; the old immutable policy files are still held.
     fn rollback_desktop_reload(&mut self) -> Option<ProcessLaunchSpec> {
         let pending = self.desktop_reload.take()?;
+        self.desktop_reload_rollbacks += 1;
         let public = self.public.as_mut()?;
         public._profile_fragments = pending.previous.fragments;
         public._profile_slot = pending.previous.profile;

@@ -1,8 +1,8 @@
 use super::admission::{HostDomain, Peer};
 use super::*;
 use sophia_protocol::{
-    ControlMessage, ControlWelcome, decode_control_frame, decode_control_header,
-    encode_control_frame,
+    CONTROL_REVISION, ControlCatalog, ControlMessage, ControlOwner, ControlWelcome,
+    control_session_operations, decode_control_frame, decode_control_header, encode_control_frame,
 };
 use std::io::Read;
 use std::os::fd::AsFd;
@@ -13,6 +13,8 @@ struct Connection {
     peer: Peer,
     id: u64,
     negotiated: bool,
+    /// The selected revision; zero before negotiation.
+    revision: u16,
     last_request: u64,
     discovered: u64,
     rx: Vec<u8>,
@@ -202,16 +204,18 @@ impl Connection {
             else {
                 return self.error(id, 2);
             };
-            if minimum_revision > 1 || maximum_revision < 1 {
+            if minimum_revision > CONTROL_REVISION || maximum_revision < 1 {
                 return self.error(0, 3);
             }
             if required_features != 0 {
                 return self.error(0, 4);
             }
             self.negotiated = true;
+            self.revision = maximum_revision.min(CONTROL_REVISION);
             return self.reply(
                 0,
                 ControlMessage::Welcome(ControlWelcome {
+                    revision: self.revision,
                     session_id: context.session_id,
                     connection_id: self.id,
                     command_timeout_ms: 10000,
@@ -224,10 +228,13 @@ impl Connection {
             return self.error(id, 2);
         }
         self.last_request = id;
+        // A connection sees and may invoke only its revision's session
+        // operations; the published catalog is the highest revision's.
+        let view = revision_view(&catalog, self.revision);
         match message {
             ControlMessage::Commands => {
                 self.discovered = catalog.generation;
-                self.reply(id, ControlMessage::Catalog((*catalog).clone()))
+                self.reply(id, ControlMessage::Catalog(view))
             }
             ControlMessage::Invoke {
                 generation,
@@ -236,7 +243,7 @@ impl Connection {
                 if generation != catalog.generation || generation != self.discovered {
                     return self.outcome(id, generation, ControlOutcome::Stale);
                 }
-                if !catalog.commands.contains(&command) {
+                if !view.commands.contains(&command) {
                     return self.outcome(id, generation, ControlOutcome::Rejected);
                 }
                 if context.active.len() >= CONTROL_MAX_PENDING {
@@ -355,6 +362,7 @@ pub(super) fn run(
                 peer,
                 id: next_id,
                 negotiated: false,
+                revision: 0,
                 last_request: 0,
                 discovered: 0,
                 rx: Vec::new(),
@@ -383,5 +391,25 @@ pub(super) fn run(
     }
     for ticket in active {
         ticket.expire();
+    }
+}
+
+/// The catalog a connection of `revision` may see: every policy command and
+/// the session operations that revision dispatches. Revision 1 dispatches only
+/// `restart-wm` (it reserves `reload-profile`), so it never sees revision 2's.
+fn revision_view(catalog: &ControlCatalog, revision: u16) -> ControlCatalog {
+    let dispatched: &[&str] = if revision == 1 {
+        &["restart-wm"]
+    } else {
+        control_session_operations(revision)
+    };
+    ControlCatalog {
+        generation: catalog.generation,
+        commands: catalog
+            .commands
+            .iter()
+            .filter(|c| c.owner == ControlOwner::Policy || dispatched.contains(&c.name.as_str()))
+            .cloned()
+            .collect(),
     }
 }

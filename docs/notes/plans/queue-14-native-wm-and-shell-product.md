@@ -63,6 +63,14 @@ transaction. Shell, input, broker and non-launch Session settings retain their
 documented deferrals. This remains candidate work requiring promotion before
 implementation; t075/t076 physical acceptance is separate.
 
+**Promoted and implemented 2026-09-26** (operator decision, for the t250 scripted
+recovery rehearsal) as control revision 2: `reload-profile` and `logout` are
+advertised to revision-2 connections and dispatched through the same owner-loop
+requests as their bindings. A control reload settles on the reload owner's own
+outcome (unchanged, declined, applied, or a required WM replacement that commits
+or rolls back to the prior profile at a fresh epoch); a hand-off alone never
+completes it. Revision-1 connections are unchanged.
+
 
 ## t038
 
