@@ -386,6 +386,68 @@ custody. File fragments neither change driver phase nor renew its response
 deadline. A closed adapter's `selected_capabilities() == 0` is its unavailable
 sentinel, not evidence of a successfully negotiated empty capability set.
 
+## Pending protected endpoint, before production launch selection
+
+The next private constructor accepts an existing `PolicyRoleEndpoint` only
+for the WM role. It takes a `ProcessSupervisor` reference, requires that
+supervisor's retained protection evidence to name its peer PID and SpatialPolicy,
+and calls the existing endpoint authorization method. The evidence is a
+supervisor assertion produced by its actual protected launch path, not an
+independent namespace inventory. The endpoint still owns exact socket UID/PID
+credential matching. No runtime public API or production start site changes.
+
+Admission polls that endpoint with one absolute twelve-second accept budget.
+No-client polls use at most two milliseconds between cancellation checks;
+wrong-peer/UID and other endpoint errors terminate this attempt rather than
+renewing the deadline or silently retrying. Once accepted, the same typed file
+and profile-handshake owner runs. Its offer and each profile completion retain
+their separate existing absolute response budgets.
+
+One cancellation state exists before accept and continues through reactor
+installation. Stop sets its atomic flag, takes a wake clone under a short lock,
+and wakes outside the lock. Installation publishes its wake and then checks
+that same flag. No polling or socket IO holds that lock. Close and Drop revoke
+and drop the reactor before releasing the actual endpoint peer and removing
+the endpoint through its existing Drop. Logical Qids are supplied; this
+constructor neither resets nor derives them from a socket or an epoch.
+
+External controls launch the current Rust test executable through the real
+`ProcessSupervisor` protection-domain path and reach the existing worker's
+Negotiated event. They distinguish a missing launch record, wrong endpoint
+role, a real protected metadata-broker record lacking SpatialPolicy, a wrong
+UID and an unrelated connecting PID. Stop controls cover before/during accept,
+after credential acceptance but before adoption, before/after wake installation,
+and forced overlapping wake registration. The after-accept control composes the
+actual endpoint accept, reactor adoption refusal and endpoint Drop; it checks
+that only the endpoint disappears, a separate marker survives, and a fresh
+bind has no active peer. It is not yet an automatic production restart test.
+Fresh protected connections also receive the same supplied Qid allocator;
+fresh epoch owners cannot reuse earlier allocated identities.
+
+The child marker directory is an explicit test-only writable grant. It confirms
+the child finished mounting its fixture and, for the success case, drained its
+Negotiated ACK before the parent stops the worker. No output/GUI/device access
+is added. This is a protected Rust child authentication control, not the later
+frozen independent Nim protected pair or native semantic-settlement evidence.
+
+Evidence lives in `.artifacts/t249-protected-endpoint`. Initial retained failures
+were an old fixture moving a field out of the newly dropping startup owner,
+a wrong-role fixture rejected by the supervisor before reaching the endpoint,
+and a child final-ACK race caused by immediate fixture teardown. The fixture now
+borrows the field, uses a genuinely launched metadata-broker role for the
+endpoint negative, and observes bounded ready/negotiated markers. Compiled
+negatives admit an unprotected PID or omit the post-registration Stop check;
+each must fail its named control before restored-source acceptance.
+
+The restored focused suite passes 51 controls, fails none and ignores three
+explicit fixtures (the two supplied Nim runs and the protected Rust child entry
+invoked by its parent). Both compiled negatives fail their intended guard.
+Strict native-session all-target Session Clippy, worktree-root layout, format
+and diff checks pass on the restored source. Device-hidden execution retains
+nice 19, two jobs and the exclusive disk target. The compile slot is released
+after all processes are collected; production endpoint selection remains a
+separate reviewed checkpoint.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

@@ -18,6 +18,17 @@ pub(super) struct NinePPolicyAdapter {
     startup: FileStartup,
 }
 impl NinePPolicyAdapter {
+    pub(super) fn pending(
+        endpoint: sophia_runtime::PolicyRoleEndpoint,
+        supervisor: &sophia_runtime::ProcessSupervisor,
+        epoch: u64,
+        limits: WmFileLimits,
+        qids: WmQids,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            startup: FileStartup::pending(endpoint, supervisor, epoch, limits, qids)?,
+        })
+    }
     pub(super) fn supplied(
         stream: UnixStream,
         epoch: u64,

@@ -323,6 +323,7 @@ fn supplied_stream_orders_negotiated_before_exact_profile_reducer_exchange() {
     assert_eq!(
         startup
             .reactor
+            .as_ref()
             .unwrap()
             .server
             .export()

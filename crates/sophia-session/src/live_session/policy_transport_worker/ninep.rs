@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 mod journal;
 mod owner;
+mod pending;
 mod runtime_adapter;
 mod staging;
 mod startup;
@@ -78,21 +79,58 @@ pub(super) trait PolicyFileCodec {
 pub(super) struct NinePReactor<C: PolicyFileCodec> {
     server: Server<WmFiles<C>>,
     stopped: Arc<AtomicBool>,
+    cancellation: Arc<NinePCancellation>,
 }
 
-struct NinePStop {
-    wake: Wake,
+/// One cancellation owner spans endpoint accept and reactor adoption. The lock
+/// protects only wake registration, never an accept, reactor turn or wait.
+struct NinePCancellation {
     stopped: Arc<AtomicBool>,
+    wake: Mutex<Option<Wake>>,
 }
+impl NinePCancellation {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            stopped: Arc::new(AtomicBool::new(false)),
+            wake: Mutex::new(None),
+        })
+    }
+    fn install(&self, wake: Wake) -> Result<(), String> {
+        *self.wake.lock().map_err(|_| "WM file wake lock poisoned")? = Some(wake.clone());
+        // A Stop before or during registration cannot disappear at adoption.
+        if self.stopped.load(Ordering::SeqCst) {
+            wake.stop();
+            return Err("WM file stopped during adoption".into());
+        }
+        Ok(())
+    }
+    fn handle(self: &Arc<Self>) -> Box<dyn PolicyAdapterStop> {
+        Box::new(NinePStop(self.clone()))
+    }
+}
+struct NinePStop(Arc<NinePCancellation>);
 impl PolicyAdapterStop for NinePStop {
     fn stop(&self) {
-        self.stopped.store(true, Ordering::SeqCst);
-        self.wake.stop();
+        self.0.stopped.store(true, Ordering::SeqCst);
+        let wake = self.0.wake.lock().ok().and_then(|wake| wake.clone());
+        if let Some(wake) = wake {
+            wake.stop();
+        }
     }
 }
 
 impl<C: PolicyFileCodec> NinePReactor<C> {
     pub(super) fn adopt(stream: UnixStream, owner: WmFiles<C>) -> Result<Self, String> {
+        Self::adopt_with_cancellation(stream, owner, NinePCancellation::new())
+    }
+    fn adopt_with_cancellation(
+        stream: UnixStream,
+        owner: WmFiles<C>,
+        cancellation: Arc<NinePCancellation>,
+    ) -> Result<Self, String> {
+        if cancellation.stopped.load(Ordering::SeqCst) {
+            return Err("WM file stopped before adoption".into());
+        }
         // WM-specific bounds: 512-byte minimum permits fragment transport,
         // sixteen waits leave room for event reads plus flush/control traffic.
         // One connection is already admitted; this reactor is not a listener.
@@ -103,16 +141,15 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         .map_err(|e| e.to_string())?;
         let connection = server.adopt(stream).map_err(|e| e.error.to_string())?;
         server.export_mut().bind_connection(connection);
+        cancellation.install(server.wake())?;
         Ok(Self {
             server,
-            stopped: Arc::new(AtomicBool::new(false)),
+            stopped: cancellation.stopped.clone(),
+            cancellation,
         })
     }
     pub(super) fn stop_handle(&self) -> Box<dyn PolicyAdapterStop> {
-        Box::new(NinePStop {
-            wake: self.server.wake(),
-            stopped: self.stopped.clone(),
-        })
+        self.cancellation.handle()
     }
     pub(super) fn owner_mut(&mut self) -> &mut WmFiles<C> {
         self.server.export_mut()

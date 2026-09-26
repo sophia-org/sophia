@@ -17,8 +17,15 @@ const PROFILE_RESPONSE_BUDGET: Duration = super::super::POLICY_CLIENT_RESPONSE_D
 
 pub(super) struct FileStartup {
     reactor: Option<NinePReactor<TypedFileCodec>>,
+    endpoint: Option<super::pending::PendingEndpoint>,
+    cancellation: Arc<NinePCancellation>,
     epoch: u64,
     limits: WmFileLimits,
+}
+impl Drop for FileStartup {
+    fn drop(&mut self) {
+        self.close();
+    }
 }
 impl FileStartup {
     pub(super) fn epoch(&self) -> u64 {
@@ -35,9 +42,11 @@ impl FileStartup {
             .ok_or_else(|| "WM file connection closed".into())
     }
     pub(super) fn close(&mut self) {
+        self.cancellation.handle().stop();
         if let Some(mut reactor) = self.reactor.take() {
             reactor.owner_mut().revoke();
         }
+        self.endpoint.take();
     }
     pub(super) fn adopt(
         stream: UnixStream,
@@ -47,14 +56,37 @@ impl FileStartup {
     ) -> Result<Self, String> {
         let owner = WmFiles::awaiting_negotiation(epoch, limits, qids, TypedFileCodec)
             .map_err(|e| format!("WM file limits: {e:?}"))?;
+        let cancellation = NinePCancellation::new();
         Ok(Self {
-            reactor: Some(NinePReactor::adopt(stream, owner)?),
+            reactor: Some(NinePReactor::adopt_with_cancellation(
+                stream,
+                owner,
+                cancellation.clone(),
+            )?),
+            endpoint: None,
+            cancellation,
             epoch,
             limits,
         })
     }
     pub(super) fn stop_handle(&self) -> Box<dyn PolicyAdapterStop> {
-        self.reactor.as_ref().expect("live startup").stop_handle()
+        self.cancellation.handle()
+    }
+    pub(super) fn pending(
+        endpoint: sophia_runtime::PolicyRoleEndpoint,
+        supervisor: &sophia_runtime::ProcessSupervisor,
+        epoch: u64,
+        limits: WmFileLimits,
+        qids: WmQids,
+    ) -> Result<Self, String> {
+        let endpoint = super::pending::PendingEndpoint::authorize(endpoint, supervisor, qids)?;
+        Ok(Self {
+            reactor: None,
+            endpoint: Some(endpoint),
+            cancellation: NinePCancellation::new(),
+            epoch,
+            limits,
+        })
     }
     pub(super) fn admit(
         &mut self,
@@ -77,6 +109,21 @@ impl FileStartup {
             || profile.is_some_and(|p| p.connection_epoch != self.epoch)
         {
             return Err("WM file supplied profile identity mismatch".into());
+        }
+        if self.reactor.is_none() {
+            let endpoint = self.endpoint.as_mut().ok_or("WM file admission closed")?;
+            let (stream, qids) = endpoint.accept(
+                &self.cancellation,
+                Instant::now() + super::super::POLICY_CLIENT_RESPONSE_DEADLINE,
+            )?;
+            let owner =
+                WmFiles::awaiting_negotiation(self.epoch, self.limits, qids, TypedFileCodec)
+                    .map_err(|e| format!("WM file limits: {e:?}"))?;
+            self.reactor = Some(NinePReactor::adopt_with_cancellation(
+                stream,
+                owner,
+                self.cancellation.clone(),
+            )?);
         }
         let reactor = self.reactor.as_mut().ok_or("WM file admission closed")?;
         if reactor.owner_mut().selected_capabilities().is_some() {
