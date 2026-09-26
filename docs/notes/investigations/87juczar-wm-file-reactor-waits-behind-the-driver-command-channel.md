@@ -67,18 +67,44 @@ the required idle ACK/clunk progress and is not the proposed correction.
 
 ## Validation and remaining work
 
-Required generic controls cover outcome delivery without another command,
+Signed correction `9f03d3e8424184c1ceb4b8c4b51bd1e3a57de6b4`, joined as
+`82085333571141eb8662bcf3468877442c72d7dd`, passes generic controls for
+outcome delivery without another command,
 idle ACK/clunk/flush service, admitted-only command wakes, enqueue races,
 ordered commands, quiet no-spin behavior, Stop and unchanged DirtyOnly
-refusal. A source negative must distinguish the old idle path without relying
-on a fragile sub-10 ms timing threshold. File active receive and current IPC
-controls must remain green.
+refusal. All seven new controls pass within the restored worker suite:
+59 passed, three explicitly ignored. Strict native Session all-target Clippy,
+fresh-worktree layout, workspace/direct formatting and whitespace pass.
+The active receive source is unchanged; current IPC retains its old branch.
+A compiled selector negative enters the old fallback and fails with the
+external test's `legacy_fallback_refused` marker. Exact restoration passes.
+This proves the selected servicing path, not a numerical latency bound.
 
-The correction is not validated by this note. After its owner checks, repeat
-the diagnostic and the separately declared release campaign against exact
-identities, retaining the original failed samples. t249 remains open and
-installed current IPC stays the default. This grants no output/shell migration
-or physical acceptance.
+The unchanged Hagia workload then runs at exact `820853335` in
+`hagia-wm-measurements/.artifacts/measure/pair-idle-fix`: all sixteen cases
+complete, with 256 admitted, 229 settled, 27 coalesced and no terminal failures
+or unresolved work. The campaign still exits 1: six of eight pairs refuse
+budgets. Three 60 Hz file runs have medians of 1.74–1.85 ms, compared with
+roughly 9 ms before the correction. Ordinal 02 is an **idle**, not CPU-loaded,
+move run with two survivors at 647.7 and 722.6 ms. Its manifest binds a load
+record with zero workers. The 120 Hz interval and survivor failures remain.
+No threshold or checkpoint behavior changed.
+
+The outlier coincides with long gaps between Hagia's checkpoint-save messages.
+Its synchronous file and directory fsyncs share the evidence/build filesystem.
+Durable-storage latency is a hypothesis, not an attributed cause: retain the
+failure and distinguish it with bounded I/O-pressure/checkpoint timing or a
+declared order control. Do not remove fsync, discard samples or redefine the
+gate after the result. The full release campaign has not run.
+
+The separate ordinary overlay at `.artifacts/measure/retained-idle-fix` passes
+all 25 named owner/legacy cases, strict native Session/runtime checks, fresh
+layout and workspace/direct overlay formatting. The source fix bundle is
+`~/.local/state/sophia/development-evidence/t249-wm-idle-9f03d3e8`; the original
+measurement bundle is
+`~/.local/state/hagia/development-evidence/h006-drag-measurement-48fed33`.
+t249 remains open and installed current IPC stays the default. Output and
+shell remain current IPC; this grants no physical acceptance.
 
 ## Connections
 
