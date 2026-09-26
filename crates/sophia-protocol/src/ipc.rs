@@ -5,6 +5,7 @@ mod cursor;
 mod frame;
 mod output_v1;
 mod policy_records;
+mod policy_scalars;
 mod portal;
 mod primitives;
 mod shell_tabs;
@@ -23,6 +24,7 @@ pub use control_v1::*;
 pub use frame::{decode_frame, encode_frame};
 pub use output_v1::*;
 pub use policy_records::*;
+pub use policy_scalars::*;
 pub use portal::{
     decode_portal_broker_request_frame, decode_portal_broker_response_frame,
     decode_portal_clipboard_payload_frame, encode_portal_broker_request_frame,

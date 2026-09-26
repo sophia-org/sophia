@@ -26,7 +26,14 @@ pub fn encode_wm_output_action_request(
     else {
         return Err(invalid());
     };
-    if !output.is_valid() || output_generation == 0 || !request.affected_outputs.contains(&output) {
+    // The shared target check, first and under this wrapper's own label as
+    // it always was; identity, outputs and the action follow in the inner
+    // legacy encode below, in their historical order.
+    if let Err(IpcCodecError::InvalidEnum {
+        field: "output_action_cause",
+        ..
+    }) = super::validate_request_cause_scalars(&request.cause, &request.affected_outputs)
+    {
         return Err(invalid());
     }
     let mut legacy = request.clone();
