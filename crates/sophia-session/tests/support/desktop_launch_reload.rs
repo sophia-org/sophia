@@ -25,9 +25,6 @@ mod policy_transport_selection;
 #[path = "policy_combined_output.rs"]
 mod policy_combined_output;
 
-#[path = "policy_hagia_session.rs"]
-mod policy_hagia_session;
-
 #[path = "policy_expectation_settlement.rs"]
 mod policy_expectation_settlement;
 

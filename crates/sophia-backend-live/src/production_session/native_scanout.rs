@@ -42,11 +42,17 @@ pub use persistent_native_scanout::{
 pub(crate) use persistent_native_scanout::LiveProductionNativeRetirementContent;
 
 #[cfg(all(test, feature = "libdrm-events", feature = "gbm-probe"))]
+pub(crate) use persistent_native_scanout::{PresentedTimingHead, completed_timing};
+
+#[cfg(all(
+    any(test, feature = "test-support"),
+    feature = "libdrm-events",
+    feature = "gbm-probe"
+))]
 pub(crate) use persistent_native_scanout::{
     CompositionInstallation, CompositionInstaller, LiveProductionQueuedMirrorHeadFrame,
-    MirrorCompletionWitness, PresentedTimingHead, SettledMirrorHead, complete_mirror_head,
-    completed_timing, install_composition_generation, reserve_composition_lifecycle,
-    settled_mirror_checksum,
+    MirrorCompletionWitness, SettledMirrorHead, complete_mirror_head,
+    install_composition_generation, reserve_composition_lifecycle, settled_mirror_checksum,
 };
 
 #[cfg(all(

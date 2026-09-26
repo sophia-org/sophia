@@ -858,6 +858,36 @@ reset during cleanup is not a clean Hagia exit claim; cleanup does not establish
 an absolute stuck-kernel reap bound. There is no physical input, native receipt,
 whole-owner-loop or application-execution claim.
 
+## WM-neutral test ownership, September 26
+
+At niltempus's correction, the new real-Hagia Session fixture family moves to
+Hagia's optional `tools/sophia_pairing` source overlay. Its action vocabulary,
+camera/checkpoint assertions, frozen binary pin and supplied historical facts
+are Hagia-owned. Copies were hashed before removing Sophia's mounts and files;
+the earlier signed checkpoints and evidence remain intact. Sophia's generic
+P1, driver, protocol, replay and owner controls remain. The optional runner must
+identify the exact Sophia base plus its hashed overlay, and reject incompatible
+private test context. It does not add a public Session API. Older interoperability
+fixtures used by Hagia's existing gate are a separate coordinated relocation;
+this checkpoint does not claim their removal.
+
+The allocator observer moved too: it had no generic caller after unmounting
+Hagia recovery. It will be injected only by the optional overlay. The backend
+mirror target is instead generic: existing mirrored tests and a feature-gated
+cross-crate fixture share the production install/custody/completion owners with
+simulated device/copy/flip inputs. Normal dependency features exclude
+`test-support`; no Hagia policy enters that target.
+
+Focused validation: 32 mirrored-target checks and 51 worker checks pass; three
+worker fixtures remain explicitly ignored. Strict backend `test-support`
+all-target and native Session all-target Clippy pass, normal backend compilation
+passes, and fresh xtask layout and formatting pass. Logs are under
+`sophia-overview/.artifacts/t249-{presentation,neutrality}`. Retained initial
+failures cover missing test-support reexports, an unused observer after
+relocation and formatting. A preliminary feature-omitting zero-test run is not
+evidence. The new Hagia presentation join remains uncompiled at this checkpoint;
+source review alone is not pairing evidence.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
