@@ -13,6 +13,9 @@ const FROZEN_SHA256: &str = "0419e09e224676c4d925438f80b22df9532c1653ec339507637
 #[path = "policy_hagia_layout.rs"]
 mod layout_settlement;
 
+#[path = "policy_hagia_corpus.rs"]
+mod corpus_parity;
+
 fn binary_hash(path: &Path) -> String {
     assert!(std::fs::metadata(path).unwrap().len() <= 64 * 1024 * 1024);
     format!("{:x}", Sha256::digest(std::fs::read(path).unwrap()))
