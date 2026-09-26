@@ -22,6 +22,9 @@ mod policy_presentation_lifecycle;
 #[path = "policy_transport_selection.rs"]
 mod policy_transport_selection;
 
+#[path = "policy_combined_output.rs"]
+mod policy_combined_output;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,

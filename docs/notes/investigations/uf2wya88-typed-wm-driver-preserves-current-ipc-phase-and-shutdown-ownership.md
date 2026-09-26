@@ -502,6 +502,44 @@ and a configuration test file crossing its limit; helpers now reside in
 external test support and transport configuration controls have their own
 module. The failed layout log is retained without a debt-ledger adjustment.
 
+## Combined file WM and output-role restart control
+
+The test-only follow-up uses the actual initial, automatic and control restart
+entrypoints with the same protected child holding the WM file stream and the
+existing output IPC stream. `native_scanout=true` is only a fixture bootstrap
+selector: a deterministic topology, empty capability list and no startup
+candidate are supplied to `from_started_public_config`. No native target or
+device is opened, and no frame, presentation receipt or retirement is produced.
+
+The child completes the existing scripted file profile exchange, negotiates
+output IPC, and checks the exact supplied topology. A third fixture witness
+socket in the existing checkpoint directory corroborates its identity: parent
+`SO_PEERCRED` must match the supervisor's peer PID and launch evidence. This
+witness adds no role authority; the actual role endpoints enforce their own
+credentials. The parent services `poll_output_authority`, so connection and
+assignee events go through the existing owner rather than a test reducer.
+Across both replacements the control requires distinct actual child PIDs,
+WM epochs 1/2/3, increasing Qids and output epochs, and unchanged topology.
+
+This snapshot-only join does not establish the exact pause-before-spawn order.
+The existing service has a synchronous private pause acknowledgement, but no
+snapshot-only public observation distinguishes a missing pause from a later
+successful PID replacement. The earlier standalone pause primitive control
+remains separate evidence. Outstanding candidate abandonment, topology apply
+and rollback are not part of this fixture.
+
+The compiled negative removes only automatic restart's `ReplaceSupervisedPid`
+command. The real service stays paused, the replacement child's output read
+hits its four-second bound, and the parent refuses after its five-second
+dual-role handshake bound. Restored source is rerun; the negative establishes
+the PID-replacement/resume obligation, not pause ordering. Evidence, including
+the changed source hash and failure log, is in `.artifacts/t249-combined-output`.
+The restored combined control passes 1/0 with its separately invoked child
+entry ignored, and retained selection controls pass 3/0 with their child entry
+ignored. Strict native-session all-target Session Clippy, layout, format and
+diff checks pass. Production files remain byte-identical to the parent
+selection checkpoint; only external test support and this note change.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
