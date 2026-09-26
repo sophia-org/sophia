@@ -129,6 +129,22 @@ deployment/rollback, based on that record. It need not wait for shell migration.
 Inspection remains a separate optional permission; it is not required for the
 WM to operate.
 
+**Rehearsal record (2026-09-26).** Candidate: personal release
+`niltempus-81b687e08030f1d7b55e` (Sophia `06efcfda`, Hagia `5af36ac7`, Lom
+`ad349869`, Bemenu `7d2d2399`, Narthex `50b9014d`), installed with the new
+"Sophia niltempus Desktop (9P WM)" entry (sealed Hagia, `--wm-transport=9p2000.L`)
+beside the unchanged current-IPC entry. `tools/rehearse_wm_9p.sh` on tty4, run by
+the operator, passed 7/7 phases on both wires, session exit 0: startup ready,
+`restart-wm` completed, reload unchanged, a Hagia-rejected profile (view-count 10)
+rejected with rollback, the restored profile unchanged, restart after the
+rollback completed, logout completed. Evidence:
+`development-evidence/t250-rehearsal-niltempus-81b687e08030f1d7b55e-{9p2000.L-20260926T193548Z,current-ipc-20260926T193602Z}`.
+The first attempt's post-rollback phases failed on the script's own readiness
+race (fixed in `0cd03eab`) and are retained beside them. Rehearsals use a copy
+of the release profile so the rejection can be swapped in; binaries are sealed.
+Remaining for t250: the attended ordinary-use session through the 9P entry, the
+t249 release latency verdict, and the default-selection decision.
+
 ### t251 — Specify the shell file contract
 
 This is the immediate parallel planning lane while WM acceptance finishes.
