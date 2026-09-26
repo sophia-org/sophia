@@ -692,7 +692,7 @@ fn mixed_output_gate_apps_satisfy_probe_profile() {
 }
 
 #[test]
-fn frame_fed_output_gate_admits_hagias_complete_session_operation_catalog() {
+fn frame_fed_output_gate_admits_the_complete_session_operation_catalog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let core = root.join("tools/config/sophia/core.kdl");
     let desktop = root.join("tools/fixtures/frame_fed_output_proof.kdl");

@@ -833,6 +833,3 @@ fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
     assert_eq!(calls, 2);
     assert!(h.ledger.live.is_empty());
 }
-
-#[path = "targeted_policy.rs"]
-mod targeted_policy;

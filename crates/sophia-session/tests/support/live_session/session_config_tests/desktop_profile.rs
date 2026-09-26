@@ -1,5 +1,5 @@
 #[test]
-fn normal_hagia_session_resolves_one_separate_shell_executable() {
+fn normal_session_resolves_one_separate_shell_executable() {
     use std::os::unix::fs::PermissionsExt as _;
     use std::time::{SystemTime, UNIX_EPOCH};
 

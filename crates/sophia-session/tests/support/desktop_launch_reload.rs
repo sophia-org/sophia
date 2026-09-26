@@ -569,7 +569,7 @@ fn rejected_policy_restores_the_exact_spec_fragments_and_commands() {
 }
 
 #[test]
-fn lom_panel_gate_admits_only_available_actions_from_hagias_complete_catalog() {
+fn lom_panel_gate_admits_only_available_actions_from_the_wm_catalog() {
     let core = include_str!("../../../../tools/fixtures/lom_panel_core.kdl");
     let arguments = [
         "--session-app=browser=/usr/bin/true",
