@@ -6,6 +6,13 @@ replaceable native desktop roles.
 are stable. Other interfaces retain the individual status recorded below; this
 document does not promote an experimental role by grouping it into the family.
 
+**Migration direction:** [9P2000.L public interfaces](sophia-9p-control-bus.md)
+are the accepted target for progressive replacement of the custom public desktop
+protocols. Their file API remains open. This document remains the current wire
+and compatibility contract until equivalent clients, lifecycle behavior and
+performance have been demonstrated and a deprecation path is published. Shared
+9P transport will preserve the role and disclosure boundaries below.
+
 Sophia exposes replaceable desktop components through local, language-neutral
 IPC. The protocol family is the public extension point. Hagia, shells, and
 later authorities are ordinary clients of separately authorized interfaces;

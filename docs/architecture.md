@@ -25,6 +25,14 @@ mediate deliberate namespace crossings. Engine boundaries remain
 protocol-neutral so future translators can be evaluated without redesigning
 visual authority.
 
+The accepted [9P public-interface direction](sophia-9p-control-bus.md) targets
+9P2000.L for replaceable desktop roles and a new application frontend alongside
+X authority. This is a target, not current support: the existing native role
+protocols remain authoritative during migration. Shared transport does not merge
+authorities, replace namespaces, or move Engine's internal execution onto 9P.
+The [decision record](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
+distinguishes accepted direction from the open filesystem contract.
+
 ## System Shape
 
 ```text
@@ -655,8 +663,11 @@ reintroduces the fragmentation it prevents. See
 control interface: the session owns caller admission, authorization, and
 routing; WM and shell clients retain their respective command semantics and
 existing role connections. A scripting caller acquires no role authority or
-application-data access merely by reaching that endpoint. The target contract
-is documented; the endpoint and `sophia msg` CLI are unimplemented.
+application-data access merely by reaching that endpoint. The experimental
+endpoint and `sophia msg` implement policy actions and confirmed WM restart as
+specified in [control v1](sophia-control-v1.md). The 9P direction changes the
+target public transport, not these authority boundaries or the current service's
+advertised operations.
 
 ## Protocol Frontends
 
@@ -694,10 +705,8 @@ the protocol role and current crate name.
 
 The frontend follows the Phoenix strategy, not Phoenix code: implement a modern
 X server cleanly, retain the established X11 API, and expand only from real
-application evidence. Sophia is not designing an “X12” or a speculative native
-application protocol. If repeated product evidence eventually exceeds X11,
-Sophia may extract a native interface from proven Engine mechanisms through an
-explicit specification decision.
+application evidence. The accepted 9P direction adds a separate application
+frontend target; it does not replace X11 or put 9P semantics inside X authority.
 
 Modernization happens beneath X11 through Sophia-owned atomic commits,
 Engine-owned presentation, explicit buffer readiness, session-selected
@@ -708,15 +717,26 @@ The detailed contract is in
 [sophia-x-authority.md](sophia-x-authority.md). Real-client admission is tracked
 in [x11-compatibility-matrix.md](x11-compatibility-matrix.md).
 
-### Future Compatibility Frontends
+### Target 9P Application Frontend and Other Candidates
 
-No non-X application frontend is currently supported or planned. A future
-compatibility translator may be admitted only from named product evidence. It
-must reduce to existing Sophia transactions, routed input, namespaces, and
-portals; remain subordinate to Engine and session policy; and must not import
-another protocol's shell, workspace, physical-input, presentation, or
-compositor-extension architecture. Architectural openness is permission to
-evaluate a translator later, not a compatibility promise.
+X11 remains the only supported application frontend. The
+[9P application frontend](sophia-9p-authority.md) is now an accepted architectural
+target, with its API and integration still to be designed and validated. It owns
+application protocol objects and translates admitted operations into existing
+Sophia transactions and routed-input boundaries. Session and the existing role
+owners retain WM, shell, administrative and portal semantics even when their
+public interfaces also use 9P.
+
+Application-owned service exports may be composed through explicit grants;
+their semantics remain with the application and are not disclosed to blind WM
+policy. Discovery, delegation and revocation require an explicit contract.
+Mount visibility does not replace admission or checks on retained handles.
+
+Other compatibility translators remain candidates requiring named product
+evidence. Every frontend must remain subordinate to Engine and session policy
+and must not import another protocol's shell, workspace, physical-input or
+presentation authority. The 9P direction establishes neither unmodified Plan 9
+application compatibility nor a general promise to support other frontends.
 
 ### XLibre Boundary
 

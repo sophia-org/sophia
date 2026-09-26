@@ -1,360 +1,169 @@
-# Sophia 9P Filesystem Frontend (`sophia-9p-authority`)
+# Sophia 9P application frontend (`sophia-9p-authority`)
 
-**Role:** subsystem architecture and target contract.
+**Role:** application frontend design under the accepted public 9P direction.
 
-**Status:** proposed frontend architecture; non-normative.
+**Status:** target architecture; application API and integration remain
+unimplemented. The checked-in crate is a scaffold, not conformance evidence.
+See the [public interface design](sophia-9p-control-bus.md) and its
+[accepted direction](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md).
+Documentation work continues while implementation and gates remain paused.
 
-## 1. Overview
+## Purpose and scope
 
-The Sophia 9P Filesystem Frontend is a proposed protocol authority that exposes
-graphical window creation, drawing operations, and user input as a **synthetic
-filesystem** served over the Plan 9 filesystem protocol (9P2000 / 9P2000.L).
+The target frontend lets an application create and update its graphical content
+and receive routed input through synthetic files served over 9P2000.L. It sits
+alongside X authority and reduces its own protocol into the existing Engine
+transaction and input boundaries. X11 applications keep their existing frontend.
 
-Traditional graphics platforms (X11, Wayland) require client applications to link
-against complex protocol serialization libraries (`libX11`, `libwayland-client`,
-`xkbcommon`, `cairo`). Plan 9 from Bell Labs proved that a synthetic filesystem
-interface (`/dev/draw`, `/dev/mouse`, `/dev/cons`) provides a complete,
-interactive, and network-transparent graphical interface using standard file I/O
-primitives (`open`, `read`, `write`, `close`).
-
-In Sophia's decoupled architecture, `sophia-engine` serves as a protocol-neutral
-visual kernel consuming anonymous visual transactions (`SurfaceTransaction`).
-The 9P frontend terminates the filesystem protocol, translates file operations
-into anonymous surface damage and buffer commits, and maps engine input back into
-readable synthetic files.
+This application interface and the proposed 9P WM/shell/administrative services
+share a protocol direction, not one grant or semantic owner. The application
+frontend must not become the owner of session control, WM policy or shell
+allocations merely because those interfaces also speak 9P.
 
 ```text
-  [ Acme / Sam ]         [ Shell / Python Script ]       [ C / Go Minimalist App ]
-         │                           │                               │
-         └─────────────┬─────────────┴───────────────────────────────┘
-                       │
-                       ▼ 9P2000 / FUSE / v9fs (open, read, write)
-        ┌────────────────────────────────────────────────────────┐
-        │      SOPHIA 9P FRONTEND (`sophia-9p-authority`)        │
-        │  • Synthetic directory trees (/dev/sophia/draw/<id>/)  │
-        │  • Plan 9 libdraw decoder & raw pixel stream parser    │
-        │  • Mouse/Kbd serialization from routed engine events   │
-        └──────────────────────────┬─────────────────────────────┘
-                                   │
-                                   ▼ SurfaceTransaction (anonymous buffers & damage)
-        ┌────────────────────────────────────────────────────────┐
-        │                 SOPHIA ENGINE: VISUAL KERNEL           │
-        │  • DRM/KMS atomic page-flips & plane scheduling        │
-        │  • Target-resolved physical input routing              │
-        └──────────────────────────┬─────────────────────────────┘
-                                   │
-                                   ▼ sophia_wm_v1 (opaque spatial nodes)
-        ┌────────────────────────────────────────────────────────┐
-        │       WINDOW MANAGER POLICY (Hagia / Reference WM)     │
-        └────────────────────────────────────────────────────────┘
+ X11 application                     9P application
+        |                                   |
+        v                                   v
+ +------------------+             +----------------------+
+ | X authority      |             | 9P app authority     |
+ | X11 object state |             | file/object state    |
+ +---------+--------+             +----------+-----------+
+           |                                 |
+           +---------------+-----------------+
+                           | admitted visual transactions
+                           v
+                +------------------------+
+                | Sophia Engine          |
+                | scene and presentation |
+                | target-resolved input  |
+                +-----------+------------+
+                            |
+                            | opaque spatial facts / proposals
+                            v
+                +------------------------+
+                | admitted WM policy     |
+                | current: sophia_wm_v1  |
+                | target: 9P WM role API |
+                +------------------------+
 ```
 
----
+## Ownership
 
-## 2. Naming and Architectural Boundary
+| Owner | Responsibility |
+| --- | --- |
+| 9P application frontend | Protocol decoding, per-connection handles and object state, admitted application content and metadata, translation to existing visual transactions, protocol replies and routed-input encoding |
+| Session | Caller admission, protection domains, supervision, grants, revocation and service routing |
+| Engine and rendering owners | Scene truth, hit-testing, atomic visual commits, source retention, native backing retirement, rendering and scanout |
+| WM | Metadata-blind spatial and focus policy over opaque nodes |
+| Shell and metadata broker | Admitted UI and metadata disclosure under their separate contracts |
+| Portal owners | Explicit cross-namespace transfer decisions and execution |
 
-- **Component Name:** Sophia 9P Filesystem Frontend
-- **API / Protocol:** 9P2000.L / Plan 9 `draw(3)`
-- **Target Crate:** `sophia-9p-authority`
+Application requests for size, fullscreen or focus are proposals interpreted by
+the existing owners; file writes do not give applications global placement or
+input authority. Metadata stays at the frontend/broker boundary and is not
+included in the WM's filesystem view. A common codec or executable must not
+merge blind policy with metadata-bearing protection domains.
 
-### The Frontend Owns:
-- 9P protocol parsing (over Unix domain sockets, TCP, or FUSE mounts).
-- Synthetic directory hierarchy and dynamic file-node lifecycle.
-- Plan 9 `libdraw` command parsing (`allocimage`, `draw`, `line`, `string`,
-  `freeimage`) and software rasterization into backing CPU buffers.
-- Raw RGBA pixel stream parsing for zero-dependency scripting.
-- Virtual input files (`mouse`, `kbd`) formatting from engine input events.
-- Emitting `SurfaceTransaction` batches, damage rects, and buffer updates to
-  `sophia-engine`.
-- Mapping client session identity to immutable `NamespaceContext` allocations.
+## File API design space
 
-### The Frontend Must Not Own:
-- Physical DRM/KMS modesetting, scanout, or hardware planes.
-- Compositor scene graph, damage accumulation, or global hit-testing.
-- Spatial layout or focus policy (delegated metadata-blindly to `sophia_wm_v1`).
-- Cross-namespace portal handoffs (mediated exclusively by `sophia-portal`).
-- Physical input device handling or hardware translation.
-
----
-
-## 3. Storage and Memory Model: Zero Disk I/O
-
-A common misconception is that a filesystem-based display server incurs physical
-disk writes or degrades solid-state drive (SSD) endurance.
-
-**The Sophia 9P filesystem is entirely synthetic and lives exclusively in RAM:**
-1. **Volatile Kernel Memory:** Like Linux's `/proc` and `/sys`, files under the
-   9P authority have no physical backing blocks on an ext4, btrfs, or NVMe
-   filesystem.
-2. **Standard Memory IPC:** When an application calls `write()` to stream pixel
-   data or draw commands, bytes move directly through kernel memory buffers
-   into the frontend process's memory space.
-3. **Hardware Impact:** Total Bytes Written (TBW) to physical storage is zero.
-   Streaming high-framerate animation through the synthetic filesystem exerts the
-   exact same system load and memory bus usage as writing to a local Unix stream
-   socket or anonymous pipe.
-
----
-
-## 4. Synthetic Filesystem Hierarchy
-
-The frontend mounts or serves a directory tree under the user's runtime directory
-(e.g., `$XDG_RUNTIME_DIR/sophia/draw/` or `/dev/sophia/draw/`):
+The following is illustrative. Allocation syntax, formats, IDs, open/close
+semantics and version negotiation have not been frozen.
 
 ```text
-$XDG_RUNTIME_DIR/sophia/draw/
-├── new                     # Open/read allocates a fresh window ID (<id>)
-└── <id>/
-    ├── ctl                 # Write: configuration commands; Read: state/geometry
-    ├── data                # Write: draw command stream or raw pixel bytes
-    ├── refresh             # Read: blocks until damage/repaint is needed
-    ├── mouse               # Read: blocking stream of pointer events
-    ├── kbd                 # Read: blocking stream of keyboard events
-    └── text                # Bidirectional raw terminal text stream (optional)
+ /sophia/app/
+   windows/
+     <opaque-object>/
+       state         admitted geometry and allocation facts
+       content       bounded content submission
+       events        routed input and lifecycle events
+       outcomes      correlated proposal/presentation results
 ```
 
-### File Operations and Semantics
+A complete design must define how a client creates an object, stages content,
+submits damage and receives explicit outcomes. File byte offsets and protocol
+request tags cannot silently replace transaction, allocation or connection
+identities. Reads and writes can fragment; the parser must retain bounded
+assembly state and must not present an incomplete buffer.
 
-#### `new`
-Opening or reading `new` triggers the authority to allocate a fresh surface
-identity, register a new `SurfaceId` with `sophia-engine`, and create a
-matching subdirectory `<id>/`.
+Possible content interfaces include bounded pixel uploads and an explicitly
+specified drawing command stream. Neither is selected by adopting 9P. GPU
+buffer sharing and synchronization require their own measured design and
+ownership proof; 9P does not transport Linux file descriptors automatically.
+Text widgets, terminal emulation, font layout and other application behavior
+remain in clients or deliberately separate services.
 
-#### `<id>/ctl`
-Accepts text-based control commands to configure surface parameters:
-```text
-size <width> <height>       # Sets backing buffer dimensions (e.g. "size 800 600")
-title <utf8-string>         # Sets surface title hint for the broker/shell
-mode <raw|libdraw>          # Toggles data parser between raw RGBA and libdraw
-format <argb8888|xrgb8888>  # Configures pixel format
-fullscreen <0|1>            # Requests fullscreen toggle via WM policy
-```
-Reading `ctl` returns current geometry, DPI scaling factor, and presentation status:
-```text
-800 600 0 0 24 100 presented
-```
+## Admission, input and lifetime
 
-#### `<id>/data`
-Accepts graphical updates depending on the negotiated mode:
-- **Raw Mode (`mode raw`):** Raw byte stream of packed 32-bit RGBA/ARGB pixels.
-  When the full frame byte count (`width * height * 4`) is satisfied, the
-  authority marks the full buffer dirty and submits a `SurfaceTransaction` to
-  the engine.
-- **Plan 9 Mode (`mode libdraw`):** Byte-stream of binary `libdraw` operators.
-  The frontend rasterizes vector lines, fills, glyphs, and Porter-Duff alpha
-  compositing into an internal CPU buffer, calculating minimal damage bounding
-  rectangles and committing them to the engine.
+Session establishes the application's resource namespace and effective rights.
+The server restricts every attach, walk, open and operation to that admission,
+including operations on previously opened handles. Linux mount namespaces can
+expose only the intended view but do not replace server checks, FD custody or
+revocation. The mounted client's relationship to process identity needs an
+explicit contract; a mount's transport peer is not assumed to identify every
+process using it.
 
-#### `<id>/mouse`
-Delivers structured pointer events to the client on `read()`. Standard Plan 9
-event format:
-```text
-'m' <x:i32> <y:i32> <buttons:u32> <msec:u64>\n
-```
-- Coordinates are surface-local, starting from `(0, 0)` at the top-left corner.
-- Buttons are represented as a bitmask (Bit 0: Left, Bit 1: Middle, Bit 2: Right,
-  Bit 3: Scroll Up, Bit 4: Scroll Down).
-- Reads block until new motion or button events are routed to this surface by
-  the engine.
+Engine resolves input against presented state. The frontend receives only the
+events routed to the admitted application and translates them into its own
+protocol. Keyboard transitions, text input, repeat, capture, cancellation,
+backpressure and release obligations require specified behavior. A UTF-8 file
+or a mouse record alone does not establish a complete input contract.
 
-#### `<id>/kbd`
-Delivers UTF-8 formatted keystroke events. Each character or key event is
-streamed as it arrives from the engine's target-resolved input dispatcher.
+Client disconnect or explicit object removal revokes future use promptly.
+Already queued, rendered, copied or submitted work retains its resources until
+the existing consumers retire. Closing a 9P handle does not prove those consumers
+have stopped. Reconnect creates fresh authority and cannot revive an old object,
+input target, transaction or completion.
 
----
+Frontend failure must be contained without claiming recovery behavior before
+the joined owner transitions are demonstrated. Physical presentation evidence
+remains distinct from headless tests with simulated completion.
 
-## 5. Security and Confinement via Mount Namespaces
+## Plan 9 applications and application services
 
-The synthetic filesystem model provides a natural, airtight sandbox boundary
-when paired with Linux kernel mount namespaces (e.g., via Bubblewrap):
+The goal includes applications built around ordinary file operations and
+composable services. It does not establish compatibility with unmodified Acme,
+Sam, Rio or plan9port. Their dialects, runtime assumptions, graphics and input
+protocols need separate implementation and independent-client evidence.
 
-```text
- ┌────────────────────────────────────────────────────────┐
- │ BUBBLEWRAP CONTAINER (Confined Namespace)              │
- │                                                        │
- │   • Read-only root filesystem                          │
- │   • No network access                                  │
- │   • Mount: bind /run/.../draw/42 -> /dev/draw          │
- │                                                        │
- │   ┌───────────────────────────────────────────────┐    │
- │   │ Untrusted App (Acme / Python Script)          │    │
- │   │ Sees only: /dev/draw/{ctl, data, mouse, kbd}  │    │
- │   └───────────────────────────────────────────────┘    │
- └──────────────────────────┬─────────────────────────────┘
-                            │
-                            ▼ Synthetic 9P Mount
- ┌────────────────────────────────────────────────────────┐
- │ HOST SOPHIA RUNTIME & 9P FRONTEND                      │
- │  • Enforces NamespaceId boundary                       │
- │  • Client has zero vocabulary to enumerate other apps  │
- └────────────────────────────────────────────────────────┘
-```
+Plan 9's [draw interface](https://9p.io/magic/man2html/3/draw) carries a specific
+graphics protocol inside files. [Rio](https://9p.io/magic/man2html/4/rio) exports
+window services. They are references for API design, not interchangeable APIs
+obtained by implementing 9P2000.L. Classic 9P2000 fallback remains an open
+compatibility decision.
 
-1. **Zero Ambient Discovery:** A sandboxed application given only its own
-   `<id>` directory cannot see or access `/run/.../draw/new` or any sibling
-   directories. It is physically impossible for the client to discover other
-   running applications, take screenshots, or sniff global keystrokes.
-2. **Namespace Keying:** The session supervisor issues an immutable
-   `NamespaceContext` during admission. The 9P authority attaches this context
-   to the allocated `SurfaceId`. Any cross-boundary interaction (e.g., clipboard
-   exchange) must route through `sophia-portal`.
-3. **Instant Teardown:** When the client process exits or closes its file handles,
-   the 9P authority detects the disconnection, tears down the synthetic node,
-   and submits a surface removal transaction to `sophia-engine`.
+An application could separately export its own domain services: for example,
+an editor's buffers and commands, following the
+[Acme model](https://9p.io/magic/man2html/4/acme). Those semantics belong to that
+application. Sophia's role is to mediate explicitly granted access, with service
+discovery, delegation and revocation still to be designed.
 
----
+A nested desktop would be an ordinary application whose internal children do
+not gain control of other Sophia applications. A system-wide WM must instead be
+explicitly admitted to the WM role. No permanent policy-serving bridge or
+automatic authority handover is part of this design; any migration adapter
+would require its own reviewed ownership and retirement criteria.
 
-## 6. Target Workflows and Use Cases
+## Performance and storage
 
-### A. The Pure Plan 9 Ecosystem (`plan9port`)
-Programs like **Acme**, **Sam**, **Page**, and **Mothra** link against `libdraw`.
-Instead of requiring `plan9port`'s X11 or Wayland translation daemons (`devdraw`),
-the programs talk directly to the synthetic filesystem served by
-`sophia-9p-authority`. They run natively without emulation layers.
+Synthetic content files do not require persistent file backing. That does not
+prove zero host disk activity, zero copying or equal overhead to current IPC.
+Direct 9P and mounted v9fs paths need separate measurements, with caching chosen
+to preserve snapshot and event semantics.
 
-### B. Shell Scripting and Zero-Dependency Tooling
-Opening a GUI window from a shell script in modern Linux currently requires
-spawning heavy toolkits (Zenity, Yad, GTK dialogs). Under 9P, a complete
-interactive window requires only core shell tools:
+Measure bounded uploads, input-to-presentation latency, slow readers, idle
+wakeups, memory usage and retirement under load against equivalent existing
+owner paths. Keep application transport costs separate from rendering and
+scanout costs. Neither a generic filesystem client nor a small protocol parser
+establishes a production graphics performance claim.
 
-```bash
-#!/usr/bin/env bash
-# Minimal interactive canvas in pure Bash
-WINDOW_DIR="$XDG_RUNTIME_DIR/sophia/draw/$(cat $XDG_RUNTIME_DIR/sophia/draw/new)"
-cd "$WINDOW_DIR" || exit 1
+## Contract and acceptance work
 
-echo "size 320 240" > ctl
-echo "title System Monitor" > ctl
+The shared [migration criteria](sophia-9p-control-bus.md#migration-and-evidence)
+apply. Application acceptance additionally needs a real independent client
+creating content, responding to routed input, resizing, disconnecting and
+reconnecting through the production owners. Negative controls must establish
+namespace exclusion, stale-identity refusal and resource retirement.
 
-# Paint red background
-python3 -c "import sys; sys.stdout.buffer.write(b'\xFF\x00\x00\xFF' * (320 * 240))" > data
-
-# Read mouse input
-while read -r tag x y btn ts; do
-    if [ "$btn" -ne 0 ]; then
-        echo "Clicked at ($x, $y) with button $btn"
-    fi
-done < mouse
-```
-
-### C. Containerized TUI / GUI Dashboards
-Minimalist appliances, embedded tools, and containerized utilities can export
-real-time status graphs, vector shapes, or interactive buttons without shipping
-Mesa, OpenGL, Wayland libraries, or X11 dependencies.
-
----
-
-## 7. Client Ingress vs. Policy Egress: The 9P Duality & Rio
-
-A crucial architectural distinction in Sophia is the separation between
-**Client Ingress** (applications presenting pixels) and **Policy Egress**
-(window managers deciding spatial layouts). 
-
-Applying 9P to Sophia reveals two distinct, complementary roles:
-
-```text
-                                [ CLIENT INGRESS ]
-                   Applications that want to DRAW pixels
-        ┌────────────────────────────────────────────────────────┐
-        │  • Firefox, Kitty, Steam        ──► sophia-x-authority │
-        │  • Acme, Sam, bash scripts      ──► sophia-9p-authority│
-        └──────────────────────────┬─────────────────────────────┘
-                                   │
-                                   ▼ SurfaceTransaction (raw pixels & damage)
-        ┌────────────────────────────────────────────────────────┐
-        │                 SOPHIA ENGINE: VISUAL KERNEL           │
-        │  • Holds the composed scene graph & schedules DRM flips│
-        └──────────────────────────┬─────────────────────────────┘
-                                   │
-                                   ▼ sophia_wm_v1 (spatial proposals)
-        ┌────────────────────────────────────────────────────────┐
-        │                   [ POLICY EGRESS ]                    │
-        │                Who DECIDES window layouts?             │
-        │                                                        │
-        │   Option A: Native Sophia WM (Hagia in Nim)            │
-        │   Option B: 9P Policy Bridge (sophia-wm-9p-bridge)     │
-        │             ──► lets scripts/wmii/rio position windows │
-        └────────────────────────────────────────────────────────┘
-```
-
-### Running Rio on Sophia: Two Architectural Models
-
-The Plan 9 window manager, **Rio**, can operate in Sophia under two different
-paradigms:
-
-#### Model A: Rio as a Self-Contained Nested Desktop (Zero `sophia_wm_v1` required)
-In Plan 9, `rio` is fundamentally an ordinary client application that connects to
-`/dev/draw` and `/dev/mouse`.
-
-Under `sophia-9p-authority`:
-1. `rio` launches as an ordinary 9P client, connecting to `/dev/sophia/draw/new`
-   and requesting a surface (e.g. 1920×1080 or floating window).
-2. Inside that allocated canvas, `rio` acts as a synthetic file server, serving
-   its own nested `/dev/draw` and `/dev/mouse` to its child processes.
-3. Users can sweep out windows, launch Acme, Sam, or `rc` shells entirely within
-   Rio's canvas.
-4. **Relationship to Sophia:** `sophia-engine` and the active system window
-   manager (`Hagia`) treat `rio` as **one single opaque surface**. Hagia positions
-   the Rio canvas; Rio manages its internal sub-windows. Zero `sophia_wm_v1`
-   negotiation is required.
-
-#### Model B: Rio / 9P as the System-Wide Window Manager (`sophia-wm-9p-bridge`)
-If the goal is for a Plan 9 tool or shell script to manage **external Sophia
-applications** (e.g., tiling Firefox from `sophia-x-authority`, Kitty, and Acme
-side-by-side on the display), it cannot do so over `/dev/draw`.
-
-In Sophia, the only interface permitted to propose geometries for compositor
-surfaces is the **`sophia_wm_v1`** protocol.
-
-To enable 9P-based desktop layout policy, Sophia defines a companion bridge:
-**`sophia-wm-9p-bridge`** (inspired by `wmii`):
-1. The bridge connects to `sophia-engine` as a standard `sophia_wm_v1` policy
-   client.
-2. The bridge exposes a synthetic 9P filesystem:
-   ```text
-   $XDG_RUNTIME_DIR/sophia/wm/
-   ├── event               # Streaming snapshot events (new window, destroyed, focus)
-   ├── client/
-   │   └── <id>/
-   │       ├── ctl         # Write: "geom 0 0 960 1080", "state floating"
-   │       ├── focus       # Write: "1" to focus
-   │       └── props       # Read-only spatial bounds and state
-   └── ctl                 # Write: "commit" to finalize layout epoch
-   ```
-3. With this bridge, any Plan 9 `rc` script, Python script, or modified Rio can
-   act as the **system-wide window manager** for all Sophia applications purely
-   by reading and writing 9P files, without linking against binary socket
-   codecs or knowing about DRM modesetting.
-
----
-
-## 8. Engine Integration Contract
-
-The contract between `sophia-9p-authority` and `sophia-engine` mirrors that of
-`sophia-x-authority`:
-
-| Phase | Flow | Data Transferred |
-| :--- | :--- | :--- |
-| **Allocation** | Frontend → Engine | `SurfaceTransaction::CreateSurface` with unique `SurfaceId`. |
-| **Frame Commit** | Frontend → Engine | CPU buffer memory handle, damage bounding box (`DamageRect`), and transaction epoch. |
-| **Layout** | Engine → WM Policy | Engine passes opaque `SurfaceId` to `sophia_wm_v1`. The WM tiles or floats the window without knowing it was created over 9P. |
-| **Input Delivery** | Engine → Frontend | `RoutedInputRequest` delivers target-resolved pointer and key events. Frontend serializes them to `<id>/mouse` and `<id>/kbd`. |
-| **Teardown** | Frontend → Engine | `SurfaceTransaction::DestroySurface` cleans up visual scene nodes atomically. |
-
----
-
-## 9. Implementation Roadmap
-
-1. **Milestone 1: In-Memory 9P Protocol Server:** Implement a lightweight, pure-Rust
-   9P2000.L server in `crates/sophia-9p-authority`, exposing the synthetic
-   directory tree over a local Unix domain socket.
-2. **Milestone 2: Raw Mode & Engine Ingress:** Support `mode raw`, writing pixel
-   buffers directly to anonymous CPU shared memory and submitting
-   `SurfaceTransaction` batches to `sophia-engine`.
-3. **Milestone 3: Input Serialization:** Hook into `RoutedInputRequest` to stream
-   mouse motion, clicks, and keystrokes through the `mouse` and `kbd` files.
-4. **Milestone 4: Plan 9 `libdraw` Decoding:** Add a software rasterizer for Plan
-   9 vector drawing primitives, enabling unpatched `plan9port` binaries to run
-   directly against the authority.
-5. **Milestone 5: Bubblewrap Sandbox Templates:** Provide standard profiles for
-   launching sandboxed 9P applications with isolated per-window mount trees.
+The first content format, required 9P operation subset, object allocation API,
+input encoding and compatibility scope remain design questions. They are not
+an implementation schedule or a second task queue.

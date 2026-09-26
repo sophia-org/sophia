@@ -103,13 +103,15 @@ candidates that role may exchange.
   failure domains, input disclosure, and evolution policy without treating a
   typical implementation as universal or target Sophia behavior as shipped.
 - [Protocol Frontend Candidates and Display Models](protocol-frontend-candidates.md)
-  evaluates alternative display paradigms (including Arcan SHMIF) and outlines
-  future protocol authority candidates (native GPU surface, 9P synthetic
-  filesystem, and remote streaming) sitting alongside `sophia-x-authority`,
-  while analyzing terminal-emulator integration as a monolithic anti-pattern.
-- [Universal 9P Control Bus](sophia-9p-control-bus.md) proposes unifying the
-  desktop control and policy plane (WM, shell, control, portals) into a single
-  in-memory synthetic filesystem served over 9P2000.L with kernel VFS sandboxing.
+  distinguishes the accepted 9P application direction from other unpromoted
+  frontend candidates and records their proposed boundaries.
+- [Public interfaces over 9P2000.L](sophia-9p-control-bus.md) records the accepted
+  target for WM, shell, administrative and application interfaces, with ASCII
+  ownership diagrams, gradual migration criteria and open design questions.
+  Namespace isolation and server authorization remain complementary.
+- [9P architectural decision](notes/decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
+  records acceptance of the direction, separately from implementation, wire
+  freeze and physical acceptance.
 - [State and Transition Discipline](state-and-transition-discipline.md)
   explains how transition systems, I/O automata, single-writer authority, and
   CALM make Sophia's separated authorities manageable. It also records the
@@ -131,8 +133,9 @@ candidates that role may exchange.
 - [Sophia X Server Frontend](sophia-x-authority.md) records the native X11
   frontend boundary, implemented surface, and remaining production gaps.
 - [Sophia 9P Filesystem Frontend](sophia-9p-authority.md) defines the synthetic
-  filesystem display frontend architecture, Plan 9 draw(3) mapping, zero-disk-write
-  RAM model, and mount-namespace confinement boundary.
+  filesystem application frontend target alongside X authority, separate from
+  desktop role services. Content formats and Plan 9 compatibility remain open;
+  the checked-in scaffold is not an integrated frontend.
 - [Sophia Window Manager API](sophia-wm-api.md) defines the native,
   language-neutral spatial-policy protocol. Legacy X11 WMs are porting
   references, not supported Sophia policy clients.

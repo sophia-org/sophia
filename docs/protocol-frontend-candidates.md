@@ -4,6 +4,12 @@
 
 **Status:** proposal and comparative research; non-normative.
 
+**2026-09-25 direction update:** the
+[9P public-interface direction](sophia-9p-control-bus.md) is accepted, including
+a 9P application frontend alongside X authority. Its API and implementation
+remain open. Other candidates below remain comparative proposals, not additional
+admitted work. Existing native IPC remains the current contract during migration.
+
 ## 1. Context and Motivation
 
 Traditional display server architectures are defined by tight coupling between
@@ -154,31 +160,29 @@ from the sprawling extension surface of Wayland. They require only:
 - Extremely compact client implementation: a complete `winit` or `SDL3` backend
   can be implemented in under 500 lines of code.
 
-### Candidate 2: `sophia-9p-authority` (Plan 9 Synthetic Filesystem Frontend)
+### Accepted Direction: `sophia-9p-authority` (Application Frontend Target)
 
-**Objective:** Bringing the Plan 9 `devdraw` / synthetic filesystem philosophy
-to Sophia, allowing scripts and lightweight utilities to create graphical
-windows without graphics libraries.
+**Objective:** expose application content and routed input through a documented
+synthetic filesystem served over 9P2000.L, alongside continued X11 support.
+The [frontend design](sophia-9p-authority.md) owns this target. The checked-in
+crate is a scaffold; it does not establish an integrated or conforming frontend.
 
-An authority exposing a synthetic 9P filesystem:
-```text
-$XDG_RUNTIME_DIR/sophia/fs/
-  window-1/
-    ctl       # echo "size 800 600" > ctl
-    data      # write raw RGBA pixel streams or vector commands
-    mouse     # read structured (x, y, buttons)
-    kbd       # read keystroke events
-```
+The broader direction also targets 9P public WM, shell and administrative APIs.
+Those services retain their existing semantic owners and separate admissions;
+they are not new responsibilities of the application authority. Shared protocol
+machinery does not combine application, spatial-policy and shell authority.
 
-**Advantages:**
-- **Zero-Dependency Graphics:** Any language with standard file I/O (bash,
-  Python, Go, awk, C) can create and manipulate graphical windows.
-- **Filesystem-Native Confinement:** In a container or Bubblewrap sandbox,
-  mounting only `/dev/sophia/window-1` gives the sandboxed application absolute
-  boundary enforcement: it cannot discover, inspect, or interact with any other
-  window on the system.
-- **Network Transparent:** Can be mounted remotely over SSH or 9P networks
-  without specialized remote desktop clients.
+Mounted file operations and generic direct clients could make independent
+applications easier to build. Applications could also export their own services
+to explicitly granted consumers. Both uses require versioned file semantics,
+bounded events, transaction outcomes, revocation and resource-retirement rules.
+Mount namespaces supplement server authorization rather than replace it.
+
+The content format, input encoding, classic Plan 9 compatibility, remote access
+and any specialized buffer transport remain separate design questions. Neither
+unmodified plan9port compatibility nor low-overhead graphics follows from the
+wire dialect alone. Migration requires independent WM, content-shell and
+application clients plus equivalent behavior, recovery and measured performance.
 
 ### Candidate 3: `sophia-remote-authority` (Headless Streaming Frontend)
 
@@ -253,7 +257,8 @@ system invariants:
    assigned an immutable `NamespaceContext` by the session supervisor.
    Cross-namespace sharing must fail closed and require explicit mediation
    via `sophia-portal`.
-3. **Metadata Blindness:** Window managers (`sophia_wm_v1`) must never receive
+3. **Metadata Blindness:** Window managers, through current `sophia_wm_v1` or
+   target 9P role interfaces, must never receive
    application titles, classes, PIDs, or protocol-specific atoms from any
    frontend. Layout operates strictly on opaque `SurfaceId` spatial nodes.
 4. **Failure Isolation:** A crash or stall in any protocol frontend must not

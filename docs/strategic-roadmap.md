@@ -6,10 +6,17 @@
 
 ## 1. Executive Summary
 
-Sophia is architected on the separation of powers: `sophia-engine` serves as a
-protocol-neutral visual kernel, while protocol authorities (`sophia-x-authority`,
-`sophia-9p-authority`), window managers (`Hagia`), and desktop shells operate as
-isolated, unprivileged peer daemons.
+Sophia separates visual authority, application protocols, window management and
+desktop shells. X authority is the current application frontend; the 9P crate
+is a scaffold. Process and repository extraction below are strategic targets,
+not claims that all components already run as standalone daemons.
+
+The accepted [9P2000.L direction](sophia-9p-control-bus.md) targets common public
+WM, shell and administrative interfaces and a 9P application frontend alongside
+X11. Application-owned service exports use explicit grants. Namespaces and
+existing semantic owners remain; Engine's internal typed execution is outside
+the public transport replacement. The file API and migration schedule remain
+open, and implementation stays paused during the current brainstorming session.
 
 This roadmap outlines the evolution of the Sophia codebase from its current
 **Phase 1: Monorepo Incubation** into **Phase 3: Autonomous Satellite Repositories**
@@ -22,7 +29,7 @@ under the `sophia-org` organization.
  │  ├── sophia-engine                   │     │sophia-x-authority│  │sophia-9p-author  │
  │  ├── sophia-session                  │     └─────────┬────────┘  └────────┬─────────┘
  │  ├── sophia-protocol (Iterating)     │               │                    │
- │  ├── sophia-x-authority (Incubating) │               ▼ (Unix Stream)      ▼ (9P2000.L)
+ │  ├── sophia-x-authority (Incubating) │               ▼ (admitted records) ▼
  │  └── sophia-9p-authority (Incubating)│     ┌────────────────────────────────────────┐
  └──────────────────────────────────────┘     │ sophia-org/sophia                      │
                                               │  • sophia-engine (DRM/KMS visual core) │
@@ -30,7 +37,7 @@ under the `sophia-org` organization.
                                               │  • sophia-protocol (v1.0 wire schemas) │
                                               └──────────────────┬─────────────────────┘
                                                                  │
-                                                                 ▼ (sophia_wm_v1)
+                                                                 ▼ (target 9P WM API)
                                                       ┌──────────────────┐
                                                       │ sophia-org/hagia │
                                                       │ (Reference WM)   │
@@ -58,8 +65,9 @@ repositories represents a balance between **engineering velocity** and
    - `sophia-engine` follows Linux DRM/KMS, DMA-BUF, and Vulkan/Mesa evolution.
    - `sophia-x-authority` is a massive legacy compatibility project with heavy
      dependencies (font parsers, XKB, XRender, Xcursor).
-   - `sophia-9p-authority` is a lightweight, self-contained utility (~1,500 lines)
-     that rarely requires updates once stabilized.
+   - `sophia-9p-authority` has a distinct application-protocol lifecycle. Its
+     production size, maintenance cost and performance are not established by
+     the current scaffold.
 
 ### The Risk of Premature Extraction (Why Monorepo Incubation Wins Today)
 - **Cross-Repository Friction:** When wire protocols, transaction structures, or
@@ -84,8 +92,9 @@ their wire interfaces reach a verified freeze.
   * Drive `sophia-x-authority` to full daily-driver maturity, validating complex
     workloads (Firefox, Steam, Kitty, Alacritty) and passing automated X11
     conformance suites.
-  * Develop the `sophia-9p-authority` prototype through Milestones 1–3 (synthetic
-    filesystem tree, raw pixel streaming, and target-resolved input routing).
+  * Define the accepted 9P direction's role and application contracts before
+    assigning implementation slices. Independent clients, joined lifecycle
+    controls and performance comparisons precede protocol retirement.
   * Refine the `SurfaceTransaction` and `RoutedInputRequest` data contracts to
     ensure they remain strictly protocol-neutral.
 * **Rules:** Authorities must not link against private engine internals; all
@@ -113,7 +122,7 @@ their wire interfaces reach a verified freeze.
   * `sophia-org/sophia-9p-authority`: The standalone Plan 9 synthetic filesystem
     frontend.
   * `sophia-org/hagia`: The external reference window manager (already in an
-    external repo speaking `sophia_wm_v1`).
+    external repo speaking `sophia_wm_v1`, with a target 9P role interface).
   * `sophia-org/sophia-surface-v1`: Future native GPU client SDK (winit/SDL3
     integration).
 * **Goals:**
@@ -146,7 +155,13 @@ four **Extraction Gates**:
 | **`sophia-session`** | `crates/sophia-session` | `sophia-org/sophia` | Supervisor lifecycle, Namespace admission | Core supervisor |
 | **`sophia-protocol`** | `crates/sophia-protocol` | `sophia-org/sophia` (or standalone crate) | KDL/Binary Wire Schemas | Iterating towards v1.0 freeze |
 | **`sophia-portal`** | `crates/sophia-portal` | `sophia-org/sophia` | Deterministic cross-namespace reducers | Implemented |
-| **`Hagia`** | External repository | `sophia-org/hagia` | `sophia_wm_v1` (opaque spatial layout) | External satellite (Active) |
+| **`Hagia`** | External repository | `sophia-org/hagia` | Current `sophia_wm_v1`; target 9P WM role (opaque spatial layout) | External satellite (Active); migration unimplemented |
 | **`sophia-x-authority`** | `crates/sophia-x-authority`| `sophia-org/sophia-x-authority` | X11 Wire ──► `SurfaceTransaction` | Phase 1 (Incubating) |
 | **`sophia-9p-authority`**| `crates/sophia-9p-authority`| `sophia-org/sophia-9p-authority`| 9P2000.L ──► `SurfaceTransaction` | Phase 1 (Stubbed) |
-| **`sophia-wm-9p-bridge`**| Proposed | `sophia-org/sophia-wm-9p` | `sophia_wm_v1` ──► 9P Synthetic Layout FS | Proposed |
+| **9P desktop role services** | Design only | Crate/process split open | Separate authorized WM, shell and administrative exports | Accepted direction; API unimplemented |
+
+The earlier permanent `sophia-wm-9p-bridge` proposal is replaced by the common
+public-interface direction. Any temporary migration adapter requires an explicit
+ownership and removal plan; blind policy does not gain a listening service.
+Other frontend rows are candidates, not promoted by the 9P decision. Repository
+extraction and public IPC migration are independent acceptance decisions.
