@@ -160,3 +160,6 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
 
 #[path = "../../../tests/support/policy_file_custody.rs"]
 mod custody_tests;
+
+#[path = "../../../tests/support/policy_file_replay.rs"]
+mod replay_tests;

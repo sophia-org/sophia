@@ -187,6 +187,38 @@ does not alter the legacy set. Full runtime begin/append/finish capability,
 aggregate and presentation checks remain distinct from the less strict direct
 legacy codec characterization recorded in the neutral-array investigation.
 
+## File-only semantic transaction watermark
+
+The supplied-stream file owner now retains two independent increasing values:
+the accepted submission ID and the last accepted semantic transaction. The
+latter is taken from a validated Configuration, Projection or SessionOperation
+event. Dirty does not have a semantic transaction, and server profile
+transactions are outside this watermark. Gaps are allowed. A fresh admitted
+epoch starts new watermarks while retaining the explicitly supplied logical
+filesystem Qid allocator. Legacy IPC's transaction set is unchanged.
+
+A domain transaction at or below the watermark returns EALREADY with staging
+intact. Both watermarks advance only after the complete Submitted record has
+reserved journal custody. Decode, capability, absent/wrong permit and journal
+credit refusals consume neither ID. Exact retained submit retries still take
+the earlier duplicate path without decoding, another permit or delivery.
+Transport ACK and a later semantic rejection do not make a consumed ID reusable.
+
+Evidence is retained in `.artifacts/t249-file-replay`. The focused restored run
+passes 26 controls, including four new replay controls. Disabling the replay
+guard in a compiled negative makes three of those four fail; the source is
+restored before the passing rerun. The prior focused run of 25 controls is
+retained separately, before the explicit rejected-outcome case was added.
+Strict native-session all-target Clippy, the rebuilt worktree layout gate,
+format and diff checks also pass. All compile/test runs used the exclusive
+disk target, two jobs, nice 19 and the device-hidden wrapper.
+These controls exercise actual file custody with driver-issued permits and a
+supplied typed candidate decoder. The rejected-outcome control supplies a real
+encoded outcome to the journal; it does not claim a reducer actually rejected
+a proposal. Array/scalar semantics remain covered by their independent codec
+controls. No startup adapter, capability selection, launch constructor or
+independent Hagia pairing is established by this checkpoint.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

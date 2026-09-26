@@ -45,7 +45,8 @@ pub(in super::super) struct WmFiles<C> {
     snapshot_open: bool,
     staging: Option<Staging>,
     accepted: Option<Accepted>,
-    watermark: u64,
+    submission_watermark: u64,
+    domain_transaction_watermark: u64,
     journal: Journal,
     permit: Option<PolicyReceivePermit>,
     delivery: Option<PolicyAdapterEvent>,
@@ -96,7 +97,8 @@ impl<C: PolicyFileCodec> WmFiles<C> {
             snapshot_open: false,
             staging: None,
             accepted: None,
-            watermark: 0,
+            submission_watermark: 0,
+            domain_transaction_watermark: 0,
             journal: Journal::new(epoch),
             permit: None,
             delivery: None,
@@ -174,7 +176,7 @@ impl<C: PolicyFileCodec> WmFiles<C> {
                 Err(EBUSY)
             };
         }
-        if submit.submission_id <= self.watermark {
+        if submit.submission_id <= self.submission_watermark {
             return Err(EALREADY);
         }
         // Absence of driver admission must not spend row-decoding work. The
@@ -208,6 +210,17 @@ impl<C: PolicyFileCodec> WmFiles<C> {
         {
             return Err(Errno::EAGAIN);
         }
+        // File-only replay policy: domain IDs come from validated semantics,
+        // never the submission header. Dirty has no domain transaction.
+        let domain_transaction = match &decoded.event {
+            PolicyAdapterEvent::Configuration { transaction, .. }
+            | PolicyAdapterEvent::SessionOperation { transaction, .. } => Some(transaction.raw()),
+            PolicyAdapterEvent::Projection(proposal) => Some(proposal.transaction.raw()),
+            _ => None,
+        };
+        if domain_transaction.is_some_and(|tx| tx <= self.domain_transaction_watermark) {
+            return Err(EALREADY);
+        }
         let body = self
             .codec
             .submitted_body(submit.submission_id, record.header.kind)?;
@@ -221,7 +234,10 @@ impl<C: PolicyFileCodec> WmFiles<C> {
             handle: staging.handle,
             sequence,
         });
-        self.watermark = submit.submission_id;
+        self.submission_watermark = submit.submission_id;
+        if let Some(transaction) = domain_transaction {
+            self.domain_transaction_watermark = transaction;
+        }
         self.permit = None;
         self.delivery = Some(decoded.event);
         Ok(())

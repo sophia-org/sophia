@@ -15,12 +15,16 @@ impl PolicyFileCodec for Codec {
     fn decode_candidate(&self, bytes: &[u8], _: u64) -> Result<DecodedFileCandidate, Errno> {
         let record =
             decode_wm_file_record(bytes, WmFileClass::Candidate).map_err(|_| Errno::EINVAL)?;
-        if record.header.kind != WmFileKind::Configuration || record.body.len() != 1 {
+        if record.header.kind != WmFileKind::Configuration || !matches!(record.body.len(), 1 | 9) {
             return Err(Errno::EINVAL);
         }
         Ok(DecodedFileCandidate {
             event: PolicyAdapterEvent::Configuration {
-                transaction: TransactionId::from_raw(700),
+                transaction: TransactionId::from_raw(if record.body.len() == 9 {
+                    u64::from_le_bytes(record.body[1..].try_into().unwrap())
+                } else {
+                    700
+                }),
                 configuration: PolicyConfiguration {
                     connection_epoch: record.header.connection_epoch,
                     generation: 3,
@@ -36,7 +40,7 @@ impl PolicyFileCodec for Codec {
     }
 }
 
-fn record(epoch: u64, kind: WmFileKind, id: u64, body: &[u8]) -> Vec<u8> {
+pub(super) fn record(epoch: u64, kind: WmFileKind, id: u64, body: &[u8]) -> Vec<u8> {
     encode_wm_file_record(
         WmFileHeader {
             kind,
@@ -58,7 +62,7 @@ fn owner(epoch: u64, qids: WmQids) -> WmFiles<Codec> {
     )
     .unwrap()
 }
-fn submit(epoch: u64, id: u64, size: usize) -> Vec<u8> {
+pub(super) fn submit(epoch: u64, id: u64, size: usize) -> Vec<u8> {
     let mut bytes = epoch.to_le_bytes().to_vec();
     bytes.extend(id.to_le_bytes());
     bytes.extend((size as u32).to_le_bytes());
@@ -68,7 +72,7 @@ fn submit(epoch: u64, id: u64, size: usize) -> Vec<u8> {
 
 // Obtain a real permit from the driver's first wait site. The fixture refuses
 // its scripted peer after extracting the permit; it adds no permit constructor.
-fn configuration_permit() -> PolicyReceivePermit {
+pub(super) fn configuration_permit() -> PolicyReceivePermit {
     struct Capture(Option<PolicyReceivePermit>);
     impl PolicyAdapter for Capture {
         fn admit(&mut self, _: u64, _: Option<PolicyProfileAdmission>) -> Result<(), String> {
@@ -165,7 +169,12 @@ fn complete_submit_requires_permit_and_duplicate_does_not_spend_the_next_one() {
         Err(EALREADY)
     );
     let mut next = files.open(&Node::Transaction, OpenFlags(2)).unwrap();
-    let bytes = record(9, WmFileKind::Configuration, 6, &[1]);
+    let bytes = record(
+        9,
+        WmFileKind::Configuration,
+        6,
+        &[vec![1], 701u64.to_le_bytes().to_vec()].concat(),
+    );
     files
         .write(&Node::Transaction, &mut next, 0, &bytes)
         .unwrap();
