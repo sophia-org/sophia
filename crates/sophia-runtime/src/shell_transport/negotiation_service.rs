@@ -330,7 +330,10 @@ impl ShellComponentTransport {
             Ok((welcome, limits)) => {
                 let limits_object = limits
                     .as_ref()
-                    .map(|limits| super::files::encode_limits_object(epoch, limits))
+                    .map(|limits| {
+                        super::files::encode_limits_object(epoch, limits)
+                            .map(|bytes| (bytes, limits.clone()))
+                    })
                     .transpose()?;
                 let body = super::files::encode_negotiated(welcome, limits.is_some())?;
                 wire.export_mut()

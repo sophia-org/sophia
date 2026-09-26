@@ -408,8 +408,8 @@ the operations t252 implements:
 | Class | Kinds |
 | --- | --- |
 | Object | `Limits` 1, `Outputs` 2 |
-| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `ObjectPublished` 19, `AllocationResult` 32 |
-| Candidate | `Negotiate` 256, `AllocationRequest` 257 |
+| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `ObjectPublished` 19, `AllocationResult` 32, `ResourceStatus` 33, `ResourceReleased` 34 |
+| Candidate | `Negotiate` 256, `AllocationRequest` 257, `ResourceBegin` 258, `ResourceEnd` 259, `ResourceCancel` 260, `ResourceRetire` 261 |
 
 As in the WM contract, the header never carries a domain identity: events
 have submission ID zero. A content record's body starts with its nonzero
@@ -425,7 +425,15 @@ not a journal event. Each publication gets a fresh qid and is announced by one
 that qid; the object and its announcement commit together, and the event's
 journal room is checked before a qid is spent. Opening `outputs` pins the
 current object; a second open on the same attach is `EBUSY`, and a pinned
-read never changes while newer objects are published. A record family not yet in the table is not carried: a component on the
+read never changes while newer objects are published.
+
+A `ResourceBegin` body adds the upload slot after the transaction ID (slot
+`u16` and six reserved bytes, then the payload). There is no chunk record:
+chunks are the slot's writes, assembled into canonical chunks as described in
+resource staging. The export reserves the slot at the accepted Begin, binds it
+when the store's `transfer_admitted` status is journaled, and ends the binding
+when the resource's accepted, rejected or cancelled status is journaled, so the
+binding follows exactly what the reader can observe. A record family not yet in the table is not carried: a component on the
 file wire whose owner queues such a record is closed rather than sent an IPC
 frame.
 

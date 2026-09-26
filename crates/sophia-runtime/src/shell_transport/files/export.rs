@@ -12,7 +12,10 @@ use sophia_9p::{
     OpenFlags, ReadOutcome, WalkName,
 };
 use sophia_protocol::shell_files::*;
-use sophia_protocol::{ShellContentRecord, ShellV1ClientHello, TransactionId};
+use sophia_protocol::{
+    ContentGrant, ContentLimits, ContentResourceCancel, ContentResourceChunk, ContentResourceId,
+    ContentResourceLayout, ShellContentRecord, ShellV1ClientHello, TransactionId,
+};
 
 use super::journal::{Journal, JournalBounds};
 use super::staging::Staging;
@@ -25,7 +28,7 @@ const EALREADY: Errno = Errno(114);
 /// socket transport's inbox does.
 pub(in crate::shell_transport) const INBOUND_RECORDS: usize = 64;
 
-const ROOT_ENTRIES: [(&[u8], Node); 7] = [
+const ROOT_ENTRIES: [(&[u8], Node); 8] = [
     (b"api", Node::Api),
     (b"limits", Node::Limits),
     (b"outputs", Node::Outputs),
@@ -33,6 +36,7 @@ const ROOT_ENTRIES: [(&[u8], Node); 7] = [
     (b"transaction", Node::Transaction),
     (b"submit", Node::Submit),
     (b"ack", Node::Ack),
+    (b"upload", Node::Uploads),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,13 +49,74 @@ pub(in crate::shell_transport) enum Node {
     Transaction,
     Submit,
     Ack,
+    /// The fixed `upload` directory of transfer slots.
+    Uploads,
+    Upload(u8),
 }
+
+impl Node {
+    /// A stable logical offset for this node's qid within the component.
+    fn index(self) -> u64 {
+        match self {
+            Self::Root => 0,
+            Self::Api => 1,
+            Self::Limits => 2,
+            Self::Outputs => 3,
+            Self::Events => 4,
+            Self::Transaction => 5,
+            Self::Submit => 6,
+            Self::Ack => 7,
+            Self::Uploads => 8,
+            Self::Upload(slot) => 9 + u64::from(slot),
+        }
+    }
+}
+
+/// Logical qids reserved per epoch for the fixed nodes (root .. upload/3).
+const NODE_QIDS: u64 = 16;
 
 pub(in crate::shell_transport) enum Handle {
     Plain,
     Transaction(u64),
     /// A pinned snapshot object: immutable, whatever is published later.
     Object(Arc<Object>),
+    /// A writer fid on one binding of an upload slot. Its `binding` qid fences
+    /// it from any later binding of the same slot.
+    Upload {
+        binding: u64,
+        writer: u64,
+    },
+}
+
+/// One slot's binding to exactly (grant, resource). Pending from the accepted
+/// Begin until the store reports the transfer admitted; it ends at a terminal
+/// status. Bytes pass to the store only as canonical chunks.
+struct Binding {
+    qid: u64,
+    transaction: TransactionId,
+    grant: ContentGrant,
+    resource: ContentResourceId,
+    layout: ContentResourceLayout,
+    admitted: bool,
+    /// End or Cancel was submitted: no further writes, and a clunk no longer
+    /// cancels (the store answers the terminal status itself).
+    closing: bool,
+    writer: Option<u64>,
+    passed: u64,
+    ordinal: u32,
+    scratch: Vec<u8>,
+}
+
+impl Binding {
+    fn cursor(&self) -> u64 {
+        self.passed + self.scratch.len() as u64
+    }
+
+    /// The canonical size of the chunk now being assembled.
+    fn chunk_len(&self) -> usize {
+        let full = u64::from(self.layout.row_bytes) * u64::from(self.layout.rows_per_chunk);
+        (self.layout.total_bytes - self.passed).min(full) as usize
+    }
 }
 
 /// One published snapshot object. A new publication never edits it; it
@@ -87,6 +152,9 @@ pub(in crate::shell_transport) struct ShellFiles {
     qid_base: u64,
     next_qid: u64,
     limits: Option<Vec<u8>>,
+    content_limits: Option<ContentLimits>,
+    upload_slots: u8,
+    uploads: [Option<Binding>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
     outputs: Option<Arc<Object>>,
     outputs_pinned: bool,
     staging: Option<Staging>,
@@ -127,8 +195,11 @@ impl ShellFiles {
             negotiated: false,
             content: false,
             qid_base,
-            next_qid: qid_base + 8,
+            next_qid: qid_base + NODE_QIDS,
             limits: None,
+            content_limits: None,
+            upload_slots: 0,
+            uploads: Default::default(),
             outputs: None,
             outputs_pinned: false,
             staging: None,
@@ -159,7 +230,7 @@ impl ShellFiles {
     /// profile has one, and whether content records may be submitted.
     pub(in crate::shell_transport) fn complete_negotiation(
         &mut self,
-        limits: Option<Vec<u8>>,
+        limits: Option<(Vec<u8>, ContentLimits)>,
     ) -> Result<(), Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);
@@ -168,9 +239,116 @@ impl ShellFiles {
             return Err(EALREADY);
         }
         self.content = limits.is_some();
-        self.limits = limits;
+        if let Some((bytes, limits)) = limits {
+            self.upload_slots = limits
+                .max_open_transfers
+                .min(u32::from(SHELL_FILE_MAX_UPLOAD_SLOTS)) as u8;
+            self.limits = Some(bytes);
+            self.content_limits = Some(limits);
+        }
         self.negotiated = true;
         Ok(())
+    }
+
+    /// Journals one event and applies what it means for the upload slots: a
+    /// resource status binds a pending slot (admitted) or ends its binding
+    /// (accepted, rejected, cancelled). Nothing changes on refusal.
+    pub(in crate::shell_transport) fn append_event(
+        &mut self,
+        kind: ShellFileKind,
+        body: &[u8],
+        credited: bool,
+    ) -> Result<u64, Errno> {
+        let status = if kind == ShellFileKind::ResourceStatus {
+            let record = encode_shell_file_record(
+                ShellFileHeader {
+                    kind,
+                    connection_epoch: self.epoch,
+                    submission_id: 0,
+                    sequence: 1,
+                },
+                body,
+            )
+            .map_err(|_| Errno::EINVAL)?;
+            match decode_shell_file_resource_status(&record)
+                .map_err(|_| Errno::EINVAL)?
+                .record
+            {
+                ShellContentRecord::ResourceStatus(status) => Some(status),
+                _ => return Err(Errno::EINVAL),
+            }
+        } else {
+            None
+        };
+        let sequence = self.journal.append(kind, body, credited)?;
+        if let Some(status) = status {
+            self.observe_resource_status(status.resource, status.status);
+        }
+        Ok(sequence)
+    }
+
+    fn observe_resource_status(&mut self, resource: ContentResourceId, status: u16) {
+        for slot in self.uploads.iter_mut() {
+            if slot.as_ref().is_some_and(|b| b.resource == resource) {
+                if status == 1 {
+                    slot.as_mut().expect("bound slot").admitted = true;
+                } else {
+                    // A terminal status fences every fid of this binding.
+                    *slot = None;
+                }
+            }
+        }
+    }
+
+    fn binding_of(&self, slot: u8, qid: u64) -> Result<&Binding, Errno> {
+        self.uploads[usize::from(slot)]
+            .as_ref()
+            .filter(|binding| binding.qid == qid)
+            .ok_or(Errno::ESTALE)
+    }
+
+    /// Appends at the binding's exact cursor, accepting at most the prefix
+    /// that completes the current canonical chunk. A completed chunk is queued
+    /// for the owners once; incomplete bytes stay in the slot's one buffer.
+    fn write_upload(&mut self, slot: u8, qid: u64, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+        let inbound_full = self.inbound.len() >= INBOUND_RECORDS;
+        let binding = self.uploads[usize::from(slot)]
+            .as_mut()
+            .filter(|binding| binding.qid == qid)
+            .ok_or(Errno::ESTALE)?;
+        if binding.closing || !binding.admitted {
+            return Err(Errno::ESTALE);
+        }
+        let end = offset.checked_add(data.len() as u64).ok_or(Errno::EINVAL)?;
+        if offset != binding.cursor() || end > binding.layout.total_bytes {
+            return Err(Errno::EINVAL);
+        }
+        if data.is_empty() {
+            return Ok(0);
+        }
+        let chunk = binding.chunk_len();
+        let take = data.len().min(chunk - binding.scratch.len());
+        let completes = binding.scratch.len() + take == chunk;
+        if completes && inbound_full {
+            return Err(Errno::EAGAIN);
+        }
+        binding.scratch.extend_from_slice(&data[..take]);
+        if completes {
+            let bytes = std::mem::replace(&mut binding.scratch, Vec::with_capacity(chunk));
+            let record = ShellContentRecord::ResourceChunk(ContentResourceChunk {
+                grant: binding.grant,
+                resource: binding.resource,
+                ordinal: binding.ordinal,
+                offset: binding.passed,
+                bytes,
+            });
+            binding.passed += chunk as u64;
+            binding.ordinal += 1;
+            let transaction = binding.transaction;
+            self.inbound
+                .push_back(Inbound::Content(transaction, Box::new(record)));
+        }
+        Ok(take as u32)
     }
 
     /// Makes one snapshot object current and journals its publication, as one
@@ -223,8 +401,15 @@ impl ShellFiles {
         &self.journal
     }
 
-    pub(in crate::shell_transport) fn journal_mut(&mut self) -> &mut Journal {
-        &mut self.journal
+    /// The first queued content record the predicate selects, left queued.
+    pub(in crate::shell_transport) fn peek_content(
+        &self,
+        select: impl Fn(&ShellContentRecord) -> bool,
+    ) -> Option<&ShellContentRecord> {
+        self.inbound.iter().find_map(|item| match item {
+            Inbound::Content(_, record) if select(record) => Some(record.as_ref()),
+            _ => None,
+        })
     }
 
     pub(in crate::shell_transport) fn take_inbound(&mut self) -> Option<Inbound> {
@@ -257,35 +442,159 @@ impl ShellFiles {
         }
     }
 
+    /// Only the current binding's writer cancels by clunking, and only before
+    /// End or Cancel was submitted. A fenced fid's clunk releases the fid.
+    fn release_writer(&mut self, qid: u64, writer: u64) {
+        let Some(slot) = self.uploads.iter_mut().find(|slot| {
+            slot.as_ref()
+                .is_some_and(|b| b.qid == qid && b.writer == Some(writer))
+        }) else {
+            return;
+        };
+        let binding = slot.take().expect("writer's binding");
+        if binding.closing || self.revoked {
+            *slot = Some(Binding {
+                writer: None,
+                ..binding
+            });
+            return;
+        }
+        self.inbound.push_back(Inbound::Content(
+            binding.transaction,
+            Box::new(ShellContentRecord::ResourceCancel(ContentResourceCancel {
+                grant: binding.grant,
+                resource: binding.resource,
+            })),
+        ));
+    }
+
     fn allocate_qid(&mut self) -> Result<u64, Errno> {
         let qid = self.next_qid;
         self.next_qid = qid.checked_add(1).ok_or(Errno::ENOSPC)?;
         Ok(qid)
     }
 
-    /// Decodes a staged candidate into the value the owners receive. The
-    /// phase decides which kinds exist: Negotiate once before negotiation,
-    /// content records only after a content grant.
-    fn decode(&self, bytes: &[u8], kind: ShellFileKind) -> Result<Inbound, Errno> {
-        match kind {
+    /// Decodes a staged candidate into the value the owners receive and the
+    /// slot effect applied once custody transfers. The phase decides which
+    /// kinds exist: Negotiate once before negotiation, content records only
+    /// after a content grant.
+    fn decode(&self, bytes: &[u8], kind: ShellFileKind) -> Result<(Inbound, SlotEffect), Errno> {
+        let content = |decoded: Result<ShellFileTransactionRecord, ShellFilePayloadError>| {
+            if !self.negotiated || !self.content {
+                return Err(Errno::EACCES);
+            }
+            let value = decoded.map_err(|_| Errno::EINVAL)?;
+            Ok(Inbound::Content(value.transaction, Box::new(value.record)))
+        };
+        let closing = |inbound: Inbound| {
+            let resource = match &inbound {
+                Inbound::Content(_, record) => match record.as_ref() {
+                    ShellContentRecord::ResourceEnd(value) => Some(value.resource),
+                    ShellContentRecord::ResourceCancel(value) => Some(value.resource),
+                    _ => None,
+                },
+                Inbound::Negotiate(_) => None,
+            };
+            (
+                inbound,
+                resource.map_or(SlotEffect::None, SlotEffect::Close),
+            )
+        };
+        let inbound = match kind {
             ShellFileKind::Negotiate => {
                 if self.negotiate_accepted {
                     return Err(EALREADY);
                 }
                 decode_shell_file_negotiate(bytes)
                     .map(Inbound::Negotiate)
-                    .map_err(|_| Errno::EINVAL)
+                    .map_err(|_| Errno::EINVAL)?
             }
             ShellFileKind::AllocationRequest => {
-                if !self.negotiated || !self.content {
-                    return Err(Errno::EACCES);
-                }
-                let value =
-                    decode_shell_file_allocation_request(bytes).map_err(|_| Errno::EINVAL)?;
-                Ok(Inbound::Content(value.transaction, Box::new(value.record)))
+                content(decode_shell_file_allocation_request(bytes))?
             }
-            _ => Err(Errno::EINVAL),
+            ShellFileKind::ResourceBegin => return self.decode_begin(bytes),
+            ShellFileKind::ResourceEnd => {
+                return Ok(closing(content(decode_shell_file_resource_end(bytes))?));
+            }
+            ShellFileKind::ResourceCancel => {
+                return Ok(closing(content(decode_shell_file_resource_cancel(bytes))?));
+            }
+            ShellFileKind::ResourceRetire => content(decode_shell_file_resource_retire(bytes))?,
+            _ => return Err(Errno::EINVAL),
+        };
+        Ok((inbound, SlotEffect::None))
+    }
+
+    /// A Begin names a free slot. The slot is reserved (pending) only when the
+    /// description has a valid layout; the store still decides admission and
+    /// reports it, so a malformed description reaches its existing refusal.
+    fn decode_begin(&self, bytes: &[u8]) -> Result<(Inbound, SlotEffect), Errno> {
+        if !self.negotiated || !self.content {
+            return Err(Errno::EACCES);
         }
+        let value = decode_shell_file_resource_begin(bytes).map_err(|_| Errno::EINVAL)?;
+        if value.slot >= u16::from(self.upload_slots) {
+            return Err(Errno::EINVAL);
+        }
+        if self.uploads[usize::from(value.slot)].is_some() {
+            return Err(EBUSY);
+        }
+        let ShellContentRecord::ResourceBegin(begin) = &value.record else {
+            return Err(Errno::EINVAL);
+        };
+        let layout = self
+            .content_limits
+            .as_ref()
+            .and_then(|limits| begin.layout(limits).ok());
+        let effect = layout.map_or(SlotEffect::None, |layout| SlotEffect::Bind {
+            slot: value.slot as u8,
+            transaction: value.transaction,
+            grant: begin.grant,
+            resource: begin.resource,
+            layout,
+        });
+        Ok((
+            Inbound::Content(value.transaction, Box::new(value.record)),
+            effect,
+        ))
+    }
+
+    fn apply(&mut self, effect: SlotEffect) -> Result<(), Errno> {
+        match effect {
+            SlotEffect::None => {}
+            SlotEffect::Bind {
+                slot,
+                transaction,
+                grant,
+                resource,
+                layout,
+            } => {
+                let qid = self.allocate_qid()?;
+                let chunk =
+                    (u64::from(layout.row_bytes) * u64::from(layout.rows_per_chunk)) as usize;
+                self.uploads[usize::from(slot)] = Some(Binding {
+                    qid,
+                    transaction,
+                    grant,
+                    resource,
+                    layout,
+                    admitted: false,
+                    closing: false,
+                    writer: None,
+                    passed: 0,
+                    ordinal: 0,
+                    scratch: Vec::with_capacity(chunk),
+                });
+            }
+            SlotEffect::Close(resource) => {
+                for binding in self.uploads.iter_mut().flatten() {
+                    if binding.resource == resource {
+                        binding.closing = true;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn submit(&mut self, bytes: &[u8]) -> Result<(), Errno> {
@@ -322,7 +631,7 @@ impl ShellFiles {
             return Err(Errno::EINVAL);
         }
         let kind = record.header.kind;
-        let inbound = self.decode(&staging.bytes, kind)?;
+        let (inbound, effect) = self.decode(&staging.bytes, kind)?;
         let body = encode_shell_file_submitted_body(ShellFileSubmitted {
             submission_id: submit.submission_id,
             candidate_kind: kind,
@@ -345,8 +654,23 @@ impl ShellFiles {
             self.negotiate_accepted = true;
         }
         self.inbound.push_back(inbound);
-        Ok(())
+        // Only an allocated qid can fail here, and nothing can observe a
+        // half-applied effect: the binding is created whole or not at all.
+        self.apply(effect)
     }
+}
+
+/// What an accepted candidate does to the upload slots once custody moved.
+enum SlotEffect {
+    None,
+    Bind {
+        slot: u8,
+        transaction: TransactionId,
+        grant: ContentGrant,
+        resource: ContentResourceId,
+        layout: ContentResourceLayout,
+    },
+    Close(ContentResourceId),
 }
 
 impl Export for ShellFiles {
@@ -377,6 +701,18 @@ impl Export for ShellFiles {
     }
 
     fn lookup(&mut self, directory: &Node, name: WalkName<'_>) -> Result<Node, Errno> {
+        if *directory == Node::Uploads {
+            return match name {
+                WalkName::Parent => Ok(Node::Root),
+                WalkName::Child(name) => std::str::from_utf8(name)
+                    .ok()
+                    .filter(|name| name.len() == 1)
+                    .and_then(|name| name.parse::<u8>().ok())
+                    .filter(|slot| *slot < self.upload_slots)
+                    .map(Node::Upload)
+                    .ok_or(Errno::ENOENT),
+            };
+        }
         if *directory != Node::Root {
             return Err(Errno::ENOTDIR);
         }
@@ -391,10 +727,11 @@ impl Export for ShellFiles {
     }
 
     fn describe(&self, node: &Node, handle: Option<&Handle>) -> Entry {
-        let mut qid_path = self.qid_base + *node as u64;
+        let mut qid_path = self.qid_base + node.index();
         match handle {
             Some(Handle::Transaction(id)) => qid_path = *id,
             Some(Handle::Object(object)) => qid_path = object.qid,
+            Some(Handle::Upload { binding, .. }) => qid_path = *binding,
             _ => {
                 if *node == Node::Outputs
                     && let Some(object) = &self.outputs
@@ -408,6 +745,10 @@ impl Export for ShellFiles {
             (Node::Limits, _) => self.limits.as_ref().map_or(0, |l| l.len() as u64),
             (Node::Outputs, Some(Handle::Object(object))) => object.bytes.len() as u64,
             (Node::Outputs, _) => self.outputs.as_ref().map_or(0, |o| o.bytes.len() as u64),
+            // The live binding's accepted append cursor; a fenced fid sees 0.
+            (Node::Upload(slot), Some(Handle::Upload { binding, .. })) => {
+                self.binding_of(*slot, *binding).map_or(0, Binding::cursor)
+            }
             (Node::Events, _) => self.journal.size(),
             (Node::Transaction, Some(Handle::Transaction(id))) => self
                 .staging
@@ -424,7 +765,7 @@ impl Export for ShellFiles {
             _ => 0,
         };
         Entry {
-            kind: if *node == Node::Root {
+            kind: if matches!(node, Node::Root | Node::Uploads) {
                 NodeKind::Directory
             } else {
                 NodeKind::File
@@ -432,9 +773,9 @@ impl Export for ShellFiles {
             qid_path,
             qid_version: 0,
             permissions: match node {
-                Node::Root => 0o500,
+                Node::Root | Node::Uploads => 0o500,
                 Node::Transaction => 0o600,
-                Node::Submit | Node::Ack => 0o200,
+                Node::Submit | Node::Ack | Node::Upload(_) => 0o200,
                 _ => 0o400,
             },
             size,
@@ -445,7 +786,7 @@ impl Export for ShellFiles {
         let access = flags.access().ok_or(Errno::EINVAL)?;
         let valid = match node {
             Node::Transaction => access == OpenAccess::ReadWrite,
-            Node::Submit | Node::Ack => access == OpenAccess::Write,
+            Node::Submit | Node::Ack | Node::Upload(_) => access == OpenAccess::Write,
             _ => access == OpenAccess::Read,
         };
         if !valid || flags.truncate() || flags.append() {
@@ -453,6 +794,24 @@ impl Export for ShellFiles {
         }
         match node {
             Node::Limits if self.limits.is_none() => Err(Errno::EAGAIN),
+            Node::Upload(slot) => {
+                let writer = self.next_qid;
+                let binding = self.uploads[usize::from(*slot)]
+                    .as_mut()
+                    .filter(|binding| binding.admitted && !binding.closing)
+                    .ok_or(Errno::EAGAIN)?;
+                // The first writer of a binding is its only writer.
+                if binding.writer.is_some() {
+                    return Err(EBUSY);
+                }
+                binding.writer = Some(writer);
+                let handle = Handle::Upload {
+                    binding: binding.qid,
+                    writer,
+                };
+                self.allocate_qid()?;
+                Ok(handle)
+            }
             Node::Outputs => {
                 // One pin per feed per attach; publication continues meanwhile.
                 if self.outputs_pinned {
@@ -526,6 +885,10 @@ impl Export for ShellFiles {
                 .filter(|s| s.handle == *id)
                 .ok_or(Errno::ESTALE)?
                 .write(offset, data, Instant::now()),
+            (Node::Upload(slot), Handle::Upload { binding, .. }) => {
+                let (slot, binding) = (*slot, *binding);
+                self.write_upload(slot, binding, offset, data)
+            }
             (Node::Submit, _) if offset == 0 => {
                 self.submit(data)?;
                 Ok(data.len() as u32)
@@ -555,6 +918,17 @@ impl Export for ShellFiles {
         cookie: u64,
         max_entries: usize,
     ) -> Result<Vec<DirEntry>, Errno> {
+        if *directory == Node::Uploads {
+            let start = cookie.min(u64::from(self.upload_slots));
+            return Ok((start..u64::from(self.upload_slots))
+                .take(max_entries)
+                .map(|slot| DirEntry {
+                    name: slot.to_string().into_bytes(),
+                    entry: self.describe(&Node::Upload(slot as u8), None),
+                    next: slot + 1,
+                })
+                .collect());
+        }
         if *directory != Node::Root {
             return Err(Errno::ENOTDIR);
         }
@@ -581,6 +955,7 @@ impl Export for ShellFiles {
                 self.staging = None
             }
             Some(Handle::Object(_)) => self.outputs_pinned = false,
+            Some(Handle::Upload { binding, writer }) => self.release_writer(binding, writer),
             _ => {}
         }
     }

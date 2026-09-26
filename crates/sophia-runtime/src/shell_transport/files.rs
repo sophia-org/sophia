@@ -101,12 +101,7 @@ impl ShellFileWire {
         body: &[u8],
         credited: bool,
     ) -> Result<bool, ShellTransportError> {
-        match self
-            .server
-            .export_mut()
-            .journal_mut()
-            .append(kind, body, credited)
-        {
+        match self.server.export_mut().append_event(kind, body, credited) {
             Ok(_) => {
                 self.server.wake().wake();
                 Ok(true)
@@ -203,9 +198,24 @@ pub(super) fn encode_content_event(
     use sophia_protocol::ShellContentRecord;
     use sophia_protocol::shell_files::{
         ShellFileTransactionRecord, encode_shell_file_allocation_result_body,
-        encode_shell_file_outputs_body,
+        encode_shell_file_outputs_body, encode_shell_file_resource_released_body,
+        encode_shell_file_resource_status_body,
+    };
+    let value = ShellFileTransactionRecord {
+        transaction,
+        record: record.clone(),
     };
     match record {
+        ShellContentRecord::ResourceStatus(_) => Ok((
+            ShellFileKind::ResourceStatus,
+            encode_shell_file_resource_status_body(&value)
+                .map_err(|_| ShellTransportError::WrongContentRecord)?,
+        )),
+        ShellContentRecord::ResourceReleased(_) => Ok((
+            ShellFileKind::ResourceReleased,
+            encode_shell_file_resource_released_body(&value)
+                .map_err(|_| ShellTransportError::WrongContentRecord)?,
+        )),
         ShellContentRecord::OutputFacts(_) => {
             let body = encode_shell_file_outputs_body(&ShellFileTransactionRecord {
                 transaction,

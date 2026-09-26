@@ -658,3 +658,417 @@ fn object_published_names_an_object_kind_and_a_nonzero_qid() {
     event_kind[32..34].copy_from_slice(&(ShellFileKind::Negotiated as u16).to_le_bytes());
     assert!(decode_shell_file_object_published(&event_kind).is_err());
 }
+
+fn resource_begin_record() -> ShellContentRecord {
+    ShellContentRecord::ResourceBegin(ContentResourceBegin {
+        grant: grant(),
+        resource: ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+        width_px: 4,
+        height_px: 2,
+        rendered_scale_numerator: 1,
+        rendered_scale_denominator: 1,
+        pixel_format: 1,
+        chunk_count: 1,
+        total_bytes: 32,
+    })
+}
+
+fn resource_end_record() -> ShellContentRecord {
+    ShellContentRecord::ResourceEnd(ContentResourceEnd {
+        grant: grant(),
+        resource: ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+        total_bytes: 32,
+        chunk_count: 1,
+    })
+}
+
+fn resource_cancel_record() -> ShellContentRecord {
+    ShellContentRecord::ResourceCancel(ContentResourceCancel {
+        grant: grant(),
+        resource: ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+    })
+}
+
+fn resource_retire_record() -> ShellContentRecord {
+    ShellContentRecord::ResourceRetire(ContentResourceRetire {
+        grant: grant(),
+        resource: ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+    })
+}
+
+fn resource_status_record() -> ShellContentRecord {
+    ShellContentRecord::ResourceStatus(ContentResourceStatus {
+        grant: grant(),
+        resource: ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+        status: 1,
+        reason: 0,
+        next_ordinal: 0,
+        admitted_bytes: 0,
+    })
+}
+
+fn resource_released_record() -> ShellContentRecord {
+    ShellContentRecord::ResourceReleased(ContentResourceReleased {
+        grant: grant(),
+        resource: ContentResourceId {
+            id: 1,
+            generation: 1,
+        },
+        reason: 1,
+    })
+}
+
+#[test]
+fn resource_end_round_trips_and_bounds() {
+    let h = ShellFileHeader {
+        kind: ShellFileKind::ResourceEnd,
+        connection_epoch: 1,
+        submission_id: 1,
+        sequence: 0,
+    };
+    let tx = TransactionId::from_raw(11);
+    let tx_record = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_end_record(),
+    };
+    let encoded = encode_shell_file_resource_end(h, &tx_record).unwrap();
+    assert_eq!(decode_shell_file_resource_end(&encoded).unwrap(), tx_record);
+    assert_eq!(
+        encode_shell_file_resource_end_body(&tx_record).unwrap(),
+        encoded[32..]
+    );
+    let frame = encode_shell_content_frame(tx, &resource_end_record()).unwrap();
+    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
+
+    // transaction 0 refused
+    let mut zero_tx = tx_record.clone();
+    zero_tx.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_shell_file_resource_end(h, &zero_tx).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    let mut zero_bytes = encoded.clone();
+    zero_bytes[32..40].fill(0);
+    assert_eq!(
+        decode_shell_file_resource_end(&zero_bytes).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+
+    // a mismatched record variant is refused
+    let wrong_variant = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_cancel_record(),
+    };
+    assert!(encode_shell_file_resource_end(h, &wrong_variant).is_err());
+
+    // a candidate does not decode as an event
+    assert_eq!(
+        decode_shell_file_record(&encoded, ShellFileClass::Event).unwrap_err(),
+        ShellFileCodecError::Class
+    );
+}
+
+#[test]
+fn resource_cancel_round_trips_and_bounds() {
+    let h = ShellFileHeader {
+        kind: ShellFileKind::ResourceCancel,
+        connection_epoch: 1,
+        submission_id: 1,
+        sequence: 0,
+    };
+    let tx = TransactionId::from_raw(12);
+    let tx_record = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_cancel_record(),
+    };
+    let encoded = encode_shell_file_resource_cancel(h, &tx_record).unwrap();
+    assert_eq!(
+        decode_shell_file_resource_cancel(&encoded).unwrap(),
+        tx_record
+    );
+    assert_eq!(
+        encode_shell_file_resource_cancel_body(&tx_record).unwrap(),
+        encoded[32..]
+    );
+    let frame = encode_shell_content_frame(tx, &resource_cancel_record()).unwrap();
+    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
+
+    // transaction 0 refused
+    let mut zero_tx = tx_record.clone();
+    zero_tx.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_shell_file_resource_cancel(h, &zero_tx).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    let mut zero_bytes = encoded.clone();
+    zero_bytes[32..40].fill(0);
+    assert_eq!(
+        decode_shell_file_resource_cancel(&zero_bytes).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+
+    // a mismatched record variant is refused
+    let wrong_variant = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_retire_record(),
+    };
+    assert!(encode_shell_file_resource_cancel(h, &wrong_variant).is_err());
+
+    // a candidate does not decode as an event
+    assert_eq!(
+        decode_shell_file_record(&encoded, ShellFileClass::Event).unwrap_err(),
+        ShellFileCodecError::Class
+    );
+}
+
+#[test]
+fn resource_retire_round_trips_and_bounds() {
+    let h = ShellFileHeader {
+        kind: ShellFileKind::ResourceRetire,
+        connection_epoch: 1,
+        submission_id: 1,
+        sequence: 0,
+    };
+    let tx = TransactionId::from_raw(13);
+    let tx_record = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_retire_record(),
+    };
+    let encoded = encode_shell_file_resource_retire(h, &tx_record).unwrap();
+    assert_eq!(
+        decode_shell_file_resource_retire(&encoded).unwrap(),
+        tx_record
+    );
+    assert_eq!(
+        encode_shell_file_resource_retire_body(&tx_record).unwrap(),
+        encoded[32..]
+    );
+    let frame = encode_shell_content_frame(tx, &resource_retire_record()).unwrap();
+    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
+
+    // transaction 0 refused
+    let mut zero_tx = tx_record.clone();
+    zero_tx.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_shell_file_resource_retire(h, &zero_tx).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    let mut zero_bytes = encoded.clone();
+    zero_bytes[32..40].fill(0);
+    assert_eq!(
+        decode_shell_file_resource_retire(&zero_bytes).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+
+    // a mismatched record variant is refused
+    let wrong_variant = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_cancel_record(),
+    };
+    assert!(encode_shell_file_resource_retire(h, &wrong_variant).is_err());
+
+    // a candidate does not decode as an event
+    assert_eq!(
+        decode_shell_file_record(&encoded, ShellFileClass::Event).unwrap_err(),
+        ShellFileCodecError::Class
+    );
+}
+
+#[test]
+fn resource_status_round_trips_and_bounds() {
+    let h = ShellFileHeader {
+        kind: ShellFileKind::ResourceStatus,
+        connection_epoch: 1,
+        submission_id: 0,
+        sequence: 1,
+    };
+    let tx = TransactionId::from_raw(14);
+    let tx_record = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_status_record(),
+    };
+    let encoded = encode_shell_file_resource_status(h, &tx_record).unwrap();
+    assert_eq!(
+        decode_shell_file_resource_status(&encoded).unwrap(),
+        tx_record
+    );
+    assert_eq!(
+        encode_shell_file_resource_status_body(&tx_record).unwrap(),
+        encoded[32..]
+    );
+    let frame = encode_shell_content_frame(tx, &resource_status_record()).unwrap();
+    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
+
+    // transaction 0 refused
+    let mut zero_tx = tx_record.clone();
+    zero_tx.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_shell_file_resource_status(h, &zero_tx).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    let mut zero_bytes = encoded.clone();
+    zero_bytes[32..40].fill(0);
+    assert_eq!(
+        decode_shell_file_resource_status(&zero_bytes).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+
+    // a mismatched record variant is refused
+    let wrong_variant = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_released_record(),
+    };
+    assert!(encode_shell_file_resource_status(h, &wrong_variant).is_err());
+
+    // an event does not decode as a candidate
+    assert_eq!(
+        decode_shell_file_record(&encoded, ShellFileClass::Candidate).unwrap_err(),
+        ShellFileCodecError::Class
+    );
+}
+
+#[test]
+fn resource_released_round_trips_and_bounds() {
+    let h = ShellFileHeader {
+        kind: ShellFileKind::ResourceReleased,
+        connection_epoch: 1,
+        submission_id: 0,
+        sequence: 1,
+    };
+    let tx = TransactionId::from_raw(15);
+    let tx_record = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_released_record(),
+    };
+    let encoded = encode_shell_file_resource_released(h, &tx_record).unwrap();
+    assert_eq!(
+        decode_shell_file_resource_released(&encoded).unwrap(),
+        tx_record
+    );
+    assert_eq!(
+        encode_shell_file_resource_released_body(&tx_record).unwrap(),
+        encoded[32..]
+    );
+    let frame = encode_shell_content_frame(tx, &resource_released_record()).unwrap();
+    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
+
+    // transaction 0 refused
+    let mut zero_tx = tx_record.clone();
+    zero_tx.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_shell_file_resource_released(h, &zero_tx).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    let mut zero_bytes = encoded.clone();
+    zero_bytes[32..40].fill(0);
+    assert_eq!(
+        decode_shell_file_resource_released(&zero_bytes).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+
+    // a mismatched record variant is refused
+    let wrong_variant = ShellFileTransactionRecord {
+        transaction: tx,
+        record: resource_status_record(),
+    };
+    assert!(encode_shell_file_resource_released(h, &wrong_variant).is_err());
+
+    // an event does not decode as a candidate
+    assert_eq!(
+        decode_shell_file_record(&encoded, ShellFileClass::Candidate).unwrap_err(),
+        ShellFileCodecError::Class
+    );
+}
+
+#[test]
+fn resource_begin_round_trips_and_bounds() {
+    let h = ShellFileHeader {
+        kind: ShellFileKind::ResourceBegin,
+        connection_epoch: 1,
+        submission_id: 1,
+        sequence: 0,
+    };
+    let tx = TransactionId::from_raw(16);
+    let value = ShellFileResourceBegin {
+        transaction: tx,
+        slot: 0,
+        record: resource_begin_record(),
+    };
+    let encoded = encode_shell_file_resource_begin(h, &value).unwrap();
+    assert_eq!(decode_shell_file_resource_begin(&encoded).unwrap(), value);
+    assert_eq!(
+        encode_shell_file_resource_begin_body(&value).unwrap(),
+        encoded[32..]
+    );
+    // After the 32-byte header and the 16-byte transaction/slot/reserved
+    // prefix, the body is exactly the existing IPC payload of the record.
+    let frame = encode_shell_content_frame(tx, &resource_begin_record()).unwrap();
+    assert_eq!(&encoded[48..], &frame[SOPHIA_IPC_HEADER_LEN..]);
+    assert_eq!(u64::from_le_bytes(encoded[32..40].try_into().unwrap()), 16);
+    assert_eq!(u16::from_le_bytes(encoded[40..42].try_into().unwrap()), 0);
+
+    // transaction 0 refused
+    let mut zero_tx = value.clone();
+    zero_tx.transaction = TransactionId::INVALID;
+    assert_eq!(
+        encode_shell_file_resource_begin(h, &zero_tx).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+    let mut zero_bytes = encoded.clone();
+    zero_bytes[32..40].fill(0);
+    assert_eq!(
+        decode_shell_file_resource_begin(&zero_bytes).unwrap_err(),
+        ShellFilePayloadError::Identity
+    );
+
+    // a mismatched record variant is refused
+    let wrong_variant = ShellFileResourceBegin {
+        transaction: tx,
+        slot: 0,
+        record: resource_end_record(),
+    };
+    assert!(encode_shell_file_resource_begin(h, &wrong_variant).is_err());
+
+    // slot 4 (the upload-slot count) is refused on encode and decode
+    let mut bad_slot = value.clone();
+    bad_slot.slot = SHELL_FILE_MAX_UPLOAD_SLOTS;
+    assert_eq!(
+        encode_shell_file_resource_begin(h, &bad_slot).unwrap_err(),
+        ShellFilePayloadError::Value
+    );
+    let mut bad_slot_bytes = encoded.clone();
+    bad_slot_bytes[40..42].copy_from_slice(&SHELL_FILE_MAX_UPLOAD_SLOTS.to_le_bytes());
+    assert_eq!(
+        decode_shell_file_resource_begin(&bad_slot_bytes).unwrap_err(),
+        ShellFilePayloadError::Value
+    );
+
+    // a nonzero reserved byte is refused
+    let mut bad_reserved = encoded.clone();
+    bad_reserved[42] = 1; // reserved starts right after transaction+slot, at 32+10
+    assert_eq!(
+        decode_shell_file_resource_begin(&bad_reserved).unwrap_err(),
+        ShellFileCodecError::Reserved.into()
+    );
+
+    // a candidate does not decode as an event
+    assert_eq!(
+        decode_shell_file_record(&encoded, ShellFileClass::Event).unwrap_err(),
+        ShellFileCodecError::Class
+    );
+}

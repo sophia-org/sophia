@@ -191,6 +191,9 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
+        if self.files.is_some() {
+            return self.poll_file_resource_record(epochs);
+        }
         let at = self.inbox.iter().position(|frame| {
             matches!(
                 u16::from_le_bytes([frame[6], frame[7]]),
@@ -221,6 +224,49 @@ impl ShellComponentTransport {
             return Ok(None);
         }
         Ok(Some((transaction, record)))
+    }
+
+    /// The file wire's typed queue, with the socket path's checks. The record
+    /// stays queued until its response credit is available.
+    fn poll_file_resource_record(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
+        let resource = |record: &ShellContentRecord| {
+            matches!(
+                record,
+                ShellContentRecord::ResourceBegin(_)
+                    | ShellContentRecord::ResourceChunk(_)
+                    | ShellContentRecord::ResourceEnd(_)
+                    | ShellContentRecord::ResourceCancel(_)
+                    | ShellContentRecord::ResourceRetire(_)
+            )
+        };
+        let files = self
+            .files
+            .as_ref()
+            .ok_or(ShellTransportError::NotConnected)?;
+        let Some(record) = files.export().peek_content(resource) else {
+            return if self.peer_closed {
+                Err(ShellTransportError::NotConnected)
+            } else {
+                Ok(None)
+            };
+        };
+        if !content_admission::client_record(record) {
+            return Err(ShellTransportError::WrongContentRecord);
+        }
+        if content_admission::record_grant(record) != self.content_grant {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        let needed = epochs
+            .resources(self.store_grant)
+            .ok_or(ShellTransportError::MissingCapability)?
+            .additional_response_credit(record);
+        if !self.control_capacity_available(epochs, needed) {
+            return Ok(None);
+        }
+        Ok(self.take_file_content(resource))
     }
 
     pub(super) fn flush_content_resource_events(

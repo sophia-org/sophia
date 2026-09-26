@@ -23,12 +23,19 @@ pub(super) fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, ShellFileCodecE
 pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
     match kind {
         ShellFileKind::Limits | ShellFileKind::Outputs => ShellFileClass::Object,
-        ShellFileKind::Negotiate | ShellFileKind::AllocationRequest => ShellFileClass::Candidate,
+        ShellFileKind::Negotiate
+        | ShellFileKind::AllocationRequest
+        | ShellFileKind::ResourceBegin
+        | ShellFileKind::ResourceEnd
+        | ShellFileKind::ResourceCancel
+        | ShellFileKind::ResourceRetire => ShellFileClass::Candidate,
         ShellFileKind::Negotiated
         | ShellFileKind::Refused
         | ShellFileKind::Submitted
         | ShellFileKind::ObjectPublished
-        | ShellFileKind::AllocationResult => ShellFileClass::Event,
+        | ShellFileKind::AllocationResult
+        | ShellFileKind::ResourceStatus
+        | ShellFileKind::ResourceReleased => ShellFileClass::Event,
     }
 }
 
@@ -41,8 +48,14 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
         18 => ShellFileKind::Submitted,
         19 => ShellFileKind::ObjectPublished,
         32 => ShellFileKind::AllocationResult,
+        33 => ShellFileKind::ResourceStatus,
+        34 => ShellFileKind::ResourceReleased,
         256 => ShellFileKind::Negotiate,
         257 => ShellFileKind::AllocationRequest,
+        258 => ShellFileKind::ResourceBegin,
+        259 => ShellFileKind::ResourceEnd,
+        260 => ShellFileKind::ResourceCancel,
+        261 => ShellFileKind::ResourceRetire,
         _ => return Err(ShellFileCodecError::Kind),
     })
 }

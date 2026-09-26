@@ -16,8 +16,14 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     event "Submitted" kind=18
     event "ObjectPublished" kind=19
     event "AllocationResult" kind=32
+    event "ResourceStatus" kind=33
+    event "ResourceReleased" kind=34
     candidate "Negotiate" kind=256
     candidate "AllocationRequest" kind=257
+    candidate "ResourceBegin" kind=258
+    candidate "ResourceEnd" kind=259
+    candidate "ResourceCancel" kind=260
+    candidate "ResourceRetire" kind=261
 
     // Payload bodies are the unchanged sophia-shell-v1 record payload of the
     // named kind, validated by that record's existing codec; no fixed size.
@@ -53,7 +59,7 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     }
     body "Submitted" size=16 {
         field "submission_id" type="u64" offset=0 nonzero=true
-        field "candidate_kind" type="u16" offset=8 min=256 max=257
+        field "candidate_kind" type="u16" offset=8 min=256 max=261
         field "reserved" type="bytes" offset=10 size=6 value=0
     }
     body "ObjectPublished" size=24 {
@@ -69,6 +75,34 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     body "AllocationResult" {
         field "transaction" type="u64" offset=0 nonzero=true
         field "payload" type="sophia-shell-v1" record="ShellContentAllocationResult" offset=8
+    }
+    // ResourceBegin also carries the upload slot the chunks that follow are
+    // written to; chunks travel as writes to that slot, never as records.
+    body "ResourceBegin" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "slot" type="u16" offset=8 min=0 max=3
+        field "reserved" type="bytes" offset=10 size=6 value=0
+        field "payload" type="sophia-shell-v1" record="ShellContentResourceBegin" offset=16
+    }
+    body "ResourceEnd" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentResourceEnd" offset=8
+    }
+    body "ResourceCancel" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentResourceCancel" offset=8
+    }
+    body "ResourceRetire" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentResourceRetire" offset=8
+    }
+    body "ResourceStatus" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentResourceStatus" offset=8
+    }
+    body "ResourceReleased" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentResourceReleased" offset=8
     }
 
     submit size=24 {

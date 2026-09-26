@@ -225,3 +225,317 @@ pub fn decode_shell_file_object_published(
     }
     Ok(value)
 }
+
+pub fn encode_shell_file_resource_end(
+    header: ShellFileHeader,
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::ResourceEnd)?;
+    let body = encode_shell_file_resource_end_body(tx_record)?;
+    Ok(encode_shell_file_record(header, &body)?)
+}
+
+pub fn encode_shell_file_resource_end_body(
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    if !tx_record.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    match tx_record.record {
+        ShellContentRecord::ResourceEnd(_) => {}
+        _ => return Err(ShellFileCodecError::Kind.into()),
+    }
+    let (_, payload) =
+        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let mut body = Vec::with_capacity(8 + payload.len());
+    body.extend(tx_record.transaction.raw().to_le_bytes());
+    body.extend_from_slice(&payload);
+    Ok(body)
+}
+
+pub fn decode_shell_file_resource_end(
+    bytes: &[u8],
+) -> Result<ShellFileTransactionRecord, ShellFilePayloadError> {
+    let r = record(bytes, ShellFileKind::ResourceEnd, 8)?;
+    let tx = TransactionId::from_raw(u64_at(r.body, 0)?);
+    if !tx.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let decoded = crate::ipc::decode_shell_content_payload(
+        IpcMessageKind::ShellContentResourceEnd,
+        tx,
+        &r.body[8..],
+    )?;
+    match decoded {
+        ShellContentRecord::ResourceEnd(_) => Ok(ShellFileTransactionRecord {
+            transaction: tx,
+            record: decoded,
+        }),
+        _ => Err(ShellFileCodecError::Kind.into()),
+    }
+}
+
+pub fn encode_shell_file_resource_cancel(
+    header: ShellFileHeader,
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::ResourceCancel)?;
+    let body = encode_shell_file_resource_cancel_body(tx_record)?;
+    Ok(encode_shell_file_record(header, &body)?)
+}
+
+pub fn encode_shell_file_resource_cancel_body(
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    if !tx_record.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    match tx_record.record {
+        ShellContentRecord::ResourceCancel(_) => {}
+        _ => return Err(ShellFileCodecError::Kind.into()),
+    }
+    let (_, payload) =
+        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let mut body = Vec::with_capacity(8 + payload.len());
+    body.extend(tx_record.transaction.raw().to_le_bytes());
+    body.extend_from_slice(&payload);
+    Ok(body)
+}
+
+pub fn decode_shell_file_resource_cancel(
+    bytes: &[u8],
+) -> Result<ShellFileTransactionRecord, ShellFilePayloadError> {
+    let r = record(bytes, ShellFileKind::ResourceCancel, 8)?;
+    let tx = TransactionId::from_raw(u64_at(r.body, 0)?);
+    if !tx.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let decoded = crate::ipc::decode_shell_content_payload(
+        IpcMessageKind::ShellContentResourceCancel,
+        tx,
+        &r.body[8..],
+    )?;
+    match decoded {
+        ShellContentRecord::ResourceCancel(_) => Ok(ShellFileTransactionRecord {
+            transaction: tx,
+            record: decoded,
+        }),
+        _ => Err(ShellFileCodecError::Kind.into()),
+    }
+}
+
+pub fn encode_shell_file_resource_retire(
+    header: ShellFileHeader,
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::ResourceRetire)?;
+    let body = encode_shell_file_resource_retire_body(tx_record)?;
+    Ok(encode_shell_file_record(header, &body)?)
+}
+
+pub fn encode_shell_file_resource_retire_body(
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    if !tx_record.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    match tx_record.record {
+        ShellContentRecord::ResourceRetire(_) => {}
+        _ => return Err(ShellFileCodecError::Kind.into()),
+    }
+    let (_, payload) =
+        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let mut body = Vec::with_capacity(8 + payload.len());
+    body.extend(tx_record.transaction.raw().to_le_bytes());
+    body.extend_from_slice(&payload);
+    Ok(body)
+}
+
+pub fn decode_shell_file_resource_retire(
+    bytes: &[u8],
+) -> Result<ShellFileTransactionRecord, ShellFilePayloadError> {
+    let r = record(bytes, ShellFileKind::ResourceRetire, 8)?;
+    let tx = TransactionId::from_raw(u64_at(r.body, 0)?);
+    if !tx.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let decoded = crate::ipc::decode_shell_content_payload(
+        IpcMessageKind::ShellContentResourceRetire,
+        tx,
+        &r.body[8..],
+    )?;
+    match decoded {
+        ShellContentRecord::ResourceRetire(_) => Ok(ShellFileTransactionRecord {
+            transaction: tx,
+            record: decoded,
+        }),
+        _ => Err(ShellFileCodecError::Kind.into()),
+    }
+}
+
+pub fn encode_shell_file_resource_status(
+    header: ShellFileHeader,
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::ResourceStatus)?;
+    let body = encode_shell_file_resource_status_body(tx_record)?;
+    Ok(encode_shell_file_record(header, &body)?)
+}
+
+pub fn encode_shell_file_resource_status_body(
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    if !tx_record.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    match tx_record.record {
+        ShellContentRecord::ResourceStatus(_) => {}
+        _ => return Err(ShellFileCodecError::Kind.into()),
+    }
+    let (_, payload) =
+        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let mut body = Vec::with_capacity(8 + payload.len());
+    body.extend(tx_record.transaction.raw().to_le_bytes());
+    body.extend_from_slice(&payload);
+    Ok(body)
+}
+
+pub fn decode_shell_file_resource_status(
+    bytes: &[u8],
+) -> Result<ShellFileTransactionRecord, ShellFilePayloadError> {
+    let r = record(bytes, ShellFileKind::ResourceStatus, 8)?;
+    let tx = TransactionId::from_raw(u64_at(r.body, 0)?);
+    if !tx.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let decoded = crate::ipc::decode_shell_content_payload(
+        IpcMessageKind::ShellContentResourceStatus,
+        tx,
+        &r.body[8..],
+    )?;
+    match decoded {
+        ShellContentRecord::ResourceStatus(_) => Ok(ShellFileTransactionRecord {
+            transaction: tx,
+            record: decoded,
+        }),
+        _ => Err(ShellFileCodecError::Kind.into()),
+    }
+}
+
+pub fn encode_shell_file_resource_released(
+    header: ShellFileHeader,
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::ResourceReleased)?;
+    let body = encode_shell_file_resource_released_body(tx_record)?;
+    Ok(encode_shell_file_record(header, &body)?)
+}
+
+pub fn encode_shell_file_resource_released_body(
+    tx_record: &ShellFileTransactionRecord,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    if !tx_record.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    match tx_record.record {
+        ShellContentRecord::ResourceReleased(_) => {}
+        _ => return Err(ShellFileCodecError::Kind.into()),
+    }
+    let (_, payload) =
+        crate::ipc::encode_shell_content_payload(tx_record.transaction, &tx_record.record)?;
+    let mut body = Vec::with_capacity(8 + payload.len());
+    body.extend(tx_record.transaction.raw().to_le_bytes());
+    body.extend_from_slice(&payload);
+    Ok(body)
+}
+
+pub fn decode_shell_file_resource_released(
+    bytes: &[u8],
+) -> Result<ShellFileTransactionRecord, ShellFilePayloadError> {
+    let r = record(bytes, ShellFileKind::ResourceReleased, 8)?;
+    let tx = TransactionId::from_raw(u64_at(r.body, 0)?);
+    if !tx.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let decoded = crate::ipc::decode_shell_content_payload(
+        IpcMessageKind::ShellContentResourceReleased,
+        tx,
+        &r.body[8..],
+    )?;
+    match decoded {
+        ShellContentRecord::ResourceReleased(_) => Ok(ShellFileTransactionRecord {
+            transaction: tx,
+            record: decoded,
+        }),
+        _ => Err(ShellFileCodecError::Kind.into()),
+    }
+}
+
+/// A `ResourceBegin` candidate: the transaction, the upload slot the chunks
+/// that follow will be written to, and the unchanged content payload. Chunks
+/// travel as writes to that slot, never as records of their own.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShellFileResourceBegin {
+    pub transaction: TransactionId,
+    pub slot: u16,
+    pub record: ShellContentRecord,
+}
+
+pub fn encode_shell_file_resource_begin(
+    header: ShellFileHeader,
+    value: &ShellFileResourceBegin,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    header_kind(header, ShellFileKind::ResourceBegin)?;
+    let body = encode_shell_file_resource_begin_body(value)?;
+    Ok(encode_shell_file_record(header, &body)?)
+}
+
+pub fn encode_shell_file_resource_begin_body(
+    value: &ShellFileResourceBegin,
+) -> Result<Vec<u8>, ShellFilePayloadError> {
+    if !value.transaction.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    if value.slot >= SHELL_FILE_MAX_UPLOAD_SLOTS {
+        return Err(ShellFilePayloadError::Value);
+    }
+    match value.record {
+        ShellContentRecord::ResourceBegin(_) => {}
+        _ => return Err(ShellFileCodecError::Kind.into()),
+    }
+    let (_, payload) = crate::ipc::encode_shell_content_payload(value.transaction, &value.record)?;
+    let mut body = Vec::with_capacity(16 + payload.len());
+    body.extend(value.transaction.raw().to_le_bytes());
+    body.extend(value.slot.to_le_bytes());
+    body.extend([0u8; 6]);
+    body.extend_from_slice(&payload);
+    Ok(body)
+}
+
+pub fn decode_shell_file_resource_begin(
+    bytes: &[u8],
+) -> Result<ShellFileResourceBegin, ShellFilePayloadError> {
+    let r = record(bytes, ShellFileKind::ResourceBegin, 16)?;
+    let tx = TransactionId::from_raw(u64_at(r.body, 0)?);
+    if !tx.is_valid() {
+        return Err(ShellFilePayloadError::Identity);
+    }
+    let slot = super::codec::u16_at(r.body, 8)?;
+    if slot >= SHELL_FILE_MAX_UPLOAD_SLOTS {
+        return Err(ShellFilePayloadError::Value);
+    }
+    reserved(&r.body[10..16])?;
+    let decoded = crate::ipc::decode_shell_content_payload(
+        IpcMessageKind::ShellContentResourceBegin,
+        tx,
+        &r.body[16..],
+    )?;
+    match decoded {
+        ShellContentRecord::ResourceBegin(_) => Ok(ShellFileResourceBegin {
+            transaction: tx,
+            slot,
+            record: decoded,
+        }),
+        _ => Err(ShellFileCodecError::Kind.into()),
+    }
+}

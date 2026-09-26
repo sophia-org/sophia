@@ -416,3 +416,197 @@ fn output_facts_are_pinned_objects_announced_by_publication() {
     transport.disconnect(&mut registry).unwrap();
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+const ESTALE: u32 = 116;
+const EINVAL: u32 = 22;
+
+/// 2048x8 BGRA: seven rows per canonical chunk, so chunks of 57344 and 8192.
+fn upload_begin(grant: ContentGrant, id: u64) -> ContentResourceBegin {
+    ContentResourceBegin {
+        grant,
+        resource: ContentResourceId { id, generation: 1 },
+        width_px: 2048,
+        height_px: 8,
+        rendered_scale_numerator: 1,
+        rendered_scale_denominator: 1,
+        pixel_format: 1,
+        chunk_count: 2,
+        total_bytes: 65536,
+    }
+}
+
+fn begin_record(epoch: u64, id: u64, slot: u16, begin: ContentResourceBegin) -> Vec<u8> {
+    encode_shell_file_resource_begin(
+        candidate(ShellFileKind::ResourceBegin, epoch, id),
+        &ShellFileResourceBegin {
+            transaction: TransactionId::from_raw(70 + begin.resource.id),
+            slot,
+            record: ShellContentRecord::ResourceBegin(begin),
+        },
+    )
+    .unwrap()
+}
+
+fn next_status(peer: &mut Peer) -> ContentResourceStatus {
+    let event = peer.next_event();
+    let ShellContentRecord::ResourceStatus(status) =
+        decode_shell_file_resource_status(&event).unwrap().record
+    else {
+        panic!("resource status");
+    };
+    peer.ack(&event);
+    status
+}
+
+fn serve_resources(
+    transport: &mut ShellComponentTransport,
+    registry: &mut ContentEpochRegistry,
+    peer: &std::thread::JoinHandle<()>,
+) {
+    let start = Instant::now();
+    while !peer.is_finished() {
+        match transport.service_content_resources(registry, start.elapsed().as_millis() as u64) {
+            Ok(_) | Err(ShellTransportError::NotConnected) => {}
+            Err(error) => panic!("resources: {error}"),
+        }
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+}
+
+fn granted() -> ShellContentAdmissionPolicy {
+    ShellContentAdmissionPolicy::Granted {
+        discrete_input: false,
+    }
+}
+
+#[test]
+fn a_split_upload_through_its_slot_is_accepted_as_canonical_chunks() {
+    const EBUSY: u32 = 16;
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let (mut transport, directory) = transport();
+    let expected = limits(1);
+    transport
+        .reserve_content(&mut registry, expected.clone())
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+    let grant = expected.grant;
+    let pixels: Vec<u8> = (0..65536u32)
+        .map(|i| if i % 4 == 3 { 255 } else { (i / 4 % 200) as u8 })
+        .collect();
+    let sent = pixels.clone();
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+        let offer = encode_shell_file_negotiate(candidate(ShellFileKind::Negotiate, 1, 1), hello())
+            .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        peer.ack(&negotiated);
+        // Nothing is bound yet.
+        assert_eq!(errno(peer.open_path(9, &[b"upload", b"0"], 1)), 11);
+        peer.submit_acknowledged(&begin_record(1, 2, 0, upload_begin(grant, 1)), 2);
+        let admitted = next_status(&mut peer);
+        assert_eq!((admitted.status, admitted.admitted_bytes), (1, 65536));
+        assert_eq!(peer.open_path(10, &[b"upload", b"0"], 1).0, 13);
+        // The first writer of a binding is its only writer; reads are refused.
+        assert_eq!(errno(peer.open_path(11, &[b"upload", b"0"], 1)), EBUSY);
+        assert_eq!(errno(peer.open_path(12, &[b"upload", b"0"], 2)), 13);
+        // Split anywhere: a short write reports the prefix completing a chunk.
+        let reply = peer.write_at(10, 0, &sent[..1000]);
+        assert_eq!(reply.0, 119);
+        assert_eq!(u32::from_le_bytes(reply.1[..4].try_into().unwrap()), 1000);
+        assert_eq!(errno(peer.write_at(10, 999, &sent[999..1100])), EINVAL);
+        assert_eq!(errno(peer.write_at(10, 2000, &sent[2000..2100])), EINVAL);
+        let reply = peer.write_at(10, 1000, &sent[1000..61000]);
+        assert_eq!(u32::from_le_bytes(reply.1[..4].try_into().unwrap()), 56344);
+        let reply = peer.write_at(10, 57344, &sent[57344..]);
+        assert_eq!(u32::from_le_bytes(reply.1[..4].try_into().unwrap()), 8192);
+        assert_eq!(errno(peer.write_at(10, 65536, &[0; 4])), EINVAL);
+        let end = encode_shell_file_resource_end(
+            candidate(ShellFileKind::ResourceEnd, 1, 3),
+            &ShellFileTransactionRecord {
+                transaction: TransactionId::from_raw(71),
+                record: ShellContentRecord::ResourceEnd(ContentResourceEnd {
+                    grant,
+                    resource: ContentResourceId {
+                        id: 1,
+                        generation: 1,
+                    },
+                    total_bytes: 65536,
+                    chunk_count: 2,
+                }),
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&end, 3);
+        assert_eq!(next_status(&mut peer).status, 2);
+        // The binding ended: its fid is fenced, and its clunk cancels nothing.
+        assert_eq!(errno(peer.write_at(10, 0, &[0; 4])), ESTALE);
+        peer.clunk(10);
+    });
+    negotiate(&mut transport, &mut registry, 1, granted(), &peer)
+        .unwrap()
+        .expect("negotiated");
+    serve_resources(&mut transport, &mut registry, &peer);
+    peer.join().unwrap();
+    let lease = transport
+        .lease_content_resource(
+            &registry,
+            grant,
+            ContentResourceId {
+                id: 1,
+                generation: 1,
+            },
+        )
+        .unwrap();
+    assert_eq!(lease.bytes(), &pixels[..]);
+    drop(lease);
+    transport.disconnect(&mut registry).unwrap();
+    registry.collect();
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn clunking_the_writer_before_end_cancels_and_frees_the_slot() {
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let (mut transport, directory) = transport();
+    let expected = limits(1);
+    transport
+        .reserve_content(&mut registry, expected.clone())
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+    let grant = expected.grant;
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+        let offer = encode_shell_file_negotiate(candidate(ShellFileKind::Negotiate, 1, 1), hello())
+            .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        peer.ack(&negotiated);
+        peer.submit_acknowledged(&begin_record(1, 2, 0, upload_begin(grant, 1)), 2);
+        assert_eq!(next_status(&mut peer).status, 1);
+        // A bound slot refuses a second Begin.
+        assert_eq!(
+            errno(peer.submit(&begin_record(1, 3, 0, upload_begin(grant, 2)))),
+            16
+        );
+        peer.clear();
+        assert_eq!(peer.open_path(10, &[b"upload", b"0"], 1).0, 13);
+        assert_eq!(peer.write_at(10, 0, &[64, 64, 64, 255].repeat(25)).0, 119);
+        peer.clunk(10);
+        assert_eq!(next_status(&mut peer).status, 4);
+        // The slot is free again for a new binding.
+        peer.submit_acknowledged(&begin_record(1, 4, 0, upload_begin(grant, 2)), 4);
+        assert_eq!(next_status(&mut peer).status, 1);
+    });
+    negotiate(&mut transport, &mut registry, 1, granted(), &peer)
+        .unwrap()
+        .expect("negotiated");
+    serve_resources(&mut transport, &mut registry, &peer);
+    peer.join().unwrap();
+    transport.disconnect(&mut registry).unwrap();
+    registry.collect();
+    std::fs::remove_dir_all(directory).unwrap();
+}

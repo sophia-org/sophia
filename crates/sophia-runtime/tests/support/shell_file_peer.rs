@@ -113,6 +113,42 @@ impl Peer {
         .unwrap()
     }
 
+    /// Walks from the root through every name, then opens with `mode`.
+    pub fn open_path(&mut self, fid: u32, names: &[&[u8]], mode: u32) -> (u8, Vec<u8>) {
+        let mut walk = [
+            1u32.to_le_bytes().as_slice(),
+            &fid.to_le_bytes(),
+            &(names.len() as u16).to_le_bytes(),
+        ]
+        .concat();
+        for name in names {
+            walk.extend((name.len() as u16).to_le_bytes());
+            walk.extend(*name);
+        }
+        assert_eq!(self.rpc(110, &walk).unwrap().0, 111);
+        self.rpc(12, &[fid.to_le_bytes(), mode.to_le_bytes()].concat())
+            .unwrap()
+    }
+
+    /// One Twrite at `offset`; the reply is returned unchecked.
+    pub fn write_at(&mut self, fid: u32, offset: u64, bytes: &[u8]) -> (u8, Vec<u8>) {
+        self.rpc(
+            118,
+            &[
+                fid.to_le_bytes().as_slice(),
+                &offset.to_le_bytes(),
+                &(bytes.len() as u32).to_le_bytes(),
+                bytes,
+            ]
+            .concat(),
+        )
+        .unwrap()
+    }
+
+    pub fn clunk(&mut self, fid: u32) {
+        assert_eq!(self.rpc(120, &fid.to_le_bytes()).unwrap().0, 121);
+    }
+
     pub fn read(&mut self, fid: u32, offset: u64) -> Vec<u8> {
         let (kind, body) = self
             .rpc(
