@@ -1,5 +1,6 @@
 //! Transport boundary for the existing WM driver. These are semantic records;
 //! adapters own framing/assembly, not proposal settlement or scene state.
+use super::driver::PolicyReceivePermit;
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,8 +40,24 @@ pub(super) trait PolicyAdapter: Send + 'static {
         profile: Option<PolicyProfileAdmission>,
     ) -> Result<(), String>;
     fn selected_capabilities(&self) -> u64;
-    fn receive_within(&mut self, timeout: Duration) -> Result<PolicyAdapterEvent, String>;
-    fn try_receive(&mut self) -> Result<Option<PolicyAdapterEvent>, String>;
+    fn receive_within(
+        &mut self,
+        permit: PolicyReceivePermit,
+        timeout: Duration,
+    ) -> Result<PolicyAdapterEvent, String>;
+    fn try_receive(
+        &mut self,
+        permit: PolicyReceivePermit,
+    ) -> Result<Option<PolicyAdapterEvent>, String>;
     fn send(&mut self, command: &PolicyTransportCommand) -> Result<(), String>;
+    /// Optional transport wakeup, never a second phase/settlement owner.
+    /// Existing IPC retains its socket-bound shutdown behavior.
+    fn stop_handle(&self) -> Option<Box<dyn PolicyAdapterStop>> {
+        None
+    }
     fn disconnect(&mut self);
+}
+
+pub(super) trait PolicyAdapterStop: Send + Sync {
+    fn stop(&self);
 }

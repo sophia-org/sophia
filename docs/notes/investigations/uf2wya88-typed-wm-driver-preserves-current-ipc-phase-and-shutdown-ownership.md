@@ -71,6 +71,30 @@ bounded send pressure, no fragment-driven phase changes and cancellation that
 preserves already acknowledged staging bytes. Those rules do not change this
 independently reviewable current-IPC extraction.
 
+## Driver hooks for the file-owner checkpoint
+
+The later t249 driver-only checkpoint passes a non-cloneable receive permit at
+each existing wait site: configuration, idle dirty, projection (with the
+existing before/after-transfer dirty distinction), and committed session
+operation. Current IPC deliberately ignores that hint and retains its original
+decode/refusal precedence. A file owner will consume it only after successful
+complete-candidate custody; staging fragments and accepted-submit replays cannot
+spend a second permission. No export phase machine is introduced.
+
+An optional adapter Stop handle is captured before worker spawn. Stop and Drop
+wake it independently of command queue space, before joining the producer;
+current IPC supplies no hook and keeps its existing socket-bound cleanup.
+The external control blocks the actual driver's synchronous send on a bounded
+simulated credit wait, fills the command queue, then verifies both explicit
+Stop and Drop wake it promptly and disconnect once. It does not claim an actual
+9P socket/journal yet. The existing full-event-queue shutdown tests remain.
+
+Focused worker checks: ten passed, including real IPC profile controls. Strict
+native Session all-target Clippy passed after a nested-if lint correction.
+Logs are `permit-focused.log` and `permit-clippy.log` under the t249 worktree
+evidence directory. Profile handoff, public policy reducer, output-role IPC and
+default transport selection are unchanged.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

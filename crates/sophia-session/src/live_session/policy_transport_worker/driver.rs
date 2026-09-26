@@ -1,6 +1,51 @@
 use super::adapter::{PolicyAdapter, PolicyAdapterEvent, PolicyProfileAdmission};
 use super::*;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum PolicyReceiveKind {
+    Configuration,
+    DirtyOnly,
+    Projection { allow_dirty: bool },
+    SessionOperation,
+}
+
+/// Issued only at the driver's existing wait sites. Not Clone/Copy: a file
+/// owner may transfer one complete candidate under it, then must return to
+/// the driver for another. File fragments never advance this permission.
+#[cfg_attr(not(test), allow(dead_code))] // Consumed by the file adapter in the next checkpoint.
+pub(super) struct PolicyReceivePermit {
+    kind: PolicyReceiveKind,
+}
+
+#[cfg_attr(not(test), allow(dead_code))] // Current IPC deliberately ignores admission hints.
+impl PolicyReceivePermit {
+    pub(super) fn kind(&self) -> PolicyReceiveKind {
+        self.kind
+    }
+
+    pub(super) fn allows(&self, event: &PolicyAdapterEvent) -> bool {
+        matches!(
+            (self.kind, event),
+            (
+                PolicyReceiveKind::Configuration,
+                PolicyAdapterEvent::Configuration { .. }
+            ) | (PolicyReceiveKind::DirtyOnly, PolicyAdapterEvent::Dirty(_))
+                | (
+                    PolicyReceiveKind::Projection { .. },
+                    PolicyAdapterEvent::Projection(_)
+                )
+                | (
+                    PolicyReceiveKind::Projection { allow_dirty: true },
+                    PolicyAdapterEvent::Dirty(_)
+                )
+                | (
+                    PolicyReceiveKind::SessionOperation,
+                    PolicyAdapterEvent::SessionOperation { .. }
+                )
+        )
+    }
+}
+
 /// Preserve the current owner phase discipline independently of byte framing.
 pub(super) fn run_policy_transport(
     transport: &mut impl PolicyAdapter,
@@ -14,7 +59,12 @@ pub(super) fn run_policy_transport(
         .send(PolicyTransportEvent::Negotiated)
         .map_err(|_| "policy owner event channel disconnected".to_owned())?;
 
-    let configuration = transport.receive_within(POLICY_CLIENT_RESPONSE_DEADLINE)?;
+    let configuration = transport.receive_within(
+        PolicyReceivePermit {
+            kind: PolicyReceiveKind::Configuration,
+        },
+        POLICY_CLIENT_RESPONSE_DEADLINE,
+    )?;
     let PolicyAdapterEvent::Configuration {
         transaction,
         configuration,
@@ -33,7 +83,9 @@ pub(super) fn run_policy_transport(
         let command = match commands.recv_timeout(Duration::from_millis(10)) {
             Ok(command) => command,
             Err(RecvTimeoutError::Timeout) => {
-                match transport.try_receive()? {
+                match transport.try_receive(PolicyReceivePermit {
+                    kind: PolicyReceiveKind::DirtyOnly,
+                })? {
                     Some(PolicyAdapterEvent::Dirty(request)) => events
                         .send(PolicyTransportEvent::Dirty(request))
                         .map_err(|_| "policy owner event channel disconnected".to_owned())?,
@@ -66,7 +118,14 @@ pub(super) fn run_policy_transport(
                 let mut projection_started = false;
                 let proposal =
                     loop {
-                        match transport.receive_within(POLICY_CLIENT_RESPONSE_DEADLINE)? {
+                        match transport.receive_within(
+                            PolicyReceivePermit {
+                                kind: PolicyReceiveKind::Projection {
+                                    allow_dirty: !projection_started,
+                                },
+                            },
+                            POLICY_CLIENT_RESPONSE_DEADLINE,
+                        )? {
                             PolicyAdapterEvent::ProjectionPending => projection_started = true,
                             PolicyAdapterEvent::Projection(projection) => break projection,
                             PolicyAdapterEvent::MalformedProjection(error) => return Err(error),
@@ -111,7 +170,12 @@ pub(super) fn run_policy_transport(
                 ..
             } => {
                 if expect_session_operation && outcome == PolicyProjectionOutcome::Committed {
-                    let event = transport.receive_within(POLICY_CLIENT_RESPONSE_DEADLINE)?;
+                    let event = transport.receive_within(
+                        PolicyReceivePermit {
+                            kind: PolicyReceiveKind::SessionOperation,
+                        },
+                        POLICY_CLIENT_RESPONSE_DEADLINE,
+                    )?;
                     let PolicyAdapterEvent::SessionOperation {
                         transaction,
                         request,

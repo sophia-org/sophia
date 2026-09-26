@@ -3,6 +3,7 @@
 #![cfg(test)]
 
 use super::adapter::{PolicyAdapter, PolicyAdapterEvent, PolicyProfileAdmission};
+use super::driver::{PolicyReceiveKind, PolicyReceivePermit};
 use super::*;
 use sophia_protocol::*;
 use std::sync::{
@@ -26,6 +27,7 @@ struct ScriptedAdapter {
     trace: SyncSender<Trace>,
     reject_profile: bool,
     received: Arc<AtomicUsize>,
+    permits: Arc<std::sync::Mutex<Vec<(PolicyReceiveKind, bool)>>>,
 }
 impl PolicyAdapter for ScriptedAdapter {
     fn admit(&mut self, epoch: u64, profile: Option<PolicyProfileAdmission>) -> Result<(), String> {
@@ -39,18 +41,35 @@ impl PolicyAdapter for ScriptedAdapter {
     fn selected_capabilities(&self) -> u64 {
         7
     }
-    fn receive_within(&mut self, timeout: Duration) -> Result<PolicyAdapterEvent, String> {
+    fn receive_within(
+        &mut self,
+        permit: PolicyReceivePermit,
+        timeout: Duration,
+    ) -> Result<PolicyAdapterEvent, String> {
         assert_eq!(timeout, Duration::from_secs(12));
         let event = self
             .incoming
             .recv_timeout(Duration::from_secs(2))
             .map_err(|e| e.to_string())?;
         self.received.fetch_add(1, Ordering::SeqCst);
+        self.permits
+            .lock()
+            .unwrap()
+            .push((permit.kind(), permit.allows(&event)));
         Ok(event)
     }
-    fn try_receive(&mut self) -> Result<Option<PolicyAdapterEvent>, String> {
+    fn try_receive(
+        &mut self,
+        permit: PolicyReceivePermit,
+    ) -> Result<Option<PolicyAdapterEvent>, String> {
         match self.incoming.try_recv() {
-            Ok(event) => Ok(Some(event)),
+            Ok(event) => {
+                self.permits
+                    .lock()
+                    .unwrap()
+                    .push((permit.kind(), permit.allows(&event)));
+                Ok(Some(event))
+            }
             Err(TryRecvError::Empty) => Ok(None),
             Err(error) => Err(error.to_string()),
         }
@@ -104,18 +123,21 @@ struct Harness {
     incoming: SyncSender<PolicyAdapterEvent>,
     trace: Receiver<Trace>,
     received: Arc<AtomicUsize>,
+    permits: Arc<std::sync::Mutex<Vec<(PolicyReceiveKind, bool)>>>,
 }
 impl Harness {
     fn new(reject: bool) -> Self {
         let (incoming, receiver) = sync_channel(8);
         let (trace, audit) = sync_channel(16);
         let received = Arc::new(AtomicUsize::new(0));
+        let permits = Arc::new(std::sync::Mutex::new(Vec::new()));
         let worker = PolicyTransportWorker::spawn(
             ScriptedAdapter {
                 incoming: receiver,
                 trace,
                 reject_profile: reject,
                 received: received.clone(),
+                permits: permits.clone(),
             },
             9,
             Some(profile()),
@@ -126,6 +148,7 @@ impl Harness {
             incoming,
             trace: audit,
             received,
+            permits,
         };
         assert_eq!(harness.trace(), Trace::Admission(9, Some(profile())));
         harness
@@ -329,6 +352,19 @@ fn semantic_adapter_preserves_cycle_operation_receipt_and_stop_order() {
         h.worker.event_timeout(Duration::from_secs(2)),
         Err(RecvTimeoutError::Disconnected)
     ));
+    assert_eq!(
+        *h.permits.lock().unwrap(),
+        vec![
+            (PolicyReceiveKind::Configuration, true),
+            (PolicyReceiveKind::DirtyOnly, true),
+            (PolicyReceiveKind::Projection { allow_dirty: true }, true),
+            // Legacy IPC can expose an incomplete transfer marker; a complete
+            // submit permit never admits such a marker as a semantic candidate.
+            (PolicyReceiveKind::Projection { allow_dirty: true }, false),
+            (PolicyReceiveKind::Projection { allow_dirty: false }, true),
+            (PolicyReceiveKind::SessionOperation, true),
+        ]
+    );
 }
 
 #[test]

@@ -12,7 +12,7 @@ use sophia_protocol::{
 mod adapter;
 mod current_ipc;
 mod driver;
-use adapter::{PolicyAdapter, PolicyProfileAdmission};
+use adapter::{PolicyAdapter, PolicyAdapterStop, PolicyProfileAdmission};
 use driver::run_policy_transport;
 
 const POLICY_TRANSPORT_CAPACITY: usize = 1;
@@ -75,6 +75,7 @@ pub(super) struct PolicyTransportWorker {
     commands: Option<SyncSender<PolicyTransportCommand>>,
     events: Receiver<PolicyTransportEvent>,
     thread: Option<JoinHandle<()>>,
+    stop: Option<Box<dyn PolicyAdapterStop>>,
 }
 
 impl PolicyTransportWorker {
@@ -83,6 +84,7 @@ impl PolicyTransportWorker {
         connection_epoch: u64,
         profile_admission: Option<PolicyProfileAdmission>,
     ) -> Result<Self, std::io::Error> {
+        let stop = transport.stop_handle();
         let (command_sender, command_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
         let (event_sender, event_receiver) = sync_channel(POLICY_TRANSPORT_CAPACITY);
         let thread = std::thread::Builder::new()
@@ -104,6 +106,7 @@ impl PolicyTransportWorker {
             commands: Some(command_sender),
             events: event_receiver,
             thread: Some(thread),
+            stop,
         })
     }
 
@@ -111,6 +114,12 @@ impl PolicyTransportWorker {
         &self,
         command: PolicyTransportCommand,
     ) -> Result<(), PolicyTransportCommand> {
+        if matches!(command, PolicyTransportCommand::Stop)
+            && let Some(stop) = &self.stop
+        {
+            stop.stop();
+            return Ok(());
+        }
         let Some(commands) = self.commands.as_ref() else {
             return Err(command);
         };
@@ -138,6 +147,11 @@ impl PolicyTransportWorker {
 
 impl Drop for PolicyTransportWorker {
     fn drop(&mut self) {
+        // An adapter can be waiting for transport retention credit while the
+        // command queue is full. Wake that wait independently of queue space.
+        if let Some(stop) = &self.stop {
+            stop.stop();
+        }
         // A producer may be blocked on the one-slot event queue when the owner
         // retires this worker. Disconnect that queue before joining it.
         let (_, closed_events) = sync_channel(POLICY_TRANSPORT_CAPACITY);
@@ -164,3 +178,6 @@ mod control_worker_shutdown;
 
 #[path = "../../tests/support/policy_adapter_driver.rs"]
 mod adapter_driver_tests;
+
+#[path = "../../tests/support/policy_adapter_stop.rs"]
+mod adapter_stop_tests;

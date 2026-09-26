@@ -1,5 +1,6 @@
 //! Current public IPC adapter. No wire transfers escape into the driver.
 use super::adapter::{PolicyAdapter, PolicyAdapterEvent, PolicyProfileAdmission};
+use super::driver::PolicyReceivePermit;
 use super::*;
 use sophia_protocol::{
     WmV1ProfileIdentity, decode_wm_v1_policy_projection, encode_wm_v1_policy_snapshot,
@@ -118,14 +119,21 @@ impl PolicyAdapter for CurrentPolicyIpc {
         self.transport.selected_capabilities()
     }
 
-    fn receive_within(&mut self, timeout: Duration) -> Result<PolicyAdapterEvent, String> {
+    fn receive_within(
+        &mut self,
+        _permit: PolicyReceivePermit,
+        timeout: Duration,
+    ) -> Result<PolicyAdapterEvent, String> {
         self.transport
             .receive_client_event_within(timeout)
             .map(decode_event)
             .map_err(|error| error.to_string())
     }
 
-    fn try_receive(&mut self) -> Result<Option<PolicyAdapterEvent>, String> {
+    fn try_receive(
+        &mut self,
+        _permit: PolicyReceivePermit,
+    ) -> Result<Option<PolicyAdapterEvent>, String> {
         self.transport
             .try_receive_client_event()
             .map(|event| event.map(decode_event))
