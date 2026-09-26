@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write as _;
 
 fn catalog_connection() -> (ShellConnection, std::os::unix::net::UnixStream) {
     let (mut connection, peer) = connection();
@@ -42,18 +43,22 @@ fn publication(count: u16, generation: u64) -> Vec<Vec<u8>> {
 
 #[test]
 fn partial_catalog_never_publishes_and_complete_transaction_is_exact() {
-    let (mut client, _peer) = catalog_connection();
+    let (mut client, mut peer) = catalog_connection();
     let mut inbox = CatalogInbox::new(7).unwrap();
     let mut frames = publication(1, 1);
     let end = frames.pop().unwrap();
-    client.inbox.extend(frames);
+    for frame in &frames {
+        peer.write_all(frame).unwrap();
+    }
+    client.poll_io().unwrap();
     assert!(
         client
             .take_catalog_observation(&mut inbox)
             .unwrap()
             .is_none()
     );
-    client.inbox.push_back(end);
+    peer.write_all(&end).unwrap();
+    client.poll_io().unwrap();
     let Some(CatalogObservation::Catalog(tx, catalog)) =
         client.take_catalog_observation(&mut inbox).unwrap()
     else {
@@ -61,7 +66,10 @@ fn partial_catalog_never_publishes_and_complete_transaction_is_exact() {
     };
     assert_eq!(tx, TransactionId::from_raw(50));
     assert_eq!(catalog.identities[&1], "registered:app1");
-    client.inbox.extend(publication(1, 1));
+    for frame in publication(1, 1) {
+        peer.write_all(&frame).unwrap();
+    }
+    client.poll_io().unwrap();
     assert!(
         client.take_catalog_observation(&mut inbox).is_err(),
         "generation replay refused"
@@ -70,7 +78,6 @@ fn partial_catalog_never_publishes_and_complete_transaction_is_exact() {
 
 #[test]
 fn large_catalog_spans_bounded_visits_without_a_full_inbox_deadlock() {
-    use std::io::Write as _;
     let (mut client, mut peer) = catalog_connection();
     peer.set_write_timeout(Some(std::time::Duration::from_secs(2)))
         .unwrap();
@@ -96,7 +103,7 @@ fn large_catalog_spans_bounded_visits_without_a_full_inbox_deadlock() {
 #[test]
 fn missing_identity_wrong_transaction_and_wrong_epoch_refuse() {
     for mode in 0..3 {
-        let (mut client, _peer) = catalog_connection();
+        let (mut client, mut peer) = catalog_connection();
         let mut inbox = CatalogInbox::new(if mode == 2 { 8 } else { 7 }).unwrap();
         let mut frames = publication(1, 1);
         if mode == 0 {
@@ -114,11 +121,17 @@ fn missing_identity_wrong_transaction_and_wrong_epoch_refuse() {
             )
             .unwrap();
         }
-        client.inbox.extend(frames);
-        assert!(
-            client.take_catalog_observation(&mut inbox).is_err(),
-            "mode {mode}"
-        );
+        for frame in &frames {
+            peer.write_all(frame).unwrap();
+        }
+        // Assembly now completes (or fails) inside `poll_io`; a malformed
+        // transaction is caught there, a structurally complete but
+        // wrong-epoch token is only caught when the caller reads it.
+        let mut refused = client.poll_io().is_err();
+        if !refused {
+            refused = client.take_catalog_observation(&mut inbox).is_err();
+        }
+        assert!(refused, "mode {mode}");
     }
 }
 
@@ -260,17 +273,18 @@ fn catalog_response_is_atomic_and_checks_complete_echo() {
 
 #[test]
 fn content_and_action_records_keep_wire_order_amid_catalog_assembly() {
-    let (mut client, _peer) = catalog_connection();
+    let (mut client, mut peer) = catalog_connection();
     let mut inbox = CatalogInbox::new(7).unwrap();
     let tx = TransactionId::from_raw(1);
     let facts = ShellContentRecord::Limits(ContentLimits::prototype(grant()));
-    client
-        .inbox
-        .push_back(encode_shell_content_frame(TransactionId::from_raw(0), &facts).unwrap());
-    client.inbox.extend(publication(1, 1));
-    client
-        .inbox
-        .push_back(encode_shell_content_frame(tx, &ShellContentRecord::Action(action())).unwrap());
+    peer.write_all(&encode_shell_content_frame(TransactionId::from_raw(0), &facts).unwrap())
+        .unwrap();
+    for frame in publication(1, 1) {
+        peer.write_all(&frame).unwrap();
+    }
+    peer.write_all(&encode_shell_content_frame(tx, &ShellContentRecord::Action(action())).unwrap())
+        .unwrap();
+    client.poll_io().unwrap();
     assert!(matches!(
         client.take_catalog_observation(&mut inbox).unwrap(),
         Some(CatalogObservation::Content(
