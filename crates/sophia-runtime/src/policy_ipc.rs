@@ -5,12 +5,8 @@ use sophia_protocol::{
     PROJECTION_OUTPUT_STATUS_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
     SNAPSHOT_ACTION_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
     SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND,
-    SNAPSHOT_SURFACE_RECORD_KIND, SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_BINDINGS,
-    SOPHIA_WM_CAPABILITY_CHROME, SOPHIA_WM_CAPABILITY_CONFIGURATION,
-    SOPHIA_WM_CAPABILITY_INDICATORS, SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT,
-    SOPHIA_WM_CAPABILITY_MULTI_OUTPUT, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
-    SOPHIA_WM_CAPABILITY_POLICY_DIRTY, SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION,
-    SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS, SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS,
+    SNAPSHOT_SURFACE_RECORD_KIND, SOPHIA_WM_CAPABILITY_INDICATORS,
+    SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT, SOPHIA_WM_INTERFACE_REVISION, SOPHIA_WM_MAX_BINDINGS,
     SOPHIA_WM_MAX_OUTPUTS, SOPHIA_WM_MAX_SURFACES, TransactionId, WmV1ClientHello,
     WmV1ProjectionBegin, WmV1ProjectionChunk, WmV1ProjectionEnd, WmV1ProjectionTransfer,
     WmV1ServerWelcome, WmV1SnapshotBegin, WmV1SnapshotChunk, WmV1SnapshotEnd, WmV1SnapshotTransfer,
@@ -19,25 +15,6 @@ use sophia_protocol::{
 pub const POLICY_MAX_TRANSFER_CHUNKS: usize = 1024;
 pub const POLICY_MAX_TRANSFER_BYTES: usize = 512 * 1024;
 
-const POLICY_SUPPORTED_CAPABILITIES: u64 = SOPHIA_WM_CAPABILITY_BINDINGS
-    | SOPHIA_WM_CAPABILITY_ACTIONS
-    | SOPHIA_WM_CAPABILITY_MULTI_OUTPUT
-    | SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS
-    | SOPHIA_WM_CAPABILITY_CHROME
-    | SOPHIA_WM_CAPABILITY_POLICY_DIRTY
-    | SOPHIA_WM_CAPABILITY_CONFIGURATION
-    | SOPHIA_WM_CAPABILITY_SESSION_OPERATIONS
-    | SOPHIA_WM_CAPABILITY_INDICATORS
-    | SOPHIA_WM_CAPABILITY_LAUNCH_PLACEMENT
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_TAB_GROUPS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_TRANSLATION_GROUPS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_POINTER_FOCUS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
-    | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyTransferError {
     NotConnected,
@@ -235,22 +212,8 @@ impl PolicyConnectionState {
         }
         self.negotiated = true;
         self.selected_revision = selected;
-        let supported = POLICY_SUPPORTED_CAPABILITIES
-            | if profile_activation {
-                SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION
-            } else {
-                0
-            };
-        self.selected_capabilities = hello.capabilities & supported;
-        if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES == 0
-        {
-            self.selected_capabilities &=
-                !sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
-        }
-        if self.selected_capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN == 0 {
-            self.selected_capabilities &=
-                !sophia_protocol::SOPHIA_WM_CAPABILITY_OUTPUT_LAUNCH_CONTEXT;
-        }
+        self.selected_capabilities =
+            crate::select_policy_capabilities(hello.capabilities, u64::MAX, profile_activation);
         Ok(WmV1ServerWelcome {
             selected_revision: selected,
             capabilities: self.selected_capabilities,

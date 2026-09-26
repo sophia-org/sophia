@@ -219,6 +219,31 @@ a proposal. Array/scalar semantics remain covered by their independent codec
 controls. No startup adapter, capability selection, launch constructor or
 independent Hagia pairing is established by this checkpoint.
 
+## Shared capability selection
+
+`select_policy_capabilities(offered, ceiling, profile_activation)` owns the
+existing supported set and its two dependency reductions: presentation actions
+require surface instances, and output launch context requires launch origin.
+It is pure. Peer authentication, connection mutation, one-time negotiation and
+required-mask refusal remain caller responsibilities. Profile activation is
+available only when the caller supplies the existing profile admission mode.
+
+Current IPC calls this function at the old selection site, after the same
+connected/negotiated/revision checks and state writes. Its transport still masks
+the Hello with its ceiling before that call. No revision, wire, error-order or
+legacy replay change accompanies the extraction. The next file admission owner
+must check missing required bits after both reductions, rather than assigning
+that decision to the body codec.
+
+Focused evidence in `.artifacts/t249-capabilities` passes three new pure/order
+controls, fifteen existing IPC controls, and thirteen transport controls with
+one pre-existing ignored case. The transport total includes optional external
+client fixtures and does not alone establish an independent Hagia run. The new
+controls cover every individual bit, both dependency combinations in offer and
+ceiling, profile-mode gating, and revision/refusal state order.
+Strict runtime all-target Clippy, rebuilt worktree layout, format and diff
+checks pass on the same source; the exclusive target and isolation are unchanged.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
