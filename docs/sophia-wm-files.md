@@ -1,9 +1,43 @@
 # WM files over 9P2000.L
 
-Status: implementation contract under review for t249 and Hagia h006. The
-existing WM IPC remains the default. This document specifies the WM role only;
+Status: implementation contract for the t249 and Hagia h006 development
+candidates; full role acceptance remains open. The existing WM IPC remains
+the default. This document specifies the WM role only;
 output control still uses its separately admitted existing IPC connection.
 The first checkpoint is a direct Unix socket, not a kernel mount.
+
+## Explicit Session selection
+
+Session selects the WM transport with
+`--wm-transport=current-ipc|9p2000.L`. Omission selects `current-ipc`; an
+explicit selection requires a configured WM using the existing
+`sophia_wm_v1` semantic interface. The interface name does not select the wire.
+The profile schema and output-role transport are unchanged.
+
+A protected launch receives only the selected WM socket variable:
+`SOPHIA_WM_SOCKET` for current IPC or `SOPHIA_WM_9P_SOCKET` for files. The
+existing cleared launch environment removes inherited alternatives. The
+output socket, staged policy candidate and checkpoint keep their existing
+grants. The WM must not sniff the protocol or fall back to the other socket;
+ambiguous client selection refuses.
+
+The selected transport is retained through automatic restart, control restart
+and profile rollback. Each replacement receives a fresh admitted epoch. One
+checked qid allocator belongs to the logical Session WM filesystem and continues
+across those replacements; recreating a socket never resets it. Exhaustion
+refuses allocation. The existing output acceptance pause and supervised-PID
+replacement barrier still precede the replacement worker.
+
+Rollback to current IPC is an explicit subsequent launch selection with its
+compatible WM and profile. A failed file negotiation or profile activation
+does not select another transport. File diagnostics identify
+`sophia_wm_fs_v1`; current-IPC diagnostics retain `sophia_wm_v1`.
+
+The Session production entrypoints have focused protected-child checks. The
+independent production Hagia loop, combined output restart and real Session/
+Engine settlement joins remain separate acceptance evidence. See the
+[typed driver investigation](notes/investigations/uf2wya88-typed-wm-driver-preserves-current-ipc-phase-and-shutdown-ownership.md)
+for exact checkpoints and limits.
 
 ## Ownership and negotiation
 
