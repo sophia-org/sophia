@@ -133,7 +133,7 @@ fn assert_managed_baseline(layout: &PersistentLiveLayout) {
 fn assert_managed_rollback(
     controls: &mut crate::session_control::SessionControlQueue,
     retained: &LayerSnapshot,
-) {
+) -> (SurfaceId, Rect) {
     let (sender, receiver) = std::sync::mpsc::sync_channel(32);
     let (_ack_sender, ack_receiver) = std::sync::mpsc::sync_channel(32);
     let mut completions = Vec::new();
@@ -159,6 +159,7 @@ fn assert_managed_rollback(
     };
     assert_eq!(surface, SURFACE);
     assert_eq!(geometry, retained.geometry);
+    (surface, geometry)
 }
 
 fn next_proposal(
@@ -319,15 +320,55 @@ fn await_checkpoint(path: &Path) -> (Vec<u8>, (u64, u64)) {
 #[test]
 #[ignore = "requires exact frozen normal Hagia and explicit fresh evidence inputs"]
 fn normal_hagia_held_resize_commits_then_answers_a_fresh_request() {
-    with_normal_hagia(
-        "held-resize-commit",
+    held_resize_commit("held-resize-commit", WmTransportSelection::NineP2000L);
+}
+
+#[derive(Debug, PartialEq)]
+struct ProposalObservation {
+    layers: Vec<LayerSnapshot>,
+    requested_sizes: BTreeMap<SurfaceId, Size>,
+    presentation_states: BTreeMap<SurfaceId, PolicyPresentationState>,
+    focus: Option<SurfaceId>,
+    settlement: LivePolicySettlementIdentity,
+}
+
+fn proposal_observation(proposal: &LiveWmProposal) -> ProposalObservation {
+    ProposalObservation {
+        layers: proposal.layers.clone(),
+        requested_sizes: proposal.requested_sizes.clone(),
+        presentation_states: proposal.presentation_states.clone(),
+        focus: proposal.focus,
+        settlement: proposal.policy_settlement.unwrap(),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct SettlementObservation {
+    selected_capabilities: u64,
+    configuration: PolicyConfiguration,
+    proposals: Vec<ProposalObservation>,
+    outcome: TransactionOutcome,
+    retained_layer: LayerSnapshot,
+    rollback: Option<(SurfaceId, Rect, bool)>,
+    checkpoint: Vec<u8>,
+}
+
+fn held_resize_commit(case: &str, transport: WmTransportSelection) -> SettlementObservation {
+    with_normal_hagia_transport(
+        case,
+        transport,
         |wm, layout, _, output, checkpoint, identity| {
+            let public = wm.public.as_ref().unwrap();
+            let selected_capabilities = public.selected_capabilities;
+            let configuration = public.accepted_configuration.clone().unwrap();
             let peer = wm.supervisor.peer_id();
             retain_existing_surface(layout);
             let old_layer = layout.layers[&SURFACE].clone();
             let old_projection = wm.public.as_ref().unwrap().reducer.committed();
             wm.enqueue_relayout(layout, output).unwrap();
             let proposal = next_proposal(wm, layout, output);
+            writeln!(identity, "first_proposal_source={:?}", proposal.source).unwrap();
+            let observation = proposal_observation(&proposal);
             let settlement = proposal.policy_settlement.unwrap();
             assert_eq!(settlement.connection_epoch, 1);
             assert!(!settlement.expect_session_operation);
@@ -364,7 +405,9 @@ fn normal_hagia_held_resize_commits_then_answers_a_fresh_request() {
                 .resolve_pending()
                 .expect("matching pixels resolve real pending layout");
             assert_eq!(result.update.commit.outcome, TransactionOutcome::Committed);
+            let outcome = result.update.commit.outcome;
             let applied = wm.apply_commit_result(result, None, output.id).unwrap();
+            assert_managed_baseline(layout);
             assert!(applied.session_action.is_none());
             assert!(applied.physical_action.is_none());
             assert_ne!(
@@ -373,6 +416,7 @@ fn normal_hagia_held_resize_commits_then_answers_a_fresh_request() {
             );
             wm.enqueue_relayout(layout, output).unwrap();
             let next = next_proposal(wm, layout, output);
+            writeln!(identity, "continuation_source={:?}", next.source).unwrap();
             let next_identity = next.policy_settlement.unwrap();
             assert!(next_identity.request_id > settlement.request_id);
             assert!(next_identity.transaction.raw() > settlement.transaction.raw());
@@ -383,20 +427,39 @@ fn normal_hagia_held_resize_commits_then_answers_a_fresh_request() {
                 "real Hagia committed outcome persists its checkpoint before next answer"
             );
             writeln!(identity, "layout_outcome=committed\nfirst_request={}\nnext_request={}\nsame_child=true\npixels=supplied CPU facts; no native retirement", settlement.request_id, next_identity.request_id).unwrap();
+            SettlementObservation {
+                selected_capabilities,
+                configuration,
+                proposals: vec![observation, proposal_observation(&next)],
+                outcome,
+                retained_layer: layout.layers[&SURFACE].clone(),
+                rollback: None,
+                checkpoint: await_checkpoint(checkpoint).0,
+            }
         },
-    );
+    )
 }
 
 #[test]
 #[ignore = "requires exact frozen normal Hagia and explicit fresh evidence inputs"]
 fn normal_hagia_timed_out_session_action_keeps_checkpoint_and_answers_next_request() {
-    with_normal_hagia(
-        "held-resize-timeout",
+    held_resize_timeout("held-resize-timeout", WmTransportSelection::NineP2000L);
+}
+
+fn held_resize_timeout(case: &str, transport: WmTransportSelection) -> SettlementObservation {
+    with_normal_hagia_transport(
+        case,
+        transport,
         |wm, layout, _, output, checkpoint, identity| {
+            let public = wm.public.as_ref().unwrap();
+            let selected_capabilities = public.selected_capabilities;
+            let configuration = public.accepted_configuration.clone().unwrap();
             let peer = wm.supervisor.peer_id();
             retain_existing_surface(layout);
             wm.enqueue_relayout(layout, output).unwrap();
             let initial = next_proposal(wm, layout, output);
+            writeln!(identity, "first_proposal_source={:?}", initial.source).unwrap();
+            let initial_observation = proposal_observation(&initial);
             assert!(!initial.requested_sizes.is_empty());
             let mut controls = crate::session_control::SessionControlQueue::default();
             assert!(layout.stage(initial, &mut controls).unwrap().is_none());
@@ -458,6 +521,7 @@ fn normal_hagia_timed_out_session_action_keeps_checkpoint_and_answers_next_reque
             wm.update_output_work_areas(layout, &[output], output)
                 .unwrap();
             let proposal = next_proposal(wm, layout, output);
+            let observation = proposal_observation(&proposal);
             assert_eq!(proposal.source, Some(LiveWmProposalSource::Action(action)));
             let settlement = proposal.policy_settlement.unwrap();
             assert!(
@@ -485,9 +549,11 @@ fn normal_hagia_timed_out_session_action_keeps_checkpoint_and_answers_next_reque
                 .unwrap()
                 .expect("actual pending expiry");
             assert_eq!(result.update.commit.outcome, TransactionOutcome::TimedOut);
+            let outcome = result.update.commit.outcome;
             assert_managed_baseline(layout);
             assert!(layout.layout_epochs.rollback_pending(SURFACE));
-            assert_managed_rollback(&mut controls, &layer_before);
+            let (rollback_surface, rollback_geometry) =
+                assert_managed_rollback(&mut controls, &layer_before);
             let applied = wm.apply_commit_result(result, None, output.id).unwrap();
             assert!(applied.session_action.is_none());
             assert!(applied.physical_action.is_none());
@@ -501,6 +567,7 @@ fn normal_hagia_timed_out_session_action_keeps_checkpoint_and_answers_next_reque
             // Existing timeout rearm or the work-area owner's queued cause proves
             // continuation; the source of this next request is not asserted.
             let next = next_proposal(wm, layout, output);
+            writeln!(identity, "continuation_source={:?}", next.source).unwrap();
             let next_identity = next.policy_settlement.unwrap();
             assert!(next_identity.request_id > settlement.request_id);
             assert!(next_identity.transaction.raw() > settlement.transaction.raw());
@@ -511,6 +578,53 @@ fn normal_hagia_timed_out_session_action_keeps_checkpoint_and_answers_next_reque
             let after = std::fs::metadata(checkpoint).unwrap();
             assert_eq!((after.dev(), after.ino()), checkpoint_identity);
             writeln!(identity, "layout_outcome=timed_out\ndeadline=forced_now\nfailed_action={}\nfailed_request={}\nnext_request={}\nsame_child=true\ncheckpoint_unchanged=true\nno_session_operation=true", action.raw(), settlement.request_id, next_identity.request_id).unwrap();
+            SettlementObservation {
+                selected_capabilities,
+                configuration,
+                proposals: vec![
+                    initial_observation,
+                    observation,
+                    proposal_observation(&next),
+                ],
+                outcome,
+                retained_layer: layout.layers[&SURFACE].clone(),
+                rollback: Some((
+                    rollback_surface,
+                    rollback_geometry,
+                    layout.layout_epochs.rollback_pending(SURFACE),
+                )),
+                checkpoint: checkpoint_before,
+            }
         },
-    );
+    )
+}
+
+#[test]
+#[ignore = "requires exact frozen normal Hagia and explicit fresh evidence inputs"]
+fn normal_hagia_current_ipc_and_files_preserve_layout_settlement() {
+    // Both sides start at epoch one with the same supplied facts. Compare
+    // semantic identities and checkpoint bytes exactly: no wire-specific
+    // normalisation may hide an extra request, effect or model transition.
+    for (name, exercise) in [
+        (
+            "commit",
+            held_resize_commit as fn(&str, WmTransportSelection) -> SettlementObservation,
+        ),
+        ("timeout", held_resize_timeout),
+    ] {
+        let ipc = exercise(
+            &format!("parity-{name}-ipc"),
+            WmTransportSelection::CurrentIpc,
+        );
+        let files = exercise(
+            &format!("parity-{name}-files"),
+            WmTransportSelection::NineP2000L,
+        );
+        assert_eq!(ipc, files, "transport changed {name} settlement");
+        eprintln!(
+            "hagia_layout_parity case={name} status=pass proposals={} checkpoint_sha256={:x} native_presentation=false rollback_completion=false",
+            ipc.proposals.len(),
+            Sha256::digest(&ipc.checkpoint)
+        );
+    }
 }

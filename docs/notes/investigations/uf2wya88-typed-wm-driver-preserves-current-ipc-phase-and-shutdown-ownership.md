@@ -676,6 +676,40 @@ not visit those included test mounts. The direct failure is retained; only
 `policy_hagia_layout.rs` and `policy_hagia_session.rs` were directly formatted,
 and the direct check now passes. No existing production include was formatted.
 
+### Current IPC and files: exact settlement parity
+
+The test-only `session/t249-hagia-wire-parity` follow-up parameterizes the
+protected normal-Hagia fixture by the explicit transport selection. The original
+file-only entry remains a compatible wrapper. Each case checks the exact selected
+socket environment, absence of its counterpart and output socket, binary hashes,
+protected launch evidence, profile admission, catalog and bounded cleanup.
+
+The same committed held resize and failed session-action timeout run through
+both production transport factories with the frozen normal `7455c3e` executable.
+The test compares selected capabilities, the complete accepted configuration,
+typed proposals and their settlement identities, actual layout outcomes, retained
+layers, rollback command shape and pending state, and checkpoint bytes. Both
+cases start at epoch one without checkpoint restoration, so no identity or byte
+normalization is applied. Future restore cases must account for the intentional
+legacy Dirty transaction allocation; the file Dirty has no domain transaction.
+Proposal causes are recorded for triage but are not included in equality.
+
+The new comparison and retained A/B controls pass 4/0 (3.16 seconds), including
+four fresh parity children. Both transports produce checkpoint SHA256
+`91f3b477708f3e7bdc6749e9d05fb1205c55c16fddfc7b4e6d21136febb7fe8f`.
+Strict native-session all-target Session Clippy, a newly compiled worktree xtask
+layout check, direct formatting of both support files, and diff checks pass.
+The first launcher invocation failed before compilation because an archived
+isolation script lacked execute permission; invoking it explicitly through Bash
+resolved that harness issue. Its failure log is retained with both green runs in
+`.artifacts/t249-parity`.
+
+This is actual Session layout settlement parity for two workloads. Historical
+admission, CPU observations and frontend ACKs remain supplied. The managed
+rollback is issued and remains unanswered during continuation. There is no
+HeadlessEngine surface apply, full WM behavior matrix, performance comparison,
+native retirement or output-role parity claim.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

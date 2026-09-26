@@ -1,4 +1,4 @@
-//! Opt-in normal Hagia through the protected production WM file factory.
+//! Opt-in normal Hagia through the protected production WM transport factory.
 //! Common protected startup custody for opt-in normal Hagia controls.
 //! Output bootstrap, native targets and presentation receipts are not supplied.
 use super::*;
@@ -43,6 +43,21 @@ fn with_normal_hagia(
         &mut std::fs::File,
     ),
 ) {
+    with_normal_hagia_transport(case, WmTransportSelection::NineP2000L, exercise);
+}
+
+fn with_normal_hagia_transport<T>(
+    case: &str,
+    transport: WmTransportSelection,
+    exercise: impl FnOnce(
+        &mut LiveWmSession,
+        &mut PersistentLiveLayout,
+        &mut ConfigFixture,
+        sophia_engine::HeadlessOutput,
+        &Path,
+        &mut std::fs::File,
+    ) -> T,
+) -> T {
     let binary = std::fs::canonicalize(
         std::env::var_os("SOPHIA_HAGIA_FILE_BIN").expect("required frozen normal Hagia missing"),
     )
@@ -59,12 +74,18 @@ fn with_normal_hagia(
     std::fs::create_dir(&evidence).expect("case evidence must be fresh; parent must exist");
     let mut identity = std::fs::File::create(evidence.join("identity.txt")).unwrap();
     writeln!(identity, "binary={}\npath_sha256_before={expected}\nsource=7455c3edd713770ed43630d0989073d2f14ba623\nidentity_qualification=path hashed before/after; not descriptor-pinned exec", binary.display()).unwrap();
+    writeln!(
+        identity,
+        "wm_transport={}\noutput_transport=current_ipc (not started in this fixture)",
+        transport.wire_name()
+    )
+    .unwrap();
 
     let mut source = ConfigFixture::new(&[]);
     source.config.wm_socket_path = source.directory.join("hagia-file.sock");
     source.config.wm_process = Some(binary.to_str().unwrap().to_owned());
     source.config.wm_process_args.clear();
-    source.config.wm_transport = WmTransportSelection::NineP2000L;
+    source.config.wm_transport = transport;
     source.config.native_scanout = false;
     let expected_profile =
         sophia_config::DesktopProfileActivationKey::from(&source.config.desktop_profile);
@@ -111,7 +132,7 @@ fn with_normal_hagia(
     assert_eq!(
         keys,
         [
-            "SOPHIA_WM_9P_SOCKET",
+            transport.socket_env(),
             "HAGIA_POLICY_CHECKPOINT",
             "HAGIA_POLICY_CANDIDATE",
             "HAGIA_POLICY_PROFILE_ACTIVATION"
@@ -128,11 +149,19 @@ fn with_normal_hagia(
     assert!(
         spec.environment
             .iter()
-            .any(|(key, _)| key == "SOPHIA_WM_9P_SOCKET")
+            .any(|(key, _)| key == transport.socket_env())
     );
-    assert!(!spec.environment.iter().any(
-        |(key, _)| key == "SOPHIA_WM_SOCKET" || key == sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV
-    ));
+    let other_transport = match transport {
+        WmTransportSelection::CurrentIpc => WmTransportSelection::NineP2000L,
+        WmTransportSelection::NineP2000L => WmTransportSelection::CurrentIpc,
+    };
+    assert!(
+        !spec
+            .environment
+            .iter()
+            .any(|(key, _)| key == other_transport.socket_env()
+                || key == sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV)
+    );
     let forbidden = sophia_protocol::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES
         | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
     let ceiling = sophia_runtime::select_policy_capabilities(u64::MAX, !forbidden, true);
@@ -199,7 +228,7 @@ fn with_normal_hagia(
         wm.settle_desktop_reload(&mut source.config, true).unwrap();
         assert_eq!(wm.public.as_ref().unwrap().selected_capabilities, selected);
     }
-    exercise(
+    let observation = exercise(
         &mut wm,
         &mut layout,
         &mut source,
@@ -240,4 +269,5 @@ fn with_normal_hagia(
         format!("PASS protected normal Hagia case={case}; no native settlement\n"),
     )
     .unwrap();
+    observation
 }
