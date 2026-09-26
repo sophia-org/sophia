@@ -1,0 +1,71 @@
+// Shell file byte contract. Bodies reuse sophia-shell-v1 record payloads and grant no admission or authority.
+protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes=4194304 {
+    header size=32 {
+        field "total_bytes" type="u32" offset=0
+        field "api_version" type="u16" offset=4 value=1
+        field "kind" type="u16" offset=6
+        field "connection_epoch" type="u64" offset=8 nonzero=true
+        field "submission_id" type="u64" offset=16
+        field "sequence" type="u64" offset=24
+    }
+
+    object "Limits" kind=1
+    event "Negotiated" kind=16
+    event "Refused" kind=17
+    event "Submitted" kind=18
+    event "AllocationResult" kind=32
+    candidate "Negotiate" kind=256
+    candidate "AllocationRequest" kind=257
+
+    body "Limits" size=80 {
+        field "dynamic" type="bytes" offset=0
+    }
+    body "Negotiate" size=16 {
+        field "minimum_revision" type="u16" offset=0
+        field "maximum_revision" type="u16" offset=2
+        field "reserved" type="u32" offset=4 value=0
+        field "required_capabilities" type="u64" offset=8
+    }
+    body "Negotiated" size=32 {
+        field "selected_revision" type="u16" offset=0
+        field "reserved" type="u16" offset=2 value=0
+        field "connection_epoch" type="u64" offset=4 nonzero=true
+        field "capabilities" type="u64" offset=12
+        field "max_descriptors" type="u16" offset=20
+        field "max_label_bytes" type="u16" offset=22
+        field "max_pending_activations" type="u16" offset=24
+        field "limits_published" type="u16" offset=26 min=0 max=1
+        field "reserved_tail" type="u32" offset=28 value=0
+    }
+    body "Refused" size=16 {
+        field "reason" type="u16" offset=0 min=1 max=4
+        field "reserved" type="u16" offset=2 value=0
+        field "reserved_tail" type="u32" offset=4 value=0
+        field "denied_capabilities" type="u64" offset=8
+    }
+    body "Submitted" size=16 {
+        field "submission_id" type="u64" offset=0 nonzero=true
+        field "candidate_kind" type="u16" offset=8 min=256 max=257
+        field "reserved" type="bytes" offset=10 size=6 value=0
+    }
+    body "AllocationRequest" size=72 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "dynamic" type="bytes" offset=8
+    }
+    body "AllocationResult" size=80 {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "dynamic" type="bytes" offset=8
+    }
+
+    submit size=24 {
+        field "connection_epoch" type="u64" offset=0 nonzero=true
+        field "submission_id" type="u64" offset=8 nonzero=true
+        field "candidate_bytes" type="u32" offset=16
+        field "reserved" type="u32" offset=20 value=0
+    }
+
+    ack size=16 {
+        field "connection_epoch" type="u64" offset=0 nonzero=true
+        field "sequence" type="u64" offset=8 nonzero=true
+    }
+}

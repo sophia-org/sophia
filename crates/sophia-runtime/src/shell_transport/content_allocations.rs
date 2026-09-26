@@ -201,18 +201,26 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
-        let at = self
-            .inbox
-            .iter()
-            .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 163);
-        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
+        let taken = if self.files.is_some() {
+            self.take_file_content(|record| {
+                matches!(record, ShellContentRecord::AllocationRequest(_))
+            })
+        } else {
+            let at = self
+                .inbox
+                .iter()
+                .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 163);
+            at.and_then(|index| self.inbox.remove(index))
+                .map(|frame| sophia_protocol::decode_shell_content_frame(&frame))
+                .transpose()?
+        };
+        let Some((transaction, record)) = taken else {
             return if self.peer_closed {
                 Err(ShellTransportError::NotConnected)
             } else {
                 Ok(None)
             };
         };
-        let (transaction, record) = sophia_protocol::decode_shell_content_frame(&frame)?;
         if !content_admission::client_record(&record) {
             return Err(ShellTransportError::WrongContentRecord);
         }
@@ -233,7 +241,7 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let (frame, control) =
+            let prepared =
                 self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.allocations_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
@@ -241,7 +249,7 @@ impl ShellComponentTransport {
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
-            self.output.push(frame, control);
+            self.push_prepared(prepared);
             store.take_event();
         }
     }

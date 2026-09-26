@@ -398,6 +398,29 @@ Catalog objects can exceed the WM's 1 MiB snapshot bound: 4096 entries with
 loss and allocation invalidation remain local Session transitions. They never wait
 for a reader's acknowledgement credit.
 
+### Record kinds and correlation (t252 first slice)
+
+The byte layouts are in
+[`sophia-shell-files-v1.kdl`](../protocol/sophia-shell-files-v1.kdl) and
+`sophia_protocol::shell_files`. The kind table is closed, and it grows only with
+the operations t252 implements:
+
+| Class | Kinds |
+| --- | --- |
+| Object | `Limits` 1 |
+| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `AllocationResult` 32 |
+| Candidate | `Negotiate` 256, `AllocationRequest` 257 |
+
+As in the WM contract, the header never carries a domain identity: events
+have submission ID zero. A content record's body starts with its nonzero
+transaction ID, followed by the existing `sophia_shell_v1` payload bytes of the
+same record, so every existing record check applies unchanged. The owner's
+event for that transaction carries the same ID back. The transaction ID is the
+domain correlation, independent of the submission ID, which records custody
+only. A record family not yet in the table is not carried: a component on the
+file wire whose owner queues such a record is closed rather than sent an IPC
+frame.
+
 ## Multiple writers, isolation and revocation
 
 Components never share a writer or an export. Admission stays

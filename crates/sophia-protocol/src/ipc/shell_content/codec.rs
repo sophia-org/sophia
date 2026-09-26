@@ -5,12 +5,13 @@ use crate::{IpcCodecError, IpcMessageKind, TransactionId, decode_frame, encode_f
 
 /// Decode one bounded frame; permission and lifecycle validation remain with
 /// the owner. Nonzero reserved bytes and trailing payloads are rejected.
-pub fn decode_shell_content_frame(
-    frame: &[u8],
-) -> Result<(TransactionId, ShellContentRecord), IpcCodecError> {
-    let (header, payload) = decode_frame(frame)?;
+pub(crate) fn decode_shell_content_payload(
+    kind: IpcMessageKind,
+    transaction: TransactionId,
+    payload: &[u8],
+) -> Result<ShellContentRecord, IpcCodecError> {
     let mut cursor = Cursor::new(payload);
-    let record = match header.message_kind {
+    let record = match kind {
         IpcMessageKind::ShellContentAdmissionRefused => {
             ShellContentRecord::AdmissionRefused(ContentAdmissionRefused::take(&mut cursor)?)
         }
@@ -77,15 +78,23 @@ pub fn decode_shell_content_frame(
         _ => return Err(IpcCodecError::InvalidRecord("not a shell content record")),
     };
     cursor.finish()?;
-    validate_transaction(header.transaction, &record)?;
+    validate_transaction(transaction, &record)?;
     super::validation::validate(&record)?;
+    Ok(record)
+}
+
+pub fn decode_shell_content_frame(
+    frame: &[u8],
+) -> Result<(TransactionId, ShellContentRecord), IpcCodecError> {
+    let (header, payload) = decode_frame(frame)?;
+    let record = decode_shell_content_payload(header.message_kind, header.transaction, payload)?;
     Ok((header.transaction, record))
 }
 
-pub fn encode_shell_content_frame(
+pub(crate) fn encode_shell_content_payload(
     transaction: TransactionId,
     record: &ShellContentRecord,
-) -> Result<Vec<u8>, IpcCodecError> {
+) -> Result<(IpcMessageKind, Vec<u8>), IpcCodecError> {
     validate_transaction(transaction, record)?;
     super::validation::validate(record)?;
     let mut bytes = Vec::new();
@@ -175,6 +184,14 @@ pub fn encode_shell_content_frame(
             IpcMessageKind::ShellContentActionAck
         }
     };
+    Ok((kind, bytes))
+}
+
+pub fn encode_shell_content_frame(
+    transaction: TransactionId,
+    record: &ShellContentRecord,
+) -> Result<Vec<u8>, IpcCodecError> {
+    let (kind, bytes) = encode_shell_content_payload(transaction, record)?;
     encode_frame(kind, transaction, &bytes)
 }
 

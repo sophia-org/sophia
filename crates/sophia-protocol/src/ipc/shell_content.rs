@@ -10,6 +10,7 @@ mod records;
 pub(super) mod validation;
 
 pub use codec::{decode_shell_content_frame, encode_shell_content_frame};
+pub(crate) use codec::{decode_shell_content_payload, encode_shell_content_payload};
 pub use limits::*;
 pub use records::*;
 pub use validation::ContentResourceLayout;

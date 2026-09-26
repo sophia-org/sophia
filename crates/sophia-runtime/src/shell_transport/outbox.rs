@@ -13,6 +13,11 @@ struct OwnedFrame {
     bytes: Box<[u8]>,
     written: usize,
     control: bool,
+    /// None for a socket frame; otherwise the file event kind whose body
+    /// `bytes` holds. The journal supplies that record's header.
+    file_kind: Option<sophia_protocol::shell_files::ShellFileKind>,
+    /// Bytes charged to the queue: the whole record the wire will carry.
+    charged: usize,
 }
 
 impl ShellOutbox {
@@ -28,7 +33,7 @@ impl ShellOutbox {
         self.frames
             .iter()
             .filter(|frame| !frame.control)
-            .map(|frame| frame.bytes.len())
+            .map(|frame| frame.charged)
             .sum()
     }
 
@@ -56,9 +61,49 @@ impl ShellOutbox {
             bytes,
             written: 0,
             control,
+            file_kind: None,
+            charged: length,
         });
         self.bytes += length;
         self.controls += usize::from(control);
+    }
+
+    /// Queues one file event body. It leaves only as a whole journal record.
+    pub(super) fn push_file(
+        &mut self,
+        kind: sophia_protocol::shell_files::ShellFileKind,
+        body: Vec<u8>,
+        control: bool,
+    ) {
+        let charged = body.len() + sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES;
+        self.frames.push_back(OwnedFrame {
+            bytes: body.into_boxed_slice(),
+            written: 0,
+            control,
+            file_kind: Some(kind),
+            charged,
+        });
+        self.bytes += charged;
+        self.controls += usize::from(control);
+    }
+
+    /// The front file event: kind, body and whether it holds a credit.
+    pub(super) fn front_file(
+        &self,
+    ) -> Option<(sophia_protocol::shell_files::ShellFileKind, &[u8], bool)> {
+        self.frames.front().and_then(|frame| {
+            frame
+                .file_kind
+                .map(|kind| (kind, &frame.bytes[..], frame.control))
+        })
+    }
+
+    /// Releases the front file event after the journal took custody of it.
+    pub(super) fn pop_file(&mut self) {
+        let frame = self.frames.pop_front().expect("file event queued");
+        assert!(frame.file_kind.is_some());
+        self.bytes -= frame.charged;
+        self.controls -= usize::from(frame.control);
     }
 
     pub(super) fn front(&self) -> &[u8] {
@@ -75,7 +120,7 @@ impl ShellOutbox {
         assert!(count <= frame.bytes.len() - frame.written);
         frame.written += count;
         if frame.written == frame.bytes.len() {
-            self.bytes -= frame.bytes.len();
+            self.bytes -= frame.charged;
             self.controls -= usize::from(frame.control);
             self.frames.pop_front();
         }

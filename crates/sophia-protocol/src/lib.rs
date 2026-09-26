@@ -13,6 +13,7 @@ pub mod packets;
 pub mod policy_behavior;
 pub mod policy_profile;
 pub mod presentation;
+pub mod shell_files;
 pub mod table;
 pub mod wm_files;
 

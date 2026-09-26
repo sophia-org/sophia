@@ -47,6 +47,7 @@ pub use shell_indicators::*;
 
 mod shell_content;
 pub use shell_content::*;
+pub(crate) use shell_content::{decode_shell_content_payload, encode_shell_content_payload};
 
 mod shell_reference;
 pub use shell_reference::*;

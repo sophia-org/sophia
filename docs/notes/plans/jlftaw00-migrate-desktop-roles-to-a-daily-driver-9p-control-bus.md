@@ -196,6 +196,20 @@ physical exit has already passed.
 This task owns shell default selection and its separately authorized rollout
 after those gates, independently of the later output migration.
 
+Slice 1 (2026-09-26) adds the `sophia_shell_fs_v1` codec
+(`sophia_protocol::shell_files`) and a per-component file wire in
+`ShellComponentTransport`: one 9P export per admitted epoch, negotiation as a
+submitted record through the unchanged `select_negotiation`, the `limits`
+object, the journal with its 64-record terminal reserve, per-role byte bounds
+and 2000 ms acknowledgement deadline, and allocation requests through the
+existing allocation owner. Current IPC remains the only selected transport:
+Session selection, the `outputs` object, uploads, candidates, actions and the
+catalog, indicator and launcher families come in later slices. Evidence is
+runtime tests over a real private socket with supplied protection evidence,
+not a protected child or an independent client. The shell export duplicates the
+WM file owner's journal and staging algorithms; extracting both into one owner
+is recorded debt.
+
 ### t253 — Migrate the separate output role
 
 After shell acceptance, specify its bounded bootstrap/topology/candidate/outcome

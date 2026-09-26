@@ -4,6 +4,14 @@ use sophia_protocol::{ContentReason, ContentResourceStatus, ShellContentRecord, 
 use super::{ShellSessionTransport, ShellTransportError, content_admission};
 use crate::ContentStoreError;
 
+/// One encoded server record before custody moves into the wire's FIFO:
+/// a socket frame, or a file event body whose header the journal supplies.
+pub(super) struct PreparedRecord {
+    pub bytes: Vec<u8>,
+    pub control: bool,
+    pub file_kind: Option<sophia_protocol::shell_files::ShellFileKind>,
+}
+
 // Header plus the fixed 48-byte ResourceStatus payload. Every resource request
 // produces at most one immediate status/release record of no greater size.
 const MAX_RESOURCE_RESPONSE_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN + 48;
@@ -116,9 +124,20 @@ impl ShellComponentTransport {
         record: &ShellContentRecord,
         reserved: bool,
     ) -> Result<(), ShellTransportError> {
-        let (frame, control) = self.prepare_content_frame(epochs, transaction, record, reserved)?;
-        self.output.push(frame, control);
+        let prepared = self.prepare_content_frame(epochs, transaction, record, reserved)?;
+        self.push_prepared(prepared);
         Ok(())
+    }
+
+    /// Transfers one prepared record into the wire's FIFO. Custody moves here
+    /// and nowhere else, so neither wire can recreate an owned response.
+    pub(super) fn push_prepared(&mut self, prepared: PreparedRecord) {
+        match prepared.file_kind {
+            None => self.output.push(prepared.bytes, prepared.control),
+            Some(kind) => self
+                .output
+                .push_file(kind, prepared.bytes, prepared.control),
+        }
     }
 
     pub(super) fn prepare_content_frame(
@@ -127,7 +146,7 @@ impl ShellComponentTransport {
         transaction: TransactionId,
         record: &ShellContentRecord,
         reserved: bool,
-    ) -> Result<(Vec<u8>, bool), ShellTransportError> {
+    ) -> Result<PreparedRecord, ShellTransportError> {
         let grant = self
             .content_grant
             .ok_or(ShellTransportError::MissingCapability)?;
@@ -137,19 +156,31 @@ impl ShellComponentTransport {
         if content_admission::record_grant(record) != Some(grant) {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        let frame = sophia_protocol::encode_shell_content_frame(transaction, record)?;
+        let (bytes, file_kind, size) = if self.files.is_some() {
+            let (kind, body) = super::files::encode_content_event(transaction, record)?;
+            let size = body.len() + sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES;
+            (body, Some(kind), size)
+        } else {
+            let frame = sophia_protocol::encode_shell_content_frame(transaction, record)?;
+            let size = frame.len();
+            (frame, None, size)
+        };
         let bulk = matches!(
             record,
             ShellContentRecord::Limits(_) | ShellContentRecord::OutputFacts(_)
         );
-        if (!bulk && frame.len() > super::control_budget::CONTROL_FRAME_BYTES)
-            || !self.frame_capacity_available(epochs, frame.len(), !bulk, reserved)
+        if (!bulk && size > super::control_budget::CONTROL_FRAME_BYTES)
+            || !self.frame_capacity_available(epochs, size, !bulk, reserved)
         {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        // No socket I/O after ownership transfer. A later partial/failed write
+        // No wire I/O after ownership transfer. A later partial/failed write
         // cannot make the producer recreate an already-owned response.
-        Ok((frame, !bulk))
+        Ok(PreparedRecord {
+            bytes,
+            control: !bulk,
+            file_kind,
+        })
     }
 
     fn poll_content_resource_record(
@@ -200,7 +231,7 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let (frame, control) =
+            let prepared =
                 self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.resources_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
@@ -210,7 +241,7 @@ impl ShellComponentTransport {
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
-            self.output.push(frame, control);
+            self.push_prepared(prepared);
             store.take_event();
         }
     }

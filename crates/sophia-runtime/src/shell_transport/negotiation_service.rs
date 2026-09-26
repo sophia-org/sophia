@@ -19,6 +19,9 @@ pub(super) struct PendingNegotiation {
     sent: usize,
     selected: Option<(ShellV1ServerWelcome, Option<ContentLimits>)>,
     refusal: Option<ContentAdmissionRefused>,
+    /// Session selected the file wire for this component at startup.
+    file: bool,
+    wire: Option<super::files::ShellFileWire>,
 }
 
 impl ShellComponentTransport {
@@ -33,10 +36,38 @@ impl ShellComponentTransport {
         timeout: Duration,
         policy: ShellContentAdmissionPolicy,
     ) -> Result<(), ShellTransportError> {
+        self.begin_selected_negotiation(epochs, connection_epoch, timeout, policy, false)
+    }
+
+    /// As [`Self::begin_negotiation`], over `sophia_shell_fs_v1`: the admitted
+    /// stream is served as this component's 9P export, and negotiation is
+    /// its one submitted Negotiate record. Nothing here changes admission.
+    pub fn begin_file_negotiation(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        connection_epoch: u64,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+    ) -> Result<(), ShellTransportError> {
+        self.begin_selected_negotiation(epochs, connection_epoch, timeout, policy, true)
+    }
+
+    fn begin_selected_negotiation(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        connection_epoch: u64,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+        file: bool,
+    ) -> Result<(), ShellTransportError> {
         if connection_epoch == 0 || connection_epoch <= self.connection_epoch {
             return Err(ShellTransportError::InvalidConnectionEpoch);
         }
-        if self.negotiation.is_some() || self.stream.is_some() || self.content_grant.is_some() {
+        if self.negotiation.is_some()
+            || self.stream.is_some()
+            || self.files.is_some()
+            || self.content_grant.is_some()
+        {
             return Err(ShellTransportError::WrongContentGrant);
         }
         if self.reserved_limits.as_ref().is_some_and(|limits| {
@@ -60,6 +91,8 @@ impl ShellComponentTransport {
             sent: 0,
             selected: None,
             refusal: None,
+            file,
+            wire: None,
         });
         Ok(())
     }
@@ -97,7 +130,7 @@ impl ShellComponentTransport {
         if budget == 0 {
             return Ok(None);
         }
-        if pending.stream.is_none() {
+        if pending.stream.is_none() && pending.wire.is_none() {
             let Some(stream) = self.endpoint.poll_expected()? else {
                 return Ok(None);
             };
@@ -109,6 +142,9 @@ impl ShellComponentTransport {
                 .expect("accepted stream retained")
                 .set_nonblocking(true)
                 .map_err(io_error)?;
+        }
+        if pending.file {
+            return self.visit_file_negotiation(epochs);
         }
         for _ in 0..32 {
             if budget == 0 {
@@ -214,29 +250,129 @@ impl ShellComponentTransport {
                 // No fallible operation after removing the exact handshake owner.
                 let pending = self.negotiation.take().expect("completed handshake");
                 let (welcome, limits) = pending.selected.expect("successful selection");
-                self.pending_activations.clear();
-                self.last_candidate_generation = 0;
-                self.requested_candidate = None;
-                self.pending_candidate = None;
-                self.presented_candidate = None;
-                self.connection_epoch = welcome.connection_epoch;
-                self.content_grant = limits.as_ref().map(|limits| limits.grant);
-                self.content_limits = limits;
-                self.reserved_limits = None;
-                self.peer_closed = false;
-                self.input.clear();
-                self.output.clear();
-                self.action_cancellations.clear();
-                self.indicator_response = None;
-                self.catalog_response = None;
-                self.native_control = super::native_launcher::control::NativeControl::default();
-                self.inbox.clear();
-                self.capabilities = welcome.capabilities;
+                self.install_negotiated(welcome, limits);
                 self.stream = pending.stream;
                 return Ok(Some(welcome));
             }
         }
         Ok(None)
+    }
+
+    /// Resets connection state for a freshly selected epoch. Both wires use
+    /// it after their last fallible step; the caller installs its wire.
+    fn install_negotiated(&mut self, welcome: ShellV1ServerWelcome, limits: Option<ContentLimits>) {
+        self.pending_activations.clear();
+        self.last_candidate_generation = 0;
+        self.requested_candidate = None;
+        self.pending_candidate = None;
+        self.presented_candidate = None;
+        self.connection_epoch = welcome.connection_epoch;
+        self.content_grant = limits.as_ref().map(|limits| limits.grant);
+        self.content_limits = limits;
+        self.reserved_limits = None;
+        self.peer_closed = false;
+        self.input.clear();
+        self.output.clear();
+        self.action_cancellations.clear();
+        self.indicator_response = None;
+        self.catalog_response = None;
+        self.native_control = super::native_launcher::control::NativeControl::default();
+        self.inbox.clear();
+        self.capabilities = welcome.capabilities;
+    }
+
+    /// One nonblocking turn of the pending file export. The accepted stream
+    /// becomes the export's single connection on the first visit. A refusal
+    /// is journaled and the component is revoked once the peer acknowledged
+    /// it, or at the negotiation deadline, whichever comes first.
+    fn visit_file_negotiation(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+    ) -> Result<Option<ShellV1ServerWelcome>, ShellTransportError> {
+        let profile = epochs.profile(self.store_grant);
+        let pending = self.negotiation.as_mut().expect("visit retains handshake");
+        if pending.wire.is_none() {
+            let stream = pending.stream.take().expect("accepted stream retained");
+            let (role, bounds) = super::files::role_bounds(profile);
+            let export = super::files::ShellFiles::awaiting_negotiation(
+                pending.epoch,
+                role,
+                bounds,
+                self.file_qids,
+                Instant::now(),
+            );
+            pending.wire = Some(super::files::ShellFileWire::adopt(stream, export)?);
+        }
+        let wire = pending.wire.as_mut().expect("adopted file wire");
+        wire.turn()?;
+        if let Some(refusal) = &pending.refusal {
+            if wire.export().journal().records() == 0 {
+                return Err(ShellTransportError::ContentAdmissionRefused(
+                    refusal.clone(),
+                ));
+            }
+            return Ok(None);
+        }
+        let hello = match wire.export_mut().take_inbound() {
+            None => return Ok(None),
+            Some(super::files::Inbound::Negotiate(hello)) => hello,
+            Some(super::files::Inbound::Content(..)) => {
+                return Err(ShellTransportError::WrongContentRecord);
+            }
+        };
+        let epoch = pending.epoch;
+        let policy = pending.policy;
+        // Admission is retained in the actual registry before encoding.
+        let selected = self.select_negotiation(epochs, epoch, policy, hello);
+        let pending = self.negotiation.as_mut().expect("visit retains handshake");
+        let wire = pending.wire.as_mut().expect("adopted file wire");
+        match selected {
+            Ok((welcome, limits)) => {
+                let limits_object = limits
+                    .as_ref()
+                    .map(|limits| super::files::encode_limits_object(epoch, limits))
+                    .transpose()?;
+                let body = super::files::encode_negotiated(welcome, limits.is_some())?;
+                wire.export_mut()
+                    .complete_negotiation(limits_object)
+                    .map_err(|error| ShellTransportError::Io(format!("{error:?}")))?;
+                if !wire.append(
+                    sophia_protocol::shell_files::ShellFileKind::Negotiated,
+                    &body,
+                    true,
+                )? {
+                    return Err(ShellTransportError::ContentQueueSaturated);
+                }
+                wire.turn()?;
+                // No fallible operation after removing the exact handshake owner.
+                let pending = self.negotiation.take().expect("completed handshake");
+                self.install_negotiated(welcome, limits);
+                self.files = pending.wire;
+                Ok(Some(welcome))
+            }
+            Err(ShellTransportError::ContentAdmissionRefused(refusal)) => {
+                let body = super::files::encode_refused(&refusal)?;
+                if !wire.append(
+                    sophia_protocol::shell_files::ShellFileKind::Refused,
+                    &body,
+                    true,
+                )? {
+                    return Err(ShellTransportError::ContentQueueSaturated);
+                }
+                wire.turn()?;
+                pending.refusal = Some(refusal);
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+impl PendingNegotiation {
+    /// The next logical qid of an adopted but unfinished file export, so a
+    /// following epoch never reuses a qid this peer already observed.
+    pub(super) fn file_qids(&self) -> Option<u64> {
+        self.wire.as_ref().map(|wire| wire.export().next_qid())
     }
 }
 

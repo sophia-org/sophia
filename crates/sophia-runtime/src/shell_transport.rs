@@ -45,6 +45,7 @@ mod content_allocations;
 mod content_candidates;
 mod content_resources;
 mod control_budget;
+mod files;
 mod indicator_responses;
 mod outbox;
 pub use accounting::{ShellContentAccounting, ShellContentShutdown};
@@ -115,6 +116,10 @@ impl From<ContentAllocationError> for ShellTransportError {
 pub struct ShellComponentTransport {
     endpoint: PolicyRoleEndpoint,
     stream: Option<UnixStream>,
+    /// The file wire of the current epoch; never set together with `stream`.
+    files: Option<files::ShellFileWire>,
+    /// The component's next logical qid, continued across file epochs.
+    file_qids: u64,
     negotiation: Option<negotiation_service::PendingNegotiation>,
     capabilities: u64,
     peer_closed: bool,
@@ -157,6 +162,8 @@ impl ShellComponentTransport {
                 expected_uid,
             )?,
             stream: None,
+            files: None,
+            file_qids: 1,
             negotiation: None,
             capabilities: 0,
             peer_closed: false,
@@ -398,6 +405,13 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
         self.stream = None;
+        if let Some(mut files) = self.files.take() {
+            self.file_qids = files.export().next_qid();
+            files.revoke();
+        }
+        if let Some(next) = self.negotiation.as_ref().and_then(|p| p.file_qids()) {
+            self.file_qids = next;
+        }
         self.negotiation = None;
         self.input.clear();
         self.output.clear();
@@ -515,10 +529,13 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         byte_budget: usize,
     ) -> Result<(), ShellTransportError> {
-        if self.stream.is_none() {
+        if self.stream.is_none() && self.files.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
         self.flush_indicator_response(epochs)?;
+        if self.files.is_some() {
+            return self.poll_files();
+        }
         self.flush_catalog_response(epochs)?;
         self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
@@ -791,4 +808,55 @@ fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, ShellTransportError> {
         .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
         .map_err(|error| ShellTransportError::Io(error.to_string()))?;
     Ok(frame)
+}
+
+impl ShellComponentTransport {
+    /// File wire service: serve ready 9P requests, move queued events into
+    /// the journal in FIFO order, then serve again so waiting reads see them.
+    /// A socket frame in this FIFO is a family the file contract does not
+    /// carry yet; it closes the component rather than crossing as old IPC.
+    fn poll_files(&mut self) -> Result<(), ShellTransportError> {
+        let files = self
+            .files
+            .as_mut()
+            .ok_or(ShellTransportError::NotConnected)?;
+        if let Err(error) = files.turn() {
+            if error == ShellTransportError::NotConnected {
+                self.peer_closed = true;
+                return Ok(());
+            }
+            return Err(error);
+        }
+        let mut blocked = false;
+        while !self.output.is_empty() {
+            let Some((kind, body, credited)) = self.output.front_file() else {
+                return Err(ShellTransportError::WrongContentRecord);
+            };
+            if !files.append(kind, body, credited)? {
+                blocked = true;
+                break;
+            }
+            self.output.pop_file();
+        }
+        files.check_ack_progress(blocked, std::time::Instant::now())?;
+        if let Err(error) = files.turn() {
+            if error == ShellTransportError::NotConnected {
+                self.peer_closed = true;
+                return Ok(());
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// The next submitted content record the selector accepts, from the file
+    /// wire's typed queue. The socket wire decodes frames instead.
+    pub(super) fn take_file_content(
+        &mut self,
+        select: impl Fn(&sophia_protocol::ShellContentRecord) -> bool,
+    ) -> Option<(TransactionId, sophia_protocol::ShellContentRecord)> {
+        self.files
+            .as_mut()
+            .and_then(|files| files.export_mut().take_content(select))
+    }
 }

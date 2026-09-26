@@ -470,7 +470,7 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let (frame, control) =
+            let prepared =
                 self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.active_candidates_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
@@ -478,7 +478,7 @@ impl ShellComponentTransport {
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
-            self.output.push(frame, control);
+            self.push_prepared(prepared);
             store.take_event();
         }
     }
