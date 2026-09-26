@@ -71,6 +71,28 @@ bounded send pressure, no fragment-driven phase changes and cancellation that
 preserves already acknowledged staging bytes. Those rules do not change this
 independently reviewable current-IPC extraction.
 
+## September 26 extraction-exit reconciliation
+
+The t248 exit was reviewed against integrated Sophia
+`11d6deef96902e49249c496aa569206818fa87af`. The retained extraction at
+`45e61551622a3b5c1d84c36dea4e9668dbf30581` and follow-up `95b39662`
+satisfy that scoped exit: six real-driver semantic-adapter controls, two real
+IPC profile controls and the full-event-queue shutdown control pass (9/0).
+The native Session library passed 620/0 with 18 ignored; strict Clippy passed.
+These are the logs under `sophia-borders/.artifacts/t248-wm-adapter`, not new
+runs on the integrated revision.
+
+The initial cached layout result is not reused as acceptance. The external
+test-mount correction `7567c745` and fresh
+`sophia-borders/.artifacts/t249-neutral-records/layout-final.log` supply that
+check. Later `permit-focused.log` (10/0) and
+`t249-profile-neutral/{protocol,runtime}.log` (7/0 and 21/0 with one ignored)
+retain the driver wait/Stop and neutral profile identity/handoff controls.
+No implementation gap remains in the behavior-preserving extraction.
+This finding does not close t249's file-role, measurement or lifecycle exit.
+The [separate integrated qualification](pp3pk4dd-read-only-wm-inspection-preserves-host-admission-and-writer-progress.md#september-26-qualification-follow-up)
+records the later X-authority harness repair and workspace gate.
+
 ## Driver hooks for the file-owner checkpoint
 
 The later t249 driver-only checkpoint passes a non-cloneable receive permit at

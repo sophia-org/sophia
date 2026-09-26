@@ -1,9 +1,5 @@
 # One task per line, a blank line between tasks: keep it that way so the file reads as a list. A row is `(priority) date text ... @context id:tNNN order:NNN [details](note)`; closed rows move to done-YYYY-MM.md.
 
-(A) 2026-09-25 Reconcile signed shared 9P core, enumeration and independent conformance evidence against the t247 exit; close the foundation only when its cancellation and bounds controls are accounted for. +critical +9p @development id:t247 order:000.000001 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t247)
-
-(B) 2026-09-25 Reconcile the implemented typed WM adapter and retained current-IPC profile, phase, queue and shutdown evidence against the t248 extraction exit. +parallel +9p @development id:t248 order:000.000002 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t248)
-
 (A) 2026-09-25 Complete remaining WM file lifecycle acceptance and reproducible transport measurements with independent Hagia and existing Session owners; retain explicit opt-in while output stays current IPC. +critical +9p @development id:t249 order:000.000003 depends:t247,t248 peer:hagia/h006 [details](docs/notes/plans/80blhke8-migrate-the-hagia-wm-role-to-admitted-9p2000-l-files.md#t249)
 
 (A) 2026-09-26 Qualify a pinned 9P WM daily-driver configuration with classified validation gates, drag-latency budgets, attended recovery and explicit current-IPC relaunch rollback. +critical +9p @physical id:t250 order:000.000004 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t250--qualify-the-wm-daily-configuration)

@@ -145,6 +145,36 @@ mounted-filesystem or default-transport acceptance here. Existing live 9P smoke
 evidence retains its original candidate identity. The complete t249 exit stays
 in its plan and queue.
 
+## September 26 qualification follow-up
+
+A separate test-only repair now addresses the stale actor bookkeeping found
+in the diagnostic run. Signed `4c40d177351b8c4904346ecef1d8a9ab073c603a`,
+integrated as `a78329c61`, retains a registry allocation while dropping its
+actual service, so the regression does not depend on allocator address reuse.
+The baseline fails with a joined watchdog but an uncollected service record.
+Drop now records its actual join and retires tracking just as finish does;
+join assertions run outside the shared bookkeeping locks. A deliberately
+withheld actual JoinHandle still fails both finish and normal Drop, without
+poisoning those locks. Unwinding retires records without claiming successful
+collection evidence.
+
+The focused controls pass 2/0, and the complete sequential all-feature
+X-authority library passes 1244/0. Strict package Clippy, formatting and layout
+pass. Logs and exact binary/source identities are retained at
+`sophia-xauthority-cleanup/.artifacts/xauthority-cleanup/README.md`.
+This proves the bookkeeping defect and its repair. It does not recover the
+lost assertion from the original workspace run or close t194. A new integrated
+workspace gate is separate from that affected-library result.
+
+The new integrated `cargo xtask check` at `7ce5d61eb` exits 0: 5798 tests
+pass and 64 are ignored, including the 1244-test X-authority library. Strict
+workspace checks, layout and the remaining protocol/profile/tool/archive
+controls also pass. The device-hidden, sequential run is retained in
+`sophia-overview/.artifacts/9p-qualification/workspace-first.log` with its
+exit file. This is fresh integrated evidence, not a reclassification of the
+earlier failure. The gate explicitly leaves buffer-age pixel equivalence,
+GLX/EGL first-frame and pixmap-export pixels unproved without a device.
+
 ## Connections
 
 - [Inspection contract](../../sophia-wm-inspection.md): owns disclosure,

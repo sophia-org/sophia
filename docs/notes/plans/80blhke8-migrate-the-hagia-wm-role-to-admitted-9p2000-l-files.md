@@ -78,6 +78,10 @@ malformed framing, counts, strings, duplicate live tags/fids, invalid opens,
 flush races, blocked reads, exhaustion and disconnect. Retain compiled negative
 controls. This is direct socket evidence; no host mount or VM is part of t247.
 
+The September 26 [foundation reconciliation](../milestones/agu8cnww-9p-foundations-meet-their-scoped-exits.md)
+records the completed exit: 50 independent checks and ten mutations that each
+fail their required named controls, including the final raw-prober gaps.
+
 ### t248
 
 Codex w9:pN owns the behavior-preserving private typed WM adapter boundary.
@@ -90,6 +94,11 @@ The existing constructors and output service remain compatible.
 Prove current IPC through real sockets and profile controls, plus driver
 transition/queue-shutdown controls through the private semantic adapter. No new
 policy, rendering, application or public runtime authority is admitted here.
+
+The September 26 [extraction-exit reconciliation](../investigations/uf2wya88-typed-wm-driver-preserves-current-ipc-phase-and-shutdown-ownership.md#september-26-extraction-exit-reconciliation)
+maps the signed extraction, nine focused controls, full native Session run,
+strict checks and fresh layout correction to this exit. Later file-role and
+whole-candidate acceptance remain separate.
 
 ### t249
 
