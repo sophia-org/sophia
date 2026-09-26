@@ -12,6 +12,9 @@ use sophia_protocol::{
 mod adapter;
 mod current_ipc;
 mod driver;
+// Supplied-stream custody checkpoint; launch selection remains on current IPC.
+#[cfg_attr(not(test), allow(dead_code))]
+mod ninep;
 use adapter::{PolicyAdapter, PolicyAdapterStop, PolicyProfileAdmission};
 use driver::run_policy_transport;
 

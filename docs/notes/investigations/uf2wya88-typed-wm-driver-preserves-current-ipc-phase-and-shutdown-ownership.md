@@ -95,6 +95,52 @@ Logs are `permit-focused.log` and `permit-clippy.log` under the t249 worktree
 evidence directory. Profile handoff, public policy reducer, output-role IPC and
 default transport selection are unchanged.
 
+## Supplied-stream file custody checkpoint
+
+The t249 file owner adopts a Unix stream already admitted by its caller. It
+does not select a transport, spawn Hagia or infer authority from attach names.
+One continuing Session-owned Qid allocator is passed explicitly; two epochs
+receive disjoint paths, opened transaction and snapshot metadata name their
+specific object, and exhaustion refuses before changing the allocator. One
+attach consumes the admitted epoch; version reset does not renew it.
+
+The export holds staged bytes, one accepted candidate, one transient driver
+permit and a bounded event journal. No-permit submission refuses before row
+decoding; the named counter control proves this. Successful complete submit
+reserves a whole Submitted record before transferring custody, while duplicate
+accepted submit bypasses decoding and leaves the next permit unspent. ACK
+releases transport bytes only. Snapshot handles keep immutable bytes and
+metadata while newer publication replaces the current snapshot. No second
+driver phase or reducer is introduced.
+
+The adopted-stream reactor owns mutation on one thread. A full journal services
+real 9P ACK traffic while the caller retains its borrowed in-flight command.
+Stop wakes the core poll independently of event credit; a peer that never ACKs
+reaches the fixed four-second send bound. Staging keeps its first-write
+twelve-second deadline despite retries. Limits are 64 event records / 1 MiB,
+one staged candidate / 1 MiB, one pinned snapshot plus the current object,
+and the core's explicit message, fid, pending-request and output bounds.
+
+Device-hidden focused worker checks pass 22/22: twelve custody controls and
+ten retained adapter/shutdown/current-IPC controls. Strict native Session
+all-target Clippy passes. Evidence is in
+`sophia-borders/.artifacts/t249-file-owner`: `focused-reviewed.log`,
+`clippy-initial.log`, and `layout.log`. The first compile's private re-export
+failure and the first real-array fixture's disabled-chrome/nonzero-width
+failure remain separately in `focused-initial.log` and `focused-arrays.log`.
+Both were corrected; neither is a physical observation.
+
+The new array control calls the actual complete configuration decoder and
+neutral row owner with the selected capability ceiling: unnegotiated chrome
+refuses, then an admitted configuration succeeds with the same unspent permit.
+Other scalar payloads and Submitted bodies are explicitly test-codec values.
+The permit control obtains a real driver-issued permit but stops its scripted
+peer afterward; it is not a complete driver-to-file startup proof. Actual socket
+controls cover ACK/Stop transport custody, not protected admission, Hagia,
+profile handoff, proposal settlement, presentation receipts or physical output.
+The complete role adapter and its launch constructor remain subsequent joins;
+default IPC, output-role transport and LivePublicPolicyState stay unchanged.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
