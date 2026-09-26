@@ -369,6 +369,23 @@ Scripted operation and receipt completion does not establish physical or
 independent application acceptance. No independent executable pass is claimed
 by the ordinary focused suite.
 
+The independent frozen Hagia peer at `586b9a4dce3d766127b575720718339cb6ac6071`
+was subsequently run against signed adapter `99601a30`: both explicit startup
+and cycle tests pass. Its candidate writes use 17-byte fragments, journal reads
+23 bytes and immutable-object reads 37 bytes. The original paired bundle
+`t249-peer-99601a30-586b9a4` remains preserved under the development-evidence
+directory. A test-only follow-up measures `SO_PEERCRED` on the accepted socket
+and requires its PID to equal the spawned child PID. Identity records explicitly
+name path hashes before and after execution, not descriptor-pinned execution;
+the hash-then-exec window remains. This socket credential check is not a
+substitute for the production protection-domain admission owner.
+
+The file protocol has no `ProjectionPending` fragment event: Dirty remains
+allowed under the existing driver permit until the complete projection obtains
+custody. File fragments neither change driver phase nor renew its response
+deadline. A closed adapter's `selected_capabilities() == 0` is its unavailable
+sentinel, not evidence of a successfully negotiated empty capability set.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

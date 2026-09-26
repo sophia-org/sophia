@@ -99,7 +99,7 @@ fn spawn_peer(case: &str) -> (PeerProcess, UnixStream, PathBuf, PathBuf, String)
         child,
         socket_dir: dir,
     };
-    fs::write(evidence.join("identity.txt"),format!("binary={}\nsha256={}\npid={}\ncase={}\nsupplied_admission=true\nscripted_outcomes=true\nnative_presentation=false\n",binary.display(),expected,child.child.id(),case)).unwrap();
+    fs::write(evidence.join("identity.txt"),format!("binary={}\nsha256={}\npid={}\ncase={}\nidentity_method=path-hash-before-and-after\ndescriptor_pinned_exec=false\nhash_then_exec_window=true\nsupplied_admission=true\nscripted_outcomes=true\nnative_presentation=false\n",binary.display(),expected,child.child.id(),case)).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     let stream = loop {
         match listener.accept() {
@@ -114,6 +114,16 @@ fn spawn_peer(case: &str) -> (PeerProcess, UnixStream, PathBuf, PathBuf, String)
         assert!(Instant::now() < deadline, "peer connect deadline");
         std::thread::sleep(Duration::from_millis(5));
     };
+    let credentials = rustix::net::sockopt::socket_peercred(&stream).unwrap();
+    let measured_pid = credentials.pid.as_raw_pid() as u32;
+    assert_eq!(
+        measured_pid,
+        child.child.id(),
+        "accepted peer must be spawned child"
+    );
+    use std::io::Write;
+    writeln!(fs::OpenOptions::new().append(true).open(evidence.join("identity.txt")).unwrap(),
+        "measured_peer_pid={measured_pid}\nmeasured_peer_uid={}\npeer_pid_matches_spawned_child=true", credentials.uid.as_raw()).unwrap();
     (
         child,
         stream,
