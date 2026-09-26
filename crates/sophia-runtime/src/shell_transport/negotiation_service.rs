@@ -316,7 +316,7 @@ impl ShellComponentTransport {
         let hello = match wire.export_mut().take_inbound() {
             None => return Ok(None),
             Some(super::files::Inbound::Negotiate(hello)) => hello,
-            Some(super::files::Inbound::Content(..)) => {
+            Some(super::files::Inbound::Content(..) | super::files::Inbound::Candidate(_)) => {
                 return Err(ShellTransportError::WrongContentRecord);
             }
         };

@@ -412,6 +412,13 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
+        if self.files.is_some() {
+            let part = self
+                .files
+                .as_mut()
+                .and_then(|files| files.export_mut().take_candidate_part());
+            return self.admit_file_record(part);
+        }
         let at = self
             .inbox
             .iter()
@@ -438,6 +445,15 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
+        if self.files.is_some() {
+            let record = self.take_file_content(|record| {
+                matches!(
+                    record,
+                    ShellContentRecord::FrameDemand(_) | ShellContentRecord::FrameDemandCancel(_)
+                )
+            });
+            return self.admit_file_record(record);
+        }
         let at = self
             .inbox
             .iter()

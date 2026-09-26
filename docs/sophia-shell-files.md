@@ -398,7 +398,7 @@ Catalog objects can exceed the WM's 1 MiB snapshot bound: 4096 entries with
 loss and allocation invalidation remain local Session transitions. They never wait
 for a reader's acknowledgement credit.
 
-### Record kinds and correlation (t252 first slice)
+### Record kinds and correlation (t252)
 
 The byte layouts are in
 [`sophia-shell-files-v1.kdl`](../protocol/sophia-shell-files-v1.kdl) and
@@ -408,8 +408,8 @@ the operations t252 implements:
 | Class | Kinds |
 | --- | --- |
 | Object | `Limits` 1, `Outputs` 2 |
-| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `ObjectPublished` 19, `AllocationResult` 32, `ResourceStatus` 33, `ResourceReleased` 34 |
-| Candidate | `Negotiate` 256, `AllocationRequest` 257, `ResourceBegin` 258, `ResourceEnd` 259, `ResourceCancel` 260, `ResourceRetire` 261 |
+| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `ObjectPublished` 19, `AllocationResult` 32, `ResourceStatus` 33, `ResourceReleased` 34, `CandidateOutcome` 35, `FramePermit` 36, `Action` 37 |
+| Candidate | `Negotiate` 256, `AllocationRequest` 257, `ResourceBegin` 258, `ResourceEnd` 259, `ResourceCancel` 260, `ResourceRetire` 261, `Candidate` 262, `FrameDemand` 263, `FrameDemandCancel` 264, `ActionAck` 265 |
 
 As in the WM contract, the header never carries a domain identity: events
 have submission ID zero. A content record's body starts with its nonzero
@@ -436,6 +436,20 @@ when the resource's accepted, rejected or cancelled status is journaled, so the
 binding follows exactly what the reader can observe. A record family not yet in the table is not carried: a component on the
 file wire whose owner queues such a record is closed rather than sent an IPC
 frame.
+
+Candidates, pacing and content actions follow the same pattern.
+`FrameDemand`, `FrameDemandCancel` and `ActionAck` are submitted records, and
+`FramePermit`, `CandidateOutcome` and `Action` are events. Each is its
+transaction ID followed by the unchanged payload. A `Candidate` record is one
+whole candidate. Its body is the transaction ID, the Begin payload length
+(`u32`) and the Chunk payload length (`u32`), then the Begin, exactly one Chunk
+(ordinal 0) and the End. All three share the transaction, grant and candidate
+generation, and the record is at most 8192 bytes, header included. A candidate
+at the prototype maxima (8 surfaces, 32 placements, 64 targets) fits. The
+candidate owner receives Begin, Chunk and End in that order, so the permit,
+assembly, deadline and outcome rules are the socket path's, unchanged. A
+malformed or incoherent record is refused at `submit` with `EINVAL`, and
+nothing reaches the owner.
 
 ## Multiple writers, isolation and revocation
 

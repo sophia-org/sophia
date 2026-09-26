@@ -79,6 +79,18 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ContentActionAck)>, ShellTransportError> {
         self.poll_io(epochs)?;
+        if self.files.is_some() {
+            let record =
+                self.take_file_content(|record| matches!(record, ShellContentRecord::ActionAck(_)));
+            return Ok(self
+                .admit_file_record(record)?
+                .map(|(transaction, record)| {
+                    let ShellContentRecord::ActionAck(ack) = record else {
+                        unreachable!("an action ack was selected");
+                    };
+                    (transaction, ack)
+                }));
+        }
         let at = self.inbox.iter().position(|frame| {
             u16::from_le_bytes([frame[6], frame[7]]) == IpcMessageKind::ShellContentActionAck as u16
         });

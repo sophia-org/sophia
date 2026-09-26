@@ -856,6 +856,29 @@ impl ShellComponentTransport {
         Ok(())
     }
 
+    /// A record taken from the file wire's typed queue, with the socket path's
+    /// direction and grant checks. None ends the peer's stream once it closed.
+    pub(super) fn admit_file_record(
+        &self,
+        taken: Option<(TransactionId, sophia_protocol::ShellContentRecord)>,
+    ) -> Result<Option<(TransactionId, sophia_protocol::ShellContentRecord)>, ShellTransportError>
+    {
+        let Some((transaction, record)) = taken else {
+            return if self.peer_closed {
+                Err(ShellTransportError::NotConnected)
+            } else {
+                Ok(None)
+            };
+        };
+        if !content_admission::client_record(&record) {
+            return Err(ShellTransportError::WrongContentRecord);
+        }
+        if content_admission::record_grant(&record) != self.content_grant {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        Ok(Some((transaction, record)))
+    }
+
     /// The next submitted content record the selector accepts, from the file
     /// wire's typed queue. The socket wire decodes frames instead.
     pub(super) fn take_file_content(

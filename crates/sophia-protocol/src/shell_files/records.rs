@@ -13,6 +13,9 @@ pub const SHELL_FILE_MAX_OBJECT_BYTES: usize = 4_194_304;
 pub const SHELL_FILE_OUTPUTS_MAX_BYTES: usize = 1024;
 /// The number of upload slots a connection may address in a `ResourceBegin`.
 pub const SHELL_FILE_MAX_UPLOAD_SLOTS: u16 = 4;
+/// One complete `Candidate` record, header included: the content limits'
+/// `max_candidate_bytes` prototype cap (docs/sophia-shell-files.md).
+pub const SHELL_FILE_MAX_CANDIDATE_BYTES: usize = 8192;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]
@@ -26,12 +29,19 @@ pub enum ShellFileKind {
     AllocationResult = 32,
     ResourceStatus = 33,
     ResourceReleased = 34,
+    CandidateOutcome = 35,
+    FramePermit = 36,
+    Action = 37,
     Negotiate = 256,
     AllocationRequest = 257,
     ResourceBegin = 258,
     ResourceEnd = 259,
     ResourceCancel = 260,
     ResourceRetire = 261,
+    Candidate = 262,
+    FrameDemand = 263,
+    FrameDemandCancel = 264,
+    ActionAck = 265,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

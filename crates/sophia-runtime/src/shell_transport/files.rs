@@ -198,7 +198,8 @@ pub(super) fn encode_content_event(
     use sophia_protocol::shell_files::{
         ShellFileTransactionRecord, encode_shell_file_allocation_result_body,
         encode_shell_file_outputs_body, encode_shell_file_resource_released_body,
-        encode_shell_file_resource_status_body,
+        encode_shell_file_resource_status_body, encode_shell_file_transaction_body,
+        shell_file_transaction_kind,
     };
     let value = ShellFileTransactionRecord {
         transaction,
@@ -230,6 +231,12 @@ pub(super) fn encode_content_event(
             })
             .map_err(|_| ShellTransportError::WrongContentRecord)?;
             Ok((ShellFileKind::AllocationResult, body))
+        }
+        // Candidate outcomes, frame permits and actions: the caller admits
+        // only server records.
+        _ if shell_file_transaction_kind(record).is_some() => {
+            encode_shell_file_transaction_body(&value)
+                .map_err(|_| ShellTransportError::WrongContentRecord)
         }
         _ => Err(ShellTransportError::WrongContentRecord),
     }

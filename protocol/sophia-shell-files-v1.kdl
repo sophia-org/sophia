@@ -18,12 +18,19 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     event "AllocationResult" kind=32
     event "ResourceStatus" kind=33
     event "ResourceReleased" kind=34
+    event "CandidateOutcome" kind=35
+    event "FramePermit" kind=36
+    event "Action" kind=37
     candidate "Negotiate" kind=256
     candidate "AllocationRequest" kind=257
     candidate "ResourceBegin" kind=258
     candidate "ResourceEnd" kind=259
     candidate "ResourceCancel" kind=260
     candidate "ResourceRetire" kind=261
+    candidate "Candidate" kind=262 max-bytes=8192
+    candidate "FrameDemand" kind=263
+    candidate "FrameDemandCancel" kind=264
+    candidate "ActionAck" kind=265
 
     // Payload bodies are the unchanged sophia-shell-v1 record payload of the
     // named kind, validated by that record's existing codec; no fixed size.
@@ -59,7 +66,7 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     }
     body "Submitted" size=16 {
         field "submission_id" type="u64" offset=0 nonzero=true
-        field "candidate_kind" type="u16" offset=8 min=256 max=261
+        field "candidate_kind" type="u16" offset=8 min=256 max=265
         field "reserved" type="bytes" offset=10 size=6 value=0
     }
     body "ObjectPublished" size=24 {
@@ -103,6 +110,41 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     body "ResourceReleased" {
         field "transaction" type="u64" offset=0 nonzero=true
         field "payload" type="sophia-shell-v1" record="ShellContentResourceReleased" offset=8
+    }
+    // One complete candidate: Begin, its only Chunk (ordinal 0) and End share
+    // the transaction, grant and candidate generation. The End payload runs
+    // to the end of the body.
+    body "Candidate" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "begin_bytes" type="u32" offset=8
+        field "chunk_bytes" type="u32" offset=12
+        field "begin" type="sophia-shell-v1" record="ShellContentCandidateBegin" offset=16 size="begin_bytes"
+        field "chunk" type="sophia-shell-v1" record="ShellContentCandidateChunk" offset="16+begin_bytes" size="chunk_bytes"
+        field "end" type="sophia-shell-v1" record="ShellContentCandidateEnd" offset="16+begin_bytes+chunk_bytes"
+    }
+    body "FrameDemand" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentFrameDemand" offset=8
+    }
+    body "FrameDemandCancel" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentFrameDemandCancel" offset=8
+    }
+    body "ActionAck" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentActionAck" offset=8
+    }
+    body "CandidateOutcome" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentCandidateOutcome" offset=8
+    }
+    body "FramePermit" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentFramePermit" offset=8
+    }
+    body "Action" {
+        field "transaction" type="u64" offset=0 nonzero=true
+        field "payload" type="sophia-shell-v1" record="ShellContentAction" offset=8
     }
 
     submit size=24 {

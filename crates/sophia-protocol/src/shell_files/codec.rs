@@ -28,14 +28,21 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::ResourceBegin
         | ShellFileKind::ResourceEnd
         | ShellFileKind::ResourceCancel
-        | ShellFileKind::ResourceRetire => ShellFileClass::Candidate,
+        | ShellFileKind::ResourceRetire
+        | ShellFileKind::Candidate
+        | ShellFileKind::FrameDemand
+        | ShellFileKind::FrameDemandCancel
+        | ShellFileKind::ActionAck => ShellFileClass::Candidate,
         ShellFileKind::Negotiated
         | ShellFileKind::Refused
         | ShellFileKind::Submitted
         | ShellFileKind::ObjectPublished
         | ShellFileKind::AllocationResult
         | ShellFileKind::ResourceStatus
-        | ShellFileKind::ResourceReleased => ShellFileClass::Event,
+        | ShellFileKind::ResourceReleased
+        | ShellFileKind::CandidateOutcome
+        | ShellFileKind::FramePermit
+        | ShellFileKind::Action => ShellFileClass::Event,
     }
 }
 
@@ -50,12 +57,19 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
         32 => ShellFileKind::AllocationResult,
         33 => ShellFileKind::ResourceStatus,
         34 => ShellFileKind::ResourceReleased,
+        35 => ShellFileKind::CandidateOutcome,
+        36 => ShellFileKind::FramePermit,
+        37 => ShellFileKind::Action,
         256 => ShellFileKind::Negotiate,
         257 => ShellFileKind::AllocationRequest,
         258 => ShellFileKind::ResourceBegin,
         259 => ShellFileKind::ResourceEnd,
         260 => ShellFileKind::ResourceCancel,
         261 => ShellFileKind::ResourceRetire,
+        262 => ShellFileKind::Candidate,
+        263 => ShellFileKind::FrameDemand,
+        264 => ShellFileKind::FrameDemandCancel,
+        265 => ShellFileKind::ActionAck,
         _ => return Err(ShellFileCodecError::Kind),
     })
 }
