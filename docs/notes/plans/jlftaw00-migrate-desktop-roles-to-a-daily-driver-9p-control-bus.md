@@ -204,6 +204,13 @@ them here.
 
 ### t252 — Join and accept the shell path
 
+**Amendment (2026-09-26).** The operator set the end state: all IPC code is
+purged and every role runs on 9P files. t251's body rule (transaction ID plus
+the unchanged `sophia_shell_v1` payload) is replaced by native file layouts
+over wire-neutral typed records, wire-neutral budgets, and a client seamed at
+typed values ([amendment 1 and the purge inventory](../../sophia-shell-files.md#amendment-1-2026-09-26-native-bodies-ipc-independent-records)).
+It lands before the role families, client and oracle build on the old rule.
+
 After t251, implement a Sophia adapter to the existing shell/component owners
 and independent clients. Development need not wait for t250's attended WM
 qualification; the daily combined configuration must use its accepted WM

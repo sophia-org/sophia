@@ -548,7 +548,7 @@ launcher and the r8 dock profiles:
   and slot.
 
 The independent Go oracle will carry these scenarios, written from
-`protocol/sophia-shell-v1.kdl` and this file contract without Sophia codec reuse.
+this file contract alone (amendment 1), without Sophia codec reuse.
 Its test admission is supplied, so it cannot prove supervisor authentication.
 The product clients then prove integration, not independence; Narthex remains
 the descriptor reference rather than acquiring content work for this gate.
@@ -597,6 +597,46 @@ before measurement and cannot be relaxed after a result.
 
 Each distribution reports p50, p95 and p99, the maximum, and every timeout,
 with the same client, workload and output on both transports.
+
+## Amendment 1 (2026-09-26): native bodies, IPC-independent records
+
+The operator set the migration's end state: all IPC code is purged and every
+role runs on 9P files. The accepted body rule, a transaction ID followed by
+the unchanged `sophia_shell_v1` payload, would keep the IPC payload codec
+alive as the file format, so it is replaced before more families build on it:
+
+- **Typed records are wire-neutral.** The shell record structs, limits and
+  validators leave `sophia_protocol::ipc` for a neutral module. Their
+  validation errors do not name the IPC codec. The IPC codec becomes one
+  encoder over those values and is deleted at t255 without touching owners.
+- **Every file record has a native layout**, defined in
+  `sophia-shell-files-v1.kdl` and `sophia_protocol::shell_files` as
+  `wm_files` does: no socket framing artifacts (chunk ordinals, repeated
+  counts, Begin/Entry/End transfers). `Candidate` is one header and three
+  counted row tables; limits, outputs, catalog and indicators are objects
+  with their own layouts. Slice-1 kinds are re-encoded; nothing shipped.
+- **Budgets are wire-neutral.** Owners charge response credit per record,
+  not in socket-frame bytes; each wire enforces its own byte bounds.
+- **Clients seam at typed values.** `sophia-shell-client` queues typed
+  records and objects; each wire encodes natively. No frame translation.
+- **The independent oracle is written from this contract alone**, never
+  from `protocol/sophia-shell-v1.kdl`.
+
+The per-role behaviour, owners, bounds and budgets above are unchanged.
+
+### IPC purge inventory (t255)
+
+Nothing new may depend on these; each is deleted when its role's file wire
+is the accepted default:
+
+| Area | IPC code |
+| --- | --- |
+| Shell | socket transport (`shell_transport` socket branch, inbox/outbox frames), `ipc::shell_*` codecs (`fields.rs`, `codec.rs`), `packets/shell_*` |
+| Shell clients | `sophia-shell-client` socket wire; `bindings/c/shell_wire` socket half |
+| WM | `policy_transport_worker/current_ipc.rs`, `ipc::wm_v1*` and `ipc::policy_*` codecs, Hagia's legacy policy wire |
+| Output | output socket role (`ipc::output_v1`), migrated by t253 |
+| Control | control socket (`ipc::control_v1`), per the control-bus plan |
+| Broker/portal | `ipc::broker*`, `ipc::portal` (t254 inventory) |
 
 ## Open decisions
 
