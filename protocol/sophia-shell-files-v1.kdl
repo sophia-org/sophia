@@ -36,13 +36,36 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     candidate "FrameDemandCancel" kind=264
     candidate "ActionAck" kind=265
 
-    // The full granted profile. Every max below is the fixed
-    // ContentLimits::prototype cap; several fields are also related to each
-    // other by the codec (for example max_staging_bytes >= max_resource_bytes,
-    // max_session_retiring_bytes >= staging+resident+retiring, and
-    // max_chunk_bytes bounded by max_width_px and max_frame_payload). Those
-    // cross-field relations are enforced by the codec but are not restated as
-    // a single-field bound here.
+    // The full granted profile. Every max below is the fixed prototype cap.
+    // A Limits object is valid only if, in addition to every field's own
+    // bounds, ALL of these hold (normative; a reader refuses otherwise):
+    //   grant_connection_epoch, grant_content_epoch, limits_generation != 0
+    //   pixel_format_mask == 1; effect_mask == 0
+    //   max_width_px, max_height_px, max_resource_bytes != 0
+    //   max_open_transfers, max_live_resources, max_outputs != 0
+    //   max_allocations_per_output != 0
+    //   max_candidate_surfaces, max_candidate_placements != 0
+    //   max_open_candidates_per_output, max_pending_candidates_per_output != 0
+    //   max_scale_numerator, max_scale_denominator != 0
+    //   max_candidate_rate_millihz, max_frames_per_service_tick != 0
+    //   max_frame_demands_per_output == 1; max_control_records >= 1
+    //   max_candidate_bytes >= 40
+    //   max_resource_ids >= max_live_resources
+    //   max_allocations_total >= max_allocations_per_output
+    //   max_open_candidates_total >= max_open_candidates_per_output
+    //   max_pending_candidates_total >= max_pending_candidates_per_output
+    //   reserved_control_queue_bytes >= 1024
+    //   max_output_queue_bytes >= reserved_control_queue_bytes
+    //   max_input_queue_bytes >= max_frame_payload + 24
+    //   max_chunk_bytes >= max_width_px * 4
+    //   max_chunk_bytes + 48 <= max_frame_payload
+    //   max_staging_bytes, max_resident_bytes, max_retiring_bytes >= max_resource_bytes
+    //   max_session_retiring_bytes >= max_staging_bytes + max_resident_bytes + max_retiring_bytes
+    //   max_reservation_extent <= max_panel_extent
+    //   every *_timeout_ms != 0; transfer_idle_timeout_ms <= transfer_timeout_ms
+    // max_frame_payload, max_input_queue_bytes and the +24/+48 terms describe
+    // the socket wire's frames; they are carried unchanged for now and are
+    // listed for removal from this object when the socket wire is purged.
     body "Limits" size=264 {
         field "grant_connection_epoch" type="u64" offset=0 nonzero=#true
         field "grant_content_epoch" type="u64" offset=8 nonzero=#true
