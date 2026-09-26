@@ -75,6 +75,8 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         signature: None,
         next: None,
         restarting: None,
+        reloading: None,
+        requests: SessionControlRequests::default(),
         published: false,
     };
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -89,13 +91,36 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         .unwrap()
         .socket_path()
         .to_path_buf();
-    assert_eq!(scripting.catalog.commands.len(), 2);
-    assert!(
-        !scripting
-            .catalog
+    // Revision 2 advertises the three session operations beside the action.
+    let names = scripting
+        .catalog
+        .commands
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        ["focus-next", "logout", "reload-profile", "restart-wm"]
+    );
+    // A revision-1 connection still sees only restart-wm among them.
+    let path = socket.clone();
+    let revision_one = std::thread::spawn(move || {
+        let mut client = ControlClient::connect_revisions(&path, 1, 1).unwrap();
+        (client.revision(), client.commands().unwrap())
+    });
+    while !revision_one.is_finished() {
+        scripting.service(Some(&mut wm), &layout, output, false);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let (revision, catalog) = revision_one.join().unwrap();
+    assert_eq!(revision, 1);
+    assert_eq!(
+        catalog
             .commands
             .iter()
-            .any(|c| c.name == "reload-profile")
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        ["focus-next", "restart-wm"]
     );
     for command in [
         ControlCommand {
@@ -193,6 +218,61 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     }
     assert_eq!(stale.join().unwrap(), ControlOutcome::Stale);
     assert_eq!(wm.committed, before);
+
+    // reload-profile raises the owner loop's reload request and settles only
+    // on the reload owner's outcome, never on hand-off.
+    scripting.service(Some(&mut wm), &layout, output, false);
+    let path = socket.clone();
+    let reload = std::thread::spawn(move || {
+        ControlClient::connect(&path)
+            .unwrap()
+            .invoke(ControlCommand {
+                owner: ControlOwner::Session,
+                name: "reload-profile".into(),
+            })
+            .unwrap()
+            .1
+    });
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut requested = SessionControlRequests::default();
+    while !requested.reload_profile {
+        scripting.service(Some(&mut wm), &layout, output, false);
+        requested = scripting.take_session_requests();
+        assert!(Instant::now() < deadline, "reload request raised");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    std::thread::sleep(Duration::from_millis(30));
+    assert!(!reload.is_finished(), "a handed-off reload is not settled");
+    scripting.settle_reload(DesktopProfileReloadOutcome::Unchanged, &wm);
+    while !reload.is_finished() {
+        scripting.service(Some(&mut wm), &layout, output, false);
+        assert!(Instant::now() < deadline, "reload settlement");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(reload.join().unwrap(), ControlOutcome::Unchanged);
+
+    // logout raises the logout request and completes once admitted.
+    let path = socket.clone();
+    let logout = std::thread::spawn(move || {
+        ControlClient::connect(&path)
+            .unwrap()
+            .invoke(ControlCommand {
+                owner: ControlOwner::Session,
+                name: "logout".into(),
+            })
+            .unwrap()
+            .1
+    });
+    let mut requested = SessionControlRequests::default();
+    while !logout.is_finished() {
+        scripting.service(Some(&mut wm), &layout, output, false);
+        let taken = scripting.take_session_requests();
+        requested.logout |= taken.logout;
+        assert!(Instant::now() < deadline, "logout settlement");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(requested.logout);
+    assert_eq!(logout.join().unwrap(), ControlOutcome::Completed);
     drop(scripting);
     drop(wm);
     std::fs::remove_dir_all(root).unwrap();

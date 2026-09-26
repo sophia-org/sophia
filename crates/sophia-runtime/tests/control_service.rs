@@ -310,7 +310,7 @@ fn all_sixteen_pending_slots_are_bounded_and_overflow_is_explicit() {
 #[test]
 fn unsupported_revision_and_features_receive_terminal_errors() {
     let f = Fixture::new();
-    for (revision, features, expected) in [(2, 0, 3), (1, 1, 4)] {
+    for (revision, features, expected) in [(3, 0, 3), (1, 1, 4)] {
         let mut stream = UnixStream::connect(f.service.socket_path()).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(3)))

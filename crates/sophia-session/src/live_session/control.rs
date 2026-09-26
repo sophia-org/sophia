@@ -4,7 +4,27 @@ struct LiveControlState {
     signature: Option<(u64, u64, bool)>,
     next: Option<sophia_runtime::ControlTicket>,
     restarting: Option<(sophia_runtime::ControlTicket, u64, usize)>,
+    /// A dispatched `reload-profile`, settled by the reload owner's outcome.
+    reloading: Option<(sophia_runtime::ControlTicket, ReloadSettlement)>,
+    requests: SessionControlRequests,
     published: bool,
+}
+
+/// Session operations control raises for the owner loop, exactly as the
+/// corresponding bindings do; taken once per pass.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct SessionControlRequests {
+    pub(super) reload_profile: bool,
+    pub(super) logout: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReloadSettlement {
+    /// Handed to the owner loop; no outcome yet.
+    Requested,
+    /// Accepted pending WM replacement; settles when the pending reload
+    /// clears, as rejected if a rollback happened meanwhile.
+    Replacing { rollbacks: u64 },
 }
 
 impl LiveControlState {
@@ -43,7 +63,38 @@ impl LiveControlState {
             signature: None,
             next: None,
             restarting: None,
+            reloading: None,
+            requests: SessionControlRequests::default(),
             published: false,
+        }
+    }
+
+    pub(super) fn take_session_requests(&mut self) -> SessionControlRequests {
+        std::mem::take(&mut self.requests)
+    }
+
+    /// The reload owner's outcome for the reload a control ticket asked for.
+    /// Without such a ticket (a binding asked) this changes nothing.
+    pub(super) fn settle_reload(&mut self, outcome: DesktopProfileReloadOutcome, wm: &LiveWmSession) {
+        use sophia_protocol::ControlOutcome as O;
+        let Some((ticket, ReloadSettlement::Requested)) = self.reloading.take() else {
+            return;
+        };
+        match outcome {
+            DesktopProfileReloadOutcome::Deferred => {
+                self.reloading = Some((ticket, ReloadSettlement::Requested));
+            }
+            DesktopProfileReloadOutcome::Unchanged => ticket.finish(O::Unchanged),
+            DesktopProfileReloadOutcome::Declined => ticket.finish(O::Rejected),
+            DesktopProfileReloadOutcome::Applied => ticket.finish(O::Completed),
+            DesktopProfileReloadOutcome::RestartRequired => {
+                self.reloading = Some((
+                    ticket,
+                    ReloadSettlement::Replacing {
+                        rollbacks: wm.desktop_reload_rollbacks,
+                    },
+                ));
+            }
         }
     }
 
@@ -63,6 +114,9 @@ impl LiveControlState {
                 ticket.finish(O::Unavailable);
             }
             if let Some((ticket, _, _)) = self.restarting.take() {
+                ticket.finish(O::Indeterminate);
+            }
+            if let Some((ticket, _)) = self.reloading.take() {
                 ticket.finish(O::Indeterminate);
             }
             // Service shutdown has no peer-dependent wait; revoke all queued tickets.
@@ -103,10 +157,14 @@ impl LiveControlState {
                 Vec::new()
             };
             if ready {
-                commands.push(ControlCommand {
-                    owner: ControlOwner::Session,
-                    name: "restart-wm".to_owned(),
-                });
+                commands.extend(
+                    sophia_protocol::control_session_operations(sophia_protocol::CONTROL_REVISION)
+                        .iter()
+                        .map(|name| ControlCommand {
+                            owner: ControlOwner::Session,
+                            name: (*name).to_owned(),
+                        }),
+                );
             }
             commands.sort();
             self.catalog = std::sync::Arc::new(sophia_protocol::ControlCatalog {
@@ -122,6 +180,15 @@ impl LiveControlState {
                 self.catalog.clone(),
                 &wm.supervisor.peer_id().into_iter().collect::<Vec<_>>(),
             );
+        }
+        if let Some((ticket, ReloadSettlement::Replacing { rollbacks })) = self.reloading.take() {
+            if wm.desktop_reload.is_some() {
+                self.reloading = Some((ticket, ReloadSettlement::Replacing { rollbacks }));
+            } else if wm.desktop_reload_rollbacks != rollbacks {
+                ticket.finish(O::Rejected);
+            } else {
+                ticket.finish(O::Completed);
+            }
         }
         if let Some((ticket, epoch, committed)) = self.restarting.take() {
             if wm.degraded || (wm.control_restart.is_none() && public.connection_epoch != epoch) {
@@ -182,6 +249,33 @@ impl LiveControlState {
                 } else {
                     ticket.finish(O::Overloaded);
                 }
+            }
+            ControlOwner::Session if ticket.command.name == "reload-profile" => {
+                // One control reload at a time; the reload owner serializes the rest.
+                if self.reloading.is_some() {
+                    ticket.finish(O::Overloaded);
+                    return;
+                }
+                if !ticket.claim() {
+                    if !ticket.cancelled() {
+                        self.next = Some(ticket);
+                    }
+                    return;
+                }
+                self.requests.reload_profile = true;
+                self.reloading = Some((ticket, ReloadSettlement::Requested));
+            }
+            ControlOwner::Session if ticket.command.name == "logout" => {
+                if !ticket.claim() {
+                    if !ticket.cancelled() {
+                        self.next = Some(ticket);
+                    }
+                    return;
+                }
+                // Completed means logout began; the session then quiesces and
+                // this connection ends with it.
+                self.requests.logout = true;
+                ticket.finish(O::Completed);
             }
             ControlOwner::Session => {
                 if ticket.command.name != "restart-wm" {

@@ -477,8 +477,8 @@ The session needs a private, owned `XDG_RUNTIME_DIR` and Linux peer-pidfd and
 namespace inspection support. If prerequisites fail, it logs control as
 disabled and continues desktop startup. It exports `SOPHIA_CONTROL_SOCKET` to
 host applications for `sophia msg commands`, `sophia msg policy 'NAME'`, and
-`sophia msg session restart-wm`. See [scripting](scripting.md) for the precise
-host trust boundary. Profile reload is not a scripting command yet.
+`sophia msg session restart-wm|reload-profile|logout` (control revision 2).
+See [scripting](scripting.md) for the precise host trust boundary.
 
 Read-only WM observation is a separate startup permission:
 `session { inspection "host-admin"; }`. It defaults to `"disabled"` and does
