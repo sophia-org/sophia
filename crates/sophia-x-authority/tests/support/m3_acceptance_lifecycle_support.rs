@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "m3_actor_tracking.rs"]
+mod actor_tracking_tests;
+
 struct Actor {
     origin: usize,
     thread: std::thread::ThreadId,
@@ -16,12 +19,16 @@ pub(crate) fn actor_started(
     kind: &'static str,
 ) {
     let origin = Arc::as_ptr(&registry.clients) as usize;
-    if !TRACKED_ORIGINS.lock().unwrap().contains(&origin) {
+    let origins = TRACKED_ORIGINS.lock().unwrap();
+    if !origins.contains(&origin) {
         return;
     }
     let mut actors = ACTORS.lock().unwrap();
     if let Some(old) = actors.iter().find(|actor| actor.thread == thread) {
-        assert_eq!((old.origin, old.kind), (origin, kind));
+        let previous = (old.origin, old.kind);
+        drop(actors);
+        drop(origins);
+        assert_eq!(previous, (origin, kind));
         return;
     }
     actors.push(Actor {
@@ -33,15 +40,14 @@ pub(crate) fn actor_started(
 }
 
 pub(crate) fn actor_joined(thread: std::thread::ThreadId) {
-    if let Some(actor) = ACTORS
-        .lock()
-        .unwrap()
-        .iter_mut()
-        .find(|actor| actor.thread == thread)
-    {
-        assert!(!actor.joined, "actor joined only once");
-        actor.joined = true;
-    }
+    let already_joined = {
+        let mut actors = ACTORS.lock().unwrap();
+        actors
+            .iter_mut()
+            .find(|actor| actor.thread == thread)
+            .is_some_and(|actor| std::mem::replace(&mut actor.joined, true))
+    };
+    assert!(!already_joined, "actor joined only once");
 }
 
 pub(crate) fn writers_started(
@@ -80,31 +86,39 @@ pub(crate) fn writers_started(
     }
 }
 
-fn collected_actors(registry: &XServerFrontendRouteRegistry) -> Vec<String> {
+fn take_actors(registry: &XServerFrontendRouteRegistry) -> Vec<Actor> {
     let origin = Arc::as_ptr(&registry.clients) as usize;
-    let mut actors = ACTORS.lock().unwrap();
+    // Stop registration before retiring the records. Both start paths keep
+    // this guard until insertion, including during fallback teardown.
+    let mut origins = TRACKED_ORIGINS.lock().unwrap();
+    origins.retain(|candidate| *candidate != origin);
+    ACTORS
+        .lock()
+        .unwrap()
+        .extract_if(.., |actor| actor.origin == origin)
+        .collect()
+}
+
+fn joined_actor_evidence(actors: Vec<Actor>) -> Vec<String> {
     let mut evidence = Vec::new();
-    actors.retain(|actor| {
-        if actor.origin != origin {
-            return true;
-        }
+    // A failed join assertion must not poison the process-wide bookkeeping
+    // mutexes and turn the original failure into a teardown abort.
+    for actor in actors {
         assert!(
             actor.joined,
             "actual started actor remains uncollected: {} {:?}",
             actor.kind, actor.thread
         );
         evidence.push(format!(
-            "{}:{:?}:origin={origin:x}",
-            actor.kind, actor.thread
+            "{}:{:?}:origin={:x}",
+            actor.kind, actor.thread, actor.origin
         ));
-        false
-    });
-    drop(actors);
-    TRACKED_ORIGINS
-        .lock()
-        .unwrap()
-        .retain(|candidate| *candidate != origin);
+    }
     evidence
+}
+
+fn collected_actors(registry: &XServerFrontendRouteRegistry) -> Vec<String> {
+    joined_actor_evidence(take_actors(registry))
 }
 
 pub(super) struct Pause {
@@ -237,7 +251,8 @@ where
     // observes is not one. Nothing below runs for an origin no acceptance case
     // is watching.
     let origin = Arc::as_ptr(&custody.cleanup_record().clients) as usize;
-    if TRACKED_ORIGINS.lock().unwrap().contains(&origin) {
+    let origins = TRACKED_ORIGINS.lock().unwrap();
+    if origins.contains(&origin) {
         // THE ACTUAL HANDLE, and nothing in its place. A poisoned slot still
         // holds the handle the start retained -- poisoning says a holder
         // unwound, not that the contents are gone -- so this reads it rather
@@ -839,9 +854,18 @@ impl Drop for LifecycleService {
         if let Some(handle) = self.handle.take()
             && self.done.recv_timeout(Duration::from_secs(5)).is_ok()
         {
+            let id = handle.thread().id();
             let _ = handle.join();
+            actor_joined(id);
         }
+        let actors = take_actors(&self.registry);
         let _ = std::fs::remove_file(&self.path);
+        // A normal Drop owes the same actual joins as finish. During an
+        // existing unwind, retire bookkeeping without a second panic or
+        // claiming successful collection evidence.
+        if !std::thread::panicking() {
+            joined_actor_evidence(actors);
+        }
     }
 }
 
