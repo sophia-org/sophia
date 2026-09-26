@@ -303,6 +303,13 @@ pub enum Request<'frame> {
         offset: u64,
         count: u32,
     },
+    /// `offset` is a cookie: zero, or an entry's offset from an earlier
+    /// reply.
+    Readdir {
+        fid: Fid,
+        offset: u64,
+        count: u32,
+    },
     Write {
         fid: Fid,
         offset: u64,
@@ -329,13 +336,21 @@ pub enum Request<'frame> {
 /// A reply a connection sends.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Reply {
-    Version { msize: u32, version: &'static [u8] },
+    Version {
+        msize: u32,
+        version: &'static [u8],
+    },
     Lerror(Errno),
     Attach(Qid),
     Flush,
     Walk(Vec<Qid>),
-    Lopen { qid: Qid, iounit: u32 },
+    Lopen {
+        qid: Qid,
+        iounit: u32,
+    },
     Read(Vec<u8>),
+    /// Encoded directory entries, as [`crate::wire::put_dirent`] writes them.
+    Readdir(Vec<u8>),
     Write(u32),
     Clunk,
     Getattr(Attr),

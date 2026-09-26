@@ -190,6 +190,29 @@ fn a_write_without_room_for_its_reply_is_not_performed() {
 }
 
 #[test]
+fn a_listing_without_room_for_its_reply_is_not_performed() {
+    let mut harness = tight();
+    harness.open(1, &[b"info"], 0).lopen();
+    harness.open(2, &[], 0o200000).lopen();
+    let mut requests = tread(4, 1, 0, 4000);
+    requests.extend(treaddir(5, 2, 0, 4000));
+    harness
+        .connection
+        .receive(&mut harness.export, &requests)
+        .unwrap();
+    assert_eq!(
+        harness.export.state().listings,
+        0,
+        "held until a reply of its whole count can be kept"
+    );
+    assert_eq!(harness.take()[0].tag, 4);
+    harness.connection.resume(&mut harness.export).unwrap();
+    let listed = harness.take();
+    assert_eq!(listed[0].tag, 5);
+    assert_eq!(listed[0].dirents().len(), 4);
+}
+
+#[test]
 fn a_waiting_read_is_not_retried_without_room_for_its_reply() {
     let mut harness = tight();
     harness.open(1, &[b"events"], 0).lopen();

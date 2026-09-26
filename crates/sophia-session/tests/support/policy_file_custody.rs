@@ -610,3 +610,136 @@ fn actual_reactor_send_without_ack_has_a_bounded_deadline() {
     assert!(started.elapsed() >= SEND_DEADLINE);
     assert!(started.elapsed() < SEND_DEADLINE + Duration::from_secs(2));
 }
+
+/// One request through a core connection to the production owner, framed
+/// from the specification; the reply's type and body.
+fn exchange(
+    connection: &mut sophia_9p::Connection<WmFiles<Codec>>,
+    files: &mut WmFiles<Codec>,
+    kind: u8,
+    tag: u16,
+    body: &[u8],
+) -> (u8, Vec<u8>) {
+    let mut frame = ((7 + body.len()) as u32).to_le_bytes().to_vec();
+    frame.push(kind);
+    frame.extend(tag.to_le_bytes());
+    frame.extend(body);
+    connection.receive(files, &frame).unwrap();
+    let output = connection.output().to_vec();
+    connection.sent(output.len());
+    let size = u32::from_le_bytes(output[..4].try_into().unwrap()) as usize;
+    assert_eq!(size, output.len(), "one reply");
+    assert_eq!(u16::from_le_bytes([output[5], output[6]]), tag);
+    (output[4], output[7..].to_vec())
+}
+
+/// One listed entry: qid type and path, next cookie, d_type and name.
+type Listed = ((u8, u64), u64, u8, Vec<u8>);
+
+/// Rreaddir count[4], then qid[13] offset[8] type[1] name[s] per entry.
+fn dirents(body: &[u8]) -> Vec<Listed> {
+    assert_eq!(
+        u32::from_le_bytes(body[..4].try_into().unwrap()) as usize,
+        body.len() - 4
+    );
+    let mut entries = Vec::new();
+    let mut at = 4;
+    while at < body.len() {
+        let length = usize::from(u16::from_le_bytes([body[at + 22], body[at + 23]]));
+        entries.push((
+            (
+                body[at],
+                u64::from_le_bytes(body[at + 5..at + 13].try_into().unwrap()),
+            ),
+            u64::from_le_bytes(body[at + 13..at + 21].try_into().unwrap()),
+            body[at + 21],
+            body[at + 24..at + 24 + length].to_vec(),
+        ));
+        at += 24 + length;
+    }
+    entries
+}
+
+fn treaddir(fid: u32, offset: u64, count: u32) -> Vec<u8> {
+    let mut body = fid.to_le_bytes().to_vec();
+    body.extend(offset.to_le_bytes());
+    body.extend(count.to_le_bytes());
+    body
+}
+
+#[test]
+fn root_lists_the_fixed_vocabulary_without_touching_role_state() {
+    let qids = WmQids::new();
+    let mut files = owner(9, qids.clone());
+    files
+        .publish_snapshot(record(9, WmFileKind::Snapshot, 0, &[1]))
+        .unwrap();
+    files.append_event(WmFileKind::Submitted, &[0; 8]).unwrap();
+    let allocated = *qids.0.lock().unwrap();
+    let events = files.describe(&Node::Events, None);
+    let id = sophia_9p::ConnectionId(7);
+    files.bind_connection(id);
+    let mut connection = sophia_9p::Connection::new(id, None, Limits::default());
+
+    let mut version = 8192u32.to_le_bytes().to_vec();
+    version.extend(8u16.to_le_bytes());
+    version.extend(b"9P2000.L");
+    assert_eq!(
+        exchange(&mut connection, &mut files, 100, u16::MAX, &version).0,
+        101
+    );
+    let mut attach = 0u32.to_le_bytes().to_vec();
+    attach.extend(u32::MAX.to_le_bytes());
+    attach.extend([0; 4]);
+    attach.extend(u32::MAX.to_le_bytes());
+    assert_eq!(
+        exchange(&mut connection, &mut files, 104, 1, &attach).0,
+        105
+    );
+    let clone = [0u32.to_le_bytes(), 1u32.to_le_bytes()].concat();
+    let mut walk = clone.clone();
+    walk.extend(0u16.to_le_bytes());
+    assert_eq!(exchange(&mut connection, &mut files, 110, 2, &walk).0, 111);
+    let open = [1u32.to_le_bytes(), 0o200000u32.to_le_bytes()].concat();
+    assert_eq!(exchange(&mut connection, &mut files, 12, 3, &open).0, 13);
+
+    let (kind, body) = exchange(&mut connection, &mut files, 40, 4, &treaddir(1, 0, 8192));
+    assert_eq!(kind, 41);
+    let entries = dirents(&body);
+    let nodes = [
+        (&b"api"[..], Node::Api),
+        (b"limits", Node::Limits),
+        (b"snapshot", Node::Snapshot),
+        (b"events", Node::Events),
+        (b"transaction", Node::Transaction),
+        (b"submit", Node::Submit),
+        (b"ack", Node::Ack),
+    ];
+    assert_eq!(entries.len(), nodes.len());
+    for ((offset, (name, node)), (qid, next, dtype, listed)) in (1..).zip(nodes).zip(&entries) {
+        let entry = files.describe(&node, None);
+        assert_eq!(listed, name);
+        assert_eq!(*qid, (0, entry.qid_path), "{name:?} as a walk reports it");
+        assert_eq!(*next, offset);
+        assert_eq!(*dtype, 8, "a regular file");
+    }
+    let (_, rest) = exchange(&mut connection, &mut files, 40, 5, &treaddir(1, 5, 8192));
+    let rest: Vec<_> = dirents(&rest).into_iter().map(|entry| entry.3).collect();
+    assert_eq!(rest, [b"submit".to_vec(), b"ack".to_vec()]);
+    let (_, end) = exchange(&mut connection, &mut files, 40, 6, &treaddir(1, 7, 8192));
+    assert!(dirents(&end).is_empty());
+
+    // Listing opened, pinned, allocated and consumed nothing.
+    assert_eq!(*qids.0.lock().unwrap(), allocated);
+    assert_eq!(files.describe(&Node::Events, None), events);
+    let pinned = files.open(&Node::Snapshot, OpenFlags(0)).unwrap();
+    files.release(Node::Snapshot, Some(pinned));
+    assert!(matches!(
+        files.readdir(&Node::Api, &mut Handle::Plain, 0, 8),
+        Err(Errno::ENOTDIR)
+    ));
+
+    files.revoke();
+    let (kind, errno) = exchange(&mut connection, &mut files, 40, 7, &treaddir(1, 0, 8192));
+    assert_eq!((kind, errno), (7, 116u32.to_le_bytes().to_vec()));
+}

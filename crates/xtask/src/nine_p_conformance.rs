@@ -3,8 +3,8 @@
 //!
 //! WHAT IT PROVES. The oracle (`tools/9p-oracle`) shares no code with the
 //! core. It drives the pinned third-party Go client, github.com/hugelgupf/p9
-//! v0.4.1 (Apache-2.0), through version, attach, walk, open, read, write,
-//! getattr and clunk, and sends frames written from the 9P2000.L
+//! v0.4.1 (Apache-2.0), through version, attach, walk, open, read, readdir,
+//! write, getattr and clunk, and sends frames written from the 9P2000.L
 //! specification for what that client never sends: flush, malformed and
 //! oversize frames, tag rules and version edge cases. The server is the
 //! crate's `static_export_server` example serving the C1 static test export
@@ -36,13 +36,14 @@ const PINNED_MODULE: &str = "github.com/hugelgupf/p9 v0.4.1";
 const PINNED_SUM: &str =
     "github.com/hugelgupf/p9 v0.4.1 h1:04RUBWSYlvP38QX8At5VXnMTg9qNEnbP/548aMLtfsk=";
 /// Fewer checks than this is an oracle that skipped some, not a pass.
-const MINIMUM_CHECKS: usize = 38;
-const MUTATIONS: [&str; 5] = [
+const MINIMUM_CHECKS: usize = 42;
+const MUTATIONS: [&str; 6] = [
     "permissive-check",
     "corrupt-read",
     "pending-as-empty",
     "version-suffix",
     "drop-flush",
+    "list-hidden",
 ];
 const RUN_LIMIT: Duration = Duration::from_secs(180);
 

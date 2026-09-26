@@ -103,6 +103,15 @@ pub enum WalkName<'request> {
     Parent,
 }
 
+/// One child a directory lists: its name, the metadata a walk to it would
+/// report, and the cookie that resumes the listing after it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DirEntry {
+    pub name: Vec<u8>,
+    pub entry: Entry,
+    pub next: u64,
+}
+
 /// A read either has its data now, or waits. A waiting read has consumed
 /// nothing: it is asked again, and only the answer that is sent consumes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -157,6 +166,30 @@ pub trait Export {
         offset: u64,
         data: &[u8],
     ) -> Result<u32, Errno>;
+
+    /// The entries of an open directory from `cookie` on, at most
+    /// `max_entries` and at least one unless the listing has ended: an empty
+    /// list is its end. Cookie zero is the start, and each entry's `next`
+    /// resumes after it, so `next` rises strictly from `cookie`. The owner
+    /// chooses cookies that stay valid while its children change.
+    ///
+    /// Names are exactly the ones [`Export::lookup`] resolves and
+    /// [`Export::check`] admits, never `.` or `..`, and each entry is the
+    /// child's [`Export::describe`] without a handle: listing opens, pins and
+    /// allocates nothing. The core has already checked the directory with
+    /// [`Operation::Read`]. It answers a listing that breaks these rules with
+    /// `EIO`, and keeps entries that do not fit its reply for the next
+    /// request. An owner that lists nothing keeps this refusal.
+    fn readdir(
+        &mut self,
+        directory: &Self::Node,
+        handle: &mut Self::Handle,
+        cookie: u64,
+        max_entries: usize,
+    ) -> Result<Vec<DirEntry>, Errno> {
+        let _ = (directory, handle, cookie, max_entries);
+        Err(Errno::EOPNOTSUPP)
+    }
 
     fn release(&mut self, node: Self::Node, handle: Option<Self::Handle>);
 }

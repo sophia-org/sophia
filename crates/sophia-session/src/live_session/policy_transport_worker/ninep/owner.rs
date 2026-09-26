@@ -5,6 +5,17 @@ use sophia_9p::connection::ConnectionId;
 mod atomic_tests;
 
 const API: &[u8] = b"sophia-wm-files version=1 output_transport=current_ipc\n";
+/// The fixed root vocabulary, in the order a listing gives it. Each entry's
+/// cookie is its position plus one.
+const ROOT_ENTRIES: [(&[u8], Node); 7] = [
+    (b"api", Node::Api),
+    (b"limits", Node::Limits),
+    (b"snapshot", Node::Snapshot),
+    (b"events", Node::Events),
+    (b"transaction", Node::Transaction),
+    (b"submit", Node::Submit),
+    (b"ack", Node::Ack),
+];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(in super::super) enum Node {
@@ -554,6 +565,33 @@ impl<C: PolicyFileCodec> Export for WmFiles<C> {
             }
             _ => Err(Errno::EINVAL),
         }
+    }
+    /// Lists the fixed root through describe alone: no open, snapshot pin,
+    /// qid allocation, journal read or acknowledgement. A listed snapshot
+    /// names the current object, which a later open may no longer pin.
+    fn readdir(
+        &mut self,
+        directory: &Node,
+        _handle: &mut Handle,
+        cookie: u64,
+        max_entries: usize,
+    ) -> Result<Vec<DirEntry>, Errno> {
+        if *directory != Node::Root {
+            return Err(Errno::ENOTDIR);
+        }
+        let start = usize::try_from(cookie)
+            .unwrap_or(usize::MAX)
+            .min(ROOT_ENTRIES.len());
+        Ok(ROOT_ENTRIES[start..]
+            .iter()
+            .take(max_entries)
+            .zip(start as u64 + 1..)
+            .map(|(&(name, node), next)| DirEntry {
+                name: name.to_vec(),
+                entry: self.describe(&node, None),
+                next,
+            })
+            .collect())
     }
     fn release(&mut self, _node: Node, handle: Option<Handle>) {
         match handle {

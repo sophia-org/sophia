@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 use export::{Node, StaticExport};
 use sophia_9p::unix::Server;
 use sophia_9p::{
-    Access, AttachContext, Attachment, Entry, Errno, Export, Limits, OpenFlags, ReadOutcome,
-    WalkName,
+    Access, AttachContext, Attachment, DirEntry, Entry, Errno, Export, Limits, OpenFlags,
+    ReadOutcome, WalkName,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,6 +39,8 @@ enum Mutation {
     VersionSuffix,
     /// Rflush never reaches the client.
     DropFlush,
+    /// A listing also names the child the owner refuses.
+    ListHidden,
 }
 
 impl Mutation {
@@ -49,6 +51,7 @@ impl Mutation {
             "pending-as-empty" => Self::PendingAsEmpty,
             "version-suffix" => Self::VersionSuffix,
             "drop-flush" => Self::DropFlush,
+            "list-hidden" => Self::ListHidden,
             other => return Err(format!("unknown mutation {other:?}")),
         })
     }
@@ -118,6 +121,29 @@ impl Export for Mutant {
         data: &[u8],
     ) -> Result<u32, Errno> {
         self.inner.write(node, handle, offset, data)
+    }
+
+    fn readdir(
+        &mut self,
+        directory: &Node,
+        handle: &mut Self::Handle,
+        cookie: u64,
+        max_entries: usize,
+    ) -> Result<Vec<DirEntry>, Errno> {
+        let mut entries = self.inner.readdir(directory, handle, cookie, max_entries)?;
+        if self.mutation == Some(Mutation::ListHidden) && directory.name == export::Name::Root {
+            let next = entries.last().map_or(cookie, |entry| entry.next) + 1;
+            let hidden = Node {
+                name: export::Name::Hidden,
+                epoch: directory.epoch,
+            };
+            entries.push(DirEntry {
+                name: b"hidden".to_vec(),
+                entry: self.inner.describe(&hidden, None),
+                next,
+            });
+        }
+        Ok(entries)
     }
 
     fn release(&mut self, node: Node, handle: Option<Self::Handle>) {

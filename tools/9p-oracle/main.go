@@ -5,8 +5,8 @@
 // Two scenarios run against a server serving the C1 static test export:
 //
 //   - client: the pinned third-party client, github.com/hugelgupf/p9 v0.4.1
-//     (Apache-2.0), performs version, attach, walk, open, read, write,
-//     getattr and clunk, and observes the server's errors.
+//     (Apache-2.0), performs version, attach, walk, open, read, readdir,
+//     write, getattr and clunk, and observes the server's errors.
 //   - raw: frames written here from the 9P2000.L specification
 //     (diod protocol.md) exercise what that client never sends: flush,
 //     malformed and oversize frames, tag rules and version edge cases.
@@ -242,7 +242,7 @@ func (o *oracle) clientScenario() {
 		return wantErrno(err, linux.EISDIR)
 	}())
 
-	o.check("client/readdir-not-performed", func() error {
+	o.check("client/readdir-lists-root", func() error {
 		_, dir, err := root.Walk(nil)
 		if err != nil {
 			return err
@@ -251,8 +251,65 @@ func (o *oracle) clientScenario() {
 		if _, _, err := dir.Open(p9.ReadOnly); err != nil {
 			return err
 		}
-		_, err = dir.Readdir(0, 1024)
-		return wantErrno(err, linux.EOPNOTSUPP)
+		entries, err := dir.Readdir(0, 1024)
+		if err != nil {
+			return err
+		}
+		// hidden is refused by the owner, so it is not listed. The type is
+		// the Linux d_type: 8 a regular file, 4 a directory.
+		want := []struct {
+			name  string
+			qid   p9.QIDType
+			dtype uint8
+		}{
+			{"info", p9.TypeRegular, 8},
+			{"sink", p9.TypeRegular, 8},
+			{"events", p9.TypeRegular, 8},
+			{"dir", p9.TypeDir, 4},
+		}
+		if len(entries) != len(want) {
+			return fmt.Errorf("entries %v", entries)
+		}
+		for i, w := range want {
+			e := entries[i]
+			if e.Name != w.name || e.QID.Type != w.qid || uint8(e.Type) != w.dtype || e.Offset != uint64(i+1) {
+				return fmt.Errorf("entry %d is %+v, want %+v at offset %d", i, e, w, i+1)
+			}
+		}
+		qids, walked, err := root.Walk([]string{"dir"})
+		if err != nil {
+			return err
+		}
+		walked.Close()
+		if qids[0] != entries[3].QID {
+			return fmt.Errorf("dir walks to %v, listed as %v", qids[0], entries[3].QID)
+		}
+		end, err := dir.Readdir(entries[3].Offset, 1024)
+		if err != nil || len(end) != 0 {
+			return fmt.Errorf("after the last entry: %v %v", end, err)
+		}
+		return nil
+	}())
+
+	o.check("client/readdir-resumes-at-an-offset", func() error {
+		_, dir, err := root.Walk(nil)
+		if err != nil {
+			return err
+		}
+		defer dir.Close()
+		if _, _, err := dir.Open(p9.ReadOnly); err != nil {
+			return err
+		}
+		// One entry for "info" is 24 + 4 bytes.
+		first, err := dir.Readdir(0, 28)
+		if err != nil || len(first) != 1 || first[0].Name != "info" {
+			return fmt.Errorf("first page %v %v", first, err)
+		}
+		rest, err := dir.Readdir(first[0].Offset, 1024)
+		if err != nil || len(rest) != 3 || rest[0].Name != "sink" || rest[2].Name != "dir" {
+			return fmt.Errorf("rest %v %v", rest, err)
+		}
+		return nil
 	}())
 
 	o.check("client/clunk-root", root.Close())
@@ -408,6 +465,10 @@ func tread(tag uint16, fid uint32, count uint32) []byte {
 	return frame(116, tag, new(body).u32(fid).u64(0).u32(count))
 }
 
+func treaddir(tag uint16, fid uint32, offset uint64, count uint32) []byte {
+	return frame(40, tag, new(body).u32(fid).u64(offset).u32(count))
+}
+
 func tgetattr(tag uint16, fid uint32) []byte {
 	return frame(24, tag, new(body).u32(fid).u64(0x7ff))
 }
@@ -489,7 +550,8 @@ func (o *oracle) rawScenario() {
 			}
 			return frame(110, 5, b)
 		}(), 22},
-		{"raw/readdir-eopnotsupp", frame(40, 5, new(body).u32(0).u64(0).u32(64)), 95},
+		{"raw/readdir-unopened-ebadf", treaddir(5, 0, 0, 64), 9},
+		{"raw/readdir-file-enotdir", treaddir(5, 1, 0, 64), 20},
 		{"raw/auth-eopnotsupp", frame(102, 5, new(body).u32(7).str("").str("").u32(nofid)), 95},
 		{"raw/unassigned-type-enosys", frame(200, 5, new(body)), 38},
 		{"raw/attach-with-afid-einval", frame(104, 5, new(body).u32(8).u32(3).str("").str("").u32(nofid)), 22},
@@ -517,6 +579,75 @@ func (o *oracle) rawScenario() {
 			return err
 		}())
 	}
+
+	// dir opened as fid 2 for listing.
+	openDir := func() (*raw, error) {
+		r, err := o.session()
+		if err != nil {
+			return nil, err
+		}
+		if err := r.send(frame(110, 7, new(body).u32(0).u32(2).u16(1).str("dir"))); err != nil {
+			return nil, err
+		}
+		if _, err := r.expectKind(7, 111); err != nil {
+			return nil, err
+		}
+		if err := r.send(frame(12, 8, new(body).u32(2).u32(0))); err != nil {
+			return nil, err
+		}
+		if _, err := r.expectKind(8, 13); err != nil {
+			return nil, err
+		}
+		return r, nil
+	}
+
+	o.check("raw/readdir-entry-layout", func() error {
+		r, err := openDir()
+		if err != nil {
+			return err
+		}
+		defer r.conn.Close()
+		if err := r.send(treaddir(9, 2, 0, 64)); err != nil {
+			return err
+		}
+		got, err := r.expectKind(9, 41)
+		if err != nil {
+			return err
+		}
+		// count[4], then qid[13] offset[8] type[1] name[s] for "leaf".
+		b := got.body
+		if len(b) != 4+24+4 || binary.LittleEndian.Uint32(b) != 28 {
+			return fmt.Errorf("Rreaddir body %v", b)
+		}
+		e := b[4:]
+		if e[0] != 0 || binary.LittleEndian.Uint64(e[13:21]) != 1 || e[21] != 8 ||
+			binary.LittleEndian.Uint16(e[22:24]) != 4 || string(e[24:]) != "leaf" {
+			return fmt.Errorf("entry %v", e)
+		}
+		if err := r.send(treaddir(10, 2, 1, 64)); err != nil {
+			return err
+		}
+		end, err := r.expectKind(10, 41)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(end.body, []byte{0, 0, 0, 0}) {
+			return fmt.Errorf("after the last entry: %v", end.body)
+		}
+		return nil
+	}())
+
+	o.check("raw/readdir-first-entry-too-large-einval", func() error {
+		r, err := openDir()
+		if err != nil {
+			return err
+		}
+		defer r.conn.Close()
+		if err := r.send(treaddir(9, 2, 0, 27)); err != nil {
+			return err
+		}
+		return r.expectErrno(9, 22)
+	}())
 
 	o.check("raw/flushed-read-is-never-answered", func() error {
 		r, err := o.session()

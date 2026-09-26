@@ -96,6 +96,9 @@ pub fn tlopen(tag: u16, fid: u32, flags: u32) -> Vec<u8> {
 pub fn tread(tag: u16, fid: u32, offset: u64, count: u32) -> Vec<u8> {
     frame(116, tag, Body::default().u32(fid).u64(offset).u32(count))
 }
+pub fn treaddir(tag: u16, fid: u32, offset: u64, count: u32) -> Vec<u8> {
+    frame(40, tag, Body::default().u32(fid).u64(offset).u32(count))
+}
 pub fn twrite(tag: u16, fid: u32, offset: u64, data: &[u8]) -> Vec<u8> {
     let count = u32::try_from(data.len()).unwrap();
     frame(
@@ -186,6 +189,28 @@ impl Frame {
         self.body[4..].to_vec()
     }
 
+    /// `Rreaddir count[4] data[count]`, split into its entries: each is
+    /// qid[13] offset[8] type[1] name[s].
+    pub fn dirents(&self) -> Vec<Dirent> {
+        assert_eq!(self.kind, 41, "{self:?} is not Rreaddir");
+        let count = self.u32_at(0) as usize;
+        assert_eq!(self.body.len(), 4 + count);
+        let mut entries = Vec::new();
+        let mut at = 4;
+        while at < self.body.len() {
+            let length = usize::from(self.u16_at(at + 22));
+            entries.push(Dirent {
+                qid: self.qid_at(at),
+                offset: self.u64_at(at + 13),
+                kind: self.body[at + 21],
+                name: self.body[at + 24..at + 24 + length].to_vec(),
+            });
+            at += 24 + length;
+        }
+        assert_eq!(at, self.body.len(), "a partial entry");
+        entries
+    }
+
     /// `Rwrite count[4]`.
     pub fn written(&self) -> u32 {
         assert_eq!(self.kind, 119, "{self:?} is not Rwrite");
@@ -205,6 +230,16 @@ impl Frame {
             self.u64_at(8 + 13 + 12 + 16),
         )
     }
+}
+
+/// One directory entry of an `Rreaddir`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Dirent {
+    pub qid: (u8, u32, u64),
+    pub offset: u64,
+    /// The Linux `d_type`: 4 for a directory, 8 for a regular file.
+    pub kind: u8,
+    pub name: Vec<u8>,
 }
 
 /// Splits a byte stream into whole reply frames; a trailing partial frame is

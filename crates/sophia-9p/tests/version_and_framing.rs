@@ -171,11 +171,13 @@ fn a_walk_of_more_than_sixteen_names_is_einval() {
 #[test]
 fn unperformed_request_types_are_refused_by_number() {
     let mut harness = Harness::attached();
-    // Treaddir and Tauth are known .L operations this core does not perform.
+    // Treaddir is performed: on the unopened attach fid it is EBADF, not a
+    // refusal by number.
     assert_eq!(
         harness.errno(&frame(40, 2, Body::default().u32(0).u64(0).u32(64))),
-        EOPNOTSUPP
+        EBADF
     );
+    // Tauth is a known .L operation this core does not perform.
     let auth = frame(
         102,
         3,

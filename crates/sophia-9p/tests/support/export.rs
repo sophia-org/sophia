@@ -11,6 +11,9 @@
 //!     leaf     read-only file
 //! ```
 //!
+//! A listing names every child but `hidden`, in the order above, with the
+//! cookie of each entry its position plus one.
+//!
 //! Every attach is a fresh epoch, and qid paths carry the epoch, so no path is
 //! reused. The shared state lets a test push events, revoke epochs, and see
 //! every call the core made.
@@ -19,8 +22,8 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use sophia_9p::{
-    Access, AttachContext, Attachment, ConnectionId, Entry, Epoch, Errno, Export, NodeKind,
-    OpenFlags, Operation, PeerCredentials, ReadOutcome, WalkName,
+    Access, AttachContext, Attachment, ConnectionId, DirEntry, Entry, Epoch, Errno, Export,
+    NodeKind, OpenFlags, Operation, PeerCredentials, ReadOutcome, WalkName,
 };
 
 pub const INFO_LEN: usize = 70_000;
@@ -81,6 +84,7 @@ pub struct Shared {
     pub checks: Vec<(ConnectionId, Epoch, Name, Operation)>,
     /// Every read and write that reached the export, ready or not.
     pub reads: usize,
+    pub listings: usize,
     pub writes: usize,
     pub opens: usize,
     /// Every release, with whether it carried an open handle.
@@ -258,6 +262,45 @@ impl Export for StaticExport {
         }
         state.sink.extend_from_slice(data);
         Ok(u32::try_from(data.len()).unwrap())
+    }
+
+    fn readdir(
+        &mut self,
+        directory: &Node,
+        _handle: &mut Handle,
+        cookie: u64,
+        max_entries: usize,
+    ) -> Result<Vec<DirEntry>, Errno> {
+        self.state().listings += 1;
+        let children: &[(&[u8], Name)] = match directory.name {
+            Name::Root => &[
+                (b"info", Name::Info),
+                (b"sink", Name::Sink),
+                (b"events", Name::Events),
+                (b"dir", Name::Dir),
+            ],
+            Name::Dir => &[(b"leaf", Name::Leaf)],
+            _ => return Err(Errno::ENOTDIR),
+        };
+        let start = usize::try_from(cookie)
+            .unwrap_or(usize::MAX)
+            .min(children.len());
+        Ok(children[start..]
+            .iter()
+            .take(max_entries)
+            .zip(start + 1..)
+            .map(|(&(name, child), next)| DirEntry {
+                name: name.to_vec(),
+                entry: self.describe(
+                    &Node {
+                        name: child,
+                        epoch: directory.epoch,
+                    },
+                    None,
+                ),
+                next: next as u64,
+            })
+            .collect())
     }
 
     fn release(&mut self, node: Node, handle: Option<Handle>) {

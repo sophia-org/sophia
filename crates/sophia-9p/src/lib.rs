@@ -21,8 +21,8 @@ pub mod wire;
 
 pub use connection::{Connection, ConnectionId, Fatal};
 pub use export::{
-    Access, AttachContext, Attachment, Entry, Epoch, Export, NodeKind, Operation, PeerCredentials,
-    ReadOutcome, WalkName,
+    Access, AttachContext, Attachment, DirEntry, Entry, Epoch, Export, NodeKind, Operation,
+    PeerCredentials, ReadOutcome, WalkName,
 };
 pub use records::{
     Errno, Fid, Limits, LimitsError, OpenAccess, OpenFlags, Qid, QidKind, Reply, Request, Tag,

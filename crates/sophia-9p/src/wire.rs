@@ -2,15 +2,22 @@
 //! encoding. Every length a peer supplies is checked against the bytes that
 //! are present, and no value is ever narrowed silently.
 
-use crate::records::{Attr, Errno, Fid, OpenFlags, Qid, Reply, Request, Tag};
+use crate::records::{Attr, Errno, Fid, OpenFlags, Qid, QidKind, Reply, Request, Tag};
 
 /// size[4] type[1] tag[2].
 pub const HEADER: usize = 7;
-/// What an `Rread` adds to its data: size[4] type[1] tag[2] count[4].
+/// What an `Rread` or `Rreaddir` adds to its data: size[4] type[1] tag[2]
+/// count[4].
 pub const READ_OVERHEAD: u32 = 11;
 /// The I/O header Linux reserves in an `iounit`: size[4] type[1] tag[2]
 /// fid[4] offset[8] count[4], plus one.
 pub const IO_HEADER: u32 = 24;
+/// An `Rreaddir` entry without its name: qid[13] offset[8] type[1] and the
+/// name's length[2].
+pub const DIRENT_FIXED: usize = 24;
+/// Linux `d_type` values for a directory and a regular file.
+const DT_DIR: u8 = 4;
+const DT_REG: u8 = 8;
 
 /// Message types, in the numbering of the 9P2000.L specification.
 pub mod kind {
@@ -29,6 +36,7 @@ pub mod kind {
     pub const TXATTRWALK: u8 = 30;
     pub const TXATTRCREATE: u8 = 32;
     pub const TREADDIR: u8 = 40;
+    pub const RREADDIR: u8 = 41;
     pub const TFSYNC: u8 = 50;
     pub const TLOCK: u8 = 52;
     pub const TGETLOCK: u8 = 54;
@@ -156,6 +164,12 @@ pub fn encode(tag: Tag, reply: &Reply, out: &mut Vec<u8>) -> Result<(), Unframea
             out.extend_from_slice(data);
             kind::RREAD
         }
+        Reply::Readdir(entries) => {
+            let count = u32::try_from(entries.len()).map_err(|_| Unframeable)?;
+            out.extend_from_slice(&count.to_le_bytes());
+            out.extend_from_slice(entries);
+            kind::RREADDIR
+        }
         Reply::Write(count) => {
             out.extend_from_slice(&count.to_le_bytes());
             kind::RWRITE
@@ -181,6 +195,29 @@ fn put_string(out: &mut Vec<u8>, value: &[u8]) -> Result<(), Unframeable> {
     out.extend_from_slice(&length.to_le_bytes());
     out.extend_from_slice(value);
     Ok(())
+}
+
+/// One `Rreaddir` entry: qid[13] offset[8] type[1] name[s]. `offset` is the
+/// cookie that resumes after this entry; `type` is the Linux `d_type` the
+/// v9fs client hands to `getdents`.
+pub fn put_dirent(
+    out: &mut Vec<u8>,
+    qid: &Qid,
+    offset: u64,
+    name: &[u8],
+) -> Result<(), Unframeable> {
+    put_qid(out, qid);
+    out.extend_from_slice(&offset.to_le_bytes());
+    out.push(match qid.kind {
+        QidKind::Directory => DT_DIR,
+        QidKind::File => DT_REG,
+    });
+    put_string(out, name)
+}
+
+/// The bytes [`put_dirent`] writes for a name of this length.
+pub const fn dirent_length(name: usize) -> usize {
+    DIRENT_FIXED + name
 }
 
 fn put_qid(out: &mut Vec<u8>, qid: &Qid) {
@@ -288,6 +325,11 @@ impl<'frame> Fields<'frame> {
                 offset: self.u64()?,
                 count: self.u32()?,
             },
+            kind::TREADDIR => Request::Readdir {
+                fid: self.fid()?,
+                offset: self.u64()?,
+                count: self.u32()?,
+            },
             kind::TWRITE => {
                 let fid = self.fid()?;
                 let offset = self.u64()?;
@@ -311,7 +353,6 @@ impl<'frame> Fields<'frame> {
             | kind::TSETATTR
             | kind::TXATTRWALK
             | kind::TXATTRCREATE
-            | kind::TREADDIR
             | kind::TFSYNC
             | kind::TLOCK
             | kind::TGETLOCK

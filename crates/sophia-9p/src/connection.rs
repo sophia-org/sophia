@@ -19,7 +19,7 @@ use crate::export::{
     WalkName,
 };
 use crate::records::{Attr, Errno, Fid, Limits, OpenAccess, OpenFlags, Reply, Request, Tag};
-use crate::wire::{self, FrameError, IO_HEADER, READ_OVERHEAD};
+use crate::wire::{self, DIRENT_FIXED, FrameError, IO_HEADER, READ_OVERHEAD};
 
 /// Identifies a connection to the export, for as long as it lives.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -61,6 +61,10 @@ fn accepts_dialect(version: &[u8]) -> bool {
 /// The largest reply to any request except a read: `Rgetattr`, 160 bytes, is
 /// the widest, with `Rwalk` of sixteen qids at 217.
 const SMALL_REPLY: usize = 256;
+/// The most entries one listing asks the export for.
+const MAX_LISTED: usize = 256;
+/// The longest name a directory entry may carry, as Linux's `NAME_MAX`.
+const NAME_MAX: usize = 255;
 /// An `Rlerror`: header and error number.
 const ERROR_REPLY: usize = 11;
 
@@ -286,7 +290,7 @@ impl<E: Export> Connection<E> {
     /// sends to reads waiting on its fid.
     fn reply_bound(&self, decoded: &Result<(Tag, Request<'_>), wire::Malformed>) -> usize {
         match decoded {
-            Ok((_, Request::Read { count, .. })) => {
+            Ok((_, Request::Read { count, .. } | Request::Readdir { count, .. })) => {
                 READ_OVERHEAD as usize + self.read_count(*count) as usize
             }
             Ok((_, Request::Clunk { fid } | Request::Remove { fid })) => {
@@ -339,6 +343,7 @@ impl<E: Export> Connection<E> {
             Request::Read { fid, offset, count } => {
                 return Ok(self.read(export, tag, fid, offset, count));
             }
+            Request::Readdir { fid, offset, count } => self.readdir(export, fid, offset, count),
             Request::Write { fid, offset, data } => self.write(export, fid, offset, data),
             Request::Clunk { fid } => self.clunk(export, fid, Reply::Clunk)?,
             // Remove clunks its fid even though the removal itself is refused.
@@ -621,6 +626,72 @@ impl<E: Export> Connection<E> {
         }
     }
 
+    /// A listing is answered at once and never waits. The export is asked for
+    /// entries from the cookie on; they are encoded while they fit in the
+    /// count, and those that do not are left for the next request, which
+    /// resumes at the last entry sent. A first entry too large for the count
+    /// is `EINVAL`, since an empty reply would end the listing.
+    fn readdir(&mut self, export: &mut E, fid: Fid, cookie: u64, count: u32) -> Reply {
+        let count = self.read_count(count) as usize;
+        let id = self.id;
+        let Some(state) = self.fids.get_mut(&fid) else {
+            return Reply::Lerror(Errno::EBADF);
+        };
+        let Some(opened) = state.open.as_mut() else {
+            return Reply::Lerror(Errno::EBADF);
+        };
+        if !opened.access.reads() {
+            return Reply::Lerror(Errno::EBADF);
+        }
+        if opened.kind != NodeKind::Directory {
+            return Reply::Lerror(Errno::ENOTDIR);
+        }
+        let access = Access {
+            connection: id,
+            epoch: state.epoch,
+            node: &state.node,
+            operation: Operation::Read,
+        };
+        if let Err(errno) = export.check(&access) {
+            return Reply::Lerror(errno);
+        }
+        // Like a zero-count read, answered without asking the export.
+        if count == 0 {
+            return Reply::Readdir(Vec::new());
+        }
+        // Every entry takes at least DIRENT_FIXED bytes, and at least one is
+        // asked for, so an empty answer always means the end.
+        let max_entries = (count / DIRENT_FIXED).clamp(1, MAX_LISTED);
+        let entries = match export.readdir(&state.node, &mut opened.handle, cookie, max_entries) {
+            Ok(entries) => entries,
+            Err(errno) => return Reply::Lerror(errno),
+        };
+        if entries.len() > max_entries {
+            return Reply::Lerror(Errno::EIO);
+        }
+        let mut previous = cookie;
+        for entry in &entries {
+            if !listable_name(&entry.name) || entry.next <= previous {
+                return Reply::Lerror(Errno::EIO);
+            }
+            previous = entry.next;
+        }
+        let mut encoded = Vec::new();
+        for entry in &entries {
+            if encoded.len() + wire::dirent_length(entry.name.len()) > count {
+                break;
+            }
+            if wire::put_dirent(&mut encoded, &entry.entry.qid(), entry.next, &entry.name).is_err()
+            {
+                return Reply::Lerror(Errno::EIO);
+            }
+        }
+        if encoded.is_empty() && !entries.is_empty() {
+            return Reply::Lerror(Errno::EINVAL);
+        }
+        Reply::Readdir(encoded)
+    }
+
     fn write(&mut self, export: &mut E, fid: Fid, offset: u64, data: &[u8]) -> Reply {
         let id = self.id;
         let Some(state) = self.fids.get_mut(&fid) else {
@@ -686,4 +757,14 @@ impl<E: Export> Connection<E> {
             size: entry.size,
         })
     }
+}
+
+/// A name a walk could take: not empty, not `.` or `..`, without `/` or NUL,
+/// and no longer than `NAME_MAX`.
+fn listable_name(name: &[u8]) -> bool {
+    !name.is_empty()
+        && name.len() <= NAME_MAX
+        && name != b"."
+        && name != b".."
+        && !name.iter().any(|byte| matches!(byte, b'/' | 0))
 }
