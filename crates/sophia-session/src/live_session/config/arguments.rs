@@ -861,6 +861,8 @@ impl PersistentXtermSessionConfig {
             session_application_overrides,
             control_access: session_profile.candidate().control,
             control_socket: None,
+            inspection_access: session_profile.candidate().inspection,
+            inspection_socket: None,
             application_catalog,
             session_profile,
             active_launch_profile: None,

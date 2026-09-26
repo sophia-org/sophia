@@ -110,6 +110,7 @@ impl LiveWmSession {
             .map(|output| output.id)
             .collect::<BTreeSet<_>>();
         let mut public = LivePublicPolicyState {
+            inspection: None,
             wm_transport: config.wm_transport,
             wm_filesystem_qids,
             control_generation: 1,

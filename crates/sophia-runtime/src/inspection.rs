@@ -121,7 +121,8 @@ impl InspectionService {
 
     /// Invalidate prior attachments synchronously, without taking the publication
     /// lock. Only Session's owner may replace this fence, not publisher clones.
-    /// A fresh safe snapshot is required before the new fence admits readers.
+    /// A fresh safe snapshot is required before snapshot/watch access; api and
+    /// unavailable status remain readable by newly admitted host readers.
     pub fn fence(
         &mut self,
         wm_epoch: u64,

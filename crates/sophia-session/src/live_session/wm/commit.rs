@@ -269,6 +269,7 @@ impl LiveWmSession {
 
 impl Drop for LiveWmSession {
     fn drop(&mut self) {
+        self.service_inspection(true);
         self.control_restart.take();
         let _ = self.supervisor.terminate();
         self.control_lifetime.take();

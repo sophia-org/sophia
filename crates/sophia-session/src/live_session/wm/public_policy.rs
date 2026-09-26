@@ -181,6 +181,7 @@ impl PublicPolicyFaultPoint {
 }
 
 struct LivePublicPolicyState {
+    inspection: Option<LivePolicyInspection>,
     wm_transport: WmTransportSelection,
     wm_filesystem_qids: policy_transport_worker::PolicyFilesystemQids,
     control_generation: u64,

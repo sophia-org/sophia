@@ -30,6 +30,9 @@ impl LiveWmSession {
         ) {
             PublicPolicyRestartDecision::Idle => return Ok(None),
             PublicPolicyRestartDecision::AbortSettlement => {
+                if let Some(public) = self.public.as_mut() {
+                    public.fence_inspection(0, self.supervisor.peer_id());
+                }
                 if !process_exited {
                     self.supervisor.terminate()?;
                 }
@@ -50,6 +53,9 @@ impl LiveWmSession {
                 return Ok(None);
             }
             PublicPolicyRestartDecision::Restart => {}
+        }
+        if let Some(public) = self.public.as_mut() {
+            public.fence_inspection(0, self.supervisor.peer_id());
         }
         if restart_requested && !process_exited {
             self.supervisor.terminate()?;
@@ -163,6 +169,7 @@ impl LiveWmSession {
         public.expected_operation_slot = None;
         public.deferred_command = None;
         public.transport_unavailable = false;
+        public.fence_inspection(next_epoch, self.supervisor.peer_id());
         public.actions.clear();
         public.queue.clear();
         public.pending_dirty_outputs.clear();

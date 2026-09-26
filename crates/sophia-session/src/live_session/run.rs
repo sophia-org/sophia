@@ -306,6 +306,9 @@ pub(crate) fn run_persistent_xterm_session(
             generation.checked_add(1)
         })
         .map_err(|_| "Sophia session generation exhausted")?;
+    if let Some(wm) = wm_session.as_mut() {
+        wm.start_inspection(&mut config, session_generation);
+    }
     let namespace_registry = Arc::new(Mutex::new(NamespaceRegistry::new(session_generation)?));
     let x_namespace = namespace_registry
         .lock()
@@ -492,7 +495,11 @@ pub(crate) fn run_persistent_xterm_session(
         (None, None)
     };
     if let Some(terminal_command) = terminal_command.as_mut() {
-        configure_control_environment(terminal_command, config.control_socket.as_deref());
+        crate::application_catalog::configure_host_application_environment(
+            terminal_command,
+            config.control_socket.as_deref(),
+            config.inspection_socket.as_deref(),
+        );
         terminal_command
             .env("DISPLAY", &config.display)
             .env("XAUTHORITY", xauthority.path())
@@ -605,6 +612,8 @@ pub(crate) fn run_persistent_xterm_session(
                     .expect("secondary terminal requires xterm"),
                 &config.display,
                 xauthority.path(),
+                config.control_socket.as_deref(),
+                config.inspection_socket.as_deref(),
                 config
                     .inject_text
                     .as_deref()
@@ -623,6 +632,7 @@ pub(crate) fn run_persistent_xterm_session(
             &config.display,
             xauthority.path(),
             config.control_socket.as_deref(),
+            config.inspection_socket.as_deref(),
             crate::diagnostics::application::LaunchContext {
                 source: crate::diagnostics::application::LaunchSource::Startup,
                 transaction: None,
@@ -847,6 +857,9 @@ pub(crate) fn run_persistent_xterm_session(
     );
     let session_error = result.err();
     let mut outer_cleanup_failures = Vec::new();
+    if let Some(wm) = wm_session.as_mut() {
+        wm.service_inspection(true);
+    }
     drop(randr_witness);
     crate::session_println!("sophia_live_session_lifecycle schema=1 status=stopping_frontend");
     // Stop frontend routing before terminating its clients. Pointer motion can

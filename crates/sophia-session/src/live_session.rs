@@ -149,6 +149,7 @@ include!("live_session/presentation.rs");
 include!("live_session/startup.rs");
 include!("live_session/wm.rs");
 include!("live_session/control.rs");
+include!("live_session/inspection.rs");
 
 const SESSION_AUTHORITY_CAPACITY: usize = 256;
 const SESSION_KEY_CAPACITY: usize = 64;

@@ -852,6 +852,9 @@ fn run_session_loop_inner(
     macro_rules! begin_session_quiescence {
         ($reason:literal) => {{
             if session_quiescence.is_none() {
+                if let Some(wm) = wm_session.as_mut() {
+                    wm.service_inspection(true);
+                }
                 let now = Instant::now();
                 if let Err(error) = shutdown::begin_frontend_quiescence(
                     &mut window_allocation_publisher,

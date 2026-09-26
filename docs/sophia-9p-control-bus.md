@@ -130,6 +130,11 @@ composition. These are design references, not compatibility promises.
 
 ## Dialect, transport and API identity
 
+The current WM direct-client subset includes bounded `TREADDIR` for its fixed
+root. Directory discovery grants no role access. The separately enabled
+[host inspection export](sophia-wm-inspection.md) reuses that operation with its
+own admission and read-only vocabulary; mounted access remains unaccepted.
+
 - **Chosen wire direction:** 9P2000.L.
 - **Access paths to evaluate:** a direct local Unix-socket client and the Linux
   v9fs mount path, both subject to the same role admission and lifecycle rules.

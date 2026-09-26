@@ -384,6 +384,7 @@ fn native_process_spawn_retains_origin_and_duplicate_cannot_cancel_started_child
         display: ":unavailable",
         xauthority: std::path::Path::new("/nonexistent"),
         control_socket: None,
+        inspection_socket: None,
     };
     // Supplied verification result; real worker verification is a separate
     // control above. This exercises real process creation in a private domain.
@@ -455,7 +456,8 @@ fn native_spawn_refuses_failed_verification_and_revoked_connection_before_effect
                 CatalogProcessEnvironment {
                     display: ":unavailable",
                     xauthority: std::path::Path::new("/nonexistent"),
-                    control_socket: None
+                    control_socket: None,
+                    inspection_socket: None,
                 },
             ),
             Err(NativeCatalogSpawnError::Refused)
@@ -485,7 +487,8 @@ fn native_spawn_error_settles_exact_attempt_without_retry() {
             CatalogProcessEnvironment {
                 display: ":unavailable",
                 xauthority: std::path::Path::new("/nonexistent"),
-                control_socket: None
+                control_socket: None,
+                inspection_socket: None,
             },
         ),
         Err(NativeCatalogSpawnError::Spawn(_))

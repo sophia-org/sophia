@@ -81,6 +81,8 @@ candidates that role may exchange.
   wire, host-control opt-in, catalog generations, and owner-settled outcomes.
   The session service and `sophia msg` implement policy actions and confirmed
   restart; reload and delegated access remain unadvertised.
+- [Read-only WM inspection](sophia-wm-inspection.md) specifies the independently
+  enabled host observer, sanitized records, bounded cursors and `sophia inspect wm`.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.

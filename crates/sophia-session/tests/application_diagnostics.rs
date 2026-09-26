@@ -460,6 +460,7 @@ fn real_catalog_spawn_uses_the_shared_registration_without_display_io() {
             display: ":nonexistent",
             xauthority: std::path::Path::new("/nonexistent"),
             control_socket: None,
+            inspection_socket: None,
         },
     )
     .unwrap();

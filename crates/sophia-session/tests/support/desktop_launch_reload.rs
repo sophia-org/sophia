@@ -28,6 +28,12 @@ mod policy_combined_output;
 #[path = "policy_expectation_settlement.rs"]
 mod policy_expectation_settlement;
 
+#[path = "policy_inspection.rs"]
+mod policy_inspection;
+
+#[path = "inspection_profile_reload.rs"]
+mod inspection_profile_reload;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -97,6 +103,7 @@ impl ReloadFixture {
             .into_iter()
             .collect::<BTreeMap<_, _>>();
         let public = LivePublicPolicyState {
+            inspection: None,
             wm_transport: config.wm_transport,
             wm_filesystem_qids,
             output_policy_keys: Default::default(),

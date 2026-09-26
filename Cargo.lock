@@ -989,6 +989,7 @@ name = "sophia-cli"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-9p",
  "sophia-backend-live",
  "sophia-broker",
  "sophia-config",

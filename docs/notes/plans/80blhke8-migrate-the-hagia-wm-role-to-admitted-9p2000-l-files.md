@@ -38,6 +38,25 @@ state and order live only in the queues.
 
 ## Task details
 
+### Approved inspection slice
+
+On 2026-09-26 niltempus approved the wmii-derived improvements while preserving
+Sophia's admission and authority model: fixed-root enumeration, a separate
+disabled-by-default host-domain observer, sanitized server-owned records and a
+read-only client. The [inspection contract](../../sophia-wm-inspection.md) owns
+the audience, exact files, bounds, loss behavior and CLI. Host inspection and
+host control have independent startup permissions. The observer serves either
+WM transport without changing the writer's attach, Qids, journal or ACKs.
+
+The wmii reference is `4cae1dc7e8ae2f7a603ab3565493e035f054a3f4`. It supplies
+the fixed-directory and file-oriented inspection pattern, not authority rules:
+Sophia does not adopt client-writable events, unbounded reader queues, mutable
+selection aliases or shared WM/render/input ownership. Mounted access,
+per-application observer delegation and a default WM transport switch remain
+separate work. This slice does not close the full t249 exit.
+The [inspection investigation](../investigations/pp3pk4dd-read-only-wm-inspection-preserves-host-admission-and-writer-progress.md)
+retains source identities, review corrections and validation limits.
+
 ### t247
 
 Claude (w9:pF) owns the bounded shared `.L` codec and per-connection driver in
@@ -47,7 +66,7 @@ exact version negotiation, framing/msize, tag/fid/queue bounds, open modes,
 partial walks, cancellation ordering and teardown. It consumes an explicit
 authorization hook on every operation, including retained handles.
 
-First prove version/attach/walk/open/read/write/metadata/clunk/flush against a
+First prove version/attach/walk/open/readdir/read/write/metadata/clunk/flush against a
 pinned third-party Go client. A separately written negative prober covers
 malformed framing, counts, strings, duplicate live tags/fids, invalid opens,
 flush races, blocked reads, exhaustion and disconnect. Retain compiled negative

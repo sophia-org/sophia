@@ -89,11 +89,14 @@ or presentation authority crosses that boundary.
 
 ## Files
 
-The root has this fixed vocabulary; discovery needs no directory enumeration
-in the first direct-client checkpoint. Unsupported filesystem mutations refuse.
+The root enumerates this fixed vocabulary through bounded `TREADDIR`. Cookies
+resume after the last complete entry; listing neither opens files nor pins or
+allocates an object. Listed qids are advisory metadata. Unsupported filesystem
+mutations refuse; `Tread` on the root remains `EISDIR`.
 
 | Path | Access | Meaning |
 | --- | --- | --- |
+| `/` | 0500 | Fixed directory vocabulary; stateless enumeration cookies |
 | `api` | read | Small immutable ASCII family/version, with `output_transport=current_ipc` |
 | `limits` | read | Immutable binary epoch, capabilities and bounds |
 | `snapshot` | read | Latest complete binary scene; open pins that exact immutable object |
@@ -360,9 +363,10 @@ bits retain the public decoders' semantics.
 
 This is offline inspection of a regular captured file. It opens no socket,
 mount or writer, sends no ACK, and provides no atomic live capture mechanism.
-Live inspection still needs an admitted read path that cannot consume the WM's
-acknowledgements or acquire writer authority. Raw binary records are not a
-`cat`-readable interface. No additional client metadata is exposed.
+The separate [host inspection service](sophia-wm-inspection.md) provides a
+sanitized live view for either WM transport. It has independent admission,
+snapshot pins and event retention, with no access to the writer's ACK or
+candidate paths. Raw binary records are not a `cat`-readable interface.
 
 ## Required evidence
 

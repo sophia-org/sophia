@@ -744,6 +744,7 @@ fn validate_setting(
             "logout",
             "startup",
             "control",
+            "inspection",
             "window-manager",
             "shell-client",
             "shell-config",

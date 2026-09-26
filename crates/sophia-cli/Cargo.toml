@@ -11,6 +11,7 @@ name = "sophia"
 path = "src/main.rs"
 
 [dependencies]
+sophia-9p = { path = "../sophia-9p" }
 sophia-backend-live = { path = "../sophia-backend-live", optional = true, default-features = false }
 sophia-broker = { path = "../sophia-broker" }
 sophia-config = { path = "../sophia-config" }

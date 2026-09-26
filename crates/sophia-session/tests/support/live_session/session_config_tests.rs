@@ -3,6 +3,9 @@ use super::*;
 #[path = "wm_transport_config.rs"]
 mod wm_transport_config;
 
+#[path = "inspection_environment.rs"]
+mod inspection_environment;
+
 #[test]
 fn dock_only_profile_requires_catalog_and_input_before_endpoint_construction() {
     use std::os::unix::fs::PermissionsExt;

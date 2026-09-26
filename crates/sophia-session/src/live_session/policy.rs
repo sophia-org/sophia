@@ -765,6 +765,7 @@ fn execute_committed_session_actions(
             &config.display,
             xauthority,
             config.control_socket.as_deref(),
+            config.inspection_socket.as_deref(),
             crate::diagnostics::application::LaunchContext {
                 source: crate::diagnostics::application::LaunchSource::Shortcut,
                 transaction: Some(intent.transaction.raw()),
@@ -776,6 +777,8 @@ fn execute_committed_session_actions(
             &command.executable.to_string_lossy(),
             &config.display,
             xauthority,
+            config.control_socket.as_deref(),
+            config.inspection_socket.as_deref(),
         )
         .map(|child| (None, child))
     };

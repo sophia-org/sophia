@@ -40,6 +40,7 @@ impl LiveWmSession {
         }
         let epoch = public.next_connection_epoch;
         public.next_connection_epoch = epoch.checked_add(1).ok_or("WM epoch exhausted")?;
+        public.fence_inspection(0, self.supervisor.peer_id());
         let placeholder = ProcessSupervisor::new(
             self.supervisor.process(),
             self.supervisor.launch_spec().clone(),
@@ -161,6 +162,7 @@ impl LiveWmSession {
                 public.expected_operation_slot = None;
                 public.deferred_command = None;
                 public.transport_unavailable = false;
+                public.fence_inspection(result.epoch, self.supervisor.peer_id());
                 public.actions.clear();
                 public.queue.clear();
                 public.pending_dirty_outputs.clear();

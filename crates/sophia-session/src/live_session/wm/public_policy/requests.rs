@@ -41,6 +41,9 @@ impl LiveWmSession {
             }
             Ok(Some(PolicyTransportEvent::ReadyForCycle { capabilities })) => {
                 public.selected_capabilities = capabilities;
+                if let Some(inspection) = public.inspection.as_mut() {
+                    inspection.capabilities = Some(capabilities);
+                }
                 if let Ok(mut origins) = public.launch_origins.lock() { origins.set_epoch(if capabilities & sophia_protocol::SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN != 0 { public.connection_epoch } else { 0 }); }
                 public.transport_ready = true;
                 None

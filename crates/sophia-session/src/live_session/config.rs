@@ -81,6 +81,8 @@ struct PersistentXtermSessionConfig {
     active_launch_profile: Option<sophia_config::DesktopSessionCandidate>,
     control_access: sophia_config::DesktopControlAccess,
     control_socket: Option<std::path::PathBuf>,
+    inspection_access: sophia_config::DesktopInspectionAccess,
+    inspection_socket: Option<std::path::PathBuf>,
     application_catalog: Option<sophia_config::ApplicationCatalogConfig>,
     secondary_terminal: bool,
     max_runtime: Option<Duration>,
@@ -375,10 +377,15 @@ impl PersistentXtermSessionConfig {
         display: &str,
         xauthority: &std::path::Path,
         control_socket: Option<&std::path::Path>,
+        inspection_socket: Option<&std::path::Path>,
         context: crate::diagnostics::application::LaunchContext,
     ) -> Result<Child, Box<dyn std::error::Error>> {
         let mut command = std::process::Command::new(&app.executable);
-        configure_control_environment(&mut command, control_socket);
+        crate::application_catalog::configure_host_application_environment(
+            &mut command,
+            control_socket,
+            inspection_socket,
+        );
         command
             .args(&app.arguments)
             .env("DISPLAY", display)

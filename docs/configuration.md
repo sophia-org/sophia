@@ -480,6 +480,15 @@ host applications for `sophia msg commands`, `sophia msg policy 'NAME'`, and
 `sophia msg session restart-wm`. See [scripting](scripting.md) for the precise
 host trust boundary. Profile reload is not a scripting command yet.
 
+Read-only WM observation is a separate startup permission:
+`session { inspection "host-admin"; }`. It defaults to `"disabled"` and does
+not follow the control setting. It uses the same verified host-domain audience
+with its own socket and sanitized records. Host applications receive
+`SOPHIA_WM_INSPECT_SOCKET` for `sophia inspect wm status`, `snapshot` or `watch`;
+inherited values cannot enable or redirect Session's service. Changing this
+permission requires a new Session. See [WM inspection](sophia-wm-inspection.md)
+for disclosure, reader limits and loss/revocation behavior.
+
 ## Discovery
 
 Each domain resolves exactly one source at startup:

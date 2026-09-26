@@ -286,6 +286,9 @@ impl LiveWmSession {
     }
 
     fn request_transport_restart(&mut self, reason: &str, error: Option<&str>) {
+        if let Some(public) = self.public.as_mut() {
+            public.fence_inspection(0, self.supervisor.peer_id());
+        }
         self.force_transport_restart = true;
         crate::session_println!(
             "sophia_live_wm schema=2 status=restart_requested reason={reason} error={}",
