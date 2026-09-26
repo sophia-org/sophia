@@ -1,0 +1,59 @@
+// Envelope checkpoint only. Record bodies and role integration remain under
+// t249/h006 review; this schema does not define a usable WM transport yet.
+protocol "sophia_wm_fs_v1" api-version=1 byte-order="little" max-object-bytes=1048576 max-sections=32 {
+    header size=32 {
+        field "total_bytes" type="u32" offset=0
+        field "api_version" type="u16" offset=4 value=1
+        field "kind" type="u16" offset=6
+        field "connection_epoch" type="u64" offset=8 nonzero=true
+        field "submission_id" type="u64" offset=16
+        field "sequence" type="u64" offset=24
+    }
+
+    // Objects have submission_id=sequence=0. Candidates have submission_id>0
+    // and sequence=0. Events have submission_id=0 and sequence>0; correlated
+    // submission and domain identities belong in their typed bodies.
+    object "Limits" kind=1
+    object "Snapshot" kind=2
+    event "Negotiated" kind=16
+    event "Submitted" kind=17
+    event "ProfilePrepare" kind=18
+    event "ProfileActivate" kind=19
+    event "ProfileRollback" kind=20
+    event "ConfigurationOutcome" kind=21
+    event "Cycle" kind=22
+    event "ProjectionOutcome" kind=23
+    event "SessionOperationOutcome" kind=24
+    event "PresentationReceipt" kind=25
+    candidate "Negotiate" kind=256
+    candidate "ProfilePrepared" kind=257
+    candidate "ProfileActive" kind=258
+    candidate "ProfileRolledBack" kind=259
+    candidate "Configuration" kind=260
+    candidate "Dirty" kind=261
+    candidate "Projection" kind=262
+    candidate "SessionOperation" kind=263
+
+    // Complete row sections, strictly ascending unique nonzero kinds. No
+    // empty sections, transfer ordinals, chunk bounds or old IPC envelopes.
+    // Row sizes, kinds and aggregate maxima belong to the neutral semantic
+    // codec. The fixed row layouts remain those in sophia-wm-v1.kdl.
+    section-header size=16 {
+        field "kind" type="u16" offset=0 nonzero=true
+        field "reserved" type="u16" offset=2 value=0
+        field "count" type="u32" offset=4 nonzero=true
+        field "byte_length" type="u32" offset=8 nonzero=true
+        field "reserved_tail" type="u32" offset=12 value=0
+    }
+
+    submit size=24 {
+        field "connection_epoch" type="u64" offset=0 nonzero=true
+        field "submission_id" type="u64" offset=8 nonzero=true
+        field "candidate_bytes" type="u32" offset=16 min=32 max=1048576
+        field "reserved" type="u32" offset=20 value=0
+    }
+    ack size=16 {
+        field "connection_epoch" type="u64" offset=0 nonzero=true
+        field "sequence" type="u64" offset=8 nonzero=true
+    }
+}

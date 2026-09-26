@@ -119,8 +119,10 @@ below the acknowledged retention floor return `ESTALE`.
 all records through that sequence. Exact repeats succeed. An older sequence,
 a future sequence or a wrong epoch refuses. It releases transport retention
 only: it cannot create a receipt, commit a proposal or release source/native
-custody. At most 64 records and 1 MiB of event bytes are retained. A producer
-reserves the whole event before dequeuing its corresponding driver command.
+custody. At most 64 records and 1 MiB of event bytes are retained. The existing driver may dequeue one command before calling the adapter. That
+single command remains in-flight custody throughout borrowed `send`; the
+adapter reserves the whole journal record before appending it or releasing
+that custody. It adds no command queue or peek owner.
 An adapter send has a four-second monotonic deadline from its first attempt,
 matching the current IPC write bound. Waiting for acknowledgement capacity does
 not extend that deadline. On expiry it returns a bounded send failure through
@@ -155,7 +157,10 @@ header is 32 bytes:
 | 16 | 8 | attach-local submission ID for a candidate; zero otherwise |
 | 24 | 8 | event sequence for events; zero for candidates and snapshots |
 
-The typed kind specifies direction, body shape and allowed phase. Counts,
+The envelope decoder requires an explicit object, event or candidate class; a
+record of another class refuses. The file owner must additionally match the
+exact permitted kind (for example Limits versus Snapshot). The typed kind
+specifies body shape and allowed phase. Counts,
 lengths, enum values, reserved zeros and UTF-8 are validated before exposing a
 semantic value. Integer conversions are checked. Unknown kinds and unnegotiated
 sections refuse; no partial semantic value escapes an assembly failure.
@@ -169,8 +174,24 @@ translation groups, output actions, generic presentation and exact presented
 action identities. Large arrays are sections of one complete object; 9P
 fragments file bytes and never defines array or commit boundaries.
 
-The next codec checkpoint fixes each body layout and publishes valid/malformed
-binary corpora. Existing record-array layouts may be extracted into a neutral
+The bounded envelope checkpoint is specified in
+[`sophia-wm-files-v1.kdl`](../protocol/sophia-wm-files-v1.kdl). It includes the
+kind table, 32-byte header, 16-byte section header, 24-byte submit and 16-byte
+ack. Sections have unique ascending nonzero kinds, nonzero row count and byte
+length, and zero reserved fields. Context-specific row sizes and aggregate
+bounds remain in the shared neutral record codec, which checks them before
+row allocation. The envelope exposes only borrowed raw bodies and sections;
+this is not semantic validation or a usable WM file export.
+
+Staging belongs to the per-attach file owner. It enforces the 1 MiB total and
+requires submit length to equal the actual complete staged length. If the
+generic listener's sixteen-connection limit were used with one staging attach
+per connection, this would permit at most sixteen MiB of candidate staging;
+the WM endpoint instead admits only its one supervised writer. Snapshot/event
+retention and server output queues have their separate stated bounds.
+
+The next codec checkpoint fixes each body layout and publishes cross-language
+valid/malformed binary corpora. Existing record-array layouts may be extracted into a neutral
 codec owner shared by both transports. The new adapter must not build old IPC
 frames or feed files through the old transport. Hagia implements the published
 layouts independently in Nim; Sophia source is not a Hagia dependency.

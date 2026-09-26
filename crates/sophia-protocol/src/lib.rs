@@ -12,6 +12,7 @@ pub mod packets;
 pub mod policy_behavior;
 pub mod presentation;
 pub mod table;
+pub mod wm_files;
 
 pub use capacity::*;
 pub use cursor::*;

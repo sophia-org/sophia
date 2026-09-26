@@ -106,6 +106,29 @@ jobs 2, exclusive disk targets), and only the director allocates main gates.
 No source edits occur in main. Queue IDs are reserved centrally; other open
 tasks are neither closed nor silently retargeted by this work.
 
+## Development checkpoints
+
+The development join includes t247's signed `b8ac5b91`/`ee2b7601` core and
+independent Go oracle, t248's signed `45e61551`/`95b39662` adapter extraction,
+and t249's signed `4406008f`/`d4d88621` neutral record conversion. The external
+test mount correction `7567c745` is joined separately; its note retracts the
+cached layout result as sufficient evidence. These are branch checkpoints,
+not main integration or WM migration acceptance.
+
+Hagia's independent client review correction is signed `7501b21`: 24 focused
+controls, six compiled guard mutations and an actual Nim/static-Rust pairing
+with five server mutations. Its note and durable h006 bundle retain exact
+binaries. No old WM constructor selects it yet.
+
+The binary envelope has nine focused controls, explicit object/event/candidate
+class checking, bounded borrowed sections, and fixed submit/ack decoding. The
+joined protocol suite passes 200 tests; strict protocol all-target Clippy,
+formatting and a freshly built local xtask layout pass. Four compiled envelope
+mutations fail class, ordering and reserved-field controls; the restored suite
+passes. Evidence is under `sophia-overview/.artifacts/t249-envelope`.
+Record bodies, independent Nim file corpus and production Session export are
+still incomplete. Existing WM semantics and output transport remain current IPC.
+
 ## Connections
 
 - [Public-interface direction](../../sophia-9p-control-bus.md).
