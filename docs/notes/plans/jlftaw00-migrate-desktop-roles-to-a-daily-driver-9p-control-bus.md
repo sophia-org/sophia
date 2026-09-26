@@ -139,9 +139,11 @@ versioned file/record contract before implementation.
 
 The [proposed shell file contract](../../sophia-shell-files.md) maps the current
 owners and revision skew, per-component uploads and revocation, and the Lom,
-Bemenu, Provlita and Narthex acceptance scopes. Snapshot retention, adapter
-buffer accounting, selection scope and numerical budgets remain named design
-decisions; the draft does not yet satisfy the implementable-contract exit.
+Bemenu, Provlita and Narthex acceptance scopes. Upload custody, separate scratch
+accounting, role-filtered disclosure and per-component selection are specified.
+Snapshot retention, aggregate transport bounds and numerical acceptance budgets
+remain named design decisions; the draft does not yet satisfy the
+implementable-contract exit.
 
 Define admission, negotiation, immutable reads, transaction assembly/submit,
 outcome correlation, source lifetime, disconnect and stale-handle semantics.

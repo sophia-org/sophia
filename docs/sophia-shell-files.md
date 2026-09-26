@@ -147,8 +147,14 @@ peer connected.
 
 ### Root vocabulary
 
-The root is fixed per profile and listable with `TREADDIR`. A name exists only
-if the profile selected its capability.
+The root is fixed per role profile and listable with `TREADDIR`. A name requires
+both the role's existing disclosure permission and its negotiated capability.
+The component bar keeps selected bit 0 for negotiation parity, but that bit is
+inert today: only the separate legacy descriptor shell receives descriptor
+snapshots. The component bar therefore exposes no `descriptors`, `tabs` or
+`shortcuts` nodes or feeds. `ContentStoreProfile::Legacy` on the bar does not
+turn it into the legacy descriptor shell. No capability bit alone widens a
+component's metadata audience.
 
 | Name | Access | Profiles | Meaning |
 | --- | --- | --- | --- |
@@ -162,7 +168,7 @@ if the profile selected its capability.
 | `catalog` | read | launcher, dock; legacy descriptor when r4 and bit 5 are selected | Pinned catalog object, with r8 identities for the dock |
 | `descriptors`, `tabs`, `shortcuts` | read | legacy descriptor | Pinned feed objects |
 | `indicators` | read | bar with bit 9 | Pinned indicator object |
-| `upload/0` .. `upload/N-1` | read/write | content profiles | Fixed transfer slots; N is `max_open_transfers` (4 in the prototype) |
+| `upload/0` .. `upload/N-1` | write | content profiles | Fixed transfer slots; N is `max_open_transfers` (4 in the prototype) |
 
 Snapshot objects follow the WM snapshot rule. An event names each object's
 generation and qid. Opening pins the object current at open time, and a later
@@ -187,8 +193,8 @@ The WM contract negotiates through a submitted candidate. This draft does the
 same rather than adding a `negotiate` file. The client submits a `Negotiate`
 record carrying what today's Hello carries: minimum and maximum revision and a
 required capability mask. Session applies the role's fixed profile with the
-same rules as today. An optional-capability mask, as in the WM record, would be
-new shell semantics; it is **unresolved** and not part of this mapping. The result is one
+same rules as today. Version 1 adds no optional-capability mask: that would
+change shell negotiation rather than transport it. The result is one
 `Negotiated` event with the selected revision, epoch, capability set and
 limits generation, or a `Refused` event with the current reason (1 permission
 denied, 2 unsupported, 3 invalid dependencies, 4 unavailable) followed by
@@ -231,10 +237,12 @@ slots.
    charges staging exactly as today. The slot is now bound to exactly
    (content grant, `ContentResourceId`). The `transfer_admitted` status arrives
    as an event. Begin on a slot that is still bound is refused.
-2. The client opens the slot for writing. The first fid opened for writing on a
+2. The client opens the slot for writing. Read and read/write opens are refused.
+   The first fid opened for writing on a
    bound slot becomes its only writer. Any other open for writing answers
-   `EBUSY`. Writes go at increasing offsets (see chunking below). Gaps, conflicts
-   and bytes past the declared length refuse without changing what was staged.
+   `EBUSY`. Writes append at the exact next byte offset (see chunking below).
+   Gaps, repeated prefixes, overflow and requests past the declared length
+   refuse before changing bytes.
 3. `ResourceEnd` submitted for that `ContentResourceId` calls `end`. The
    `accepted` or `rejected` status is an event.
 4. `ResourceCancel`, or a clunk of the current writer fid before End, calls
@@ -251,6 +259,14 @@ successor bound to the same slot. An unbound slot answers `EAGAIN` to open. A
 slot bound in another epoch is stale (`ESTALE`). The slot index is transport
 bookkeeping, not authority.
 
+`getattr` on the live bound slot reports its accepted append cursor as size:
+canonical bytes already passed to the store plus bytes in charged partial
+scratch. It reports the binding's qid, not a successor's. After a flush race,
+the writer can query that same binding and resume at this offset. Flush never
+undoes an executed write; repeating an earlier prefix is still refused.
+If the binding ended, the held fid is stale and cannot discover or append to
+a successor. This metadata read grants no pixel readback.
+
 One slot carries at most `max_resource_bytes` (4 MiB), which exceeds the WM's
 1 MiB transaction bound. Total store staging stays bounded by the role's
 `max_staging_bytes` (4-8 MiB), charged at Begin.
@@ -260,21 +276,47 @@ exactly `rows_per_chunk * row_bytes` bytes, the last one the remainder, at the
 next ordinal and offset (`crates/sophia-runtime/src/shell_content/resources.rs:286-298`).
 `rows_per_chunk` is `min(max_frame_payload - 48, max_chunk_bytes) / row_bytes`
 (`crates/sophia-protocol/src/ipc/shell_content/validation.rs:393-399`). A 9P
-write can split anywhere, so the adapter holds a partial buffer of less than
-one canonical chunk per bound slot and passes each chunk to `chunk` once it is
-complete. That buffer is additional to the store's staging charge: at most
-`max_open_transfers` chunks per component (about 256 KiB in the prototype). It
-must be charged when the slot binds and released when the binding ends.
-**Design decision:** which existing component budget carries this charge.
+write can split anywhere. After validating the binding, offset and entire
+declared request range, the adapter accepts at most the prefix completing the
+current canonical chunk. A positive short `Rwrite` reports that prefix; the
+client advances by the returned count. Incomplete bytes stay in one reusable
+chunk buffer. A completed chunk goes to `chunk` once, and successful admission
+clears the buffer for reuse. The core already supports positive short writes
+(`crates/sophia-9p/src/connection.rs:695-719`).
 
-**Design decision:** whether writes are strictly appended at the exact offset,
-or may also repeat identical bytes within the staged prefix, as the WM staging
-rule allows. A repeat must compare against bytes the store already holds, so it
-adds no copy, and must not extend any deadline. Likewise, whether the slot can
-be read back is a design decision. If it can, a read returns only bytes already
-staged or buffered, and keeps no extra copy. The required invariant for both:
-no unbounded or uncharged buffering, and no path that bypasses the store's
-canonical chunk validation.
+Malformed canonical bytes, including invalid premultiplied pixels, cause the
+store to abort the transfer. The adapter fences the binding, drops its scratch
+and retains the existing rejection event; that write returns an error.
+Limiting a write to one chunk boundary prevents the error from hiding earlier
+successful chunks from that same write. Earlier successful writes may still
+end in resource rejection: `Rwrite` proves byte custody, while successful End
+proves resource acceptance. Incomplete End keeps the owner's terminal
+`Incomplete` result. Process expiry and terminal outcomes before another
+write. Only a successful canonical chunk refreshes the idle deadline; partial,
+empty and rejected writes do not. The overall deadline never extends.
+A client trickling less than one canonical chunk can therefore expire with
+partial bytes buffered; those writes cannot keep a transfer alive indefinitely.
+
+Scratch is a separate transport charge, not part of the resource store's
+staging allowance. The file export reserves
+`max_open_transfers * min(max_frame_payload - 48, max_chunk_bytes)` bytes at
+admission: 261,952 bytes for the prototype, under 768 KiB across three active
+component exports. Before accepting Begin custody or calling the store,
+acquire the slot buffer and response capacity; an early capacity refusal
+leaves the store untouched. Once `begin` runs, its existing generation and
+failure semantics apply. The buffer is released at binding termination; a
+retained pool remains charged. Revocation releases transport scratch without
+releasing renderer-held content. This preserves admission of a 4 MiB resource
+when the role's staging grant is exactly 4 MiB.
+
+The resource registry reserves staging, resident and retiring storage; it has
+no adapter scratch API (`shell_content/epoch_registry.rs:135-153`). Transport
+input/output accounting is already separate (`shell_transport/accounting.rs`).
+The file adapter therefore owns and reports this additional bounded charge.
+It never retains another copy of the staged prefix. Version 1 offers no upload
+readback or prefix replay: staging bytes are private to the resource owner,
+and its `lease` API is for accepted resources with real consumers. No new
+staging-read API is needed.
 
 ### Events, snapshots and acknowledgement
 
@@ -361,9 +403,19 @@ today, so skew is resolved by the same negotiation, not by the transport.
 No client reconnects in-process. Each relies on supervisor restart with a
 fresh process, which matches one attach per epoch.
 
-Current IPC remains the default. **Decision pending:** whether the transport
-is selected per component or once per session. The WM uses an explicit launch
-argument.
+Current IPC remains the default. Session-owned configuration selects transport
+per component at startup; the mutually exclusive legacy descriptor shell has
+its own selection. Clients and inherited environment do not choose the
+server's protocol, and there is no sniffing or fallback. Mixed transports can
+use the same one `ContentEpochRegistry`; selection neither creates another
+budget nor changes a role's grants.
+
+A transport change is a complete component replacement: stop, revoke, settle
+the existing retirement claims, then issue a fresh grant and connection epoch.
+It never migrates a live grant. Until a reload owner implements that complete
+transition, a reload requesting a transport change must refuse it and retain
+the startup selection. Explicit Session relaunch is the rollback path; an
+installed-default change remains a separate acceptance decision.
 
 ## Independent clients and evidence
 
@@ -382,9 +434,11 @@ launcher and the r8 dock profiles:
 - r8: catalog snapshot with identities, and catalog activation by generation
   and slot.
 
-Either a shell scenario in the independent Go oracle or a content subset in
-Narthex would do. The product clients then prove integration, not
-independence.
+The independent Go oracle will carry these scenarios, written from
+`protocol/sophia-shell-v1.kdl` and this file contract without Sophia codec reuse.
+Its test admission is supplied, so it cannot prove supervisor authentication.
+The product clients then prove integration, not independence; Narthex remains
+the descriptor reference rather than acquiring content work for this gate.
 
 Required evidence follows the control bus's five retirement criteria, per
 profile:
@@ -415,7 +469,7 @@ before measurement and cannot be relaxed after a result.
 
 | Measure | Proposed budget |
 | --- | --- |
-| Panel repaint: submit of a bar-sized resource (for example 1920x24, 184 KiB) to `accepted` | p95 within current IPC + 1 ms, p99 within + 2 ms |
+| Panel repaint: submit of a bar-sized resource (for example 1920x24, 180 KiB) to `accepted` | p95 within current IPC + 1 ms, p99 within + 2 ms |
 | 4 MiB resource upload to `accepted` | p95 within current IPC + 10%; no timeout at the 2000 ms transfer bound |
 | Candidate submit to Presented | p95 within current IPC + 1 ms, p99 within + 2 ms, at 60 and 120 Hz |
 | Frame demand to permit | p99 below half the 250 ms permit TTL |
@@ -430,12 +484,5 @@ with the same client, workload and output on both transports.
 - Shell transaction cap (proposed 64 KiB).
 - Journal bounds (proposed 256 records and 1 MiB).
 - Snapshot cap or catalog paging (proposed 4 MiB).
-- Upload slot access mode, and repeat-within-prefix writes.
-- Which budget charges the adapter's partial-chunk buffers.
 - Snapshot retention per feed, and the mismatch and resync rule.
-- Whether an optional capability mask enters shell negotiation.
-- Transport selection scope.
-- Which independent client carries content evidence.
 - The numeric budgets above.
-- Whether the component bar, which negotiates bit 0 but never receives
-  descriptor snapshots today, keeps that bit in its file profile.
