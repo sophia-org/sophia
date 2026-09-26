@@ -142,7 +142,6 @@ fn an_all_ones_selected_index_passes_the_codec_and_is_left_to_engine() {
 }
 
 #[test]
-#[ignore = "strict optional-surface contract; flips when the selected field is fixed"]
 fn contract_zero_index_selection_and_no_selection_round_trip() {
     for groups in [
         vec![group(
@@ -157,7 +156,6 @@ fn contract_zero_index_selection_and_no_selection_round_trip() {
 }
 
 #[test]
-#[ignore = "strict optional-surface contract; flips when the selected field is fixed"]
 fn contract_all_ones_selected_index_is_refused_by_the_codec() {
     assert!(decode_raw(u32::MAX, 1).is_err());
 }
