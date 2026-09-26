@@ -16,6 +16,8 @@ mod output_transport;
 mod policy_ipc;
 mod policy_profile_handoff;
 #[cfg(target_os = "linux")]
+mod policy_profile_io;
+#[cfg(target_os = "linux")]
 mod policy_socket;
 #[cfg(target_os = "linux")]
 mod policy_transport;
@@ -52,6 +54,8 @@ pub use output_service::*;
 pub use output_transport::*;
 pub use policy_ipc::*;
 pub use policy_profile_handoff::*;
+#[cfg(target_os = "linux")]
+pub use policy_profile_io::*;
 #[cfg(target_os = "linux")]
 pub use policy_socket::*;
 #[cfg(target_os = "linux")]

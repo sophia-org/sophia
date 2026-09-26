@@ -141,6 +141,52 @@ profile handoff, proposal settlement, presentation receipts or physical output.
 The complete role adapter and its launch constructor remain subsequent joins;
 default IPC, output-role transport and LivePublicPolicyState stay unchanged.
 
+## Neutral profile records and existing handoff I/O
+
+The profile extraction names the passive records `PolicyProfileIdentity`,
+`PolicyProfileOutcome`, `PolicyProfileCommand` and `PolicyProfileCompletion`.
+The old `WmV1Profile*` exports remain aliases of those same types. Constructors,
+outcome codes, error values and generated legacy frame codecs are unchanged.
+A new control compares all six typed codecs with the pre-existing generated
+golden frames and checks invalid-identity error precedence through both names.
+
+`PolicyProfileHandoffIo` supplies typed send-effect and receive-completion
+operations to the extracted existing execution loop. The existing reducer
+still owns phase, exact transaction/epoch/generation/digest correlation and
+rollback. The shared helper neither retries input nor invents automatic rollback;
+it returns the rejected candidate model from a single step, as before. Current
+IPC delegates to that helper without changing socket reads, framing, deadline
+behavior or refusal precedence. This helper uses the existing Linux transport
+error type and is gated with that platform; the passive records and pure
+reducer remain platform-independent.
+
+In particular, the existing four-second admission socket timeout is a timeout
+on socket operations, not an absolute four-second complete-frame deadline:
+`receive_frame` can perform multiple reads. The extraction does not silently
+harden that behavior. The file transport's separately specified absolute send
+deadline remains a different contract.
+
+Focused evidence in `.artifacts/t249-profile-neutral` comprises seven protocol
+checks and twenty-one runtime checks with one pre-existing ignored case. These
+include the shared helper's ordering/error controls, the pure reducer, and
+current IPC prepare/activate/rollback, rejection and out-of-phase controls.
+The runtime target also contains optional Hagia fixtures; the target's passing
+total alone does not assert that an independent Hagia binary ran. No file
+profile bodies, startup transport selection, capability negotiation or replay
+policy change is part of this extraction.
+
+The separate read-only replay audit found one unbounded per-epoch
+`PolicyConnectionState.used_transactions` set shared by IPC projections,
+configuration, dirty controls and session operations. File submission IDs
+cannot stand in for those transactions. Hagia `97ed593e` allocates one increasing
+client transaction counter for configuration/projection/operation (and its old
+Dirty envelope); profile completions instead echo server commands. This
+supports a separately declared bounded file-only domain watermark, with gaps
+allowed and no domain transaction assigned to Dirty. That proposed follow-up
+does not alter the legacy set. Full runtime begin/append/finish capability,
+aggregate and presentation checks remain distinct from the less strict direct
+legacy codec characterization recorded in the neutral-array investigation.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

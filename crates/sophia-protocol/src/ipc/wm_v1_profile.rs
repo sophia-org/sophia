@@ -1,8 +1,7 @@
 use crate::{
-    IpcCodecError, SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED, SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY,
-    SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE, TransactionId, WmV1ProfileActivate,
-    WmV1ProfileActive, WmV1ProfilePrepare, WmV1ProfilePrepared, WmV1ProfileRollback,
-    WmV1ProfileRolledBack, decode_wm_v1_profile_activate_frame, decode_wm_v1_profile_active_frame,
+    IpcCodecError, TransactionId, WmV1ProfileActivate, WmV1ProfileActive, WmV1ProfilePrepare,
+    WmV1ProfilePrepared, WmV1ProfileRollback, WmV1ProfileRolledBack,
+    decode_wm_v1_profile_activate_frame, decode_wm_v1_profile_active_frame,
     decode_wm_v1_profile_prepare_frame, decode_wm_v1_profile_prepared_frame,
     decode_wm_v1_profile_rollback_frame, decode_wm_v1_profile_rolled_back_frame,
     encode_wm_v1_profile_activate_frame, encode_wm_v1_profile_active_frame,
@@ -10,74 +9,12 @@ use crate::{
     encode_wm_v1_profile_rollback_frame, encode_wm_v1_profile_rolled_back_frame,
 };
 
-pub const WM_V1_PROFILE_DIGEST_BYTES: usize = 32;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WmV1ProfileIdentity {
-    pub connection_epoch: u64,
-    pub profile_generation: u64,
-    pub profile_digest: [u8; WM_V1_PROFILE_DIGEST_BYTES],
-}
-
-impl WmV1ProfileIdentity {
-    pub fn new(
-        connection_epoch: u64,
-        profile_generation: u64,
-        profile_digest: [u8; WM_V1_PROFILE_DIGEST_BYTES],
-    ) -> Result<Self, IpcCodecError> {
-        if connection_epoch == 0 {
-            return Err(IpcCodecError::InvalidProfileIdentity("connection_epoch"));
-        }
-        if profile_generation == 0 {
-            return Err(IpcCodecError::InvalidProfileIdentity("profile_generation"));
-        }
-        if profile_digest == [0; WM_V1_PROFILE_DIGEST_BYTES] {
-            return Err(IpcCodecError::InvalidProfileIdentity("profile_digest"));
-        }
-        Ok(Self {
-            connection_epoch,
-            profile_generation,
-            profile_digest,
-        })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum WmV1ProfileOutcome {
-    Accepted = SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED,
-    RejectedIdentity = SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY,
-    RejectedState = SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE,
-}
-
-impl TryFrom<u16> for WmV1ProfileOutcome {
-    type Error = IpcCodecError;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED => Ok(Self::Accepted),
-            SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY => Ok(Self::RejectedIdentity),
-            SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE => Ok(Self::RejectedState),
-            _ => Err(IpcCodecError::InvalidEnum {
-                field: "profile_outcome",
-                value: u32::from(value),
-            }),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WmV1ProfileCommand {
-    pub transaction: TransactionId,
-    pub identity: WmV1ProfileIdentity,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WmV1ProfileCompletion {
-    pub transaction: TransactionId,
-    pub identity: WmV1ProfileIdentity,
-    pub outcome: WmV1ProfileOutcome,
-}
+// Compatibility names retain the same passive types, constructors and errors.
+pub use crate::{
+    POLICY_PROFILE_DIGEST_BYTES as WM_V1_PROFILE_DIGEST_BYTES,
+    PolicyProfileCommand as WmV1ProfileCommand, PolicyProfileCompletion as WmV1ProfileCompletion,
+    PolicyProfileIdentity as WmV1ProfileIdentity, PolicyProfileOutcome as WmV1ProfileOutcome,
+};
 
 fn command(
     transaction: TransactionId,

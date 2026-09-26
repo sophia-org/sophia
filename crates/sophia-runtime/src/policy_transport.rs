@@ -27,11 +27,11 @@ use sophia_protocol::{
 };
 
 use crate::{
-    PolicyConnectionState, PolicyPeerIdentity, PolicyProfileCompletionDisposition,
-    PolicyProfileHandoffEffect, PolicyProfileHandoffError, PolicyProfileHandoffKind,
-    PolicyProfileHandoffModel, PolicyProfileHandoffMsg, PolicyProfileHandoffUpdate,
-    PolicyRoleEndpoint, PolicyRoleEndpointError, PolicySnapshotAssembler, PolicyTransferError,
-    QueuedPolicyProjection, reduce_policy_profile_handoff,
+    PolicyConnectionState, PolicyPeerIdentity, PolicyProfileHandoffEffect,
+    PolicyProfileHandoffError, PolicyProfileHandoffIo, PolicyProfileHandoffKind,
+    PolicyProfileHandoffModel, PolicyProfileHandoffUpdate, PolicyRoleEndpoint,
+    PolicyRoleEndpointError, PolicySnapshotAssembler, PolicyTransferError, QueuedPolicyProjection,
+    activate_policy_profile_handoff, execute_policy_profile_handoff_step,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -538,25 +538,7 @@ impl PolicyWmSessionTransport {
         prepare_transaction: TransactionId,
         activate_transaction: TransactionId,
     ) -> Result<PolicyProfileHandoffModel, PolicyTransportError> {
-        let mut model = PolicyProfileHandoffModel::new(identity);
-        for (kind, transaction) in [
-            (PolicyProfileHandoffKind::Prepare, prepare_transaction),
-            (PolicyProfileHandoffKind::Activate, activate_transaction),
-        ] {
-            let settled = self.execute_profile_handoff_step(&model, kind, transaction)?;
-            match settled.completion {
-                Some(PolicyProfileCompletionDisposition::Accepted) => {
-                    model = settled.model;
-                }
-                Some(PolicyProfileCompletionDisposition::Rejected(outcome)) => {
-                    return Err(PolicyTransportError::ProfileRejected { kind, outcome });
-                }
-                Some(PolicyProfileCompletionDisposition::Stale) | None => {
-                    return Err(PolicyTransportError::ProfileCompletionStale);
-                }
-            }
-        }
-        Ok(model)
+        activate_policy_profile_handoff(self, identity, prepare_transaction, activate_transaction)
     }
 
     /// Executes one reducer-owned handoff step and returns the candidate model
@@ -568,30 +550,7 @@ impl PolicyWmSessionTransport {
         kind: PolicyProfileHandoffKind,
         transaction: TransactionId,
     ) -> Result<PolicyProfileHandoffUpdate, PolicyTransportError> {
-        let update = reduce_policy_profile_handoff(
-            model,
-            PolicyProfileHandoffMsg::Begin { kind, transaction },
-        )?;
-        self.send_profile_handoff(
-            update
-                .effect
-                .expect("a valid profile begin always emits one effect"),
-        )?;
-        let PolicyClientEvent::ProfileCompletion {
-            kind: completion_kind,
-            completion,
-        } = self.receive_client_event()?
-        else {
-            return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
-        };
-        if completion_kind != kind {
-            return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
-        }
-        reduce_policy_profile_handoff(
-            &update.model,
-            PolicyProfileHandoffMsg::Completion { kind, completion },
-        )
-        .map_err(Into::into)
+        execute_policy_profile_handoff_step(self, model, kind, transaction)
     }
 
     pub fn send_projection_request(
@@ -815,4 +774,24 @@ fn read_policy_frame(stream: &mut UnixStream) -> Result<Vec<u8>, PolicyTransport
         .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
         .map_err(|error| PolicyTransportError::Io(error.to_string()))?;
     Ok(frame)
+}
+
+// Codec and socket timeout behavior stay inside the current IPC adapter.
+impl PolicyProfileHandoffIo for PolicyWmSessionTransport {
+    fn send_profile_effect(
+        &mut self,
+        effect: PolicyProfileHandoffEffect,
+    ) -> Result<(), PolicyTransportError> {
+        self.send_profile_handoff(effect)
+    }
+
+    fn receive_profile_completion(
+        &mut self,
+    ) -> Result<Option<(PolicyProfileHandoffKind, WmV1ProfileCompletion)>, PolicyTransportError>
+    {
+        Ok(match self.receive_client_event()? {
+            PolicyClientEvent::ProfileCompletion { kind, completion } => Some((kind, completion)),
+            _ => None,
+        })
+    }
 }
