@@ -9,7 +9,10 @@
 //     write, getattr and clunk, and observes the server's errors.
 //   - raw: frames written here from the 9P2000.L specification
 //     (diod protocol.md) exercise what that client never sends: flush,
-//     malformed and oversize frames, tag rules and version edge cases.
+//     malformed and oversize frames and strings, invalid open flags, fid
+//     reuse, the fid and waiting-read limits, tag rules, version edge cases,
+//     and a disconnect's cleanup, observed through the static export's
+//     release ledger from a second connection.
 //
 // Each check prints one line. The last line is the verdict:
 //
@@ -35,6 +38,9 @@ const (
 	notag   = 0xffff
 	nofid   = 0xffffffff
 	infoLen = 70000
+	// The static server's default bounds (sophia_9p::Limits::default).
+	maxFids    = 256
+	maxPending = 32
 )
 
 type oracle struct {
@@ -266,6 +272,7 @@ func (o *oracle) clientScenario() {
 			{"sink", p9.TypeRegular, 8},
 			{"events", p9.TypeRegular, 8},
 			{"dir", p9.TypeDir, 4},
+			{"ledger", p9.TypeRegular, 8},
 		}
 		if len(entries) != len(want) {
 			return fmt.Errorf("entries %v", entries)
@@ -284,7 +291,7 @@ func (o *oracle) clientScenario() {
 		if qids[0] != entries[3].QID {
 			return fmt.Errorf("dir walks to %v, listed as %v", qids[0], entries[3].QID)
 		}
-		end, err := dir.Readdir(entries[3].Offset, 1024)
+		end, err := dir.Readdir(entries[4].Offset, 1024)
 		if err != nil || len(end) != 0 {
 			return fmt.Errorf("after the last entry: %v %v", end, err)
 		}
@@ -306,7 +313,7 @@ func (o *oracle) clientScenario() {
 			return fmt.Errorf("first page %v %v", first, err)
 		}
 		rest, err := dir.Readdir(first[0].Offset, 1024)
-		if err != nil || len(rest) != 3 || rest[0].Name != "sink" || rest[2].Name != "dir" {
+		if err != nil || len(rest) != 4 || rest[0].Name != "sink" || rest[3].Name != "ledger" {
 			return fmt.Errorf("rest %v %v", rest, err)
 		}
 		return nil
@@ -469,6 +476,52 @@ func treaddir(tag uint16, fid uint32, offset uint64, count uint32) []byte {
 	return frame(40, tag, new(body).u32(fid).u64(offset).u32(count))
 }
 
+func twalk(tag uint16, fid, newfid uint32) []byte {
+	return frame(110, tag, new(body).u32(fid).u32(newfid).u16(0))
+}
+
+type ledger struct{ released, withHandle uint64 }
+
+// ledger rereads the static export's release counts from fid 2.
+func (r *raw) ledger() (ledger, error) {
+	if err := r.send(frame(116, 12, new(body).u32(2).u64(0).u32(256))); err != nil {
+		return ledger{}, err
+	}
+	got, err := r.expectKind(12, 117)
+	if err != nil {
+		return ledger{}, err
+	}
+	var l ledger
+	if len(got.body) < 4 {
+		return l, fmt.Errorf("Rread body %v", got.body)
+	}
+	if _, err := fmt.Sscanf(string(got.body[4:]), "released=%d released_with_handle=%d\n", &l.released, &l.withHandle); err != nil {
+		return l, fmt.Errorf("ledger %q: %w", got.body[4:], err)
+	}
+	return l, nil
+}
+
+// settledLedger rereads the ledger until two reads 100ms apart agree.
+func (r *raw) settledLedger(bound time.Duration) (ledger, error) {
+	deadline := time.Now().Add(bound)
+	last, err := r.ledger()
+	for err == nil {
+		time.Sleep(100 * time.Millisecond)
+		var next ledger
+		if next, err = r.ledger(); err != nil {
+			break
+		}
+		if next == last {
+			return next, nil
+		}
+		if time.Now().After(deadline) {
+			return next, fmt.Errorf("ledger did not settle: %+v then %+v", last, next)
+		}
+		last = next
+	}
+	return last, err
+}
+
 func tgetattr(tag uint16, fid uint32) []byte {
 	return frame(24, tag, new(body).u32(fid).u64(0x7ff))
 }
@@ -557,6 +610,14 @@ func (o *oracle) rawScenario() {
 		{"raw/attach-with-afid-einval", frame(104, 5, new(body).u32(8).u32(3).str("").str("").u32(nofid)), 22},
 		{"raw/attach-used-fid-ebadf", frame(104, 5, new(body).u32(0).u32(nofid).str("").str("").u32(nofid)), 9},
 		{"raw/read-unopened-ebadf", tread(5, 0, 10), 9},
+		// A string whose length runs past the frame, in an attach and in a walk.
+		{"raw/attach-string-past-frame-eproto", frame(104, 5, new(body).u32(3).u32(nofid).u16(40).u8('x')), 71},
+		{"raw/walk-name-past-frame-eproto", frame(110, 5, new(body).u32(0).u32(3).u16(1).u16(40)), 71},
+		// Access mode 3 and a flag this server does not accept (O_CREAT).
+		{"raw/open-access-mode-3-einval", frame(12, 5, new(body).u32(0).u32(3)), 22},
+		{"raw/open-unknown-flag-einval", frame(12, 5, new(body).u32(0).u32(0o100)), 22},
+		// fid 1 is the session's open events file.
+		{"raw/walk-to-used-newfid-ebadf", frame(110, 5, new(body).u32(0).u32(1).u16(0)), 9},
 	}
 	for _, a := range answered {
 		o.check(a.name, func() error {
@@ -647,6 +708,138 @@ func (o *oracle) rawScenario() {
 			return err
 		}
 		return r.expectErrno(9, 22)
+	}())
+
+	o.check("raw/fid-limit-emfile", func() error {
+		r, err := o.session()
+		if err != nil {
+			return err
+		}
+		defer r.conn.Close()
+		// The session holds fids 0 and 1; the server admits maxFids in all.
+		for fid := uint32(2); fid < maxFids; fid++ {
+			if err := r.send(twalk(5, 0, fid)); err != nil {
+				return err
+			}
+			if _, err := r.expectKind(5, 111); err != nil {
+				return fmt.Errorf("walk to fid %d: %w", fid, err)
+			}
+		}
+		if err := r.send(twalk(6, 0, maxFids)); err != nil {
+			return err
+		}
+		if err := r.expectErrno(6, 24); err != nil {
+			return err
+		}
+		// Clunking one makes room again.
+		if err := r.send(frame(120, 7, new(body).u32(maxFids-1))); err != nil {
+			return err
+		}
+		if _, err := r.expectKind(7, 121); err != nil {
+			return err
+		}
+		if err := r.send(twalk(8, 0, maxFids)); err != nil {
+			return err
+		}
+		_, err = r.expectKind(8, 111)
+		return err
+	}())
+
+	o.check("raw/waiting-read-limit-eagain", func() error {
+		r, err := o.session()
+		if err != nil {
+			return err
+		}
+		defer r.conn.Close()
+		// Nothing is ever pushed to events, so every read on fid 1 waits.
+		for tag := uint16(20); tag < 20+maxPending; tag++ {
+			if err := r.send(tread(tag, 1, 64)); err != nil {
+				return err
+			}
+		}
+		// The next is refused at once rather than queued.
+		r.conn.SetDeadline(time.Now().Add(2 * time.Second))
+		if err := r.send(tread(9, 1, 64)); err != nil {
+			return err
+		}
+		return r.expectErrno(9, 11)
+	}())
+
+	o.check("raw/disconnect-releases-held-fids-and-waiting-read", func() error {
+		observer, err := o.session()
+		if err != nil {
+			return err
+		}
+		defer observer.conn.Close()
+		// The observer keeps the ledger open on fid 2 and rereads it.
+		if err := observer.send(frame(110, 7, new(body).u32(0).u32(2).u16(1).str("ledger"))); err != nil {
+			return err
+		}
+		if _, err := observer.expectKind(7, 111); err != nil {
+			return err
+		}
+		if err := observer.send(frame(12, 8, new(body).u32(2).u32(0))); err != nil {
+			return err
+		}
+		if _, err := observer.expectKind(8, 13); err != nil {
+			return err
+		}
+		// Earlier checks' connections may still be closing; wait until the
+		// ledger holds still so only this peer's releases are counted.
+		before, err := observer.settledLedger(2 * time.Second)
+		if err != nil {
+			return err
+		}
+		// The departing peer: root, open events, two more fids (one open),
+		// and a read left waiting on events.
+		peer, err := o.session()
+		if err != nil {
+			return err
+		}
+		defer peer.conn.Close()
+		for _, step := range []struct {
+			request []byte
+			kind    uint8
+		}{
+			{frame(110, 3, new(body).u32(0).u32(2).u16(1).str("info")), 111},
+			{frame(12, 4, new(body).u32(2).u32(0)), 13},
+			{frame(110, 5, new(body).u32(0).u32(3).u16(1).str("dir")), 111},
+		} {
+			if err := peer.send(step.request); err != nil {
+				return err
+			}
+			if _, err := peer.expectKind(binary.LittleEndian.Uint16(step.request[5:7]), step.kind); err != nil {
+				return err
+			}
+		}
+		if err := peer.send(tread(9, 1, 64)); err != nil {
+			return err
+		}
+		// A later request's reply, ordered after the read, shows the server
+		// processed that read and left it waiting: no read reply comes first.
+		if err := peer.send(tgetattr(10, 0)); err != nil {
+			return err
+		}
+		if _, err := peer.expectKind(10, 25); err != nil {
+			return fmt.Errorf("the read did not wait: %w", err)
+		}
+		held, withHandle := uint64(4), uint64(2)
+		peer.conn.Close()
+		// The server must release all four fids, two with open handles.
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			after, err := observer.ledger()
+			if err != nil {
+				return err
+			}
+			if after.released-before.released == held && after.withHandle-before.withHandle == withHandle {
+				return nil
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("ledger went from %+v to %+v; want %d more released, %d with handles", before, after, held, withHandle)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
 	}())
 
 	o.check("raw/flushed-read-is-never-answered", func() error {

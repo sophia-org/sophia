@@ -100,7 +100,7 @@ fn reads_stats_and_lists_through_the_real_driver() {
     client.open(&mut listing, true).unwrap();
     let entries = client.list_all(&listing, 16).unwrap();
     let names: Vec<&[u8]> = entries.iter().map(|entry| entry.name.as_slice()).collect();
-    assert_eq!(names, [&b"info"[..], b"sink", b"events", b"dir"]);
+    assert_eq!(names, [&b"info"[..], b"sink", b"events", b"dir", b"ledger"]);
     assert_eq!(entries[3].qid.kind, QidKind::Directory);
     assert_eq!(entries[3].dtype, 4);
     assert_eq!(

@@ -36,16 +36,16 @@ fn a_directory_lists_what_a_walk_reaches_in_the_owners_order() {
     let entries = harness.one(&treaddir(4, 1, 0, 8192)).dirents();
     assert_eq!(
         names(&entries),
-        [&b"info"[..], b"sink", b"events", b"dir"],
+        [&b"info"[..], b"sink", b"events", b"dir", b"ledger"],
         "hidden is refused by the owner, so it is not listed"
     );
     assert_eq!(
         entries.iter().map(|entry| entry.offset).collect::<Vec<_>>(),
-        [1, 2, 3, 4]
+        [1, 2, 3, 4, 5]
     );
     assert_eq!(
         entries.iter().map(|entry| entry.kind).collect::<Vec<_>>(),
-        [DT_REG, DT_REG, DT_REG, DT_DIR]
+        [DT_REG, DT_REG, DT_REG, DT_DIR, DT_REG]
     );
     for (fid, entry) in (10..).zip(&entries) {
         let walked = harness
@@ -53,7 +53,7 @@ fn a_directory_lists_what_a_walk_reaches_in_the_owners_order() {
             .walk();
         assert_eq!(walked, [entry.qid], "{:?}", entry.name);
     }
-    let end = harness.one(&treaddir(6, 1, 4, 8192)).dirents();
+    let end = harness.one(&treaddir(6, 1, 5, 8192)).dirents();
     assert!(end.is_empty(), "the last entry's cookie ends the listing");
     let beyond = harness.one(&treaddir(7, 1, 99, 8192)).dirents();
     assert!(beyond.is_empty());
@@ -76,7 +76,11 @@ fn entries_that_do_not_fit_stay_for_the_next_cookie() {
     let two = harness.one(&treaddir(5, 1, 0, 72)).dirents();
     assert_eq!(names(&two), [&b"info"[..], b"sink"], "events is not sent");
     let rest = harness.one(&treaddir(6, 1, two[1].offset, 8192)).dirents();
-    assert_eq!(names(&rest), [&b"events"[..], b"dir"], "nothing was lost");
+    assert_eq!(
+        names(&rest),
+        [&b"events"[..], b"dir", b"ledger"],
+        "nothing was lost"
+    );
     // A count too small for the first entry cannot be answered with an
     // empty reply, which would end the listing.
     assert_eq!(harness.errno(&treaddir(7, 1, 2, 29)), EINVAL);
@@ -97,7 +101,7 @@ fn a_zero_count_listing_is_answered_without_the_owner() {
 fn a_count_beyond_the_message_size_is_clamped() {
     let mut harness = listing();
     let entries = harness.one(&treaddir(4, 1, 0, u32::MAX)).dirents();
-    assert_eq!(entries.len(), 4);
+    assert_eq!(entries.len(), 5);
 }
 
 #[test]

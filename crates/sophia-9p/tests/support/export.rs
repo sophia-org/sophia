@@ -9,10 +9,12 @@
 //!   hidden     visible to lookup, refused by check
 //!   dir/       directory
 //!     leaf     read-only file
+//!   ledger     read-only; counts of every fid and handle released so far,
+//!              so a client can see a disconnected peer's state cleaned up
 //! ```
 //!
-//! A listing names every child but `hidden`, in the order above, with the
-//! cookie of each entry its position plus one.
+//! A listing names every child but `hidden`, in the order info, sink, events,
+//! dir, ledger, with the cookie of each entry its position plus one.
 //!
 //! Every attach is a fresh epoch, and qid paths carry the epoch, so no path is
 //! reused. The shared state lets a test push events, revoke epochs, and see
@@ -38,6 +40,7 @@ pub enum Name {
     Hidden,
     Dir,
     Leaf,
+    Ledger,
 }
 
 impl Name {
@@ -50,6 +53,7 @@ impl Name {
             Self::Hidden => 5,
             Self::Dir => 6,
             Self::Leaf => 7,
+            Self::Ledger => 8,
         }
     }
 
@@ -160,7 +164,7 @@ impl Export for StaticExport {
         }
         match (access.node.name, access.operation) {
             (Name::Hidden, _) => Err(Errno::EACCES),
-            (Name::Info | Name::Leaf | Name::Events, Operation::Open(flags))
+            (Name::Info | Name::Leaf | Name::Events | Name::Ledger, Operation::Open(flags))
                 if flags.access().is_some_and(|access| access.writes()) =>
             {
                 Err(Errno::EACCES)
@@ -181,6 +185,7 @@ impl Export for StaticExport {
             (Name::Root, WalkName::Child(b"events")) => Name::Events,
             (Name::Root, WalkName::Child(b"hidden")) => Name::Hidden,
             (Name::Root, WalkName::Child(b"dir")) => Name::Dir,
+            (Name::Root, WalkName::Child(b"ledger")) => Name::Ledger,
             (Name::Dir, WalkName::Child(b"leaf")) => Name::Leaf,
             (Name::Dir, WalkName::Parent) => Name::Root,
             _ => return Err(Errno::ENOENT),
@@ -234,6 +239,18 @@ impl Export for StaticExport {
                 let end = start.saturating_add(count as usize).min(length);
                 Ok(ReadOutcome::Ready((start..end).map(info_byte).collect()))
             }
+            Name::Ledger => {
+                let with_handle = state.released.iter().filter(|(_, _, open)| *open).count();
+                let text = format!(
+                    "released={} released_with_handle={with_handle}\n",
+                    state.released.len()
+                );
+                let start = usize::try_from(offset)
+                    .unwrap_or(usize::MAX)
+                    .min(text.len());
+                let end = start.saturating_add(count as usize).min(text.len());
+                Ok(ReadOutcome::Ready(text.as_bytes()[start..end].to_vec()))
+            }
             Name::Events => match state.events.front() {
                 None => Ok(ReadOutcome::Pending),
                 // An event is never split: one that does not fit is refused
@@ -278,6 +295,7 @@ impl Export for StaticExport {
                 (b"sink", Name::Sink),
                 (b"events", Name::Events),
                 (b"dir", Name::Dir),
+                (b"ledger", Name::Ledger),
             ],
             Name::Dir => &[(b"leaf", Name::Leaf)],
             _ => return Err(Errno::ENOTDIR),

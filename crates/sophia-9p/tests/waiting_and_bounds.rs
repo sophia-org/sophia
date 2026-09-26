@@ -209,7 +209,7 @@ fn a_listing_without_room_for_its_reply_is_not_performed() {
     harness.connection.resume(&mut harness.export).unwrap();
     let listed = harness.take();
     assert_eq!(listed[0].tag, 5);
-    assert_eq!(listed[0].dirents().len(), 4);
+    assert_eq!(listed[0].dirents().len(), 5);
 }
 
 #[test]

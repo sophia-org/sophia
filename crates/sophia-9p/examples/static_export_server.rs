@@ -41,6 +41,14 @@ enum Mutation {
     DropFlush,
     /// A listing also names the child the owner refuses.
     ListHidden,
+    /// Every Rlerror reaches the client as EIO, whatever the server chose.
+    ErrnoAsEio,
+    /// The server is configured with four times the fids the oracle expects.
+    UnboundedFids,
+    /// The server is configured with twice the waiting reads the oracle expects.
+    UnboundedPending,
+    /// Released fids and handles never reach the owner's ledger.
+    LeakOnRelease,
 }
 
 impl Mutation {
@@ -52,12 +60,38 @@ impl Mutation {
             "version-suffix" => Self::VersionSuffix,
             "drop-flush" => Self::DropFlush,
             "list-hidden" => Self::ListHidden,
+            "errno-as-eio" => Self::ErrnoAsEio,
+            "unbounded-fids" => Self::UnboundedFids,
+            "unbounded-pending" => Self::UnboundedPending,
+            "leak-on-release" => Self::LeakOnRelease,
             other => return Err(format!("unknown mutation {other:?}")),
         })
     }
 
     const fn in_relay(self) -> bool {
-        matches!(self, Self::VersionSuffix | Self::DropFlush)
+        matches!(
+            self,
+            Self::VersionSuffix | Self::DropFlush | Self::ErrnoAsEio
+        )
+    }
+
+    /// The server's bounds: the defaults the oracle expects, or one relaxed.
+    fn limits(self) -> Limits {
+        let default = Limits::default();
+        let (fids, pending) = match self {
+            Self::UnboundedFids => (default.max_fids() * 4, default.max_pending()),
+            Self::UnboundedPending => (default.max_fids(), default.max_pending() * 2),
+            _ => return default,
+        };
+        Limits::new(
+            default.max_msize(),
+            default.min_msize(),
+            pending,
+            fids,
+            default.max_unsent(),
+            default.max_connections(),
+        )
+        .expect("relaxed limits stay valid")
     }
 }
 
@@ -147,7 +181,9 @@ impl Export for Mutant {
     }
 
     fn release(&mut self, node: Node, handle: Option<Self::Handle>) {
-        self.inner.release(node, handle);
+        if self.mutation != Some(Mutation::LeakOnRelease) {
+            self.inner.release(node, handle);
+        }
     }
 }
 
@@ -170,7 +206,8 @@ fn main() -> Result<(), String> {
         inner: StaticExport::new(),
         mutation,
     };
-    let mut server = Server::new(export, Limits::default()).map_err(|error| error.to_string())?;
+    let limits = mutation.map_or_else(Limits::default, Mutation::limits);
+    let mut server = Server::new(export, limits).map_err(|error| error.to_string())?;
     let listener = UnixListener::bind(&served).map_err(|error| error.to_string())?;
     server.listen(listener).map_err(|error| error.to_string())?;
     if let Some(mutation) = mutation.filter(|mutation| mutation.in_relay()) {
@@ -232,6 +269,13 @@ fn rewrite(mut from: UnixStream, mut to: UnixStream, mutation: Mutation) -> Unix
         let kind = rest.first().copied();
         let frame = match (mutation, kind) {
             (Mutation::DropFlush, Some(109)) => continue,
+            (Mutation::ErrnoAsEio, Some(7)) => {
+                // type tag, then the error number replaced.
+                let mut frame = size.to_vec();
+                frame.extend_from_slice(&rest[..3]);
+                frame.extend_from_slice(&5u32.to_le_bytes());
+                frame
+            }
             (Mutation::VersionSuffix, Some(101)) => {
                 // type tag msize, then the version string replaced.
                 let mut body = rest[..7].to_vec();

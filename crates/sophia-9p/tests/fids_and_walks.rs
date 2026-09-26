@@ -339,3 +339,21 @@ fn an_open_fid_is_described_as_the_version_it_opened() {
         "unopened: the node"
     );
 }
+
+#[test]
+fn the_ledger_reports_every_release_it_has_seen() {
+    let mut harness = Harness::attached();
+    harness.open(1, &[b"ledger"], O_RDONLY).lopen();
+    let read = |harness: &mut Harness| {
+        String::from_utf8(harness.one(&tread(4, 1, 0, 256)).data()).unwrap()
+    };
+    assert_eq!(read(&mut harness), "released=0 released_with_handle=0\n");
+    harness.open(2, &[b"info"], O_RDONLY).lopen();
+    harness.one(&twalk(5, 0, 3, &[b"dir"])).walk();
+    harness.one(&tclunk(6, 2));
+    harness.one(&tclunk(7, 3));
+    assert_eq!(read(&mut harness), "released=2 released_with_handle=1\n");
+    // Writing is refused like any other read-only file.
+    harness.one(&twalk(8, 0, 4, &[b"ledger"])).walk();
+    assert_eq!(harness.errno(&tlopen(9, 4, O_WRONLY)), EACCES);
+}

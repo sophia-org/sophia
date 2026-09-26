@@ -20,7 +20,7 @@
 //! `go mod download` in `tools/9p-oracle`.
 //!
 //! `--self-test` runs the server with each harness mutation, and each must
-//! make the oracle fail.
+//! make the oracle fail, including every check the mutation is named for.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -36,14 +36,59 @@ const PINNED_MODULE: &str = "github.com/hugelgupf/p9 v0.4.1";
 const PINNED_SUM: &str =
     "github.com/hugelgupf/p9 v0.4.1 h1:04RUBWSYlvP38QX8At5VXnMTg9qNEnbP/548aMLtfsk=";
 /// Fewer checks than this is an oracle that skipped some, not a pass.
-const MINIMUM_CHECKS: usize = 42;
-const MUTATIONS: [&str; 6] = [
-    "permissive-check",
-    "corrupt-read",
-    "pending-as-empty",
-    "version-suffix",
-    "drop-flush",
-    "list-hidden",
+const MINIMUM_CHECKS: usize = 50;
+/// Each harness mutation, and the checks that must be among those it fails:
+/// a mutation proves only the checks it is required to break.
+const MUTATIONS: [(&str, &[&str]); 10] = [
+    (
+        "permissive-check",
+        &["client/owner-refuses-hidden", "client/write-sink"],
+    ),
+    (
+        "corrupt-read",
+        &["client/walk-open-read", "client/large-read"],
+    ),
+    (
+        "pending-as-empty",
+        &[
+            "raw/flushed-read-is-never-answered",
+            "raw/clunk-answers-waiting-reads-first",
+            "raw/disconnect-releases-held-fids-and-waiting-read",
+        ],
+    ),
+    ("version-suffix", &["raw/version-exact"]),
+    (
+        "drop-flush",
+        &[
+            "raw/flushed-read-is-never-answered",
+            "raw/flush-of-unknown-tag-answered",
+        ],
+    ),
+    (
+        "list-hidden",
+        &[
+            "client/readdir-lists-root",
+            "client/readdir-resumes-at-an-offset",
+        ],
+    ),
+    (
+        "errno-as-eio",
+        &[
+            "raw/attach-string-past-frame-eproto",
+            "raw/walk-name-past-frame-eproto",
+            "raw/open-access-mode-3-einval",
+            "raw/open-unknown-flag-einval",
+            "raw/walk-to-used-newfid-ebadf",
+            "raw/fid-limit-emfile",
+            "raw/waiting-read-limit-eagain",
+        ],
+    ),
+    ("unbounded-fids", &["raw/fid-limit-emfile"]),
+    ("unbounded-pending", &["raw/waiting-read-limit-eagain"]),
+    (
+        "leak-on-release",
+        &["raw/disconnect-releases-held-fids-and-waiting-read"],
+    ),
 ];
 const RUN_LIMIT: Duration = Duration::from_secs(180);
 
@@ -64,12 +109,21 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     let server = build_server(repo)?;
     let mut lines = vec![format!("evidence: {}", output.display())];
     if self_test {
-        for mutation in MUTATIONS {
+        for (mutation, required) in MUTATIONS {
             let transcript = run_once(&server, &oracle, &output, Some(mutation))?;
             match judge(&transcript) {
-                Verdict::Fail(summary) => lines.push(format!(
-                    "mutation {mutation}: failed as required ({summary})"
-                )),
+                Verdict::Fail(summary) => {
+                    let missed = unbroken(&transcript, required);
+                    if !missed.is_empty() {
+                        return Err(format!(
+                            "mutation {mutation} left required checks passing: {}",
+                            missed.join(" ")
+                        ));
+                    }
+                    lines.push(format!(
+                        "mutation {mutation}: failed as required ({summary})"
+                    ));
+                }
                 Verdict::Pass(summary) => {
                     return Err(format!(
                         "mutation {mutation} passed and must not: {summary}"
@@ -293,6 +347,21 @@ fn wait(child: &mut Child, what: &str) -> Result<(), String> {
             Err(error) => return Err(format!("could not wait for {what}: {error}")),
         }
     }
+}
+
+/// The required checks that did not fail in this transcript.
+pub fn unbroken<'a>(transcript: &str, required: &[&'a str]) -> Vec<&'a str> {
+    required
+        .iter()
+        .copied()
+        .filter(|name| {
+            !transcript.lines().any(|line| {
+                line.strip_prefix("check ")
+                    .and_then(|rest| rest.split_once(" FAIL: "))
+                    .is_some_and(|(failed, _)| failed == *name)
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug, Eq, PartialEq)]
