@@ -114,3 +114,41 @@ fn malformed_catalog_and_invoke_payloads_fail_closed() {
         assert!(decode_control_frame(&frame[..end]).is_err());
     }
 }
+
+#[test]
+fn welcome_capacity_follows_the_selected_revision() {
+    for (revision, commands) in [(1u16, 258usize), (2, 259)] {
+        assert_eq!(control_max_commands(revision), commands);
+        let welcome = ControlMessage::Welcome(ControlWelcome {
+            revision,
+            session_id: [1, 2],
+            connection_id: 1,
+            command_timeout_ms: 10000,
+            frame_timeout_ms: 2000,
+            idle_timeout_ms: 60000,
+        });
+        let bytes = encode_control_frame(0, &welcome).unwrap();
+        assert_eq!(decode_control_frame(&bytes).unwrap().1, welcome);
+        // The other revision's capacity is refused.
+        let mut wrong = bytes.clone();
+        let other = control_max_commands(3 - revision) as u16;
+        wrong[24 + 40..24 + 42].copy_from_slice(&other.to_le_bytes());
+        assert!(decode_control_frame(&wrong).is_err());
+    }
+    let mut unknown = ControlWelcome {
+        revision: 3,
+        session_id: [1, 2],
+        connection_id: 1,
+        command_timeout_ms: 10000,
+        frame_timeout_ms: 2000,
+        idle_timeout_ms: 60000,
+    };
+    assert!(encode_control_frame(0, &ControlMessage::Welcome(unknown.clone())).is_err());
+    unknown.revision = 0;
+    assert!(encode_control_frame(0, &ControlMessage::Welcome(unknown)).is_err());
+    // Revision 2's session operations decode; an unknown session name does not.
+    for name in ["logout", "reload-profile", "restart-wm"] {
+        assert!(control_session_operation(name));
+    }
+    assert!(!control_session_operation("shutdown"));
+}

@@ -81,6 +81,8 @@ struct LiveWmSession {
     shortcuts: Option<WmShortcutRouter>,
     command_registry: SessionCommandRegistry,
     desktop_reload: Option<PendingDesktopReload>,
+    /// Counts rolled-back reloads, so a settled reload can say which way it went.
+    desktop_reload_rollbacks: u64,
     _other_authority_fragments: Option<sophia_config::DesktopProfileFragments>,
     pending_policy_launch_spec: Option<ProcessLaunchSpec>,
     pending_policy_configuration: Option<(sophia_protocol::PolicyConfiguration, sophia_engine::WmShortcutRegistry)>,

@@ -2,7 +2,7 @@
 
 Generated from `protocol/sophia-control-v1.kdl`; do not edit.
 
-Experimental major 1, revision 1. [Normative semantics](../sophia-control-v1.md).
+Experimental major 1, revision 2 (revision 1 remains negotiable). [Normative semantics](../sophia-control-v1.md).
 
 All offsets are payload-relative; integers are little endian, with no alignment padding.
 
@@ -93,7 +93,7 @@ Kind 131; session-to-client; transaction `required`.
 | 0 | `catalog_generation` | u64 (8 bytes) |
 | 8 | `entry_count` | u16 (2 bytes) |
 | 10 | `reserved` | u16 (2 bytes); must be zero |
-| 12 | `entries` | `entry_count` entries, max 258 |
+| 12 | `entries` | `entry_count` entries, max 259 |
 
 Entry offsets:
 

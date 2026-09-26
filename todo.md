@@ -62,8 +62,6 @@ Before admitting a content prototype, characterize Quickshell's retained popup-m
 
 Optional short installed control smoke: discover, invoke a safe registered action, restart WM, and observe continued input/rendering. +candidate @planning id:t036 order:036 [details](docs/notes/plans/queue-14-native-wm-and-shell-product.md#t036)
 
-Verify owner recovery and control-endpoint settlement before exposing scripted reload-profile; shortcut-driven reload acceptance remains in t076. +candidate @planning id:t037 order:037 [details](docs/notes/plans/queue-14-native-wm-and-shell-product.md#t037)
-
 Harden the implemented issuer-scoped action checks and reservation/work-area coordination only against a named remaining lifecycle gap; preserve existing offline conformance and distinguish it… +candidate @planning id:t038 order:038 [details](docs/notes/plans/queue-14-native-wm-and-shell-product.md#t038)
 
 Stabilize the minimum sophia_shell_v1 lifecycle only after CP-15.1 and CP-15.2; require signed installed Narthex evidence and preserve metadata separation from the blind WM. +candidate @planning id:t039 order:039 [details](docs/notes/plans/queue-14-native-wm-and-shell-product.md#t039)

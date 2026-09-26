@@ -1,10 +1,11 @@
 # Sophia Control v1
 
 **Role:** normative scripting wire and lifecycle specification.
-**Status:** experimental major 1, revision 1; Linux session endpoint, Rust and
+**Status:** experimental major 1, revision 2 (revision 1 remains negotiable); Linux session endpoint, Rust and
 independent Python clients, policy settlement, and confirmed WM restart are
-implemented. Control remains disabled by default. Profile reload is reserved
-but unadvertised until its transactional recovery is repaired.
+implemented. Control remains disabled by default. Revision 2 dispatches
+`reload-profile` through the session's reload owner, which now restores the
+prior profile when a replacement fails (t037), and adds `logout`.
 
 [Scripting Sophia](scripting.md) owns the generic authority contract;
 [the native protocol family](sophia-policy-ipc.md) owns the common envelope.
@@ -23,8 +24,10 @@ tokens, or application handles through this endpoint. Engine still validates
 and commits visual state; the WM still interprets spatial policy.
 
 Revision 1 exposes discovery and invocation of argument-free registered WM
-actions and the session operation `restart-wm`. The `reload-profile` operation
-is reserved but is not advertised or dispatched. The owner selector
+actions and the session operation `restart-wm`; it reserves `reload-profile`
+without advertising or dispatching it. Revision 2 (2026-09-26) adds the session
+operations `reload-profile` and `logout`, with the settlement rules below.
+Nothing else changes: a revision-1 connection behaves exactly as before. The owner selector
 is `policy = 1` or `session = 2`. Shell commands, parameters, process execution,
 synthetic input, metadata queries, event subscriptions, FD transfer, and
 delegated grants are absent. No generic extension blob is reserved for them.
@@ -105,13 +108,13 @@ a protocol violation and received FDs must be closed immediately.
 
 The admitted client sends `ClientHello` (128), ID zero, specifying inclusive
 minimum/maximum revisions and required feature bits. Both revisions must be
-nonzero and ordered. Revision 1 defines **no feature bits**. A server selects
+nonzero and ordered. Revisions 1 and 2 define **no feature bits**. A server selects
 the highest supported revision in the intersection; absent overlap returns
 `ProtocolError(revision)`. Any unsupported required feature returns
 `ProtocolError(features)`. The frame version and major are not negotiated;
 this endpoint speaks major 1 only.
 
-`ServerWelcome` (129), ID zero, selects revision 1 and features zero. Its
+`ServerWelcome` (129), ID zero, states the selected revision and features zero. Its
 128-bit session ID (two LE u64 words) is a fresh nonzero identifier for each
 session-runtime incarnation; its nonzero connection ID is never reused within
 that session. Neither is a secret or permission. Counters must not wrap.
@@ -120,7 +123,7 @@ The welcome advertises effective bounds:
 | Field | Allowed value |
 | --- | --- |
 | `max_payload` | 65,536 (fixed in revision 1) |
-| `max_commands` | 258 (256 WM actions plus two session operations) |
+| `max_commands` | 256 WM actions plus the revision's session operations: 258 in revision 1 (two, one reserved), 259 in revision 2 (three) |
 | `max_name_bytes` | 128 |
 | `command_timeout_ms` | 1–10,000 |
 | `frame_timeout_ms` | 1–2,000 |
@@ -166,7 +169,11 @@ declared length excludes zero padding; all unused bytes must be zero. Names
 are case-sensitive and never interpreted as shell text. Entries are unique by
 `(owner, name)` and sorted by owner then ASCII name bytes. Policy entries have
 completion `policy-commit = 1`; session entries have `session-settlement = 2`
-and one of the two session names. Session-operation binding slots and launch
+and a session operation of the connection's revision. A revision-1 connection
+is shown only `restart-wm`; a revision-2 connection is shown `logout`,
+`reload-profile` and `restart-wm` when the session offers them. Both views of
+one generation carry identical entries apart from those session operations,
+and an invocation absent from the connection's view is `rejected`. Session-operation binding slots and launch
 bindings must not be advertised as policy commands to bypass owner routing.
 
 The generation identifies an immutable authorized catalog and its private
@@ -222,6 +229,18 @@ insufficient. Rejection must preserve or restore the previous working profile
 and coherent policy state. Restart `completed` means replacement admission,
 configuration/checkpoint restoration as applicable, and a usable committed
 policy cycle, not merely process creation. `unchanged` is valid only for reload.
+
+Revision 2 settles its operations through the session's existing owners, which
+also serve the key bindings. `reload-profile` raises the same reload request as
+the binding. It is `unchanged` when the equivalent profile is retained,
+`rejected` when the reload owner declines the candidate or a required WM
+replacement rolls it back, and `completed` when the candidate is activated
+directly or its replacement commits. One control reload is dispatched at a time;
+another is `overloaded`. `logout` raises the same logout request as the binding
+and is `completed` once the session has admitted the logout and begun draining
+toward its own end. It has no rollback. The endpoint closes with the session, so
+the reply may be the connection's last frame or may be lost to end of stream,
+which a client reports as an unknown outcome.
 
 The intentional WM replacement inside `restart-wm` or a reload is tracked by
 the session-owned operation across that expected transition. Its original

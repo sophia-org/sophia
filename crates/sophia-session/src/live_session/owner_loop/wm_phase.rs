@@ -1,5 +1,9 @@
 {
     scripting.service(wm_session.as_mut(), &layout, output, logout_requested);
+    // Control's session operations raise the same requests as the bindings.
+    let control_requests = scripting.take_session_requests();
+    profile_reload_requested |= control_requests.reload_profile;
+    logout_requested |= control_requests.logout;
     if active_output_topology_preparation.is_none()
         && wm_session
             .as_ref()
@@ -23,7 +27,9 @@
             && wm.shortcuts.as_ref().is_none_or(WmShortcutRouter::shortcut_idle);
         wm.settle_desktop_reload(config, launch_input_idle)?;
         if profile_reload_requested && launch_input_idle && !config_reload_pending {
-            profile_reload_requested = matches!(wm.reload_desktop_profile(config)?, DesktopProfileReloadOutcome::Deferred);
+            let outcome = wm.reload_desktop_profile(config)?;
+            profile_reload_requested = matches!(outcome, DesktopProfileReloadOutcome::Deferred);
+            scripting.settle_reload(outcome, wm);
         }
         if wm_restart_requested {
             wm_restart_requested = false;

@@ -1,6 +1,6 @@
 // Experimental wire specification, not a registered runtime endpoint.
 // Fixed byte arrays are zero padded; semantic rules live in the companion spec.
-protocol "sophia_control_v1" frame-version=1 interface-major=1 interface-revision=1 max-payload=65536 max-commands=258 max-name-bytes=128 {
+protocol "sophia_control_v1" frame-version=1 interface-major=1 interface-revision=2 max-payload=65536 max-commands=259 max-name-bytes=128 {
     owner "policy" value=1
     owner "session" value=2
     completion "policy-commit" value=1
@@ -22,18 +22,19 @@ protocol "sophia_control_v1" frame-version=1 interface-major=1 interface-revisio
 
     message "ClientHello" kind=128 direction="client-to-session" transaction="zero" {
         field "minimum_revision" type="u16" sample=1
-        field "maximum_revision" type="u16" sample=1
+        field "maximum_revision" type="u16" sample=2
         field "required_features" type="u64" sample=0
     }
     message "ServerWelcome" kind=129 direction="session-to-client" transaction="zero" {
-        field "selected_revision" type="u16" sample=1
+        // Revision 1 advertises max_commands 258; revision 2, 259.
+        field "selected_revision" type="u16" sample=2
         field "reserved" type="u16" sample=0 reserved=#true
         field "session_id_low" type="u64" sample=1
         field "session_id_high" type="u64" sample=2
         field "connection_id" type="u64" sample=1
         field "features" type="u64" sample=0
         field "max_payload" type="u32" sample=65536
-        field "max_commands" type="u16" sample=258
+        field "max_commands" type="u16" sample=259
         field "max_name_bytes" type="u16" sample=128
         field "command_timeout_ms" type="u32" sample=10000
         field "frame_timeout_ms" type="u32" sample=2000
@@ -42,9 +43,9 @@ protocol "sophia_control_v1" frame-version=1 interface-major=1 interface-revisio
     message "CommandsRequest" kind=130 direction="client-to-session" transaction="required" {}
     message "CommandsReply" kind=131 direction="session-to-client" transaction="required" {
         field "catalog_generation" type="u64" sample=1
-        field "entry_count" type="u16" sample=1 max=258
+        field "entry_count" type="u16" sample=1 max=259
         field "reserved" type="u16" sample=0 reserved=#true
-        repeated "entries" count="entry_count" max=258 {
+        repeated "entries" count="entry_count" max=259 {
             field "owner" type="u16" sample=1
             field "completion" type="u16" sample=1
             field "name_len" type="u16" sample=10 max=128

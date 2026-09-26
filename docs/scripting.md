@@ -79,6 +79,8 @@ session ownership even when a WM exposes bindings that request them.
 sophia msg commands
 sophia msg policy 'registered action name'
 sophia msg session restart-wm
+sophia msg session reload-profile
+sophia msg session logout
 sophia msg --json commands
 ```
 

@@ -18,10 +18,17 @@ pub struct ControlClient {
     command_timeout: Duration,
     invocation_pending: bool,
     failed: bool,
+    revision: u16,
 }
 
 impl ControlClient {
     pub fn connect(path: &Path) -> io::Result<Self> {
+        Self::connect_revisions(path, 1, sophia_protocol::CONTROL_REVISION)
+    }
+
+    /// Connect offering exactly `minimum..=maximum`; the server selects the
+    /// highest revision both speak.
+    pub fn connect_revisions(path: &Path, minimum: u16, maximum: u16) -> io::Result<Self> {
         if !path.is_absolute() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -62,21 +69,30 @@ impl ControlClient {
             command_timeout: Duration::from_secs(2),
             invocation_pending: false,
             failed: false,
+            revision: 0,
         };
         let reply = client.exchange(
             0,
             ControlMessage::Hello {
-                minimum_revision: 1,
-                maximum_revision: 1,
+                minimum_revision: minimum,
+                maximum_revision: maximum,
                 required_features: 0,
             },
         )?;
         let ControlMessage::Welcome(welcome) = reply else {
             return Err(invalid("expected control welcome"));
         };
+        if !(minimum..=maximum).contains(&welcome.revision) {
+            return Err(invalid("control welcome selected an unoffered revision"));
+        }
+        client.revision = welcome.revision;
         client.frame_timeout = Duration::from_millis(welcome.frame_timeout_ms.into());
         client.command_timeout = Duration::from_millis(welcome.command_timeout_ms.into());
         Ok(client)
+    }
+    /// The negotiated revision.
+    pub fn revision(&self) -> u16 {
+        self.revision
     }
     pub fn invocation_pending(&self) -> bool {
         self.invocation_pending

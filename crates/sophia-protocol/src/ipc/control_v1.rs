@@ -2,7 +2,31 @@
 use super::cursor::{Cursor, push_u16, push_u32, push_u64};
 use super::{IpcCodecError, SOPHIA_IPC_MAX_PAYLOAD_LEN};
 
-pub const CONTROL_MAX_COMMANDS: usize = 258;
+/// The largest catalog any revision allows: 256 WM actions plus the session
+/// operations of the highest revision. A welcome states its own revision's cap.
+pub const CONTROL_MAX_COMMANDS: usize = 259;
+/// The highest revision this implementation speaks.
+pub const CONTROL_REVISION: u16 = 2;
+
+/// Session operations each revision names. Revision 1 reserves `reload-profile`
+/// without dispatching it; revision 2 dispatches it and adds `logout`.
+pub const fn control_session_operations(revision: u16) -> &'static [&'static str] {
+    match revision {
+        1 => &["reload-profile", "restart-wm"],
+        _ => &["logout", "reload-profile", "restart-wm"],
+    }
+}
+
+/// The catalog capacity a welcome advertises for `revision`.
+pub const fn control_max_commands(revision: u16) -> usize {
+    256 + control_session_operations(revision).len()
+}
+
+/// A session operation of any revision. The frame codec is revision-agnostic;
+/// the negotiated revision decides what a connection may see and invoke.
+pub fn control_session_operation(name: &str) -> bool {
+    control_session_operations(CONTROL_REVISION).contains(&name)
+}
 pub const CONTROL_FRAME_TIMEOUT_MS: u32 = 2000;
 pub const CONTROL_COMMAND_TIMEOUT_MS: u32 = 10000;
 pub const CONTROL_IDLE_TIMEOUT_MS: u32 = 60000;
@@ -75,6 +99,8 @@ pub struct ControlCatalog {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ControlWelcome {
+    /// The selected revision, 1 or 2.
+    pub revision: u16,
     pub session_id: [u64; 2],
     pub connection_id: u64,
     pub command_timeout_ms: u32,
@@ -203,12 +229,18 @@ pub fn decode_control_frame(bytes: &[u8]) -> Result<(u64, ControlMessage), IpcCo
             }
         }
         129 => {
-            require(c.u16()? == 1 && c.u16()? == 0)?;
+            let revision = c.u16()?;
+            require((1..=CONTROL_REVISION).contains(&revision) && c.u16()? == 0)?;
             let session_id = [c.u64()?, c.u64()?];
             let connection_id = c.u64()?;
             require(session_id != [0, 0] && connection_id != 0 && c.u64()? == 0)?;
-            require(c.u32()? == 65536 && c.u16()? == 258 && c.u16()? == 128)?;
+            require(
+                c.u32()? == 65536
+                    && usize::from(c.u16()?) == control_max_commands(revision)
+                    && c.u16()? == 128,
+            )?;
             let welcome = ControlWelcome {
+                revision,
                 session_id,
                 connection_id,
                 command_timeout_ms: c.u32()?,
@@ -239,10 +271,7 @@ pub fn decode_control_frame(bytes: &[u8]) -> Result<(u64, ControlMessage), IpcCo
                 let length = c.u16()? as usize;
                 require(c.u16()? == 0)?;
                 let name = text(&mut c, length, 128, true)?;
-                require(
-                    owner != ControlOwner::Session
-                        || matches!(name.as_str(), "reload-profile" | "restart-wm"),
-                )?;
+                require(owner != ControlOwner::Session || control_session_operation(&name))?;
                 let command = ControlCommand { owner, name };
                 require(commands.last().is_none_or(|last| last < &command))?;
                 commands.push(command);
@@ -308,13 +337,14 @@ pub fn encode_control_frame(id: u64, message: &ControlMessage) -> Result<Vec<u8>
             128
         }
         ControlMessage::Welcome(w) => {
-            push_u16(&mut out, 1);
+            require((1..=CONTROL_REVISION).contains(&w.revision))?;
+            push_u16(&mut out, w.revision);
             push_u16(&mut out, 0);
             for n in [w.session_id[0], w.session_id[1], w.connection_id, 0] {
                 push_u64(&mut out, n);
             }
             push_u32(&mut out, 65536);
-            push_u16(&mut out, 258);
+            push_u16(&mut out, control_max_commands(w.revision) as u16);
             push_u16(&mut out, 128);
             for n in [w.command_timeout_ms, w.frame_timeout_ms, w.idle_timeout_ms] {
                 push_u32(&mut out, n);
@@ -391,8 +421,7 @@ pub fn validate_control_catalog(catalog: &ControlCatalog) -> Result<(), IpcCodec
     for command in &catalog.commands {
         validate_control_name(&command.name)?;
         require(
-            command.owner != ControlOwner::Session
-                || matches!(command.name.as_str(), "reload-profile" | "restart-wm"),
+            command.owner != ControlOwner::Session || control_session_operation(&command.name),
         )?;
     }
     Ok(())

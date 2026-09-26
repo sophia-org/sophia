@@ -5,7 +5,9 @@ pub(crate) fn print(verbose: bool) {
     println!(
         "commands: client-launch --adapter=chromium --argv-style=direct|wrapper [--check-only] -- PROGRAM ARGS..."
     );
-    println!("commands: msg [--socket PATH] [--json] commands|policy NAME|session restart-wm");
+    println!(
+        "commands: msg [--socket PATH] [--json] commands|policy NAME|session restart-wm|reload-profile|logout"
+    );
     println!("commands: config check [--config=/absolute/path]");
     println!("commands: config check --wm [--wm-config=/absolute/path]");
     println!("commands: config check --desktop-profile=/absolute/path");

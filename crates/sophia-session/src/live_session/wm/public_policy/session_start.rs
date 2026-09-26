@@ -205,6 +205,7 @@ impl LiveWmSession {
             command_registry: SessionCommandRegistry::prepare(1, &config.applications)?
                 .with_policy_launch_roles(config.launch_surface_proof_requested()),
             desktop_reload: None,
+            desktop_reload_rollbacks: 0,
             _other_authority_fragments: None,
             pending_policy_launch_spec: None,
             pending_policy_configuration: None,
