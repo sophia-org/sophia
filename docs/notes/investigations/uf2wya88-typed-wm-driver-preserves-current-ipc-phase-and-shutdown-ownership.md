@@ -801,6 +801,63 @@ from the fallback command at the wrapper's eight-job setting, above the agreed
 two-job limit. No fresh P1 run is claimed by this disclosure; its original
 evidence is unchanged.
 
+## Normal Hagia committed operation: accepted intent, no executor
+
+The test-only `policy_hagia_operation.rs` child uses the same frozen normal
+Hagia `7455c3e` (SHA256
+`0419e09e224676c4d925438f80b22df9532c1653ec339507637edbe01ea52f5f`)
+and protected file-WM fixture. It establishes the corrected managed historical
+baseline and commits a real held resize with supplied CPU facts and correlated
+frontend ACKs. These remain supplied inputs, not original application admission
+or actual X-client/native completion evidence.
+
+The admitted slot-one action then produces an unchanged projection through
+Hagia's real loop. Its actual immediate `stage` result reaches
+`apply_commit_result`; staged projection custody is consumed, no operation is
+pending yet, and the expected slot remains one. The driver subsequently delivers
+the real operation to the existing public owner, which validates epoch, token,
+target and slot before returning its unchanged operation proposal. That proposal
+also yields an immediate real layout result. Applying it returns the exact
+`LaunchApplication { application: SessionApplicationId(1) }`, target `None`,
+transaction tuple and sends the existing accepted-intent outcome. The tuple stays
+local: the fixture never calls the committed-action queue, executor or launcher.
+Application execution and success remain unproven.
+
+The restored run distinguishes activation serial 5, projection request ID 2,
+projection domain transaction 3 and operation domain transaction 4. The operation
+request ID equals the activation serial. Numeric inequality between activation
+and projection request is a fixture discrimination assertion, not a production
+identity rule. An atomic checkpoint replacement is observed before operation
+settlement. After the actual accepted-intent outcome, the same protected child
+answers request 3 with domain transaction 5; checkpoint bytes and inode identity
+stay unchanged through that operation. This continuation is a fresh proposal,
+not a second committed layout.
+
+The first run is retained under `.artifacts/t249-hagia-operation`: seven controls
+passed and the new case failed an incorrect `physical_action.is_none()` fixture
+assertion after projection commit. `wm/commit.rs` intentionally returns
+`Some(action)` for this committed, non-scripted Action; the production
+`owner_loop/session_control.rs` logs that diagnostic marker, separately from
+queueing `session_action`. The corrected assertion checks the exact marker.
+The operation branch still requires `physical_action == None`. No production
+change was needed. The first run interleaved eight cases; the restored run uses
+`--test-threads=1` and passes eight controls in 5.97 seconds, including retained
+A/B, CPU, layout parity and the joined behavior corpus.
+
+Strict native-session all-target Session Clippy passes. Layout passes with an
+xtask freshly compiled from this worktree in a dedicated disk target beneath
+the exclusive t027 cache (jobs 2, nice 19, device-hidden). Direct support-file
+rustfmt and diff checks pass. No compiled mutation was requested for this slice.
+
+This fixture omits `preflight_staged_presentation`: presentation capabilities
+are absent and there is no publication, for which the production preflight
+returns true. It does not exercise presentation preflight or retirement. Other
+limits remain: supervisor protection evidence is not namespace inventory;
+path hashes before/after are not descriptor-pinned execution; terminal peer
+reset during cleanup is not a clean Hagia exit claim; cleanup does not establish
+an absolute stuck-kernel reap bound. There is no physical input, native receipt,
+whole-owner-loop or application-execution claim.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)
