@@ -584,6 +584,60 @@ This proves real protected Hagia admission/configuration/catalog, not Session
 layout settlement, surface-transaction prepare/apply, native completion, or
 presentation receipts. Phase B remains separate.
 
+## Phase B: real Hagia layout settlement and failed-action continuation
+
+The separate `session/t249-hagia-layout-settlement` checkpoint reuses Phase A's
+frozen normal Hagia, protected factory, profile and catalog owners. Both new
+cases pass unmodified Hagia proposals through `PersistentLiveLayout::stage`.
+Each asserts a nonempty resize obligation and a pending result. Supplied initial
+facts comprise an already managed surface, safe retained CPU image and route;
+the fixture does not demonstrate their original admission or native retirement.
+
+The committed path services actual emitted frontend controls through the
+Session queue with supplied correlated Delivered acknowledgements, then calls
+the existing layout acknowledgement method. These are simulated X-authority
+ACKs, not an actual X client or native presentation receipts. ACKs alone leave
+readiness false and the retained layer unchanged. Matching supplied CPU facts
+then make readiness true, followed by production prepare, resolve and apply.
+The reducer successor and real Hagia checkpoint advance. A fresh proposal with
+increasing request and domain transaction identities comes from the same child
+and epoch. That proposal proves continuation, not a second committed layout;
+cleanup may terminate its outstanding turn.
+
+The timeout case first commits a baseline and boundedly waits for Hagia's fresh
+atomic checkpoint, rather than treating Session Ready as peer consumption. It
+pins bytes and device/inode from the same opened file. The scene admits operation
+slot 1 before the fixture selects its real catalog action. The action is queued,
+then canonical work-area facts advance through the existing owner before
+dispatch, causing Hagia itself to compute a different size. The owner's relayout
+is queued behind the action; no queue or proposal is rewritten. Exact frontend
+ACKs are supplied but resized pixels are withheld. The pending layout remains
+unready and `public.prepared` remains absent: timeout does not call prepare.
+`force_pending_timeout` advances the deadline to now, followed by real expire
+and apply. This exercises expiry logic, not a measured 250 ms timeout. Retained
+layout and committed reducer state stay unchanged, with no session operation or
+physical action. A later correlated proposal from the same child proves failed
+outcome consumption; checkpoint bytes and device/inode remain unchanged after
+that proposal. The next cause may be existing timeout rearm or work-area work.
+
+The first two runs are retained fixture failures, not production defects:
+initial retained admission was absent, so CPU observations were correctly
+excluded, and initial SetPresentationState acknowledgements had not been
+supplied. The corrected run and exact restored run each pass all three A/B
+controls (3/0; restored 1.39 seconds). The narrow compiled P1 negative removes
+only the Committed conjunction at semantic command construction. The real
+Hagia reports “Sophia's session-operation expectation disagrees with the
+projection,” and the next-proposal loop fails its same-child admission guard
+(exit 101, 0.29 seconds). This is the intended guard failure, not a setup timeout.
+The production `commit.rs` blob is restored byte-exact with its SHA256 verified.
+
+Logs, per-case identities, both fixture reds, negative source hash and restored
+proof are retained in `.artifacts/t249-hagia-layout`. Strict native-session
+all-target Session Clippy passes. These controls prove Session layout/reducer
+settlement through real Hagia's file loop. They do not execute HeadlessEngine
+surface prepare/apply, output-role bootstrap, native completion or presentation
+receipts. Existing stuck-kernel cleanup and path-hash execution limits remain.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

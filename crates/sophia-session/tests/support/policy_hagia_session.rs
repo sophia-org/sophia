@@ -1,6 +1,6 @@
 //! Opt-in normal Hagia through the protected production WM file factory.
-//! This first checkpoint stops after profile/configuration/catalog admission;
-//! no layout outcome, output bootstrap, native target or receipt is supplied.
+//! Common protected startup custody for opt-in normal Hagia controls.
+//! Output bootstrap, native targets and presentation receipts are not supplied.
 use super::*;
 use sha2::{Digest, Sha256};
 use std::io::Write;
@@ -10,6 +10,9 @@ const FROZEN_BINARY: &str =
     "/home/niltempus/dev/hagia-overview-fix/.artifacts/h006-endpoint/hagia-7455c3e";
 const FROZEN_SHA256: &str = "0419e09e224676c4d925438f80b22df9532c1653ec339507637edbe01ea52f5f";
 
+#[path = "policy_hagia_layout.rs"]
+mod layout_settlement;
+
 fn binary_hash(path: &Path) -> String {
     assert!(std::fs::metadata(path).unwrap().len() <= 64 * 1024 * 1024);
     format!("{:x}", Sha256::digest(std::fs::read(path).unwrap()))
@@ -18,6 +21,25 @@ fn binary_hash(path: &Path) -> String {
 #[test]
 #[ignore = "requires exact frozen normal Hagia and explicit fresh evidence inputs"]
 fn protected_normal_hagia_admits_profile_configuration_and_catalog_over_files() {
+    with_normal_hagia("protected-startup", |_, _, _, _, checkpoint, _| {
+        assert!(!checkpoint.exists(), "startup must not write a layout checkpoint");
+    });
+}
+
+// Each case gets a fresh child, profile and checkpoint. The callback runs only
+// after real configuration publication and ReadyForCycle; cleanup and binary
+// custody remain common to startup and layout-settlement controls.
+fn with_normal_hagia(
+    case: &str,
+    exercise: impl FnOnce(
+        &mut LiveWmSession,
+        &mut PersistentLiveLayout,
+        &mut ConfigFixture,
+        sophia_engine::HeadlessOutput,
+        &Path,
+        &mut std::fs::File,
+    ),
+) {
     let binary = std::fs::canonicalize(
         std::env::var_os("SOPHIA_HAGIA_FILE_BIN").expect("required frozen normal Hagia missing"),
     )
@@ -30,7 +52,7 @@ fn protected_normal_hagia_admits_profile_configuration_and_catalog_over_files() 
         std::env::var_os("SOPHIA_HAGIA_FILE_EVIDENCE")
             .expect("required fresh evidence parent missing"),
     )
-    .join("protected-startup");
+    .join(case);
     std::fs::create_dir(&evidence).expect("case evidence must be fresh; parent must exist");
     let mut identity = std::fs::File::create(evidence.join("identity.txt")).unwrap();
     writeln!(identity, "binary={}\npath_sha256_before={expected}\nsource=7455c3edd713770ed43630d0989073d2f14ba623\nidentity_qualification=path hashed before/after; not descriptor-pinned exec", binary.display()).unwrap();
@@ -174,6 +196,7 @@ fn protected_normal_hagia_admits_profile_configuration_and_catalog_over_files() 
         wm.settle_desktop_reload(&mut source.config, true).unwrap();
         assert_eq!(wm.public.as_ref().unwrap().selected_capabilities, selected);
     }
+    exercise(&mut wm, &mut layout, &mut source, output, &checkpoint, &mut identity);
     let stopped = Instant::now();
     wm.public.as_mut().unwrap().worker.take(); // Existing worker Drop/Stop owner.
     wm.supervisor.request_termination().unwrap();
@@ -196,13 +219,12 @@ fn protected_normal_hagia_admits_profile_configuration_and_catalog_over_files() 
     )
     .unwrap();
     assert_eq!(binary_hash(&binary), expected);
-    assert!(
-        !checkpoint.exists(),
-        "startup alone must not produce a layout checkpoint"
-    );
+    if case == "protected-startup" {
+        assert!(!checkpoint.exists(), "startup alone must not produce a layout checkpoint");
+    }
     std::fs::write(
         evidence.join("result.txt"),
-        "PASS protected normal Hagia profile/configuration/catalog; no layout/native settlement\n",
+        format!("PASS protected normal Hagia case={case}; no native settlement\n"),
     )
     .unwrap();
 }
