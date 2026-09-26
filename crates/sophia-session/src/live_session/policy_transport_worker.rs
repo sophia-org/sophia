@@ -194,3 +194,6 @@ mod adapter_driver_tests;
 
 #[path = "../../tests/support/policy_adapter_stop.rs"]
 mod adapter_stop_tests;
+
+#[path = "../../tests/support/policy_worker_capture.rs"]
+pub(in crate::live_session) mod worker_capture;

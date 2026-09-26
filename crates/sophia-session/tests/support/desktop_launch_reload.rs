@@ -28,6 +28,9 @@ mod policy_combined_output;
 #[path = "policy_hagia_session.rs"]
 mod policy_hagia_session;
 
+#[path = "policy_expectation_settlement.rs"]
+mod policy_expectation_settlement;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
