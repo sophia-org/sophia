@@ -710,6 +710,61 @@ rollback is issued and remains unanswered during continuation. There is no
 HeadlessEngine surface apply, full WM behavior matrix, performance comparison,
 native retirement or output-role parity claim.
 
+## Plain CPU production join after Session settlement
+
+The separate `session/t249-hagia-cpu-join` fixture reuses the corrected baseline
+and frozen normal Hagia, then passes actual CPU bytes and the actual Session
+owner update into the existing backend CPU production cycle. Initial authority
+transaction 700 supplies buffer 700 at previous surface generation 0; transaction
+701 supplies resized buffer 701 at previous surface generation 1. Engine surface
+generations become 1 and 2. Buffer content versions are independently 11 and 23;
+they are not derived from Engine counters. The supplied Session baseline is
+explicitly compared with the backend baseline established by the first real CPU
+cycle (geometry, source and surface generation). This correspondence is not proof
+of the original application admission.
+
+Owner order follows `owner_loop/authority.rs`: `layout.projected_batch`, then
+`presentation.rs::production_authority_batch`; `authority_production.rs` applies
+the actual layout epoch result and calls `run_cpu_production_cycle`. The fixture
+calls these existing methods in that order, rather than executing the whole
+owner-loop macros. The backend reaches `ProductionSessionDriver::run_cycle`,
+authority intake commit, and Engine surface prepare/apply. Source content,
+readiness and previous generations remain unchanged through projection; only
+geometry is projected by its production owner. No test compensation repairs a
+refused generation or manufactures a WM result.
+
+Pending retention is narrowly an empty CPU cycle with no competing content.
+Admission-group CPU handles feed residency; layout epoch commit/abort calls own
+the Present scheduler, not arbitrary CPU batches. These fixtures create no
+Present and assert no staged/rejected Present count. The successful case observes
+real supplied resized bytes, reaches real readiness/prepare/resolve/apply in the
+same turn, then feeds that owner update and converted batch into CPU production.
+Backend and output committed geometry, surface generation and source are checked,
+as are raw registry bytes and their independent content version. Registry bytes
+alone are source-selection evidence. Composition is required for the successor
+pixel assertion: a bounded 16x16 interior sample (256 pixels) matches XRGB8888
+RGB using the renderer's B,G,R,X byte interpretation. Old-only pixels are checked
+where nonempty; the retained run records zero because the target covers the old
+rectangle. No exposed region is invented.
+
+The timeout case withholds new pixels, consumes the actual timeout update through
+epoch abort and CPU production, and compares complete retained composed-frame
+bytes/format/size/stride plus committed geometry/source/generation before and
+after. It does not assert that an overlapping failed target rectangle is empty.
+Actual WM update transaction/request identities are retained. Same-child next
+proposal and unchanged checkpoint checks remain; rollback is issued but unanswered.
+There is no cross-owner atomic rollback claim: Session settles its WM result
+before this backend production turn. Native retirement, receipts, GPU execution,
+actual X-client ACKs and original historical admission remain outside this proof.
+
+The first compile failure used a nonexistent fixture `XResourceId::from_raw`
+constructor; it is retained and corrected to `new(3, 1)`. The first runnable and
+final owner-order-aligned runs pass 6/0, including two CPU cases, retained A/B and
+the two-workload IPC/files parity case. Final duration is 4.33 seconds. Evidence
+is separate under `.artifacts/t249-hagia-cpu`; no production or decoder change
+was needed. Strict native-session all-target Session Clippy, layout, direct
+rustfmt of the included support files and diff checks pass.
+
 ## Connections
 
 The accepted [9P interface decision](../decisions/1uoozfl8-adopt-9p2000-l-as-the-target-public-interface-while-preserving-authority-boundaries.md)

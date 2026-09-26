@@ -5,6 +5,9 @@ use super::*;
 use sophia_protocol::*;
 use std::os::unix::fs::MetadataExt;
 
+#[path = "policy_hagia_cpu.rs"]
+mod cpu_join;
+
 const SURFACE: SurfaceId = SurfaceId::new(3, 1);
 
 fn retain_existing_surface(layout: &mut PersistentLiveLayout) {
