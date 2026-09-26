@@ -142,8 +142,18 @@ rollback completed, logout completed. Evidence:
 The first attempt's post-rollback phases failed on the script's own readiness
 race (fixed in `0cd03eab`) and are retained beside them. Rehearsals use a copy
 of the release profile so the rejection can be swapped in; binaries are sealed.
-Remaining for t250: the attended ordinary-use session through the 9P entry, the
-t249 release latency verdict, and the default-selection decision.
+**Attended session (2026-09-26).** The operator logged in through the installed
+"Sophia niltempus Desktop (9P WM)" entry (session
+`00000001790451452784-210136aa`, release commit `06efcfda`, Hagia over
+`--wm-transport=9p2000.L`) and used it as the ordinary desktop, including this
+development session. Operator report: layout, focus, move/resize and overview
+behave normally; a Ctrl+Alt+Shift+R WM restart came back with the layout
+preserved. The session log shows the WM ready at epoch 1, one requested restart
+to epoch 2 with `preserved_layout=true`, and no degraded or failure records.
+Single head per output as configured; multi-output acceptance is not claimed.
+
+Remaining for t250: the t249 release latency verdict (armed overnight) and the
+operator's default-selection decision.
 
 ### t251 — Specify the shell file contract
 
