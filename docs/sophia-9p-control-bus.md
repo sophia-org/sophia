@@ -176,6 +176,9 @@ attributes and directory reads), which keeps a later dual-dialect core cheap.
 Descriptor passing, if a role needs it, stays an optional out-of-band
 capability on the socket, not a protocol extension. Portability beyond Linux
 is deferred (t256).
+Record traffic is binary, compact and strictly bounded because graphics and
+input run at frame rate; a read-only text view per role for humans and
+scripts is planned separately (t257).
 
 Classic 9P2000 fallback is a separate compatibility question. Supporting `.L`
 does not make existing Plan 9 or plan9port applications work unchanged. Graphics,
