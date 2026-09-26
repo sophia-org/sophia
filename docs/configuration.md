@@ -781,6 +781,16 @@ is per component; the global `gpu "direct"` mode is refused here. Explicit legac
 `--shell-process` conflicts, while `--shell-process-default` and ambient
 `SOPHIA_SHELL_CONFIG` are not inherited by explicitly selected components.
 
+Each component may select its wire with `transport "current-ipc"` (the default)
+or `transport "9p2000.L"`, the `sophia_shell_fs_v1` file export of
+[shell files](sophia-shell-files.md). The child receives only its selected
+endpoint: `SOPHIA_SHELL_SOCKET` for current IPC, `SOPHIA_SHELL_9P_SOCKET` for
+files. The selection is read at startup; a desktop-profile reload does not
+re-read shell components, so it cannot change a running component's wire.
+Selecting files changes the transport only, never the role's grants. It is
+development selection under t252: record families the file wire does not yet
+carry close that component rather than falling back.
+
 This is implemented selection/configuration, not completed native acceptance.
 The [attended launcher smoke](../tools/probes/native_launcher/README.md) keeps the
 working single-shell probe available and records independent identities. It does

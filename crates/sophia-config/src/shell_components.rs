@@ -40,6 +40,35 @@ pub struct ShellComponentReservation {
     pub max_thickness: u16,
 }
 
+/// The wire one component's connection uses, fixed at startup. Current IPC
+/// remains the default; a selection never changes the role's grants.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ShellTransportSelection {
+    #[default]
+    CurrentIpc,
+    /// `sophia_shell_fs_v1` over 9P2000.L.
+    NineP2000L,
+}
+
+impl ShellTransportSelection {
+    /// The KDL value, matching the WM's `--wm-transport` names.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::CurrentIpc => "current-ipc",
+            Self::NineP2000L => "9p2000.L",
+        }
+    }
+
+    /// The environment variable that names the component's endpoint, so a
+    /// client can never mistake one wire's socket for the other's.
+    pub const fn socket_env(self) -> &'static str {
+        match self {
+            Self::CurrentIpc => "SOPHIA_SHELL_SOCKET",
+            Self::NineP2000L => "SOPHIA_SHELL_9P_SOCKET",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShellComponentConfig {
     pub id: String,
@@ -48,6 +77,7 @@ pub struct ShellComponentConfig {
     pub config: Option<PathBuf>,
     pub gpu: ShellGpuMode,
     pub reservation: Option<ShellComponentReservation>,
+    pub transport: ShellTransportSelection,
 }
 
 fn invalid(message: &str) -> DesktopProfileError {
@@ -90,6 +120,7 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
     let mut config = None;
     let mut gpu = None;
     let mut reservation = None;
+    let mut transport = None;
     for child in children.nodes() {
         match child.name().value() {
             "executable" if executable.is_none() => {
@@ -105,6 +136,21 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
                         .remove(0)
                         .into(),
                 );
+            }
+            "transport" if transport.is_none() => {
+                if child.ty().is_some()
+                    || child.children().is_some()
+                    || child.entries().len() != 1
+                    || child.entries()[0].ty().is_some()
+                    || child.entries()[0].name().is_some()
+                {
+                    return Err(invalid("transport requires one untyped positional wire"));
+                }
+                transport = Some(match child.get(0).and_then(|value| value.as_string()) {
+                    Some("current-ipc") => ShellTransportSelection::CurrentIpc,
+                    Some("9p2000.L") => ShellTransportSelection::NineP2000L,
+                    _ => return Err(invalid("transport must be current-ipc or 9p2000.L")),
+                });
             }
             "reservation" if reservation.is_none() => {
                 reservation = Some(parse_reservation(child)?);
@@ -139,6 +185,7 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
         config,
         gpu: gpu.unwrap_or_default(),
         reservation,
+        transport: transport.unwrap_or_default(),
     })
 }
 

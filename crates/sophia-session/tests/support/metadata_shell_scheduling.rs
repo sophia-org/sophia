@@ -16,6 +16,7 @@ fn session(root: &Path) -> ShellComponentSession {
         config: None,
         reservation: None,
         gpu: ShellGpuMode::Denied,
+        transport: Default::default(),
     };
     let mut owner = ShellComponentSession::prepare(
         &[selection],

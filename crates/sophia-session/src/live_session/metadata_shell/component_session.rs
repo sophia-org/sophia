@@ -107,11 +107,12 @@ impl ShellComponentSession {
         let mut processes = ShellComponentProcesses::new()?;
         for plan in &plans {
             let selected = plan.selection();
-            processes.add(
+            processes.add_with_transport(
                 &selected.id,
                 selected.role,
                 &directory.join(&selected.id),
                 rustix::process::geteuid().as_raw(),
+                selected.transport,
             )?;
         }
         Ok(Self {

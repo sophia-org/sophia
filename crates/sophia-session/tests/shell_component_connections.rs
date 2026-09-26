@@ -12,6 +12,8 @@ use std::time::Duration;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 #[path = "support/component_budget_records.rs"]
 mod budget_records;
+#[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 struct Harness {
     owner: ShellComponentConnections,
     directory: std::path::PathBuf,
@@ -920,5 +922,118 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
     h.owner.close(menu).unwrap();
     assert!(!h.owner.collect().quiescent());
     drop((bar_pixels, menu_pixels));
+    assert!(h.owner.collect().quiescent());
+}
+
+/// Mixed wires share the one registry: a file-selected bar negotiates through
+/// its own 9P export while the neighbouring launcher negotiates over current
+/// IPC. Selection changes the wire only, never the role's profile or grant.
+#[test]
+fn a_file_selected_bar_and_an_ipc_launcher_negotiate_in_one_registry() {
+    use sophia_protocol::shell_files::*;
+    let directory = std::env::temp_dir().join(format!(
+        "session-component-files-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let mut owner = ShellComponentConnections::new().unwrap();
+    let uid = rustix::process::geteuid().as_raw();
+    owner
+        .add_with_transport(
+            "panel",
+            ShellComponentRole::Bar,
+            &directory.join("panel"),
+            uid,
+            sophia_config::ShellTransportSelection::NineP2000L,
+        )
+        .unwrap();
+    owner
+        .add(
+            "menu",
+            ShellComponentRole::ApplicationLauncher,
+            &directory.join("menu"),
+            uid,
+        )
+        .unwrap();
+    let mut h = Harness { owner, directory };
+
+    let bar = h.owner.reserve_attempt(0).unwrap();
+    h.owner
+        .begin_negotiation(
+            bar,
+            &evidence(),
+            Duration::from_secs(2),
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: false,
+            },
+        )
+        .unwrap();
+    let socket = h.owner.socket_path(0).unwrap().to_owned();
+    let epoch = bar.grant.connection_epoch;
+    let peer = std::thread::spawn(move || {
+        let mut peer = shell_file_peer::Peer::connect(&socket);
+        peer.setup();
+        let offer = encode_shell_file_negotiate(
+            ShellFileHeader {
+                kind: ShellFileKind::Negotiate,
+                connection_epoch: epoch,
+                submission_id: 1,
+                sequence: 0,
+            },
+            ShellV1ClientHello {
+                minimum_revision: 5,
+                maximum_revision: 6,
+                required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+                    | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        let value = decode_shell_file_negotiated(&negotiated).unwrap();
+        peer.ack(&negotiated);
+        (peer, value)
+    });
+    let start = std::time::Instant::now();
+    let welcome = loop {
+        if let Some((key, result)) = h
+            .owner
+            .poll_negotiations(65536)
+            .into_iter()
+            .flatten()
+            .next()
+        {
+            assert_eq!(key, bar);
+            break result.unwrap();
+        }
+        assert!(start.elapsed() < Duration::from_secs(3));
+        std::thread::yield_now();
+    };
+    // The owner loop keeps serving the export: the peer still acknowledges.
+    while !peer.is_finished() {
+        h.owner
+            .with_connection(bar, |t| t.poll_io())
+            .unwrap()
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(3));
+        std::thread::yield_now();
+    }
+    let (_peer, negotiated) = peer.join().unwrap();
+    assert_eq!(negotiated.welcome, welcome);
+    assert_eq!(welcome.connection_epoch, epoch);
+    assert_eq!(welcome.selected_revision, 6);
+    assert!(negotiated.limits_published);
+    assert!(
+        h.owner
+            .with_connection(bar, |t| t.supports_content())
+            .unwrap()
+    );
+
+    // The launcher on current IPC is unaffected by its neighbour's wire.
+    let menu = h.owner.reserve_attempt(1).unwrap();
+    let _client = h.connect(menu);
+    h.owner.close(bar).unwrap();
+    h.owner.close(menu).unwrap();
     assert!(h.owner.collect().quiescent());
 }

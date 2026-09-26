@@ -140,6 +140,7 @@ fn component_catalog_scan_is_outer_owned_and_shutdown_cannot_restart_it() {
             config: None,
             reservation: None,
             gpu: sophia_config::ShellGpuMode::Denied,
+            transport: Default::default(),
         });
     config.session_profile = PreparedSessionProfile::new(candidate).unwrap();
     config.application_catalog = Some(sophia_config::ApplicationCatalogConfig {

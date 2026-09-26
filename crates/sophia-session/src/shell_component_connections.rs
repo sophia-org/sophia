@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentRole};
+use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentRole, ShellTransportSelection};
 use sophia_protocol::{ContentGrant, ContentLimits, ShellV1ServerWelcome};
 use sophia_runtime::{
     ContentEpochAccounting, ContentEpochRegistry, ContentReconnectAllowance,
@@ -58,6 +58,8 @@ struct Connection {
     id: String,
     role: ShellComponentRole,
     transport: ShellComponentTransport,
+    /// Fixed at registration; a replacement epoch keeps the same wire.
+    wire: ShellTransportSelection,
     attempt: Option<(ContentGrant, ComponentConnectionPhase)>,
 }
 
@@ -100,6 +102,25 @@ impl ShellComponentConnections {
         directory: &Path,
         uid: u32,
     ) -> Result<usize, ComponentConnectionError> {
+        self.add_with_transport(
+            id,
+            role,
+            directory,
+            uid,
+            ShellTransportSelection::CurrentIpc,
+        )
+    }
+
+    /// As [`Self::add`], with the operator's startup wire for this component.
+    /// The selection is data: it changes neither admission nor grants.
+    pub fn add_with_transport(
+        &mut self,
+        id: &str,
+        role: ShellComponentRole,
+        directory: &Path,
+        uid: u32,
+        wire: ShellTransportSelection,
+    ) -> Result<usize, ComponentConnectionError> {
         if self.next_connection != 1
             || self.connections.len() == MAX_SHELL_COMPONENTS
             || id.is_empty()
@@ -121,9 +142,21 @@ impl ShellComponentConnections {
             id: id.into(),
             role,
             transport,
+            wire,
             attempt: None,
         });
         Ok(slot)
+    }
+
+    pub fn transport_selection(
+        &self,
+        slot: usize,
+    ) -> Result<ShellTransportSelection, ComponentConnectionError> {
+        Ok(self
+            .connections
+            .get(slot)
+            .ok_or(ComponentConnectionError::UnknownComponent)?
+            .wire)
     }
 
     pub fn socket_path(&self, slot: usize) -> Result<&Path, ComponentConnectionError> {
@@ -231,13 +264,19 @@ impl ShellComponentConnections {
         let result = connection
             .transport
             .authorize_protected_peer(evidence)
-            .and_then(|()| {
-                connection.transport.begin_negotiation(
+            .and_then(|()| match connection.wire {
+                ShellTransportSelection::CurrentIpc => connection.transport.begin_negotiation(
                     &self.epochs,
                     key.grant.connection_epoch,
                     timeout,
                     policy,
-                )
+                ),
+                ShellTransportSelection::NineP2000L => connection.transport.begin_file_negotiation(
+                    &self.epochs,
+                    key.grant.connection_epoch,
+                    timeout,
+                    policy,
+                ),
             });
         if let Err(error) = result {
             let _ = self.close(key);

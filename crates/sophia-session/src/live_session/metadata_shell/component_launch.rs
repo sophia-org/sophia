@@ -73,12 +73,19 @@ impl ShellComponentLaunch {
         if key.grant.connection_epoch == 0 || key.grant.content_grant_epoch == 0 {
             return Err("component launch requires a reserved nonzero grant".into());
         }
-        let base = base_launch_spec(
+        let mut base = base_launch_spec(
             &self.selection.executable,
             socket,
             self.panel_thickness,
             self.selection.config.as_deref(),
         )?;
+        // The child is told only the endpoint of its selected wire.
+        let wire = self.selection.transport;
+        if wire != sophia_config::ShellTransportSelection::CurrentIpc {
+            base.environment
+                .retain(|(name, _)| name != sophia_runtime::SOPHIA_SHELL_SOCKET_ENV);
+            base = base.env(wire.socket_env(), socket);
+        }
         Ok(self.gpu.prepare(&base, key.grant.connection_epoch)?)
     }
 }
