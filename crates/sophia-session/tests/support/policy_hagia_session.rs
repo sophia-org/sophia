@@ -15,6 +15,9 @@ mod layout_settlement;
 #[path = "policy_hagia_corpus.rs"]
 mod corpus_parity;
 
+#[path = "policy_hagia_behavior.rs"]
+mod behavior_coverage;
+
 fn binary_hash(path: &Path) -> String {
     assert!(std::fs::metadata(path).unwrap().len() <= 64 * 1024 * 1024);
     format!("{:x}", Sha256::digest(std::fs::read(path).unwrap()))
@@ -60,6 +63,24 @@ fn with_normal_hagia_transport<T>(
         &mut std::fs::File,
     ) -> T,
 ) -> T {
+    with_normal_hagia_transport_desktop(case, transport, None, exercise)
+}
+
+// `desktop` replaces only the desktop profile document; `None` keeps the
+// fixture's exact default document, so every existing caller is unchanged.
+fn with_normal_hagia_transport_desktop<T>(
+    case: &str,
+    transport: WmTransportSelection,
+    desktop: Option<&str>,
+    exercise: impl FnOnce(
+        &mut LiveWmSession,
+        &mut PersistentLiveLayout,
+        &mut ConfigFixture,
+        sophia_engine::HeadlessOutput,
+        &Path,
+        &mut std::fs::File,
+    ) -> T,
+) -> T {
     let binary = std::fs::canonicalize(
         std::env::var_os("SOPHIA_HAGIA_FILE_BIN").expect("required frozen normal Hagia missing"),
     )
@@ -92,7 +113,10 @@ fn with_normal_hagia_transport<T>(
     )
     .unwrap();
 
-    let mut source = ConfigFixture::new(&[]);
+    let mut source = match desktop {
+        None => ConfigFixture::new(&[]),
+        Some(document) => ConfigFixture::from_documents(CORE, document, &[]),
+    };
     source.config.wm_socket_path = source.directory.join("hagia-file.sock");
     source.config.wm_process = Some(binary.to_str().unwrap().to_owned());
     source.config.wm_process_args.clear();

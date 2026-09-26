@@ -34,27 +34,126 @@ fn next_event(
         .expect("the same Hagia keeps its transport")
 }
 
-fn run_corpus(case: &str, transport: WmTransportSelection) -> (u64, Vec<ScenarioObservation>) {
-    with_normal_hagia_transport(case, transport, |wm, _, _, _, _, identity| {
+/// One configured worker taken from Session, driven one canonical cycle at a
+/// time. Shared with the behaviour-coverage corpus.
+pub(super) struct CorpusWorker {
+    pub(super) worker: policy_transport_worker::PolicyTransportWorker,
+    pub(super) epoch: u64,
+    pub(super) selected: u64,
+}
+
+impl CorpusWorker {
+    /// Takes the configured worker; nothing else polls it afterwards.
+    pub(super) fn take(wm: &mut LiveWmSession) -> Self {
         let public = wm.public.as_mut().unwrap();
         assert!(public.configured && public.transport_ready);
         assert!(public.in_flight_request.is_none());
-        let epoch = public.connection_epoch;
-        let selected = public.selected_capabilities;
         // The configured catalog stays with Hagia's configuration. Each corpus
         // snapshot carries the conformance host's exact vocabulary instead: no
         // actions and no session operations, as encode_wm_v1_policy_snapshot
-        // receives them there. Canonical scenes also carry no operations.
+        // receives them there.
         assert!(!public.actions.is_empty(), "Hagia configured its catalog");
-        // The corpus owns the configured worker from here; nothing else polls it.
-        let worker = public.worker.take().expect("configured worker");
+        Self {
+            epoch: public.connection_epoch,
+            selected: public.selected_capabilities,
+            worker: public.worker.take().expect("configured worker"),
+        }
+    }
 
+    /// Issues one cycle for `scene` and `cause`, lets `decide` settle Hagia's
+    /// proposal on the test-owned canonical reducer, returns the outcome and
+    /// waits until the driver is ready for the next cycle with the admitted
+    /// selection unchanged.
+    pub(super) fn cycle(
+        &self,
+        label: &str,
+        reducer: &mut sophia_engine::PolicyProjectionReducer,
+        scene: &sophia_protocol::PolicySceneSnapshot,
+        cause: sophia_protocol::PolicyRequestCause,
+        transaction: u64,
+        launch_origins: Vec<sophia_protocol::PolicyLaunchContext>,
+        decide: impl FnOnce(
+            &mut sophia_engine::PolicyProjectionReducer,
+            &PolicyProjectionProposal,
+        ) -> PolicyProjectionOutcome,
+    ) -> (PolicyProjectionProposal, PolicyProjectionOutcome) {
+        if reducer.scene().generation != scene.generation {
+            reducer.observe_scene(scene.clone()).unwrap();
+        }
+        let mut affected_outputs = scene
+            .outputs
+            .iter()
+            .map(|output| output.output)
+            .collect::<Vec<_>>();
+        affected_outputs.sort_by_key(|output| (*output != scene.active_output, output.raw()));
+        let request = reducer
+            .issue_request_with_cause(affected_outputs, cause)
+            .unwrap();
+        assert!(
+            self.worker
+                .try_command(policy_transport_worker::PolicyTransportCommand::Cycle {
+                    snapshot_transaction: TransactionId::from_raw(transaction),
+                    request_transaction: TransactionId::from_raw(transaction + 1),
+                    scene: Box::new(scene.clone()),
+                    actions: Vec::new(),
+                    classifications: Vec::new(),
+                    launch_origins,
+                    request: request.clone(),
+                })
+                .is_ok(),
+            "{label}: the corpus cycle is the worker's only command"
+        );
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let proposal = match next_event(&self.worker, deadline) {
+            policy_transport_worker::PolicyTransportEvent::Projection(proposal) => *proposal,
+            policy_transport_worker::PolicyTransportEvent::Failed(error) => {
+                panic!("{label}: transport failed: {error}")
+            }
+            _ => panic!("{label}: expected Hagia's projection"),
+        };
+        assert_eq!(proposal.connection_epoch, self.epoch);
+        assert_eq!(proposal.request_id, request.request_id);
+        assert_eq!(proposal.base_generation, request.scene_generation);
+        // The canonical reducer decides each outcome, as the conformance host
+        // does; nothing here settles Session layout.
+        let outcome = decide(reducer, &proposal);
+        assert!(
+            self.worker
+                .try_command(
+                    policy_transport_worker::PolicyTransportCommand::ProjectionOutcome {
+                        transaction: proposal.transaction,
+                        request_id: proposal.request_id,
+                        scene_generation: reducer.scene().generation,
+                        outcome,
+                        // No corpus action names a session operation.
+                        expect_session_operation: false,
+                    }
+                )
+                .is_ok()
+        );
+        match next_event(&self.worker, deadline) {
+            policy_transport_worker::PolicyTransportEvent::ReadyForCycle { capabilities } => {
+                assert_eq!(capabilities, self.selected, "{label}: selection changed");
+            }
+            policy_transport_worker::PolicyTransportEvent::Failed(error) => {
+                panic!("{label}: transport failed after its outcome: {error}")
+            }
+            _ => panic!("{label}: expected readiness for the next cycle"),
+        }
+        (proposal, outcome)
+    }
+}
+
+fn run_corpus(case: &str, transport: WmTransportSelection) -> (u64, Vec<ScenarioObservation>) {
+    with_normal_hagia_transport(case, transport, |wm, _, _, _, _, identity| {
+        let corpus = CorpusWorker::take(wm);
+        let selected = corpus.selected;
         let scenarios = SOPHIA_WM_V1_BEHAVIOR_SCENARIOS.as_slice();
         let mut reducer = sophia_engine::PolicyProjectionReducer::new(
             sophia_wm_v1_behavior_scene(scenarios[0]).unwrap(),
         )
         .unwrap();
-        reducer.connect(epoch).unwrap();
+        reducer.connect(corpus.epoch).unwrap();
         let mut observations = Vec::new();
         for (index, scenario) in scenarios.iter().copied().enumerate() {
             let scene = sophia_wm_v1_behavior_scene(scenario).unwrap();
@@ -62,63 +161,31 @@ fn run_corpus(case: &str, transport: WmTransportSelection) -> (u64, Vec<Scenario
                 scene.session_operations.is_empty(),
                 "{scenario}: canonical scene"
             );
-            if reducer.scene().generation != scene.generation {
-                reducer.observe_scene(scene.clone()).unwrap();
-            }
-            let mut affected_outputs = scene
-                .outputs
-                .iter()
-                .map(|output| output.output)
-                .collect::<Vec<_>>();
-            affected_outputs.sort_by_key(|output| (*output != scene.active_output, output.raw()));
-            let cause = sophia_wm_v1_behavior_cause(scenario).unwrap();
-            let request = reducer
-                .issue_request_with_cause(affected_outputs, cause)
-                .unwrap();
-            let transaction = 29 + u64::try_from(index).unwrap() * 2;
-            assert!(
-                worker
-                    .try_command(policy_transport_worker::PolicyTransportCommand::Cycle {
-                        snapshot_transaction: TransactionId::from_raw(transaction),
-                        request_transaction: TransactionId::from_raw(transaction + 1),
-                        scene: Box::new(scene.clone()),
-                        actions: Vec::new(),
-                        classifications: Vec::new(),
-                        launch_origins: Vec::new(),
-                        request: request.clone(),
-                    })
-                    .is_ok(),
-                "the corpus cycle is the worker's only command"
+            let (proposal, outcome) = corpus.cycle(
+                scenario,
+                &mut reducer,
+                &scene,
+                sophia_wm_v1_behavior_cause(scenario).unwrap(),
+                29 + u64::try_from(index).unwrap() * 2,
+                Vec::new(),
+                |reducer, proposal| match scenario {
+                    "timeout-discard" => reducer.timeout(proposal.request_id),
+                    "stale-discard" => {
+                        let successor = sophia_wm_v1_behavior_scene(scenarios[index + 1]).unwrap();
+                        reducer.observe_scene(successor).unwrap();
+                        reducer.apply_proposal(proposal)
+                    }
+                    "invalid-discard" => {
+                        // Host behaviour: the reducer judges a copy with no
+                        // active output. Hagia's own wire proposal was well
+                        // formed.
+                        let mut invalid = proposal.clone();
+                        invalid.active_output = OutputId::from_raw(0);
+                        reducer.apply_proposal(&invalid)
+                    }
+                    _ => reducer.apply_proposal(proposal),
+                },
             );
-            let deadline = Instant::now() + Duration::from_secs(8);
-            let proposal = match next_event(&worker, deadline) {
-                policy_transport_worker::PolicyTransportEvent::Projection(proposal) => *proposal,
-                policy_transport_worker::PolicyTransportEvent::Failed(error) => {
-                    panic!("{scenario}: transport failed: {error}")
-                }
-                _ => panic!("{scenario}: expected Hagia's projection"),
-            };
-            assert_eq!(proposal.connection_epoch, epoch);
-            assert_eq!(proposal.request_id, request.request_id);
-            assert_eq!(proposal.base_generation, request.scene_generation);
-            // The canonical reducer decides each outcome, as the conformance
-            // host does; nothing here settles Session layout.
-            let outcome = match scenario {
-                "timeout-discard" => reducer.timeout(proposal.request_id),
-                "stale-discard" => {
-                    let successor = sophia_wm_v1_behavior_scene(scenarios[index + 1]).unwrap();
-                    reducer.observe_scene(successor).unwrap();
-                    reducer.apply_proposal(&proposal)
-                }
-                "invalid-discard" => {
-                    // Host behaviour: the reducer judges a copy with no active
-                    // output. Hagia's own wire proposal was well formed.
-                    let mut invalid = proposal.clone();
-                    invalid.active_output = OutputId::from_raw(0);
-                    reducer.apply_proposal(&invalid)
-                }
-                _ => reducer.apply_proposal(&proposal),
-            };
             let expected = match scenario {
                 "timeout-discard" => PolicyProjectionOutcome::TimedOut,
                 "stale-discard" => PolicyProjectionOutcome::RejectedStale,
@@ -126,20 +193,6 @@ fn run_corpus(case: &str, transport: WmTransportSelection) -> (u64, Vec<Scenario
                 _ => PolicyProjectionOutcome::Committed,
             };
             assert_eq!(outcome, expected, "{scenario}: {proposal:?}");
-            assert!(
-                worker
-                    .try_command(
-                        policy_transport_worker::PolicyTransportCommand::ProjectionOutcome {
-                            transaction: proposal.transaction,
-                            request_id: proposal.request_id,
-                            scene_generation: reducer.scene().generation,
-                            outcome,
-                            // No corpus action names a session operation.
-                            expect_session_operation: false,
-                        }
-                    )
-                    .is_ok()
-            );
             if outcome == PolicyProjectionOutcome::Committed {
                 let committed = reducer.committed();
                 let expected_surfaces = scene
@@ -161,15 +214,6 @@ fn run_corpus(case: &str, transport: WmTransportSelection) -> (u64, Vec<Scenario
                     "{scenario}"
                 );
             }
-            match next_event(&worker, deadline) {
-                policy_transport_worker::PolicyTransportEvent::ReadyForCycle { capabilities } => {
-                    assert_eq!(capabilities, selected, "{scenario}: selection changed");
-                }
-                policy_transport_worker::PolicyTransportEvent::Failed(error) => {
-                    panic!("{scenario}: transport failed after its outcome: {error}")
-                }
-                _ => panic!("{scenario}: expected readiness for the next cycle"),
-            }
             observations.push(ScenarioObservation {
                 scenario,
                 proposal,
@@ -188,7 +232,7 @@ fn run_corpus(case: &str, transport: WmTransportSelection) -> (u64, Vec<Scenario
             observations.len()
         )
         .unwrap();
-        drop(worker);
+        drop(corpus);
         (selected, observations)
     })
 }
