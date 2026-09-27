@@ -517,6 +517,53 @@ open, `EBUSY` for a second pin, a fresh qid whenever the bytes change. Each
 owner hands its records to the wire as typed values; no owner queues a socket
 frame on a file-wire component.
 
+### Negotiation and pacing outcomes (normative)
+
+These are the observable outcomes a client and the independent oracle rely
+on. Layouts are in the KDL; this section fixes which records appear.
+
+**Negotiation.** A Negotiate record is judged against the role profile Session
+fixed before the peer connected.
+- Accepted: one `Negotiated` event. For the component content profile the
+  selected revision is min(maximum, 6) for any offer with
+  1 <= minimum <= maximum and minimum <= 6. Content bits (7, and 8 with 7) are
+  grantable only when the selected revision is at least 5. The capabilities
+  are bit 0 (required in every offer), work-area reservation, the granted
+  content bits, and the indicator bits only when requested at revision 6. `limits_published` is 1
+  and the `limits` object is readable once the event is visible.
+- Refused by content policy: one `Refused` event, then revocation. Reason 1
+  (permission denied) when the operator denied content, with
+  `denied_capabilities` the requested content bits (or only bit 8 when just
+  discrete input is denied); reason 4 (unavailable) when content is
+  unavailable or its budget cannot be admitted.
+- An offer the profile cannot serve at all (minimum revision 0 or above the
+  profile's maximum, minimum above maximum, bit 0 missing, discrete input
+  without surface, or a required bit the profile cannot grant) ends the attach
+  without a `Refused` event: the peer observes the export's revocation.
+  Reasons 2 and 3 are reserved and not used by this version.
+- A second `Negotiate` submit after one was accepted fails with `EALREADY`;
+  any content record before negotiation fails with `EACCES`. Neither is
+  journaled.
+
+**Pacing.**
+- A `FrameDemand` that the candidate owner can serve yields a `FramePermit`
+  with state 1, the permit, `ttl_ms` <= 250 and reason 0.
+- A permit that expires unconsumed yields `FramePermit` state 2, reason 6
+  (timeout).
+- `FrameDemandCancel` naming the standing demand (permit_id 0) or its
+  unconsumed permit yields `FramePermit` state 3, reason 11 (cancelled), with
+  the same demand_id and the cancelled permit_id (0 when only the demand was
+  standing). A cancel that names no current demand or permit is a stale
+  record: the component's authority is revoked and nothing is journaled for it.
+- A new permit for an output supersedes that output's pending, not yet
+  submitted candidate: `CandidateOutcome` kind 4, reason 10 (superseded).
+- A `Candidate` whose `pacing_permit` is not the output's current unconsumed
+  permit (missing, wrong, cancelled or expired) is a stale record, handled
+  like the stale cancel above: it gets `Submitted` custody, no
+  `CandidateOutcome`, and the component's authority is revoked. (Open product
+  question, not a transport rule: whether a refused permit should instead
+  yield `CandidateOutcome` rejected with reason 1 on both wires.)
+
 ## Multiple writers, isolation and revocation
 
 Components never share a writer or an export. Admission stays
