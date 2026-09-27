@@ -236,9 +236,21 @@ kinds, traced against the owners (ee5e7f80, 19a21c84, ae60576f), and
 independent codecs for all 17 B5 kinds in C (ef50d220) and in the Go oracle
 (72eef656) by Codex, written from the KDL alone. The live oracle verdict is
 still the 54 base checks; no role-family runtime pass is claimed yet.
-Remaining: B5 owner handoff (runtime, then Session), the 96-check live oracle
-and C r7/r8 sessions, Bemenu r7 on the C client, measurements, merge and
-attended evidence.
+Role families, owner handoff (2026-09-27): the launcher, dock and bar
+families run over the file wire through the existing owners (a52f93f7);
+Session publishes component catalogs and indicators through the typed
+transport (e50fc08a, bdf3f12c); a whole candidate gets exactly one outcome
+and large objects publish in order under the object cap (3856d101), both
+found by Codex's live oracle. The independent Go oracle now passes exactly
+96 checks (r6, r7, r8 added; 9583b499) and the C client runs native launcher
+and dock sessions against the production export, including a 4096-row
+catalog (e8f3c486). Catalog and indicator eligibility is scripted in the
+oracle from the normative rules; Session launch and admission policy is not
+claimed there.
+Remaining: the per-record credit rework, Bemenu r7 on the C client, B9
+measurements under a new declared method (the t249 verdict showed survivor
+equality and 120 Hz are unattainable as declared), merge and attended
+evidence.
 
 After t251, implement a Sophia adapter to the existing shell/component owners
 and independent clients. Development need not wait for t250's attended WM
