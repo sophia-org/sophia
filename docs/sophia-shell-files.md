@@ -448,9 +448,14 @@ the rows. There are no chunk ordinals and no repeated counts or identities. The
 record is at most 8192 bytes, header included; a candidate at the prototype
 maxima (8 surfaces, 32 placements, 64 targets) fits. The candidate owner
 receives Begin, Chunk and End in that order, so the permit, assembly, deadline
-and outcome rules are the socket path's, unchanged. A malformed record, or
-one whose parts the existing validators refuse, is refused at `submit` with
-`EINVAL`, and nothing reaches the owner.
+and outcome rules are the socket path's, unchanged. A record that is
+malformed, or whose parts the value validators refuse (layout, counts,
+reserved bytes, identities, per-row fields, rectangle arithmetic), is refused
+at `submit` with `EINVAL`, and nothing reaches the owner. Rules that need
+the owner's state or the whole candidate (target triple uniqueness,
+overlapping bounds, targets inside their surface, current permits,
+generations and slots) are the owner's; their outcomes are in "Negotiation
+and pacing outcomes" and "Role family outcomes".
 
 ### Role family kinds (t252 B5, draft)
 
@@ -622,15 +627,36 @@ not -- unknown, already acknowledged, or from an opening `NativeClosed` has
 since cleared -- the ack is consumed with no reply and no other effect:
 there is no outcome record for a stale `NativeInputAck`.
 
-**Native and persistent-catalog candidates.** A `NativeCandidate` or
-`CatalogCandidate` naming a stale `catalog_generation` (or, for the native
-launcher, a stale `opening` or `state_revision`) is refused with
-`CandidateOutcome` kind 3 (Rejected), reason 1 (Stale). A candidate that
-violates a structural rule in the KDL (surface/placement/target counts,
-row/slot uniqueness, a displayed row or target naming a catalog slot that is
-not currently present and `available`) is refused with the same kind 3,
-reason 3 (Malformed). Neither case reaches `NativeFocus`, an activation
-owner or the launch queue.
+**Native and persistent-catalog candidates.** Most of a `NativeCandidate`'s
+structure is a value-validator rule the decoder checks, on both wires,
+before the record reaches the owner at all: exactly one surface, at least
+one placement, `target_count` equal to `row_count`, every displayed
+`NativeCandidateRow.slot` distinct and in range, and `selected` a member of
+the displayed rows (or 0 when there are none). A record violating any of
+these is refused at `submit` with `EINVAL`; nothing is journaled, not even
+`Submitted`. A `CatalogCandidate`'s decoder checks only that every provided
+surface has role=1 (panel); it does not check the surface or placement
+*count*, so `surface_count` exactly 1 and `placement_count` at least 1 are
+the persistent-catalog candidate owner's to enforce instead, once
+`Submitted` custody has already transferred.
+
+Everything else here needs live connection state the decoder does not have,
+so only the owner judges it, after custody has transferred. A
+`NativeCandidate` or `CatalogCandidate` naming a stale `catalog_generation`
+(or, for the native launcher, a stale `opening` or `state_revision`) is
+refused with `CandidateOutcome` kind 3 (Rejected), reason 1 (Stale). The
+following are refused with the same kind 3, reason 3 (Malformed) instead: a
+`CatalogCandidate`'s surface- or placement-count violation above; a
+displayed row (native) or target action naming a catalog slot that is not
+currently present and `available` in the connection's live catalog; and,
+for either family, a duplicate (`target_id`, `target_generation`,
+`action_id`) triple or an overlapping bounds rectangle on the same surface
+among that record's targets -- the base `Candidate` rules, which the
+decoder never checks either. A `NativeCandidate` or `CatalogCandidate`
+whose `pacing_permit` is not the output's current unconsumed permit follows
+the base `Candidate` pacing rule above instead: `Submitted` custody only, no
+`CandidateOutcome`, and the component's authority is revoked. None of these
+cases reach `NativeFocus`, an activation owner or the launch queue.
 
 **Persistent catalog activation (`CatalogActivate` to
 `CatalogActivationOutcome`).** `reason` is always 0 here regardless of
@@ -655,7 +681,7 @@ native launcher's analogous case above is Unknown (3).
 | 0 Accepted | 0 | A snapshot has been published; the named `connection_epoch`/`snapshot_generation` match the snapshot last published; a published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple exactly; that entry's `action` is nonzero; and (when ordinary input is disabled) `event_id` exceeds every previously accepted `event_id` on this connection; and the downstream admission step admits it. |
 | 1 Stale | 0 | No snapshot has ever been published, or the named `connection_epoch`/`snapshot_generation` do not match the one last published. |
 | 1 Stale | 0 | Ordinary input disabled: otherwise eligible, but `event_id` does not exceed the connection's high-water mark. |
-| 1 Stale | 1 | Ordinary input enabled: the linked action admission is not eligible (the event was not issued, or has already been answered, for this snapshot); or, in either mode, the WM admission reports a duplicate. |
+| 1 Stale | 1 | Ordinary input enabled: `indicator_admission` finds no linked, still-awaiting action for the named `event_id` -- it is 0 or exceeds every event this connection has ever issued; no action with that `event_id` remains on the ledger (already collected once fully settled, or it was never an indicator-family action, e.g. a native-launcher or persistent-catalog action's `event_id`); its `action_ack_timeout_ms` deadline has passed; it was issued under a different `connection_epoch`; the WM has already recorded a decision for it (admitted or rejected), even though not yet acknowledged; or its own `output`/`indicator`/`action` differs from the ones named in this activation. Or, in either mode, the WM admission reports a duplicate. |
 | 2 Unknown | 0 | No published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple. |
 | 2 Unknown | 2 | Otherwise-eligible, but the downstream admission step refuses for capacity. This family has no dedicated Capacity status; a capacity refusal is folded into Unknown/Budget here. |
 | 3 Unauthorized | 0 | A matching `IndicatorEntry` exists but its `action` is 0 (published but not activatable). |

@@ -867,29 +867,38 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // order: surface_count `NativeSurface`, placement_count
     // `NativePlacement`, target_count `NativeTarget`, then row_count
     // `NativeCandidateRow` (the displayed catalog slots). No chunk ordinals
-    // or repeated counts. Normative, current code (the native launcher
-    // candidate owner; a reader refuses otherwise): `surface_count` is
+    // or repeated counts. Normative, current code: `surface_count` is
     // exactly 1, never 0, so the launcher's panel-shaped row is always
     // present -- tighter than this field's own `max=1` bound, which alone
     // would also admit 0; `placement_count` is at least 1; `target_count`
     // equals `row_count` exactly (one clickable `NativeTarget` per
-    // displayed slot). `selected` is 0 exactly when `row_count` is 0, and
+    // displayed slot); `selected` is 0 exactly when `row_count` is 0, and
     // otherwise must be one of the `NativeCandidateRow.slot` values below
     // (selected-slot membership); every `NativeCandidateRow.slot` is
     // distinct from every other one in the same record (displayed-row
-    // uniqueness), and every one must name a slot that is present and
-    // `available` in the catalog generation this candidate declares. Every
-    // `NativeTarget` shares `surface_index`=0 (the one surface), and the
-    // base `Candidate` rules also apply: within one record, every
-    // `NativeTarget`'s (`target_id`, `target_generation`, `action_id`)
-    // triple is distinct from every other, and no two `NativeTarget` rows
-    // sharing a `surface_index` may have overlapping bounds rectangles.
-    // A candidate whose `opening`, `catalog_generation` or `state_revision`
-    // does not match the connection's current native launcher state exactly
-    // is rejected as stale (`CandidateOutcome` kind 3 Rejected, reason 1
-    // Stale); a structural violation of any rule above, or a displayed
-    // row's slot not currently present and available, is rejected as
-    // malformed (reason 3).
+    // uniqueness). Every `NativeTarget` shares `surface_index`=0 (the one
+    // surface). Every rule just listed is a value-validator rule, checked by
+    // the same decoder both wires share before the record reaches the owner
+    // at all: a record violating any one of them is refused at `submit`
+    // with `EINVAL`, and nothing is journaled, not even `Submitted`.
+    // Two kinds of rule need live connection state the decoder does not
+    // have, so only the owner -- after custody has already transferred --
+    // can check them, and a violation there is `CandidateOutcome` kind 3
+    // Rejected: a `NativeCandidateRow.slot` (checked at Begin, against the
+    // catalog snapshot named by `catalog_generation`) or a
+    // `NativeTarget.action_id` (checked at End, for consistency with that
+    // same Begin-time row) naming a slot that is not currently present and
+    // `available` is malformed (reason 3); and the base `Candidate` rules,
+    // also checked only at End -- within one record, every `NativeTarget`'s
+    // (`target_id`, `target_generation`, `action_id`) triple must be
+    // distinct from every other, and no two `NativeTarget` rows sharing a
+    // `surface_index` may have overlapping bounds rectangles -- are
+    // likewise malformed (reason 3) on violation. A candidate whose
+    // `opening`, `catalog_generation` or `state_revision` does not match
+    // the connection's current native launcher state exactly is also only
+    // checked by the owner, at Begin, which rejects it as stale (reason 1)
+    // instead. Neither case reaches `NativeFocus`, an activation owner or
+    // the launch queue.
     body-prefix "NativeCandidate" size=108 max-bytes=8192 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -1037,21 +1046,26 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // A whole candidate plus the catalog generation it presents. Rows
     // follow the prefix in order: surface_count `ContentSurface`,
     // placement_count `ContentPlacement`, target_count `CatalogTarget`. No
-    // chunk ordinals or repeated counts. Normative, current code (the
-    // persistent-catalog candidate owner, not merely this contract's own
-    // field bounds): `surface_count` is exactly 1 and that one
-    // `ContentSurface` has role=1 (panel), never a popout -- tighter than
-    // this field's own `max=8`; `placement_count` is at least 1. Every
+    // chunk ordinals or repeated counts. Every provided `ContentSurface`'s
+    // role=1 (panel), never a popout, is a value-validator rule the decoder
+    // checks before the record reaches the owner: a record with any other
+    // role is refused at `submit` with `EINVAL`, and nothing is journaled.
+    // The decoder does not check the surface *count*, so the rest is the
+    // persistent-catalog candidate owner's to enforce once `Submitted`
+    // custody has already transferred -- not merely this contract's own
+    // `max=8`/`max=32` field bounds -- and a violation is `CandidateOutcome`
+    // kind 3 Rejected, reason 3 (Malformed): `surface_count` must be exactly
+    // 1 and `placement_count` at least 1 (checked at Begin); every
     // `CatalogTarget.action_id` must name a slot present and `available` in
-    // the catalog generation this candidate declares. The base `Candidate`
-    // rules also apply: within one record, every `CatalogTarget`'s
+    // the catalog generation this candidate declares (checked at End,
+    // against the live catalog); and the base `Candidate` rules apply, also
+    // checked at End -- within one record, every `CatalogTarget`'s
     // (`target_id`, `target_generation`, `action_id`) triple is distinct
     // from every other, and no two `CatalogTarget` rows sharing a
     // `surface_index` may have overlapping bounds rectangles. A candidate
     // whose `catalog_generation` or connection epoch does not match the
-    // currently published catalog exactly is rejected as stale
-    // (`CandidateOutcome` kind 3 Rejected, reason 1 Stale); a structural
-    // violation of any rule above is rejected as malformed (reason 3).
+    // currently published catalog exactly is instead rejected as stale
+    // (reason 1), checked at Begin (and rechecked at End).
     body-prefix "CatalogCandidate" size=88 max-bytes=8192 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
