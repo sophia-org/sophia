@@ -1,0 +1,52 @@
+package shelloracle
+
+func (r *runner) indicatorsScenario() {
+	s := r.connect("bar", 4096)
+	defer s.close()
+	roleNegotiate(s, 6, 0x681, 0x683)
+	r.check(55, true)
+	s.phase("publish")
+	a := announced(s, 4, 3)
+	qid := s.w.file(10, 0, "indicators")
+	old := s.object(10)
+	r.check(56, old.kind == 4 && u16(old.body, 34) == 1 && u16(old.body, 36) == 2 && u64(old.body, 24) == 2)
+	r.check(57, qid == u64(a.body, 16))
+	s.w.walk(11, "indicators")
+	r.check(59, errno(s.w.open(11, 0)) == 16)
+	s.w.clunk(11)
+	s.phase("same-generation")
+	a = announced(s, 4, 3)
+	r.check(58, u64(a.body, 16) != qid)
+	need(identical(s.object(10).bytes, old.bytes), "same-generation pin changed")
+	s.phase("republish")
+	a = announced(s, 4, 4)
+	r.check(60, identical(s.object(10).bytes, old.bytes))
+	s.w.clunk(10)
+	current := s.w.file(10, 0, "indicators")
+	o := s.object(10)
+	s.w.clunk(10)
+	r.check(61, current == u64(a.body, 16) && current != qid && u64(o.body, 16) == 4)
+	s.phase("hold-activation")
+	b := indicatorActivateBody(200, s.epoch, 4, 2, 1, 2, 11)
+	id := s.submit(272, b)
+	s.ack(s.custody(id, 272))
+	s.noEvents()
+	r.check(62, true)
+	s.phase("release-activation")
+	e := s.expect(45)
+	r.check(63, u64(e.body, 0) == 200 && u64(e.body, 8) == s.epoch && u64(e.body, 16) == 4 && u64(e.body, 24) == 11 && u16(e.body, 32) == 0 && u16(e.body, 34) == 0)
+	s.ack(e)
+	for i := 0; i < 2; i++ {
+		generation, event := uint64(4), uint64(11)
+		if i == 1 {
+			generation, event = 3, 12
+		}
+		id = s.submit(272, indicatorActivateBody(201+uint64(i), s.epoch, generation, 2, 1, 2, event))
+		s.custody(id, 272)
+		e = s.expect(45)
+		need(u64(e.body, 0) == 201+uint64(i) && u64(e.body, 16) == generation && u64(e.body, 24) == event && u16(e.body, 32) == 1 && u16(e.body, 34) == 0, "indicator stale echo")
+		s.ack(e)
+	}
+	s.phase("one-admission")
+	r.check(64, true)
+}

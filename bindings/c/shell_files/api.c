@@ -1,5 +1,17 @@
 #include "session_internal.h"
 
+int sf_api_profile(const uint8_t *b, size_t n, enum sophia_sf_profile profile)
+{
+    const char *name = profile == SOPHIA_SF_BAR        ? "bar"
+                       : profile == SOPHIA_SF_LAUNCHER ? "launcher"
+                                                       : "dock";
+    const size_t start = sizeof("sophia-shell-files version=1 role=") - 1;
+    size_t size = strlen(name);
+    return n > start + size && !memcmp(b + start, name, size) && b[start + size] == ' '
+               ? 0
+               : SOPHIA_9P_INVALID;
+}
+
 /* Consume the complete api file before accepting its epoch: a valid prefix
  * followed by another line must never authorize record submission. */
 int sf_api_epoch(const uint8_t *b, size_t n, uint64_t *epoch)
@@ -13,8 +25,8 @@ int sf_api_epoch(const uint8_t *b, size_t n, uint64_t *epoch)
         return SOPHIA_9P_INVALID;
     if (b[at] < 'a' || b[at] > 'z')
         return SOPHIA_9P_INVALID;
-    while (at < n && ((b[at] >= 'a' && b[at] <= 'z') ||
-                      (b[at] >= '0' && b[at] <= '9') || b[at] == '_' || b[at] == '-'))
+    while (at < n && ((b[at] >= 'a' && b[at] <= 'z') || (b[at] >= '0' && b[at] <= '9') ||
+                      b[at] == '_' || b[at] == '-'))
         at++;
     if (n - at < sizeof(middle) - 1 || memcmp(b + at, middle, sizeof(middle) - 1))
         return SOPHIA_9P_INVALID;
@@ -28,8 +40,7 @@ int sf_api_epoch(const uint8_t *b, size_t n, uint64_t *epoch)
             return SOPHIA_9P_INVALID;
         value = value * 10 + digit;
     }
-    if (at == start || n - at != sizeof(suffix) - 1 ||
-        memcmp(b + at, suffix, sizeof(suffix) - 1))
+    if (at == start || n - at != sizeof(suffix) - 1 || memcmp(b + at, suffix, sizeof(suffix) - 1))
         return SOPHIA_9P_INVALID;
     *epoch = value;
     return 0;

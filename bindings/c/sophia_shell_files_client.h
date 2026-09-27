@@ -5,7 +5,8 @@
 
 /* The caller explicitly chooses this native file backend and supplies the
  * admitted fd through wire. No discovery, protocol sniffing or fallback.
- * B7 base covers r5/r6 content; r7/r8 role-specific records remain unsupported. */
+ * Role-aware initialization supports bar, native launcher and persistent dock. */
+enum sophia_sf_profile { SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK };
 struct sophia_sf_operation {
     struct sophia_9p_handle handle;
     uint8_t active;
@@ -15,6 +16,9 @@ struct sophia_sf_client {
     uint64_t epoch, next_submission, sequence, consumed_sequence, acked_sequence;
     uint64_t event_offset, ack_pending, object_generation, object_qid;
     struct sophia_sf_negotiate offer;
+    enum sophia_sf_profile profile;
+    uint8_t *object_storage;
+    size_t object_capacity;
     struct sophia_sf_limits limits;
     uint32_t root, fids[4], object_fid, upload_fid, api_fid, api_iounit;
     uint32_t iounit[4], object_iounit, upload_iounit;
@@ -39,6 +43,15 @@ struct sophia_sf_client {
  * Initialization starts version/attach/api/setup/Negotiate, all nonblocking. */
 int sophia_sf_client_init(struct sophia_sf_client *, struct sophia_9p_client *,
                           struct sophia_sf_negotiate);
+/* storage is exclusive, caller-owned object scratch (at most 4 MiB), borrowed
+ * until disposal; it must not overlap client or wire storage. Decoded row/text
+ * views survive until the next object fetch.
+ * NULL with capacity 0 selects the inline 1 KiB buffer. The base initializer
+ * selects BAR with that buffer. Launcher/dock offers require their exact masks
+ * and a revision range containing 7/8. No implicit role/protocol fallback. */
+int sophia_sf_client_init_profile(struct sophia_sf_client *, struct sophia_9p_client *,
+                                  struct sophia_sf_negotiate, enum sophia_sf_profile, void *storage,
+                                  size_t capacity);
 int sophia_sf_client_service(struct sophia_sf_client *, size_t byte_budget);
 int sophia_sf_client_ready(const struct sophia_sf_client *);
 /* Copies one whole value; header epoch/submission are assigned here. Return

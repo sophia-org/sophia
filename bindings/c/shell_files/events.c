@@ -22,6 +22,10 @@ int sf_session_event_parse(struct sophia_sf_client *c)
             v->selected_revision > c->offer.maximum_revision ||
             (v->capabilities & c->offer.required_capabilities) != c->offer.required_capabilities)
             return SOPHIA_9P_INVALID;
+        if (c->profile != SOPHIA_SF_BAR &&
+            (v->selected_revision != (c->profile == SOPHIA_SF_LAUNCHER ? 7 : 8) ||
+             v->capabilities != c->offer.required_capabilities))
+            return SOPHIA_9P_INVALID;
         c->negotiated = 1;
         if (v->limits_published) {
             status = sophia_sf_client_object(c, SOPHIA_SF_LIMITS, 0, 0);

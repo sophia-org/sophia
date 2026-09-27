@@ -26,7 +26,10 @@ bytes, oversized counts, malformed/padded text, duplicate slots, identities,
 conditional geometry/state rules and encode/decode round trips. The Go decoder
 also validates outgoing extended records before an oracle submits them.
 
-## Phase 2: live role coverage (runtime hash and plan approval required)
+## Phase 2: live role coverage
+
+Runtime handoff: `39433c631`, with typed family publications and owner intake.
+The independent checks remain strict when they expose runtime mismatches.
 
 Extend the oracle to **96 named checks: the existing 54 plus 42 below**. Update
 both verdict producers and the independent Rust exact-name parser together.
@@ -76,8 +79,7 @@ conflating these failure paths.
 `ae60576f8` resolves owner failures: wrong/missing permits transfer Submitted
 custody then revoke without an outcome; stale opening/catalog/state yields
 Rejected/reason 1; malformed owner geometry, target identities or unavailable
-slots yield Rejected/reason 3. The negative-case hold is lifted. Phase 2 still
-awaits the B5 runtime handoff. Indicator outcomes follow that commit's corrected
+slots yield Rejected/reason 3. The negative-case hold is lifted. Indicator outcomes follow that commit's corrected
 linked-admission rules. No phase-1 test claims a live owner outcome.
 
 ## Gates and handoff

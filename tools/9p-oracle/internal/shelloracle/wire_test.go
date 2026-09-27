@@ -26,7 +26,7 @@ func TestReplyBoundsBeforeAllocation(t *testing.T) {
 }
 func TestUniqueCheckNames(t *testing.T) {
 	seen := map[string]bool{}
-	if len(Names) != 54 {
+	if len(Names) != 96 {
 		t.Fatal(len(Names))
 	}
 	for _, name := range Names {

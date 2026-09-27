@@ -1,8 +1,8 @@
 # Role fixture sequences for t252 B7/B8
 
-Preparation against `026af08c9`, with layouts from the file KDL and lifecycle
-rules through `ae60576f8`. Implementation awaits the merged and gated B5 runtime
-handoff. The [approved coverage plan](ROLE-COVERAGE.md) fixes the verdict at
+Prepared against `026af08c9`, with layouts from the file KDL and lifecycle
+rules through `ae60576f8`; runtime implementation starts from `39433c631`.
+The [approved coverage plan](ROLE-COVERAGE.md) fixes the verdict at
 **96 names: 54 existing plus the 42 below**. This document adds no passing checks.
 
 ## Shared fixture rules
@@ -23,7 +23,8 @@ negotiated values or verdicts. The oracle decodes every observed object/event
 using its independent KDL validators.
 
 Use output `(2,1)`, allocation `(1,1)`, facts generation 3 and scale generation 5
-as fixture facts, with a 64-by-32 allocation at scale 1/1. Upload a small resource
+as fixture facts, with a 64-by-32 allocation inside a 128-by-64 output at scale
+1/1 (within the coverage budget). Upload a small resource
 through the real file slots before submitting candidates. The ordinary catalog
 contains two available entries in slots 1 and 2 and an unavailable slot 3.
 Slot 4096 is absent. Use distinct transaction IDs and increasing submission IDs;

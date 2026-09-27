@@ -3,6 +3,7 @@
 #include "../sophia_shell_files_client.h"
 #include "internal.h"
 int sf_api_epoch(const uint8_t *, size_t, uint64_t *);
+int sf_api_profile(const uint8_t *, size_t, enum sophia_sf_profile);
 int sf_session_queue(struct sophia_sf_client *, const struct sophia_sf_record *);
 int sf_session_drive(struct sophia_sf_client *);
 int sf_session_event_parse(struct sophia_sf_client *);

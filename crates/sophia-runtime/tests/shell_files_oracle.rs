@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 mod fixture;
 #[path = "support/shell_files_oracle/process.rs"]
 mod process;
+#[path = "support/shell_files_oracle/roles.rs"]
+mod roles;
 #[path = "support/shell_files_oracle/verdict.rs"]
 mod verdict;
 
@@ -19,7 +21,7 @@ struct Control {
     command: Option<(String, String)>,
 }
 impl Control {
-    fn poll(&mut self, fixtures: &mut [fixture::Fixture]) -> bool {
+    fn poll(&mut self, fixtures: &mut [fixture::Fixture], roles: &mut [roles::Fixture]) -> bool {
         if self.command.is_none() {
             let mut b = [0; 128];
             match self.stream.read(&mut b) {
@@ -38,11 +40,16 @@ impl Control {
             self.command = Some((words[0].into(), words[1].into()));
         }
         let (name, phase) = self.command.as_ref().unwrap();
-        let f = fixtures
-            .iter_mut()
-            .find(|f| f.name == name)
-            .expect("known fixture");
-        match f.phase(phase) {
+        let result = if let Some(f) = fixtures.iter_mut().find(|f| f.name == name) {
+            f.phase(phase)
+        } else {
+            roles
+                .iter_mut()
+                .find(|f| f.name == name)
+                .expect("known role fixture")
+                .phase(phase)
+        };
+        match result {
             Ok(false) => false,
             result => {
                 let line = match result {
@@ -76,6 +83,11 @@ fn independent_go_judges_the_production_shell_file_export() {
         .map(|(i, name)| fixture::Fixture::new(&scratch.0, name, i))
         .collect::<Vec<_>>();
     let stdout = scratch.0.join("stdout");
+    let mut roles = roles::NAMES
+        .iter()
+        .enumerate()
+        .map(|(i, name)| roles::Fixture::new(&scratch.0, name, i))
+        .collect::<Vec<_>>();
     let stderr = scratch.0.join("stderr");
     let mut child = process::ChildGuard(
         Command::new("nice")
@@ -93,9 +105,13 @@ fn independent_go_judges_the_production_shell_file_export() {
     for f in &mut fixtures {
         f.authorize(child.0.id());
     }
+    for f in &mut roles {
+        f.authorize(child.0.id());
+    }
     child.0.stdin.take().unwrap().write_all(b"G").unwrap();
     let start = Instant::now();
     let mut control: Option<Control> = None;
+    let mut owner_errors = Vec::new();
     let status = loop {
         if let Some(status) = child.0.try_wait().unwrap() {
             break status;
@@ -115,6 +131,11 @@ fn independent_go_judges_the_production_shell_file_export() {
         for f in &mut fixtures {
             f.tick();
         }
+        for f in &mut roles {
+            if let Err(error) = f.tick() {
+                owner_errors.push(error);
+            }
+        }
         if control.is_none() {
             match listener.accept() {
                 Ok((stream, _)) => {
@@ -129,7 +150,10 @@ fn independent_go_judges_the_production_shell_file_export() {
                 Err(e) => panic!("control accept {e}"),
             }
         }
-        if control.as_mut().is_some_and(|c| c.poll(&mut fixtures)) {
+        if control
+            .as_mut()
+            .is_some_and(|c| c.poll(&mut fixtures, &mut roles))
+        {
             control = None;
         }
         std::thread::sleep(Duration::from_micros(100));
@@ -139,8 +163,15 @@ fn independent_go_judges_the_production_shell_file_export() {
     for f in &mut fixtures {
         f.cleanup();
     }
+    for f in &mut roles {
+        f.cleanup();
+    }
     verdict::validate(&output, status.success())
-        .unwrap_or_else(|e| panic!("{e}\n{output}\n{errors}"));
+        .unwrap_or_else(|e| panic!("{e}\n{output}\n{errors}\n{owner_errors:?}"));
+    assert!(owner_errors.is_empty(), "{owner_errors:?}");
+    for f in &roles {
+        f.assert_finished();
+    }
     assert!(fixtures[0].presented && fixtures[0].action_acked);
     assert!(
         fixtures
@@ -166,4 +197,7 @@ fn a_pass_requires_every_named_check_and_a_successful_exit() {
     );
     assert!(verdict::validate(&format!("check action/echo ok\n{text}"), true).is_err());
     assert!(verdict::validate(&text[..text.len() - 20], true).is_err());
+    assert!(verdict::validate(&text.replace("checks=96", "checks=54"), true).is_err());
+    assert!(verdict::validate(&text.replace("check r7/focus-binding ok\n", ""), true).is_err());
+    assert!(verdict::validate(&format!("check r8/presented ok\n{text}"), true).is_err());
 }
