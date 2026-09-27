@@ -256,7 +256,16 @@ and dock sessions against the production export, including a 4096-row
 catalog (e8f3c486). Catalog and indicator eligibility is scripted in the
 oracle from the normative rules; Session launch and admission policy is not
 claimed there.
-Remaining: the per-record credit rework, Bemenu r7 on the C client, B9
+Full offline gate on the branch with master merged (29c5f77e,
+2026-09-27 02:55, device-hidden, jobs 2): 6036 passed, 64 ignored, 6 failed;
+fmt, workspace clippy, layout, both C gates and the 96-check oracle pass.
+The 6 are not from t252: 5 `sophia-cli` `client_launch_socket` tests trip
+their 3-second watchdog only under full-workspace parallel load (3/3 alone),
+and `gpu_proof_domain` failed transiently on master and the branch alike
+around 02:55-02:58 and passes since (7/7 on master, 3/3 on the branch; a
+bisect on it was misled by the transient). The per-record credit rework is
+deferred to the socket Limits removal (purge inventory).
+Remaining: Bemenu r7 on the C client, B9
 measurements under a new declared method (the t249 verdict showed survivor
 equality and 120 Hz are unattainable as declared), merge and attended
 evidence.
