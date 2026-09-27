@@ -4,4 +4,4 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$root/target/c-shell-files}"
 nice -n 19 cargo run --offline --locked -j 2 -q -p xtask -- check c-desktop-sdk
-exec nice -n 19 cargo test --offline --locked -j 2 -p sophia-runtime --test shell_files_c --test shell_files_c_roles -- --test-threads=1
+exec nice -n 19 cargo test --offline --locked -j 2 -p sophia-runtime --test shell_files_c --test shell_files_c_roles --test shell_native_sdk -- --test-threads=1

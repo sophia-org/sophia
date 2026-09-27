@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "https://github.com/sophia-org/sophia-desktop-sdk-c",
-  "revision": "df9421192da2758dc1981d6eaeb588b92a43c9e9",
+  "revision": "6a59a13f026111a7a277943d71c1fdb090613a23",
   "files": {
     ".gitignore": "020c2606e8ed484089c2083e0be438b9d0736bee1558a6b76af0d58bd23f69cf",
     "AGENTS.md": "485b0618f7843434e0ea69f558bd173e47c1005b158351d710589a628ab18539",
@@ -113,6 +113,7 @@
     "src/sophia_wm_v1.c": "43c777c255c378aed0adc707b49e8cc152aee02ff5f4d47d95e19c491f9e4409",
     "src/sophia_wm_v1.h": "df6eb21a812261112fb992229e0476a1eda4345833c04a3edf439ae870329f3d",
     "src/tests/desktop_connection_test.c": "c059dc48ff7ccc33b8926e7eccfad34fed2d151e8ad4e7fd934eea32c6f40cfe",
+    "src/tests/desktop_native_peer.c": "2ad3452390e19c88a722890c48164a20bcae61723d2ec9fb5ba0de530b00a945",
     "src/tests/desktop_session_peer.c": "7eca76724deb5216f084a8493156c6e49e3aaed052cc2538e4bedf4e6366838d",
     "src/tests/native_session_test.c": "81f81e0e14a29c3ec90b7cabfed60bf0ddf98886ede37a770030f7b924627ea3",
     "src/tests/shell_files_vectors.h": "b44c51c9756fae255396970253ef3496b576e55fe4f1587f3fb3720f00c58b0c",
