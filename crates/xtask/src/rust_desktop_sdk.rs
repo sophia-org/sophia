@@ -8,7 +8,7 @@
 //! live in the SDK, so this check is also what runs them against Sophia's
 //! authoritative contract.
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -76,7 +76,8 @@ pub fn run(repo: &Path) -> Result<Vec<String>, String> {
     let revision = verify(&snapshot, repo)?;
     let manifest = snapshot.join("source/Cargo.toml");
     let manifest = manifest.to_str().ok_or("non-UTF-8 SDK path")?;
-    let target = repo.join("target/rust-desktop-sdk");
+    let target =
+        target_root(repo, std::env::var_os("CARGO_TARGET_DIR").as_deref()).join("rust-desktop-sdk");
     let target = target.to_str().ok_or("non-UTF-8 target path")?;
     for arguments in [
         &[
@@ -115,6 +116,16 @@ pub fn run(repo: &Path) -> Result<Vec<String>, String> {
     Ok(vec![format!(
         "rust_desktop_sdk status=pass revision={revision}"
     )])
+}
+
+/// Nested SDK checks honor Cargo's selected build directory. A contained
+/// check must not fall back to writing into its read-only source checkout.
+pub fn target_root(repo: &Path, configured: Option<&std::ffi::OsStr>) -> PathBuf {
+    repo.join(
+        configured
+            .map(Path::new)
+            .unwrap_or_else(|| Path::new("target")),
+    )
 }
 
 /// Checks the snapshot against its manifest and its contract copies against
@@ -230,10 +241,8 @@ pub fn vendor(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> 
     .trim()
     .to_owned();
     git(&["verify-commit", &revision])?;
-    let stage = repo.join(format!(
-        "target/rust-desktop-sdk-stage-{}",
-        std::process::id()
-    ));
+    let stage = target_root(repo, std::env::var_os("CARGO_TARGET_DIR").as_deref())
+        .join(format!("rust-desktop-sdk-stage-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage);
     let result = (|| {
         let source = stage.join("source");

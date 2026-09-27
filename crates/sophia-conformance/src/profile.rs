@@ -262,12 +262,14 @@ fn session_binary() -> Result<String, String> {
         .parent()
         .and_then(std::path::Path::parent)
         .ok_or("the xtask manifest has no workspace root")?;
+    let target =
+        workspace.join(std::env::var_os("CARGO_TARGET_DIR").unwrap_or_else(|| "target".into()));
     // Newest wins. Preferring release found a binary from before the flag
     // existed, which ignored it and started a session; whichever was built
     // last is the one the caller most likely meant.
     let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
     for profile in ["release", "debug"] {
-        let candidate = workspace.join("target").join(profile).join("sophia");
+        let candidate = target.join(profile).join("sophia");
         let Ok(modified) = candidate.metadata().and_then(|data| data.modified()) else {
             continue;
         };

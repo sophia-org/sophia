@@ -247,3 +247,20 @@ fn a_stage_that_fails_verification_leaves_the_pin_untouched() {
     );
     assert!(rust_desktop_sdk::verify(&snapshot, &root.0).is_ok());
 }
+
+#[test]
+fn nested_sdk_work_uses_the_selected_cargo_target() {
+    let source = Path::new("/readonly/source");
+    assert_eq!(
+        rust_desktop_sdk::target_root(source, Some(std::ffi::OsStr::new("/private/build"))),
+        Path::new("/private/build")
+    );
+    assert_eq!(
+        rust_desktop_sdk::target_root(source, Some(std::ffi::OsStr::new("relative-build"))),
+        source.join("relative-build")
+    );
+    assert_eq!(
+        rust_desktop_sdk::target_root(source, None),
+        source.join("target")
+    );
+}

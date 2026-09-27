@@ -539,7 +539,7 @@ fn d_service_exit() {
             assert_eq!(egress, 1);
         }
         // Owed a charge: a budget yield under load is retried (t194).
-        let step = service.step_charged();
+        let step = service.step_charged(PrivateMaintenancePhase::Output);
         assert_eq!(step.instance, closed.instance);
         assert_eq!(step.phase, PrivateMaintenancePhase::Output);
         assert_eq!(step.modifiers, Some(1));

@@ -3,6 +3,9 @@ use super::*;
 #[path = "m3_actor_tracking.rs"]
 mod actor_tracking_tests;
 
+#[path = "m3_maintenance_retry.rs"]
+mod maintenance_retry_tests;
+
 struct Actor {
     origin: usize,
     thread: std::thread::ThreadId,
@@ -805,21 +808,8 @@ impl LifecycleService {
         self.steps.recv_timeout(Duration::from_secs(5)).unwrap()
     }
 
-    /// A step that is owed a charge: one that yields on the service budget
-    /// is retried after the budget's own `retry_after`, bounded, since the
-    /// interval's time is wall-clock and a loaded machine spends it faster.
-    pub(super) fn step_charged(&self) -> Maintained {
-        let deadline = std::time::Instant::now() + Duration::from_secs(3);
-        loop {
-            let step = self.step();
-            let Some(retry_after) = step.budget_retry_after else {
-                return step;
-            };
-            if step.charged || std::time::Instant::now() + retry_after > deadline {
-                return step;
-            }
-            std::thread::sleep(retry_after);
-        }
+    pub(super) fn step_charged(&self, phase: PrivateMaintenancePhase) -> Maintained {
+        charged_phase(phase, || self.step(), std::thread::sleep)
     }
 
     pub(super) fn finish(mut self, custodies: &[Arc<PrivateEvidenceCustody>]) -> Vec<String> {
@@ -840,6 +830,30 @@ impl LifecycleService {
         actor_joined(id);
         collected_actors(&self.registry)
     }
+}
+
+/// Budget yields advance the scheduler's phase too. Service intervening phases
+/// normally, but only return the requested phase; its caller still checks the
+/// charge and outcome. Both elapsed time and visit count bound this wait.
+fn charged_phase(
+    phase: PrivateMaintenancePhase,
+    mut next: impl FnMut() -> Maintained,
+    mut wait: impl FnMut(Duration),
+) -> Maintained {
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    for _ in 0..256 {
+        let step = next();
+        if step.phase == phase && (step.charged || step.budget_retry_after.is_none()) {
+            return step;
+        }
+        let delay = step.budget_retry_after.unwrap_or_default();
+        assert!(
+            std::time::Instant::now() + delay <= deadline,
+            "maintenance phase {phase:?} did not progress: {step:?}"
+        );
+        wait(delay);
+    }
+    panic!("maintenance phase {phase:?} exceeded the visit bound");
 }
 
 impl Drop for LifecycleService {
