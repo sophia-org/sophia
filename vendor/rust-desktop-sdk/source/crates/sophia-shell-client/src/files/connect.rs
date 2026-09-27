@@ -54,6 +54,35 @@ fn open_fixed(
     }
 }
 
+/// Reads a whole immutable object through `fid`, blocking within
+/// `deadline`: a positive short read is not the end, only a zero-length read
+/// is, and holding exactly `cap` bytes takes a 1-byte read to prove it.
+fn read_object(
+    pipeline: &mut Pipeline,
+    fid: Fid,
+    iounit: u32,
+    cap: usize,
+    deadline: Instant,
+) -> Result<Vec<u8>, ShellClientError> {
+    let count = if iounit == 0 { u32::MAX } else { iounit };
+    let mut bytes = Vec::new();
+    loop {
+        let want = if bytes.len() == cap { 1 } else { count };
+        let tag = pipeline.read(fid, bytes.len() as u64, want)?;
+        let data = match wait_ok(pipeline, tag, deadline)? {
+            Reply::Read(data) => data,
+            _ => return Err(ShellClientError::Protocol("object read refused")),
+        };
+        if data.is_empty() {
+            return Ok(bytes);
+        }
+        if bytes.len() + data.len() > cap {
+            return Err(ShellClientError::Protocol("object over its cap"));
+        }
+        bytes.extend_from_slice(&data);
+    }
+}
+
 fn ack_now(
     pipeline: &mut Pipeline,
     ack_fid: Fid,
@@ -238,12 +267,23 @@ impl FileWire {
         let mut inbox = VecDeque::new();
         let mut upload_slots = 0u8;
         if negotiated.limits_published {
-            let fid = open_fixed(&mut pipeline, root, b"limits", O_RDONLY, deadline)?;
-            let tag = pipeline.read(fid, 0, u32::MAX)?;
-            let data = match wait_ok(&mut pipeline, tag, deadline)? {
-                Reply::Read(data) => data,
-                _ => return Err(ShellClientError::Protocol("limits read refused")),
+            let (tag, fid) = pipeline.walk(root, &[b"limits"])?;
+            match wait_ok(&mut pipeline, tag, deadline)? {
+                Reply::Walk(qids) if qids.len() == 1 => {}
+                _ => return Err(ShellClientError::Protocol("limits walk refused")),
+            }
+            let tag = pipeline.lopen(fid, O_RDONLY)?;
+            let iounit = match wait_ok(&mut pipeline, tag, deadline)? {
+                Reply::Lopen { iounit, .. } => iounit,
+                _ => return Err(ShellClientError::Protocol("limits open refused")),
             };
+            let data = read_object(
+                &mut pipeline,
+                fid,
+                iounit,
+                SHELL_FILE_MAX_OBJECT_BYTES,
+                deadline,
+            )?;
             pending_forgettable.push(pipeline.clunk(fid)?);
             let limits: ContentLimits = decode_shell_file_limits(&data)?;
             upload_slots = limits
@@ -271,10 +311,15 @@ impl FileWire {
             acked: last_acked,
             ack_tag: None,
             object_fetch: None,
+            holds: [None; 3],
+            progress: 0,
             pending: VecDeque::new(),
-            staged: None,
+            staged: Vec::new(),
             staged_begin: None,
             current: None,
+            backoff: super::RETRY_FIRST,
+            custody: Vec::new(),
+            retire: 0,
             uploads: Default::default(),
             forgettable: pending_forgettable.into_iter().collect(),
             peer_closed: false,

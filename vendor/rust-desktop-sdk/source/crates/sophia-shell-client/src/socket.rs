@@ -23,6 +23,7 @@ use sophia_shell_protocol::{
     ShellV1ClientHello, ShellV1ServerWelcome, TransactionId,
 };
 
+use crate::custody::{Custody, Ledger};
 use crate::wire::{Inbound, Outbound};
 use crate::{
     MAX_QUEUED_BYTES, MAX_QUEUED_FRAMES, ShellClientError, ShellClientOptions, client_record,
@@ -124,6 +125,7 @@ impl SocketWire {
         &mut self,
         output: &mut ClientOutbox,
         inbox: &mut VecDeque<Inbound>,
+        ledger: &mut Ledger,
     ) -> Result<(), ShellClientError> {
         let mut remaining = 256 * 1024;
         for _ in 0..64 {
@@ -136,7 +138,10 @@ impl SocketWire {
             match self.stream.write(&bytes[..bytes.len().min(remaining)]) {
                 Ok(0) => return Err(ShellClientError::PeerClosed),
                 Ok(written) => {
-                    output.written(written);
+                    // Kernel acceptance proves nothing more on this wire.
+                    if let Some(ticket) = output.written(written) {
+                        ledger.set(ticket, Custody::Written);
+                    }
                     remaining -= written;
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,

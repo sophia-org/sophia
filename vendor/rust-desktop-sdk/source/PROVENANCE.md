@@ -14,6 +14,10 @@ merge). Later changes are made here first; Sophia vendors a pinned snapshot.
 | `sophia-shell-client` | `crates/sophia-shell-client` |
 | `spec/sophia-shell-files-v1.kdl` | `protocol/sophia-shell-files-v1.kdl` |
 | `spec/sophia-shell-v1.kdl` | `protocol/sophia-shell-v1.kdl` |
+| `spec/sophia-shell-files.md` | `docs/sophia-shell-files.md` (the normative shell file contract) |
+| `spec/sophia-wm-files.md` | `docs/sophia-wm-files.md` (the custody and retry rules the shell contract adopts) |
+| `spec/sophia-9p-profile.md` | `docs/sophia-9p-profile.md` |
+| `spec/references/diod-9p2000L-protocol.md` | `docs/references/diod-9p2000L-protocol.md` (GPL; reference only, see its notice) |
 | `spec/golden/sophia-shell-*.frames` | `protocol/golden/` (content, content-malformed, catalog-actions, indicators, launcher, v1, v1-malformed) |
 
 Edits made on extraction: crate paths, crate roots and manifests, doc links

@@ -32,6 +32,7 @@ fn connection() -> (ShellConnection, std::os::unix::net::UnixStream) {
             },
             output: outbox::ClientOutbox::default(),
             inbox: std::collections::VecDeque::new(),
+            ledger: crate::custody::Ledger::default(),
         },
         peer,
     )
@@ -68,7 +69,10 @@ fn full_outbox_does_not_consume_candidate_identity_and_retry_owns_exactly_one_gr
     let (mut connection, _peer) = connection();
     let mut lifecycle = ContentLifecycle::new(ContentLimits::prototype(grant())).unwrap();
     for _ in 0..32 {
-        connection.output.enqueue(vec![vec![1]], false).unwrap();
+        connection
+            .output
+            .enqueue(vec![vec![1]], false, &mut crate::custody::Ledger::default())
+            .unwrap();
     }
     let tx = TransactionId::from_raw(3);
     assert_eq!(

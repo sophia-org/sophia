@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sophia_protocol::*;
 use sophia_runtime::*;
-use sophia_shell_client::{ShellClientError, ShellClientOptions, ShellConnection};
+use sophia_shell_client::{Custody, ShellClientError, ShellClientOptions, ShellConnection};
 
 const MIB: u64 = 1024 * 1024;
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -798,8 +798,23 @@ fn an_action_and_its_exact_ack_cross_the_file_wire_via_the_client() {
     paced_candidate_via_client(true);
 }
 
+/// Polls until `ticket` settles past `InFlight`, bounded.
+fn settled(client: &mut ShellConnection, ticket: sophia_shell_client::Ticket) -> Custody {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        client.poll_io().unwrap();
+        match client.custody(ticket) {
+            Some(Custody::Queued | Custody::InFlight) => {}
+            Some(custody) => return custody,
+            None => panic!("ticket evicted"),
+        }
+        assert!(Instant::now() < deadline, "custody timed out");
+        std::thread::yield_now();
+    }
+}
+
 #[test]
-fn an_unsupported_family_is_refused_at_enqueue() {
+fn an_action_response_pair_is_two_submissions_and_a_lone_candidate_part_is_refused() {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let (mut transport, directory) = transport();
     transport
@@ -812,25 +827,33 @@ fn an_unsupported_family_is_refused_at_enqueue() {
         let ShellContentRecord::Limits(limits) = next_content(&mut client) else {
             panic!("expected limits");
         };
-        // Indicator activations/responses are not in the file contract yet
-        // (t252 B5): refused locally, never silently dropped.
+        // An action response rides the file wire as its own record, with its
+        // own ticket; the session takes custody even of an ACK naming no live
+        // event (it has no effect there).
         let ack = ContentActionAck {
             grant: limits.grant,
-            output: ContentOutputId::default(),
-            candidate_generation: 0,
-            presentation_epoch: 0,
-            interaction_generation: 0,
-            allocation: ContentAllocationId::default(),
+            output: ContentOutputId {
+                id: 2,
+                generation: 1,
+            },
+            candidate_generation: 1,
+            presentation_epoch: 1,
+            interaction_generation: 1,
+            allocation: ContentAllocationId {
+                id: 1,
+                generation: 1,
+            },
             target_id: 0,
             target_generation: 0,
             action_id: 0,
-            event_id: 0,
+            event_id: 1,
             disposition: 1,
         };
-        let error = client
-            .enqueue_indicator_action_response(TransactionId::from_raw(1), &ack, None)
-            .unwrap_err();
-        assert!(matches!(error, ShellClientError::UnsupportedOnWire));
+        let admission = client
+            .enqueue_indicator_action_response_tracked(TransactionId::from_raw(1), &ack, None)
+            .unwrap();
+        assert_eq!(admission.count, 1);
+        assert_eq!(settled(&mut client, admission.first), Custody::Submitted);
 
         // A lone CandidateBegin outside a ContentGroup has no single-record
         // file-wire shape either.

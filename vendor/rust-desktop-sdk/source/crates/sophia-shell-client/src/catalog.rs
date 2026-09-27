@@ -107,6 +107,20 @@ impl ShellConnection {
         chunks: &[ContentCandidateChunk],
         end: &ContentCandidateEnd,
     ) -> Result<(), ShellClientError> {
+        self.enqueue_catalog_candidate_tracked(lifecycle, transaction, begin, chunks, end)
+            .map(|_| ())
+    }
+
+    /// [`Self::enqueue_catalog_candidate`] with its tickets: one on the file
+    /// wire (the whole candidate is one record), one per frame on the socket.
+    pub fn enqueue_catalog_candidate_tracked(
+        &mut self,
+        lifecycle: &mut ContentLifecycle,
+        transaction: TransactionId,
+        begin: &CatalogCandidateBegin,
+        chunks: &[ContentCandidateChunk],
+        end: &ContentCandidateEnd,
+    ) -> Result<Admission, ShellClientError> {
         self.require_catalog()?;
         if chunks.len() > MAX_QUEUED_FRAMES / 2 - 2 {
             return Err(ShellClientError::QueueSaturated);
@@ -129,13 +143,15 @@ impl ShellConnection {
             chunks: chunks.to_vec(),
             end: end.clone(),
         })?;
-        self.output.enqueue_after(units, false, || {
-            lifecycle
-                .register(metadata)
-                .map_err(ShellClientError::Lifecycle)
-        })?;
+        let admission = self
+            .output
+            .enqueue_after(units, false, &mut self.ledger, || {
+                lifecycle
+                    .register(metadata)
+                    .map_err(ShellClientError::Lifecycle)
+            })?;
         self.wire.commit_encoded();
-        Ok(())
+        Ok(admission)
     }
 
     /// Reserve ACK and exact activation together before a UI effect. There is
@@ -146,17 +162,29 @@ impl ShellConnection {
         ack: &ContentActionAck,
         activation: Option<(TransactionId, &CatalogActivation)>,
     ) -> Result<(), ShellClientError> {
+        self.enqueue_catalog_action_response_tracked(transaction, ack, activation)
+            .map(|_| ())
+    }
+
+    /// [`Self::enqueue_catalog_action_response`] with its tickets: the ACK
+    /// first, then the activation when there is one.
+    pub fn enqueue_catalog_action_response_tracked(
+        &mut self,
+        transaction: TransactionId,
+        ack: &ContentActionAck,
+        activation: Option<(TransactionId, &CatalogActivation)>,
+    ) -> Result<Admission, ShellClientError> {
         self.require_catalog()?;
         if ack.grant.connection_epoch != self.connection_epoch() {
             return Err(ShellClientError::WrongDirection);
         }
-        let units = self.wire.encode(Outbound::CatalogActionResponse {
-            transaction,
-            ack: ack.clone(),
-            activation: activation.map(|(tx, activation)| (tx, activation.clone())),
-        })?;
-        self.output.enqueue(units, true)?;
-        self.wire.commit_encoded();
-        Ok(())
+        self.admit(
+            Outbound::CatalogActionResponse {
+                transaction,
+                ack: ack.clone(),
+                activation: activation.map(|(tx, activation)| (tx, activation.clone())),
+            },
+            true,
+        )
     }
 }

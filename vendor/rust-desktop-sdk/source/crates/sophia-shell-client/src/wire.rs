@@ -12,6 +12,7 @@ use sophia_shell_protocol::{
     ShellIndicatorActivationOutcome, ShellIndicatorSnapshot, ShellPersistentCatalog, TransactionId,
 };
 
+use crate::custody::Ledger;
 use crate::files::FileWire;
 #[cfg(feature = "ipc-compat")]
 use crate::socket::SocketWire;
@@ -19,13 +20,6 @@ use crate::{ShellClientError, outbox::ClientOutbox};
 
 /// One whole client-to-session unit. Named for what it means, never for how
 /// many frames a wire needs to carry it.
-#[cfg_attr(
-    not(feature = "ipc-compat"),
-    expect(
-        dead_code,
-        reason = "the file wire does not carry indicator and catalog units yet"
-    )
-)]
 pub(crate) enum Outbound {
     /// One content record.
     Content(TransactionId, ShellContentRecord),
@@ -75,13 +69,6 @@ impl Outbound {
 /// One whole session-to-client unit. A multi-frame wire transfer (indicator
 /// Begin/.../End, catalog Begin/Entry/Identity/End) is assembled inside the
 /// owning wire and only ever surfaces here as one complete value.
-#[cfg_attr(
-    not(feature = "ipc-compat"),
-    expect(
-        dead_code,
-        reason = "the file wire does not carry indicator and catalog units yet"
-    )
-)]
 pub(crate) enum Inbound {
     Content(TransactionId, ShellContentRecord),
     Indicators(TransactionId, ShellIndicatorSnapshot),
@@ -134,11 +121,22 @@ impl Wire {
         &mut self,
         output: &mut ClientOutbox,
         inbox: &mut VecDeque<Inbound>,
+        ledger: &mut Ledger,
     ) -> Result<(), ShellClientError> {
         match self {
             #[cfg(feature = "ipc-compat")]
-            Wire::Socket(socket) => socket.poll_io(output, inbox),
-            Wire::Files(files) => files.poll_io(output, inbox),
+            Wire::Socket(socket) => socket.poll_io(output, inbox, ledger),
+            Wire::Files(files) => files.poll_io(output, inbox, ledger),
+        }
+    }
+
+    /// When the connection next needs servicing even without I/O: a
+    /// refused write's retry falls due then.
+    pub(crate) fn wake_deadline(&self) -> Option<std::time::Instant> {
+        match self {
+            #[cfg(feature = "ipc-compat")]
+            Wire::Socket(_) => None,
+            Wire::Files(files) => files.wake_deadline(),
         }
     }
 

@@ -19,15 +19,18 @@
 //! the one type defined here.
 
 use std::collections::{HashSet, VecDeque};
+use std::time::{Duration, Instant};
 
 use sophia_9p_client::pipeline::Pipeline;
 use sophia_9p_records::{Fid, Tag};
 
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::{
-    ContentCandidate, ContentResourceId, ShellContentRecord, TransactionId,
+    CatalogContentCandidate, ContentActionAck, ContentCandidate, ContentResourceId,
+    ShellCatalogActionRecord, ShellContentRecord, ShellIndicatorActivation, TransactionId,
 };
 
+use crate::custody::Custody;
 use crate::wire::Outbound;
 use crate::{ShellClientError, client_record};
 
@@ -71,12 +74,41 @@ enum QueuedKind {
     },
 }
 
+/// The first and largest pause before retrying a write the session refused
+/// with `EAGAIN`. A retry also goes early once an event has been consumed,
+/// since that is what frees journal room or a permit; it never goes in the
+/// same pass that saw the refusal.
+const RETRY_FIRST: Duration = Duration::from_millis(2);
+const RETRY_MAX: Duration = Duration::from_millis(64);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SubmissionPhase {
-    Walk { tag: Tag, fid: Fid },
-    Open { tag: Tag, fid: Fid },
-    WriteRecord { tag: Tag, fid: Fid },
-    WriteSubmit { tag: Tag, fid: Fid },
+    Walk {
+        tag: Tag,
+        fid: Fid,
+    },
+    Open {
+        tag: Tag,
+        fid: Fid,
+    },
+    WriteRecord {
+        tag: Tag,
+        fid: Fid,
+    },
+    /// `submit` is on the wire: from here the session may hold custody.
+    WriteSubmit {
+        tag: Tag,
+        fid: Fid,
+    },
+    /// `submit` was refused with `EAGAIN`: nothing transferred, the staged
+    /// record is kept, and the same submit goes again once `not_before`
+    /// passes or an event is consumed after `progress`.
+    RetryWait {
+        fid: Fid,
+        not_before: Instant,
+        progress: u64,
+    },
+    /// `submit` returned `Rwrite`; waiting for the `Submitted` event.
     AwaitSubmitted,
 }
 
@@ -84,13 +116,24 @@ enum Current {
     Submission {
         bytes: Vec<u8>,
         submission_id: u64,
+        ticket: u64,
+        /// The exact `submit` bytes, once built, for an `EAGAIN` retry.
+        submit: Vec<u8>,
         phase: SubmissionPhase,
+        /// The `Submitted` event for this submission was observed (it may
+        /// precede the `submit` reply). Custody is then settled for good.
+        submitted: bool,
     },
     SlotWrite {
         resource: ContentResourceId,
         offset: u64,
         remaining: Vec<u8>,
         tag: Option<Tag>,
+        ticket: u64,
+        /// Set after `EAGAIN`: no write before this instant.
+        not_before: Option<Instant>,
+        /// Some bytes already returned `Rwrite`.
+        wrote_any: bool,
     },
 }
 
@@ -120,17 +163,53 @@ struct Upload {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FetchPhase {
     NotStarted,
-    Walk { tag: Tag, fid: Fid },
-    Open { tag: Tag, fid: Fid },
-    Read { tag: Tag, fid: Fid },
+    Walk {
+        tag: Tag,
+        fid: Fid,
+    },
+    Open {
+        tag: Tag,
+        fid: Fid,
+    },
+    /// Reading at `buf.len()`; a positive short read is not the end.
+    Read {
+        tag: Tag,
+        fid: Fid,
+        count: u32,
+    },
+    /// Exactly the feed's cap is held: one 1-byte read must find the end.
+    Probe {
+        tag: Tag,
+        fid: Fid,
+    },
 }
 
+/// Fetching the snapshot object one `ObjectPublished` announced.
 struct ObjectFetch {
-    /// The `ObjectPublished` event's own sequence: acked once the fetch
-    /// completes and its typed record is retained, never before.
-    sequence: u64,
+    feed: ShellFileKind,
+    generation: u64,
+    qid: u64,
     phase: FetchPhase,
+    buf: Vec<u8>,
+    /// Fetches restarted after a node-specific `ESTALE`/`EAGAIN`.
+    restarts: u8,
 }
+
+/// Snapshot feeds the file wire fetches, and each one's encoded cap
+/// (docs/sophia-shell-files.md, snapshot objects).
+const FEEDS: [(ShellFileKind, usize); 3] = [
+    (ShellFileKind::Outputs, SHELL_FILE_OUTPUTS_MAX_BYTES),
+    (ShellFileKind::Catalog, SHELL_FILE_MAX_OBJECT_BYTES),
+    (ShellFileKind::Indicators, SHELL_FILE_INDICATORS_MAX_BYTES),
+];
+
+fn feed_index(kind: ShellFileKind) -> Option<usize> {
+    FEEDS.iter().position(|(feed, _)| *feed == kind)
+}
+
+/// How many times one announcement's fetch restarts after the node itself
+/// answers `ESTALE` or `EAGAIN` before the connection fails closed.
+const MAX_FETCH_RESTARTS: u8 = 2;
 
 pub(crate) struct FileWire {
     pipeline: Pipeline,
@@ -146,16 +225,29 @@ pub(crate) struct FileWire {
     read_tag: Option<Tag>,
     read_offset: u64,
     event_buf: Vec<u8>,
+    /// Every event through this sequence has been handled.
     ack_ready: u64,
     acked: u64,
     ack_tag: Option<Tag>,
     object_fetch: Option<ObjectFetch>,
+    /// Per feed (`FEEDS` order): the ack bound an announcement not yet
+    /// fetched imposes (its sequence minus one), kept at the earliest such
+    /// announcement until the newest one is fetched and verified.
+    holds: [Option<u64>; 3],
+    /// Events handled so far; an `EAGAIN` retry waits for this to move.
+    progress: u64,
 
     // Outbound: a single lane, mirroring `ClientOutbox`'s FIFO order.
     pending: VecDeque<QueuedKind>,
-    staged: Option<QueuedKind>,
+    staged: Vec<QueuedKind>,
     staged_begin: Option<(u16, ContentResourceId)>,
     current: Option<Current>,
+    /// The next `EAGAIN` backoff.
+    backoff: Duration,
+    /// Custody changes for `poll_io` to record in the connection's ledger.
+    custody: Vec<(u64, Custody)>,
+    /// Settled front units for `poll_io` to release from the outbox.
+    retire: usize,
 
     uploads: [Option<Upload>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
 
@@ -277,7 +369,7 @@ impl FileWire {
         if let Some(error) = &self.fatal {
             return Err(error.clone());
         }
-        self.staged = None;
+        self.staged.clear();
         self.staged_begin = None;
         match outbound {
             Outbound::Content(transaction, record) => self.encode_content(transaction, record),
@@ -291,14 +383,102 @@ impl FileWire {
                         candidate,
                     },
                 )?;
-                self.staged = Some(QueuedKind::Record);
-                Ok(vec![bytes])
+                Ok(self.stage_records(vec![bytes]))
             }
-            Outbound::IndicatorActivation(..)
-            | Outbound::ActionResponse { .. }
-            | Outbound::CatalogCandidateGroup { .. }
-            | Outbound::CatalogActionResponse { .. } => Err(ShellClientError::UnsupportedOnWire),
+            Outbound::IndicatorActivation(transaction, activation) => {
+                let bytes = self.indicator_activate(transaction, activation)?;
+                Ok(self.stage_records(vec![bytes]))
+            }
+            Outbound::ActionResponse {
+                transaction,
+                ack,
+                activation,
+            } => {
+                let mut records = vec![self.action_ack(transaction, ack)?];
+                if let Some((transaction, activation)) = activation {
+                    records.push(self.indicator_activate(transaction, activation)?);
+                }
+                Ok(self.stage_records(records))
+            }
+            Outbound::CatalogCandidateGroup {
+                transaction,
+                begin,
+                chunks,
+                end,
+            } => {
+                let mut records = vec![ShellContentRecord::CandidateBegin(begin.content)];
+                records.extend(chunks.into_iter().map(ShellContentRecord::CandidateChunk));
+                records.push(ShellContentRecord::CandidateEnd(end));
+                let candidate = CatalogContentCandidate {
+                    candidate: assemble_candidate(&records)?,
+                    catalog_generation: begin.catalog_generation,
+                };
+                let header = self.next_header(ShellFileKind::CatalogCandidate);
+                let bytes = encode_shell_file_catalog_candidate(
+                    header,
+                    &ShellFileCatalogCandidate {
+                        transaction,
+                        candidate,
+                    },
+                )?;
+                Ok(self.stage_records(vec![bytes]))
+            }
+            Outbound::CatalogActionResponse {
+                transaction,
+                ack,
+                activation,
+            } => {
+                let mut records = vec![self.action_ack(transaction, ack)?];
+                if let Some((transaction, activation)) = activation {
+                    let header = self.next_header(ShellFileKind::CatalogActivate);
+                    records.push(encode_shell_file_catalog_action(
+                        header,
+                        &ShellFileCatalogActionRecord {
+                            transaction,
+                            record: ShellCatalogActionRecord::Activate(activation),
+                        },
+                    )?);
+                }
+                Ok(self.stage_records(records))
+            }
         }
+    }
+
+    /// Stages whole records, each its own unit and its own submission.
+    fn stage_records(&mut self, records: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        self.staged
+            .extend(std::iter::repeat_n(QueuedKind::Record, records.len()));
+        records
+    }
+
+    fn action_ack(
+        &mut self,
+        transaction: TransactionId,
+        ack: ContentActionAck,
+    ) -> Result<Vec<u8>, ShellClientError> {
+        let header = self.next_header(ShellFileKind::ActionAck);
+        Ok(encode_shell_file_transaction(
+            header,
+            &ShellFileTransactionRecord {
+                transaction,
+                record: ShellContentRecord::ActionAck(ack),
+            },
+        )?)
+    }
+
+    fn indicator_activate(
+        &mut self,
+        transaction: TransactionId,
+        activation: ShellIndicatorActivation,
+    ) -> Result<Vec<u8>, ShellClientError> {
+        let header = self.next_header(ShellFileKind::IndicatorActivate);
+        Ok(encode_shell_file_indicator_activate(
+            header,
+            &ShellFileIndicatorActivate {
+                transaction,
+                activation,
+            },
+        )?)
     }
 
     fn encode_content(
@@ -311,7 +491,7 @@ impl FileWire {
         }
         match record {
             ShellContentRecord::ResourceChunk(chunk) => {
-                self.staged = Some(QueuedKind::SlotWrite {
+                self.staged.push(QueuedKind::SlotWrite {
                     resource: chunk.resource,
                     offset: chunk.offset,
                 });
@@ -329,7 +509,7 @@ impl FileWire {
                         record: ShellContentRecord::ResourceBegin(begin),
                     },
                 )?;
-                self.staged = Some(QueuedKind::Record);
+                self.staged.push(QueuedKind::Record);
                 self.staged_begin = Some((slot, resource));
                 Ok(vec![bytes])
             }
@@ -342,7 +522,7 @@ impl FileWire {
                         record,
                     },
                 )?;
-                self.staged = Some(QueuedKind::Record);
+                self.staged.push(QueuedKind::Record);
                 Ok(vec![bytes])
             }
             ShellContentRecord::ResourceEnd(_) => {
@@ -354,7 +534,7 @@ impl FileWire {
                         record,
                     },
                 )?;
-                self.staged = Some(QueuedKind::Record);
+                self.staged.push(QueuedKind::Record);
                 Ok(vec![bytes])
             }
             ShellContentRecord::ResourceCancel(_) => {
@@ -366,7 +546,7 @@ impl FileWire {
                         record,
                     },
                 )?;
-                self.staged = Some(QueuedKind::Record);
+                self.staged.push(QueuedKind::Record);
                 Ok(vec![bytes])
             }
             ShellContentRecord::ResourceRetire(_) => {
@@ -378,7 +558,7 @@ impl FileWire {
                         record,
                     },
                 )?;
-                self.staged = Some(QueuedKind::Record);
+                self.staged.push(QueuedKind::Record);
                 Ok(vec![bytes])
             }
             ShellContentRecord::FrameDemand(_)
@@ -398,7 +578,7 @@ impl FileWire {
                         record,
                     },
                 )?;
-                self.staged = Some(QueuedKind::Record);
+                self.staged.push(QueuedKind::Record);
                 Ok(vec![bytes])
             }
             // CandidateBegin/Chunk/End alone (outside a ContentGroup) have no
@@ -411,15 +591,12 @@ impl FileWire {
     }
 
     pub(crate) fn commit_encoded(&mut self) {
-        let Some(kind) = self.staged.take() else {
-            return;
-        };
         if let Some((slot, resource)) = self.staged_begin.take() {
             self.uploads[slot as usize] = Some(Upload {
                 resource,
                 state: UploadState::Pending,
             });
         }
-        self.pending.push_back(kind);
+        self.pending.extend(self.staged.drain(..));
     }
 }

@@ -1,20 +1,35 @@
-tree 6e5d10b122cae385c687388dffc5eebc6ba5e49e
-parent 8d2035c46003f908c9f1e8760df72f455c874bda
-author Mason Green <mason@greenm01.net> 1790508928 -0400
-committer Mason Green <mason@greenm01.net> 1790508928 -0400
+tree 67e1bec094ffce8415c05d4ce3aea5e8c11b1fba
+parent cd5b1033e434f224457da2be77b722e1497acade
+author Mason Green <mason@greenm01.net> 1790509955 -0400
+committer Mason Green <mason@greenm01.net> 1790509955 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarj/gAAKCRBXGEu2KoAA
- YkDhAP40/FII+73t9QENbh72GZBX0DuGkBfoEhzlYDfWHOe6TAD+IRVtMxCnHPGk
- jPyiODpuDl+Gsff4Rw9wxgV/prtw6wE=
- =eQe/
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkDgwAKCRBXGEu2KoAA
+ Ygb9AQCrLp+QZYLa3rXZilkc53DHQfjPCgoP0zYo5ZMwGn4TzwD/Tik20/wIzu3m
+ SUWKfwI2rOUWxEqbLKhhJhCDVPMfOA0=
+ =PShm
  -----END PGP SIGNATURE-----
 
-Pin the socket contract and corpus; correct platform and parity claims
+Settle custody per unit, retry refused submits, and carry every shell family
 
-spec/ now also carries the retiring socket contract (sophia-shell-v1.kdl)
-and Sophia's shell golden corpora, all in SHA256SUMS, and
-sophia-shell-ipc's corpus test decodes and re-encodes them standalone.
-The crate's doc now names the real parity test in Sophia instead of
-claiming one. PLATFORMS.md claims Linux x86_64 only; aarch64 is expected
-to work but untested.
+Admission is local queue ownership; each unit now gets a ticket whose
+custody (Queued, InFlight, Submitted, Stored, Written, Refused, Unknown,
+DroppedUnsent) the connection reports, through additive *_tracked methods
+beside the existing Result<()> ones. A file-wire record is Submitted only
+when its Submitted event is observed, which may precede the submit reply;
+a unit stays queued until settled, and a disconnect classifies it. A submit
+refused with EAGAIN keeps its staged record and goes again after a consumed
+event or a doubling backoff, never in the same pass; EALREADY is custody
+only after an observed Submitted; ESTALE is revocation; any other error is
+a definitive refusal and the lane moves on. Slot writes back off the same
+way and settle as Stored.
+
+Snapshot objects: each announcement holds acknowledgement at the earliest
+unfetched announcement per feed; an announcement already superseded in the
+buffered events is not fetched; an opened object whose qid differs is
+newer and delivers nothing; reads continue to a zero-length end, respecting
+iounit, with a 1-byte probe at the feed's cap; the decoded generation must
+match; node ESTALE or EAGAIN restarts a fetch twice at most. The catalog
+and indicator objects and their activation outcomes, indicator and catalog
+activations, action responses and catalog candidates now ride the file
+wire.

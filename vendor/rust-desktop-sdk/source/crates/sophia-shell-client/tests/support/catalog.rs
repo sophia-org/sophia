@@ -152,7 +152,10 @@ fn catalog_candidate_saturation_retains_lifecycle_and_exact_wire_family() {
     };
     let tx = TransactionId::from_raw(3);
     for _ in 0..32 {
-        client.output.enqueue(vec![vec![1]], false).unwrap();
+        client
+            .output
+            .enqueue(vec![vec![1]], false, &mut crate::custody::Ledger::default())
+            .unwrap();
     }
     assert_eq!(
         client.enqueue_catalog_candidate(&mut lifecycle, tx, &begin, &[], &end),
@@ -238,7 +241,10 @@ fn catalog_response_is_atomic_and_checks_complete_echo() {
     );
     assert!(client.output.front().is_none());
     for _ in 0..63 {
-        client.output.enqueue(vec![vec![1]], true).unwrap();
+        client
+            .output
+            .enqueue(vec![vec![1]], true, &mut crate::custody::Ledger::default())
+            .unwrap();
     }
     assert_eq!(
         client.enqueue_catalog_action_response(

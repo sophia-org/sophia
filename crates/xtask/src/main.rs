@@ -42,6 +42,9 @@ fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("panel") => panel::run(&workspace_root()?, &arguments[1..]),
+        Some("vendor-rust-desktop-sdk") => {
+            rust_desktop_sdk::vendor(&workspace_root()?, &arguments[1..]).map(print_lines)
+        }
         Some("dock") => match &arguments[1..] {
             [command, paths @ ..] if command == "profile" => {
                 print!("{}", sophia_conformance::dock::profile(paths)?);
@@ -467,6 +470,13 @@ usage: cargo xtask <command>
 
   check [layout]
       Run the full offline gate, or only the exact source-layout debt gate.
+
+  check rust-desktop-sdk
+      Verify the vendored Rust desktop SDK snapshot, then run its own tests.
+
+  vendor-rust-desktop-sdk SDK_CHECKOUT REVISION
+      Replace the vendored Rust desktop SDK with a signed revision, offline; the
+      new snapshot must verify before the old one is replaced.
 
   check native-protocol-family --output=/NEW/DIR --target-dir=/OWNED/TARGET
         [--hagia-root=/HAGIA --narthex-root=/NARTHEX --timeout=3600]

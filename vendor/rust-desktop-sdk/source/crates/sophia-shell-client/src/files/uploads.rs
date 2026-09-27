@@ -9,9 +9,11 @@ use sophia_9p_records::{Errno, Fid, Tag};
 use sophia_shell_protocol::ContentResourceId;
 
 use super::{
-    Current, FileWire, O_WRONLY, SlotOpen, Upload, UploadState, WRITE_OVERHEAD, open_fid_for,
+    Current, FileWire, O_WRONLY, RETRY_FIRST, SlotOpen, Upload, UploadState, WRITE_OVERHEAD,
+    open_fid_for,
 };
 use crate::ShellClientError;
+use crate::custody::Custody;
 
 impl FileWire {
     /// Advances a bound slot's walk-then-open sequence once admitted.
@@ -76,30 +78,45 @@ impl FileWire {
         if !is_mine {
             return Ok(false);
         }
+        let progress_backoff = match reply {
+            Reply::Error(errno) if *errno == Errno::EAGAIN => Some(self.next_backoff()),
+            _ => None,
+        };
         let Some(Current::SlotWrite {
             offset,
             remaining,
             tag: current_tag,
+            not_before,
+            wrote_any,
             ..
         }) = &mut self.current
         else {
             unreachable!("checked above");
         };
         match reply {
-            Reply::Write(count) => {
+            Reply::Write(count) if (*count as usize) <= remaining.len() && *count > 0 => {
                 let count = *count as usize;
                 remaining.drain(..count);
                 *offset += count as u64;
                 *current_tag = None;
+                *wrote_any = true;
                 if remaining.is_empty() {
-                    self.current = None;
+                    self.backoff = RETRY_FIRST;
+                    self.settle_current(Custody::Stored);
                 }
             }
             Reply::Error(errno) if *errno == Errno::EAGAIN => {
+                // Nothing transferred; write again after a backoff, never in
+                // the pass that saw the refusal.
                 *current_tag = None;
+                *not_before = progress_backoff.map(|backoff| std::time::Instant::now() + backoff);
             }
-            Reply::Error(errno) if *errno == Errno::ESTALE => {
-                self.current = None;
+            Reply::Error(errno) => {
+                // A node-specific refusal (`ESTALE` once the resource is
+                // fenced): these bytes are not stored, and the connection
+                // continues.
+                let errno = errno.0;
+                self.settle_current(Custody::Refused(errno));
             }
             _ => return Err(ShellClientError::Protocol("unexpected slot write reply")),
         }
@@ -114,8 +131,14 @@ impl FileWire {
                 resource,
                 tag,
                 remaining,
+                not_before,
                 ..
-            }) => (*resource, tag.is_none() && !remaining.is_empty()),
+            }) => (
+                *resource,
+                tag.is_none()
+                    && !remaining.is_empty()
+                    && not_before.is_none_or(|at| std::time::Instant::now() >= at),
+            ),
             _ => return Ok(false),
         };
         if !ready {
@@ -123,8 +146,8 @@ impl FileWire {
         }
         let Some(fid) = open_fid_for(&self.uploads, resource) else {
             // The binding vanished (fenced/terminal) between queueing and
-            // writing; nothing left to send.
-            self.current = None;
+            // writing: these bytes never left the client.
+            self.settle_current(Custody::DroppedUnsent);
             return Ok(true);
         };
         let budget = (self.pipeline.msize().saturating_sub(WRITE_OVERHEAD)) as usize;
@@ -140,6 +163,9 @@ impl FileWire {
         let take = remaining.len().min(budget.max(1));
         let write_tag = self.pipeline.write(fid, *offset, &remaining[..take])?;
         *tag = Some(write_tag);
+        if let Some(Current::SlotWrite { not_before, .. }) = &mut self.current {
+            *not_before = None;
+        }
         Ok(true)
     }
 

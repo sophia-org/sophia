@@ -7,6 +7,8 @@
 //! module that knows a socket frame exists.
 
 mod candidate;
+mod custody;
+pub use custody::{Admission, Custody, Ticket};
 mod catalog;
 pub use catalog::{CatalogInbox, CatalogObservation};
 mod files;
@@ -62,10 +64,9 @@ pub enum ShellClientError {
     WrongDirection,
     QueueSaturated,
     PeerClosed,
-    /// The current wire has no file-contract shape for this record family
-    /// yet (indicator activations, catalog candidates/responses, native
-    /// launcher records, or a lone Candidate Begin/Chunk/End outside a
-    /// `ContentGroup`).
+    /// The current wire has no file-contract shape for this record: a lone
+    /// Candidate Begin/Chunk/End outside a group (only a whole candidate is a
+    /// file record).
     UnsupportedOnWire,
     /// A local invariant the file wire's own state machine relies on did not
     /// hold (an unexpected 9P reply shape, or an event out of the sequence
@@ -114,6 +115,7 @@ pub struct ShellConnection {
     welcome: ShellV1ServerWelcome,
     output: outbox::ClientOutbox,
     inbox: VecDeque<Inbound>,
+    ledger: custody::Ledger,
 }
 
 impl ShellConnection {
@@ -145,6 +147,7 @@ impl ShellConnection {
             welcome,
             output: outbox::ClientOutbox::default(),
             inbox: VecDeque::new(),
+            ledger: custody::Ledger::default(),
         })
     }
 
@@ -168,6 +171,7 @@ impl ShellConnection {
             welcome,
             output: outbox::ClientOutbox::default(),
             inbox,
+            ledger: custody::Ledger::default(),
         })
     }
 
@@ -216,12 +220,43 @@ impl ShellConnection {
         transaction: TransactionId,
         record: &ShellContentRecord,
     ) -> Result<(), ShellClientError> {
+        self.enqueue_content_tracked(transaction, record)
+            .map(|_| ())
+    }
+
+    /// [`Self::enqueue_content`], returning the admitted unit's ticket (see
+    /// [`Self::custody`]).
+    pub fn enqueue_content_tracked(
+        &mut self,
+        transaction: TransactionId,
+        record: &ShellContentRecord,
+    ) -> Result<Admission, ShellClientError> {
         let outbound = Outbound::Content(transaction, record.clone());
         let control = outbound.is_control();
+        self.admit(outbound, control)
+    }
+
+    /// Encodes one outbound unit and admits all of its wire units, or none.
+    fn admit(&mut self, outbound: Outbound, control: bool) -> Result<Admission, ShellClientError> {
         let units = self.wire.encode(outbound)?;
-        self.output.enqueue(units, control)?;
+        let admission = self.output.enqueue(units, control, &mut self.ledger)?;
         self.wire.commit_encoded();
-        Ok(())
+        Ok(admission)
+    }
+
+    /// What became of an admitted unit, or `None` once its ticket is older
+    /// than the most recent 256 (never another unit's outcome). On the file
+    /// wire a record reaches [`Custody::Submitted`] only when the session's
+    /// `Submitted` event is observed; admission alone is local queueing.
+    pub fn custody(&self, ticket: Ticket) -> Option<Custody> {
+        self.ledger.get(ticket)
+    }
+
+    /// When to call [`Self::poll_io`] again even if the socket has nothing
+    /// to read or write: a write the session refused with `EAGAIN` is retried
+    /// then (or sooner, once an event is consumed). `None` when nothing waits.
+    pub fn wake_deadline(&self) -> Option<std::time::Instant> {
+        self.wire.wake_deadline()
     }
 
     /// Atomically own a bounded group of bulk content records (for example a
@@ -231,12 +266,18 @@ impl ShellConnection {
         transaction: TransactionId,
         records: &[ShellContentRecord],
     ) -> Result<(), ShellClientError> {
-        let units = self
-            .wire
-            .encode(Outbound::ContentGroup(transaction, records.to_vec()))?;
-        self.output.enqueue(units, false)?;
-        self.wire.commit_encoded();
-        Ok(())
+        self.enqueue_content_group_tracked(transaction, records)
+            .map(|_| ())
+    }
+
+    /// [`Self::enqueue_content_group`] with its tickets: one on the file wire
+    /// (the whole candidate is one record), one per frame on the socket wire.
+    pub fn enqueue_content_group_tracked(
+        &mut self,
+        transaction: TransactionId,
+        records: &[ShellContentRecord],
+    ) -> Result<Admission, ShellClientError> {
+        self.admit(Outbound::ContentGroup(transaction, records.to_vec()), false)
     }
 
     /// Own a complete candidate and its exact lifecycle metadata together.
@@ -248,17 +289,30 @@ impl ShellConnection {
         transaction: TransactionId,
         records: &[ShellContentRecord],
     ) -> Result<(), ShellClientError> {
+        self.enqueue_candidate_tracked(lifecycle, transaction, records)
+            .map(|_| ())
+    }
+
+    /// [`Self::enqueue_candidate`] with its tickets.
+    pub fn enqueue_candidate_tracked(
+        &mut self,
+        lifecycle: &mut ContentLifecycle,
+        transaction: TransactionId,
+        records: &[ShellContentRecord],
+    ) -> Result<Admission, ShellClientError> {
         let units = self
             .wire
             .encode(Outbound::ContentGroup(transaction, records.to_vec()))?;
         let metadata = candidate::metadata(transaction, records)?;
-        self.output.enqueue_after(units, false, || {
-            lifecycle
-                .register(metadata)
-                .map_err(ShellClientError::Lifecycle)
-        })?;
+        let admission = self
+            .output
+            .enqueue_after(units, false, &mut self.ledger, || {
+                lifecycle
+                    .register(metadata)
+                    .map_err(ShellClientError::Lifecycle)
+            })?;
         self.wire.commit_encoded();
-        Ok(())
+        Ok(admission)
     }
 
     /// Atomically own both ACK and indicator request before committing a UI
@@ -269,15 +323,24 @@ impl ShellConnection {
         ack: &sophia_shell_protocol::ContentActionAck,
         activation: Option<(TransactionId, &ShellIndicatorActivation)>,
     ) -> Result<(), ShellClientError> {
+        self.enqueue_indicator_action_response_tracked(transaction, ack, activation)
+            .map(|_| ())
+    }
+
+    /// [`Self::enqueue_indicator_action_response`] with its tickets: the ACK
+    /// first, then the activation when there is one.
+    pub fn enqueue_indicator_action_response_tracked(
+        &mut self,
+        transaction: TransactionId,
+        ack: &sophia_shell_protocol::ContentActionAck,
+        activation: Option<(TransactionId, &ShellIndicatorActivation)>,
+    ) -> Result<Admission, ShellClientError> {
         let outbound = Outbound::ActionResponse {
             transaction,
             ack: ack.clone(),
             activation: activation.map(|(transaction, activation)| (transaction, *activation)),
         };
-        let units = self.wire.encode(outbound)?;
-        self.output.enqueue(units, true)?;
-        self.wire.commit_encoded();
-        Ok(())
+        self.admit(outbound, true)
     }
 
     /// Take the oldest session-to-client content record while retaining other
@@ -347,12 +410,20 @@ impl ShellConnection {
         transaction: TransactionId,
         activation: &ShellIndicatorActivation,
     ) -> Result<(), ShellClientError> {
-        let units = self
-            .wire
-            .encode(Outbound::IndicatorActivation(transaction, *activation))?;
-        self.output.enqueue(units, false)?;
-        self.wire.commit_encoded();
+        self.enqueue_indicator_activation_tracked(transaction, activation)?;
         self.poll_io()
+    }
+
+    /// Queue one indicator activation without I/O, returning its ticket.
+    pub fn enqueue_indicator_activation_tracked(
+        &mut self,
+        transaction: TransactionId,
+        activation: &ShellIndicatorActivation,
+    ) -> Result<Admission, ShellClientError> {
+        self.admit(
+            Outbound::IndicatorActivation(transaction, *activation),
+            false,
+        )
     }
 
     /// Take one exact indicator activation result.
@@ -387,7 +458,8 @@ impl ShellConnection {
     /// permission to discard an accepted outcome. Each call reads and writes
     /// at most 256 KiB in at most 64 syscalls per direction.
     pub fn poll_io(&mut self) -> Result<(), ShellClientError> {
-        self.wire.poll_io(&mut self.output, &mut self.inbox)
+        self.wire
+            .poll_io(&mut self.output, &mut self.inbox, &mut self.ledger)
     }
 }
 

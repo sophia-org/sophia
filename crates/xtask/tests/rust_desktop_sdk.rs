@@ -32,6 +32,7 @@ fn scratch() -> (Scratch, PathBuf) {
     let snapshot = root.0.join("vendor/rust-desktop-sdk");
     std::fs::create_dir_all(&snapshot).unwrap();
     std::fs::create_dir_all(root.0.join("protocol/golden")).unwrap();
+    std::fs::create_dir_all(root.0.join("docs/references")).unwrap();
     assert!(
         std::process::Command::new("cp")
             .args(["-R", "--"])
@@ -69,8 +70,10 @@ fn edit_manifest(snapshot: &Path, edit: impl FnOnce(&mut serde_json::Value)) {
 
 #[test]
 fn the_committed_snapshot_verifies() {
-    // `run` also builds and tests the snapshot; the gate runs it, not this test.
+    // `run` also builds and tests the snapshot, and `vendor` needs a signed
+    // SDK checkout; the gate and the operator run those, not this test.
     let _ = rust_desktop_sdk::run;
+    let _ = rust_desktop_sdk::vendor;
     assert!(rust_desktop_sdk::verify(&repo().join("vendor/rust-desktop-sdk"), &repo()).is_ok());
     let (root, snapshot) = scratch();
     assert!(rust_desktop_sdk::verify(&snapshot, &root.0).is_ok());
@@ -140,7 +143,7 @@ fn bad_identities_and_entries_are_refused() {
 
 #[test]
 fn drift_in_every_contract_pair_and_an_unrecorded_digest_are_refused() {
-    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 9);
+    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 13);
     for (_, authoritative) in rust_desktop_sdk::CONTRACTS {
         let (root, snapshot) = scratch();
         std::fs::write(root.0.join(authoritative), b"changed contract").unwrap();
@@ -197,4 +200,50 @@ fn the_tree_and_revision_are_bound_to_the_recorded_commit() {
     raw.extend_from_slice(b"forged\n");
     std::fs::write(&commit, raw).unwrap();
     refused(&snapshot, &root.0, "does not identify upstream.commit");
+}
+
+#[test]
+fn installing_the_pinned_revision_reproduces_the_committed_snapshot() {
+    let (root, snapshot) = scratch();
+    let stage = root.0.join("stage");
+    std::fs::create_dir_all(&stage).unwrap();
+    assert!(
+        std::process::Command::new("cp")
+            .args(["-R", "--"])
+            .arg(repo().join("vendor/rust-desktop-sdk/source"))
+            .arg(&stage)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let raw = std::fs::read(snapshot.join("upstream.commit")).unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(snapshot.join("manifest.json")).unwrap()).unwrap();
+    let revision = manifest["revision"].as_str().unwrap().to_owned();
+    rust_desktop_sdk::install(&root.0, &stage, &raw, &revision).unwrap();
+    for name in ["manifest.json", "upstream.commit"] {
+        assert_eq!(
+            std::fs::read(snapshot.join(name)).unwrap(),
+            std::fs::read(repo().join("vendor/rust-desktop-sdk").join(name)).unwrap(),
+            "{name}"
+        );
+    }
+    assert!(rust_desktop_sdk::verify(&snapshot, &root.0).is_ok());
+}
+
+#[test]
+fn a_stage_that_fails_verification_leaves_the_pin_untouched() {
+    let (root, snapshot) = scratch();
+    let before = std::fs::read(snapshot.join("manifest.json")).unwrap();
+    let stage = root.0.join("stage");
+    std::fs::create_dir_all(stage.join("source")).unwrap();
+    std::fs::write(stage.join("source/README.md"), b"not the SDK").unwrap();
+    let raw = std::fs::read(snapshot.join("upstream.commit")).unwrap();
+    let revision = "0".repeat(40);
+    assert!(rust_desktop_sdk::install(&root.0, &stage, &raw, &revision).is_err());
+    assert_eq!(
+        std::fs::read(snapshot.join("manifest.json")).unwrap(),
+        before
+    );
+    assert!(rust_desktop_sdk::verify(&snapshot, &root.0).is_ok());
 }

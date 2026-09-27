@@ -23,8 +23,14 @@ serve.
 owns (`protocol/sophia-shell-files-v1.kdl` in the Sophia repository), and
 `spec/sophia-shell-v1.kdl` with `spec/golden/*.frames` are pinned copies of the
 retiring socket contract and its golden corpus, which `sophia-shell-ipc`'s
-tests read. `spec/SHA256SUMS` holds their digests; Sophia's gate refuses a
-vendored SDK whose copies differ from its own.
+tests read. `spec/sophia-shell-files.md` is the normative text of the file
+contract (custody, retry, snapshot pins, role outcomes) that the client
+implements, `spec/sophia-wm-files.md` the envelope, custody and retry rules
+it adopts, `spec/sophia-9p-profile.md` Sophia's 9P2000.L subset, and
+`spec/references/diod-9p2000L-protocol.md` the pinned dialect text, which is
+GPL-licensed and kept for reference only under its own notice.
+`spec/SHA256SUMS` holds every digest; Sophia's gate refuses a vendored SDK
+whose copies differ from its own.
 
 The dialect is plain 9P2000.L; wire error numbers are the Linux values
 9P2000.L defines, whatever the host (see `PLATFORMS.md`).

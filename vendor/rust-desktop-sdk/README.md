@@ -10,7 +10,8 @@ the SDK's own tests (including the contract's conformance tests) with and
 without `ipc-compat`.
 
 Change code in the SDK repository, test it, and sign the commit. Then run
-`tools/vendor_rust_desktop_sdk.sh <sdk checkout> <revision>` and the check.
+`cargo xtask vendor-rust-desktop-sdk <sdk checkout> <revision>`, which stages
+and verifies the new snapshot before replacing this one, and the check.
 Never edit `source/` or pin a moving branch.
 
 Publication of the SDK repository awaits GitHub authentication; the pinned

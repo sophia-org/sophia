@@ -69,6 +69,7 @@ impl Errno {
     pub const ENOSYS: Self = Self(38);
     pub const EPROTO: Self = Self(71);
     pub const EOPNOTSUPP: Self = Self(95);
+    pub const EALREADY: Self = Self(114);
     pub const ESTALE: Self = Self(116);
 }
 
