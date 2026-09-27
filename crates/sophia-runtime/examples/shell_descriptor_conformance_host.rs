@@ -33,7 +33,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let client = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .ok_or("usage: shell_descriptor_conformance_host CLIENT [--proof|--serve]")?;
+        .ok_or("usage: shell_descriptor_conformance_host CLIENT [--proof|--serve|--bar-proof] [CLIENT_ARGS...]")?;
     let client_mode = std::env::args()
         .nth(2)
         .unwrap_or_else(|| "--proof".to_owned());
@@ -62,6 +62,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
         .process_group()
         .protection_domain(domain);
+    // Pass fixture/client options as argv, without interpreting or evaluating them.
+    for argument in std::env::args_os().skip(3) {
+        spec = spec.arg(argument);
+    }
     if bar_proof {
         spec = spec.env("SOPHIA_SHELL_BAR_THICKNESS", "28");
     }
@@ -478,15 +482,15 @@ fn fixture() -> (
     )
 }
 
-// Exercise the actual independent Nim server with two persistent generations,
-// including a superseded transfer, before the unchanged r1 switcher lifecycle.
+// Two persistent generations, including a superseded transfer, precede the
+// revision-1 switcher lifecycle. The peer may be any conforming implementation.
 fn tab_protocol_proof(
     transport: &mut ShellSessionTransport,
     snapshot: &ShellV1DescriptorSnapshot,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use sophia_protocol::*;
     if !transport.supports_tabs() {
-        return Err("Narthex did not negotiate tab descriptors".into());
+        return Err("shell did not negotiate tab descriptors".into());
     }
     let mut descriptors = snapshot.descriptors.clone();
     for d in &mut descriptors {
@@ -567,28 +571,34 @@ fn tab_protocol_proof(
             IpcMessageKind::ShellV1ActivationAck,
         )?)
         .map_err(|e| format!("{e:?}"))?;
-        if actual != tx || ack.disposition != ShellV1ActivationDisposition::Consumed {
+        if actual != tx
+            || ack.connection_epoch != event.connection_epoch
+            || ack.activation != event.activation
+            || ack.disposition != ShellV1ActivationDisposition::Consumed
+        {
             return Err("tab activation rejected".into());
         }
         // A different presentation epoch cannot activate the same descriptor.
+        let stale_tx = TransactionId::from_raw(111);
+        let stale = ShellV1Activation {
+            activation: 601,
+            presentation_epoch: 49,
+            ..event
+        };
         transport.send_async(
-            encode_shell_v1_activation_frame(
-                TransactionId::from_raw(111),
-                ShellV1Activation {
-                    activation: 601,
-                    presentation_epoch: 49,
-                    ..event
-                },
-            )
-            .map_err(|e| format!("{e:?}"))?,
+            encode_shell_v1_activation_frame(stale_tx, stale).map_err(|e| format!("{e:?}"))?,
         )?;
-        let (_, ack) = decode_shell_v1_activation_ack_frame(&wait(
+        let (actual, ack) = decode_shell_v1_activation_ack_frame(&wait(
             transport,
             IpcMessageKind::ShellV1ActivationAck,
         )?)
         .map_err(|e| format!("{e:?}"))?;
-        if ack.disposition != ShellV1ActivationDisposition::RejectedStale {
-            return Err("stale tab activation accepted".into());
+        if actual != stale_tx
+            || ack.connection_epoch != stale.connection_epoch
+            || ack.activation != stale.activation
+            || ack.disposition != ShellV1ActivationDisposition::RejectedStale
+        {
+            return Err("stale tab activation not acknowledged with its exact identity".into());
         }
     }
     println!(

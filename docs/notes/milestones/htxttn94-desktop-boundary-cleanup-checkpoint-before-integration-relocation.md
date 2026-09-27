@@ -197,6 +197,45 @@ second corrected procfs but encountered the first run's PID-named scratch path.
 Both failed logs remain. The passing invocation mounts matching procfs and a
 private tmpfs, without changing the test or production code.
 
+## G4 source pin and generic descriptor coverage
+
+The repaired combined gate passes at signed
+`de776c68afdf9a133818f86917893c3362dc9fb7`; the source tree is clean and the G4
+files remain available for the external copy. Evidence:
+`bemenu-files/boundary-combined-de776c68.log` (exit 0). Workspace and SDK checks,
+clippy, layout, conformance, archive and verifier checks pass. Hardware proofs
+are explicitly unavailable in the device-hidden run; this is not physical
+acceptance. The external lane uses this pre-deletion source pin and must pass
+its relocated coverage before the subsequent Sophia cuts.
+
+While that pin is frozen for provisioning, the isolated
+`architecture/contract-shell-peers` branch prepares ordinary tests of all three
+descriptor host modes. A scripted public-codec peer handles descriptor and
+reservation withdrawal, tab supersession and stale activation, and the maximum
+reference catalog with committed-page navigation. It uses no desktop product.
+The independent C reader and socket checks stay; the Rust fixture is not a
+second independent codec. No product protocol stage has been removed. Reading
+the persistent-tab host also exposed incomplete
+ack correlation: it checked the first transaction but neither activation ID nor
+epoch, and discarded the second transaction. Both responses now require the
+exact transaction, connection epoch and activation ID as well as disposition.
+An ordinary negative test exercises seven malformed-ack cases through explicit
+fixture options forwarded as client argv. It requires the precise host refusal
+and no completion record. The fixture is an explicit executable target owned by
+the conformance tests.
+
+The device-hidden focused gate passes all four tests, including the seven
+negative cases. Two mutation controls fail as required: accepting a stale
+presentation epoch breaks the persistent-mode test; removing stale-ack
+transaction correlation lets the host incorrectly complete, which breaks the
+negative test. Both source files are restored, and the final focused run passes
+again. Clippy (all conformance targets/features, warnings denied), formatting
+and layout also pass. Evidence is under `contract-shell-peers/`:
+`focused-final.log`, `mutant-stale-epoch.log`, `mutant-stale-transaction.log`,
+`clippy-final.log`, `fmt.log` and `layout.log`. The expected mutant failures are
+kept. These checks prove the scripted protocol/owner paths, not product-client
+interoperability or physical presentation.
+
 ## Remaining work
 
 The generic launcher path is now concrete: `run_sophia_session.sh -- session run
@@ -222,13 +261,14 @@ whose shell-source slices included the new branch's closing `fi` without its
 opener. Their extraction now includes the complete legacy branch; all five
 application-recipe tests pass with unchanged behavior assertions. The failed
 full run remains `bemenu-files/boundary-combined-e19c0e1c.log`; the focused repair
-is `boundary-recipe-slicing.log`. A new combined gate is required at the repaired
-commit, with devices hidden and no physical acceptance claim.
+is `boundary-recipe-slicing.log`. The repaired combined gate at `de776c68` is
+recorded above, with devices hidden and no physical acceptance claim.
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 and [t252 acceptance plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
-retain the full exits. These slices have no combined full-workspace gate,
-physical acceptance, publication or installed-release claim. The final
+retain the full exits. The remaining relocations and the new descriptor tests
+still need a final combined full-workspace gate. There is no physical acceptance,
+publication or installed-release claim. The final
 candidate must combine the remaining relocations, matching
 external clients and installer inputs, then pass the affected gates before
 release preparation.

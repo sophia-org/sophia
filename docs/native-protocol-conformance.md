@@ -1,5 +1,37 @@
 # Native protocol family conformance
 
+## Generic descriptor host coverage
+
+Sophia's ordinary conformance tests exercise all three descriptor host modes
+with `shell_descriptor_contract_peer`, a scripted peer using the public Rust
+codecs:
+
+```sh
+cargo test --offline --locked -p sophia-conformance --test shell_descriptor_modes
+```
+
+The `--proof` path covers descriptor presentation, exact activation and
+withdrawal. The `--serve` path also covers tab supersession, rejection of a stale
+presentation epoch, the maximum 256-row shortcut catalog, committed-page
+navigation and reference dismissal. The `--bar-proof` path checks that a
+reservation changes the work area only at commit and that withdrawal restores
+it. The host launches the peer through the protected shell supervisor; a missing
+Bubblewrap or unavailable isolation fails the test. Each invocation has a
+deadline and capped logs.
+
+The host accepts optional client arguments after the mode and forwards them as
+an argument vector. Negative fixture runs use this to send validly encoded tab
+acks with a wrong epoch, activation ID or transaction, and to accept a stale
+activation. Both the current and stale event must be correlated exactly. The
+test requires the host's specific refusal; a peer crash or timeout cannot pass
+as the intended rejection.
+
+These are Rust owner/codec checks. The independent C corpus and socket checks
+remain separate, and product-client checks retain their own evidence. None of
+these scripted presentation outcomes proves physical rendering or input.
+
+## Combined client gate during relocation
+
 From a Sophia checkout, with independent Hagia and Narthex checkouts beside it:
 
 ```sh

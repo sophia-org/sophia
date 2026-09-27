@@ -55,6 +55,12 @@ path = "../sophia-config/examples/desktop_profile_probe.rs"
 test = false
 doc = false
 
+[[bin]]
+name = "shell_descriptor_contract_peer"
+path = "tests/support/shell_descriptor_contract_peer/main.rs"
+test = false
+doc = false
+
 [dependencies]
 drm = { version = "0.15", default-features = false }
 niri-ipc = "=26.4.0"
