@@ -812,6 +812,20 @@ Selecting files changes the transport only, never the role's grants. It is
 development selection under t252: record families the file wire does not yet
 carry close that component rather than falling back.
 
+The single-process launcher also accepts
+`--shell-process=/absolute/client --shell-transport=9p2000.L`. Its default is
+`current-ipc`. A file selection requires enabled shell content and a positive
+panel allowance; descriptor-only switchers still lack a file contract and are
+refused at configuration time. Independent components must select the wire in
+their own profile instead of using this flag. Both paths pass exactly one
+socket variable and retain the same protected-peer admission and content owners.
+
+The generic `shell-gpu-content-proof` requires
+`--transport=current-ipc|9p2000.L`; its completion record includes `wire`.
+`shell_content_conformance_host CLIENT --transport=9p2000.L` exercises allocation,
+upload, candidate refusal and lease-backed retirement without a display or GPU.
+Omitting the host's transport flag preserves its existing IPC peer interface.
+
 This is implemented selection/configuration, not completed native acceptance.
 The attended launcher and multi-component desktop smoke tests belong to
 `sophia-org/sophia-desktop-integration` (`tools/probes/native_launcher/README.md`).

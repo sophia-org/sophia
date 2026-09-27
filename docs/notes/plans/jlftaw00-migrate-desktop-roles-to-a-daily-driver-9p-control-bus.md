@@ -250,6 +250,24 @@ them here.
 
 ### t252 — Join and accept the shell path
 
+**Content host selection (2026-09-27).** The single-shell owner now selects
+9P explicitly with `--shell-transport=9p2000.L`; independent components retain
+their existing profile selection. GPU content proof parameters require a wire,
+and the content conformance host accepts a wire argument. All three use the
+existing component file export, admission and content owners. The single-shell
+facade's bounded negotiation and reconnect tests pass, as do 90 metadata-shell
+tests, the configuration refusals, 12 proof-parameter tests and five proof CLI
+tests. Focused all-target/all-feature clippy and layout pass. The content host
+also completed an external, device-hidden Lom file exchange through protected
+launch, ending with renderer failure and exact lease-backed release. This does
+not claim GPU execution or native presentation. Descriptor-only file selection
+is refused until that profile has a file contract; the independent descriptor
+peer gaps remain open. Evidence is under development-evidence/final-9p.
+
+The C SDK snapshot is now `8decca1d73699d6750c9228ecbf6e27f589d965d`,
+including required-capability validation and nonblocking WM wakeups. Its exact
+tree/contract check and the generic C SDK production WM export exchange pass.
+
 **Amendment (2026-09-26).** The operator set the end state: all IPC code is
 purged and every role runs on 9P files. t251's body rule (transaction ID plus
 the unchanged `sophia_shell_v1` payload) is replaced by native file layouts

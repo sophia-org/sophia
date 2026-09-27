@@ -107,6 +107,7 @@ pub(super) struct LiveMetadataShell {
     base_launch_spec: ProcessLaunchSpec,
     gpu: gpu::ShellGpuLaunchPolicy,
     transport: sophia_runtime::ShellSessionTransport,
+    wire: sophia_config::ShellTransportSelection,
     slots: BTreeMap<SurfaceId, u16>,
     next_slot: u16,
     outputs: BTreeMap<sophia_protocol::OutputId, ShellOutputIdentity>,
@@ -698,7 +699,16 @@ impl LiveMetadataShell {
             .ok_or("metadata shell supervisor omitted its protection domain")?
             .clone();
         self.transport.authorize_protected_peer(&evidence)?;
-        let welcome = match self.transport.accept_and_negotiate_with_content_policy(
+        let negotiate = match self.wire {
+            sophia_config::ShellTransportSelection::CurrentIpc => {
+                sophia_runtime::ShellSessionTransport::accept_and_negotiate_with_content_policy
+            }
+            sophia_config::ShellTransportSelection::NineP2000L => {
+                sophia_runtime::ShellSessionTransport::accept_files_with_content_policy
+            }
+        };
+        let welcome = match negotiate(
+            &mut self.transport,
             connection_epoch,
             Duration::from_secs(5),
             self.content.admission_policy(),

@@ -51,6 +51,27 @@ session { terminal "terminal"; browser "browser"; }
     assert_eq!(config.shell_process.as_deref(), Some("/srv/shell"));
     assert_eq!(config.shell_proof_restart_after_visible, Some(2));
 
+    let mut unsupported = explicit.clone();
+    unsupported.push("--shell-transport=9p2000.L".into());
+    assert!(PersistentXtermSessionConfig::from_args(&unsupported).unwrap_err().to_string().contains("requires shell content"));
+    let content_profile = std::fs::read_to_string(&path).unwrap()
+        .replace("shell { enabled #true; }", "shell { enabled #true; content #true; panel 24; }");
+    std::fs::write(&path, content_profile).unwrap();
+
+    for (value, expected) in [
+        ("current-ipc", sophia_config::ShellTransportSelection::CurrentIpc),
+        ("9p2000.L", sophia_config::ShellTransportSelection::NineP2000L),
+    ] {
+        let mut args = explicit.clone();
+        args.push(format!("--shell-transport={value}"));
+        assert_eq!(PersistentXtermSessionConfig::from_args(&args).unwrap().shell_transport, expected);
+    }
+    for value in ["auto", "9p", ""] {
+        let mut args = explicit.clone();
+        args.push(format!("--shell-transport={value}"));
+        assert!(PersistentXtermSessionConfig::from_args(&args).unwrap_err().to_string().contains("shell transport must be"));
+    }
+
     assert!(
         PersistentXtermSessionConfig::from_args(&[
             isolated_core_config_argument(),

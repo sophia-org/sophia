@@ -13,10 +13,47 @@ fn capture_success(line: &str) {
 }
 
 #[test]
+fn single_shell_wire_selects_exactly_one_endpoint_without_changing_grants() {
+    use sophia_config::ShellTransportSelection;
+    let make = |wire| {
+        LiveMetadataShell::prepare(
+            "/bin/false",
+            wire,
+            Some(24),
+            true,
+            true,
+            sophia_config::ShellGpuMode::Denied,
+            None,
+            None,
+        )
+        .unwrap()
+    };
+    for wire in [
+        ShellTransportSelection::CurrentIpc,
+        ShellTransportSelection::NineP2000L,
+    ] {
+        let shell = make(wire);
+        let endpoints = shell
+            .base_launch_spec
+            .environment
+            .iter()
+            .filter(|(name, _)| name == "SOPHIA_SHELL_SOCKET" || name == "SOPHIA_SHELL_9P_SOCKET")
+            .collect::<Vec<_>>();
+        assert_eq!(endpoints.len(), 1);
+        assert_eq!(endpoints[0].0, wire.socket_env());
+        assert_eq!(endpoints[0].1, shell.transport.socket_path());
+        assert_eq!(shell.wire, wire);
+        assert!(shell.presentation_paused);
+        assert!(!shell.connected);
+    }
+}
+
+#[test]
 fn deferred_first_negotiation_is_ready_and_only_later_connection_is_reconnected() {
     crate::install_session_output(crate::SessionOutput::new(capture_success, |_| {})).unwrap();
     let mut shell = LiveMetadataShell::prepare(
         "/bin/false",
+        sophia_config::ShellTransportSelection::CurrentIpc,
         None,
         false,
         false,

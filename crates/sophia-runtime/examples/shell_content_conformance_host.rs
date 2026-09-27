@@ -20,10 +20,20 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let client = std::env::args_os()
-        .nth(1)
+    let mut args = std::env::args_os().skip(1);
+    let client = args
+        .next()
         .map(PathBuf::from)
-        .ok_or("usage: shell_content_conformance_host CLIENT")?;
+        .ok_or("usage: shell_content_conformance_host CLIENT [--transport=current-ipc|9p2000.L]")?;
+    let file_wire = match args.next().as_deref() {
+        None => false,
+        Some(value) if value == "--transport=current-ipc" => false,
+        Some(value) if value == "--transport=9p2000.L" => true,
+        _ => return Err("transport must be current-ipc or 9p2000.L".into()),
+    };
+    if args.next().is_some() {
+        return Err("unexpected content host argument".into());
+    }
     if !client.is_absolute() || !client.is_file() {
         return Err("shell client must be an absolute executable path".into());
     }
@@ -56,7 +66,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("shell process has no protection evidence")?
         .clone();
     transport.authorize_protected_peer(&evidence)?;
-    transport.accept_and_negotiate_with_content_policy(
+    let negotiate = if file_wire {
+        ShellSessionTransport::accept_files_with_content_policy
+    } else {
+        ShellSessionTransport::accept_and_negotiate_with_content_policy
+    };
+    negotiate(
+        &mut transport,
         1,
         Duration::from_secs(5),
         ShellContentAdmissionPolicy::Granted {
@@ -93,7 +109,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut render: Option<ContentRenderBundle> = None;
     let mut allocation_granted = false;
     let mut permit_sent = false;
-    let mut candidate_records = 0;
     let mut candidate_settled = false;
     let mut verified = false;
     loop {
@@ -178,17 +193,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             permit_sent = true;
         }
-        if permit_sent && candidate_records < 3 {
+        if permit_sent && !candidate_settled {
             let context = ContentCandidateContext {
                 output,
                 facts_generation: 1,
                 interaction_generation: 1,
                 allocations: &allocations,
             };
-            candidate_records += transport
+            transport
                 .service_content_candidates(&[context], started.elapsed().as_millis() as u64)?;
         }
-        if candidate_records == 3 && render.is_none() && !candidate_settled {
+        if transport.next_content_submission().is_some() && render.is_none() && !candidate_settled {
             let candidate = transport.begin_content_submission(
                 output,
                 1,

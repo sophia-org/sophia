@@ -20,6 +20,7 @@ const EDGES: [ShellComponentEdge; 4] = [
 
 fn proof(edge: ShellComponentEdge, width: u32, height: u32) -> ShellGpuContentProof {
     ShellGpuContentProof {
+        transport: sophia_config::ShellTransportSelection::CurrentIpc,
         client: "/opt/shell/client".into(),
         client_args: vec!["--any".into(), "value with spaces".into()],
         config: Some("/etc/shell/config".into()),

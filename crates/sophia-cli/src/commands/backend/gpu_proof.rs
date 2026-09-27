@@ -98,6 +98,11 @@ fn parse(
         None => SHELL_GPU_PROOF_DEFAULT_TIMEOUT,
     };
     Ok(ShellGpuContentProof {
+        transport: sophia_config::ShellTransportSelection::parse(&required(
+            args,
+            "--transport",
+            "current-ipc|9p2000.L",
+        )?)?,
         client: PathBuf::from(client),
         client_args: client_args(args),
         config: arg_value(args, "--config").map(PathBuf::from),

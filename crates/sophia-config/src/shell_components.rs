@@ -51,6 +51,14 @@ pub enum ShellTransportSelection {
 }
 
 impl ShellTransportSelection {
+    pub fn parse(value: &str) -> Result<Self, &'static str> {
+        match value {
+            "current-ipc" => Ok(Self::CurrentIpc),
+            "9p2000.L" => Ok(Self::NineP2000L),
+            _ => Err("shell transport must be current-ipc or 9p2000.L"),
+        }
+    }
+
     /// The KDL value, matching the WM's `--wm-transport` names.
     pub const fn wire_name(self) -> &'static str {
         match self {

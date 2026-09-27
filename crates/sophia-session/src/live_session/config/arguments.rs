@@ -573,6 +573,15 @@ impl PersistentXtermSessionConfig {
             }
             None
         };
+        let shell_transport = match arg_value(args, "--shell-transport") {
+            Some(value) => {
+                if shell_process.is_none() {
+                    return Err("--shell-transport requires a single shell process; independent components select transport in their profile".into());
+                }
+                sophia_config::ShellTransportSelection::parse(&value)?
+            }
+            None => sophia_config::ShellTransportSelection::default(),
+        };
         // Component configs are explicit per-role grants, never the legacy
         // ambient config or the installed fallback shell's private settings.
         let shell_config = if independent_shell { None } else { std::env::var_os("SOPHIA_SHELL_CONFIG")
@@ -605,6 +614,11 @@ impl PersistentXtermSessionConfig {
         let shell_content_input_enabled =
             sophia_config::desktop_profile_shell_content_input_enabled(&desktop_profile);
         let shell_gpu_mode = sophia_config::desktop_profile_shell_gpu_mode(&desktop_profile);
+        if shell_transport == sophia_config::ShellTransportSelection::NineP2000L
+            && !shell_content_enabled
+        {
+            return Err("--shell-transport=9p2000.L requires shell content; the descriptor profile has no file contract yet".into());
+        }
         if independent_shell {
             if !shell_content_enabled {
                 return Err("independent shell components require shell content".into());
@@ -864,6 +878,7 @@ impl PersistentXtermSessionConfig {
             wm_process_args,
             wm_process_executable_grants,
             shell_process,
+            shell_transport,
             shell_shortcuts_enabled: live_shell_enabled,
             shell_config,
             shell_panel_thickness,

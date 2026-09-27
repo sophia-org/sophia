@@ -617,6 +617,7 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
     let (_neighbor, _neighbor_peer, neighbor_pixels) = h.connect(1);
     let mut legacy = LiveMetadataShell::prepare(
         "/bin/false",
+        sophia_config::ShellTransportSelection::CurrentIpc,
         Some(8),
         true,
         true,

@@ -134,7 +134,7 @@ fn run_with_inventory(
     }
     base = base
         .env(domain::OBSERVATION_ENV, &observation)
-        .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
+        .env(proof.transport.socket_env(), &socket)
         .env(
             "SOPHIA_SHELL_BAR_THICKNESS",
             proof.surface.thickness().to_string(),
@@ -157,7 +157,16 @@ fn run_with_inventory(
         .ok_or("shell process has no protection evidence")?
         .clone();
     transport.authorize_protected_peer(&protection)?;
-    let welcome = transport.accept_and_negotiate_with_content_policy(
+    let negotiate = match proof.transport {
+        sophia_config::ShellTransportSelection::CurrentIpc => {
+            ShellSessionTransport::accept_and_negotiate_with_content_policy
+        }
+        sophia_config::ShellTransportSelection::NineP2000L => {
+            ShellSessionTransport::accept_files_with_content_policy
+        }
+    };
+    let welcome = negotiate(
+        &mut transport,
         1,
         Duration::from_secs(5),
         proof_content_admission_policy(proof.discrete_input),
@@ -391,7 +400,8 @@ fn run_with_inventory(
             // outcome here is synthetic; GPU origin of the pixels is not
             // claimed and belongs to the client's external verifier.
             crate::session_println!(
-                "sophia_shell_gpu_content_proof schema=1 status=complete protected=true revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} output_width={} output_height={} edge={} width={} height={} renders={} pixels={} discrete_input={} end={} backing_bytes=0 native_presentation=false",
+                "sophia_shell_gpu_content_proof schema=1 status=complete protected=true wire={} revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} output_width={} output_height={} edge={} width={} height={} renders={} pixels={} discrete_input={} end={} backing_bytes=0 native_presentation=false",
+                proof.transport.wire_name(),
                 welcome.selected_revision,
                 welcome.capabilities,
                 gpu.epoch,

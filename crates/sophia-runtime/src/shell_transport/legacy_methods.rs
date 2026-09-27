@@ -169,6 +169,31 @@ transport_facade!(crate::shell_transport::ShellTransportConnection<'_>);
 
 // Admission and disconnect stay on the owning compatibility transport.
 impl ShellSessionTransport {
+    /// Negotiate the single-shell owner over 9P2000.L. This uses the same
+    /// admission, deadline and content registry as independent components.
+    pub fn accept_files_with_content_policy(
+        &mut self,
+        connection_epoch: u64,
+        timeout: Duration,
+        content_policy: ShellContentAdmissionPolicy,
+    ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
+        self.state.begin_file_negotiation(
+            &self.content_epochs,
+            connection_epoch,
+            timeout,
+            content_policy,
+        )?;
+        loop {
+            if let Some(welcome) = self
+                .state
+                .poll_negotiation(&mut self.content_epochs, 64 * 1024)?
+            {
+                return Ok(welcome);
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
     pub fn accept_and_negotiate(
         &mut self,
         connection_epoch: u64,

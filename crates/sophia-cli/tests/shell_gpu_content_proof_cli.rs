@@ -8,7 +8,8 @@ use std::io::Read as _;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-const VALID: [&str; 8] = [
+const VALID: [&str; 9] = [
+    "--transport=9p2000.L",
     "--client=/absent/shell-client",
     "--output=800x600",
     "--surface=800x24",
@@ -74,6 +75,7 @@ fn an_unarmed_proof_refuses() {
 #[test]
 fn every_required_flag_is_named_when_missing() {
     for flag in [
+        "--transport=",
         "--client=",
         "--output=",
         "--surface=",
@@ -95,6 +97,7 @@ fn every_required_flag_is_named_when_missing() {
 #[test]
 fn malformed_values_are_refused() {
     for (flag, value, expected) in [
+        ("--transport=", "auto", "shell transport must be"),
         ("--output=", "800", "--output must be WxH"),
         (
             "--output=",

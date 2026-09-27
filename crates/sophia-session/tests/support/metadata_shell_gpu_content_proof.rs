@@ -6,6 +6,7 @@ use std::cell::Cell;
 
 fn proof() -> ShellGpuContentProof {
     ShellGpuContentProof {
+        transport: sophia_config::ShellTransportSelection::CurrentIpc,
         client: "/absent/shell-client".into(),
         client_args: Vec::new(),
         config: None,
