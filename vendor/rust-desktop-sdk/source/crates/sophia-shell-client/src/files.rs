@@ -250,6 +250,12 @@ pub(crate) struct FileWire {
     /// was being settled, before normal intake reaches it; intake accepts
     /// that one event once.
     early_submitted: Option<(u64, ShellFileKind)>,
+    /// The sequence of the latest `Submitted` event handled. The export
+    /// keeps the accepted candidate, and refuses a new `transaction` open
+    /// with `EBUSY`, until that event is acknowledged (export.rs, the
+    /// `Transaction` open; docs/sophia-wm-files.md: a later ID cannot
+    /// replace unacknowledged candidate custody).
+    submitted_sequence: u64,
 
     // Outbound: a single lane, mirroring `ClientOutbox`'s FIFO order.
     pending: VecDeque<QueuedKind>,

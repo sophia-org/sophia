@@ -316,6 +316,7 @@ impl FileWire {
             progress: 0,
             pass: 0,
             early_submitted: None,
+            submitted_sequence: 0,
             pending: VecDeque::new(),
             staged: Vec::new(),
             staged_begin: None,

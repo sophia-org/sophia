@@ -225,7 +225,10 @@ impl FileWire {
             return Err(ShellClientError::Protocol("event sequence did not rise"));
         }
         match event {
-            Event::Submitted(submission, kind) => self.on_submitted(submission, kind)?,
+            Event::Submitted(submission, kind) => {
+                self.on_submitted(submission, kind)?;
+                self.submitted_sequence = sequence;
+            }
             Event::Published(published, index) => {
                 let bound = sequence - 1;
                 let hold = self.holds[index].get_or_insert(bound);

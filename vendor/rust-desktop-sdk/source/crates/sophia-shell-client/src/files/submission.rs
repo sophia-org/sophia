@@ -45,6 +45,16 @@ impl FileWire {
         {
             return Ok(false);
         }
+        // A record needs the `transaction` node, which the export keeps busy
+        // until the previous submission's `Submitted` is acknowledged. The
+        // export serves a connection's requests in order, so the covering
+        // ack must be queued before this unit's walk and open: wait until
+        // intake has reached that event and an ack through it is queued.
+        if matches!(kind, QueuedKind::Record)
+            && (self.early_submitted.is_some() || self.acked < self.submitted_sequence)
+        {
+            return Ok(false);
+        }
         let bytes = output
             .front()
             .expect("pending mirrors the outbox one-for-one")

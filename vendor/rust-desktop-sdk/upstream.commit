@@ -1,33 +1,23 @@
-tree 6b955c77ad11088c6a85a82e3404f924b68cb615
-parent 8a508299140b9ee4d20602de67c6e7a20fdcfbee
-author Mason Green <mason@greenm01.net> 1790511932 -0400
-committer Mason Green <mason@greenm01.net> 1790511932 -0400
+tree b0654fa58462aa820c62cdd63c424ceb868f297c
+parent 87ab93fed12f738add5d4e3e8d917b41dfa078ba
+author Mason Green <mason@greenm01.net> 1790513128 -0400
+committer Mason Green <mason@greenm01.net> 1790513128 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkLPAAKCRBXGEu2KoAA
- Yim0AP9/V5BvXWFJ9MOoHaKq6+Nt85xVj+W3KBBzMhoeIoyX2QEA73401qR62rDP
- sWyeYEr8BrIbOdEEJ9MuYScDnnqSxAA=
- =s4EC
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkP6AAKCRBXGEu2KoAA
+ YlSeAP4msvq0itTHUE1MLlas0GIVjJw60HDl+55wtPid3voBZAEA0Ei/PN/2mSk/
+ qN8gzzo7Yi0iF/0e5K10wwGTnMN7iAQ=
+ =a7aw
  -----END PGP SIGNATURE-----
 
-Test the file wire against a scripted peer; fix four faults it found
+Open the next transaction only after acknowledging the previous Submitted
 
-A scripted 9P shell-files peer now drives the client through every B6c
-behavior: EAGAIN retries of the same submit after progress or the backoff,
-never in the refusing pass; Submitted before the submit reply and in the
-final read before EOF; disconnect classification; both EALREADY branches;
-refusal continuation and refusal after Submitted; exact write counts;
-foreign epochs and kinds; object reads past msize, the cap probe, qid and
-generation mismatches, undisclosed feeds and supersession; the catalog and
-indicator families; the close scan stopping at a record full decoding
-refuses; a Submitted and the submit error in one drain, either order; and a
-clunk the pipeline cannot queue.
-
-Faults it found and this fixes: replies drained in a pass did not count as
-progress, so a request queued by a reply waited for the next call; an
-EAGAIN retry could go in the refusing pass once an event was consumed; a
-housekeeping clunk on a failed pipeline replaced the real error, while on a
-live pipeline an unqueueable clunk now fails closed instead of leaking the
-fid; and a submit error drained ahead of its Submitted misjudged custody,
-so a drain now buffers its events before judging other replies. Event
-intake and the close scan share one full decoder.
+The export keeps an accepted candidate, and refuses a new transaction open
+with EBUSY, until its Submitted event is acknowledged; it serves a
+connection's requests in order. A record unit now starts only once intake
+has handled the previous Submitted and an ack through its sequence is
+queued, so the ack always precedes the next walk and open. Before, an
+outstanding earlier ack, an early-settled Submitted not yet reached by
+intake, or an ack held behind an unfetched announcement let the next open
+go first. Scripted regressions log the ack before the next walk in both
+the shared-drain and held-ack cases, and fail without the gate.

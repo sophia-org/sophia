@@ -108,6 +108,15 @@ pub struct Ack {
     pub after_reads: usize,
 }
 
+/// One step of the client's traffic the peer answered, in arrival order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Logged {
+    Ack(u64),
+    Walk(String),
+    Open(String),
+    ObjectRead { node: String, returned: usize },
+}
+
 struct HeldRead {
     tag: u16,
     fid: u32,
@@ -155,6 +164,15 @@ pub struct Peer {
     pub hold_object_reads: bool,
     held_object_reads: VecDeque<HeldRead>,
     pub object_reads: Vec<ObjectRead>,
+    /// Every ack, walk, open and object read, in arrival order.
+    pub log: Vec<Logged>,
+    /// When set, `ack` writes are logged but their replies wait in
+    /// `held_replies` until [`Peer::release_replies`].
+    pub hold_ack_replies: bool,
+    /// When set, walks to `transaction` wait the same way.
+    pub hold_transaction_walks: bool,
+    /// Replies withheld by the two flags above: type, tag and body.
+    pub held_replies: Vec<(u8, u16, Vec<u8>)>,
     /// The `Negotiate` record the handshake received.
     pub negotiate: Option<Vec<u8>>,
     limits: Vec<u8>,
@@ -240,6 +258,10 @@ impl Peer {
             hold_object_reads: false,
             held_object_reads: VecDeque::new(),
             object_reads: Vec::new(),
+            log: Vec::new(),
+            hold_ack_replies: false,
+            hold_transaction_walks: false,
+            held_replies: Vec::new(),
             negotiate: None,
             limits,
             batch: None,
@@ -275,6 +297,16 @@ impl Peer {
         self.walks.clear();
         self.opens.clear();
         self.object_reads.clear();
+        self.log.clear();
+    }
+
+    /// Sends every withheld reply, in arrival order, and stops withholding.
+    pub fn release_replies(&mut self) {
+        self.hold_ack_replies = false;
+        self.hold_transaction_walks = false;
+        for (kind, tag, body) in std::mem::take(&mut self.held_replies) {
+            self.send(kind, tag, &body);
+        }
     }
 
     pub fn walk_count(&self, name: &str) -> usize {
@@ -404,13 +436,19 @@ impl Peer {
                 };
                 if !path.is_empty() {
                     self.walks.push(node.clone());
+                    self.log.push(Logged::Walk(node.clone()));
                 }
                 let mut reply = names.to_le_bytes().to_vec();
                 for _ in 0..names {
                     reply.extend_from_slice(&self.qid_of(&node));
                 }
+                let held = self.hold_transaction_walks && node == "transaction";
                 self.fids.insert(newfid, node);
-                self.send(RWALK, tag, &reply);
+                if held {
+                    self.held_replies.push((RWALK, tag, reply));
+                } else {
+                    self.send(RWALK, tag, &reply);
+                }
             }
             TLOPEN => {
                 let fid = u32_at(&body, 0);
@@ -419,6 +457,7 @@ impl Peer {
                 if let Some(object) = self.objects.get(&node) {
                     self.pins.insert(fid, object.clone());
                 }
+                self.log.push(Logged::Open(node.clone()));
                 self.opens.push((node, u64_at(&reported, 5)));
                 let mut reply = reported.to_vec();
                 reply.extend_from_slice(&0u32.to_le_bytes());
@@ -498,8 +537,14 @@ impl Peer {
                             sequence: ack.sequence,
                             after_reads: self.object_reads.len(),
                         });
+                        self.log.push(Logged::Ack(ack.sequence));
                         let reply = self.ack_reply.unwrap_or(count);
-                        self.answer_write(tag, reply);
+                        if self.hold_ack_replies {
+                            self.held_replies
+                                .push((RWRITE, tag, reply.to_le_bytes().to_vec()));
+                        } else {
+                            self.answer_write(tag, reply);
+                        }
                         if self.handshaking && ack.sequence == 2 && !self.profile.limits_published {
                             self.handshake_done = true;
                         }
@@ -575,6 +620,10 @@ impl Peer {
         let node = self.fids.get(&read.fid).cloned().unwrap_or_default();
         let count = (read.count as usize).min(object.chunk);
         let returned = self.serve_bytes(read.tag, &object.bytes, read.offset, count);
+        self.log.push(Logged::ObjectRead {
+            node: node.clone(),
+            returned,
+        });
         self.object_reads.push(ObjectRead {
             node,
             offset: read.offset,

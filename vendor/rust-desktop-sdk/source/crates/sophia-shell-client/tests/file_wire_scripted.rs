@@ -14,7 +14,9 @@ use std::os::unix::net::UnixListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use file_wire_peer::{Ack, CONTENT_GRANT_EPOCH, EPOCH, Held, MSIZE, Object, Peer, Profile, WAIT};
+use file_wire_peer::{
+    Ack, CONTENT_GRANT_EPOCH, EPOCH, Held, Logged, MSIZE, Object, Peer, Profile, WAIT,
+};
 use sophia_shell_client::*;
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::*;
@@ -1408,6 +1410,155 @@ fn catalog_candidate_and_action_response_are_written_as_their_records_in_order()
             transaction: tx(22),
             record: ShellCatalogActionRecord::Activate(activation),
         }
+    );
+}
+
+// ---- the ack that releases `transaction` ----
+
+/// The export keeps `transaction` busy until the previous `Submitted` is
+/// acknowledged, and serves requests in order. With an earlier ack still
+/// unanswered, unit N's `Submitted` is handled; its own ack must wait for
+/// that reply. Then the ack reply (and anything else withheld, such as a
+/// `transaction` walk, were one sent) reaches the client in one drain. The
+/// ack covering N's `Submitted` must precede N+1's walk and open.
+#[test]
+fn the_next_record_waits_for_the_ack_covering_the_previous_submitted() {
+    let (mut connection, mut peer) = connect(bar(0));
+    let first = enqueue_demand(&mut connection, 1);
+    let second = enqueue_demand(&mut connection, 2);
+    let held = submit(&mut connection, &mut peer);
+    let (submission, kind) = staged(&peer, &held);
+
+    peer.hold_ack_replies = true;
+    let event = permit(&mut peer);
+    peer.push(event);
+    drive(&mut connection, &mut peer, |_, peer| {
+        !peer.held_replies.is_empty()
+    })
+    .unwrap();
+
+    peer.hold_transaction_walks = true;
+    let covering = peer.next_sequence();
+    peer.answer_write(held.tag, SHELL_FILE_SUBMIT_BYTES as u32);
+    let event = peer.submitted(submission, kind);
+    peer.push(event);
+    drive(&mut connection, &mut peer, |connection, _| {
+        connection.custody(first) == Some(Custody::Submitted)
+    })
+    .unwrap();
+    for _ in 0..4 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    assert!(
+        peer.acks.iter().all(|ack| ack.sequence < covering),
+        "the covering ack went while an earlier one was unanswered"
+    );
+    assert_eq!(
+        peer.walk_count("transaction"),
+        1,
+        "the next record started before the ack covering Submitted"
+    );
+
+    peer.begin_batch();
+    peer.release_replies();
+    peer.end_batch();
+    commit(&mut connection, &mut peer, second);
+
+    let covered = peer
+        .log
+        .iter()
+        .position(|logged| matches!(logged, Logged::Ack(sequence) if *sequence >= covering))
+        .expect("an ack covering Submitted");
+    let walk = peer
+        .log
+        .iter()
+        .rposition(|logged| *logged == Logged::Walk("transaction".to_owned()))
+        .unwrap();
+    let open = peer
+        .log
+        .iter()
+        .rposition(|logged| *logged == Logged::Open("transaction".to_owned()))
+        .unwrap();
+    assert!(
+        covered < walk && walk < open,
+        "ack at {covered}, walk at {walk}, open at {open}: {:?}",
+        peer.log
+    );
+}
+
+/// An announcement whose object is not yet fetched holds acknowledgement
+/// below it, so an ack covering a later `Submitted` cannot go; the next
+/// record must not start until the fetch completes and that ack is queued.
+#[test]
+fn an_ack_held_by_an_unfetched_announcement_delays_the_next_record() {
+    let (mut connection, mut peer) = connect(bar(SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS));
+    publish(
+        &mut peer,
+        "indicators",
+        6,
+        indicators_object(EPOCH, 2),
+        usize::MAX,
+    );
+    peer.hold_object_reads = true;
+    let first = enqueue_demand(&mut connection, 1);
+    let second = enqueue_demand(&mut connection, 2);
+    let held = submit(&mut connection, &mut peer);
+    let (submission, kind) = staged(&peer, &held);
+    peer.answer_write(held.tag, SHELL_FILE_SUBMIT_BYTES as u32);
+    // The older announcement is superseded, so it is never fetched, but it
+    // holds the ack below itself until the newer one is.
+    let event = peer.published(ShellFileKind::Indicators, 1, 5);
+    peer.push(event);
+    let covering = peer.next_sequence();
+    let event = peer.submitted(submission, kind);
+    peer.push(event);
+    let event = peer.published(ShellFileKind::Indicators, 2, 6);
+    peer.push(event);
+    peer.flush_events();
+    drive(&mut connection, &mut peer, |connection, _| {
+        connection.custody(first) == Some(Custody::Submitted)
+    })
+    .unwrap();
+    drive(&mut connection, &mut peer, |_, peer| !peer.opens.is_empty()).unwrap();
+    for _ in 0..4 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    assert!(
+        peer.acks.iter().all(|ack| ack.sequence < covering),
+        "{:?}",
+        peer.acks
+    );
+    assert_eq!(
+        peer.walk_count("transaction"),
+        1,
+        "the next record started while its ack was held back"
+    );
+
+    peer.release_object_reads();
+    commit(&mut connection, &mut peer, second);
+    let fetched = peer
+        .log
+        .iter()
+        .position(|logged| {
+            matches!(logged, Logged::ObjectRead { node, returned: 0 } if node == "indicators")
+        })
+        .expect("the fetch completed");
+    let covered = peer
+        .log
+        .iter()
+        .position(|logged| matches!(logged, Logged::Ack(sequence) if *sequence >= covering))
+        .expect("an ack covering Submitted");
+    let walk = peer
+        .log
+        .iter()
+        .rposition(|logged| *logged == Logged::Walk("transaction".to_owned()))
+        .unwrap();
+    assert!(
+        fetched < covered && covered < walk,
+        "fetch at {fetched}, ack at {covered}, walk at {walk}: {:?}",
+        peer.log
     );
 }
 
