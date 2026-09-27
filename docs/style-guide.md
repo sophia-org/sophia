@@ -4,6 +4,38 @@ This guide defines implementation discipline for Sophia. It is intentionally
 small because the project is still a research prototype. The rules here defend
 the data model in `dod.md`.
 
+## Shell and WM independence (required)
+
+Sophia MUST remain independent of particular shell and WM implementations.
+This is a repository boundary, covering production code, tests, fixtures,
+build tooling, artifact preparation and release automation.
+
+- Sophia owns protocol contracts, server behavior and generic SDK/server
+  interoperability tests. Conformance peers and reference fixtures must derive
+  their expectations from the public contract, without depending on a specific
+  desktop client's implementation.
+- A client's repository owns its UI, renderer, adapter and policy tests.
+- External desktop integration tooling owns tests that combine Sophia with
+  named clients, along with their build recipes, executable artifacts, fonts,
+  desktop composition and end-to-end expectations.
+
+Do not add Bemenu-, Lom-, Provlita-, Hagia- or other client-specific harnesses
+or artifact builders to Sophia. An ignored test or separately launched process
+still crosses this boundary. Parameterizing its executable path does not make
+a harness generic if its setup or assertions still depend on one client.
+Access to Sophia's real owners is not an exception: provide a generic protocol
+or test-support seam for an external integration harness instead.
+
+When reviewing a test, ask whether another conforming shell or WM could replace
+the peer without changing the contract expectations. Client-specific rendering,
+interaction or policy expectations must live outside Sophia. Names alone do not
+decide ownership; the behavior and dependencies do.
+
+Existing violations are migration debt, not permission to add or extend them.
+Relocate client-specific integration work to its owner, retaining generic
+protocol regression coverage in Sophia. The tooling migration guidance below
+does not exempt existing code from this requirement.
+
 ## Languages
 
 Sophia user-space components are Rust by default.
