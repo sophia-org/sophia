@@ -2,13 +2,10 @@
 set -euo pipefail
 
 profile="${1:-}"
-case "$profile" in
-    hagia|kitty|native|standalone) ;;
-    *)
-        echo "usage: tools/stop_sophia_session.sh hagia|kitty|native|standalone" >&2
-        exit 2
-        ;;
-esac
+if [[ "$#" != 1 || ! "$profile" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$ ]]; then
+    echo "usage: tools/stop_sophia_session.sh LABEL (1-64 ASCII letters, digits, dot, dash or underscore; starts with a letter or digit)" >&2
+    exit 2
+fi
 
 runtime_root="${XDG_RUNTIME_DIR:-}"
 if [[ -z "$runtime_root" ]]; then

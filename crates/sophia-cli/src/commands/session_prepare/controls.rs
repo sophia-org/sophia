@@ -22,16 +22,26 @@ fn identity(name: &str) -> Result<String> {
     )
 }
 
-pub(super) fn run(_options: &BTreeMap<String, String>, _extra: &[String]) -> Result<()> {
-    let profile = choice(
-        "SOPHIA_TTY_PROFILE",
-        "",
-        &["hagia", "native", "kitty", "standalone"],
-    )?;
-    let startup = choice("SOPHIA_SESSION_STARTUP", "terminal", &["terminal", "none"])?;
-    if startup == "none" && profile != "hagia" {
-        return Err("terminal-free startup requires Hagia".into());
+pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Result<()> {
+    if !extra.is_empty() || options.keys().any(|key| key != "profile") {
+        return Err("prepare-controls accepts only an optional --profile label".into());
     }
+    let profile = if let Some(label) = options.get("profile") {
+        // An external recipe supplies a label for state/log paths, not a
+        // selector for applications, startup policy or proof behavior.
+        if label.is_empty()
+            || label.len() > 64
+            || !label.as_bytes()[0].is_ascii_alphanumeric()
+            || !label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err("profile label requires 1-64 ASCII letters, digits, dot, dash or underscore, starting with a letter or digit".into());
+        }
+        label.clone()
+    } else {
+        legacy_profile()?
+    };
     let watchdog = env("SOPHIA_SESSION_WATCHDOG_SECONDS", "")?;
     if !watchdog.is_empty() {
         discovery::positive("SOPHIA_SESSION_WATCHDOG_SECONDS", "")?;
@@ -51,10 +61,6 @@ pub(super) fn run(_options: &BTreeMap<String, String>, _extra: &[String]) -> Res
         "display_manager",
         &["display_manager", "cycle_runner"],
     )?;
-    let truecolor = choice("SOPHIA_TRUECOLOR_PROOF", "false", &["true", "false"])?;
-    if truecolor == "true" && profile != "hagia" {
-        return Err("TrueColor proof requires Hagia".into());
-    }
     let values = [
         profile,
         watchdog,
@@ -72,4 +78,23 @@ pub(super) fn run(_options: &BTreeMap<String, String>, _extra: &[String]) -> Res
         output.write_all(b"\0")?;
     }
     Ok(())
+}
+
+// Kept until the external recipe gate covers the old invocation without a
+// profile argument. The explicit-label path has no recipe dependencies.
+fn legacy_profile() -> Result<String> {
+    let profile = choice(
+        "SOPHIA_TTY_PROFILE",
+        "",
+        &["hagia", "native", "kitty", "standalone"],
+    )?;
+    let startup = choice("SOPHIA_SESSION_STARTUP", "terminal", &["terminal", "none"])?;
+    if startup == "none" && profile != "hagia" {
+        return Err("terminal-free startup requires Hagia".into());
+    }
+    let truecolor = choice("SOPHIA_TRUECOLOR_PROOF", "false", &["true", "false"])?;
+    if truecolor == "true" && profile != "hagia" {
+        return Err("TrueColor proof requires Hagia".into());
+    }
+    Ok(profile)
 }

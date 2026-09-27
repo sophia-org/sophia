@@ -152,10 +152,11 @@ pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Resul
         if !err_done {
             err_done = read(&mut stderr, &mut err, STDERR_CAP, "stderr")?;
         }
-        if let Some(status) = child.status()? {
-            if out_done && err_done {
-                break status;
-            }
+        if let Some(status) = child.status()?
+            && out_done
+            && err_done
+        {
+            break status;
         }
         if Instant::now() >= deadline {
             return Err("host preflight exceeded ten seconds".into());

@@ -199,6 +199,24 @@ private tmpfs, without changing the test or production code.
 
 ## Remaining work
 
+The generic launcher path is now concrete: `run_sophia_session.sh -- session run
+<arguments...>` takes a prebuilt absolute executable and preserves the supplied
+vector. Exactly one explicit input selector also selects the recovery reader.
+Generic control labels and the stop helper share the same bounded path-safe
+syntax. The path skips recipe discovery, staging and environment interpretation;
+host preflight, parser acceptance, guard, watchdog and recovery stay. The legacy
+invocation remains until the external G4 recipe port passes.
+
+The focused CLI gate passes 41 tests: five explicit-argv controls, 20 launcher
+safety, two host-wrapper negatives, two recovery, four argument preparation and
+eight input/staging controls. Focused clippy passes with warnings denied. Logs:
+`bemenu-files/boundary-explicit-argv-run3.log` and
+`boundary-explicit-argv-clippy-run2.log`. Earlier logs retain a test adapter's
+wrong private-state path, a source-slicing test that omitted the new branch
+opener, and a clippy style finding in the host checker; all were corrected
+without weakening the existing assertions. PTY tests supply guard/TTY/session
+effects and exercise the real parser; they do not take over a display.
+
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 and [t252 acceptance plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
 retain the full exits. These slices have no combined full-workspace gate,

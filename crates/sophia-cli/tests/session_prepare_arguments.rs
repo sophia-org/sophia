@@ -216,8 +216,12 @@ fn preparation_rejects_unknown_and_duplicate_options_without_output() {
 fn adapter_preserves_argument_boundaries_and_refuses_old_binaries() {
     let fixture = Fixture::new();
     let launcher = include_str!("../../../tools/run_sophia_session.sh");
-    let start = launcher.find("prepared_arguments=\"").unwrap();
-    let end = launcher[start..].find("prepared_environment=").unwrap() + start;
+    let arguments = launcher.find("prepared_arguments=\"").unwrap();
+    // Exercise the retained recipe branch, including its explicit-argv guard.
+    let start = launcher[..arguments]
+        .rfind("if [[ \"$EXPLICIT_ARGV\" == false ]]; then")
+        .unwrap();
+    let end = launcher[arguments..].find("prepared_environment=").unwrap() + arguments;
     let script = format!(
         "{}\nprintf '%s\\0' \"${{session_args[@]}}\"",
         &launcher[start..end]
@@ -233,6 +237,7 @@ fn adapter_preserves_argument_boundaries_and_refuses_old_binaries() {
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("SOPHIA_BIN", binary)
+            .env("EXPLICIT_ARGV", "false")
             .env("SESSION_PROFILE", "hagia")
             .env("ROOT_DIR", &fixture.0)
             .env("STATE_DIR", fixture.0.join("state"))

@@ -88,6 +88,34 @@ it, alongside their DISPLAY/WAYLAND_DISPLAY refusal. For those wrappers set
 existing explicit force variables map to `--allow-active=true`; force cannot
 bypass missing policy, invalid output or a checker timeout.
 
+## Explicit session launch arguments
+
+External integration assembles the session recipe and can pass its final vector
+to the retained safety wrapper:
+
+```sh
+SOPHIA_BIN=/absolute/path/to/sophia \
+SOPHIA_SESSION_PREFLIGHT=/absolute/path/to/checker \
+tools/run_sophia_session.sh -- session run <arguments...>
+```
+
+This path requires a prebuilt executable and refuses `SOPHIA_BUILD_SESSION=true`.
+It preserves argument boundaries without shell evaluation and accepts only a
+`session run` vector. Include exactly one nonempty `--input-seat=...` or
+`--input-devices=...`; the recovery guard receives that same selector. The
+session parser validates the vector before graphics takeover. Host preflight,
+guard arming and liveness checks, watchdog, bus setup and TTY recovery remain
+in the wrapper. No recipe discovery, proof staging or application-specific
+environment is added on this path; integration supplies those inputs.
+
+`SOPHIA_TTY_PROFILE` is only a state/log label here (default `session`). Labels
+contain 1–64 ASCII letters, digits, dots, dashes or underscores, starting with a
+letter or digit. `tools/stop_sophia_session.sh <label>` stops the wrapper recorded
+under that same label. `sophia session prepare-controls --profile=<label>` exposes
+these generic controls without interpreting startup or proof recipe variables.
+The invocation without `--` temporarily retains the old recipe behavior until
+the external replacement has passed its migration gates.
+
 ## Canonical Commands
 
 Use these from documentation, CI, and new scripts:
