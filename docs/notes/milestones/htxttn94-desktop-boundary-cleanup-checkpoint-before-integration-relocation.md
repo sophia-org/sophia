@@ -54,12 +54,39 @@ The independent Bemenu relocation was gated before its Sophia deletion in
 Later external relocations still require their own complete input bindings and
 gates before Sophia entry points are removed.
 
+## Paired WM and generic launcher follow-up
+
+Hagia's generic environment branch was merged locally as signed
+`20ef21300901e2cdb9e6fc448674edba556a4d32`, with the exact tested tree of
+`5569345b8aa89fb16f7c65d508f90c2aa81df7a2`. The independent legacy-pin suite
+passed 474 tests. The separate pairing `run3` passed all 38 phases against
+Sophia `be6e5888` plus the recorded Hagia-owned test overlay. Its report is
+`hagia-wm-policy-env/pairing-be6e5888/run3/report.json` under development evidence.
+The frozen Hagia executable came from `e8b56a3`, SHA-256
+`e8221d1197b032e51c7fabe5dccc20e6c8e52342e8e8cd8a82940ad9063b86ad`.
+
+The launch records list configured generic environment keys; they do not
+capture the child's environment. The checkpoint recovery case demonstrates
+that real Hagia used the new checkpoint path. Candidate and activation support
+is evidenced indirectly by the protected startup and profile recovery cases.
+The earlier `run` failed because its target was hidden by the sandbox's `/tmp`
+mount. `run2` failed because a legacy fixture depended on removed implicit shell
+selection. Both failures are retained. The corrected fixture supplies an
+explicit shell, preserving the policy profile under test.
+
+Sophia `ecb3209c` replaces the joined Bemenu evidence test with a contract
+launcher. The focused native-session test passes under device-hidden execution,
+retaining pre-negotiation refusal, exact connection identity, stopped-key
+refusal, reaping and revocation settlement assertions. The log is
+`bemenu-files/boundary-joined-launcher.log`. The other two Bemenu tests remain
+until external tests cover both wires and their production Session path.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 and [t252 acceptance plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
-retain the full exits. This checkpoint has no full-workspace gate, new-name
-Hagia launch evidence, physical acceptance, publication or installed-release
-claim. The final candidate must combine the remaining relocations, matching
+retain the full exits. These slices have no combined full-workspace gate,
+physical acceptance, publication or installed-release claim. The final
+candidate must combine the remaining relocations, matching
 external clients and installer inputs, then pass the affected gates before
 release preparation.

@@ -137,6 +137,19 @@ for matching external adapters and WM support; an explicit checker must
 produce `policy=validated` wherever the desktop previously required validation.
 Publication and attended acceptance are separate from these local gate results.
 
+Installed wrappers must emit `SOPHIA_DESKTOP_PROFILE_MODE` before a release uses
+the generic reader. Do not prepare a release from an intermediate cleanup tree
+with the old wrappers. Keep the personal installer's user-owned WM and reload
+workflow; an immutable WM pair used for integration packaging does not change
+that default.
+
+Preserve IPC rollback coverage alongside file-wire tests. External Bemenu
+acceptance covers both wires and the production Session launch, process custody
+and settlement path before the remaining product-specific tests leave Sophia.
+Whole-desktop recipes, physical runners and their negative controls move
+together. Sophia retains generic protocol checks, input/TTY safety primitives
+and contract-derived configuration fixtures.
+
 The [boundary cleanup checkpoint](../milestones/htxttn94-desktop-boundary-cleanup-checkpoint-before-integration-relocation.md)
 records the explicit policy-checker seam, generic WM environment and discovery,
 personal installer compatibility checks, and sibling-free verifier fixtures.
