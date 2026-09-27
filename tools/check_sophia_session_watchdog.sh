@@ -6,6 +6,10 @@ TEST_ROOT="$(mktemp -d /tmp/sophia-session-watchdog.XXXXXX)"
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
 
 mkdir -p "$TEST_ROOT/runtime" "$TEST_ROOT/state"
+# Supplied clear verdict for this guard/watchdog fixture, not host detection.
+printf '%s\n' '#!/bin/sh' 'printf "sophia_session_preflight schema=1 status=clear tty=%s\n" "${1#--tty=}"' > "$TEST_ROOT/check-host"
+chmod 700 "$TEST_ROOT/check-host"
+export SOPHIA_SESSION_PREFLIGHT="$TEST_ROOT/check-host"
 export XDG_RUNTIME_DIR="$TEST_ROOT/runtime"
 export XDG_STATE_HOME="$TEST_ROOT/state"
 export SOPHIA_BIN="$ROOT_DIR/tools/fixtures/fake_sophia_session_watchdog.sh"

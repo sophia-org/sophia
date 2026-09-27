@@ -107,7 +107,7 @@ fn firefox_m10_gate_uses_the_proven_isolated_native_x_configuration() {
 #[test]
 fn firefox_m10_profiles_are_bounded_by_the_session_lifecycle() {
     let prior_wrapper_check = offset("if [[ -s \"$PID_FILE\" ]]");
-    let graphical_session_check = offset("if (( ${#active_sessions[@]} > 0 )); then");
+    let graphical_session_check = offset("\"$SOPHIA_BIN\" session check-host \"--tty=$tty_name\"");
     let child_shutdown = offset(
         "[[ -z \"$session_pid\" ]] || terminate_bounded \"-$session_pid\" \"$SESSION_LABEL\"",
     );
@@ -121,6 +121,19 @@ fn firefox_m10_profiles_are_bounded_by_the_session_lifecycle() {
     assert!(trap < staging);
     assert!(SESSION_LAUNCHER.contains("rm -rf -- \"$firefox_m10_probe_dir\""));
     assert!(SESSION_LAUNCHER.contains("firefox_m10_probe_dir=\"\""));
+}
+
+#[test]
+fn external_host_preflight_precedes_inputs_guard_and_service_changes() {
+    let check = offset("\"$SOPHIA_BIN\" session check-host \"--tty=$tty_name\"");
+    assert!(offset("lifecycle_phase entering preflight") < check);
+    assert!(offset("if [[ ! -t 0 ]]") < check);
+    assert!(offset("if [[ \"$REQUIRE_LOCAL_VT\" == true") < check);
+    assert!(check < offset("input_seat="));
+    assert!(check < offset("sophia_load_preparation 'sophia_session_inputs"));
+    assert!(check < offset("Emergency input guard armed."));
+    assert!(!SESSION_LAUNCHER.contains("--allow-active"));
+    assert!(!SESSION_LAUNCHER.contains("live_named_processes"));
 }
 
 #[test]

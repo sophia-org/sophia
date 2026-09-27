@@ -5,25 +5,11 @@
 # run that proves nothing is worse than no run, because its output looks like a
 # result. Refusing up front is the cheaper failure.
 
-# Names the display servers that would hold the card. Not exhaustive by design:
-# the DISPLAY and WAYLAND_DISPLAY checks catch what this list misses, and an
-# unknown compositor still fails safely as MasterUnavailable at the ioctl.
-declare -p SOPHIA_DRM_MASTER_HOLDERS >/dev/null 2>&1 ||
-    declare -a SOPHIA_DRM_MASTER_HOLDERS=(
-        Xorg X Xwayland xlibre-server sophia hyprland sway niri weston kwin_wayland
-        gnome-shell
-    )
-
-# Prints one line per apparent holder. Empty output means the card looks free.
+# Ambient display endpoints are additional refusal evidence. Process detection
+# belongs to the required external checker, never a list of desktop products.
 sophia_drm_master_blockers() {
     [[ -n "${DISPLAY:-}" ]] && echo "DISPLAY=${DISPLAY} is set"
     [[ -n "${WAYLAND_DISPLAY:-}" ]] && echo "WAYLAND_DISPLAY=${WAYLAND_DISPLAY} is set"
-    local name
-    for name in "${SOPHIA_DRM_MASTER_HOLDERS[@]}"; do
-        if pgrep -x "$name" >/dev/null 2>&1; then
-            echo "$name is running"
-        fi
-    done
     return 0
 }
 
@@ -31,27 +17,37 @@ sophia_drm_master_blockers() {
 # honors, so the message points at the right escape hatch.
 sophia_require_drm_master_available() {
     local override="${1:-SOPHIA_DRM_MASTER_FORCE}"
-    local blockers
+    local blockers checker_bin tty_name allow_active=false
     blockers="$(sophia_drm_master_blockers)"
+    if [[ "${!override:-0}" == "1" ]]; then
+        allow_active=true
+    fi
+    if [[ -n "$blockers" ]]; then
+        echo "A display endpoint is configured:" >&2
+        sed 's/^/  - /' <<<"$blockers" >&2
+        if [[ "$allow_active" != true ]]; then
+            echo "Use a bare TTY, or explicitly set $override=1." >&2
+            return 1
+        fi
+        echo "$override=1; overriding the ambient display refusal." >&2
+    fi
 
+    checker_bin="${SOPHIA_BIN:-}"
+    if [[ "$checker_bin" != /* || ! -f "$checker_bin" || ! -x "$checker_bin" ]]; then
+        echo "Set SOPHIA_BIN to an absolute built Sophia executable with session check-host." >&2
+        return 1
+    fi
+    tty_name="$(tty 2>/dev/null)" || {
+        echo "DRM validation requires a TTY for the external host preflight." >&2
+        return 1
+    }
+    # Even force cannot bypass a missing checker, malformed verdict or timeout.
+    "$checker_bin" session check-host "--tty=$tty_name" "--allow-active=$allow_active" || return 1
     if [[ ! -d /dev/dri ]]; then
         echo "/dev/dri is missing; no primary card node to use." >&2
         return 1
     fi
-    if [[ -z "$blockers" ]]; then
-        return 0
-    fi
-
-    echo "A display server appears to hold the card:" >&2
-    sed 's/^/  - /' <<<"$blockers" >&2
-    echo >&2
-    if [[ "${!override:-0}" == "1" ]]; then
-        echo "$override=1; running anyway." >&2
-        echo >&2
-        return 0
-    fi
-    echo "Atomic commits need DRM master even to validate, so this run would report" >&2
-    echo "MasterUnavailable and conclude nothing. Switch to a bare TTY with no" >&2
-    echo "compositor, or set $override=1 to run anyway." >&2
-    return 1
+    # The check makes no reservation: the atomic ioctl can still refuse with
+    # MasterUnavailable if ownership changes or detection misses an owner.
+    return 0
 }

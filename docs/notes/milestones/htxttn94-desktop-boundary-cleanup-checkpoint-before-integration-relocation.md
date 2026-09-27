@@ -97,8 +97,23 @@ exact verdicts and constrained override behavior. Logs under `bemenu-files/`:
 The original `boundary-check-host.log` remains failed (8/9): its stderr assertion
 did not account for Rust's error-return Debug formatting. The assertion was
 corrected without changing production behavior. Formatting and diff checks pass.
-The wrapper migration remains separate; these tests open no display or input
-device and do not claim a live host-policy decision.
+These tests open no display or input device and do not claim a live host-policy
+decision.
+
+The retained session launcher now calls the required checker after its
+TTY/runtime/VT checks and before input preparation or service changes. The DRM
+guard uses the same seam and retains its ambient-display refusal. It requires an
+absolute prebuilt `SOPHIA_BIN`; force overrides only known active-session evidence,
+never missing policy, malformed output or timeout. Product process-name lists
+have left these two guards. External callers must supply their host checker.
+
+The wrapper gate passes launcher safety 20/20, real CLI refusal on a disposable
+PTY 2/2, and guard/recovery 2/2. The watchdog regression, focused clippy,
+formatting, shell syntax and diff checks pass. Logs are
+`bemenu-files/boundary-host-wrappers.log`, `boundary-host-wrappers-clippy.log`
+and `boundary-host-watchdog.log`. The supplied clear checker in recovery and
+watchdog fixtures is test data, not a host detection result. No graphics or
+input device was opened by these checks.
 
 ## Public conformance seams and E2 relocation
 

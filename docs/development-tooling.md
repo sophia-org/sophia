@@ -80,8 +80,13 @@ explicit force control to it.
 
 This result records the external checker's observation. It acquires no device
 authority or reservation; DRM acquisition can still report `MasterUnavailable`.
-The retained safety wrappers will call this command before input-guard arming,
-service changes or device takeover when the external wrapper migration lands.
+The retained session safety wrapper calls this command before input-guard
+arming, service changes or device takeover. DRM validation wrappers also require
+it, alongside their DISPLAY/WAYLAND_DISPLAY refusal. For those wrappers set
+`SOPHIA_BIN` to an absolute, already-built Sophia executable and
+`SOPHIA_SESSION_PREFLIGHT` to the integration checker. Run from a TTY. Their
+existing explicit force variables map to `--allow-active=true`; force cannot
+bypass missing policy, invalid output or a checker timeout.
 
 ## Canonical Commands
 

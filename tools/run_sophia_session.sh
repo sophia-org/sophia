@@ -121,27 +121,9 @@ if [[ "$REQUIRE_LOCAL_VT" == true && ! "$tty_name" =~ ^/dev/tty[0-9]+$ ]]; then
     exit 1
 fi
 
-live_named_processes() {
-    local name pid state
-    for name in "$@"; do
-        while read -r pid; do
-            [[ -n "$pid" ]] || continue
-            state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
-            [[ "$state" == Z* ]] || printf '%s:%s\n' "$name" "$pid"
-        done < <(pgrep -x "$name" 2>/dev/null || true)
-    done
-}
-active_sessions=()
-for process in river niri sway Hyprland kwin_wayland Xorg; do
-    while read -r active; do
-        [[ -n "$active" ]] && active_sessions+=("$active")
-    done < <(live_named_processes "$process")
-done
-if (( ${#active_sessions[@]} > 0 )); then
-    echo "Refusing to take over a TTY while a graphical session is active." >&2
-    echo "Still active (process:pid): ${active_sessions[*]}" >&2
-    exit 1
-fi
+# Desktop detection is supplied by the integration layer. This command refuses
+# missing policy, malformed verdicts and timeout before any input/service work.
+"$SOPHIA_BIN" session check-host "--tty=$tty_name"
 
 input_seat="${SOPHIA_OPERATOR_INPUT_SEAT:-seat0}"
 input_devices="${SOPHIA_OPERATOR_INPUT_DEVICES:-}"

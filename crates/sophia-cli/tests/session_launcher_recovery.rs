@@ -33,8 +33,12 @@ fn guard_death_and_early_recovery_prevent_graphics_takeover() {
         std::process::id()
     ));
     fs::create_dir_all(root.join("bin")).unwrap();
-    fs::write(root.join("bin/pgrep"), "#!/bin/sh\nexit 1\n").unwrap();
-    fs::set_permissions(root.join("bin/pgrep"), fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(root.join("bin/check-host"), "#!/bin/sh\nprintf 'sophia_session_preflight schema=1 status=clear tty=%s\\n' \"${1#--tty=}\"\n").unwrap();
+    fs::set_permissions(
+        root.join("bin/check-host"),
+        fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
     for (mode, expected) in [("die", 1), ("trigger", 130)] {
         let directory = root.join(mode);
         fs::create_dir_all(directory.join("runtime")).unwrap();
@@ -59,6 +63,7 @@ fn guard_death_and_early_recovery_prevent_graphics_takeover() {
                     source.join("tools/fixtures/fake_sophia_session_watchdog.sh"),
                 )
                 .env("SOPHIA_TEST_PREPARER_BIN", env!("CARGO_BIN_EXE_sophia"))
+                .env("SOPHIA_SESSION_PREFLIGHT", root.join("bin/check-host"))
                 .env("SOPHIA_TEST_GUARD_MODE", mode)
                 .env(
                     "SOPHIA_TTY_MODE_HELPER",
