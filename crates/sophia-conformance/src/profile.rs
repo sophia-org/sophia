@@ -16,9 +16,7 @@ pub struct Profile {
     pub name: &'static str,
     /// The startup application's identity within the session.
     pub startup: &'static str,
-    /// Whether a window manager serves this profile. `sophia-wm-demo` lost its
-    /// serving mode in 83596bfc, so only profiles backed by a native Sophia WM
-    /// protocol client have one.
+    /// Whether an explicitly selected WM protocol client serves this profile.
     pub window_manager: bool,
     /// Whether the session ends when its startup application does. A profile
     /// with no window manager has no logout shortcut, because shortcuts are
@@ -27,9 +25,9 @@ pub struct Profile {
     pub exit_with_startup: bool,
 }
 
-pub const PROFILES: [Profile; 4] = [
+pub const PROFILES: [Profile; 3] = [
     Profile {
-        name: "hagia",
+        name: "managed",
         startup: "terminal",
         window_manager: true,
         exit_with_startup: false,
@@ -43,12 +41,6 @@ pub const PROFILES: [Profile; 4] = [
     Profile {
         name: "standalone",
         startup: "standalone",
-        window_manager: false,
-        exit_with_startup: true,
-    },
-    Profile {
-        name: "kitty",
-        startup: "terminal",
         window_manager: false,
         exit_with_startup: true,
     },
@@ -132,10 +124,8 @@ pub fn session_args(profile: Profile, options: &Options) -> Result<Vec<String>, 
         ));
     }
     if !profile.window_manager && options.wm_process.is_some() {
-        // Refused rather than passed through. `sophia-wm-demo` cannot serve a
-        // session, and a profile that acquires a window manager silently would
-        // gain chrome that makes direct scanout impossible and shortcuts that
-        // its guidance says do not exist.
+        // Adding a WM would change the declared session shape, including its
+        // chrome and shortcut authority.
         return Err(format!("profile {:?} runs no window manager", profile.name));
     }
 
@@ -307,7 +297,7 @@ pub fn resolve(arguments: &[String]) -> Result<Vec<String>, String> {
 /// Every profile below is validated against a configuration root built to be
 /// refused, which only means anything while it is still refusing. If the
 /// schema moves under the fixture, or the shell rule that rejects it softens,
-/// the file becomes an inert directory and all five validations quietly stop
+/// the file becomes an inert directory and the profile validations quietly stop
 /// testing discovery at all -- passing, and proving nothing.
 ///
 /// So the check runs the one vector that must fail: normal mode with no

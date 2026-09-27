@@ -157,7 +157,7 @@ reject "an archive naming an unsigned commit" "$unsigned" "without a valid signa
 # A run that recorded a different kind of proof.
 wrong_kind="$temp_dir/wrong-kind"
 cp -r "$archive" "$wrong_kind"
-sed -i 's/^record_kind=.*/record_kind=hagia_native_session/' "$wrong_kind/manifest"
+sed -i 's/^record_kind=.*/record_kind=unrelated_record/' "$wrong_kind/manifest"
 (cd "$wrong_kind" && sha256sum manifest result.kdl session.log >SHA256SUMS)
 reject "an archive recording another kind of run" "$wrong_kind" "another kind of run"
 

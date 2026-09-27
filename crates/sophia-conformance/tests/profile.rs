@@ -31,7 +31,7 @@ fn a_profile_with_no_window_manager_refuses_to_be_given_one() {
 /// told which one, rather than silently starting without it.
 #[test]
 fn a_profile_served_by_a_policy_client_requires_one() {
-    let refused = session_args(find("hagia").unwrap(), &options());
+    let refused = session_args(find("managed").unwrap(), &options());
     assert!(refused.is_err(), "a served profile started with no client");
 }
 
