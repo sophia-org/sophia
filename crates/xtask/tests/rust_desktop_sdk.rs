@@ -1,5 +1,7 @@
 //! Snapshot checks must reject every way the vendored Rust SDK can drift from
 //! its pin or from Sophia's contract.
+#[path = "../src/git_tree.rs"]
+mod git_tree;
 #[path = "../src/rust_desktop_sdk.rs"]
 mod rust_desktop_sdk;
 
@@ -107,7 +109,7 @@ fn a_linked_source_root_is_refused() {
     let real = snapshot.join("real");
     std::fs::rename(snapshot.join("source"), &real).unwrap();
     std::os::unix::fs::symlink(&real, snapshot.join("source")).unwrap();
-    refused(&snapshot, &root.0, "must be a directory");
+    refused(&snapshot, &root.0, "must not be symlinked");
 }
 
 #[test]
@@ -168,4 +170,34 @@ fn contract_drift_and_an_unrecorded_digest_are_refused() {
         m["files"]["spec/sophia-shell-files-v1.kdl"] = digest.into();
     });
     refused(&snapshot, &root.0, "SHA256SUMS does not record");
+}
+
+#[test]
+fn the_tree_and_revision_are_bound_to_the_recorded_commit() {
+    // A source change recorded consistently in the manifest still fails: the
+    // tree no longer matches the pinned commit's.
+    let (root, snapshot) = scratch();
+    let file = snapshot.join("source/README.md");
+    let mut changed = std::fs::read(&file).unwrap();
+    changed.extend_from_slice(b"\nchanged\n");
+    std::fs::write(&file, &changed).unwrap();
+    let digest = {
+        use sha2::Digest as _;
+        format!("{:x}", sha2::Sha256::digest(&changed))
+    };
+    edit_manifest(&snapshot, |m| m["files"]["README.md"] = digest.into());
+    refused(&snapshot, &root.0, "does not match its pinned commit");
+
+    // Another well-formed revision does not name the recorded commit.
+    let (root, snapshot) = scratch();
+    edit_manifest(&snapshot, |m| m["revision"] = "1".repeat(40).into());
+    refused(&snapshot, &root.0, "does not identify upstream.commit");
+
+    // Nor does an edited commit object.
+    let (root, snapshot) = scratch();
+    let commit = snapshot.join("upstream.commit");
+    let mut raw = std::fs::read(&commit).unwrap();
+    raw.extend_from_slice(b"forged\n");
+    std::fs::write(&commit, raw).unwrap();
+    refused(&snapshot, &root.0, "does not identify upstream.commit");
 }

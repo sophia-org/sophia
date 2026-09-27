@@ -1,5 +1,8 @@
 //! Verify the immutable Rust desktop SDK snapshot, then run its own tests.
 //!
+//! The snapshot's Git tree must be the tree its recorded raw commit names, and
+//! that commit must hash to the pinned revision (`git_tree`).
+//!
 //! Sophia builds the SDK's crates through path dependencies on
 //! `vendor/rust-desktop-sdk/source`; the shell contract's conformance tests
 //! live in the SDK, so this check is also what runs them against Sophia's
@@ -100,14 +103,8 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
         }
     }
     let source = snapshot.join("source");
-    let kind = std::fs::symlink_metadata(&source)
-        .map_err(|error| format!("could not inspect {}: {error}", source.display()))?
-        .file_type();
-    if !kind.is_dir() {
-        return Err(format!("{} must be a directory", source.display()));
-    }
-    let mut actual = BTreeMap::new();
-    collect(&source, &source, &mut actual)?;
+    let inventory = crate::git_tree::inventory(&source)?;
+    let actual = &inventory.files;
     if let Some(name) = actual
         .iter()
         .find(|(name, digest)| manifest.files.get(*name) != Some(*digest))
@@ -139,6 +136,11 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             return Err(format!("Rust SDK spec/SHA256SUMS does not record {name}"));
         }
     }
+    crate::git_tree::verify_commit(
+        &read(&snapshot.join("upstream.commit"))?,
+        &manifest.revision,
+        &inventory.tree,
+    )?;
     Ok(manifest.revision)
 }
 
@@ -151,38 +153,4 @@ fn hex(value: &str, length: usize) -> bool {
         && value
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-fn collect(
-    root: &Path,
-    directory: &Path,
-    files: &mut BTreeMap<String, String>,
-) -> Result<(), String> {
-    let entries = std::fs::read_dir(directory)
-        .map_err(|error| format!("could not list {}: {error}", directory.display()))?;
-    for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("could not list {}: {error}", directory.display()))?;
-        let path = entry.path();
-        let kind = entry
-            .file_type()
-            .map_err(|error| format!("could not inspect {}: {error}", path.display()))?;
-        if kind.is_dir() {
-            collect(root, &path, files)?;
-        } else if kind.is_file() {
-            let name = path
-                .strip_prefix(root)
-                .map_err(|error| error.to_string())?
-                .to_str()
-                .ok_or("non-UTF-8 SDK path")?
-                .to_owned();
-            files.insert(name, format!("{:x}", Sha256::digest(read(&path)?)));
-        } else {
-            return Err(format!(
-                "SDK source must contain only regular files: {}",
-                path.display()
-            ));
-        }
-    }
-    Ok(())
 }
