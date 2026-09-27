@@ -1,13 +1,13 @@
-tree 5f79419b34dc0cb1e3452ffd7bcc4faf604d0a14
-parent 3ff46a2c44e840e8439b1567cc004665ba4bb762
-author Mason Green <mason@greenm01.net> 1790513831 -0400
-committer Mason Green <mason@greenm01.net> 1790513831 -0400
+tree a538d819cada04b29ad37864be465734eef9dbd7
+parent 32f9c4a53e79602311fdeffa796a78e88c09940a
+author Mason Green <mason@greenm01.net> 1790538016 -0400
+committer Mason Green <mason@greenm01.net> 1790538016 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkSpwAKCRBXGEu2KoAA
- Ymv4AP9lS9KRGdp0gdI38uhfgWWleo4DxbRvfC6RKeHW8jblpAD/VNzVFUvG/qsk
- Er1+ntzMIrjAe4S6HJPrFBytE6JqZAg=
- =JpHM
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarlxIAAKCRBXGEu2KoAA
+ YkgcAQD95qIwlogX/neKhRQKu//uiv4BYDtb4kRvfEmjO6caqQEA3Gs6wXPhCeRj
+ uHC4w/3gFDL1mrB/WpmVQtauyYCk1QE=
+ =RpQM
  -----END PGP SIGNATURE-----
 
-Document prompt custody acknowledgements and enforce them in peers
+Add a bounded WM file session with explicit custody and snapshot lifetimes

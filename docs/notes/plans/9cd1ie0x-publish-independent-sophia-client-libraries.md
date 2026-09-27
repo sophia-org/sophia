@@ -25,9 +25,11 @@ for distribution development packages. Neither SDK needs a compositor checkout.
 - Inventory the Rust, C and Nim implementations and their consumers: Lom, Bemenu
   and Hagia. Preserve supported behavior and record each extraction's source commit.
 - Nim can consume the C API through its foreign function interface, so a separately
-  published Nim SDK is outside this plan. Evaluate C interop for Hagia against
-  retaining its existing Nim client, including WM role coverage, ownership and
-  build dependencies; this does not authorize an immediate Hagia rewrite.
+  published Nim SDK is outside this plan. Under niltempus's later explicit ruling,
+  Hagia uses thin C SDK bindings and retires its product-owned WM/9P transport.
+  Its signed source tree vendors an exact verified SDK snapshot; builds must not
+  resolve an ambient sibling checkout. Hagia retains its policy reducer and
+  checkpoint/profile semantics.
 - Define public APIs, ownership, licensing, versioning and the supported contract
   revisions. Publish independently buildable packages with examples and tests.
 - Migrate consumers to pinned releases and verify each against the production
@@ -39,6 +41,31 @@ for distribution development packages. Neither SDK needs a compositor checkout.
 
 Implementation and publication are authorized by niltempus's approved plan.
 The application SDK, compositor portability and broker/portal migration remain separate.
+
+## Unified role scope
+
+Niltempus subsequently required one SDK repository per language to cover every
+public WM, shell, output and admin/control operation formerly provided by IPC.
+Use standard 9P2000.L with typed role files, ordinary operations and wire errors.
+No private 9P opcodes, IPC tunnelling or fallback fills a missing contract. Modules
+within an SDK share transport without merging role authority. The C and Rust SDKs
+remain separate repositories, and Nim uses C rather than creating a third SDK.
+
+For each role, map the old requests, responses, events, capabilities, resource
+grants and terminal outcomes to file operations and named tests. Track absent
+contracts separately from missing clients. A role needs server-export, C and
+Rust SDK evidence before complete parity is claimed. Current output/admin gaps
+remain explicit; a WM client reading `output_transport=current_ipc` in the pinned
+api descriptor does not select or open that separate output transport.
+
+Lom, Bemenu and Hagia are being made 9P-only by explicit instruction. Their
+product IPC tests are retired with that wire, with required behaviour mapped to
+file tests. Earlier rollback requirements below describe the prior stage; they
+do not authorize reintroducing a product fallback. Existing SDK compatibility
+archives remain transitional and outside the complete 9P target.
+
+The [C WM checkpoint](../milestones/bzitjwp8-c-wm-sdk-codec-and-session-checkpoint.md)
+records the signed codec/session slices and their test limits.
 
 ## SDK platform policy
 

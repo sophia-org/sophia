@@ -43,3 +43,21 @@ authoritative KDL before running offline gates. No build downloads contracts.
 The copied generated `sophia_wm_v1.{c,h}` is legacy socket compatibility from
 the same source commit. Its generator and authoritative schema remain in Sophia;
 this initial extraction does not advertise a WM file client.
+
+## WM file implementation inputs
+
+The WM file layer uses these additional unmodified contract inputs from Sophia
+`de776c68afdf9a133818f86917893c3362dc9fb7` (signed):
+
+- `protocol/sophia-wm-files-v1.kdl` → `spec/sophia-wm-files-v1.kdl`
+- `protocol/sophia-wm-v1.kdl` → `spec/sophia-wm-v1.kdl`
+- `protocol/golden/sophia-wm-v1.records` → `spec/golden/sophia-wm-v1.records`
+- `docs/sophia-wm-api.md` → `spec/sophia-wm-api.md`
+
+The fixed rows in the older WM schema are neutral values also used by the file
+contract. Importing those rows does not import its socket framing into the file
+library. The row corpus tests those values independently of the file encoder.
+The WM file KDL, rows, corpus and WM file lifecycle document are byte-identical
+between Sophia `9fcaec782` and this revision. The existing lifecycle copy retains
+its earlier provenance above. These pinned documents still describe transitional
+IPC support in Sophia; they do not weaken this SDK's complete 9P migration target.

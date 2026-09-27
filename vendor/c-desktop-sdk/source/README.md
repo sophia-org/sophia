@@ -3,13 +3,44 @@
 Native C99 libraries for Sophia desktop components. This repository builds
 without a Sophia checkout and uses no Rust code. Nim clients can use its C API.
 
+## SDK scope
+
+One desktop SDK per language covers Sophia's WM, shell, output and admin/control
+roles. Role modules share standard 9P2000.L transport, bounded I/O and custody
+rules; they are not separate SDK repositories. Nim uses this SDK through thin C
+bindings. The target is the complete functionality of the former IPC APIs over
+Sophia's admitted file contracts, without IPC fallback or private 9P opcodes.
+Existing compatibility code is transitional, not part of that target.
+
+[COVERAGE.md](COVERAGE.md) distinguishes that requirement from implemented and
+tested support. A missing server file contract is a migration gap, not permission
+to tunnel the old socket protocol through a file.
+
 ## Current coverage
 
 The development snapshot provides a generic nonblocking 9P2000.L client and
 shell file records and sessions for bar (r6), native launcher (r7), and persistent
 catalog/dock (r8). The existing shell IPC backend remains available for rollback
-and comparison. The imported WM socket codec is compatibility code; WM files,
-output authority, and admin SDK modules are not implemented here yet.
+and comparison. The imported WM socket codec is compatibility code.
+WM file record codecs and a bounded WM session are implemented and tested with
+a scripted peer. The production-export WM gate and product migration remain
+open. Output authority and admin file clients are not implemented yet.
+
+The WM file codec (`sophia_wm_files.h`) covers API-1 envelopes, typed scalar
+bodies, cycle causes, complete section bounds and negotiated section disclosure.
+`sophia_wm_records.h` supplies all 22 neutral fixed row codecs without socket
+framing. These enforce structural wire rules; Session still validates scene,
+geometry, policy phase and authority. The focused codec test uses literal
+bodies and the pinned golden row corpus, not a live export. Regenerate fixed
+rows with `python3 tools/generate_wm_rows.py`; Python is not a library build
+dependency. `compatibility.json` keeps `wm_files=false` until the production
+WM export gate passes.
+
+The WM session (`sophia_wm_session.h`) owns file bootstrap, immutable candidate
+submission, custody tickets, cumulative acknowledgements and snapshot pins.
+It accepts a borrowed fd and caller-owned storage; policy and profile decisions
+remain with the caller and server. See [the WM API notes](src/README-wm.md) for
+lifetimes, deadlines and evidence limits.
 
 The bounded shell session (`sophia_shell_session.h`) provides atomic local queue
 admission, per-record custody tickets, paced retries, object acknowledgement
@@ -41,7 +72,7 @@ make install PREFIX=/usr/local DESTDIR=/path/to/staging
 `make WITH_IPC=0` omits the compatibility library. The static libraries are:
 
 - `libsophia-9p.a`: generic transport, link with `-lsophia-9p`.
-- `libsophia-desktop.a`: native shell file codecs/session; link with
+- `libsophia-desktop.a`: WM and shell file codecs/sessions; link with
   `-lsophia-desktop -lsophia-9p`.
 - `libsophia-desktop-ipc.a`: optional shell and WM socket compatibility.
 
