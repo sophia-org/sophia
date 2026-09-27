@@ -231,9 +231,14 @@ judges the production export with 54 named checks across eight exports and
 shares no code with Sophia; it found the revocation gap. Its admission is
 supplied, so it proves wire and owner interoperability, not supervisor
 authentication, native rendering, latency or attended acceptance.
-Remaining: B5 owner handoff (runtime, then Session), r7/r8 oracle and client
-coverage, Bemenu r7 on the C client, measurements, merge and attended
-evidence.
+Role families, codec layer: normative rules for the launcher, dock and bar
+kinds, traced against the owners (ee5e7f80, 19a21c84, ae60576f), and
+independent codecs for all 17 B5 kinds in C (ef50d220) and in the Go oracle
+(72eef656) by Codex, written from the KDL alone. The live oracle verdict is
+still the 54 base checks; no role-family runtime pass is claimed yet.
+Remaining: B5 owner handoff (runtime, then Session), the 96-check live oracle
+and C r7/r8 sessions, Bemenu r7 on the C client, measurements, merge and
+attended evidence.
 
 After t251, implement a Sophia adapter to the existing shell/component owners
 and independent clients. Development need not wait for t250's attended WM
