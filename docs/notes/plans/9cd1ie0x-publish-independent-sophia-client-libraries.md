@@ -4,19 +4,21 @@ date: 2026-09-26
 kind: plan
 tags: [plan, 9p, tooling]
 ---
-# Publish independent Sophia client libraries
+# Publish native C and Rust desktop SDKs
 
 ## t263 — Publish versioned client libraries
 
-Requested by niltempus on 2026-09-26. After the role contracts stabilize, extract
-the Rust and C clients from Sophia into independently versioned repositories
-under sophia-org. Consumers should be able to use a small
-client package without depending on the compositor repository.
+Promoted by niltempus on 2026-09-27 under the
+[accepted SDK decision](../decisions/gs6l7tuk-publish-native-c-and-rust-desktop-sdks-with-pinned-contracts.md).
+Extract from merged master `987cfd39` (t252 source `79a09a302`). The first
+release supplies the shell SDKs needed for t252 application adoption; it does
+not wait for t252's attended acceptance.
 
-Expose generic 9P transport separately from Sophia role records, negotiation and
-session handling. Review suitable existing transport libraries before choosing
-what to maintain. A language SDK may initially contain both exposed layers;
-repository names and the final split are implementation decisions.
+Repositories: `sophia-org/sophia-desktop-sdk-c` (Codex) and
+`sophia-org/sophia-desktop-sdk-rs` (Claude). Keep generic 9P separate from shell,
+WM, output and administration modules. Shell ships first; releases declare
+actual coverage. Use `libsophia-desktop` for the C library and reserve `-dev`
+for distribution development packages. Neither SDK needs a compositor checkout.
 
 ## Scope and exit
 
@@ -35,13 +37,63 @@ repository names and the final split are implementation decisions.
   Keep the Go oracle independent of the SDK codecs so it can detect shared errors.
 - Document dependency updates and compatibility checks across repositories.
 
-This backlog entry authorizes tracking only. Repository creation, publication and
-consumer migration follow promotion with an owner and an agreed release plan.
+Implementation and publication are authorized by niltempus's approved plan.
+The application SDK, portability and broker/portal migration remain separate.
+
+## Extraction and completion
+
+Claude extracts Rust blocking/pipelined 9P clients and neutral value types, and
+the shared shell protocol crate used by the SDK and Sophia server. Server
+connection/export/journal/admission owners stay in Sophia. B6c completes
+catalog/indicator objects, outcomes, candidates and activation responses, and
+fixes submit EAGAIN handling and premature transaction-fid cleanup.
+
+Codex extracts C transport/codecs/session support, preserving the existing
+same-ID EAGAIN retry. Add reusable lifecycle handling, bounded multi-record
+queue admission, explicit connection selection, poll interests/deadlines and
+terminal errors. Share lifecycle logic through typed values; keep UI/rendering
+in applications. Retain IPC compatibility backends in both SDKs until t255.
+
+Local queue admission, Submitted custody, semantic outcome and presentation
+remain distinct. A sent request without observed custody can have unknown
+outcome; never replay across epochs. Resolve EALREADY from tracked state or
+fail closed. Bound raw object buffers and owned decoded data separately; never
+ack past unresolved retention obligations.
+
+SDK tests carry immutable specification copies with source revisions and
+digests, verified by Sophia's integration gate. Pin Rust dependencies by exact
+revision and lockfile and provision verified sources before offline gates.
+C consumers use immutable snapshots with upstream revision and per-file hashes.
+No gate fetches sources or reads a mutable external worktree. SDK release ->
+explicit source/spec pin update -> full gate. Compatibility manifests include
+SDK version, source hash, dialect, file API version and role revisions/masks.
+
+After a tested SDK commit is pinned, Codex adopts C in Bemenu; Claude assigns
+disjoint Lom and Provlita lanes. Preserve Bemenu `7d2d239` and its five unpushed
+commits. Avoid Lom's active `test/t099-content-lifecycle` branch; coordinate
+Provlita's Lom GPU-helper pin. Add production-export tests to all three clients.
+
+Exit of the first release: both SDKs build independently, declared shell
+coverage passes against the production export, source/spec provisioning is
+reproducible offline, and applications pin the required releases. Retain literal
+vectors, pipeline regressions, malformed/partial traffic, retry/disconnect,
+bounded-memory, maximum-object and revocation controls, and the independent
+Go oracle's exact 96-check verdict. Native rendering, installed rollout and
+performance acceptance remain t252 gates.
+
+Codex directs tracking, normative changes, integration review and compile slots.
+Claude owns Sophia-side Rust dependency integration; Codex owns C snapshots,
+Bemenu and the oracle. Use isolated worktrees, nice 19/jobs 2/private targets,
+signed commits and herdr handoffs. Never reset gpg-agent. Authentication may
+block publication but does not block local implementation.
 
 ## Dependencies and connections
 
-Depends on t252 shell contract acceptance. Coordinate extraction with the remaining
-role migrations before promising coverage beyond accepted contracts.
+Prerequisites are the accepted t251 contract and reviewed t252 foundation, now
+merged. This replaces the former dependency on completed t252 acceptance.
+The initial SDK release supports t252 application adoption. Keep t249/t250
+qualification open and t254's dependency unchanged. Later SDK role modules
+follow their accepted contracts without claiming unimplemented coverage.
 
 - [9P migration plan](jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
   owns role acceptance and compatibility retirement.

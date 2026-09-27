@@ -28,6 +28,38 @@ internal transactions remain internal. A desktop-role exit must name any public
 interfaces still on old IPC; it cannot claim that every IPC path migrated.
 Task state and execution order live in [todo.md](../../../todo.md).
 
+## Implementation and qualification policy (2026-09-27)
+
+niltempus approved completing implementation, client integration and recovery
+before broad performance tuning, and using 9P as the experimental daily-driver
+path with IPC retained for explicit rollback and benchmark comparison. The
+refused t249 result stays recorded; t249/t250 qualification and t255 retirement
+remain separate gates. No benchmark thresholds change through this decision.
+
+The [desktop SDK decision](../decisions/gs6l7tuk-publish-native-c-and-rust-desktop-sdks-with-pinned-contracts.md)
+promotes [t263's initial shell SDK release](9cd1ie0x-publish-independent-sophia-client-libraries.md)
+ahead of t252 application adoption. Merge the reviewed t252 foundation first,
+then extract the native C and Rust SDKs in parallel, complete their lifecycle
+and file-role support, and move Bemenu/Lom/Provlita to pinned releases. New
+releases include t261; its prior source fix was absent from the installed WM.
+
+Codex directs tracking, contract review, integration and build slots, and owns
+the C SDK, Bemenu and independent oracle. Claude owns Rust extraction, B6c and
+Sophia's Rust dependency integration; separate agents adopt Lom and Provlita
+after a tested SDK commit is pinned. Preserve Bemenu's unpushed local commits
+and coordinate Provlita's Lom GPU-helper pin. Build at nice 19, jobs 2, with
+private targets and explicit quiet windows for measurements.
+
+Source integration: signed master merge `987cfd39` incorporates t252 at
+`79a09a302`. Its production source is identical to that gated branch; only
+master's corrected verdict text differs. The branch's six classified full-suite
+failures remain failures, with their retained baseline evidence below.
+
+t253 requires a real output-role product peer before implementation: the only
+current client is the in-repository proof client. t254 retains its t249
+dependency until qualification closes or a separate scope decision changes it.
+Application frontend and broker/portal work remain outside this implementation.
+
 ## Starting evidence, September 26
 
 | Area | Established boundary | Remaining acceptance |
@@ -177,9 +209,10 @@ survivor populations and stalls on both wires, the breaches do not establish
 transport causality. Codex independently re-verified the hashes and survivor
 sequences; the refusal stands (corrections appended to the evidence
 VERDICT.md). The refusal stands for this
-method; it is not rerun. Open for the operator: a new declared method (rates
-the fixture sustains without coalescing, early stop), and whether the 9P
-default stays with this limitation recorded or rolls back to current IPC.
+method; it is not rerun. On 2026-09-27 niltempus chose to retain the experimental
+9P daily driver with IPC rollback and comparison. A new declared method must
+retain the numeric budgets and 60/120 Hz coverage, report coalescing and stalls,
+and distinguish transport costs from shared scheduling/storage delays.
 
 ### t251 — Specify the shell file contract
 
