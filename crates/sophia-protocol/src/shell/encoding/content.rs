@@ -114,7 +114,7 @@ pub fn decode_shell_content_value(
 /// The structural half of [`decode_shell_content_value`]: fields, reserved
 /// bytes, counts and no trailing bytes, without semantic validation, so a
 /// carrier can check its own framing rules in between.
-pub(crate) fn parse_shell_content_value(
+pub fn parse_shell_content_value(
     kind: ShellContentValueKind,
     payload: &[u8],
 ) -> Result<ShellContentRecord, ValueError> {

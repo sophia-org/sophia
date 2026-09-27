@@ -18,7 +18,7 @@ pub(crate) fn decode_shell_content_payload(
     // order callers have always observed.
     let record = parse_shell_content_value(value_kind, payload)?;
     validate_transaction(transaction, &record)?;
-    crate::shell::content::validation::validate(&record)?;
+    crate::shell::content::validate_shell_content_record(&record)?;
     Ok(record)
 }
 

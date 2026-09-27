@@ -12,6 +12,14 @@ pub use limits::*;
 pub use records::*;
 pub use validation::ContentResourceLayout;
 
+/// Semantic validation of one content record, as every codec that carries
+/// it applies after its own structural and framing checks.
+pub fn validate_shell_content_record(
+    record: &ShellContentRecord,
+) -> Result<(), crate::InvalidRecord> {
+    validation::validate(record)
+}
+
 pub const SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE: u64 = 1 << 7;
 pub const SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT: u64 = 1 << 8;
 pub const SOPHIA_SHELL_CONTENT_REVISION: u16 = 5;

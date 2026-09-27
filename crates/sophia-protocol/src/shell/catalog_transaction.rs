@@ -25,6 +25,12 @@ pub struct ShellPersistentCatalog {
 /// all (the launcher's and legacy descriptor's view) is not this value's
 /// concern; callers that also accept that shape check for empty identities
 /// themselves before reaching here (`shell::encoding::applications`).
+pub fn validate_shell_persistent_catalog(
+    value: &ShellPersistentCatalog,
+) -> Result<(), InvalidRecord> {
+    validate(value)
+}
+
 pub(crate) fn validate(value: &ShellPersistentCatalog) -> Result<(), InvalidRecord> {
     crate::validate_shell_application_catalog(&value.catalog)?;
     let bad = InvalidRecord("persistent catalog identity bijection");

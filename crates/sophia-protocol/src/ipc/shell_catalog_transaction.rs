@@ -59,6 +59,7 @@ pub fn decode_shell_persistent_catalog(
         catalog,
         identities,
     };
-    crate::shell::catalog_transaction::validate(&value).map_err(|_| bad())?;
+    crate::shell::catalog_transaction::validate_shell_persistent_catalog(&value)
+        .map_err(|_| bad())?;
     Ok((transaction, value))
 }
