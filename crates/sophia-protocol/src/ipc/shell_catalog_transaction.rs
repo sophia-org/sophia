@@ -52,21 +52,13 @@ pub fn decode_shell_persistent_catalog(
         }
     }
     let (transaction, catalog) = decode_shell_application_catalog(&legacy)?;
-    if identities.len() != catalog.entries.len()
-        || (!identities.is_empty()
-            && binding != Some((catalog.connection_epoch, catalog.generation)))
-        || catalog
-            .entries
-            .iter()
-            .any(|entry| !identities.contains_key(&entry.slot))
-    {
+    if !identities.is_empty() && binding != Some((catalog.connection_epoch, catalog.generation)) {
         return Err(bad());
     }
-    Ok((
-        transaction,
-        ShellPersistentCatalog {
-            catalog,
-            identities,
-        },
-    ))
+    let value = ShellPersistentCatalog {
+        catalog,
+        identities,
+    };
+    crate::shell::catalog_transaction::validate(&value).map_err(|_| bad())?;
+    Ok((transaction, value))
 }

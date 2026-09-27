@@ -22,7 +22,10 @@ pub(super) fn u64_at(bytes: &[u8], offset: usize) -> Result<u64, ShellFileCodecE
 
 pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
     match kind {
-        ShellFileKind::Limits | ShellFileKind::Outputs => ShellFileClass::Object,
+        ShellFileKind::Limits
+        | ShellFileKind::Outputs
+        | ShellFileKind::Catalog
+        | ShellFileKind::Indicators => ShellFileClass::Object,
         ShellFileKind::Negotiate
         | ShellFileKind::AllocationRequest
         | ShellFileKind::ResourceBegin
@@ -32,7 +35,14 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::Candidate
         | ShellFileKind::FrameDemand
         | ShellFileKind::FrameDemandCancel
-        | ShellFileKind::ActionAck => ShellFileClass::Candidate,
+        | ShellFileKind::ActionAck
+        | ShellFileKind::NativeAllocationRequest
+        | ShellFileKind::NativeCandidate
+        | ShellFileKind::NativeInputAck
+        | ShellFileKind::NativeActivate
+        | ShellFileKind::CatalogCandidate
+        | ShellFileKind::CatalogActivate
+        | ShellFileKind::IndicatorActivate => ShellFileClass::Candidate,
         ShellFileKind::Negotiated
         | ShellFileKind::Refused
         | ShellFileKind::Submitted
@@ -42,7 +52,15 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::ResourceReleased
         | ShellFileKind::CandidateOutcome
         | ShellFileKind::FramePermit
-        | ShellFileKind::Action => ShellFileClass::Event,
+        | ShellFileKind::Action
+        | ShellFileKind::NativeOpening
+        | ShellFileKind::NativeFocus
+        | ShellFileKind::NativeFocusRevoked
+        | ShellFileKind::NativeInput
+        | ShellFileKind::NativeActivationOutcome
+        | ShellFileKind::NativeClosed
+        | ShellFileKind::CatalogActivationOutcome
+        | ShellFileKind::IndicatorActivationOutcome => ShellFileClass::Event,
     }
 }
 
@@ -50,6 +68,8 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
     Ok(match value {
         1 => ShellFileKind::Limits,
         2 => ShellFileKind::Outputs,
+        3 => ShellFileKind::Catalog,
+        4 => ShellFileKind::Indicators,
         16 => ShellFileKind::Negotiated,
         17 => ShellFileKind::Refused,
         18 => ShellFileKind::Submitted,
@@ -60,6 +80,14 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
         35 => ShellFileKind::CandidateOutcome,
         36 => ShellFileKind::FramePermit,
         37 => ShellFileKind::Action,
+        38 => ShellFileKind::NativeOpening,
+        39 => ShellFileKind::NativeFocus,
+        40 => ShellFileKind::NativeFocusRevoked,
+        41 => ShellFileKind::NativeInput,
+        42 => ShellFileKind::NativeActivationOutcome,
+        43 => ShellFileKind::NativeClosed,
+        44 => ShellFileKind::CatalogActivationOutcome,
+        45 => ShellFileKind::IndicatorActivationOutcome,
         256 => ShellFileKind::Negotiate,
         257 => ShellFileKind::AllocationRequest,
         258 => ShellFileKind::ResourceBegin,
@@ -70,6 +98,13 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
         263 => ShellFileKind::FrameDemand,
         264 => ShellFileKind::FrameDemandCancel,
         265 => ShellFileKind::ActionAck,
+        266 => ShellFileKind::NativeAllocationRequest,
+        267 => ShellFileKind::NativeCandidate,
+        268 => ShellFileKind::NativeInputAck,
+        269 => ShellFileKind::NativeActivate,
+        270 => ShellFileKind::CatalogCandidate,
+        271 => ShellFileKind::CatalogActivate,
+        272 => ShellFileKind::IndicatorActivate,
         _ => return Err(ShellFileCodecError::Kind),
     })
 }

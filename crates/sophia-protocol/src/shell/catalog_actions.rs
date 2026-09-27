@@ -4,7 +4,10 @@
 //! transaction before ApplicationsEnd; candidates bind that exact catalog
 //! generation, and activation echoes an issued action.
 use crate::InvalidRecord;
-use crate::{ContentAction, ContentCandidateBegin, ContentCandidateChunk, ShellContentRecord};
+use crate::{
+    ContentAction, ContentCandidate, ContentCandidateBegin, ContentCandidateChunk,
+    ContentCandidateEnd, ShellContentRecord,
+};
 
 pub const SOPHIA_SHELL_PERSISTENT_CATALOG_REVISION: u16 = 8;
 pub const SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG: u64 = 1 << 12;
@@ -23,6 +26,69 @@ pub struct ShellCatalogIdentity {
 pub struct CatalogCandidateBegin {
     pub content: ContentCandidateBegin,
     pub catalog_generation: u64,
+}
+/// One whole catalog candidate: the underlying content candidate plus the
+/// catalog generation it presents. Transports that carry it in parts
+/// reassemble it; the candidate owner receives it as
+/// [`CatalogCandidateBegin`], a [`ContentCandidateChunk`] and the shared r5
+/// `CandidateEnd`, exactly as [`ContentCandidate::parts`] documents for the
+/// base profile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogContentCandidate {
+    pub candidate: ContentCandidate,
+    pub catalog_generation: u64,
+}
+impl CatalogContentCandidate {
+    /// The candidate as the owner's `CandidateBegin`, `CandidateChunk` (both
+    /// persistent-catalog records) and the shared r5 `CandidateEnd`.
+    pub fn parts(
+        &self,
+    ) -> (
+        ShellCatalogActionRecord,
+        ShellCatalogActionRecord,
+        ShellContentRecord,
+    ) {
+        let candidate = &self.candidate;
+        let (surfaces, placements, targets) = (
+            candidate.surfaces.len() as u32,
+            candidate.placements.len() as u32,
+            candidate.targets.len() as u32,
+        );
+        let begin = CatalogCandidateBegin {
+            content: ContentCandidateBegin {
+                grant: candidate.grant,
+                candidate_generation: candidate.candidate_generation,
+                output: candidate.output,
+                facts_generation: candidate.facts_generation,
+                pacing_permit: candidate.pacing_permit,
+                interaction_generation: candidate.interaction_generation,
+                surface_count: surfaces,
+                placement_count: placements,
+                target_count: targets,
+            },
+            catalog_generation: self.catalog_generation,
+        };
+        let chunk = ContentCandidateChunk {
+            grant: candidate.grant,
+            candidate_generation: candidate.candidate_generation,
+            chunk_ordinal: 0,
+            surfaces: candidate.surfaces.clone(),
+            placements: candidate.placements.clone(),
+            targets: candidate.targets.clone(),
+        };
+        let end = ShellContentRecord::CandidateEnd(ContentCandidateEnd {
+            grant: candidate.grant,
+            candidate_generation: candidate.candidate_generation,
+            surface_count: surfaces,
+            placement_count: placements,
+            target_count: targets,
+        });
+        (
+            ShellCatalogActionRecord::CandidateBegin(begin),
+            ShellCatalogActionRecord::CandidateChunk(chunk),
+            end,
+        )
+    }
 }
 /// Exact issued pointer action plus the catalog bound to its presented candidate.
 /// There is no transient opening, keyboard event or focus lease in this family.
