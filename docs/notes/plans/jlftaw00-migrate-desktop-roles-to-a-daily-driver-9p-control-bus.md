@@ -168,11 +168,15 @@ preregistered campaign ran 22:10-01:01 on a quiet machine with the operator
 logged out (evidence `t249-release-overnight-48c387dd-r2/VERDICT.md`; an
 earlier start aborted on a stale lock before measuring). `budgets_pass=false`,
 40/40 pairs refused: all 40 on survivor equality (timing-dependent coalescing
-happens on both wires, so identical retained updates are unattainable whenever
-any coalescing occurs), 21 on the one-interval p99 at 120 Hz (both wires run
-at p99 ~22 ms there; the fixture saturates at 120 Hz), and 3 relative 9P
-regressions (one a 60 Hz stall episode, two at 120 Hz). Elsewhere 9P tracks
-current IPC within tenths of a millisecond. The refusal stands for this
+happens on both wires, which makes exact cross-run equality fragile), 21 on
+the one-interval p99 (all 20 at 120 Hz, where both wires run at p99 ~22 ms,
+plus move 60 cpu pair 4), and 3 relative threshold breaches (one a 60 Hz
+stall, two at 120 Hz). Current IPC also has 60 Hz p99 outliers (26.5 ms and
+7.6 ms); 1.7-3.1 ms is the typical 60 Hz p99 on both wires. With different
+survivor populations and stalls on both wires, the breaches do not establish
+transport causality. Codex independently re-verified the hashes and survivor
+sequences; the refusal stands (corrections appended to the evidence
+VERDICT.md). The refusal stands for this
 method; it is not rerun. Open for the operator: a new declared method (rates
 the fixture sustains without coalescing, early stop), and whether the 9P
 default stays with this limitation recorded or rolls back to current IPC.
