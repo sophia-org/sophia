@@ -414,9 +414,8 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "reserved_tail" type="u32" offset=28 value=0
     }
     // surface_index selects a row of the same record's surface table.
-    // action_kind is fixed at 1 for this profile (the native launcher and
-    // persistent catalog row families use other action kinds, reserved for
-    // later work and not carried by this contract). target_id,
+    // action_kind is fixed at 1 for this base profile. NativeTarget uses 2
+    // and CatalogTarget uses 3 in their separate row families below. target_id,
     // target_generation and action_id are always nonzero.
     row "ContentTarget" size=48 {
         field "surface_index" type="u16" offset=0 max=7
@@ -431,7 +430,14 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "reserved" type="u32" offset=44 value=0
     }
     // allocation is zero-or-nonzero as a pair (zero for an output-wide
-    // demand); reason 1-3 names why a frame is wanted.
+    // demand). reason 1/2 is dirty or animation work (treated alike), 3 is
+    // withdrawal. demand_id strictly increases within the grant's owner,
+    // across outputs; a non-rising id is a fatal stale request. One standing
+    // demand per output; a newer demand replaces it, but replacing a standing
+    // reason-3 demand with reason 1/2 is fatal. Grant consumes the demand;
+    // candidate begin consumes its permit, so each frame needs a new demand.
+    // Do not demand while an output has a permit or assembling candidate;
+    // current Session treats the resulting grant refusal as fatal.
     body "FrameDemand" size=66 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -458,6 +464,12 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     //     reason 0.
     //   state 2-4: permit_id, ttl_ms and max_candidate_bytes carry no further
     //     constraint and no meaning beyond naming the permit, if any.
+    // ttl_ms starts at the owner's grant-time sample, not client receipt.
+    // Current Session samples elapsed Instant milliseconds before polling
+    // demands in that visit. No issue timestamp is carried; neither client
+    // receipt+TTL nor enqueue+TTL guarantees server validity. A client margin
+    // is advisory only. An expired permit named by a candidate is fatal;
+    // see the normative lifecycle and clocks rules in sophia-shell-files.md.
     body "FramePermit" size=72 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -474,8 +486,8 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     }
     // kind 1 Activation (target_id, target_generation and action_id nonzero,
     // reason=0), 2 Dismissal (target_id, target_generation and action_id
-    // zero, reason=0), 3 other (reason may be nonzero). allocation is always
-    // nonzero.
+    // zero, reason=0), 3 Cancel (reason may be nonzero). allocation is always
+    // nonzero. Kinds 1/2 require ActionAck; kind 3 requires no ack.
     body "Action" size=120 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -697,6 +709,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // layout and the control-character/bidi-override rule it shares); it
     // must be nonempty and satisfy that rule when `kind`=1 (Text), and must
     // be empty for every other `kind`, including 17 (Accept).
+    // issued_mono_usec uses Session's host CLOCK_MONOTONIC microseconds.
+    // Missing acknowledgement by action_ack_timeout_ms from the later of
+    // issuance and last owner service closes the opening with reason 6.
     body "NativeInput" size=398 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -733,8 +748,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // activation issued against the older revision); the named catalog
     // does not match the binding's `catalog_generation` and connection
     // epoch; for a keyboard (`cause`=1) activation, no matching
-    // un-acknowledged Accept `NativeInput` is outstanding within
-    // `action_ack_timeout_ms` of its issuance, or the named `slot` is not
+    // unattempted Accept receipt remains within `action_ack_timeout_ms`
+    // from the later of issuance and last service at receipt creation (an
+    // acknowledged Accept remains eligible), or the named `slot` is not
     // the presented candidate's `selected` slot; and any `NativeActivate`
     // received after `NativeClosed` for that opening. Unknown covers a
     // `slot` absent from the current catalog. Unauthorized covers a `slot`
@@ -815,7 +831,8 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // its first ack regardless of the declared disposition; only an Accept
     // receipt keeps the declared disposition, and that value does not by
     // itself affect activation eligibility (see `NativeActivationOutcome`
-    // above).
+    // above). Ack and activation may arrive in either order; one Accept
+    // receipt can authorize at most one activation attempt.
     body "NativeInputAck" size=132 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -898,7 +915,13 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // the connection's current native launcher state exactly is also only
     // checked by the owner, at Begin, which rejects it as stale (reason 1)
     // instead. Neither case reaches `NativeFocus`, an activation owner or
-    // the launch queue.
+    // the launch queue. Production Session supplies interaction_generation=1;
+    // it is not a client-allocated counter. facts_generation must match the
+    // current Outputs facts. Both are checked again when pending work is
+    // taken for renderer submission, along with opening, catalog generation,
+    // state revision and allocation binding; a mismatch at that later step
+    // currently terminates the component, rather than promising a Rejected outcome.
+    // candidate_generation strictly increases within the grant's owner.
     body-prefix "NativeCandidate" size=108 max-bytes=8192 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true

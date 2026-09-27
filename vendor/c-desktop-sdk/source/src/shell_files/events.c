@@ -38,7 +38,8 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         c->refused = 1;
         break;
     case SOPHIA_SF_SUBMITTED:
-        if (!c->submit_stage || c->submitted ||
+        /* Custody cannot follow a definitive refusal of the same submission. */
+        if (!c->submit_stage || c->submitted || c->submit_error ||
             r->value.submitted.submission_id != c->next_submission - 1 ||
             r->value.submitted.candidate_kind != sf_get(c->tx + 6, 2))
             return SOPHIA_9P_INVALID;

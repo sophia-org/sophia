@@ -25,6 +25,15 @@ remain authoritative. The api file supplies the attach epoch.
 also recorded profile blob `de101e3d` and diod reference blob `48d63c80`, upstream
 `de51d1ee1bd5`. The current complete copy digests are the SDK reference inputs.
 
+The shell file KDL comments and lifecycle document were subsequently updated
+from Sophia commit `436fb1ac`, with audit qualifications in `e9750572`, to
+clarify native launcher clocks, generations, input acknowledgement and close
+settlement. These updates change no field layout. `spec/sophia-wm-files.md`
+is also copied from `e9750572`: the shell contract references its custody rules,
+including paced EAGAIN retries and unknown custody across disconnect. The other
+reference copies retain the initial source revision above. Reference documents
+retain their own notices; they are not compiled into the libraries.
+
 To update a contract, choose a reviewed Sophia commit, copy the changed
 authoritative files, update the digest manifest and provenance revision,
 implement and test compatibility, then sign the SDK commit. Sophia integration

@@ -80,6 +80,8 @@ int sophia_9p_flush(struct sophia_9p_client *, struct sophia_9p_handle old,
 /* At most byte_budget bytes and 32 syscalls in EACH direction, including EINTR.
  * Partial I/O remains owned. A terminal result latches; caller closes the fd. */
 int sophia_9p_service(struct sophia_9p_client *, size_t byte_budget);
+/* Nonzero while request bytes remain unsent on a live client: poll POLLOUT. */
+int sophia_9p_wants_write(const struct sophia_9p_client *);
 /* Arrival FIFO; peek borrows a stable reply until explicit consume. */
 int sophia_9p_peek(struct sophia_9p_client *, struct sophia_9p_reply *);
 int sophia_9p_consume(struct sophia_9p_client *, struct sophia_9p_handle);

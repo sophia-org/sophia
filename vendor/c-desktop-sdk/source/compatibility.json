@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "sdk": "sophia-desktop-sdk-c",
+  "version": "0.1.0-dev",
+  "release": false,
+  "dialect": "9P2000.L",
+  "shell_file_api": 1,
+  "shell_file_profiles": {
+    "bar": { "maximum_revision": 6, "capabilities": "negotiated" },
+    "native_launcher": { "revision": 7, "required_capabilities": "0x9a0" },
+    "persistent_catalog": { "revision": 8, "required_capabilities": "0x11a2" }
+  },
+  "ipc_compatibility": "optional",
+  "wm_files": false,
+  "output_files": false,
+  "admin_files": false,
+  "tested_platforms": ["linux"],
+  "next_qualification_target": "freebsd",
+  "contract_digests": "spec/SHA256SUMS",
+  "import_digests": "provenance/import.sha256"
+}

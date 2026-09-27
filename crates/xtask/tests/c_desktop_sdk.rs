@@ -135,6 +135,7 @@ fn pinned_source_and_contract_are_both_required() {
         "protocol/sophia-shell-v1.kdl".to_owned(),
         "docs/sophia-9p-profile.md".to_owned(),
         "docs/sophia-shell-files.md".to_owned(),
+        "docs/sophia-wm-files.md".to_owned(),
         "docs/references/diod-9p2000L-protocol.md".to_owned(),
         "bindings/c/sophia_wm_v1.c".to_owned(),
         "bindings/c/sophia_wm_v1.h".to_owned(),
