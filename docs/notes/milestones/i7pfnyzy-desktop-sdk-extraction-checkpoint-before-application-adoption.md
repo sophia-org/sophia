@@ -90,7 +90,29 @@ The [native contract audit](../investigations/c6z62h49-native-launcher-sdk-audit
 records thirteen questions traced to owners and tests. Clarifications
 `436fb1ac` and `e9750572` preserve current behavior, including its fatal expiry
 and renderer-revalidation races. The native layer's production-export test is
-the next validation boundary; no application or installed default has changed.
+now covered as described below; no application or installed default has changed.
+
+## Native session production-owner coverage
+
+Signed C SDK `6a59a13` adds the public native-session peer. Sophia integration
+`c1eb783d` pins that exact 143-file snapshot and adds `shell_native_sdk` to the
+C file gate. The gate passes all five tests: three base/session tests, one
+existing r7/r8 record test, and the new native-session lifecycle test. The pin
+check, targeted runtime clippy with warnings denied, formatting and layout pass.
+
+The new peer uses the real C session and native layers against Sophia's real
+file export, allocation, resource, candidate, focus and input owners. It checks
+Submitted custody, upload acceptance, Prepared versus Presented, exact focus
+binding, reservation refusal before a UI edit, one edit and acknowledgement,
+keyboard activation, focus disarming, close, allocation invalidation and
+resource retirement. Cleanup requires quiescent content accounting.
+
+Session admission and presentation observations are scripted. The content clock
+is frozen and input timestamps use fixture time; this test does not cover
+production deadlines, pointer activation, launch policy or physical rendering.
+Rust B6c review found missing event/object epoch checks, submission-kind and
+write-count checks, and a custody overwrite path. Claude has reported fixes in
+progress; those require their own regression evidence before integration.
 
 ## Remaining work
 
