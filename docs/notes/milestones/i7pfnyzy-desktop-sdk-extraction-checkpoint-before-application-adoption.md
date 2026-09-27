@@ -209,13 +209,35 @@ Claude reports Rust SDK `0da1042` and Sophia integration `93ac7747c` passing
 before/after control. Rust's full workspace gate remains required. The compile
 slot has returned to that lane to merge the C master base and run the gate.
 
+## Rust integration merged and first live candidate
+
+Signed master merge `f5b5854d0` lands the Rust desktop SDK and B6c. The complete
+offline `cargo xtask check` passed at its integration parent `ff59002c9`:
+441 passing test-result blocks, no failures, both SDK pin checks, workspace
+clippy, conformance, layout, verifier controls, archives and host pixel proofs.
+The earlier failed gate attempts remain failed in the evidence history.
+Log: `development-evidence/sdk-rust-gate/ff59002c9.log` under the Sophia state
+directory. The Rust pin is `0da10428ad2ef85ff9f1c35c11238fbfebe81d04`;
+the C pin remains `a0ab8c853fe56b68e01ae69b82d06c15fc177484`.
+
+Sophia `f5b5854d0` and Bemenu `52a6e30` were pushed to their origin master
+branches. The standalone SDK repositories remain local: creation/publication
+requires renewed GitHub CLI authentication. Their verified vendored snapshots
+support offline desktop builds independently of that publication step.
+
+niltempus authorized preparing a live session after the Rust merge and push.
+The first candidate uses Hagia and Bemenu over 9P, with Lom still on IPC until
+its SDK adoption. The personal installer prepares distinct normal and IPC
+rollback profiles without changing the user's source desktop profile. This
+records authorization and candidate scope, not installation or live acceptance.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 defines lifecycle completion, release and application-adoption exits. The C
 session/native lifecycle layers and Bemenu's application pin have production
-export coverage and are merged locally. Rust B6c needs its final integration
-gate and merge. SDK publication,
+export coverage and are merged. Rust B6c passed its final integration gate and
+is merged. SDK publication,
 the other application adoptions and attended daily-driver acceptance remain.
 No installed default has changed. Task state remains in
 [todo.md](../../../todo.md).
