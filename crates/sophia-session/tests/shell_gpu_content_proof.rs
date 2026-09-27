@@ -3,10 +3,10 @@
 use sophia_config::ShellComponentEdge;
 use sophia_protocol::ContentPixelRect;
 use sophia_session::{
-    SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_EXTENT, SHELL_GPU_PROOF_MAX_RENDERS,
-    SHELL_GPU_PROOF_MAX_TIMEOUT, SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof,
-    ShellGpuProofEnd, ShellGpuProofError, ShellGpuProofExtent, ShellGpuProofOutcome,
-    ShellGpuProofSurface,
+    SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_RENDERS, SHELL_GPU_PROOF_MAX_TIMEOUT,
+    SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof, ShellGpuProofEnd, ShellGpuProofError,
+    ShellGpuProofExtent, ShellGpuProofOutcome, ShellGpuProofPixels, ShellGpuProofSurface,
+    shell_gpu_proof_content_limits,
 };
 use std::time::Duration;
 
@@ -40,9 +40,23 @@ fn proof(edge: ShellComponentEdge, width: u32, height: u32) -> ShellGpuContentPr
             ShellGpuProofOutcome::PresentedSynthetic,
         ],
         end: ShellGpuProofEnd::StopClient,
+        pixels: ShellGpuProofPixels::Contract,
         discrete_input: false,
         timeout: SHELL_GPU_PROOF_DEFAULT_TIMEOUT,
     }
+}
+
+fn on_output(
+    edge: ShellComponentEdge,
+    output: (u32, u32),
+    surface: (u32, u32),
+) -> ShellGpuContentProof {
+    let mut parameters = proof(edge, surface.0, surface.1);
+    parameters.output = ShellGpuProofExtent {
+        width: output.0,
+        height: output.1,
+    };
+    parameters
 }
 
 #[test]
@@ -76,60 +90,139 @@ fn surfaces_fit_and_sit_against_each_edge() {
 #[test]
 fn a_surface_larger_than_the_output_does_not_fit_any_edge() {
     for edge in EDGES {
-        for (width, height) in [(801, 24), (48, 601), (801, 601)] {
+        for (width, height) in [(801, 24), (24, 601), (801, 601)] {
             assert_eq!(
                 proof(edge, width, height).validate(),
                 Err(ShellGpuProofError::SurfaceOutsideOutput),
                 "{edge:?} {width}x{height}"
             );
         }
-        // Exactly the output is the largest surface that fits.
-        proof(edge, 800, 600).validate().unwrap();
     }
 }
 
 #[test]
-fn zero_oversized_and_overflowing_dimensions_are_refused() {
-    let mut parameters = proof(ShellComponentEdge::Top, 800, 24);
-    parameters.surface.height = 0;
-    assert_eq!(
-        parameters.validate(),
-        Err(ShellGpuProofError::ZeroExtent {
-            name: "surface height"
-        })
-    );
-    let mut parameters = proof(ShellComponentEdge::Top, 800, 24);
-    parameters.output.width = 0;
-    assert_eq!(
-        parameters.validate(),
-        Err(ShellGpuProofError::ZeroExtent {
-            name: "output width"
-        })
-    );
-    for value in [SHELL_GPU_PROOF_MAX_EXTENT + 1, u32::MAX] {
+fn zero_dimensions_are_refused() {
+    for (field, name) in [
+        (0, "output width"),
+        (1, "output height"),
+        (2, "surface width"),
+        (3, "surface height"),
+    ] {
         let mut parameters = proof(ShellComponentEdge::Top, 800, 24);
-        parameters.output.height = value;
+        match field {
+            0 => parameters.output.width = 0,
+            1 => parameters.output.height = 0,
+            2 => parameters.surface.width = 0,
+            _ => parameters.surface.height = 0,
+        }
         assert_eq!(
             parameters.validate(),
-            Err(ShellGpuProofError::OversizedExtent {
-                name: "output height",
-                value
-            })
+            Err(ShellGpuProofError::ZeroExtent { name })
         );
-        let mut parameters = proof(ShellComponentEdge::Left, 48, 600);
-        parameters.output = ShellGpuProofExtent {
-            width: value,
-            height: value,
-        };
-        parameters.surface.width = value;
-        assert!(matches!(
-            parameters.validate(),
-            Err(ShellGpuProofError::OversizedExtent { .. })
-        ));
     }
-    let mut largest = proof(ShellComponentEdge::Top, SHELL_GPU_PROOF_MAX_EXTENT, 24);
-    largest.output.width = SHELL_GPU_PROOF_MAX_EXTENT;
-    largest.validate().unwrap();
+}
+
+#[test]
+fn resource_width_and_height_limits_hold_at_and_one_past() {
+    let limits = shell_gpu_proof_content_limits();
+    let width = limits.max_width_px;
+    on_output(ShellComponentEdge::Top, (width + 1, 4096), (width, 1))
+        .validate()
+        .unwrap();
+    assert_eq!(
+        on_output(ShellComponentEdge::Top, (width + 1, 4096), (width + 1, 1)).validate(),
+        Err(ShellGpuProofError::ResourceExtent {
+            name: "surface width",
+            value: width + 1,
+            limit: width
+        })
+    );
+    let height = limits.max_height_px;
+    on_output(ShellComponentEdge::Left, (16, height + 1), (1, height))
+        .validate()
+        .unwrap();
+    assert_eq!(
+        on_output(ShellComponentEdge::Left, (16, height + 1), (1, height + 1)).validate(),
+        Err(ShellGpuProofError::ResourceExtent {
+            name: "surface height",
+            value: height + 1,
+            limit: height
+        })
+    );
+    assert!(matches!(
+        on_output(ShellComponentEdge::Top, (u32::MAX, u32::MAX), (u32::MAX, 1)).validate(),
+        Err(ShellGpuProofError::ResourceExtent { .. })
+    ));
+}
+
+#[test]
+fn thickness_across_each_edge_holds_at_and_one_past_the_limit() {
+    let limits = shell_gpu_proof_content_limits();
+    let limit = limits.max_panel_extent.min(limits.max_reservation_extent);
+    for edge in EDGES {
+        let across = |thickness| match edge {
+            ShellComponentEdge::Top | ShellComponentEdge::Bottom => (16, thickness),
+            ShellComponentEdge::Left | ShellComponentEdge::Right => (thickness, 16),
+        };
+        on_output(edge, (1024, 1024), across(limit))
+            .validate()
+            .unwrap();
+        assert_eq!(
+            on_output(edge, (1024, 1024), across(limit + 1)).validate(),
+            Err(ShellGpuProofError::Thickness {
+                thickness: limit + 1,
+                limit
+            }),
+            "{edge:?}"
+        );
+    }
+}
+
+#[test]
+fn resource_bytes_hold_at_and_one_row_past_the_limit() {
+    let limits = shell_gpu_proof_content_limits();
+    let width = limits.max_width_px;
+    let pixels = limits.max_resource_bytes / 4;
+    assert_eq!(pixels % u64::from(width), 0, "limit is not whole rows");
+    let height = u32::try_from(pixels / u64::from(width)).unwrap();
+    let thickness = limits.max_panel_extent.min(limits.max_reservation_extent);
+    assert!(
+        height < thickness,
+        "rows past the byte limit must still fit"
+    );
+    let output = (width, limits.max_height_px);
+    let at = on_output(ShellComponentEdge::Top, output, (width, height));
+    assert_eq!(at.surface.bytes(), Some(limits.max_resource_bytes));
+    at.validate().unwrap();
+    let past = on_output(ShellComponentEdge::Top, output, (width, height + 1));
+    assert_eq!(
+        past.validate(),
+        Err(ShellGpuProofError::ResourceBytes {
+            bytes: past.surface.bytes(),
+            limit: limits.max_resource_bytes
+        })
+    );
+    let overflowing = ShellGpuProofSurface {
+        edge: ShellComponentEdge::Top,
+        width: u32::MAX,
+        height: 2,
+    };
+    assert_eq!(overflowing.bytes(), None);
+}
+
+#[test]
+fn coverage_holds_at_and_one_row_past_the_limit() {
+    let percent = shell_gpu_proof_content_limits().max_content_coverage_percent;
+    // On a 100x100 output one full-width row is exactly one percent.
+    on_output(ShellComponentEdge::Top, (100, 100), (100, percent))
+        .validate()
+        .unwrap();
+    assert_eq!(
+        on_output(ShellComponentEdge::Top, (100, 100), (100, percent + 1)).validate(),
+        Err(ShellGpuProofError::Coverage {
+            percent_limit: percent
+        })
+    );
 }
 
 #[test]

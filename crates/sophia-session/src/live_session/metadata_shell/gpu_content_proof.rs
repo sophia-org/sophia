@@ -1,12 +1,14 @@
 //! Isolated hardware proof for the production shell GPU and content seams.
 //!
-//! A shell client of any shape runs inside the protected domain with a direct
-//! render-node grant, requests the one edge-anchored surface its parameters
-//! name, and renders the number of candidates they name. The proof answers
-//! each candidate synthetically; it never acquires DRM master or claims native
-//! presentation. Client-specific expectations -- what a particular shell
-//! prints, which adapter it selects, how it reacts to a failed render --
-//! belong to that client's own verifier, which reads the records emitted here.
+//! A shell client runs inside the protected domain with a direct render-node
+//! grant. It must request the one edge-anchored surface the parameters name,
+//! within the proof's content limits, and submit as many candidates as the
+//! parameters list outcomes. The proof answers each candidate synthetically;
+//! it never acquires DRM master or claims native presentation. The pixels are
+//! checked only as far as the selected [`ShellGpuProofPixels`] pattern says.
+//! Client-specific expectations -- what a particular shell prints, which
+//! adapter it selects, how it reacts to a failed render -- belong to that
+//! client's own verifier, which reads the records emitted here.
 
 use super::gpu::ShellGpuLaunchPolicy;
 use sophia_backend_live::LiveRenderDeviceIdentitySnapshot;
@@ -29,15 +31,40 @@ mod domain;
 mod parameters;
 pub use domain::exec_client;
 pub use parameters::{
-    SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_EXTENT, SHELL_GPU_PROOF_MAX_RENDERS,
+    SHELL_GPU_PROOF_BYTES_PER_PIXEL, SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_RENDERS,
     SHELL_GPU_PROOF_MAX_TIMEOUT, SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof,
     ShellGpuProofEnd, ShellGpuProofError, ShellGpuProofExtent, ShellGpuProofOutcome,
-    ShellGpuProofSurface,
+    ShellGpuProofPixels, ShellGpuProofSurface, shell_gpu_proof_content_limits,
 };
 
-/// Content intake records per candidate: the bound on candidate servicing,
-/// so a client that keeps submitting cannot hold the proof in intake.
-const INTAKE_RECORDS_PER_RENDER: usize = 3;
+/// Candidate intake across the proof's visits to the transport.
+///
+/// Each visit services one batch, which the transport owner bounds by its
+/// negotiated `max_frames_per_service_tick` and output-queue room. The proof
+/// adds no cap across visits: a fragmented candidate's Begin, chunks and End
+/// may arrive on any number of visits, and a lifetime cap would strand its End
+/// until the deadline. The proof's deadline bounds the whole run.
+#[derive(Debug, Default)]
+struct CandidateIntake {
+    serviced: usize,
+}
+
+impl CandidateIntake {
+    /// Service one owner-bounded batch once a frame permit exists; a
+    /// candidate cannot begin without one.
+    fn visit<E>(
+        &mut self,
+        permits_sent: u64,
+        service: impl FnOnce() -> Result<usize, E>,
+    ) -> Result<usize, E> {
+        if permits_sent == 0 {
+            return Ok(0);
+        }
+        let serviced = service()?;
+        self.serviced = self.serviced.saturating_add(serviced);
+        Ok(serviced)
+    }
+}
 
 type Inventory = Vec<LiveRenderDeviceIdentitySnapshot>;
 
@@ -132,6 +159,14 @@ fn run_with_inventory(
         proof_content_admission_policy(proof.discrete_input),
     )?;
     let grant = transport.content_grant().ok_or("content was not granted")?;
+    // validate() checked the geometry against this profile; refuse if the
+    // transport ever negotiates another one.
+    let negotiated = transport
+        .content_limits()
+        .ok_or("content limits were not negotiated")?;
+    if *negotiated != sophia_protocol::ContentLimits::prototype(negotiated.grant) {
+        return Err("negotiated content limits differ from the limits the proof validated".into());
+    }
     // Environment fields correlate observations; only this protected-peer
     // authorization and completed negotiation establish the parent binding.
     crate::session_println!(
@@ -165,7 +200,7 @@ fn run_with_inventory(
     let deadline = started + proof.timeout;
     let mut allocation = None;
     let mut permits_sent = 0_u64;
-    let mut candidate_records = 0;
+    let mut intake = CandidateIntake::default();
     let mut presentations = 0_u64;
     let mut last_generation = 0_u64;
     let mut verified = 0_usize;
@@ -243,9 +278,10 @@ fn run_with_inventory(
                     )
                 })?;
         }
-        if permits_sent != 0 && candidate_records < renders * INTAKE_RECORDS_PER_RENDER {
-            candidate_records += transport
-                .service_content_candidates(
+        let serviced_before = intake.serviced;
+        intake
+            .visit(permits_sent, || {
+                transport.service_content_candidates(
                     &[ContentCandidateContext {
                         output,
                         facts_generation: 1,
@@ -254,12 +290,12 @@ fn run_with_inventory(
                     }],
                     now,
                 )
-                .map_err(|error| {
-                    format!(
-                        "candidate intake after {candidate_records} records and {permits_sent} permits: {error}"
-                    )
-                })?;
-        }
+            })
+            .map_err(|error| {
+                format!(
+                    "candidate intake after {serviced_before} records and {permits_sent} permits: {error}"
+                )
+            })?;
         while let Some((candidate_output, generation)) = transport.next_content_submission() {
             if candidate_output != output {
                 return Err("client submitted a candidate for an unknown output".into());
@@ -278,7 +314,7 @@ fn run_with_inventory(
             let bundle = transport
                 .begin_content_submission(output, generation, now)
                 .map_err(|error| format!("candidate {index} submission: {error}"))?;
-            let (bytes, checksum) = verify_bundle(&bundle, proof.surface)?;
+            let (bytes, checksum) = verify_bundle(&bundle, proof.surface, proof.pixels)?;
             let outcome = proof.outcomes[verified];
             match outcome {
                 ShellGpuProofOutcome::PresentedSynthetic => {
@@ -339,7 +375,7 @@ fn run_with_inventory(
                 return Err("content lease or backing survived the proof's end".into());
             }
             crate::session_println!(
-                "sophia_shell_gpu_content_proof schema=1 status=complete protected=true revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} output_width={} output_height={} edge={} width={} height={} renders={} discrete_input={} end={} backing_bytes=0 native_presentation=false",
+                "sophia_shell_gpu_content_proof schema=1 status=complete protected=true revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} output_width={} output_height={} edge={} width={} height={} renders={} pixels={} discrete_input={} end={} backing_bytes=0 native_presentation=false",
                 welcome.selected_revision,
                 welcome.capabilities,
                 gpu.epoch,
@@ -353,6 +389,7 @@ fn run_with_inventory(
                 proof.surface.width,
                 proof.surface.height,
                 renders,
+                proof.pixels.record_name(),
                 proof.discrete_input,
                 proof.end.record_name(),
             );
@@ -460,41 +497,81 @@ fn service_demands(
     }
 }
 
+/// Check one candidate against the proof's pixel pattern and summarise the
+/// bytes of its placed resources, in placement order, for the render record.
 fn verify_bundle(
     bundle: &ContentRenderBundle,
     surface: ShellGpuProofSurface,
+    pixels: ShellGpuProofPixels,
 ) -> Result<(usize, u64), Box<dyn std::error::Error>> {
-    if bundle.surfaces.len() != 1 || bundle.placements.is_empty() {
-        return Err("client did not submit one complete surface".into());
+    if pixels == ShellGpuProofPixels::FullSurfaceRaster {
+        if bundle.surfaces.len() != 1 {
+            return Err("full-surface raster: client did not submit exactly one surface".into());
+        }
+        let first = bundle
+            .placements
+            .first()
+            .ok_or("full-surface raster: the surface has no placement")?;
+        let lease = bundle
+            .resource(first.resource)
+            .ok_or("candidate placement named no admitted resource")?;
+        let description = lease.description();
+        check_full_surface_raster(
+            surface,
+            description.width_px,
+            description.height_px,
+            lease.bytes(),
+        )?;
     }
-    let resource = bundle.placements[0].resource;
-    let lease = bundle
-        .resource(resource)
-        .ok_or("candidate placement named no admitted resource")?;
-    let description = lease.description();
-    if description.width_px != surface.width || description.height_px != surface.height {
-        return Err("GPU pixels do not match the acknowledged allocation".into());
+    let mut seen = Vec::new();
+    let mut total = 0_usize;
+    let mut hash = FNV_OFFSET;
+    for placement in &bundle.placements {
+        if seen.contains(&placement.resource) {
+            continue;
+        }
+        seen.push(placement.resource);
+        let lease = bundle
+            .resource(placement.resource)
+            .ok_or("candidate placement named no admitted resource")?;
+        total = total.saturating_add(lease.bytes().len());
+        hash = fnv(hash, lease.bytes());
     }
-    let expected = u64::from(surface.width)
-        .checked_mul(u64::from(surface.height))
-        .and_then(|pixels| pixels.checked_mul(4))
-        .ok_or("surface byte size overflows")?;
-    let bytes = lease.bytes();
-    let mut pixels = bytes.chunks_exact(4);
-    let first = pixels
-        .next()
-        .ok_or("GPU render produced no complete pixel")?;
+    Ok((total, hash))
+}
+
+/// The full-surface raster peer requirement for one resource: the
+/// allocation's exact size in the admitted format, with bytes that are
+/// neither empty nor uniform.
+fn check_full_surface_raster(
+    surface: ShellGpuProofSurface,
+    width_px: u32,
+    height_px: u32,
+    bytes: &[u8],
+) -> Result<(), String> {
+    if width_px != surface.width || height_px != surface.height {
+        return Err("full-surface raster: resource does not match the allocation".into());
+    }
+    let expected = surface
+        .bytes()
+        .ok_or("full-surface raster: surface byte size overflows")?;
+    let mut pixels = bytes.chunks_exact(SHELL_GPU_PROOF_BYTES_PER_PIXEL as usize);
+    let Some(first) = pixels.next() else {
+        return Err("full-surface raster: resource holds no complete pixel".into());
+    };
     if u64::try_from(bytes.len()).ok() != Some(expected)
         || bytes.iter().all(|byte| *byte == 0)
         || pixels.all(|pixel| pixel == first)
     {
-        return Err("GPU render produced empty or uniform surface bytes".into());
+        return Err("full-surface raster: resource bytes are empty or uniform".into());
     }
-    Ok((bytes.len(), checksum(bytes)))
+    Ok(())
 }
 
-fn checksum(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf29ce484222325, |hash, byte| {
+const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+
+fn fnv(hash: u64, bytes: &[u8]) -> u64 {
+    bytes.iter().fold(hash, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     })
 }

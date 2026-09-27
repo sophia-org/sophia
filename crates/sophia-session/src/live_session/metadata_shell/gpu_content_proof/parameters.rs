@@ -1,13 +1,13 @@
 //! Typed parameters of the shell GPU content proof.
 //!
-//! Every expectation the proof checks comes from these parameters, so a shell
-//! of any shape can be proven without Sophia knowing which client it is.
-//! [`ShellGpuContentProof::validate`] is pure: it runs before the proof reads
-//! the render inventory or touches a device, and refuses anything it cannot
-//! bound.
+//! Every expectation the proof checks comes from these parameters rather than
+//! from a particular client. [`ShellGpuContentProof::validate`] is pure: it
+//! runs before the proof reads the render inventory or touches a device, and
+//! refuses any geometry the proof's negotiated content limits would refuse
+//! later.
 
 use sophia_config::ShellComponentEdge;
-use sophia_protocol::ContentPixelRect;
+use sophia_protocol::{ContentGrant, ContentLimits, ContentPixelRect};
 use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
@@ -15,13 +15,18 @@ use std::time::Duration;
 
 /// Upper bound on verified renders in one proof.
 pub const SHELL_GPU_PROOF_MAX_RENDERS: usize = 16;
-/// Upper bound on any one output or surface dimension, in pixels. It keeps a
-/// surface's byte size well inside `u32` and its thickness inside the `u16`
-/// reservation extent.
-pub const SHELL_GPU_PROOF_MAX_EXTENT: u32 = 16_384;
 pub const SHELL_GPU_PROOF_MIN_TIMEOUT: Duration = Duration::from_secs(1);
 pub const SHELL_GPU_PROOF_MAX_TIMEOUT: Duration = Duration::from_secs(120);
 pub const SHELL_GPU_PROOF_DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
+/// Bytes per pixel of the one content pixel format the limits admit.
+pub const SHELL_GPU_PROOF_BYTES_PER_PIXEL: u32 = 4;
+
+/// The content limits the proof's transport negotiates. The proof reserves no
+/// session limits, so negotiation grants the prototype profile; `run` refuses
+/// if the negotiated profile ever differs from this one.
+pub fn shell_gpu_proof_content_limits() -> ContentLimits {
+    ContentLimits::prototype(ContentGrant::default())
+}
 
 /// The synthetic output the proof publishes to the client, in pixels at scale 1.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +52,12 @@ impl ShellGpuProofSurface {
         }
     }
 
+    /// Bytes of one full-surface resource in the admitted pixel format.
+    pub fn bytes(self) -> Option<u64> {
+        let row = self.width.checked_mul(SHELL_GPU_PROOF_BYTES_PER_PIXEL)?;
+        u64::from(row).checked_mul(u64::from(self.height))
+    }
+
     /// Where the surface sits on the output: against its edge, with no margin.
     /// This matches Session's placement of an edge-anchored allocation.
     pub fn placement(self, output: ShellGpuProofExtent) -> ContentPixelRect {
@@ -58,7 +69,6 @@ impl ShellGpuProofSurface {
             ShellComponentEdge::Bottom => output.height.saturating_sub(self.height),
             _ => 0,
         };
-        // Both are bounded by SHELL_GPU_PROOF_MAX_EXTENT once validated.
         ContentPixelRect {
             x: i32::try_from(x).unwrap_or(i32::MAX),
             y: i32::try_from(y).unwrap_or(i32::MAX),
@@ -106,6 +116,30 @@ impl ShellGpuProofEnd {
     }
 }
 
+/// What the proof requires of each candidate's pixels, beyond the content
+/// contract the transport already enforces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShellGpuProofPixels {
+    /// No requirement beyond the contract: any number of placements and
+    /// resources, including solid fills. The records carry byte counts and a
+    /// checksum over the placed resources, but no rendering claim.
+    Contract,
+    /// Peer requirement for a client that rasters its whole surface into one
+    /// resource: exactly one surface, whose first placement's resource has the
+    /// allocation's exact size and bytes that are neither empty nor uniform.
+    /// Only this pattern shows that GPU-rendered pixels crossed the grant.
+    FullSurfaceRaster,
+}
+
+impl ShellGpuProofPixels {
+    pub const fn record_name(self) -> &'static str {
+        match self {
+            Self::Contract => "contract",
+            Self::FullSurfaceRaster => "full_surface_raster",
+        }
+    }
+}
+
 /// One isolated run of a shell client through the protected GPU grant and
 /// the content seam, without DRM master or native presentation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -125,6 +159,7 @@ pub struct ShellGpuContentProof {
     /// One synthetic answer per verified render, in order.
     pub outcomes: Vec<ShellGpuProofOutcome>,
     pub end: ShellGpuProofEnd,
+    pub pixels: ShellGpuProofPixels,
     /// Whether content admission grants discrete input.
     pub discrete_input: bool,
     pub timeout: Duration,
@@ -134,13 +169,40 @@ pub struct ShellGpuContentProof {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ShellGpuProofError {
-    RelativePath { name: &'static str },
+    RelativePath {
+        name: &'static str,
+    },
     EmptySeat,
-    ZeroExtent { name: &'static str },
-    OversizedExtent { name: &'static str, value: u32 },
+    ZeroExtent {
+        name: &'static str,
+    },
+    /// A surface dimension exceeds the resource width or height limit.
+    ResourceExtent {
+        name: &'static str,
+        value: u32,
+        limit: u32,
+    },
     SurfaceOutsideOutput,
-    RenderCount { count: usize },
-    Timeout { timeout: Duration },
+    /// The extent across the edge exceeds the panel or reservation limit.
+    Thickness {
+        thickness: u32,
+        limit: u32,
+    },
+    /// One full-surface resource would exceed the resource byte limit.
+    ResourceBytes {
+        bytes: Option<u64>,
+        limit: u64,
+    },
+    /// The surface covers more of the output than the coverage limit allows.
+    Coverage {
+        percent_limit: u32,
+    },
+    RenderCount {
+        count: usize,
+    },
+    Timeout {
+        timeout: Duration,
+    },
     MalformedExpectedDevice,
 }
 
@@ -150,11 +212,28 @@ impl fmt::Display for ShellGpuProofError {
             Self::RelativePath { name } => write!(formatter, "{name} must be an absolute path"),
             Self::EmptySeat => formatter.write_str("seat must not be empty"),
             Self::ZeroExtent { name } => write!(formatter, "{name} must not be zero"),
-            Self::OversizedExtent { name, value } => write!(
-                formatter,
-                "{name} {value} exceeds {SHELL_GPU_PROOF_MAX_EXTENT}"
-            ),
+            Self::ResourceExtent { name, value, limit } => {
+                write!(
+                    formatter,
+                    "{name} {value} exceeds the resource limit {limit}"
+                )
+            }
             Self::SurfaceOutsideOutput => formatter.write_str("surface does not fit the output"),
+            Self::Thickness { thickness, limit } => write!(
+                formatter,
+                "surface thickness {thickness} across its edge exceeds the limit {limit}"
+            ),
+            Self::ResourceBytes { bytes, limit } => match bytes {
+                Some(bytes) => write!(
+                    formatter,
+                    "surface needs {bytes} resource bytes, above the limit {limit}"
+                ),
+                None => formatter.write_str("surface resource byte size overflows"),
+            },
+            Self::Coverage { percent_limit } => write!(
+                formatter,
+                "surface covers more than {percent_limit}% of the output"
+            ),
             Self::RenderCount { count } => write!(
                 formatter,
                 "render count {count} is outside 1..={SHELL_GPU_PROOF_MAX_RENDERS}"
@@ -172,8 +251,10 @@ impl fmt::Display for ShellGpuProofError {
 impl std::error::Error for ShellGpuProofError {}
 
 impl ShellGpuContentProof {
-    /// Check every parameter without touching the filesystem or a device.
+    /// Check every parameter against the proof's content limits without
+    /// touching the filesystem or a device.
     pub fn validate(&self) -> Result<(), ShellGpuProofError> {
+        let limits = shell_gpu_proof_content_limits();
         for (name, path) in [
             ("client", Some(&self.client)),
             ("config", self.config.as_ref()),
@@ -195,12 +276,43 @@ impl ShellGpuContentProof {
             if value == 0 {
                 return Err(ShellGpuProofError::ZeroExtent { name });
             }
-            if value > SHELL_GPU_PROOF_MAX_EXTENT {
-                return Err(ShellGpuProofError::OversizedExtent { name, value });
+        }
+        for (name, value, limit) in [
+            ("surface width", self.surface.width, limits.max_width_px),
+            ("surface height", self.surface.height, limits.max_height_px),
+        ] {
+            if value > limit {
+                return Err(ShellGpuProofError::ResourceExtent { name, value, limit });
             }
         }
         if self.surface.width > self.output.width || self.surface.height > self.output.height {
             return Err(ShellGpuProofError::SurfaceOutsideOutput);
+        }
+        // Allocation refuses a panel thicker than the panel extent and a
+        // reservation above the reservation extent; the proof grants a
+        // reservation equal to the thickness, so both apply.
+        let thickness_limit = limits.max_panel_extent.min(limits.max_reservation_extent);
+        if self.surface.thickness() > thickness_limit {
+            return Err(ShellGpuProofError::Thickness {
+                thickness: self.surface.thickness(),
+                limit: thickness_limit,
+            });
+        }
+        let bytes = self.surface.bytes();
+        if bytes.is_none_or(|bytes| bytes > limits.max_resource_bytes) {
+            return Err(ShellGpuProofError::ResourceBytes {
+                bytes,
+                limit: limits.max_resource_bytes,
+            });
+        }
+        let area = u64::from(self.surface.width) * u64::from(self.surface.height);
+        let output_area = u64::from(self.output.width) * u64::from(self.output.height);
+        if u128::from(area) * 100
+            > u128::from(output_area) * u128::from(limits.max_content_coverage_percent)
+        {
+            return Err(ShellGpuProofError::Coverage {
+                percent_limit: limits.max_content_coverage_percent,
+            });
         }
         if !(1..=SHELL_GPU_PROOF_MAX_RENDERS).contains(&self.outcomes.len()) {
             return Err(ShellGpuProofError::RenderCount {

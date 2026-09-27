@@ -23,6 +23,7 @@ fn proof() -> ShellGpuContentProof {
         },
         outcomes: vec![ShellGpuProofOutcome::PresentedSynthetic; 3],
         end: ShellGpuProofEnd::StopClient,
+        pixels: ShellGpuProofPixels::FullSurfaceRaster,
         discrete_input: false,
         timeout: SHELL_GPU_PROOF_DEFAULT_TIMEOUT,
     }
@@ -127,4 +128,71 @@ fn inventory_is_read_only_after_every_local_check_passes() {
         error.to_string(),
         "proof requires exactly one admitted render-node identity"
     );
+}
+
+/// A fragmented candidate -- Begin, several chunks, End -- that arrives one
+/// record per visit must be serviced through its End. A cap on intake across
+/// visits (formerly three records per render) strands it after the third
+/// record and the proof times out; this control fails under that cap.
+#[test]
+fn a_fragmented_candidate_across_visits_is_serviced_to_its_end() {
+    let records = ["begin", "chunk", "chunk", "chunk", "chunk", "end"];
+    let mut arriving = records.iter();
+    let mut serviced = Vec::new();
+    let mut intake = CandidateIntake::default();
+    for _visit in 0..records.len() {
+        intake
+            .visit(1, || {
+                Ok::<_, ()>(match arriving.next() {
+                    Some(record) => {
+                        serviced.push(*record);
+                        1
+                    }
+                    None => 0,
+                })
+            })
+            .unwrap();
+    }
+    assert_eq!(serviced, records);
+    assert_eq!(intake.serviced, records.len());
+}
+
+#[test]
+fn intake_waits_for_a_permit_and_propagates_owner_errors() {
+    let mut intake = CandidateIntake::default();
+    let mut called = false;
+    intake
+        .visit(0, || {
+            called = true;
+            Ok::<_, ()>(1)
+        })
+        .unwrap();
+    assert!(!called, "a candidate cannot begin before a frame permit");
+    assert_eq!(intake.visit(1, || Err::<usize, _>("owner")), Err("owner"));
+    assert_eq!(intake.serviced, 0);
+}
+
+#[test]
+fn full_surface_raster_requires_exact_size_and_varied_bytes() {
+    let surface = ShellGpuProofSurface {
+        edge: ShellComponentEdge::Top,
+        width: 4,
+        height: 2,
+    };
+    let varied = (0..32_u8).collect::<Vec<_>>();
+    check_full_surface_raster(surface, 4, 2, &varied).unwrap();
+    for (width, height, bytes) in [
+        (3, 2, varied.clone()),
+        (4, 1, varied.clone()),
+        (4, 2, varied[..28].to_vec()),
+        (4, 2, vec![0; 32]),
+        (4, 2, [1, 2, 3, 4].repeat(8)),
+        (4, 2, Vec::new()),
+    ] {
+        assert!(
+            check_full_surface_raster(surface, width, height, &bytes).is_err(),
+            "{width}x{height} with {} bytes",
+            bytes.len()
+        );
+    }
 }

@@ -112,10 +112,10 @@ pub fn run_input_guard(args: &[String]) -> Result<(), Box<dyn std::error::Error>
 /// Typed parameters of the shell GPU content proof.
 #[cfg(feature = "native-session")]
 pub use live_session::metadata_shell::gpu_content_proof::{
-    SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_EXTENT, SHELL_GPU_PROOF_MAX_RENDERS,
+    SHELL_GPU_PROOF_BYTES_PER_PIXEL, SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_RENDERS,
     SHELL_GPU_PROOF_MAX_TIMEOUT, SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof,
     ShellGpuProofEnd, ShellGpuProofError, ShellGpuProofExtent, ShellGpuProofOutcome,
-    ShellGpuProofSurface,
+    ShellGpuProofPixels, ShellGpuProofSurface, shell_gpu_proof_content_limits,
 };
 
 /// Exercise a shell client's real protected GPU/content path without

@@ -8,13 +8,14 @@ use std::io::Read as _;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-const VALID: [&str; 7] = [
+const VALID: [&str; 8] = [
     "--client=/absent/shell-client",
     "--output=800x600",
     "--surface=800x24",
     "--edge=top",
     "--outcomes=presented,renderer-failed",
     "--end=client-exits",
+    "--pixels=full-surface-raster",
     "--discrete-input=denied",
 ];
 
@@ -79,6 +80,7 @@ fn every_required_flag_is_named_when_missing() {
         "--edge=",
         "--outcomes=",
         "--end=",
+        "--pixels=",
         "--discrete-input=",
     ] {
         let stderr = refuse(true, &with(flag, None));
@@ -108,6 +110,7 @@ fn malformed_values_are_refused() {
             "unknown --outcomes entry",
         ),
         ("--end=", "later", "unknown --end"),
+        ("--pixels=", "any-shape", "unknown --pixels"),
         ("--discrete-input=", "yes", "unknown --discrete-input"),
     ] {
         let stderr = refuse(true, &with(flag, Some(value)));
@@ -125,7 +128,9 @@ fn invalid_parameters_are_refused_by_validation() {
         ("--output=", "0x600"),
         ("--surface=", "800x0"),
         ("--surface=", "801x24"),
-        ("--surface=", "16385x24"),
+        ("--surface=", "8193x24"),
+        ("--surface=", "800x513"),
+        ("--surface=", "800x301"),
         ("--outcomes=", seventeen.as_str()),
         ("--client=", "relative/client"),
     ] {

@@ -2,7 +2,7 @@ use super::super::prelude::arg_value;
 use sophia_config::ShellComponentEdge;
 use sophia_session::{
     SHELL_GPU_PROOF_DEFAULT_TIMEOUT, ShellGpuContentProof, ShellGpuProofEnd, ShellGpuProofExtent,
-    ShellGpuProofOutcome, ShellGpuProofSurface,
+    ShellGpuProofOutcome, ShellGpuProofPixels, ShellGpuProofSurface,
 };
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -79,6 +79,11 @@ fn parse(
         "stop-client" => ShellGpuProofEnd::StopClient,
         other => return Err(format!("unknown --end {other:?}").into()),
     };
+    let pixels = match required(args, "--pixels", "contract|full-surface-raster")?.as_str() {
+        "contract" => ShellGpuProofPixels::Contract,
+        "full-surface-raster" => ShellGpuProofPixels::FullSurfaceRaster,
+        other => return Err(format!("unknown --pixels {other:?}").into()),
+    };
     let discrete_input = match required(args, "--discrete-input", "granted|denied")?.as_str() {
         "granted" => true,
         "denied" => false,
@@ -109,6 +114,7 @@ fn parse(
         },
         outcomes,
         end,
+        pixels,
         discrete_input,
         timeout,
     })
