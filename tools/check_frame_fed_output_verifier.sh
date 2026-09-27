@@ -9,8 +9,13 @@ work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 
 source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
-hagia_root="${SOPHIA_HAGIA_ROOT:-$ROOT_DIR/../hagia}"
-hagia_commit="$(git -C "$hagia_root" rev-parse HEAD)"
+# The binary is synthetic; exercise real signature checks using this
+# repository's commit instead of requiring an unrelated product checkout.
+hagia_root="$work/policy-source"
+# The archiver requires a checkout with a .git directory. A local clone also
+# works when this test itself runs from a linked worktree (.git is a file).
+git -c init.templateDir= clone --quiet --shared --no-checkout "$ROOT_DIR" "$hagia_root"
+hagia_commit="$source_commit"
 sophia_bin="$work/sophia"
 hagia_bin="$work/hagia"
 cp /usr/bin/true "$sophia_bin"

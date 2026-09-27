@@ -676,10 +676,12 @@ cp /usr/bin/true "$sophia_bin"
 cp /usr/bin/false "$hagia_bin"
 cp /usr/bin/true "$hagia_shell_bin"
 sophia_commit="$(git -C "$root_dir" rev-parse HEAD)"
-hagia_root="${SOPHIA_HAGIA_ROOT:-$root_dir/../hagia}"
-hagia_commit="$(git -C "$hagia_root" rev-parse HEAD)"
-narthex_root="${SOPHIA_NARTHEX_ROOT:-$root_dir/../narthex}"
-narthex_commit="$(git -C "$narthex_root" rev-parse HEAD)"
+# Synthetic binary identities need real signed commit objects, not product
+# checkouts. Use this repository for each fixture's signature verification.
+hagia_root="$root_dir"
+hagia_commit="$sophia_commit"
+narthex_root="$root_dir"
+narthex_commit="$sophia_commit"
 sophia_sha256="$(sha256sum "$sophia_bin" | awk '{ print $1 }')"
 hagia_sha256="$(sha256sum "$hagia_bin" | awk '{ print $1 }')"
 narthex_sha256="$(sha256sum "$hagia_shell_bin" | awk '{ print $1 }')"
@@ -708,7 +710,7 @@ SOPHIA_HAGIA_ROOT="$hagia_root" \
 
 
 # Recomputed checksums must not hide a changed Narthex identity. The positive
-# archive above binds genuine signed Sophia/Hagia/Narthex commit objects; these
+# archive above binds genuine signed objects to synthetic client identities; these
 # copies change only the claim being tested, not the signature verifier.
 archive_fixture_checksums() {
     candidate="$1"
