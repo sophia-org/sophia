@@ -137,6 +137,10 @@ for matching external adapters and WM support; an explicit checker must
 produce `policy=validated` wherever the desktop previously required validation.
 Publication and attended acceptance are separate from these local gate results.
 
+The [boundary cleanup checkpoint](../milestones/htxttn94-desktop-boundary-cleanup-checkpoint-before-integration-relocation.md)
+records the explicit policy-checker seam, generic WM environment and discovery,
+personal installer compatibility checks, and sibling-free verifier fixtures.
+
 The [extraction checkpoint](../milestones/i7pfnyzy-desktop-sdk-extraction-checkpoint-before-application-adoption.md)
 records the first merged C snapshot, validation and the scope still unclaimed.
 
