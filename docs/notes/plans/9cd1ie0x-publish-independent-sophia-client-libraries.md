@@ -106,6 +106,37 @@ block publication but does not block local implementation.
 
 ## Dependencies and connections
 
+### Repository boundary cleanup before the installed session
+
+On 2026-09-27 niltempus required Sophia to remain independent of particular
+shell and WM products, including tests and release tooling. The required rule
+is in `docs/style-guide.md` and the Sophia agent instructions. Generic SDK and
+server conformance stays in Sophia; actual desktop assembly belongs in
+`sophia-desktop-integration` or the personal installer, and UI behavior belongs
+in the client repository.
+
+The first relocation moves Bemenu artifact preparation and the live Bemenu
+test to the independent integration workspace at signed revision
+`d39c351fa72d30eb19e1da9d064bc49e23ad8373`. It pins public Sophia crates at
+`9fcaec782ce4fe9978568c0466ee17a78b3d4571`, with a committed lockfile and
+explicit offline provisioning. Its artifact refusal tests pass 4/4, pin tests
+5/5, and the live Bemenu check passes with two openings, three candidates,
+one edit and one activation. The source is Bemenu `52a6e309`, the SDK snapshot
+is `a0ab8c8`, and the prepared binary SHA-256 is
+`c2b16fabd9564d506548e3181f8903abb6ee0a72a0c56651b890276f37f5d00d`.
+The live log is `bemenu-files/live-52a6e30-integration.log` under development
+evidence. Session decisions remain scripted; this does not prove physical
+rendering, expiry behavior or launch policy.
+
+The remaining cleanup includes product-specific discovery and preflight,
+WM launch environment names, named-stack build and installed-session tooling,
+and product evidence gates. Relocate each gate with its inputs and negative
+controls before removing its Sophia entry point. Preserve generic policy,
+shell, protected-GPU and configuration checks. New release preparation waits
+for matching external adapters and WM support; an explicit checker must
+produce `policy=validated` wherever the desktop previously required validation.
+Publication and attended acceptance are separate from these local gate results.
+
 The [extraction checkpoint](../milestones/i7pfnyzy-desktop-sdk-extraction-checkpoint-before-application-adoption.md)
 records the first merged C snapshot, validation and the scope still unclaimed.
 
