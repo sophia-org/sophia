@@ -84,6 +84,11 @@ func (s *session) encoded(kind uint16, id uint64, body []byte) []byte {
 		}
 		p64(b, at, s.epoch)
 	}
+	if kind >= 266 && kind <= 272 {
+		raw, err := encodeRole(kind, id, s.epoch, b)
+		must(err)
+		return raw
+	}
 	return envelope(kind, id, s.epoch, b)
 }
 func (s *session) stage(raw []byte, split int) {
