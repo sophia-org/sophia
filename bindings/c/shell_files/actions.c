@@ -66,7 +66,7 @@ int sf_check_frame_permit(const struct sophia_sf_frame_permit *v)
 {
     if (!v->transaction || !v->grant_connection_epoch || !v->grant_content_epoch || !v->output_id ||
         !v->output_generation || !v->demand_id || v->state < 1 || v->state > 4 || v->reason > 12 ||
-        v->ttl_ms > 250 || v->max_candidate_bytes > 8192)
+        (v->state == 1 && v->ttl_ms > 250) || v->max_candidate_bytes > 8192)
         return -1;
     return 0;
 }

@@ -73,7 +73,8 @@ int sf_check_allocation_result(const struct sophia_sf_allocation_result *v)
 {
     if (!v->transaction || !v->grant_connection_epoch || !v->grant_content_epoch || v->status < 1 ||
         v->status > 4 || v->reason > 12 || !v->output_id || !v->output_generation ||
-        v->allowed_reservation_extent > 512 || v->margin_top < -512 || v->margin_top > 512 ||
+        (v->status == 1 && v->allowed_reservation_extent > 512) ||
+        v->margin_top < -512 || v->margin_top > 512 ||
         v->margin_right < -512 || v->margin_right > 512 || v->margin_bottom < -512 ||
         v->margin_bottom > 512 || v->margin_left < -512 || v->margin_left > 512)
         return -1;

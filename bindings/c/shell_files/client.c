@@ -1,15 +1,14 @@
 #include "session_internal.h"
 
 static const char *const names[] = {"events", "transaction", "submit", "ack"};
-int sophia_sf_client_init(struct sophia_sf_client *c, struct sophia_9p_client *wire, uint64_t epoch,
+int sophia_sf_client_init(struct sophia_sf_client *c, struct sophia_9p_client *wire,
                           struct sophia_sf_negotiate offer)
 {
-    if (!c || !wire || !epoch || wire->phase || !offer.minimum_revision ||
+    if (!c || !wire || wire->phase || !offer.minimum_revision ||
         offer.minimum_revision > offer.maximum_revision || wire->capacity < 8)
         return SOPHIA_9P_ARGUMENT;
     memset(c, 0, sizeof(*c));
     c->wire = wire;
-    c->epoch = epoch;
     c->offer = offer;
     c->next_submission = 1;
     c->object_fid = c->upload_fid = UINT32_MAX;
@@ -23,12 +22,24 @@ static int bootstrap_drive(struct sophia_sf_client *c)
 {
     int r;
     unsigned index;
-    if (c->boot_op.active || c->bootstrap >= 10)
+    if (c->boot_op.active || c->bootstrap >= 14)
         return 0;
     if (c->bootstrap == 1)
         r = sophia_9p_attach(c->wire, "", "", &c->boot_op.handle, &c->root);
+    else if (c->bootstrap == 2) {
+        const char *api = "api";
+        r = sophia_9p_walk(c->wire, c->root, &api, 1, &c->boot_op.handle, &c->api_fid);
+    } else if (c->bootstrap == 3)
+        r = sophia_9p_lopen(c->wire, c->api_fid, 0, &c->boot_op.handle);
+    else if (c->bootstrap == 4) {
+        uint32_t count = 257u - (uint32_t)c->api_used;
+        if (c->api_iounit && count > c->api_iounit)
+            count = c->api_iounit;
+        r = sophia_9p_read(c->wire, c->api_fid, c->api_used, count, &c->boot_op.handle);
+    } else if (c->bootstrap == 5)
+        r = sophia_9p_clunk(c->wire, c->api_fid, &c->boot_op.handle);
     else {
-        index = (c->bootstrap - 2) / 2;
+        index = (c->bootstrap - 6) / 2;
         if (!(c->bootstrap % 2))
             r = sophia_9p_walk(c->wire, c->root, &names[index], 1, &c->boot_op.handle,
                                &c->fids[index]);
@@ -41,7 +52,7 @@ static int bootstrap_drive(struct sophia_sf_client *c)
 int sf_session_drive(struct sophia_sf_client *c)
 {
     int r = bootstrap_drive(c);
-    if (r || c->bootstrap < 10)
+    if (r || c->bootstrap < 14)
         return r;
     if (!c->event_ready && !c->event_op.active) {
         uint32_t count = (uint32_t)(sizeof(c->event_bytes) - c->event_used);
@@ -123,14 +134,27 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
         }
         if (r->type == 111 && r->count != 1)
             return SOPHIA_9P_INVALID;
-        if (r->type == 13) {
-            unsigned index = (c->bootstrap - 2) / 2;
+        if (c->bootstrap == 4) {
+            if (r->count > 256u - c->api_used)
+                return SOPHIA_9P_INVALID;
+            if (r->count) {
+                memcpy(c->event_bytes + c->api_used, r->data, r->count);
+                c->api_used += r->count;
+                return 0;
+            }
+            if (sf_api_epoch(c->event_bytes, c->api_used, &c->epoch))
+                return SOPHIA_9P_INVALID;
+        }
+        if (r->type == 13 && c->bootstrap == 3)
+            c->api_iounit = r->iounit;
+        else if (r->type == 13) {
+            unsigned index = (c->bootstrap - 6) / 2;
             if (r->iounit && ((index == 2 && r->iounit < 24) || (index == 3 && r->iounit < 16)))
                 return SOPHIA_9P_INVALID;
             c->iounit[index] = r->iounit;
         }
         c->bootstrap++;
-        if (c->bootstrap == 10) {
+        if (c->bootstrap == 14) {
             struct sophia_sf_record record = {0};
             record.header.kind = SOPHIA_SF_NEGOTIATE;
             record.value.negotiate = c->offer;

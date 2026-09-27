@@ -10,10 +10,14 @@ orchestrates a file session. Compile these C99 sources together. They do not
 link the existing `shell_wire` sources or translate IPC frames.
 
 Reference inputs are the shell file KDL at `bae4ec4a9` (including the Limits
-rules from `f64d670e0`), profile blob `de101e3d` and diod reference blob
+rules from `f64d670e0` and conditional-bound correction `6bb0c8f2e`),
+profile blob `de101e3d` and diod reference blob
 `48d63c80` (upstream `de51d1ee1bd5`). The KDL alone supplies record layouts
-and validation. Session's launch owner supplies the epoch, revision range,
-capability mask and fd. Bemenu can select this backend explicitly at startup
+and validation. The API lifecycle contract is pinned at `43e4530b3`.
+After attach, the client reads the complete `api` file and learns its epoch
+before submitting any records. It rejects malformed, oversized or unterminated
+API lines. Session's launch owner supplies the revision range, capability mask
+and fd. Bemenu can select this backend explicitly at startup
 and own a `sophia_sf_client`; it must continue consuming events and servicing
 the fd. There is no endpoint discovery or automatic backend selection.
 

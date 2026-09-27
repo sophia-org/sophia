@@ -16,14 +16,14 @@ struct sophia_sf_client {
     uint64_t event_offset, ack_pending, object_generation, object_qid;
     struct sophia_sf_negotiate offer;
     struct sophia_sf_limits limits;
-    uint32_t root, fids[4], object_fid, upload_fid;
+    uint32_t root, fids[4], object_fid, upload_fid, api_fid, api_iounit;
     uint32_t iounit[4], object_iounit, upload_iounit;
     uint16_t object_kind;
     int terminal, object_status;
     uint8_t bootstrap, negotiated, have_limits, event_ready, object_ready;
     uint8_t submit_stage, submitted, submit_replied, object_stage, upload_stage, refused,
         upload_closing;
-    size_t tx_size, tx_offset, event_used, object_used, upload_sent, upload_size;
+    size_t tx_size, tx_offset, event_used, object_used, upload_sent, upload_size, api_used;
     uint64_t upload_offset;
     uint16_t upload_slot;
     uint32_t remote_error;
@@ -35,9 +35,9 @@ struct sophia_sf_client {
     const uint8_t *upload_data;
 };
 /* wire must be fresh and exclusively owned by this client until disposal.
- * Explicit epoch and requested capabilities are supplied by the launch owner.
- * Initialization starts version/attach/setup/Negotiate, all nonblocking. */
-int sophia_sf_client_init(struct sophia_sf_client *, struct sophia_9p_client *, uint64_t epoch,
+ * The epoch is learned from api after attach. The caller supplies its offer.
+ * Initialization starts version/attach/api/setup/Negotiate, all nonblocking. */
+int sophia_sf_client_init(struct sophia_sf_client *, struct sophia_9p_client *,
                           struct sophia_sf_negotiate);
 int sophia_sf_client_service(struct sophia_sf_client *, size_t byte_budget);
 int sophia_sf_client_ready(const struct sophia_sf_client *);

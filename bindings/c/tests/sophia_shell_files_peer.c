@@ -37,7 +37,7 @@ int main(int argc, char **argv)
     assert(fd >= 0);
     assert(!connect(fd, (struct sockaddr *)&address, sizeof(address)));
     assert(!sophia_9p_init(&wire, fd, 4096, 8, 32, memory, bytes));
-    assert(!sophia_sf_client_init(&c, &wire, 1, offer));
+    assert(!sophia_sf_client_init(&c, &wire, offer));
     assert(!clock_gettime(CLOCK_MONOTONIC, &start));
     while (stage != 9) {
         status = sophia_sf_client_service(&c, 65536);
@@ -70,7 +70,7 @@ int main(int argc, char **argv)
             struct sophia_sf_allocation_request *a = &request.value.allocation_request;
             request.header.kind = SOPHIA_SF_ALLOCATION_REQUEST;
             a->transaction = 40;
-            a->grant_connection_epoch = 1;
+            a->grant_connection_epoch = c.epoch;
             a->grant_content_epoch = 1;
             a->output_id = 99;
             a->output_generation = 1;
@@ -85,7 +85,7 @@ int main(int argc, char **argv)
         }
         if (stage == 1 && rejected && !c.submit_stage) {
             begin.transaction = 70;
-            begin.grant_connection_epoch = 1;
+            begin.grant_connection_epoch = c.epoch;
             begin.grant_content_epoch = 1;
             begin.resource_id = 1;
             begin.resource_generation = 1;

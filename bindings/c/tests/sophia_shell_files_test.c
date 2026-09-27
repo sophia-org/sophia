@@ -1,8 +1,38 @@
 #include "../sophia_shell_files.h"
+#include "../shell_files/session_internal.h"
 #include "shell_files_vectors.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+static void api_discovery(void)
+{
+    static const char valid[] = "sophia-shell-files version=1 role=bar epoch=17 fd_transfer=none\n";
+    static const char maximum[] = "sophia-shell-files version=1 role=bar epoch=18446744073709551615 fd_transfer=none\n";
+    static const char *const invalid[] = {
+        "sophia-shell-files version=1 role=bar fd_transfer=none\n",
+        "sophia-shell-files version=2 role=bar epoch=17 fd_transfer=none\n",
+        "sophia-shell-files version=1 role=bar epoch=0 fd_transfer=none\n",
+        "sophia-shell-files version=1 role=bar epoch=017 fd_transfer=none\n",
+        "sophia-shell-files version=1 role=bar epoch=-1 fd_transfer=none\n",
+        "sophia-shell-files version=1 role=bar epoch=18446744073709551616 fd_transfer=none\n",
+        "sophia-shell-files version=1 role= epoch=17 fd_transfer=none\n",
+        "sophia-shell-files version=1 role=bar epoch=17 fd_transfer=none\nextra\n",
+        "sophia-shell-files version=1 role=bar epoch=17 fd_transfer=rights\n",
+    };
+    uint64_t epoch = 123;
+    size_t i;
+    assert(!sf_api_epoch((const uint8_t *)valid, sizeof(valid) - 1, &epoch) && epoch == 17);
+    assert(!sf_api_epoch((const uint8_t *)maximum, sizeof(maximum) - 1, &epoch) && epoch == UINT64_MAX);
+    for (i = 0; i < sizeof(valid) - 1; i++) {
+        epoch = 123;
+        assert(sf_api_epoch((const uint8_t *)valid, i, &epoch) && epoch == 123);
+    }
+    for (i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        epoch = 123;
+        assert(sf_api_epoch((const uint8_t *)invalid[i], strlen(invalid[i]), &epoch) && epoch == 123);
+    }
+}
 
 static void vectors_and_truncations(void)
 {
@@ -36,6 +66,13 @@ static void conditional_rules(void)
     assert(sophia_sf_encode(b, sizeof(b), &r, &n));
     r.value.frame_permit.reason = 0;
     assert(!sophia_sf_encode(b, sizeof(b), &r, &n));
+    r.value.frame_permit.ttl_ms = 251;
+    assert(sophia_sf_encode(b, sizeof(b), &r, &n));
+    r.value.frame_permit.state = 2;
+    r.value.frame_permit.ttl_ms = UINT32_MAX;
+    assert(!sophia_sf_encode(b, sizeof(b), &r, &n));
+    assert(!sophia_sf_decode(b, n, &r));
+    assert(r.value.frame_permit.ttl_ms == UINT32_MAX);
     assert(!sophia_sf_decode(vector_ResourceStatus, sizeof(vector_ResourceStatus), &r));
     r.value.resource_status.reason = 1;
     assert(sophia_sf_encode(b, sizeof(b), &r, &n));
@@ -59,7 +96,10 @@ static void conditional_rules(void)
     r.value.allocation_result.allocation_id = 1;
     r.value.allocation_result.allocation_generation = 1;
     r.value.allocation_result.scale_numerator = UINT32_MAX;
+    r.value.allocation_result.allowed_reservation_extent = UINT32_MAX;
     assert(!sophia_sf_encode(b, sizeof(b), &r, &n));
+    assert(!sophia_sf_decode(b, n, &r));
+    assert(r.value.allocation_result.allowed_reservation_extent == UINT32_MAX);
     assert(!sophia_sf_decode(vector_Limits, sizeof(vector_Limits), &r));
     r.value.limits.max_session_retiring_bytes = 11;
     assert(sophia_sf_encode(b, sizeof(b), &r, &n));
@@ -103,6 +143,7 @@ static void maximum_candidate_rows(void)
 }
 int main(void)
 {
+    api_discovery();
     vectors_and_truncations();
     conditional_rules();
     maximum_candidate_rows();

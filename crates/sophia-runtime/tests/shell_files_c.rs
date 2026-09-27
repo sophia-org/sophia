@@ -70,7 +70,7 @@ fn c_session_negotiates_uploads_and_cancels_over_native_files() {
     .unwrap();
     let mut registry = ContentEpochRegistry::new(64 * 1024 * 1024).unwrap();
     let grant = ContentGrant {
-        connection_epoch: 1,
+        connection_epoch: 17,
         content_grant_epoch: 1,
     };
     transport
@@ -96,7 +96,7 @@ fn c_session_negotiates_uploads_and_cancels_over_native_files() {
     transport
         .begin_file_negotiation(
             &registry,
-            1,
+            grant.connection_epoch,
             Duration::from_secs(2),
             ShellContentAdmissionPolicy::Granted {
                 discrete_input: false,
