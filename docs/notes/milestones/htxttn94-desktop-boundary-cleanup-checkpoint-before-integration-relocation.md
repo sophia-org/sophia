@@ -293,6 +293,15 @@ precedes the remaining deletions and is not the installation candidate. The
 final personal assembly, private install/rollback test and final pin updates
 remain necessary.
 
+The retained X11 contract coverage now includes Present unselection after
+window destruction, using a real socket in both byte orders. The control
+checks the exact BadWindow request identity and then receives a reply and
+creates another window on the same connection. This preserves the teardown
+regression independently of the product probe being relocated. All six tests
+in `present_msc_ordering` and focused clippy pass offline with devices hidden;
+logs are in `present-teardown-contract/`. The existing dispatch test for an
+unknown window remains. No external client, display or GPU is used.
+
 Public WM startup errors and the activation ownership comment name the policy client.
 The reduced diagnostic vocabulary no longer gives two product names special
 treatment. The profile record now validates its mode independently: all five

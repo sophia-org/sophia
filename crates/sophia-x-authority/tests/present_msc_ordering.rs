@@ -341,6 +341,50 @@ fn immediate_notify_msc_serializes_across_the_sequence_wrap() {
 }
 
 #[test]
+fn present_selection_after_destroy_reports_bad_window_and_keeps_serving() {
+    for order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
+        let fixture = Fixture::new();
+        let mut client = fixture.connect(order);
+        let window = client.create_window();
+        let event_id = client.subscribe(window);
+        let mut destroy = client.header(4, 0, 2);
+        put32(&mut destroy, order, window);
+        client.send(&destroy);
+
+        // Teardown may unselect Present events after DestroyWindow has already
+        // reached the server. Unrelated requests in between do not keep the
+        // drawable alive, and the resulting error must remain request-local.
+        let bell = client.header(104, 0, 1);
+        client.send(&bell);
+        client.send(&bell);
+        let mut unselect = client.header(
+            X_PRESENT_MAJOR_OPCODE,
+            X_PRESENT_SELECT_INPUT_MINOR_OPCODE,
+            4,
+        );
+        for value in [event_id, window, 0] {
+            put32(&mut unselect, order, value);
+        }
+        let sequence = client.send(&unselect);
+        let error = client.record();
+        assert_eq!(&error[..2], &[0, XErrorCode::BadWindow.wire_code()]);
+        assert_eq!(get16(order, &error[2..4]), sequence);
+        assert_eq!(get32(order, &error[4..8]), window);
+        assert_eq!(
+            get16(order, &error[8..10]),
+            u16::from(X_PRESENT_SELECT_INPUT_MINOR_OPCODE)
+        );
+        assert_eq!(error[10], X_PRESENT_MAJOR_OPCODE);
+
+        // A reply and a new window on the same connection prove that the
+        // failed unselection did not close or poison the client lane.
+        client.barrier();
+        assert_eq!(client.create_window(), window);
+        assert!(client.record_with_timeout(SILENCE).is_none());
+    }
+}
+
+#[test]
 fn notify_msc_bad_window_reports_an_error_without_a_notification() {
     for order in [XByteOrder::LittleEndian, XByteOrder::BigEndian] {
         let fixture = Fixture::new();
