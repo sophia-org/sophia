@@ -1,17 +1,18 @@
-//! One bounded catalog publication retains its exact source and FIFO remainder.
+//! One bounded catalog publication hands its whole typed value to the
+//! transport, which owns per-wire encoding, pacing and retry-safe custody
+//! (`ShellComponentTransport::publish_catalog`). A saturated transport takes
+//! nothing, so this keeps no partial state of its own: the next visit simply
+//! retries the same publication.
 use super::PublishedApplicationCatalog;
 use sophia_protocol::{ContentGrant, TransactionId};
 use sophia_runtime::{ShellTransportConnection, ShellTransportError};
-use std::collections::VecDeque;
-
-const RECORDS_PER_VISIT: usize = 32;
-const BYTES_PER_VISIT: usize = 64 * 1024;
 
 pub struct NativeCatalogPublication {
     grant: ContentGrant,
     persistent: bool,
+    transaction: TransactionId,
     catalog: PublishedApplicationCatalog,
-    remaining: VecDeque<Vec<u8>>,
+    published: bool,
 }
 impl NativeCatalogPublication {
     pub fn new(
@@ -29,19 +30,15 @@ impl NativeCatalogPublication {
             return Err(ShellTransportError::WrongContentGrant);
         }
         let persistent = transport.supports_persistent_catalog();
-        let frames = if persistent {
-            catalog.persistent_frames(transaction)?
-        } else {
-            catalog.frames(transaction)?
-        };
-        if frames.iter().any(|frame| frame.len() > BYTES_PER_VISIT) {
-            return Err(ShellTransportError::ActivationQueueSaturated);
-        }
+        // Validate the same bounded/identity contract the publication uses,
+        // once, up front, rather than discovering it mid-transfer.
+        catalog.value(persistent)?;
         Ok(Self {
             grant,
             persistent,
+            transaction,
             catalog,
-            remaining: frames.into(),
+            published: false,
         })
     }
     pub const fn grant(&self) -> ContentGrant {
@@ -53,15 +50,16 @@ impl NativeCatalogPublication {
         self.persistent
     }
 
-    /// Available after every catalog record is FIFO-owned, not peer receipt.
-    /// Queue an Opening on that same FIFO only after this becomes available.
+    /// Available once the transport has taken custody of the whole
+    /// publication, not on peer receipt. Queue an Opening on the same wire
+    /// only after this becomes available.
     pub fn published(&self) -> Option<&PublishedApplicationCatalog> {
-        self.remaining.is_empty().then_some(&self.catalog)
+        self.published.then_some(&self.catalog)
     }
 
-    /// No socket I/O here. On refusal the exact front remains; on success the
-    /// prevalidated front is removed immediately, without allocation/callback.
-    /// The FIFO then owns partial-write and final-byte lifetime/accounting.
+    /// Hands the whole typed catalog to the transport. A saturated transport
+    /// takes nothing and leaves this unpublished for the next visit to retry;
+    /// there is no partial front to track any more.
     pub fn service(
         &mut self,
         transport: &mut ShellTransportConnection<'_>,
@@ -75,24 +73,17 @@ impl NativeCatalogPublication {
         {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        let mut bytes = 0;
-        for _ in 0..RECORDS_PER_VISIT {
-            let Some(frame) = self.remaining.front() else {
-                return Ok(true);
-            };
-            if bytes + frame.len() > BYTES_PER_VISIT {
-                break;
-            }
-            let length = frame.len();
-            match transport.enqueue_async(frame.clone()) {
-                Ok(()) => {
-                    self.remaining.pop_front();
-                    bytes += length;
-                }
-                Err(ShellTransportError::ActivationQueueSaturated) => return Ok(false),
-                Err(error) => return Err(error),
-            }
+        if self.published {
+            return Ok(true);
         }
-        Ok(self.remaining.is_empty())
+        let value = self.catalog.value(self.persistent)?;
+        match transport.publish_catalog(self.transaction, &value) {
+            Ok(()) => {
+                self.published = true;
+                Ok(true)
+            }
+            Err(ShellTransportError::ActivationQueueSaturated) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 }

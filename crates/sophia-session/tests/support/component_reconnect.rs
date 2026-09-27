@@ -94,6 +94,7 @@ impl Harness {
                         max_thickness: 8,
                     }),
                 gpu: ShellGpuMode::Denied,
+                transport: Default::default(),
             })
             .collect();
         let mut owner = ShellComponentSession::prepare(

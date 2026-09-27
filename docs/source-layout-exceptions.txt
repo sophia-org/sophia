@@ -16,6 +16,7 @@ inline-tests crates/sophia-backend-live/src/production_session/native_scanout/pe
 inline-tests crates/sophia-backend-live/src/production_visual_runtime.rs
 inline-tests crates/sophia-runtime/src/shell_transport/control_budget.rs
 inline-tests crates/sophia-runtime/src/shell_transport/outbox.rs
+inline-tests crates/sophia-runtime/src/shell_transport/files/journal.rs
 inline-tests crates/sophia-session/src/live_session/metadata_shell/content/actions.rs
 inline-tests crates/sophia-shell-client/src/candidate.rs
 inline-tests crates/sophia-shell-client/src/outbox.rs

@@ -11,14 +11,23 @@
 //! owner decides admission, disclosure and revocation. Attach names, user
 //! names and peer credentials reach the owner as data and grant nothing here.
 //!
+//! [`journal`] holds the record-file custody exports share: an acknowledged
+//! event journal and write staging, with every bound chosen by the owner.
+//!
 //! [`client`] is a separate bounded, read-only client with its own codec; it
-//! shares only the protocol's value records with the server core.
+//! shares only the protocol's value records with the server core. [`pipeline`]
+//! is a nonblocking, pipelined, write-capable client for Sophia's own role
+//! clients; it shares its request encoders and reply decoders with [`client`]
+//! through the private `client_codec` module, not with the server core.
 //!
 //! The older `sophia-9p-authority` scaffold is unrelated and unused.
 
 pub mod client;
+mod client_codec;
 pub mod connection;
 pub mod export;
+pub mod journal;
+pub mod pipeline;
 pub mod records;
 pub mod unix;
 pub mod wire;

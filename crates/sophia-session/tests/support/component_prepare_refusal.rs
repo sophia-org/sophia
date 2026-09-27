@@ -18,6 +18,7 @@ fn component(id: &str, role: ShellComponentRole, gpu: ShellGpuMode) -> ShellComp
         config: None,
         gpu,
         reservation: None,
+        transport: Default::default(),
     }
 }
 

@@ -25,13 +25,30 @@ impl ShellComponentTransport {
             .min(32) as usize;
         let mut processed = 0;
         while processed < maximum {
-            let Some(kind) = self.inbox.iter().find_map(|frame| {
-                let kind = u16::from_le_bytes([frame[6], frame[7]]);
-                matches!(kind, 194 | 195).then_some(kind)
-            }) else {
-                break;
+            let ack_pending = if self.files.is_some() {
+                self.files
+                    .as_ref()
+                    .and_then(|files| files.export().peek_native_input_ack())
+                    .is_some()
+            } else {
+                self.inbox
+                    .iter()
+                    .any(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 194)
             };
-            if kind == 194 {
+            let activate_pending = if self.files.is_some() {
+                self.files
+                    .as_ref()
+                    .and_then(|files| files.export().peek_native_activate())
+                    .is_some()
+            } else {
+                self.inbox
+                    .iter()
+                    .any(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 195)
+            };
+            if !ack_pending && !activate_pending {
+                break;
+            }
+            if ack_pending {
                 // The production decoder validates the grant and exact receipt.
                 // Closed cleared input authority; a late valid ACK is stale.
                 if self.take_native_launcher_input_ack()?.is_none() {

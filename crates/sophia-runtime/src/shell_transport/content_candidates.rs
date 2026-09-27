@@ -252,6 +252,12 @@ impl ShellComponentTransport {
                 );
             }
             processed += 1;
+            if outcome.is_err()
+                && reported
+                && let Some(files) = self.files.as_mut()
+            {
+                files.export_mut().discard_candidate_parts();
+            }
             self.flush_content_candidate_events(epochs)?;
             if let Err(error) = outcome
                 && !reported
@@ -412,6 +418,13 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
+        if self.files.is_some() {
+            let part = self
+                .files
+                .as_mut()
+                .and_then(|files| files.export_mut().take_candidate_part());
+            return self.admit_file_record(part);
+        }
         let at = self
             .inbox
             .iter()
@@ -438,6 +451,15 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
+        if self.files.is_some() {
+            let record = self.take_file_content(|record| {
+                matches!(
+                    record,
+                    ShellContentRecord::FrameDemand(_) | ShellContentRecord::FrameDemandCancel(_)
+                )
+            });
+            return self.admit_file_record(record);
+        }
         let at = self
             .inbox
             .iter()
@@ -470,7 +492,7 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let (frame, control) =
+            let prepared =
                 self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.active_candidates_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
@@ -478,7 +500,7 @@ impl ShellComponentTransport {
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
-            self.output.push(frame, control);
+            self.push_prepared(prepared);
             store.take_event();
         }
     }

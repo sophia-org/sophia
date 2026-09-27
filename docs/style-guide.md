@@ -209,6 +209,13 @@ accounting, forced returned refusal and partial FIFO drain. It does not enable
 dock negotiation or claim kernel backpressure. Its bodies remain outside `src`;
 only its individual module mount is listed, with no checker or legacy-debt change.
 
+The shell file journal fixture, `tests/support/shell_file_journal.rs`, is
+mounted inside the private journal owner for the same reason. Through the public
+socket path the export's 64-record inbound bound is reached long before the
+journal's 192 unsolicited records, so the terminal reserve, the byte reserve and
+the refused-append-spends-nothing rule cannot be placed publicly. Its bodies
+remain outside `src`; only the one mount is listed.
+
 The private input Session fixtures mount `tests/support/private_input_session.rs`
 and `tests/support/private_input_generations.rs` to inspect exact retained custody,
 poison ownership locks, and prepare a candidate before a competing Engine commit.

@@ -1,9 +1,10 @@
 # Shell files over 9P2000.L
 
-Status: **proposed contract, t251 planning draft.** Nothing here is
-implemented. `sophia_shell_v1` over its existing socket remains the only shell
-transport and the installed default. Items marked **decision pending** are
-proposals that need review before t252 can depend on them. Source references
+Status: **accepted contract (t251, accepted by the operator on 2026-09-26).**
+Nothing here is implemented yet; t252 implements it. `sophia_shell_v1` over its
+existing socket remains the only shell transport and the installed default
+until t252's gates pass. The items under "Open decisions" stay open and do not
+block t252. Source references
 are to the tree this draft was written against (signed `2f9c2220`, based on
 `11d6deef9`).
 
@@ -158,7 +159,7 @@ component's metadata audience.
 
 | Name | Access | Profiles | Meaning |
 | --- | --- | --- | --- |
-| `api` | read | all | Small immutable text: family `sophia_shell_fs_v1`, API version, role profile, `fd_transfer=none` |
+| `api` | read | all | Small immutable text, one line: `sophia-shell-files version=<api> role=<profile> epoch=<connection epoch> fd_transfer=none`. The epoch is the value every record header of this attach carries; a client reads it after attaching, before its first submit |
 | `limits` | read | content profiles | The granted `ContentLimits` as a binary record, immutable for the grant |
 | `events` | read | all | Ordered records by byte offset, retained until acknowledged |
 | `transaction` | read/write | all | The attach's single candidate buffer; at most one open `transaction` fid per attach, as in the WM contract |
@@ -176,16 +177,34 @@ object never aliases an open pin. An object that has not yet been published
 answers `EAGAIN`.
 
 An announced qid is not kept forever. Per feed, Session retains only the
-current object and at most one older object still pinned by an open fid. The
-exact retention is a **design decision**, with this required invariant:
+current object and at most one older object still pinned by an open fid.
+Each attach holds at most one open pin per feed; a second open while a pin is
+held returns `EBUSY`. Publication continues while a pin is held; the
+old pin stays immutable and the epoch fences it. Object identity (qid)
+changes whenever the bytes change, even at an unchanged domain generation
+(indicators can republish focus at the same generation).
+
+The retention rule requires this invariant:
 
 - the opened object's generation and qid are reported through `getattr`;
 - a client whose opened object does not match the event it is handling must
-  resynchronise from the newest event and object;
+  clunk, reopen, and continue from the newest event. `ESTALE` below the
+  retention floor means: re-read every disclosed snapshot object and resume
+  from the newest event sequence;
 - a mismatch never authorises anything. Every activation, candidate or action
   names the exact generation and slot identity it acts on, and the existing
   owner validates that against current state, rejecting stale references as it
   does today.
+
+The encoded snapshot cap per component is the sum over its role's disclosed
+feeds of 2 x cap plus one shared 4 MiB build scratch. These are encoded-buffer
+bounds, not RSS; allocator capacity, metadata and queues are accounted
+separately. The per-object caps are: catalog 4 MiB, tabs 1 MiB, shortcuts
+128 KiB, indicators 32 KiB, descriptors 4 KiB, outputs 1 KiB.
+
+The r8 catalog maximum is 3,014,740 bytes in old framing, and 3,145,876 bytes
+conservative with headers, which fits the 4 MiB cap. The new codec must
+enforce count, row, and header bounds independently.
 
 ### Negotiation is a candidate, not a node
 
@@ -216,11 +235,11 @@ below the watermark is `EALREADY`. A submit refused with `EAGAIN` has
 transferred nothing.
 
 Candidate Begin/Chunk/End collapse into one complete record, which stays
-within `max_candidate_bytes` (8192). As in the WM contract, each attach has one
+within `max_candidate_bytes` (8192 bytes, `crates/sophia-protocol/src/ipc/shell_content/limits.rs:309`). As in the WM contract, each attach has one
 candidate buffer, and `submit` refers to that attach's staged candidate. The
 buffer therefore needs no more than the largest control record, not the WM's
-1 MiB. **Decision
-pending:** the shell transaction cap is 64 KiB (`max_frame_payload`).
+1 MiB. The shell transaction cap is 64 KiB per attach transaction buffer, equal to
+`max_frame_payload` (65,536 bytes, `crates/sophia-protocol/src/ipc/shell_content/limits.rs:294`).
 
 ### Resource staging without client-created files
 
@@ -325,18 +344,347 @@ whole records, reads that block at the tail, `EINVAL` past it and `ESTALE`
 below the retention floor. Acknowledgement releases transport retention only.
 
 Shell traffic is denser than WM traffic: frame permits, candidate outcomes and
-resource statuses. **Decision pending:** 256 records and 1 MiB per component
-journal (four times today's 256 KiB output queue).
+resource statuses. A component journal holds at most 256 records. 64 of them
+are the terminal reserve, equal to `max_control_records`
+(`crates/sophia-protocol/src/ipc/shell_content/limits.rs:317`, enforced in aggregate
+by `crates/sophia-runtime/src/shell_transport/control_budget.rs:18-41`). Only
+records that already hold a counted credit may use the reserve, so every
+promised response always has space. The other 192 hold unsolicited Session
+events (snapshot announcements, allocation invalidation, focus revocation,
+opening, content actions, closed) and unacknowledged history.
+
+Byte bounds are derived from the largest Session-to-client record of each role
+profile. The file envelope's 32-byte header (as in [WM files](sophia-wm-files.md))
+replaces the 24-byte frame header, adding 8 bytes per record. The journal byte
+bound is 256 times that record, rounded up to the next power of two and capped at
+1 MiB. The terminal reserve is 64 times the largest terminal record. Snapshot
+objects are not journal records; their events only name the object.
+
+To bound a stalled reader, `journal_ack_progress_timeout` is 2000 ms. It is a
+separate constant from the 2000 ms peer-write timeout, which the socket layer
+owns; the same value treats a stalled reader like a stalled socket. When Session
+must append an unsolicited record and the non-reserve part of the journal is
+full, it waits for acknowledgement progress. If no acknowledgement advances
+within the deadline, that component alone is closed and revoked, as saturation
+does today. A reader that keeps acknowledging is never closed by this rule.
+Credited records never wait. There is no fake acknowledgement, overwrite,
+invented outcome or dropped owed record.
+
+### Per-role disclosure bounds
+
+The root names come from the vocabulary above. Snapshot bound is twice the sum of
+the disclosed feeds' caps (current plus one pinned older object) plus one
+shared 4 MiB build scratch.
+
+| Role profile | Root names | Snapshot feeds and caps | Largest S-to-C record (file framing) | Journal bytes | Terminal reserve | Snapshot bound |
+| --- | --- | --- | --- | --- | --- | --- |
+| Bar (Lom, r6) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `upload/N`; `indicators` with bit 9 | outputs 1 KiB; indicators 32 KiB | AllocationResult, 192 B (`crates/sophia-protocol/src/ipc/shell_content/fields.rs:332-351`) | 65,536 (256 x 192 = 49,152, rounded) | 12,288 | 4,261,888 |
+| Launcher (Bemenu, r7) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB | native Input, up to 420 B (`crates/sophia-protocol/src/ipc/shell_native_launcher/records.rs:100`) | 131,072 (256 x 420 = 107,520, rounded) | 26,880 | 12,584,960 |
+| Dock (Provlita, r8) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB with r8 identities | AllocationResult, 192 B | 65,536 | 12,288 | 12,584,960 |
+| Legacy descriptor (Narthex, r1-r8) | `api`, `events`, `transaction`, `submit`, `ack`, `descriptors`, `tabs`, `shortcuts`; `catalog` when r4 and bit 5 are selected | descriptors 4 KiB; tabs 1 MiB; shortcuts 128 KiB; catalog 4 MiB when selected | LauncherRequest, 342 B (`crates/sophia-protocol/src/ipc/shell_launcher.rs:130-146`; query at most 256 B, `crates/sophia-protocol/src/packets/shell_launcher.rs:8`) | 131,072 (256 x 342 = 87,552, rounded) | 21,888 | 6,561,792; 14,950,400 with catalog |
+
+The bar and dock record sizes come from the terminal-debt inventory (184-byte
+AllocationResult and up to 412-byte native Input in today's framing, plus 8).
+For the legacy descriptor profile, the records that become snapshot objects
+(descriptor snapshots of at most 3,084 bytes framed, tabs, shortcut and application
+entries, catalog identities) are excluded; the largest record that stays a journal
+event is the launcher request. Its reserve is sized on that record rather than on a
+separately derived terminal record, which over-reserves.
+
+Note: The component bar's inert bit 0 discloses no descriptor, tab, or shortcut feed.
 
 Catalog objects can exceed the WM's 1 MiB snapshot bound: 4096 entries with
-128-byte labels and 256-byte keywords. **Decision pending:** a 4 MiB cap on
-snapshot objects, charged to the component and released when the pin is
-clunked. The alternative is catalog paging.
+128-byte labels and 256-byte keywords. Content actions, focus revocation, input-lease
+loss and allocation invalidation remain local Session transitions. They never wait
+for a reader's acknowledgement credit.
 
-Content actions, focus revocation, input-lease loss and allocation
-invalidation remain local Session transitions. They never wait for a reader's
-acknowledgement credit. A saturated journal stops that component only, as
-saturation does today.
+### Record kinds and correlation (t252)
+
+The byte layouts are in
+[`sophia-shell-files-v1.kdl`](../protocol/sophia-shell-files-v1.kdl) and
+`sophia_protocol::shell_files`. The kind table is closed, and it grows only with
+the operations t252 implements:
+
+| Class | Kinds |
+| --- | --- |
+| Object | `Limits` 1, `Outputs` 2 |
+| Event | `Negotiated` 16, `Refused` 17, `Submitted` 18, `ObjectPublished` 19, `AllocationResult` 32, `ResourceStatus` 33, `ResourceReleased` 34, `CandidateOutcome` 35, `FramePermit` 36, `Action` 37 |
+| Candidate | `Negotiate` 256, `AllocationRequest` 257, `ResourceBegin` 258, `ResourceEnd` 259, `ResourceCancel` 260, `ResourceRetire` 261, `Candidate` 262, `FrameDemand` 263, `FrameDemandCancel` 264, `ActionAck` 265 |
+
+As in the WM contract, the header never carries a domain identity: events
+have submission ID zero. A content record's body starts with its nonzero
+transaction ID, followed by the existing `sophia_shell_v1` payload bytes of the
+same record, so every existing record check applies unchanged. The owner's
+event for that transaction carries the same ID back. The transaction ID is the
+domain correlation, independent of the submission ID, which records custody
+only.
+
+Output facts are the `outputs` object (at most 1 KiB: sixteen outputs fit),
+not a journal event. Each publication gets a fresh qid and is announced by one
+`ObjectPublished` event carrying the object kind, the facts generation and
+that qid; the object and its announcement commit together, and the event's
+journal room is checked before a qid is spent. Opening `outputs` pins the
+current object; a second open on the same attach is `EBUSY`, and a pinned
+read never changes while newer objects are published.
+
+A `ResourceBegin` body adds the upload slot after the transaction ID (slot
+`u16` and six reserved bytes, then the payload). There is no chunk record:
+chunks are the slot's writes, assembled into canonical chunks as described in
+resource staging. The export reserves the slot at the accepted Begin, binds it
+when the store's `transfer_admitted` status is journaled, and ends the binding
+when the resource's accepted, rejected or cancelled status is journaled, so the
+binding follows exactly what the reader can observe. A record family not yet in the table is not carried: a component on the
+file wire whose owner queues such a record is closed rather than sent an IPC
+frame.
+
+Candidates, pacing and content actions follow the same pattern.
+`FrameDemand`, `FrameDemandCancel` and `ActionAck` are submitted records, and
+`FramePermit`, `CandidateOutcome` and `Action` are events. Each is its
+transaction ID followed by the record's value. A `Candidate` record is one
+whole candidate: the transaction ID, the candidate header (grant, candidate
+generation, output, facts generation, pacing permit, interaction generation),
+the surface, placement and target counts as `u16` with one reserved `u16`, then
+the rows. There are no chunk ordinals and no repeated counts or identities. The
+record is at most 8192 bytes, header included; a candidate at the prototype
+maxima (8 surfaces, 32 placements, 64 targets) fits. The candidate owner
+receives Begin, Chunk and End in that order, so the permit, assembly, deadline
+and outcome rules are the socket path's, unchanged. A record that is
+malformed, or whose parts the value validators refuse (layout, counts,
+reserved bytes, identities, per-row fields, rectangle arithmetic), is refused
+at `submit` with `EINVAL`, and nothing reaches the owner. Rules that need
+the owner's state or the whole candidate (target triple uniqueness,
+overlapping bounds, targets inside their surface, current permits,
+generations and slots) are the owner's; their outcomes are in "Negotiation
+and pacing outcomes" and "Role family outcomes".
+
+### Role family kinds (t252 B5, draft)
+
+The launcher, dock and bar families follow the same rule: whole typed values,
+no transfer shapes. Kind numbers are reserved here before implementation:
+
+| Class | Kind | Replaces | Value |
+| --- | --- | --- | --- |
+| Object | `Catalog` 3 | 114-116 transfer, and 202 identities for r8 | The whole application catalog; for the dock, each entry with its r8 identity. Cap 4 MiB |
+| Object | `Indicators` 4 | 181-184 transfer | The whole indicator snapshot: active output, output statuses, indicators. Cap 32 KiB |
+| Event | `NativeOpening` 38 | 187 | Opening, catalog generation, state revision |
+| Event | `NativeFocus` 39 | 191 | The focus lease binding, minted only after an actual Presented |
+| Event | `NativeFocusRevoked` 40 | 192 | Binding and reason |
+| Event | `NativeInput` 41 | 193 | Semantic input event with its text |
+| Event | `NativeActivationOutcome` 42 | 196 | Activation, status and reason; admitted means a queue slot only |
+| Event | `NativeClosed` 43 | 197 | Opening and reason |
+| Event | `CatalogActivationOutcome` 44 | 201 | Activation, status and reason |
+| Event | `IndicatorActivationOutcome` 45 | 186 | The exact activation echo, status and reason |
+| Candidate | `NativeAllocationRequest` 266 | 188 | Parentless allocation, no reservation |
+| Candidate | `NativeCandidate` 267 | 189, 190 and 174 | A whole candidate plus opening, catalog generation, state revision, selection and rows |
+| Candidate | `NativeInputAck` 268 | 194 | Event and disposition |
+| Candidate | `NativeActivate` 269 | 195 | Event, cause and slot |
+| Candidate | `CatalogCandidate` 270 | 198, 199 and 174 | A whole candidate plus the catalog generation it presents |
+| Candidate | `CatalogActivate` 271 | 200 | The content action and catalog generation, never a command |
+| Candidate | `IndicatorActivate` 272 | 185 | Snapshot generation, output, indicator, action and event |
+
+**Owner handoff.** These families are frame-shaped above the wire today, so
+B5 moves the seam up to typed values on both sides of the transport:
+
+- Session stops encoding frames for component roles. Indicator snapshots and
+  application catalogs, plain or with r8 identities, reach the transport as
+  typed values through `publish_indicators` and `publish_catalog`. Session no
+  longer builds frames and hands them to `send_async`
+  (`metadata_shell/indicators.rs`, the catalog paths in
+  `metadata_shell/launcher.rs` and `application_catalog/publication.rs`).
+- The transport's owner paths hand typed records to one queue call per wire,
+  not raw socket frames through `output.push`:
+  - native launcher: opening, focus, focus revocation, input, activation
+    outcome and close;
+  - catalog activation outcomes;
+  - indicator activation outcomes.
+
+  The socket wire encodes frames, including the multi-frame catalog and
+  indicator transfers, and the file wire encodes events or publishes objects.
+- Inbound, the file export decodes the new candidate kinds into typed
+  submissions: native and catalog candidates as whole values, input acks,
+  activations and indicator activations. The existing owner calls
+  (`take_native_launcher_input_ack`, `take_catalog_request`,
+  `take_indicator_request` and the candidate services) read them from the typed
+  queue exactly as they read decoded frames today.
+- Response credit is charged per record by kind, not in socket-frame bytes, and
+  each wire enforces its own byte bounds. This removes the socket-shaped
+  charge the file wire inherited in B4.
+
+Legacy descriptor paths (`reference.rs`, `tabs.rs` and the descriptor launcher
+flow) keep sending frames until that profile moves to files.
+
+The legacy descriptor profile's feeds (`descriptors`, `tabs`, `shortcuts`)
+and records get kinds when that profile moves to files; until then it stays
+on its socket, and the purge inventory lists it.
+
+Objects are published as `outputs` is: fits-then-qid-then-announce, pinned on
+open, `EBUSY` for a second pin, a fresh qid whenever the bytes change. Each
+owner hands its records to the wire as typed values; no owner queues a socket
+frame on a file-wire component.
+
+### Negotiation and pacing outcomes (normative)
+
+These are the observable outcomes a client and the independent oracle rely
+on. Layouts are in the KDL; this section fixes which records appear.
+
+**Negotiation.** A Negotiate record is judged against the role profile Session
+fixed before the peer connected.
+- Accepted: one `Negotiated` event. For the component content profile the
+  selected revision is min(maximum, 6) for any offer with
+  1 <= minimum <= maximum and minimum <= 6. Content bits (7, and 8 with 7) are
+  grantable only when the selected revision is at least 5. The capabilities
+  are bit 0 (required in every offer), work-area reservation, the granted
+  content bits, and the indicator bits only when requested at revision 6. `limits_published` is 1
+  and the `limits` object is readable once the event is visible.
+- Accepted (native launcher, r7): one `Negotiated` event with
+  `selected_revision`=7 for any offer with minimum <= 7 <= maximum (any other
+  offer is not served at all; see below). `required_capabilities` must equal
+  exactly bits 5, 7, 8 and 11 (application catalog, content surface, content
+  discrete input, native launcher) -- not a superset or subset -- and the
+  granted `capabilities` echo that same exact mask.
+- Accepted (persistent catalog, r8): one `Negotiated` event with
+  `selected_revision`=8 for any offer with minimum <= 8 <= maximum.
+  `required_capabilities` must equal exactly bits 1, 5, 7, 8 and 12
+  (work-area reservation, application catalog, content surface, content
+  discrete input, persistent catalog); the granted `capabilities` echo that
+  same exact mask.
+- Refused by content policy: one `Refused` event, then revocation. Reason 1
+  (permission denied) when the operator denied content, with
+  `denied_capabilities` the requested content bits (or only bit 8 when just
+  discrete input is denied); reason 4 (unavailable) when content is
+  unavailable or its budget cannot be admitted. For r7 and r8,
+  `denied_capabilities` is instead the whole exact mask above, never a
+  partial one: reason 4 when content is unavailable, reason 1 otherwise
+  (denied outright, or granted without discrete input).
+- An offer the profile cannot serve at all (minimum revision 0 or above the
+  profile's maximum, minimum above maximum, bit 0 missing, discrete input
+  without surface, or a required bit the profile cannot grant) ends the attach
+  without a `Refused` event: the peer observes the export's revocation.
+  Reasons 2 and 3 are reserved and not used by this version. For r7 and r8,
+  the same "ends the attach" outcome (no `Refused` event) also covers: a
+  revision window that does not include the exact fixed revision;
+  `required_capabilities` other than the exact mask above; reaching
+  negotiation with no content limits already reserved for this connection;
+  and reserved limits whose grant names a different connection epoch.
+- A second `Negotiate` submit after one was accepted fails with `EALREADY`;
+  any content record before negotiation fails with `EACCES`. Neither is
+  journaled.
+
+**Pacing.**
+- A `FrameDemand` that the candidate owner can serve yields a `FramePermit`
+  with state 1, the permit, `ttl_ms` <= 250 and reason 0.
+- A permit that expires unconsumed yields `FramePermit` state 2, reason 6
+  (timeout).
+- `FrameDemandCancel` naming the standing demand (permit_id 0) or its
+  unconsumed permit yields `FramePermit` state 3, reason 11 (cancelled), with
+  the same demand_id and the cancelled permit_id (0 when only the demand was
+  standing). A cancel that names no current demand or permit is a stale
+  record: the component's authority is revoked and nothing is journaled for it.
+- A new permit for an output supersedes that output's pending, not yet
+  submitted candidate: `CandidateOutcome` kind 4, reason 10 (superseded).
+- A `Candidate` whose `pacing_permit` is not the output's current unconsumed
+  permit (missing, wrong, cancelled or expired) is a stale record, handled
+  like the stale cancel above: it gets `Submitted` custody, no
+  `CandidateOutcome`, and the component's authority is revoked. (Open product
+  question, not a transport rule: whether a refused permit should instead
+  yield `CandidateOutcome` rejected with reason 1 on both wires.)
+
+### Role family outcomes (normative)
+
+These are the observable outcomes for the native launcher (r7), persistent
+catalog (r8) and view indicator (r6) families: which record, status and
+reason a client sees for each negative case. Per-record field layouts and
+byte-level rules are in the KDL; this section fixes lifecycle behaviour that
+spans several records. `reason` values are the shared `ContentReason` codes
+used throughout this contract (1 Stale, 2 Budget, 3 Malformed, 4
+Unauthorized, ... 12 Revoked) unless noted otherwise.
+
+**Native launcher activation (`NativeActivate` to `NativeActivationOutcome`).**
+An activation is checked against the connection's current focus binding,
+state revision, published catalog and (for a keyboard cause) outstanding
+Accept receipt, in that order; the first failure decides the outcome.
+
+| Status | Reason | Trigger |
+| --- | --- | --- |
+| 1 Admitted | 0 | Every check passes and the launch queue admits it. Admission is queue ownership only, not application startup. |
+| 2 Stale | 1 | The binding does not match the current focus exactly (any field, including one already superseded by a later `NativeFocus`); the named `state_revision` does not equal the connection's current state revision (a query `NativeInput` since the binding was observed disarms an activation issued against the older revision); the catalog generation or connection epoch does not match; for `cause`=1 (keyboard), no matching un-acknowledged Accept `NativeInput` is outstanding within `action_ack_timeout_ms`, or `slot` is not the presented candidate's `selected` slot; or the activation reaches the connection after `NativeClosed` for that opening (no Presented candidate remains). |
+| 3 Unknown | 3 | `slot` is absent from the current catalog. |
+| 4 Unauthorized | 4 | `slot` is present but not `available`, or not among the presented candidate's displayed rows. |
+| 5 Capacity | 2 | Every check above passes but the launch queue itself refuses for capacity. |
+
+A `NativeActivate` is never accepted "before a Presented candidate" or
+"without a focus lease" as a distinct case: both collapse into Stale above,
+because `native_launcher_focus()` is `None` until an actual Presented
+mints a `NativeFocus`, so the binding-match check already fails.
+
+**Native launcher input acknowledgement (`NativeInputAck`).** The
+`disposition` a client declares is not itself checked; the session instead
+checks whether the named `event` has an outstanding, not yet acknowledged
+receipt. If it does, the receipt is retired (a non-Accept receipt regardless
+of the declared disposition; an Accept receipt keeps the declared value,
+which does not by itself affect activation eligibility above). If it does
+not -- unknown, already acknowledged, or from an opening `NativeClosed` has
+since cleared -- the ack is consumed with no reply and no other effect:
+there is no outcome record for a stale `NativeInputAck`.
+
+**Native and persistent-catalog candidates.** Most of a `NativeCandidate`'s
+structure is a value-validator rule the decoder checks, on both wires,
+before the record reaches the owner at all: exactly one surface, at least
+one placement, `target_count` equal to `row_count`, every displayed
+`NativeCandidateRow.slot` distinct and in range, and `selected` a member of
+the displayed rows (or 0 when there are none). A record violating any of
+these is refused at `submit` with `EINVAL`; nothing is journaled, not even
+`Submitted`. A `CatalogCandidate`'s decoder checks only that every provided
+surface has role=1 (panel); it does not check the surface or placement
+*count*, so `surface_count` exactly 1 and `placement_count` at least 1 are
+the persistent-catalog candidate owner's to enforce instead, once
+`Submitted` custody has already transferred.
+
+Everything else here needs live connection state the decoder does not have,
+so only the owner judges it, after custody has transferred. A
+`NativeCandidate` or `CatalogCandidate` naming a stale `catalog_generation`
+(or, for the native launcher, a stale `opening` or `state_revision`) is
+refused with `CandidateOutcome` kind 3 (Rejected), reason 1 (Stale). The
+following are refused with the same kind 3, reason 3 (Malformed) instead: a
+`CatalogCandidate`'s surface- or placement-count violation above; a
+displayed row (native) or target action naming a catalog slot that is not
+currently present and `available` in the connection's live catalog; and,
+for either family, a duplicate (`target_id`, `target_generation`,
+`action_id`) triple or an overlapping bounds rectangle on the same surface
+among that record's targets -- the base `Candidate` rules, which the
+decoder never checks either. A `NativeCandidate` or `CatalogCandidate`
+whose `pacing_permit` is not the output's current unconsumed permit follows
+the base `Candidate` pacing rule above instead: `Submitted` custody only, no
+`CandidateOutcome`, and the component's authority is revoked. None of these
+cases reach `NativeFocus`, an activation owner or the launch queue.
+
+**Persistent catalog activation (`CatalogActivate` to
+`CatalogActivationOutcome`).** `reason` is always 0 here regardless of
+`status`, unlike the native launcher above; only `status` varies.
+
+| Status | Trigger |
+| --- | --- |
+| 1 Admitted | The wrapped action's `event_id` is a live, already-issued one; `catalog_generation` and the grant's connection epoch match the currently published catalog exactly; a matching, still-awaiting, not cancelled, not expired ledger entry exists for that exact action; that entry's target is still part of the currently Presented candidate (activation is accepted only against the Presented target); `action_id` names a slot present in the current publication; and the launch queue admits it. |
+| 2 Stale | Any eligibility check above (other than the slot lookup) fails. |
+| 4 Unauthorized | `action_id` names a slot absent from the current publication, or the launch queue itself refuses as unauthorized. |
+| 5 Capacity | Every eligibility check passes but the launch queue refuses for capacity. |
+
+Status 3 (Unknown) is never produced for `CatalogActivationOutcome` in the
+current code; an unrecognized slot is Unauthorized (4) here, where the
+native launcher's analogous case above is Unknown (3).
+
+**Indicator activation (`IndicatorActivate` to
+`IndicatorActivationOutcome`).**
+
+| Status | Reason | Trigger |
+| --- | --- | --- |
+| 0 Accepted | 0 | A snapshot has been published; the named `connection_epoch`/`snapshot_generation` match the snapshot last published; a published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple exactly; that entry's `action` is nonzero; and (when ordinary input is disabled) `event_id` exceeds every previously accepted `event_id` on this connection; and the downstream admission step admits it. |
+| 1 Stale | 0 | No snapshot has ever been published, or the named `connection_epoch`/`snapshot_generation` do not match the one last published. |
+| 1 Stale | 0 | Ordinary input disabled: otherwise eligible, but `event_id` does not exceed the connection's high-water mark. |
+| 1 Stale | 1 | Ordinary input enabled: `indicator_admission` finds no linked, still-awaiting action for the named `event_id` -- it is 0 or exceeds every event this connection has ever issued; no action with that `event_id` remains on the ledger (already collected once fully settled, or it was never an indicator-family action, e.g. a native-launcher or persistent-catalog action's `event_id`); its `action_ack_timeout_ms` deadline has passed; it was issued under a different `connection_epoch`; the WM has already recorded a decision for it (admitted or rejected), even though not yet acknowledged; or its own `output`/`indicator`/`action` differs from the ones named in this activation. Or, in either mode, the WM admission reports a duplicate. |
+| 2 Unknown | 0 | No published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple. |
+| 2 Unknown | 2 | Otherwise-eligible, but the downstream admission step refuses for capacity. This family has no dedicated Capacity status; a capacity refusal is folded into Unknown/Budget here. |
+| 3 Unauthorized | 0 | A matching `IndicatorEntry` exists but its `action` is 0 (published but not activatable). |
 
 ## Multiple writers, isolation and revocation
 
@@ -435,10 +783,16 @@ launcher and the r8 dock profiles:
   and slot.
 
 The independent Go oracle will carry these scenarios, written from
-`protocol/sophia-shell-v1.kdl` and this file contract without Sophia codec reuse.
+this file contract alone (amendment 1), without Sophia codec reuse.
 Its test admission is supplied, so it cannot prove supervisor authentication.
 The product clients then prove integration, not independence; Narthex remains
 the descriptor reference rather than acquiring content work for this gate.
+Because Provlita cannot build as-is (due to missing `../sophia-stack` path
+dependencies), its r8 dock bounds (catalog with r8 identities at the 4 MiB cap,
+per-output allocations and reservations, journal and snapshot bounds) are proven first through the
+independent Go oracle's r8 profile. Provlita's own integration evidence requires
+repairing its dependency pin, which is a prerequisite recorded here and not a
+transport change.
 
 Required evidence follows the control bus's five retirement criteria, per
 profile:
@@ -457,17 +811,17 @@ Rows marked as product gaps belong to their own tasks, not to this transport.
 
 | Role | Must behave as today over files | Product gaps, not transport |
 | --- | --- | --- |
-| Dock (Provlita, r8) | Per-output allocations and edge reservations, checked against the allowed reservation extent. Pinned tiles from the catalog, with r8 identities. Activation names the catalog generation and slot and is accepted only against the Presented target. Launch context taken by Session from the committed WM output context, refused when stale. Replacing the dock does not disturb bar or launcher. Retained dock content retires after revocation, and storage is reclaimed. | Running-window feed (t043); reservation arbitration (t106) |
+| Dock (Provlita, r8) | Per-output allocations and edge reservations, checked against the allowed reservation extent. Pinned tiles from the catalog, with r8 identities at the 4 MiB cap. Activation names the catalog generation and slot and is accepted only against the Presented target. Launch context taken by Session from the committed WM output context, refused when stale. Replacing the dock does not disturb bar or launcher. Retained dock content retires after revocation, and storage is reclaimed. | Running-window feed (t043); reservation arbitration (t106) |
 | Launcher (Bemenu, r7) | Opening from Session; parentless allocation with no reservation. Focus lease minted only after an actual Presented, and FocusRevoked on loss. Semantic input with stale acknowledgements. A query edit disarms activation. Activation admits a queue slot only; the revocation semantics above hold. Close, and the opening timeout. | Popout workflow (t099) |
 | Bar (Lom, r6) | Panel allocation per output with its reservation. Indicator snapshot and exact activation echo. Presented work-area bands survive reconnect until the new first Present. Content upload and retirement within role limits. | Recovery (t100) |
 | Legacy descriptor (Narthex, r1-r8) | Descriptor snapshot, candidate, activation and ack; tabs; shortcuts and reference; launcher catalog when r4 and bit 5 are selected. Reservation via candidate, and withdrawal. | Overview r9 exists only on the unmerged `overview` branch |
 
-## Budgets (decisions pending)
+## Budgets
 
-These are proposed acceptance budgets, not measurements. They are stated
+These are the accepted acceptance budgets, not measurements. They are stated
 before measurement and cannot be relaxed after a result.
 
-| Measure | Proposed budget |
+| Measure | Budget |
 | --- | --- |
 | Panel repaint: submit of a bar-sized resource (for example 1920x24, 180 KiB) to `accepted` | p95 within current IPC + 1 ms, p99 within + 2 ms |
 | 4 MiB resource upload to `accepted` | p95 within current IPC + 10%; no timeout at the 2000 ms transfer bound |
@@ -479,10 +833,51 @@ before measurement and cannot be relaxed after a result.
 Each distribution reports p50, p95 and p99, the maximum, and every timeout,
 with the same client, workload and output on both transports.
 
+## Amendment 1 (2026-09-26): native bodies, IPC-independent records
+
+The operator set the migration's end state: all IPC code is purged and every
+role runs on 9P files. The accepted body rule, a transaction ID followed by
+the unchanged `sophia_shell_v1` payload, would keep the IPC payload codec
+alive as the file format, so it is replaced before more families build on it:
+
+- **Typed records are wire-neutral.** The shell record structs, limits and
+  validators leave `sophia_protocol::ipc` for a neutral module. Their
+  validation errors do not name the IPC codec. The IPC codec becomes one
+  encoder over those values and is deleted at t255 without touching owners.
+- **Every file record has a native layout**, defined in
+  `sophia-shell-files-v1.kdl` and `sophia_protocol::shell_files` as
+  `wm_files` does: no socket framing artifacts (chunk ordinals, repeated
+  counts, Begin/Entry/End transfers). `Candidate` is one header and three
+  counted row tables; limits, outputs, catalog and indicators are objects
+  with their own layouts. Slice-1 kinds are re-encoded; nothing shipped.
+- **Budgets are wire-neutral.** Owners charge response credit per record,
+  not in socket-frame bytes; each wire enforces its own byte bounds.
+- **Clients seam at typed values.** `sophia-shell-client` queues typed
+  records and objects; each wire encodes natively. No frame translation.
+- **The independent oracle is written from this contract alone**, never
+  from `protocol/sophia-shell-v1.kdl`.
+
+The per-role behaviour, owners, bounds and budgets above are unchanged.
+
+### IPC purge inventory (t255)
+
+Nothing new may depend on these; each is deleted when its role's file wire
+is the accepted default:
+
+| Area | IPC code |
+| --- | --- |
+| Shell | socket transport (`shell_transport` socket branch, inbox/outbox frames), `ipc::shell_*` codecs (`fields.rs`, `codec.rs`), `packets/shell_*` |
+| Shell clients | `sophia-shell-client` socket wire; `bindings/c/shell_wire` socket half |
+| Shell file contract | the socket-shaped `Limits` fields (`max_frame_payload`, `max_input_queue_bytes`) and the relations that use the socket header sizes (+24, +48); with them, the response budget's byte charges (`control_budget.rs`: bulk records charged in socket-frame bytes, `max_output_queue_bytes` and the control reserve) become per-record credits with each wire enforcing its own byte bounds. Until then the budget holds its bounds on both wires; control credits are already per record |
+| WM | `policy_transport_worker/current_ipc.rs`, `ipc::wm_v1*` and `ipc::policy_*` codecs, Hagia's legacy policy wire |
+| WM file wire (relocate, not delete) | the neutral row-section codec now under `ipc::wm_v1_records` and `ipc::policy_records`, and the row layouts `sophia-wm-files-v1.kdl` cites from `sophia-wm-v1.kdl`, move to wire-neutral homes before the WM IPC codecs go |
+| Output | output socket role (`ipc::output_v1`), migrated by t253 |
+| Control | control socket (`ipc::control_v1`), per the control-bus plan |
+| Broker/portal | `ipc::broker*`, `ipc::portal` (t254 inventory) |
+
 ## Open decisions
 
-- Shell transaction cap (proposed 64 KiB).
-- Journal bounds (proposed 256 records and 1 MiB).
-- Snapshot cap or catalog paging (proposed 4 MiB).
-- Snapshot retention per feed, and the mismatch and resync rule.
-- The numeric budgets above.
+- The `AllocationResult` event `status=4` (invalidate) preserves today's semantics in v1:
+  it is Session-initiated, holds no pre-reserved credit (`crates/sophia-runtime/src/shell_content/allocations.rs:379-407`),
+  and uses the non-reserve journal space. A guaranteed variant would reserve +16
+  (`max_allocations_total`).

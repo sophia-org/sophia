@@ -32,6 +32,7 @@ fn connected_worker_adopts_exact_child_and_revocation_prevents_old_execution() {
                 config: None,
                 reservation: None,
                 gpu: sophia_config::ShellGpuMode::Denied,
+                transport: Default::default(),
             });
         config.session_profile = PreparedSessionProfile::new(selected).unwrap();
         config.application_catalog = Some(sophia_config::ApplicationCatalogConfig {

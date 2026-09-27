@@ -108,3 +108,33 @@ fn a_prepared_outcome_cannot_claim_native_presentation() {
         .is_err()
     );
 }
+
+/// Structure, then the frame's transaction rule, then semantics: a zero
+/// transaction on a record that needs one is reported as such even when the
+/// payload is also semantically invalid; truncation and trailing bytes still
+/// come first.
+#[test]
+fn content_frame_errors_keep_their_precedence() {
+    let decode = |len: usize| {
+        let frame = encode_frame(
+            IpcMessageKind::ShellContentFrameDemandCancel,
+            TransactionId::from_raw(0),
+            &vec![0u8; len],
+        )
+        .unwrap();
+        decode_shell_content_frame(&frame).unwrap_err()
+    };
+    assert_eq!(decode(48), IpcCodecError::InvalidTransaction(0));
+    assert_eq!(decode(47), IpcCodecError::Truncated);
+    assert_eq!(decode(49), IpcCodecError::TrailingBytes(1));
+    let frame = encode_frame(
+        IpcMessageKind::ShellContentFrameDemandCancel,
+        TransactionId::from_raw(7),
+        &[0u8; 48],
+    )
+    .unwrap();
+    assert!(matches!(
+        decode_shell_content_frame(&frame).unwrap_err(),
+        IpcCodecError::InvalidRecord(_)
+    ));
+}

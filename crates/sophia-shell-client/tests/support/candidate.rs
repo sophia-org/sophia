@@ -1,4 +1,6 @@
 use super::*;
+use crate::socket::SocketWire;
+use crate::wire::Wire;
 use crate::*;
 use sophia_protocol::*;
 
@@ -17,7 +19,7 @@ fn connection() -> (ShellConnection, std::os::unix::net::UnixStream) {
     stream.set_nonblocking(true).unwrap();
     (
         ShellConnection {
-            stream,
+            wire: Wire::Socket(SocketWire::new(stream)),
             welcome: ShellV1ServerWelcome {
                 selected_revision: 6,
                 connection_epoch: 7,
@@ -27,10 +29,8 @@ fn connection() -> (ShellConnection, std::os::unix::net::UnixStream) {
                 max_label_bytes: 128,
                 max_pending_activations: 16,
             },
-            input: Vec::new(),
             output: outbox::ClientOutbox::default(),
             inbox: std::collections::VecDeque::new(),
-            peer_closed: false,
         },
         peer,
     )

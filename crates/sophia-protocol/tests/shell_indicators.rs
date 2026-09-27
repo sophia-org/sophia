@@ -103,6 +103,55 @@ fn too_many_indicators_is_rejected() {
     assert!(encode_shell_indicator_snapshot(TransactionId::from_raw(1), &s).is_err());
 }
 
+/// Regression: `validate_shell_indicator_snapshot`'s count checks must keep
+/// reporting `IpcCodecError::CountTooLarge { count, max }` exactly, not the
+/// file-wire's own `InvalidRecord`-shaped error
+/// (`crate::shell::indicators::validate`, which the neutral value codec
+/// uses for the same bound). This is a distinct, byte/value-identical
+/// public IPC error, not merely `.is_err()`.
+#[test]
+fn indicator_count_over_maximum_reports_the_exact_ipc_error() {
+    let mut s = snapshot();
+    let count = SOPHIA_SHELL_MAX_INDICATORS + 1;
+    s.indicators = (0..count)
+        .map(|i| ShellIndicator {
+            output: OutputId::from_raw(1),
+            indicator: i as u64,
+            action: 1,
+            slot: 0,
+            state_bits: 0,
+            label: "v".to_owned(),
+        })
+        .collect();
+    assert_eq!(
+        validate_shell_indicator_snapshot(&s),
+        Err(IpcCodecError::CountTooLarge {
+            count,
+            max: SOPHIA_SHELL_MAX_INDICATORS,
+        })
+    );
+}
+
+#[test]
+fn output_status_count_over_maximum_reports_the_exact_ipc_error() {
+    let mut s = snapshot();
+    let count = SOPHIA_SHELL_MAX_OUTPUT_STATUS + 1;
+    s.statuses = (0..count)
+        .map(|i| ShellOutputStatus {
+            output: OutputId::from_raw(i as u64 + 1),
+            focus_bits: 0,
+            layout: "Tall".to_owned(),
+        })
+        .collect();
+    assert_eq!(
+        validate_shell_indicator_snapshot(&s),
+        Err(IpcCodecError::CountTooLarge {
+            count,
+            max: SOPHIA_SHELL_MAX_OUTPUT_STATUS,
+        })
+    );
+}
+
 #[test]
 fn activation_round_trips() {
     let tx = TransactionId::from_raw(4);
@@ -137,6 +186,34 @@ fn activation_outcome_round_trips_and_rejects_unknown_status() {
     let offset = bytes.len() - 4;
     bytes[offset..offset + 2].copy_from_slice(&9u16.to_le_bytes());
     assert!(decode_shell_indicator_activation_outcome(&bytes).is_err());
+}
+
+/// Regression: an invalid status byte must still report
+/// `IpcCodecError::InvalidEnum { field: "shell_indicator_activation_status",
+/// value }` exactly -- the original identifier, not the neutral value
+/// codec's own spelling (`"shell indicator activation status"`, used only
+/// by the file wire's decoder). The IPC boundary maps the neutral error back
+/// to this field name.
+#[test]
+fn activation_outcome_invalid_status_reports_the_exact_ipc_error() {
+    let tx = TransactionId::from_raw(4);
+    let outcome = ShellIndicatorActivationOutcome {
+        connection_epoch: 7,
+        snapshot_generation: 3,
+        event_id: 88,
+        status: ShellIndicatorActivationStatus::Stale,
+        reason: 1,
+    };
+    let mut bytes = encode_shell_indicator_activation_outcome(tx, &outcome).expect("encode");
+    let offset = bytes.len() - 4;
+    bytes[offset..offset + 2].copy_from_slice(&9u16.to_le_bytes());
+    assert_eq!(
+        decode_shell_indicator_activation_outcome(&bytes),
+        Err(IpcCodecError::InvalidEnum {
+            field: "shell_indicator_activation_status",
+            value: 9,
+        })
+    );
 }
 
 #[test]

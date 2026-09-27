@@ -189,13 +189,14 @@ supervision, metadata delivery, reservations, focus/capture, actions, content
 submission and receipts. Map every operation to its current owner and a
 versioned file/record contract before implementation.
 
-The [proposed shell file contract](../../sophia-shell-files.md) maps the current
+The [shell file contract](../../sophia-shell-files.md), accepted on 2026-09-26, maps the current
 owners and revision skew, per-component uploads and revocation, and the Lom,
 Bemenu, Provlita and Narthex acceptance scopes. Upload custody, separate scratch
 accounting, role-filtered disclosure and per-component selection are specified.
-Snapshot retention, aggregate transport bounds and numerical acceptance budgets
-remain named design decisions; the draft does not yet satisfy the
-implementable-contract exit.
+Snapshot retention, journal and snapshot bounds, the acknowledgement-progress
+deadline, per-role disclosure and the performance budgets are decided. The
+operator accepted the contract on 2026-09-26, which closes this exit; the
+guaranteed allocation-invalidation variant stays an open, non-blocking decision.
 
 Define admission, negotiation, immutable reads, transaction assembly/submit,
 outcome correlation, source lifetime, disconnect and stale-handle semantics.
@@ -215,6 +216,63 @@ Companion repositories allocate their own task IDs; Sophia does not invent
 them here.
 
 ### t252 — Join and accept the shell path
+
+**Amendment (2026-09-26).** The operator set the end state: all IPC code is
+purged and every role runs on 9P files. t251's body rule (transaction ID plus
+the unchanged `sophia_shell_v1` payload) is replaced by native file layouts
+over wire-neutral typed records, wire-neutral budgets, and a client seamed at
+typed values ([amendment 1 and the purge inventory](../../sophia-shell-files.md#amendment-1-2026-09-26-native-bodies-ipc-independent-records)).
+It lands before the role families, client and oracle build on the old rule.
+
+**Progress (2026-09-26, protocol/t252-shell-files).** Native records and
+codec: typed shell records and value encodings out of IPC (4c46ec24,
+f0d01d77, 4fb064a0), native whole `Candidate` (d2ec49db), self-contained KDL
+pinned by a conformance test with normative cross-field rules (a25783ba,
+f64d670e, bae4ec4a). Transport: shared journal/staging (f5f0dd43), candidates,
+pacing and actions over files (59c056d5). Clients: Rust client seamed at
+typed values (a753b343), pipelined write-capable 9P client with review-4
+fixes (ab1c4243, a8b3f7f1), and the C binding's native 9P file client for the
+base kinds by Codex (ba8c617b; `tools/check_shell_c_wire_files.sh`), proven
+against the production export without Bemenu adoption or r7 records yet.
+Later the same day: the Rust client's native file wire (cac21b94), the B5
+protocol layer for launcher, dock and bar kinds (7f1b2f22), the attach epoch
+disclosed in `api` (43e4530b) and read by both clients (ef0b9453, 7247f2d5),
+revocation flushed so waiting reads answer ESTALE before close (ef0b9453),
+and normative KDL corrections from Codex's audit (bae4ec4a, 6bb0c8f2). The
+independent Go oracle by Codex (f516ba22; `tools/check_shell_files_oracle.sh`)
+judges the production export with 54 named checks across eight exports and
+shares no code with Sophia; it found the revocation gap. Its admission is
+supplied, so it proves wire and owner interoperability, not supervisor
+authentication, native rendering, latency or attended acceptance.
+Role families, codec layer: normative rules for the launcher, dock and bar
+kinds, traced against the owners (ee5e7f80, 19a21c84, ae60576f), and
+independent codecs for all 17 B5 kinds in C (ef50d220) and in the Go oracle
+(72eef656) by Codex, written from the KDL alone. The live oracle verdict is
+still the 54 base checks; no role-family runtime pass is claimed yet.
+Role families, owner handoff (2026-09-27): the launcher, dock and bar
+families run over the file wire through the existing owners (a52f93f7);
+Session publishes component catalogs and indicators through the typed
+transport (e50fc08a, bdf3f12c); a whole candidate gets exactly one outcome
+and large objects publish in order under the object cap (3856d101), both
+found by Codex's live oracle. The independent Go oracle now passes exactly
+96 checks (r6, r7, r8 added; 9583b499) and the C client runs native launcher
+and dock sessions against the production export, including a 4096-row
+catalog (e8f3c486). Catalog and indicator eligibility is scripted in the
+oracle from the normative rules; Session launch and admission policy is not
+claimed there.
+Full offline gate on the branch with master merged (29c5f77e,
+2026-09-27 02:55, device-hidden, jobs 2): 6036 passed, 64 ignored, 6 failed;
+fmt, workspace clippy, layout, both C gates and the 96-check oracle pass.
+The 6 are not from t252: 5 `sophia-cli` `client_launch_socket` tests trip
+their 3-second watchdog only under full-workspace parallel load (3/3 alone),
+and `gpu_proof_domain` failed transiently on master and the branch alike
+around 02:55-02:58 and passes since (7/7 on master, 3/3 on the branch; a
+bisect on it was misled by the transient). The per-record credit rework is
+deferred to the socket Limits removal (purge inventory).
+Remaining: Bemenu r7 on the C client, B9
+measurements under a new declared method (the t249 verdict showed survivor
+equality and 120 Hz are unattainable as declared), merge and attended
+evidence.
 
 After t251, implement a Sophia adapter to the existing shell/component owners
 and independent clients. Development need not wait for t250's attended WM
@@ -246,6 +304,20 @@ adding Provlita to this migration plan does not claim t108's three-component
 physical exit has already passed.
 This task owns shell default selection and its separately authorized rollout
 after those gates, independently of the later output migration.
+
+Slice 1 (2026-09-26) adds the `sophia_shell_fs_v1` codec
+(`sophia_protocol::shell_files`) and a per-component file wire in
+`ShellComponentTransport`: one 9P export per admitted epoch, negotiation as a
+submitted record through the unchanged `select_negotiation`, the `limits`
+object, the journal with its 64-record terminal reserve, per-role byte bounds
+and 2000 ms acknowledgement deadline, and allocation requests through the
+existing allocation owner. Current IPC remains the only selected transport:
+Session selection, the `outputs` object, uploads, candidates, actions and the
+catalog, indicator and launcher families come in later slices. Evidence is
+runtime tests over a real private socket with supplied protection evidence,
+not a protected child or an independent client. The shell export duplicates the
+WM file owner's journal and staging algorithms; extracting both into one owner
+is recorded debt.
 
 ### t253 — Migrate the separate output role
 

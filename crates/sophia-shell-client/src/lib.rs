@@ -1,30 +1,30 @@
 //! Display-independent client transport for `sophia_shell_v1`.
 //!
 //! This crate owns framing and bounded socket queues. It grants no authority,
-//! renders no pixels and opens no X11 or Wayland connection.
+//! renders no pixels and opens no X11 or Wayland connection. Internals hold
+//! whole typed values (see `wire`); today's Unix-socket IPC wire is the only
+//! implementation of that seam, kept entirely inside `socket`.
 
 mod candidate;
 mod catalog;
 pub use catalog::{CatalogInbox, CatalogObservation};
+mod files;
 mod lifecycle;
 mod outbox;
 pub use lifecycle::*;
+mod socket;
+mod wire;
 
 use std::collections::VecDeque;
-use std::io::{Read as _, Write as _};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
 use sophia_protocol::{
-    ContentAdmissionRefused, IpcCodecError, IpcMessageKind, SOPHIA_IPC_HEADER_LEN,
-    SOPHIA_IPC_MAX_PAYLOAD_LEN, ShellContentRecord, ShellIndicatorActivation,
-    ShellIndicatorActivationOutcome, ShellIndicatorSnapshot, ShellV1ClientHello,
-    ShellV1ServerWelcome, TransactionId, decode_frame, decode_shell_content_frame,
-    decode_shell_indicator_activation_outcome, decode_shell_indicator_snapshot,
-    decode_shell_v1_server_welcome_frame, encode_shell_content_frame,
-    encode_shell_indicator_activation, encode_shell_v1_client_hello_frame,
+    ContentAdmissionRefused, IpcCodecError, ShellContentRecord, ShellIndicatorActivation,
+    ShellIndicatorActivationOutcome, ShellIndicatorSnapshot, ShellV1ServerWelcome, TransactionId,
 };
+
+use wire::{Inbound, Outbound, Wire};
 
 const MAX_QUEUED_BYTES: usize = 2 * 1024 * 1024;
 const MAX_QUEUED_FRAMES: usize = 64;
@@ -44,6 +44,11 @@ pub struct ShellClientOptions {
 pub enum ShellClientError {
     Io(String),
     Codec(IpcCodecError),
+    /// A `sophia_shell_fs_v1` envelope or record failed to encode/decode.
+    FileCodec(sophia_protocol::shell_files::ShellFilePayloadError),
+    /// The underlying 9P pipeline failed (I/O, or a protocol violation it
+    /// detected in a reply).
+    Pipeline(sophia_9p::pipeline::PipelineError),
     AdmissionRefused(ContentAdmissionRefused),
     Lifecycle(ContentLifecycleError),
     UnsupportedRevision,
@@ -51,6 +56,17 @@ pub enum ShellClientError {
     WrongDirection,
     QueueSaturated,
     PeerClosed,
+    /// The current wire has no file-contract shape for this record family
+    /// yet (indicator activations, catalog candidates/responses, native
+    /// launcher records, or a lone Candidate Begin/Chunk/End outside a
+    /// `ContentGroup`).
+    UnsupportedOnWire,
+    /// A local invariant the file wire's own state machine relies on did not
+    /// hold (an unexpected 9P reply shape, or an event out of the sequence
+    /// the wire's own bookkeeping expected).
+    Protocol(&'static str),
+    /// `connect_from_env`'s environment selection was invalid.
+    Environment(&'static str),
 }
 
 impl core::fmt::Display for ShellClientError {
@@ -67,14 +83,30 @@ impl From<IpcCodecError> for ShellClientError {
     }
 }
 
+impl From<sophia_protocol::shell_files::ShellFilePayloadError> for ShellClientError {
+    fn from(error: sophia_protocol::shell_files::ShellFilePayloadError) -> Self {
+        Self::FileCodec(error)
+    }
+}
+
+impl From<sophia_protocol::shell_files::ShellFileCodecError> for ShellClientError {
+    fn from(error: sophia_protocol::shell_files::ShellFileCodecError) -> Self {
+        Self::FileCodec(error.into())
+    }
+}
+
+impl From<sophia_9p::pipeline::PipelineError> for ShellClientError {
+    fn from(error: sophia_9p::pipeline::PipelineError) -> Self {
+        Self::Pipeline(error)
+    }
+}
+
 /// One admitted shell connection. Calls are nonblocking after negotiation.
 pub struct ShellConnection {
-    stream: UnixStream,
+    wire: Wire,
     welcome: ShellV1ServerWelcome,
-    input: Vec<u8>,
     output: outbox::ClientOutbox,
-    inbox: VecDeque<Vec<u8>>,
-    peer_closed: bool,
+    inbox: VecDeque<Inbound>,
 }
 
 impl ShellConnection {
@@ -89,29 +121,7 @@ impl ShellConnection {
         {
             return Err(ShellClientError::UnsupportedRevision);
         }
-        let mut stream = UnixStream::connect(path).map_err(io_error)?;
-        stream
-            .set_read_timeout(Some(options.handshake_timeout))
-            .map_err(io_error)?;
-        stream
-            .set_write_timeout(Some(options.handshake_timeout))
-            .map_err(io_error)?;
-        let hello = encode_shell_v1_client_hello_frame(ShellV1ClientHello {
-            minimum_revision: options.minimum_revision,
-            maximum_revision: options.maximum_revision,
-            required_capabilities: options.required_capabilities,
-        })?;
-        stream.write_all(&hello).map_err(io_error)?;
-        let response = read_frame(&mut stream)?;
-        let (header, _) = decode_frame(&response)?;
-        if header.message_kind == IpcMessageKind::ShellContentAdmissionRefused {
-            let (_, record) = decode_shell_content_frame(&response)?;
-            let ShellContentRecord::AdmissionRefused(refusal) = record else {
-                return Err(ShellClientError::WrongDirection);
-            };
-            return Err(ShellClientError::AdmissionRefused(refusal));
-        }
-        let welcome = decode_shell_v1_server_welcome_frame(&response)?;
+        let (socket, welcome) = socket::SocketWire::connect(path, options)?;
         if welcome.selected_revision < options.minimum_revision
             || welcome.selected_revision > options.maximum_revision
         {
@@ -120,17 +130,50 @@ impl ShellConnection {
         if welcome.capabilities & options.required_capabilities != options.required_capabilities {
             return Err(ShellClientError::MissingCapability);
         }
-        stream.set_read_timeout(None).map_err(io_error)?;
-        stream.set_write_timeout(None).map_err(io_error)?;
-        stream.set_nonblocking(true).map_err(io_error)?;
         Ok(Self {
-            stream,
+            wire: Wire::Socket(socket),
             welcome,
-            input: Vec::new(),
             output: outbox::ClientOutbox::default(),
             inbox: VecDeque::new(),
-            peer_closed: false,
         })
+    }
+
+    /// Connect over the native 9P file wire: Pipeline connect, attach, open
+    /// the fixed nodes, then negotiate exactly as `connect` does. The
+    /// attach's connection epoch (every record header must carry it) is read
+    /// from `api` right after attach; see [`parse_shell_files_api_line`].
+    pub fn connect_files(
+        path: impl AsRef<Path>,
+        options: ShellClientOptions,
+    ) -> Result<Self, ShellClientError> {
+        if options.minimum_revision == 0
+            || options.minimum_revision > options.maximum_revision
+            || options.handshake_timeout.is_zero()
+        {
+            return Err(ShellClientError::UnsupportedRevision);
+        }
+        let (wire, welcome, inbox) = files::FileWire::connect(path.as_ref(), &options)?;
+        Ok(Self {
+            wire: Wire::Files(Box::new(wire)),
+            welcome,
+            output: outbox::ClientOutbox::default(),
+            inbox,
+        })
+    }
+
+    /// Selects a wire from the environment: exactly one of
+    /// `SOPHIA_SHELL_9P_SOCKET` (file wire) or `SOPHIA_SHELL_SOCKET` (socket
+    /// wire) must be set. Neither, or both, is refused outright: there is no
+    /// fallback and no sniffing.
+    pub fn connect_from_env(options: ShellClientOptions) -> Result<Self, ShellClientError> {
+        let selection = select_env_wire(
+            std::env::var_os("SOPHIA_SHELL_SOCKET"),
+            std::env::var_os("SOPHIA_SHELL_9P_SOCKET"),
+        )?;
+        match selection {
+            EnvWireSelection::Socket(path) => Self::connect(path, options),
+            EnvWireSelection::Files { socket } => Self::connect_files(socket, options),
+        }
     }
 
     pub const fn welcome(&self) -> ShellV1ServerWelcome {
@@ -158,14 +201,12 @@ impl ShellConnection {
         transaction: TransactionId,
         record: &ShellContentRecord,
     ) -> Result<(), ShellClientError> {
-        if !client_record(record) {
-            return Err(ShellClientError::WrongDirection);
-        }
-        let frame = encode_shell_content_frame(transaction, record)?;
-        self.output.enqueue(
-            vec![frame],
-            matches!(record, ShellContentRecord::ActionAck(_)),
-        )
+        let outbound = Outbound::Content(transaction, record.clone());
+        let control = outbound.is_control();
+        let units = self.wire.encode(outbound)?;
+        self.output.enqueue(units, control)?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Atomically own a bounded group of bulk content records (for example a
@@ -175,8 +216,12 @@ impl ShellConnection {
         transaction: TransactionId,
         records: &[ShellContentRecord],
     ) -> Result<(), ShellClientError> {
-        self.output
-            .enqueue(encode_content_group(transaction, records)?, false)
+        let units = self
+            .wire
+            .encode(Outbound::ContentGroup(transaction, records.to_vec()))?;
+        self.output.enqueue(units, false)?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Own a complete candidate and its exact lifecycle metadata together.
@@ -188,13 +233,17 @@ impl ShellConnection {
         transaction: TransactionId,
         records: &[ShellContentRecord],
     ) -> Result<(), ShellClientError> {
-        let frames = encode_content_group(transaction, records)?;
+        let units = self
+            .wire
+            .encode(Outbound::ContentGroup(transaction, records.to_vec()))?;
         let metadata = candidate::metadata(transaction, records)?;
-        self.output.enqueue_after(frames, false, || {
+        self.output.enqueue_after(units, false, || {
             lifecycle
                 .register(metadata)
                 .map_err(ShellClientError::Lifecycle)
-        })
+        })?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Atomically own both ACK and indicator request before committing a UI
@@ -205,23 +254,15 @@ impl ShellConnection {
         ack: &sophia_protocol::ContentActionAck,
         activation: Option<(TransactionId, &ShellIndicatorActivation)>,
     ) -> Result<(), ShellClientError> {
-        let mut frames = vec![encode_shell_content_frame(
+        let outbound = Outbound::ActionResponse {
             transaction,
-            &ShellContentRecord::ActionAck(ack.clone()),
-        )?];
-        if let Some((transaction, activation)) = activation {
-            if ack.disposition != 1
-                || ack.event_id != activation.event_id
-                || ack.grant.connection_epoch != activation.connection_epoch
-                || ack.output.id != activation.output.raw()
-                || ack.target_id != activation.indicator
-                || ack.action_id != activation.action
-            {
-                return Err(ShellClientError::WrongDirection);
-            }
-            frames.push(encode_shell_indicator_activation(transaction, activation)?);
-        }
-        self.output.enqueue(frames, true)
+            ack: ack.clone(),
+            activation: activation.map(|(transaction, activation)| (transaction, *activation)),
+        };
+        let units = self.wire.encode(outbound)?;
+        self.output.enqueue(units, true)?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Take the oldest session-to-client content record while retaining other
@@ -237,17 +278,19 @@ impl ShellConnection {
     pub fn take_content(
         &mut self,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellClientError> {
-        let at = self.inbox.iter().position(|frame| {
-            decode_frame(frame).is_ok_and(|(header, _)| content_kind(header.message_kind))
-        });
-        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
-            return if self.peer_closed {
+        let at = self
+            .inbox
+            .iter()
+            .position(|item| matches!(item, Inbound::Content(_, _)));
+        let Some(Inbound::Content(transaction, record)) =
+            at.and_then(|index| self.inbox.remove(index))
+        else {
+            return if self.wire.peer_closed() {
                 Err(ShellClientError::PeerClosed)
             } else {
                 Ok(None)
             };
         };
-        let (transaction, record) = decode_shell_content_frame(&frame)?;
         if !server_record(&record) {
             return Err(ShellClientError::WrongDirection);
         }
@@ -267,49 +310,20 @@ impl ShellConnection {
     pub fn take_indicators(
         &mut self,
     ) -> Result<Option<(TransactionId, ShellIndicatorSnapshot)>, ShellClientError> {
-        let Some(begin) = self.inbox.iter().position(|frame| {
-            decode_frame(frame).is_ok_and(|(header, _)| {
-                header.message_kind == IpcMessageKind::ShellIndicatorsBegin
-            })
-        }) else {
-            return if self.peer_closed {
+        let at = self
+            .inbox
+            .iter()
+            .position(|item| matches!(item, Inbound::Indicators(_, _)));
+        let Some(Inbound::Indicators(transaction, snapshot)) =
+            at.and_then(|index| self.inbox.remove(index))
+        else {
+            return if self.wire.peer_closed() {
                 Err(ShellClientError::PeerClosed)
             } else {
                 Ok(None)
             };
         };
-        let (header, _) = decode_frame(&self.inbox[begin])?;
-        let transaction = header.transaction;
-        let end = self
-            .inbox
-            .iter()
-            .enumerate()
-            .skip(begin)
-            .find_map(|(index, frame)| {
-                decode_frame(frame).ok().and_then(|(header, _)| {
-                    (header.transaction == transaction
-                        && header.message_kind == IpcMessageKind::ShellIndicatorsEnd)
-                        .then_some(index)
-                })
-            });
-        let Some(end) = end else {
-            return Ok(None);
-        };
-        let mut frames = Vec::new();
-        let mut retained = VecDeque::with_capacity(self.inbox.len());
-        for (index, frame) in self.inbox.drain(..).enumerate() {
-            if (begin..=end).contains(&index)
-                && decode_frame(&frame).is_ok_and(|(header, _)| header.transaction == transaction)
-            {
-                frames.push(frame);
-            } else {
-                retained.push_back(frame);
-            }
-        }
-        self.inbox = retained;
-        decode_shell_indicator_snapshot(&frames)
-            .map(Some)
-            .map_err(Into::into)
+        Ok(Some((transaction, snapshot)))
     }
 
     /// Queue one activation naming an exact published indicator generation.
@@ -318,8 +332,11 @@ impl ShellConnection {
         transaction: TransactionId,
         activation: &ShellIndicatorActivation,
     ) -> Result<(), ShellClientError> {
-        let frame = encode_shell_indicator_activation(transaction, activation)?;
-        self.output.enqueue(vec![frame], false)?;
+        let units = self
+            .wire
+            .encode(Outbound::IndicatorActivation(transaction, *activation))?;
+        self.output.enqueue(units, false)?;
+        self.wire.commit_encoded();
         self.poll_io()
     }
 
@@ -335,85 +352,27 @@ impl ShellConnection {
     pub fn take_indicator_activation_outcome(
         &mut self,
     ) -> Result<Option<(TransactionId, ShellIndicatorActivationOutcome)>, ShellClientError> {
-        let at = self.inbox.iter().position(|frame| {
-            decode_frame(frame).is_ok_and(|(header, _)| {
-                header.message_kind == IpcMessageKind::ShellIndicatorActivateOutcome
-            })
-        });
-        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
-            return if self.peer_closed {
+        let at = self
+            .inbox
+            .iter()
+            .position(|item| matches!(item, Inbound::IndicatorOutcome(_, _)));
+        let Some(Inbound::IndicatorOutcome(transaction, outcome)) =
+            at.and_then(|index| self.inbox.remove(index))
+        else {
+            return if self.wire.peer_closed() {
                 Err(ShellClientError::PeerClosed)
             } else {
                 Ok(None)
             };
         };
-        decode_shell_indicator_activation_outcome(&frame)
-            .map(Some)
-            .map_err(Into::into)
+        Ok(Some((transaction, outcome)))
     }
 
     /// Bounded nonblocking progress. A queue limit is a protocol failure, not
     /// permission to discard an accepted outcome. Each call reads and writes
     /// at most 256 KiB in at most 64 syscalls per direction.
     pub fn poll_io(&mut self) -> Result<(), ShellClientError> {
-        let mut remaining = 256 * 1024;
-        for _ in 0..64 {
-            if remaining == 0 {
-                break;
-            }
-            let Some(bytes) = self.output.front() else {
-                break;
-            };
-            match self.stream.write(&bytes[..bytes.len().min(remaining)]) {
-                Ok(0) => return Err(ShellClientError::PeerClosed),
-                Ok(written) => {
-                    self.output.written(written);
-                    remaining -= written;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(error) => return Err(io_error(error)),
-            }
-        }
-        for _ in 0..64 {
-            self.decode_input()?;
-            let retained = self.input.len() + self.inbox.iter().map(Vec::len).sum::<usize>();
-            let available = MAX_QUEUED_BYTES.saturating_sub(retained);
-            if available == 0 || self.inbox.len() == MAX_QUEUED_FRAMES {
-                break;
-            }
-            let mut bytes = [0u8; 4096];
-            let available = available.min(bytes.len());
-            match self.stream.read(&mut bytes[..available]) {
-                Ok(0) => {
-                    self.peer_closed = true;
-                    break;
-                }
-                Ok(read) => self.input.extend_from_slice(&bytes[..read]),
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(error) => return Err(io_error(error)),
-            }
-            self.decode_input()?;
-        }
-        Ok(())
-    }
-
-    fn decode_input(&mut self) -> Result<(), ShellClientError> {
-        while self.input.len() >= SOPHIA_IPC_HEADER_LEN && self.inbox.len() < MAX_QUEUED_FRAMES {
-            let payload = u32::from_le_bytes(self.input[16..20].try_into().unwrap()) as usize;
-            if payload > SOPHIA_IPC_MAX_PAYLOAD_LEN {
-                return Err(ShellClientError::Codec(IpcCodecError::PayloadTooLarge(
-                    payload,
-                )));
-            }
-            let frame_len = SOPHIA_IPC_HEADER_LEN + payload;
-            if self.input.len() < frame_len {
-                break;
-            }
-            let frame = self.input.drain(..frame_len).collect::<Vec<_>>();
-            decode_frame(&frame)?;
-            self.inbox.push_back(frame);
-        }
-        Ok(())
+        self.wire.poll_io(&mut self.output, &mut self.inbox)
     }
 }
 
@@ -450,54 +409,94 @@ fn server_record(record: &ShellContentRecord) -> bool {
     )
 }
 
-fn content_kind(kind: IpcMessageKind) -> bool {
-    (IpcMessageKind::ShellContentAdmissionRefused as u16
-        ..=IpcMessageKind::ShellContentActionAck as u16)
-        .contains(&(kind as u16))
-}
-
 fn io_error(error: std::io::Error) -> ShellClientError {
     ShellClientError::Io(error.to_string())
 }
 
-fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, ShellClientError> {
-    let mut header = [0u8; SOPHIA_IPC_HEADER_LEN];
-    stream.read_exact(&mut header).map_err(io_error)?;
-    let payload = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
-    if payload > SOPHIA_IPC_MAX_PAYLOAD_LEN {
-        return Err(ShellClientError::Codec(IpcCodecError::PayloadTooLarge(
-            payload,
-        )));
-    }
-    let mut frame = Vec::with_capacity(SOPHIA_IPC_HEADER_LEN + payload);
-    frame.extend_from_slice(&header);
-    frame.resize(SOPHIA_IPC_HEADER_LEN + payload, 0);
-    stream
-        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
-        .map_err(io_error)?;
-    decode_frame(&frame)?;
-    Ok(frame)
+/// What [`ShellConnection::connect_from_env`] selects and what it needs to
+/// open it. Exposed so the selection rule below is testable directly, with
+/// no process-global environment mutation: `std::env::set_var`/`remove_var`
+/// are `unsafe` since edition 2024, and this workspace forbids unsafe code
+/// outright.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EnvWireSelection {
+    Socket(std::ffi::OsString),
+    Files { socket: std::ffi::OsString },
 }
 
-fn encode_content_group(
-    transaction: TransactionId,
-    records: &[ShellContentRecord],
-) -> Result<Vec<Vec<u8>>, ShellClientError> {
-    if records.is_empty() || records.len() > MAX_QUEUED_FRAMES / 2 {
-        return Err(ShellClientError::QueueSaturated);
+/// The pure selection rule behind [`ShellConnection::connect_from_env`]:
+/// exactly one of `socket` (the `SOPHIA_SHELL_SOCKET` value) or
+/// `files_socket` (`SOPHIA_SHELL_9P_SOCKET`) must be given. Kept apart from
+/// actually reading the environment so it is directly testable; see this
+/// crate's `tests/connection.rs`.
+pub fn select_env_wire(
+    socket: Option<std::ffi::OsString>,
+    files_socket: Option<std::ffi::OsString>,
+) -> Result<EnvWireSelection, ShellClientError> {
+    match (socket, files_socket) {
+        (Some(_), Some(_)) => Err(ShellClientError::Environment(
+            "both SOPHIA_SHELL_SOCKET and SOPHIA_SHELL_9P_SOCKET are set",
+        )),
+        (None, None) => Err(ShellClientError::Environment(
+            "neither SOPHIA_SHELL_SOCKET nor SOPHIA_SHELL_9P_SOCKET is set",
+        )),
+        (Some(path), None) => Ok(EnvWireSelection::Socket(path)),
+        (None, Some(path)) => Ok(EnvWireSelection::Files { socket: path }),
     }
-    let mut frames = Vec::with_capacity(records.len());
-    let mut bytes = 0usize;
-    for record in records {
-        if !client_record(record) {
-            return Err(ShellClientError::WrongDirection);
-        }
-        let frame = encode_shell_content_frame(transaction, record)?;
-        bytes = bytes.saturating_add(frame.len());
-        if bytes > MAX_QUEUED_BYTES {
-            return Err(ShellClientError::QueueSaturated);
-        }
-        frames.push(frame);
+}
+
+/// The number of bytes `connect_files`/`connect_from_env` will read from
+/// `api` before giving up. The real line
+/// (`sophia-shell-files version=<u16> role=<role> epoch=<u64>
+/// fd_transfer=none\n`) stays well under this, so a well-formed line always
+/// reads whole in one 9P read; a read that fills the whole budget is treated
+/// as oversize/malformed rather than silently truncated.
+pub const SHELL_FILES_API_LINE_MAX_BYTES: u32 = 256;
+
+/// Parses the `api` file's one line strictly: the exact key set and order
+/// `sophia-shell-files version=<SHELL_FILE_API_VERSION> role=<role>
+/// epoch=<connection epoch> fd_transfer=none`, terminated by exactly one
+/// trailing newline and nothing else. Returns the connection epoch every
+/// record header of this attach must carry -- the only field the file wire
+/// needs from this line.
+pub fn parse_shell_files_api_line(bytes: &[u8]) -> Result<u64, ShellClientError> {
+    if bytes.len() >= SHELL_FILES_API_LINE_MAX_BYTES as usize {
+        return Err(ShellClientError::Protocol("api line oversize"));
     }
-    Ok(frames)
+    let text =
+        std::str::from_utf8(bytes).map_err(|_| ShellClientError::Protocol("api line not utf-8"))?;
+    let line = text
+        .strip_suffix('\n')
+        .ok_or(ShellClientError::Protocol("api line missing newline"))?;
+    let mut fields = line.split(' ');
+    if fields.next() != Some("sophia-shell-files") {
+        return Err(ShellClientError::Protocol("api line missing family"));
+    }
+    let version: u16 = fields
+        .next()
+        .and_then(|field| field.strip_prefix("version="))
+        .and_then(|value| value.parse().ok())
+        .ok_or(ShellClientError::Protocol("api line missing version"))?;
+    if version != sophia_protocol::shell_files::SHELL_FILE_API_VERSION {
+        return Err(ShellClientError::Protocol("api line version mismatch"));
+    }
+    fields
+        .next()
+        .and_then(|field| field.strip_prefix("role="))
+        .ok_or(ShellClientError::Protocol("api line missing role"))?;
+    let epoch: u64 = fields
+        .next()
+        .and_then(|field| field.strip_prefix("epoch="))
+        .and_then(|value| value.parse().ok())
+        .filter(|epoch| *epoch != 0)
+        .ok_or(ShellClientError::Protocol(
+            "api line missing a nonzero epoch",
+        ))?;
+    if fields.next() != Some("fd_transfer=none") {
+        return Err(ShellClientError::Protocol("api line missing fd_transfer"));
+    }
+    if fields.next().is_some() {
+        return Err(ShellClientError::Protocol("api line has extra fields"));
+    }
+    Ok(epoch)
 }

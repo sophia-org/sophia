@@ -31,7 +31,7 @@ pub use parse::*;
 pub use session_candidate::*;
 pub use shell_components::{
     MAX_SHELL_COMPONENTS, ShellComponentConfig, ShellComponentEdge, ShellComponentReservation,
-    ShellComponentRole, validate_shell_component_reservations,
+    ShellComponentRole, ShellTransportSelection, validate_shell_component_reservations,
 };
 pub use shortcut_candidate::*;
 pub use types::*;

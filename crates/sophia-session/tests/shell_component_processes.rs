@@ -200,6 +200,7 @@ fn component_scheduler_spaces_a_service_failure_like_a_refused_start() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
+        transport: Default::default(),
     };
     let mut owner = ShellComponentSession::prepare(
         &[selection],
@@ -350,6 +351,7 @@ fn protected_bemenu(
             config: None,
             reservation: None,
             gpu: sophia_config::ShellGpuMode::Denied,
+            transport: Default::default(),
         },
         None,
         None,
@@ -456,6 +458,7 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
                     },
                 ),
                 gpu: sophia_config::ShellGpuMode::Denied,
+                transport: Default::default(),
             },
             Some(28),
             None,
@@ -532,6 +535,63 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
 
 #[cfg(feature = "native-session")]
 #[test]
+fn a_file_selected_component_is_told_only_its_9p_endpoint() {
+    use sophia_session::shell_component_launch::ShellComponentLaunch;
+    let root = std::env::temp_dir().join(format!("component-9p-launch-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let mut owner = ShellComponentProcesses::new().unwrap();
+    let slot = owner
+        .add_with_transport(
+            "bar",
+            ShellComponentRole::Bar,
+            &root.join("bar"),
+            rustix::process::geteuid().as_raw(),
+            sophia_config::ShellTransportSelection::NineP2000L,
+        )
+        .unwrap();
+    let plan = ShellComponentLaunch::new(
+        sophia_config::ShellComponentConfig {
+            id: "bar".into(),
+            role: ShellComponentRole::Bar,
+            executable: "/bin/true".into(),
+            config: None,
+            reservation: None,
+            gpu: sophia_config::ShellGpuMode::Denied,
+            transport: sophia_config::ShellTransportSelection::NineP2000L,
+        },
+        Some(28),
+        None,
+    )
+    .unwrap();
+    let result = owner.start(
+        slot,
+        |key, socket| {
+            let (spec, _) = plan.prepare(key, socket).unwrap();
+            assert!(
+                spec.environment
+                    .iter()
+                    .any(|(k, v)| k == "SOPHIA_SHELL_9P_SOCKET" && v == socket.as_os_str())
+            );
+            assert!(
+                !spec
+                    .environment
+                    .iter()
+                    .any(|(k, _)| k == "SOPHIA_SHELL_SOCKET")
+            );
+            Err("inspected; deliberately no spawn".into())
+        },
+        ShellContentAdmissionPolicy::Granted {
+            discrete_input: false,
+        },
+    );
+    assert!(result.is_err());
+    assert!(owner.collect().quiescent());
+    drop(owner);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(feature = "native-session")]
+#[test]
 fn component_launch_refuses_unadmitted_gpu_and_unbounded_panel() {
     use sophia_session::shell_component_launch::ShellComponentLaunch;
     let selection = sophia_config::ShellComponentConfig {
@@ -541,6 +601,7 @@ fn component_launch_refuses_unadmitted_gpu_and_unbounded_panel() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
+        transport: Default::default(),
     };
     for thickness in [None, Some(0)] {
         assert!(ShellComponentLaunch::new(selection.clone(), thickness, None).is_err());
@@ -578,6 +639,7 @@ fn joined_session_retains_failed_attempt_until_reap_and_exact_cleanup() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
+        transport: Default::default(),
     };
     let mut owner = ShellComponentSession::prepare(
         &[selection],
@@ -672,6 +734,7 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
+        transport: Default::default(),
     });
     let mut owner = ShellComponentSession::prepare(
         &selections,
@@ -757,6 +820,7 @@ fn joined_bemenu_evidence_requires_exact_current_negotiation() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
+        transport: Default::default(),
     };
     let mut owner = ShellComponentSession::prepare(
         &[selection],

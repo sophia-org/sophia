@@ -1,6 +1,6 @@
 //! Process custody joined to the single Session component/content registry.
 use crate::shell_component_connections::*;
-use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentRole};
+use sophia_config::{MAX_SHELL_COMPONENTS, ShellComponentRole, ShellTransportSelection};
 use sophia_runtime::*;
 use std::path::Path;
 use std::time::Duration;
@@ -48,6 +48,17 @@ impl ShellComponentProcesses {
     ) -> Result<usize, ComponentConnectionError> {
         self.connections.add(id, role, directory, uid)
     }
+    pub fn add_with_transport(
+        &mut self,
+        id: &str,
+        role: ShellComponentRole,
+        directory: &Path,
+        uid: u32,
+        wire: ShellTransportSelection,
+    ) -> Result<usize, ComponentConnectionError> {
+        self.connections
+            .add_with_transport(id, role, directory, uid, wire)
+    }
     pub fn attempt(&self, slot: usize) -> Option<ComponentConnectionKey> {
         self.slots.get(slot).and_then(|s| s.key)
     }
@@ -77,9 +88,17 @@ impl ShellComponentProcesses {
             if spec.protection_domain.is_none() {
                 return Err("component requires protected launch".into());
             }
-            spec.environment
-                .retain(|(name, _)| name != SOPHIA_SHELL_SOCKET_ENV);
-            spec = spec.env(SOPHIA_SHELL_SOCKET_ENV, path).process_group();
+            let wire = self
+                .connections
+                .transport_selection(slot)
+                .map_err(|e| e.to_string())?;
+            // Neither wire's variable is inherited: the child sees exactly the
+            // one endpoint its selected wire serves.
+            spec.environment.retain(|(name, _)| {
+                name != ShellTransportSelection::CurrentIpc.socket_env()
+                    && name != ShellTransportSelection::NineP2000L.socket_env()
+            });
+            spec = spec.env(wire.socket_env(), path).process_group();
             let process = self.slots[slot]
                 .process
                 .insert(ProcessSupervisor::new(SupervisedProcessKind::Shell, spec));

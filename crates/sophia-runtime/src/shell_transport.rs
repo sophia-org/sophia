@@ -45,8 +45,10 @@ mod content_allocations;
 mod content_candidates;
 mod content_resources;
 mod control_budget;
+mod files;
 mod indicator_responses;
 mod outbox;
+mod publication;
 pub use accounting::{ShellContentAccounting, ShellContentShutdown};
 pub use content_admission::ShellContentAdmissionPolicy;
 
@@ -115,6 +117,10 @@ impl From<ContentAllocationError> for ShellTransportError {
 pub struct ShellComponentTransport {
     endpoint: PolicyRoleEndpoint,
     stream: Option<UnixStream>,
+    /// The file wire of the current epoch; never set together with `stream`.
+    files: Option<files::ShellFileWire>,
+    /// The component's next logical qid, continued across file epochs.
+    file_qids: u64,
     negotiation: Option<negotiation_service::PendingNegotiation>,
     capabilities: u64,
     peer_closed: bool,
@@ -123,6 +129,9 @@ pub struct ShellComponentTransport {
     action_cancellations: Vec<sophia_protocol::ContentAction>,
     indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
     catalog_response: Option<catalog_responses::PendingCatalogResponse>,
+    /// Socket frames of one indicator or catalog publication not yet queued;
+    /// drained within the bulk budget on each I/O turn.
+    publication: VecDeque<Vec<u8>>,
     native_control: native_launcher::control::NativeControl,
     inbox: VecDeque<Vec<u8>>,
     connection_epoch: u64,
@@ -157,6 +166,8 @@ impl ShellComponentTransport {
                 expected_uid,
             )?,
             stream: None,
+            files: None,
+            file_qids: 1,
             negotiation: None,
             capabilities: 0,
             peer_closed: false,
@@ -165,6 +176,7 @@ impl ShellComponentTransport {
             action_cancellations: Vec::with_capacity(16),
             indicator_response: None,
             catalog_response: None,
+            publication: VecDeque::new(),
             native_control: native_launcher::control::NativeControl::default(),
             inbox: VecDeque::new(),
             connection_epoch: 0,
@@ -398,12 +410,20 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
         self.stream = None;
+        if let Some(mut files) = self.files.take() {
+            self.file_qids = files.export().next_qid();
+            files.revoke();
+        }
+        if let Some(next) = self.negotiation.as_ref().and_then(|p| p.file_qids()) {
+            self.file_qids = next;
+        }
         self.negotiation = None;
         self.input.clear();
         self.output.clear();
         self.action_cancellations.clear();
         self.indicator_response = None;
         self.catalog_response = None;
+        self.publication.clear();
         self.native_control = native_launcher::control::NativeControl::default();
         self.inbox.clear();
         self.requested_candidate = None;
@@ -515,7 +535,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         byte_budget: usize,
     ) -> Result<(), ShellTransportError> {
-        if self.stream.is_none() {
+        if self.stream.is_none() && self.files.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
         self.flush_indicator_response(epochs)?;
@@ -523,6 +543,10 @@ impl ShellComponentTransport {
         self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
+        self.flush_publication(epochs);
+        if self.files.is_some() {
+            return self.poll_files();
+        }
         let stream = self
             .stream
             .as_mut()
@@ -791,4 +815,93 @@ fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, ShellTransportError> {
         .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
         .map_err(|error| ShellTransportError::Io(error.to_string()))?;
     Ok(frame)
+}
+
+impl ShellComponentTransport {
+    /// File wire service: serve ready 9P requests, move queued events into
+    /// the journal in FIFO order, then serve again so waiting reads see them.
+    /// A socket frame in this FIFO is a family the file contract does not
+    /// carry yet; it closes the component rather than crossing as old IPC.
+    /// Moves queued file events into the journal in FIFO order; `Ok(false)`
+    /// when the journal is full and events remain queued.
+    fn drain_file_output(
+        files: &mut files::ShellFileWire,
+        output: &mut outbox::ShellOutbox,
+    ) -> Result<bool, ShellTransportError> {
+        while !output.is_empty() {
+            let Some((kind, body, credited)) = output.front_file() else {
+                return Err(ShellTransportError::WrongContentRecord);
+            };
+            let taken = if sophia_protocol::shell_files::shell_file_class(kind)
+                == sophia_protocol::shell_files::ShellFileClass::Object
+            {
+                files.publish(kind, body, credited)?
+            } else {
+                files.append(kind, body, credited)?
+            };
+            if !taken {
+                return Ok(false);
+            }
+            output.pop_file();
+        }
+        Ok(true)
+    }
+
+    fn poll_files(&mut self) -> Result<(), ShellTransportError> {
+        let files = self
+            .files
+            .as_mut()
+            .ok_or(ShellTransportError::NotConnected)?;
+        if let Err(error) = files.turn() {
+            if error == ShellTransportError::NotConnected {
+                self.peer_closed = true;
+                return Ok(());
+            }
+            return Err(error);
+        }
+        let blocked = !Self::drain_file_output(files, &mut self.output)?;
+        files.check_ack_progress(blocked, std::time::Instant::now())?;
+        if let Err(error) = files.turn() {
+            if error == ShellTransportError::NotConnected {
+                self.peer_closed = true;
+                return Ok(());
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// A record taken from the file wire's typed queue, with the socket path's
+    /// direction and grant checks. None ends the peer's stream once it closed.
+    pub(super) fn admit_file_record(
+        &self,
+        taken: Option<(TransactionId, sophia_protocol::ShellContentRecord)>,
+    ) -> Result<Option<(TransactionId, sophia_protocol::ShellContentRecord)>, ShellTransportError>
+    {
+        let Some((transaction, record)) = taken else {
+            return if self.peer_closed {
+                Err(ShellTransportError::NotConnected)
+            } else {
+                Ok(None)
+            };
+        };
+        if !content_admission::client_record(&record) {
+            return Err(ShellTransportError::WrongContentRecord);
+        }
+        if content_admission::record_grant(&record) != self.content_grant {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        Ok(Some((transaction, record)))
+    }
+
+    /// The next submitted content record the selector accepts, from the file
+    /// wire's typed queue. The socket wire decodes frames instead.
+    pub(super) fn take_file_content(
+        &mut self,
+        select: impl Fn(&sophia_protocol::ShellContentRecord) -> bool,
+    ) -> Option<(TransactionId, sophia_protocol::ShellContentRecord)> {
+        self.files
+            .as_mut()
+            .and_then(|files| files.export_mut().take_content(select))
+    }
 }

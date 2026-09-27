@@ -1,9 +1,9 @@
-use super::records::*;
-use crate::ipc::cursor::Cursor;
-use crate::ipc::shell_content::fields::Wire;
-use crate::{
-    ContentCandidateChunk, IpcCodecError, IpcMessageKind, TransactionId, decode_frame, encode_frame,
+use crate::TransactionId;
+use crate::shell::encoding::native_launcher::{
+    ShellNativeLauncherValueKind, decode_shell_native_launcher_value,
+    encode_shell_native_launcher_value, shell_native_launcher_value_kind,
 };
+use crate::{IpcCodecError, IpcMessageKind, ShellNativeLauncherRecord, decode_frame, encode_frame};
 
 /// All native-launcher records require a nonzero transaction. Admission and
 /// matching an outstanding request remain the receiving owner's responsibility.
@@ -14,32 +14,9 @@ pub fn encode_shell_native_launcher_frame(
     if !transaction.is_valid() {
         return Err(IpcCodecError::InvalidRecord("native launcher transaction"));
     }
-    super::validation::validate(record)?;
-    let mut payload = Vec::new();
-    macro_rules! put {
-        ($v:ident, $kind:ident) => {{
-            $v.put(&mut payload);
-            IpcMessageKind::$kind
-        }};
-    }
-    let kind = match record {
-        ShellNativeLauncherRecord::Opening(v) => put!(v, ShellNativeLauncherOpening),
-        ShellNativeLauncherRecord::AllocationRequest(v) => {
-            put!(v, ShellNativeLauncherAllocationRequest)
-        }
-        ShellNativeLauncherRecord::CandidateBegin(v) => put!(v, ShellNativeLauncherCandidateBegin),
-        ShellNativeLauncherRecord::CandidateChunk(v) => put!(v, ShellNativeLauncherCandidateChunk),
-        ShellNativeLauncherRecord::Focus(v) => put!(v, ShellNativeLauncherFocus),
-        ShellNativeLauncherRecord::FocusRevoked(v) => put!(v, ShellNativeLauncherFocusRevoked),
-        ShellNativeLauncherRecord::Input(v) => put!(v, ShellNativeLauncherInput),
-        ShellNativeLauncherRecord::InputAck(v) => put!(v, ShellNativeLauncherInputAck),
-        ShellNativeLauncherRecord::Activate(v) => put!(v, ShellNativeLauncherActivate),
-        ShellNativeLauncherRecord::ActivationOutcome(v) => {
-            put!(v, ShellNativeLauncherActivationOutcome)
-        }
-        ShellNativeLauncherRecord::Closed(v) => put!(v, ShellNativeLauncherClosed),
-    };
-    encode_frame(kind, transaction, &payload)
+    let bytes = encode_shell_native_launcher_value(record)?;
+    let kind = value_kind_to_ipc(shell_native_launcher_value_kind(record));
+    encode_frame(kind, transaction, &bytes)
 }
 
 pub fn decode_shell_native_launcher_frame(
@@ -49,34 +26,47 @@ pub fn decode_shell_native_launcher_frame(
     if !header.transaction.is_valid() {
         return Err(IpcCodecError::InvalidRecord("native launcher transaction"));
     }
-    let mut cursor = Cursor::new(payload);
-    use IpcMessageKind::*;
-    use ShellNativeLauncherRecord as R;
-    let record = match header.message_kind {
-        ShellNativeLauncherOpening => R::Opening(NativeLauncherOpening::take(&mut cursor)?),
-        ShellNativeLauncherAllocationRequest => {
-            R::AllocationRequest(NativeLauncherAllocationRequest::take(&mut cursor)?)
-        }
-        ShellNativeLauncherCandidateBegin => {
-            R::CandidateBegin(NativeLauncherCandidateBegin::take(&mut cursor)?)
-        }
-        ShellNativeLauncherCandidateChunk => {
-            R::CandidateChunk(ContentCandidateChunk::take(&mut cursor)?)
-        }
-        ShellNativeLauncherFocus => R::Focus(NativeLauncherBinding::take(&mut cursor)?),
-        ShellNativeLauncherFocusRevoked => {
-            R::FocusRevoked(NativeLauncherFocusRevoked::take(&mut cursor)?)
-        }
-        ShellNativeLauncherInput => R::Input(NativeLauncherInput::take(&mut cursor)?),
-        ShellNativeLauncherInputAck => R::InputAck(NativeLauncherInputAck::take(&mut cursor)?),
-        ShellNativeLauncherActivate => R::Activate(NativeLauncherActivation::take(&mut cursor)?),
-        ShellNativeLauncherActivationOutcome => {
-            R::ActivationOutcome(NativeLauncherActivationOutcome::take(&mut cursor)?)
-        }
-        ShellNativeLauncherClosed => R::Closed(NativeLauncherClosed::take(&mut cursor)?),
-        _ => return Err(IpcCodecError::InvalidRecord("not a native launcher record")),
-    };
-    cursor.finish()?;
-    super::validation::validate(&record)?;
+    let value_kind = value_kind_from_ipc(header.message_kind)
+        .ok_or(IpcCodecError::InvalidRecord("not a native launcher record"))?;
+    let record = decode_shell_native_launcher_value(value_kind, payload)?;
     Ok((header.transaction, record))
+}
+
+/// The `IpcMessageKind` <-> `ShellNativeLauncherValueKind` mapping. This is
+/// the only place that knows both namings.
+fn value_kind_from_ipc(kind: IpcMessageKind) -> Option<ShellNativeLauncherValueKind> {
+    use IpcMessageKind as K;
+    use ShellNativeLauncherValueKind as V;
+    Some(match kind {
+        K::ShellNativeLauncherOpening => V::Opening,
+        K::ShellNativeLauncherAllocationRequest => V::AllocationRequest,
+        K::ShellNativeLauncherCandidateBegin => V::CandidateBegin,
+        K::ShellNativeLauncherCandidateChunk => V::CandidateChunk,
+        K::ShellNativeLauncherFocus => V::Focus,
+        K::ShellNativeLauncherFocusRevoked => V::FocusRevoked,
+        K::ShellNativeLauncherInput => V::Input,
+        K::ShellNativeLauncherInputAck => V::InputAck,
+        K::ShellNativeLauncherActivate => V::Activate,
+        K::ShellNativeLauncherActivationOutcome => V::ActivationOutcome,
+        K::ShellNativeLauncherClosed => V::Closed,
+        _ => return None,
+    })
+}
+
+fn value_kind_to_ipc(kind: ShellNativeLauncherValueKind) -> IpcMessageKind {
+    use IpcMessageKind as K;
+    use ShellNativeLauncherValueKind as V;
+    match kind {
+        V::Opening => K::ShellNativeLauncherOpening,
+        V::AllocationRequest => K::ShellNativeLauncherAllocationRequest,
+        V::CandidateBegin => K::ShellNativeLauncherCandidateBegin,
+        V::CandidateChunk => K::ShellNativeLauncherCandidateChunk,
+        V::Focus => K::ShellNativeLauncherFocus,
+        V::FocusRevoked => K::ShellNativeLauncherFocusRevoked,
+        V::Input => K::ShellNativeLauncherInput,
+        V::InputAck => K::ShellNativeLauncherInputAck,
+        V::Activate => K::ShellNativeLauncherActivate,
+        V::ActivationOutcome => K::ShellNativeLauncherActivationOutcome,
+        V::Closed => K::ShellNativeLauncherClosed,
+    }
 }

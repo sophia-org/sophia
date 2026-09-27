@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sophia_config::{
-    ConfigGeneration, DesktopAuthority, ShellComponentRole, ShellGpuMode,
+    ConfigGeneration, DesktopAuthority, ShellComponentRole, ShellGpuMode, ShellTransportSelection,
     load_prepared_desktop_profile, stage_desktop_profile,
 };
 
@@ -195,6 +195,47 @@ fn three_roles_require_explicit_distinct_persistent_edges() {
         assert!(
             load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
             "{bad}"
+        );
+    }
+}
+
+#[test]
+fn component_transport_defaults_to_current_ipc_and_selects_9p_explicitly() {
+    let fixture = Profile::new();
+    let bar = r#"shell-component "panel" "bar" { executable "/opt/lom"; transport "9p2000.L"; };"#;
+    let path = fixture.write(&format!("{bar} {LAUNCHER}"), true);
+    let prepared = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    let [bar, launcher] = prepared
+        .candidates
+        .session
+        .components
+        .shell_components
+        .as_slice()
+    else {
+        panic!("two components");
+    };
+    assert_eq!(bar.transport, ShellTransportSelection::NineP2000L);
+    assert_eq!(launcher.transport, ShellTransportSelection::CurrentIpc);
+    assert_eq!(bar.transport.socket_env(), "SOPHIA_SHELL_9P_SOCKET");
+    assert_eq!(launcher.transport.socket_env(), "SOPHIA_SHELL_SOCKET");
+}
+
+#[test]
+fn component_transport_refuses_unknown_repeated_and_typed_values() {
+    for transport in [
+        r#"transport "9p""#,
+        r#"transport "9p2000.L"; transport "current-ipc""#,
+        r#"transport (wire)"9p2000.L""#,
+        r#"transport "9p2000.L" "current-ipc""#,
+        r#"transport name="9p2000.L""#,
+    ] {
+        let fixture = Profile::new();
+        let bar =
+            format!(r#"shell-component "panel" "bar" {{ executable "/opt/lom"; {transport}; }};"#);
+        let path = fixture.write(&bar, true);
+        assert!(
+            load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
+            "{transport}"
         );
     }
 }

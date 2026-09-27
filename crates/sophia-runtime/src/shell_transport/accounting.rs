@@ -50,6 +50,7 @@ impl ShellComponentTransport {
     ) -> Result<ShellContentShutdown, B> {
         if self.negotiation.is_some()
             || self.stream.is_some()
+            || self.files.is_some()
             || self.content_grant.is_some()
             || epochs.resources(self.store_grant).is_some()
         {

@@ -24,6 +24,7 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         if self.negotiation.is_some()
             || self.stream.is_some()
+            || self.files.is_some()
             || self.content_grant.is_some()
             || self.reserved_limits.is_some()
             || epochs.resources(self.store_grant).is_some()
