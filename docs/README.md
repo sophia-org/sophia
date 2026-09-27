@@ -111,6 +111,8 @@ candidates that role may exchange.
   target for WM, shell, administrative and application interfaces, with ASCII
   ownership diagrams, gradual migration criteria and open design questions.
   Namespace isolation and server authorization remain complementary.
+- [Sophia's 9P2000.L profile](sophia-9p-profile.md) states the message subset,
+  refusals and bounds the core serves, against the pinned upstream text.
 - [Daily-driver 9P migration plan](notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
   sequences WM acceptance, Lom/Bemenu/Provlita shell migration, output and
   administrative roles, and per-role compatibility retirement.

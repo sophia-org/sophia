@@ -151,12 +151,34 @@ Linux provides a 9P client with Unix-socket transport. The `.L` dialect defines
 Linux-oriented operations and numeric `Rlerror` replies. Mount setup, privileges,
 caching and caller identity still need a Sophia-specific design. See
 [Linux v9fs](https://docs.kernel.org/filesystems/9p.html) and the
-[9P2000.L specification](https://github.com/chaos/diod/blob/master/protocol.md).
+[9P2000.L specification](https://github.com/chaos/diod/blob/de51d1ee1bd5ccf1d8c16b96227c8bb03ec50106/protocol.md).
+Sophia's core, its independent oracle and these contracts are judged against
+that pinned revision (diod commit `de51d1ee1bd5`, `protocol.md` SHA-256
+`10c7d7de8108fd81af14ff9c59136349b00b20bef9f1e139647568838b913a2a`). A newer upstream text changes
+nothing here until the pin moves in a reviewed change. A verbatim copy is kept at
+[`references/diod-9p2000L-protocol.md`](references/diod-9p2000L-protocol.md);
+it remains diod's text under GPL-2.0, not this repository's BSD-3-Clause licence.
+The subset Sophia's core serves, its refusals and bounds are stated in
+[Sophia's 9P2000.L profile](sophia-9p-profile.md).
 The [host mounting investigation](notes/investigations/5kqzwmi5-plan-9-belongs-in-the-session-control-plane-not-the-engine.md)
 observed v9fs refusing an unprivileged user-namespace mount; this is host evidence,
 not a portable kernel guarantee. Direct clients need no mount privilege. A
 userspace `9pfuse` path is a later option requiring its own admission, caching
 and lifecycle checks, not an already supported access path.
+
+**Decision (2026-09-26): plain 9P2000.L, no Sophia extension.** Desktop
+meaning lives in each role's file namespace (events as blocking reads,
+transactions as submit records, snapshots as pinned objects, uploads as fixed
+slots, revocation as the export's check), never in new message types, so any
+9P2000.L client can drive a role. Role contracts use only operations that
+plain 9P2000 also has (version, attach, walk, open, read, write, clunk, flush,
+attributes and directory reads), which keeps a later dual-dialect core cheap.
+Descriptor passing, if a role needs it, stays an optional out-of-band
+capability on the socket, not a protocol extension. Portability beyond Linux
+is deferred (t256).
+Record traffic is binary, compact and strictly bounded because graphics and
+input run at frame rate; a read-only text view per role for humans and
+scripts is planned separately (t257).
 
 Classic 9P2000 fallback is a separate compatibility question. Supporting `.L`
 does not make existing Plan 9 or plan9port applications work unchanged. Graphics,

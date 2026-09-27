@@ -409,6 +409,71 @@ fn stop_wakes_actual_reactor_waiting_for_ack_credit() {
     thread.join().unwrap();
 }
 
+#[test]
+fn stop_answers_a_waiting_events_read_estale_before_closing() {
+    use std::io::{Read, Write};
+    let (server, mut client) = UnixStream::pair().unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let mut reactor = NinePReactor::adopt(server, owner(9, WmQids::new())).unwrap();
+    let stop = reactor.stop_handle();
+    let thread = std::thread::spawn(move || {
+        loop {
+            match reactor.receive(configuration_permit(), Duration::from_millis(50)) {
+                Ok(_) => {}
+                Err(_) => return,
+            }
+        }
+    });
+    let mut version = 65536u32.to_le_bytes().to_vec();
+    version.extend(8u16.to_le_bytes());
+    version.extend(b"9P2000.L");
+    assert_eq!(rpc(&mut client, 100, u16::MAX, &version).0, 101);
+    let mut attach = 1u32.to_le_bytes().to_vec();
+    attach.extend(u32::MAX.to_le_bytes());
+    attach.extend([0; 4]);
+    attach.extend(u32::MAX.to_le_bytes());
+    assert_eq!(rpc(&mut client, 104, 1, &attach).0, 105);
+    let walk = |fid: u32, newfid: u32, name: &[u8]| {
+        let mut walk = fid.to_le_bytes().to_vec();
+        walk.extend(newfid.to_le_bytes());
+        walk.extend(1u16.to_le_bytes());
+        walk.extend((name.len() as u16).to_le_bytes());
+        walk.extend(name);
+        walk
+    };
+    assert_eq!(rpc(&mut client, 110, 2, &walk(1, 2, b"events")).0, 111);
+    let open = [2u32.to_le_bytes(), 0u32.to_le_bytes()].concat();
+    assert_eq!(rpc(&mut client, 12, 3, &open).0, 13);
+    // An empty journal: a read at offset 0 waits for the next event.
+    let mut read = 2u32.to_le_bytes().to_vec();
+    read.extend(0u64.to_le_bytes());
+    read.extend(64u32.to_le_bytes());
+    let mut frame = ((7 + read.len()) as u32).to_le_bytes().to_vec();
+    frame.push(116);
+    frame.extend(9u16.to_le_bytes());
+    frame.extend(&read);
+    client.write_all(&frame).unwrap();
+    // Requests are served in order: once this walk answers, the read waits.
+    assert_eq!(rpc(&mut client, 110, 4, &walk(1, 3, b"ack")).0, 111);
+    stop.stop();
+    let mut header = [0; 7];
+    client.read_exact(&mut header).unwrap();
+    assert_eq!(header[4], 7, "the waiting read is answered, not dropped");
+    assert_eq!(u16::from_le_bytes([header[5], header[6]]), 9);
+    let mut errno = [0; 4];
+    client.read_exact(&mut errno).unwrap();
+    assert_eq!(u32::from_le_bytes(errno), 116, "ESTALE");
+    thread.join().unwrap();
+    let mut rest = Vec::new();
+    assert_eq!(
+        client.read_to_end(&mut rest).unwrap(),
+        0,
+        "then the socket closes"
+    );
+}
+
 struct ArrayCodec;
 impl PolicyFileCodec for ArrayCodec {
     fn decode_candidate(&self, bytes: &[u8], selected: u64) -> Result<DecodedFileCandidate, Errno> {

@@ -28,7 +28,8 @@ use crate::client_codec::{
 use crate::records::{Attr, Errno, Qid, QidKind};
 
 // Message types the server core answers but this client's shared codec does
-// not: `Client` alone reads directory entries and attributes.
+// not: `Client` alone reads directory entries and attributes (numbering from
+// diod protocol.md at de51d1ee1bd5, pinned in docs/sophia-9p-control-bus.md).
 const TGETATTR: u8 = 24;
 const RGETATTR: u8 = 25;
 const TREADDIR: u8 = 40;

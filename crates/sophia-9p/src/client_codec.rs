@@ -26,7 +26,8 @@ use std::os::unix::net::UnixStream;
 
 use crate::records::{Errno, Qid, QidKind};
 
-// Message types, from the 9P2000.L specification (diod protocol.md), for the
+// Message types, from the 9P2000.L specification (diod protocol.md at
+// de51d1ee1bd5, pinned in docs/sophia-9p-control-bus.md), for the
 // verbs both clients send or receive. `Tgetattr`/`Treaddir` and their replies
 // are `Client`-only and stay defined there.
 pub(crate) const RLERROR: u8 = 7;
