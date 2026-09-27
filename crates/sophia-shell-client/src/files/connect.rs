@@ -19,29 +19,17 @@ use crate::wire::Inbound;
 use crate::{ShellClientError, ShellClientOptions};
 use std::collections::VecDeque;
 
-/// `Pipeline::wait`, recovering a reply that already landed in its completed
-/// queue even when the call itself returns an I/O error: `read_input`'s own
-/// loop can drain and resolve a reply, then immediately hit a real EOF on a
-/// following nonblocking read within that *same* call, and propagates that
-/// EOF without ever re-checking what it just resolved. `take_reply` still
-/// sees it (poisoning never clears the completed queue), so recover it here
-/// before reporting the connection broken.
+/// `Pipeline::wait`, converted to `ShellClientError`. `Pipeline::wait` itself
+/// already recovers a reply that arrived just before the peer closed (a
+/// following nonblocking read hitting real EOF within the same internal
+/// `poll` call no longer loses a reply `read_input` had already resolved);
+/// this wrapper only exists for the error-type conversion at each call site.
 fn wait_ok(
     pipeline: &mut Pipeline,
     tag: Tag,
     deadline: Instant,
 ) -> Result<Reply, ShellClientError> {
-    match pipeline.wait(tag, deadline) {
-        Ok(reply) => Ok(reply),
-        Err(error) => {
-            while let Some((found, reply)) = pipeline.take_reply() {
-                if found == tag {
-                    return Ok(reply);
-                }
-            }
-            Err(error.into())
-        }
-    }
+    Ok(pipeline.wait(tag, deadline)?)
 }
 
 /// Walks one fixed root name and opens it, blocking within `deadline`. Used
@@ -84,23 +72,34 @@ fn ack_now(
     }
 }
 
+/// Whether `error` is only the connection having closed. Tolerated
+/// specifically for the ack of the handshake's *terminal* event
+/// (`Negotiated`/`Refused`): the server's own revocation is gated on having
+/// processed that ack (it journals nothing more once every retained record
+/// is acked), so by the time this ack's own write reaches the wire the
+/// server may revoke and close before its `Rwrite` reply gets back -- a
+/// same-turn race between generating that reply and disconnecting (see the
+/// final report). The client already has everything it needs from the
+/// decoded event itself; the ack write having been *sent* is what matters,
+/// not seeing its own reply.
+fn is_peer_closed(error: &ShellClientError) -> bool {
+    matches!(
+        error,
+        ShellClientError::Pipeline(sophia_9p::pipeline::PipelineError::Io(kind))
+            if super::is_disconnect(*kind)
+    )
+}
+
 impl FileWire {
     /// Connects, attaches, opens the fixed nodes and negotiates, all bounded
     /// by `options.handshake_timeout`. The codec requires every record's
-    /// header to carry the attach's exact `connection_epoch`, which the file
-    /// contract gives no in-band way to learn before the first submission;
-    /// `connection_epoch` is Session's own pre-assignment for this attach
-    /// (see the final report).
+    /// header to carry the attach's exact connection epoch; the client learns
+    /// it from `api` (read right after attach, before any candidate is
+    /// staged), which the export discloses precisely for this purpose.
     pub(crate) fn connect(
         path: &Path,
-        connection_epoch: u64,
         options: &ShellClientOptions,
     ) -> Result<(Self, ShellV1ServerWelcome, VecDeque<Inbound>), ShellClientError> {
-        if connection_epoch == 0 {
-            return Err(ShellClientError::Environment(
-                "file wire connection epoch must be nonzero",
-            ));
-        }
         let deadline = Instant::now()
             .checked_add(options.handshake_timeout)
             .ok_or(ShellClientError::Protocol("handshake deadline overflow"))?;
@@ -111,6 +110,19 @@ impl FileWire {
             Reply::Attach(_) => {}
             _ => return Err(ShellClientError::Protocol("attach refused")),
         }
+
+        let api_fid = open_fixed(&mut pipeline, root, b"api", O_RDONLY, deadline)?;
+        let tag = pipeline.read(api_fid, 0, crate::SHELL_FILES_API_LINE_MAX_BYTES)?;
+        let api_line = match wait_ok(&mut pipeline, tag, deadline)? {
+            Reply::Read(data) => data,
+            _ => return Err(ShellClientError::Protocol("api read refused")),
+        };
+        // These clunks' own replies arrive only once `poll_io` starts
+        // draining the pipeline, well after `connect` returns; the built
+        // `FileWire` must already know to treat them as forgettable.
+        let mut pending_forgettable = vec![pipeline.clunk(api_fid)?];
+        let connection_epoch = crate::parse_shell_files_api_line(&api_line)?;
+
         let events_fid = open_fixed(&mut pipeline, root, b"events", O_RDONLY, deadline)?;
         let submit_fid = open_fixed(&mut pipeline, root, b"submit", O_WRONLY, deadline)?;
         let ack_fid = open_fixed(&mut pipeline, root, b"ack", O_WRONLY, deadline)?;
@@ -145,10 +157,7 @@ impl FileWire {
             Reply::Write(count) if count as usize == submit_bytes.len() => {}
             _ => return Err(ShellClientError::Protocol("negotiate submit refused")),
         }
-        // These clunks' own replies arrive only once `poll_io` starts
-        // draining the pipeline, well after `connect` returns; the built
-        // `FileWire` must already know to treat them as forgettable.
-        let mut pending_forgettable = vec![pipeline.clunk(txn_fid)?];
+        pending_forgettable.push(pipeline.clunk(txn_fid)?);
 
         let mut read_offset = 0u64;
         let mut buffer: Vec<u8> = Vec::new();
@@ -185,12 +194,22 @@ impl FileWire {
                     }
                     ShellFileKind::Negotiated => {
                         let negotiated = decode_shell_file_negotiated(&record)?;
-                        ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)?;
+                        if let Err(error) =
+                            ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)
+                            && !is_peer_closed(&error)
+                        {
+                            return Err(error);
+                        }
                         break 'outer (Ok(negotiated), sequence);
                     }
                     ShellFileKind::Refused => {
                         let refused = decode_shell_file_refused(&record)?;
-                        ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)?;
+                        if let Err(error) =
+                            ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)
+                            && !is_peer_closed(&error)
+                        {
+                            return Err(error);
+                        }
                         break 'outer (Err(refused), sequence);
                     }
                     _ => {

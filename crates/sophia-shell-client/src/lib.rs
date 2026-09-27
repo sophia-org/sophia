@@ -139,14 +139,11 @@ impl ShellConnection {
     }
 
     /// Connect over the native 9P file wire: Pipeline connect, attach, open
-    /// the fixed nodes, then negotiate exactly as `connect` does. The file
-    /// contract gives no in-band way to learn this attach's connection epoch
-    /// before the first submission (every record header must already carry
-    /// it); `connection_epoch` is whatever Session pre-assigned this attach
-    /// (see the crate's final report for detail).
+    /// the fixed nodes, then negotiate exactly as `connect` does. The
+    /// attach's connection epoch (every record header must carry it) is read
+    /// from `api` right after attach; see [`parse_shell_files_api_line`].
     pub fn connect_files(
         path: impl AsRef<Path>,
-        connection_epoch: u64,
         options: ShellClientOptions,
     ) -> Result<Self, ShellClientError> {
         if options.minimum_revision == 0
@@ -155,8 +152,7 @@ impl ShellConnection {
         {
             return Err(ShellClientError::UnsupportedRevision);
         }
-        let (wire, welcome, inbox) =
-            files::FileWire::connect(path.as_ref(), connection_epoch, &options)?;
+        let (wire, welcome, inbox) = files::FileWire::connect(path.as_ref(), &options)?;
         Ok(Self {
             wire: Wire::Files(Box::new(wire)),
             welcome,
@@ -168,21 +164,15 @@ impl ShellConnection {
     /// Selects a wire from the environment: exactly one of
     /// `SOPHIA_SHELL_9P_SOCKET` (file wire) or `SOPHIA_SHELL_SOCKET` (socket
     /// wire) must be set. Neither, or both, is refused outright: there is no
-    /// fallback and no sniffing. The file wire also needs
-    /// `SOPHIA_SHELL_9P_EPOCH`, this attach's connection epoch (see
-    /// `connect_files`).
+    /// fallback and no sniffing.
     pub fn connect_from_env(options: ShellClientOptions) -> Result<Self, ShellClientError> {
         let selection = select_env_wire(
             std::env::var_os("SOPHIA_SHELL_SOCKET"),
             std::env::var_os("SOPHIA_SHELL_9P_SOCKET"),
-            std::env::var("SOPHIA_SHELL_9P_EPOCH").ok(),
         )?;
         match selection {
             EnvWireSelection::Socket(path) => Self::connect(path, options),
-            EnvWireSelection::Files {
-                socket,
-                connection_epoch,
-            } => Self::connect_files(socket, connection_epoch, options),
+            EnvWireSelection::Files { socket } => Self::connect_files(socket, options),
         }
     }
 
@@ -431,22 +421,17 @@ fn io_error(error: std::io::Error) -> ShellClientError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EnvWireSelection {
     Socket(std::ffi::OsString),
-    Files {
-        socket: std::ffi::OsString,
-        connection_epoch: u64,
-    },
+    Files { socket: std::ffi::OsString },
 }
 
 /// The pure selection rule behind [`ShellConnection::connect_from_env`]:
 /// exactly one of `socket` (the `SOPHIA_SHELL_SOCKET` value) or
-/// `files_socket` (`SOPHIA_SHELL_9P_SOCKET`) must be given, and the file wire
-/// additionally needs `epoch` (`SOPHIA_SHELL_9P_EPOCH`) parsed as a nonzero
-/// `u64`. Kept apart from actually reading the environment so it is directly
-/// testable; see this crate's `tests/connection.rs`.
+/// `files_socket` (`SOPHIA_SHELL_9P_SOCKET`) must be given. Kept apart from
+/// actually reading the environment so it is directly testable; see this
+/// crate's `tests/connection.rs`.
 pub fn select_env_wire(
     socket: Option<std::ffi::OsString>,
     files_socket: Option<std::ffi::OsString>,
-    epoch: Option<String>,
 ) -> Result<EnvWireSelection, ShellClientError> {
     match (socket, files_socket) {
         (Some(_), Some(_)) => Err(ShellClientError::Environment(
@@ -456,18 +441,62 @@ pub fn select_env_wire(
             "neither SOPHIA_SHELL_SOCKET nor SOPHIA_SHELL_9P_SOCKET is set",
         )),
         (Some(path), None) => Ok(EnvWireSelection::Socket(path)),
-        (None, Some(path)) => {
-            let connection_epoch = epoch
-                .as_deref()
-                .and_then(|value| value.parse::<u64>().ok())
-                .filter(|epoch| *epoch != 0)
-                .ok_or(ShellClientError::Environment(
-                    "SOPHIA_SHELL_9P_EPOCH must be set to a nonzero connection epoch",
-                ))?;
-            Ok(EnvWireSelection::Files {
-                socket: path,
-                connection_epoch,
-            })
-        }
+        (None, Some(path)) => Ok(EnvWireSelection::Files { socket: path }),
     }
+}
+
+/// The number of bytes `connect_files`/`connect_from_env` will read from
+/// `api` before giving up. The real line
+/// (`sophia-shell-files version=<u16> role=<role> epoch=<u64>
+/// fd_transfer=none\n`) stays well under this, so a well-formed line always
+/// reads whole in one 9P read; a read that fills the whole budget is treated
+/// as oversize/malformed rather than silently truncated.
+pub const SHELL_FILES_API_LINE_MAX_BYTES: u32 = 256;
+
+/// Parses the `api` file's one line strictly: the exact key set and order
+/// `sophia-shell-files version=<SHELL_FILE_API_VERSION> role=<role>
+/// epoch=<connection epoch> fd_transfer=none`, terminated by exactly one
+/// trailing newline and nothing else. Returns the connection epoch every
+/// record header of this attach must carry -- the only field the file wire
+/// needs from this line.
+pub fn parse_shell_files_api_line(bytes: &[u8]) -> Result<u64, ShellClientError> {
+    if bytes.len() >= SHELL_FILES_API_LINE_MAX_BYTES as usize {
+        return Err(ShellClientError::Protocol("api line oversize"));
+    }
+    let text =
+        std::str::from_utf8(bytes).map_err(|_| ShellClientError::Protocol("api line not utf-8"))?;
+    let line = text
+        .strip_suffix('\n')
+        .ok_or(ShellClientError::Protocol("api line missing newline"))?;
+    let mut fields = line.split(' ');
+    if fields.next() != Some("sophia-shell-files") {
+        return Err(ShellClientError::Protocol("api line missing family"));
+    }
+    let version: u16 = fields
+        .next()
+        .and_then(|field| field.strip_prefix("version="))
+        .and_then(|value| value.parse().ok())
+        .ok_or(ShellClientError::Protocol("api line missing version"))?;
+    if version != sophia_protocol::shell_files::SHELL_FILE_API_VERSION {
+        return Err(ShellClientError::Protocol("api line version mismatch"));
+    }
+    fields
+        .next()
+        .and_then(|field| field.strip_prefix("role="))
+        .ok_or(ShellClientError::Protocol("api line missing role"))?;
+    let epoch: u64 = fields
+        .next()
+        .and_then(|field| field.strip_prefix("epoch="))
+        .and_then(|value| value.parse().ok())
+        .filter(|epoch| *epoch != 0)
+        .ok_or(ShellClientError::Protocol(
+            "api line missing a nonzero epoch",
+        ))?;
+    if fields.next() != Some("fd_transfer=none") {
+        return Err(ShellClientError::Protocol("api line missing fd_transfer"));
+    }
+    if fields.next().is_some() {
+        return Err(ShellClientError::Protocol("api line has extra fields"));
+    }
+    Ok(epoch)
 }

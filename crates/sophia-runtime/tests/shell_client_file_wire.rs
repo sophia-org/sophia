@@ -135,7 +135,7 @@ fn negotiation_accepted_delivers_limits_and_outputs() {
     let expected_in_client = expected.clone();
     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
     let client = std::thread::spawn(move || {
-        let mut client = ShellConnection::connect_files(&socket, EPOCH, opts).unwrap();
+        let mut client = ShellConnection::connect_files(&socket, opts).unwrap();
         assert_eq!(client.welcome().selected_revision, 6);
         assert_eq!(client.connection_epoch(), EPOCH);
         let ShellContentRecord::Limits(got) = next_content(&mut client) else {
@@ -180,7 +180,7 @@ fn negotiation_refused_gives_the_exact_refusal() {
     let socket = transport.socket_path().to_owned();
     let opts = options(5, 6, base_capabilities());
     let client = std::thread::spawn(move || {
-        let Err(error) = ShellConnection::connect_files(&socket, EPOCH, opts) else {
+        let Err(error) = ShellConnection::connect_files(&socket, opts) else {
             panic!("connect_files unexpectedly succeeded");
         };
         assert!(matches!(
@@ -227,7 +227,7 @@ fn allocation_round_trips_through_the_client() {
     let opts = options(5, 6, base_capabilities());
     let grant = expected.grant;
     let client = std::thread::spawn(move || {
-        let mut client = ShellConnection::connect_files(&socket, EPOCH, opts).unwrap();
+        let mut client = ShellConnection::connect_files(&socket, opts).unwrap();
         let ShellContentRecord::Limits(_) = next_content(&mut client) else {
             panic!("expected limits");
         };
@@ -339,7 +339,7 @@ fn a_split_upload_through_its_slot_reaches_accepted_status() {
         .collect();
     let sent = pixels.clone();
     let client = std::thread::spawn(move || {
-        let mut client = ShellConnection::connect_files(&socket, EPOCH, opts).unwrap();
+        let mut client = ShellConnection::connect_files(&socket, opts).unwrap();
         let ShellContentRecord::Limits(_) = next_content(&mut client) else {
             panic!("expected limits");
         };
@@ -447,7 +447,7 @@ fn paced_candidate_via_client(with_action: bool) {
     let capabilities = base_capabilities() | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
     let opts = options(5, 6, capabilities);
     let client = std::thread::spawn(move || {
-        let mut client = ShellConnection::connect_files(&socket, EPOCH, opts).unwrap();
+        let mut client = ShellConnection::connect_files(&socket, opts).unwrap();
         let ShellContentRecord::Limits(_) = next_content(&mut client) else {
             panic!("expected limits");
         };
@@ -808,7 +808,7 @@ fn an_unsupported_family_is_refused_at_enqueue() {
     let socket = transport.socket_path().to_owned();
     let opts = options(5, 6, base_capabilities());
     let client = std::thread::spawn(move || {
-        let mut client = ShellConnection::connect_files(&socket, EPOCH, opts).unwrap();
+        let mut client = ShellConnection::connect_files(&socket, opts).unwrap();
         let ShellContentRecord::Limits(limits) = next_content(&mut client) else {
             panic!("expected limits");
         };
@@ -892,4 +892,150 @@ fn connect_from_env_requires_a_wire_selection_by_default() {
         panic!("connect_from_env unexpectedly succeeded with no wire selected");
     };
     assert!(matches!(error, ShellClientError::Environment(_)));
+}
+
+// A malformed `api` line is refused. The real export (`shell_transport/files/
+// export.rs`) always writes a well-formed line, so this cannot be produced
+// through it without editing that file; this is a minimal standalone 9P
+// export -- built from `sophia_9p`'s own public `Export` trait and
+// `unix::Server` harness seam, no production code touched -- that serves
+// nothing but a deliberately malformed `api`.
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+enum MalformedNode {
+    Root,
+    Api,
+}
+
+struct MalformedApiExport {
+    line: Vec<u8>,
+}
+
+impl sophia_9p::Export for MalformedApiExport {
+    type Node = MalformedNode;
+    type Handle = ();
+
+    fn attach(
+        &mut self,
+        _context: &sophia_9p::AttachContext<'_>,
+    ) -> Result<sophia_9p::Attachment<Self::Node>, sophia_9p::Errno> {
+        Ok(sophia_9p::Attachment {
+            root: MalformedNode::Root,
+            epoch: sophia_9p::Epoch(1),
+        })
+    }
+
+    fn check(
+        &mut self,
+        _access: &sophia_9p::Access<'_, Self::Node>,
+    ) -> Result<(), sophia_9p::Errno> {
+        Ok(())
+    }
+
+    fn lookup(
+        &mut self,
+        directory: &Self::Node,
+        name: sophia_9p::WalkName<'_>,
+    ) -> Result<Self::Node, sophia_9p::Errno> {
+        if *directory != MalformedNode::Root {
+            return Err(sophia_9p::Errno::ENOTDIR);
+        }
+        match name {
+            sophia_9p::WalkName::Parent => Ok(MalformedNode::Root),
+            sophia_9p::WalkName::Child(b"api") => Ok(MalformedNode::Api),
+            sophia_9p::WalkName::Child(_) => Err(sophia_9p::Errno::ENOENT),
+        }
+    }
+
+    fn describe(&self, node: &Self::Node, _handle: Option<&Self::Handle>) -> sophia_9p::Entry {
+        sophia_9p::Entry {
+            kind: if *node == MalformedNode::Root {
+                sophia_9p::NodeKind::Directory
+            } else {
+                sophia_9p::NodeKind::File
+            },
+            qid_path: match node {
+                MalformedNode::Root => 0,
+                MalformedNode::Api => 1,
+            },
+            qid_version: 0,
+            permissions: if *node == MalformedNode::Root {
+                0o500
+            } else {
+                0o400
+            },
+            size: if *node == MalformedNode::Api {
+                self.line.len() as u64
+            } else {
+                0
+            },
+        }
+    }
+
+    fn open(
+        &mut self,
+        node: &Self::Node,
+        flags: sophia_9p::OpenFlags,
+    ) -> Result<Self::Handle, sophia_9p::Errno> {
+        if *node != MalformedNode::Api || flags.access() != Some(sophia_9p::OpenAccess::Read) {
+            return Err(sophia_9p::Errno::EACCES);
+        }
+        Ok(())
+    }
+
+    fn read(
+        &mut self,
+        node: &Self::Node,
+        _handle: &mut Self::Handle,
+        offset: u64,
+        count: u32,
+    ) -> Result<sophia_9p::ReadOutcome, sophia_9p::Errno> {
+        if *node != MalformedNode::Api {
+            return Err(sophia_9p::Errno::EACCES);
+        }
+        let start = (offset as usize).min(self.line.len());
+        let end = start.saturating_add(count as usize).min(self.line.len());
+        Ok(sophia_9p::ReadOutcome::Ready(
+            self.line[start..end].to_vec(),
+        ))
+    }
+
+    fn write(
+        &mut self,
+        _node: &Self::Node,
+        _handle: &mut Self::Handle,
+        _offset: u64,
+        _data: &[u8],
+    ) -> Result<u32, sophia_9p::Errno> {
+        Err(sophia_9p::Errno::EOPNOTSUPP)
+    }
+
+    fn release(&mut self, _node: Self::Node, _handle: Option<Self::Handle>) {}
+}
+
+#[test]
+fn a_malformed_api_line_is_refused_at_connect() {
+    let socket_dir = directory();
+    std::fs::create_dir_all(&socket_dir).unwrap();
+    let socket = socket_dir.join("socket");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let limits = sophia_9p::Limits::new(65536, 512, 16, 32, 131072, 1).unwrap();
+    let export = MalformedApiExport {
+        // An otherwise well-formed line with one extra trailing field.
+        line: b"sophia-shell-files version=1 role=bar epoch=7 fd_transfer=none extra=1\n".to_vec(),
+    };
+    let mut server = sophia_9p::unix::Server::new(export, limits).unwrap();
+    server.listen(listener).unwrap();
+    let wake = server.wake();
+    let server_thread = std::thread::spawn(move || server.run());
+
+    let opts = options(5, 6, base_capabilities());
+    let Err(error) = ShellConnection::connect_files(&socket, opts) else {
+        panic!("connect_files unexpectedly succeeded against a malformed api line");
+    };
+    assert!(matches!(error, ShellClientError::Protocol(_)));
+
+    wake.stop();
+    server_thread.join().unwrap().unwrap();
+    std::fs::remove_dir_all(socket_dir).unwrap();
 }
