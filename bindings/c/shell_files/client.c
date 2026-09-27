@@ -4,12 +4,30 @@ static const char *const names[] = {"events", "transaction", "submit", "ack"};
 int sophia_sf_client_init(struct sophia_sf_client *c, struct sophia_9p_client *wire,
                           struct sophia_sf_negotiate offer)
 {
+    return sophia_sf_client_init_profile(c, wire, offer, SOPHIA_SF_BAR, NULL, 0);
+}
+int sophia_sf_client_init_profile(struct sophia_sf_client *c, struct sophia_9p_client *wire,
+                                  struct sophia_sf_negotiate offer, enum sophia_sf_profile profile,
+                                  void *storage, size_t capacity)
+{
     if (!c || !wire || wire->phase || !offer.minimum_revision ||
-        offer.minimum_revision > offer.maximum_revision || wire->capacity < 8)
+        offer.minimum_revision > offer.maximum_revision || wire->capacity < 8 ||
+        profile < SOPHIA_SF_BAR || profile > SOPHIA_SF_DOCK || ((!storage) != (!capacity)) ||
+        (storage && (capacity < 296 || capacity > SOPHIA_SF_MAX_RECORD)))
         return SOPHIA_9P_ARGUMENT;
+    if (profile != SOPHIA_SF_BAR) {
+        unsigned revision = profile == SOPHIA_SF_LAUNCHER ? 7 : 8;
+        uint64_t mask = profile == SOPHIA_SF_LAUNCHER ? 0x9a0 : 0x11a2;
+        if (offer.minimum_revision > revision || offer.maximum_revision < revision ||
+            offer.required_capabilities != mask)
+            return SOPHIA_9P_ARGUMENT;
+    }
     memset(c, 0, sizeof(*c));
     c->wire = wire;
     c->offer = offer;
+    c->profile = profile;
+    c->object_storage = storage ? storage : c->object_bytes;
+    c->object_capacity = storage ? capacity : sizeof(c->object_bytes);
     c->next_submission = 1;
     c->object_fid = c->upload_fid = UINT32_MAX;
     return sf_started(&c->boot_op, sophia_9p_version(wire, &c->boot_op.handle));
@@ -142,7 +160,8 @@ static int receive(struct sophia_sf_client *c, const struct sophia_9p_reply *r)
                 c->api_used += r->count;
                 return 0;
             }
-            if (sf_api_epoch(c->event_bytes, c->api_used, &c->epoch))
+            if (sf_api_epoch(c->event_bytes, c->api_used, &c->epoch) ||
+                sf_api_profile(c->event_bytes, c->api_used, c->profile))
                 return SOPHIA_9P_INVALID;
         }
         if (r->type == 13 && c->bootstrap == 3)

@@ -1,6 +1,6 @@
 # C shell wire foundation
 
-## Native 9P file backend (t252 B7 base)
+## Native 9P file backend (t252 B7)
 
 `sophia_9p_client.h` with `nine_p/*.c` implements version, attach, walk,
 lopen, read, write, clunk and flush over an already admitted stream fd.
@@ -13,9 +13,9 @@ link the existing `shell_wire` sources or translate IPC frames.
 
 `sophia_shell_files_roles.h` adds Catalog and Indicators objects, native launcher
 events/requests, and persistent catalog candidates/activations. These use the
-same `sophia_sf_encode` / `sophia_sf_decode` entry points. Session orchestration
-for the role families follows in phase 2; these codecs alone do not establish
-Bemenu or dock adoption.
+same `sophia_sf_encode` / `sophia_sf_decode` entry points. The file session also
+supports r7/r8 through `sophia_sf_client_init_profile`; Bemenu adoption remains
+separate work.
 
 Candidate bodies also expose `sophia_sf_role_candidate_{encode,decode}_bytes`
 and `sophia_sf_role_candidate_validate_value`. Byte operations enforce field
@@ -38,6 +38,15 @@ The largest record cap is 4 MiB (`SOPHIA_SF_MAX_RECORD`); submission staging
 retains its 64 KiB cap (`SOPHIA_SF_MAX_TRANSACTION`), and native/catalog
 candidates remain bounded to 8192 bytes. The record union contains bounded
 typed candidates and snapshot views, never a full catalog allocation.
+
+`sophia_sf_client_init_profile` takes BAR, LAUNCHER or DOCK plus caller-owned
+object scratch. It checks the API role and, for launcher/dock, the exact
+revision/capability profile. Supply 4 MiB for maximum catalogs, or 32 KiB for
+indicators. The base initializer retains its inline 1 KiB buffer and BAR profile.
+Large reads respect msize/iounit. An oversized object fails the fetch and closes
+its pin without overflowing the buffer or terminating the session. Storage must
+remain alive and separate from client/wire state until disposal; returned views
+remain borrowed until the next fetch.
 
 Reference inputs are the shell file KDL at `bae4ec4a9` (including the Limits
 rules from `f64d670e0` and conditional-bound correction `6bb0c8f2e`), extended
@@ -78,7 +87,7 @@ Negotiation starts a Limits fetch when announced. Drain `object_result` after
 it completes. Subsequent Limits/Outputs fetches use fresh pins and compare the
 announced generation and qid; a superseded pin reports AGAIN. The returned
 object pointer remains borrowed until the next fetch. Unknown record kinds
-fail closed, leaving a clear extension point for the reserved launcher records.
+fail closed. Catalog/Indicators use the same pin and announced-identity checks.
 
 Use `upload_begin`, then wait for status 1 and the upload writer to open before
 calling `upload_chunk`. The chunk pointer remains borrowed until acknowledged
@@ -97,7 +106,14 @@ evidence. Coverage includes R4-1 through R4-7, tag wrap, reply poisoning, clean
 EOF, 22 base and 17 role KDL-derived literal vectors, negotiation, rejected allocation, a split
 64 KiB upload, cancellation and explicit acknowledgements. It does not start a
 desktop or prove protected launch. Base records include native whole Candidate
-rows. Live r7/r8 orchestration and Bemenu adoption remain separate work.
+rows. `shell_files_c_roles` additionally drives the C launcher and dock sessions
+through real allocation/resource/candidate/focus owners, including a 4096-row
+catalog, query disarm, semantic input, activation and close. Catalog admission
+decisions are scripted from the contract; this is not a Session launch-policy
+test. A small-buffer dock fixture also proves oversized-object refusal releases
+the pin and leaves the session usable. Neither peer starts applications or
+changes the Bemenu repository. These live flows pass against runtime
+`3856d1014`; the file gate runs two base tests and one role integration test.
 
 ## Existing socket backend
 
