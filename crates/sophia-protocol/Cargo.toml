@@ -17,6 +17,8 @@ sophia-shell-protocol = { workspace = true }
 
 [dev-dependencies]
 kdl = { workspace = true }
+# Parity: the SDK's socket-wire codec copy against this crate's own.
+sophia-shell-ipc = { workspace = true }
 
 [lints]
 workspace = true
