@@ -1,0 +1,24 @@
+[package]
+name = "sophia-shell-client"
+description = "Sophia desktop shell client over the sophia_shell_fs_v1 9P file contract."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+sophia-9p-client = { workspace = true }
+sophia-9p-records = { workspace = true }
+sophia-shell-ipc = { workspace = true, optional = true }
+sophia-shell-protocol = { workspace = true }
+
+[features]
+default = []
+# The retiring sophia_shell_v1 Unix-socket wire, kept for rollback until the
+# socket transport is removed (t255).
+ipc-compat = ["dep:sophia-shell-ipc"]
+
+[lints]
+workspace = true

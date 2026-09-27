@@ -1,5 +1,8 @@
 use core::marker::PhantomData;
 
+// Shared with every role contract through the Rust desktop SDK.
+pub use sophia_desktop_ids::{OutputId, TransactionId};
+
 macro_rules! simple_id {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
@@ -26,10 +29,8 @@ macro_rules! simple_id {
 
 simple_id!(NamespaceId);
 simple_id!(ClientAdmissionId);
-simple_id!(OutputId);
 simple_id!(SeatId);
 simple_id!(DeviceId);
-simple_id!(TransactionId);
 simple_id!(PortalTransferId);
 simple_id!(WorkspaceId);
 simple_id!(IconTokenId);

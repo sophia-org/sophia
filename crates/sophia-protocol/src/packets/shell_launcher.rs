@@ -3,8 +3,6 @@ use crate::{OutputId, ShellV1CandidateOutcomeKind};
 pub const SOPHIA_SHELL_LAUNCHER_REVISION: u16 = 4;
 pub const SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG: u64 = 1 << 5;
 pub const SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER: u64 = 1 << 6;
-pub const SOPHIA_SHELL_MAX_APPLICATIONS: usize = 4096;
-pub const SOPHIA_SHELL_MAX_LAUNCHER_ROWS: usize = 32;
 pub const SOPHIA_SHELL_MAX_QUERY_BYTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

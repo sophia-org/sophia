@@ -1,0 +1,15 @@
+[package]
+name = "sophia-shell-ipc"
+description = "Compatibility codec for the retiring sophia_shell_v1 socket frames."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+sophia-shell-protocol = { workspace = true }
+
+[lints]
+workspace = true

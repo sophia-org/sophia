@@ -1,4 +1,5 @@
-use sophia_9p::{QidKind, client::Listed, records::Attr};
+use sophia_9p::{QidKind, records::Attr};
+use sophia_9p_client::client::Listed;
 use sophia_protocol::inspection::*;
 use std::io::{self, Write};
 

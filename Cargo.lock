@@ -944,6 +944,8 @@ name = "sophia-9p"
 version = "0.1.0"
 dependencies = [
  "rustix",
+ "sophia-9p-client",
+ "sophia-9p-records",
 ]
 
 [[package]]
@@ -957,6 +959,18 @@ dependencies = [
  "sophia-protocol",
  "tracing",
 ]
+
+[[package]]
+name = "sophia-9p-client"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "sophia-9p-records",
+]
+
+[[package]]
+name = "sophia-9p-records"
+version = "0.1.0"
 
 [[package]]
 name = "sophia-backend-live"
@@ -990,6 +1004,7 @@ version = "0.1.0"
 dependencies = [
  "rustix",
  "sophia-9p",
+ "sophia-9p-client",
  "sophia-backend-live",
  "sophia-broker",
  "sophia-config",
@@ -1031,6 +1046,10 @@ dependencies = [
  "sophia-engine",
  "x11rb",
 ]
+
+[[package]]
+name = "sophia-desktop-ids"
+version = "0.1.0"
 
 [[package]]
 name = "sophia-drm-out-fence"
@@ -1087,6 +1106,9 @@ dependencies = [
  "kdl",
  "serde",
  "serde_json",
+ "sophia-desktop-ids",
+ "sophia-shell-ipc",
+ "sophia-shell-protocol",
 ]
 
 [[package]]
@@ -1139,6 +1161,7 @@ dependencies = [
  "rustix",
  "sha2",
  "sophia-9p",
+ "sophia-9p-client",
  "sophia-backend-live",
  "sophia-broker",
  "sophia-config",
@@ -1162,8 +1185,24 @@ dependencies = [
 name = "sophia-shell-client"
 version = "0.1.0"
 dependencies = [
- "sophia-9p",
- "sophia-protocol",
+ "sophia-9p-client",
+ "sophia-9p-records",
+ "sophia-shell-ipc",
+ "sophia-shell-protocol",
+]
+
+[[package]]
+name = "sophia-shell-ipc"
+version = "0.1.0"
+dependencies = [
+ "sophia-shell-protocol",
+]
+
+[[package]]
+name = "sophia-shell-protocol"
+version = "0.1.0"
+dependencies = [
+ "sophia-desktop-ids",
 ]
 
 [[package]]

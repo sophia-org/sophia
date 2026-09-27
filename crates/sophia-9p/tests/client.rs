@@ -8,9 +8,9 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use sophia_9p::client::{Client, ClientError, ClientLimits};
 use sophia_9p::unix::{Server, Wake};
 use sophia_9p::{Epoch, Errno, Limits, QidKind};
+use sophia_9p_client::client::{Client, ClientError, ClientLimits};
 use support::StaticExport;
 use support::export::{INFO_LEN, info_byte};
 
@@ -402,7 +402,7 @@ fn opened(stream: &mut UnixStream, directory: bool) {
 fn open_client(
     client: Result<Client, ClientError>,
     directory: bool,
-) -> (Client, sophia_9p::client::File) {
+) -> (Client, sophia_9p_client::client::File) {
     let mut client = client.unwrap();
     let root = client.attach(b"", b"").unwrap();
     let mut file = client.walk(&root, &[b"x"]).unwrap();

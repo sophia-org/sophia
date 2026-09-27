@@ -14,7 +14,6 @@ members = [
     "crates/sophia-renderer-native-egl",
     "crates/sophia-renderer-live",
     "crates/sophia-runtime",
-    "crates/sophia-shell-client",
     "crates/sophia-session",
     "crates/sophia-sysv-shm",
     "crates/sophia-9p",
@@ -37,7 +36,6 @@ default-members = [
     "crates/sophia-renderer-native-egl",
     "crates/sophia-renderer-live",
     "crates/sophia-runtime",
-    "crates/sophia-shell-client",
     "crates/sophia-session",
     "crates/sophia-sysv-shm",
     "crates/sophia-9p",
@@ -47,6 +45,9 @@ default-members = [
     "crates/sophia-xshmfence",
 ]
 resolver = "3"
+# The Rust desktop SDK snapshot is its own workspace; Sophia uses its crates
+# through the path dependencies below.
+exclude = ["vendor/rust-desktop-sdk/source"]
 
 [workspace.package]
 authors = ["Mason Austin Green"]
@@ -74,6 +75,15 @@ kdl = { version = "6.7.1", default-features = false, features = ["span"] }
 # flate2 because it pulls in no C library and no build script.
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 rustix = { version = "1.1", default-features = false, features = ["fs", "process"] }
+# The Rust desktop SDK, vendored from sophia-org/sophia-desktop-sdk-rs; the pin
+# and digests are in vendor/rust-desktop-sdk/manifest.json (cargo xtask check
+# rust-desktop-sdk).
+sophia-9p-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-9p-client" }
+sophia-9p-records = { path = "vendor/rust-desktop-sdk/source/crates/sophia-9p-records" }
+sophia-desktop-ids = { path = "vendor/rust-desktop-sdk/source/crates/sophia-desktop-ids" }
+sophia-shell-client = { path = "vendor/rust-desktop-sdk/source/crates/sophia-shell-client" }
+sophia-shell-ipc = { path = "vendor/rust-desktop-sdk/source/crates/sophia-shell-ipc" }
+sophia-shell-protocol = { path = "vendor/rust-desktop-sdk/source/crates/sophia-shell-protocol" }
 sha2 = "0.10.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

@@ -14,23 +14,19 @@
 //! [`journal`] holds the record-file custody exports share: an acknowledged
 //! event journal and write staging, with every bound chosen by the owner.
 //!
-//! [`client`] is a separate bounded, read-only client with its own codec; it
-//! shares only the protocol's value records with the server core. [`pipeline`]
-//! is a nonblocking, pipelined, write-capable client for Sophia's own role
-//! clients; it shares its request encoders and reply decoders with [`client`]
-//! through the private `client_codec` module, not with the server core.
+//! [`records`] are the protocol's value records, shared with Sophia's clients:
+//! they come from the Rust desktop SDK's `sophia-9p-records`, and the clients
+//! themselves live in its `sophia-9p-client`, never in this crate.
 //!
 //! The older `sophia-9p-authority` scaffold is unrelated and unused.
 
-pub mod client;
-mod client_codec;
 pub mod connection;
 pub mod export;
 pub mod journal;
-pub mod pipeline;
-pub mod records;
 pub mod unix;
 pub mod wire;
+
+pub use sophia_9p_records as records;
 
 pub use connection::{Connection, ConnectionId, Fatal};
 pub use export::{

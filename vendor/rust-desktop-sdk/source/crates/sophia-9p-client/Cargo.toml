@@ -1,0 +1,16 @@
+[package]
+name = "sophia-9p-client"
+description = "A bounded 9P2000.L client for Sophia's role file exports."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+rustix = { workspace = true, features = ["event", "net", "std"] }
+sophia-9p-records = { workspace = true }
+
+[lints]
+workspace = true

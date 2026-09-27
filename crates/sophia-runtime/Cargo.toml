@@ -17,7 +17,7 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 rustix = { version = "1.1", default-features = false, features = ["time"] }
 sophia-engine = { path = "../sophia-engine" }
-sophia-shell-client = { path = "../sophia-shell-client" }
+sophia-shell-client = { workspace = true, features = ["ipc-compat"] }
 sophia-wm-demo = { path = "../sophia-wm-demo" }
 
 [lints]
