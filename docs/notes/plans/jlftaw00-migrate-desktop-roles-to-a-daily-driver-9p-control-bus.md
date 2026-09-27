@@ -221,8 +221,18 @@ typed values (a753b343), pipelined write-capable 9P client with review-4
 fixes (ab1c4243, a8b3f7f1), and the C binding's native 9P file client for the
 base kinds by Codex (ba8c617b; `tools/check_shell_c_wire_files.sh`), proven
 against the production export without Bemenu adoption or r7 records yet.
-Remaining: the Rust client's file wire, B5 role families and owner handoff,
-Bemenu r7 on the C client, the Go oracle, measurements, merge and attended
+Later the same day: the Rust client's native file wire (cac21b94), the B5
+protocol layer for launcher, dock and bar kinds (7f1b2f22), the attach epoch
+disclosed in `api` (43e4530b) and read by both clients (ef0b9453, 7247f2d5),
+revocation flushed so waiting reads answer ESTALE before close (ef0b9453),
+and normative KDL corrections from Codex's audit (bae4ec4a, 6bb0c8f2). The
+independent Go oracle by Codex (f516ba22; `tools/check_shell_files_oracle.sh`)
+judges the production export with 54 named checks across eight exports and
+shares no code with Sophia; it found the revocation gap. Its admission is
+supplied, so it proves wire and owner interoperability, not supervisor
+authentication, native rendering, latency or attended acceptance.
+Remaining: B5 owner handoff (runtime, then Session), r7/r8 oracle and client
+coverage, Bemenu r7 on the C client, measurements, merge and attended
 evidence.
 
 After t251, implement a Sophia adapter to the existing shell/component owners
