@@ -70,6 +70,9 @@ impl ShellGpuProofSurface {
     /// origin or far edge cannot be expressed in `i32`. Validated parameters
     /// always place; nothing here clamps.
     pub fn placement(self, output: ShellGpuProofExtent) -> Option<ContentPixelRect> {
+        if self.width > output.width || self.height > output.height {
+            return None;
+        }
         let x = match self.edge {
             ShellComponentEdge::Right => output.width.checked_sub(self.width)?,
             _ => 0,

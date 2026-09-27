@@ -372,3 +372,62 @@ fn right_and_bottom_surfaces_need_an_addressable_output() {
         assert_eq!(past.surface.placement(past.output), None);
     }
 }
+
+/// The placement helper enforces its own contract on every edge: a surface
+/// that does not fit the output never places, independent of validate().
+#[test]
+fn placement_refuses_a_surface_that_does_not_fit_on_every_edge() {
+    let output = ShellGpuProofExtent {
+        width: 800,
+        height: 600,
+    };
+    for edge in EDGES {
+        let surface = |width, height| ShellGpuProofSurface {
+            edge,
+            width,
+            height,
+        };
+        // Exactly the output: fits, placed at the origin on every edge.
+        assert_eq!(
+            surface(800, 600).placement(output),
+            Some(ContentPixelRect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 600
+            }),
+            "{edge:?}"
+        );
+        // One past in width, one past in height, and far past in each.
+        for (width, height) in [(801, 600), (800, 601), (u32::MAX, 1), (1, u32::MAX)] {
+            assert_eq!(
+                surface(width, height).placement(output),
+                None,
+                "{edge:?} {width}x{height}"
+            );
+        }
+    }
+    // A fitting surface sits against its own edge.
+    for (edge, width, height, x, y) in [
+        (ShellComponentEdge::Top, 800, 24, 0, 0),
+        (ShellComponentEdge::Bottom, 800, 24, 0, 576),
+        (ShellComponentEdge::Left, 24, 600, 0, 0),
+        (ShellComponentEdge::Right, 24, 600, 776, 0),
+    ] {
+        assert_eq!(
+            ShellGpuProofSurface {
+                edge,
+                width,
+                height
+            }
+            .placement(output),
+            Some(ContentPixelRect {
+                x,
+                y,
+                width,
+                height
+            }),
+            "{edge:?}"
+        );
+    }
+}
