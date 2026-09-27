@@ -42,6 +42,47 @@ The library never prints directly. The `sophia` binary installs stdout and
 stderr callbacks, preserving the existing evidence schema while keeping
 presentation at the binary boundary.
 
+## External host preflight
+
+`sophia session check-host --tty=/dev/ttyN` runs the executable explicitly
+selected by `SOPHIA_SESSION_PREFLIGHT`. The desktop integration owns detection
+of other desktop processes and host policy. Sophia owns the bounded invocation
+and the verdict check. The checker must be an absolute regular executable;
+symlinks to such files are accepted. There is no discovery or default checker.
+The operator owns the path: the check does not seal it against replacement
+before exec.
+
+The command validates the TTY name syntax (`/dev/ttyN`, `/dev/pts/N`, `/dev/tty`
+or `/dev/console`) without opening a device. It passes exactly one argument,
+`--tty=<name>`, with null stdin and the caller's environment. The checker has
+ten seconds. Stdout is capped at 4 KiB and stderr at 16 KiB; exceeding either
+cap refuses the check. Process-group cleanup runs on every result, waiting
+two seconds after TERM before KILL and reaping the direct child. Exit is observed
+without reaping, so the leader pins the group number until the final signal.
+The checker is trusted not to escape cleanup: a descendant that changes its
+process group or session is outside this cleanup scope. Bounded stderr is
+reported on success and refusal, with control characters escaped except LF
+and TAB.
+
+Success requires exit 0 and exactly this stdout line, including its final LF:
+
+```text
+sophia_session_preflight schema=1 status=clear tty=/dev/ttyN
+```
+
+Exit 1 with empty stdout means an active-session refusal; its explanation goes
+to stderr. Exit 2 means invalid invocation. Other exits, malformed output,
+missing configuration, output overflow and timeout refuse startup. An explicit
+`--allow-active=true` permits only the exit-1 refusal and reports
+`status=overridden`. It cannot override the other errors. Normal session
+launchers do not enable this option; physical probe tooling may map its existing
+explicit force control to it.
+
+This result records the external checker's observation. It acquires no device
+authority or reservation; DRM acquisition can still report `MasterUnavailable`.
+The retained safety wrappers will call this command before input-guard arming,
+service changes or device takeover when the external wrapper migration lands.
+
 ## Canonical Commands
 
 Use these from documentation, CI, and new scripts:

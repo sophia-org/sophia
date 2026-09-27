@@ -71,6 +71,7 @@ pub(crate) fn print(verbose: bool) {
     println!(
         "session prepare-environment --tty=PATH --firefox-probe=PATH -- [session arguments]: prepare NUL-delimited bus mode and environment entries without starting a session or bus"
     );
+    println!("session check-host --tty=/dev/ttyN [--allow-active=true|false]: run the explicit SOPHIA_SESSION_PREFLIGHT checker before device takeover; never discovers a desktop client");
     println!("compatibility aliases: sophia-live-session, sophia-session-input-guard");
     #[cfg(feature = "native-session")]
     println!(

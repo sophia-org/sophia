@@ -81,6 +81,25 @@ refusal, reaping and revocation settlement assertions. The log is
 `bemenu-files/boundary-joined-launcher.log`. The other two Bemenu tests remain
 until external tests cover both wires and their production Session path.
 
+## External host-check seam
+
+`sophia session check-host` provides the bounded invocation and verdict check
+for an operator-selected host-policy executable. It contains no desktop process
+names. Exit observation leaves the leader unreaped through TERM, the two-second
+grace and KILL, preventing process-group number reuse during cleanup. Stderr
+controls are escaped; executable symlinks and the trusted checker's ability to
+escape its process group are documented.
+
+The focused CLI suite passes 9/9, including successful leader exit with a
+background child that holds no output pipe, timeout cleanup, output overflow,
+exact verdicts and constrained override behavior. Logs under `bemenu-files/`:
+`boundary-check-host-run2.log` and `boundary-check-host-clippy-final.log`.
+The original `boundary-check-host.log` remains failed (8/9): its stderr assertion
+did not account for Rust's error-return Debug formatting. The assertion was
+corrected without changing production behavior. Formatting and diff checks pass.
+The wrapper migration remains separate; these tests open no display or input
+device and do not claim a live host-policy decision.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)

@@ -6,6 +6,7 @@ mod bounded;
 mod controls;
 mod discovery;
 mod environment;
+mod host;
 mod proofs;
 mod standalone;
 
@@ -22,12 +23,16 @@ pub(crate) fn try_run(args: &[String]) -> Result<bool> {
                     | "stage-proofs"
                     | "check-launch"
                     | "prepare-controls"
+                    | "check-host"
             )
         )
     {
         return Ok(false);
     }
     let (options, extra) = parse(&args[2..])?;
+    if args[1] == "check-host" {
+        return host::run(&options, extra).map(|()| true);
+    }
     if args[1] == "prepare-controls" {
         return controls::run(&options, extra).map(|()| true);
     }
@@ -80,6 +85,7 @@ fn parse(args: &[String]) -> Result<(BTreeMap<String, String>, &[String])> {
             "firefox-profile",
             "tty",
             "firefox-probe",
+            "allow-active",
         ]
         .contains(&key)
             || options.insert(key.to_owned(), value.to_owned()).is_some()
