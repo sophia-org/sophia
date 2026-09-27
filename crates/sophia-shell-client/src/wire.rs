@@ -12,6 +12,7 @@ use sophia_protocol::{
     ShellIndicatorActivationOutcome, ShellIndicatorSnapshot, ShellPersistentCatalog, TransactionId,
 };
 
+use crate::files::FileWire;
 use crate::socket::SocketWire;
 use crate::{ShellClientError, outbox::ClientOutbox};
 
@@ -74,19 +75,37 @@ pub(crate) enum Inbound {
     CatalogOutcome(TransactionId, CatalogActivationOutcome),
 }
 
-/// The connection's transport. An enum, not a trait object, so a later
-/// native 9P file wire is a plain additional variant next to `Socket`.
+/// The connection's transport. An enum, not a trait object, so the native 9P
+/// file wire is a plain additional variant next to `Socket`. `FileWire` owns
+/// a whole `Pipeline` plus its own submission/upload/event state, far larger
+/// than `SocketWire`; boxing it keeps every `Outbound`/`Inbound` value (and
+/// this enum's own stack footprint) from paying for that on the socket path.
 pub(crate) enum Wire {
     Socket(SocketWire),
+    Files(Box<FileWire>),
 }
 
 impl Wire {
     /// Turn one whole outbound unit into the wire's own encoded units (wire
-    /// frames for the socket). Outbox accounting applies to those units
-    /// unchanged, whatever a future wire's unit shape turns out to be.
-    pub(crate) fn encode(&self, outbound: Outbound) -> Result<Vec<Vec<u8>>, ShellClientError> {
+    /// frames for the socket; one file record or one slot write for the file
+    /// wire). Outbox accounting applies to those units unchanged. The file
+    /// wire's encoding is stateful (it assigns submission ids and upload
+    /// slots), hence `&mut self`; call [`Self::commit_encoded`] once the
+    /// returned units are actually admitted into the outbox.
+    pub(crate) fn encode(&mut self, outbound: Outbound) -> Result<Vec<Vec<u8>>, ShellClientError> {
         match self {
             Wire::Socket(_) => crate::socket::encode(outbound),
+            Wire::Files(files) => files.encode(outbound),
+        }
+    }
+
+    /// Hands the wire ownership of exactly the units the last successful
+    /// `encode` call staged, now that the outbox has admitted them. A no-op
+    /// for the socket wire, whose outbox frames are themselves the units on
+    /// the wire.
+    pub(crate) fn commit_encoded(&mut self) {
+        if let Wire::Files(files) = self {
+            files.commit_encoded();
         }
     }
 
@@ -99,12 +118,14 @@ impl Wire {
     ) -> Result<(), ShellClientError> {
         match self {
             Wire::Socket(socket) => socket.poll_io(output, inbox),
+            Wire::Files(files) => files.poll_io(output, inbox),
         }
     }
 
     pub(crate) fn peer_closed(&self) -> bool {
         match self {
             Wire::Socket(socket) => socket.peer_closed(),
+            Wire::Files(files) => files.peer_closed(),
         }
     }
 }

@@ -133,7 +133,9 @@ impl ShellConnection {
             lifecycle
                 .register(metadata)
                 .map_err(ShellClientError::Lifecycle)
-        })
+        })?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Reserve ACK and exact activation together before a UI effect. There is
@@ -153,6 +155,8 @@ impl ShellConnection {
             ack: ack.clone(),
             activation: activation.map(|(tx, activation)| (tx, activation.clone())),
         })?;
-        self.output.enqueue(units, true)
+        self.output.enqueue(units, true)?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 }

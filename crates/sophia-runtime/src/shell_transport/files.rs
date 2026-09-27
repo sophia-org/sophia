@@ -17,6 +17,10 @@ mod journal;
 pub(super) use export::{Inbound, ShellFiles};
 pub(super) use journal::JournalBounds;
 
+/// Nonblocking turns spent flushing a revocation; bounded so a peer that
+/// stops reading cannot hold the owner.
+const REVOKE_TURNS: usize = 4;
+
 const ACK_PROGRESS_TIMEOUT: Duration =
     Duration::from_millis(SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS as u64);
 
@@ -145,8 +149,19 @@ impl ShellFileWire {
         Ok(())
     }
 
+    /// Ends the epoch. Before the socket closes, a few nonblocking turns
+    /// answer every waiting read `ESTALE` and flush replies already owed,
+    /// such as the acknowledgement of a terminal event, so the peer observes
+    /// the revocation rather than a bare EOF.
     pub(super) fn revoke(&mut self) {
         self.server.export_mut().revoke();
+        self.server.wake().wake();
+        for _ in 0..REVOKE_TURNS {
+            match self.server.turn(Some(Duration::ZERO)) {
+                Ok(true) if self.server.connection_count() > 0 => {}
+                _ => break,
+            }
+        }
     }
 }
 
