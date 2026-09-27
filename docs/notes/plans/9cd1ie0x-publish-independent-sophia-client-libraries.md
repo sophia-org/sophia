@@ -38,7 +38,23 @@ for distribution development packages. Neither SDK needs a compositor checkout.
 - Document dependency updates and compatibility checks across repositories.
 
 Implementation and publication are authorized by niltempus's approved plan.
-The application SDK, portability and broker/portal migration remain separate.
+The application SDK, compositor portability and broker/portal migration remain separate.
+
+## SDK platform policy
+
+Approved by niltempus on 2026-09-27: design both native SDKs for Linux and BSD,
+with Linux as the first supported platform and FreeBSD as the next qualification
+target. Keep byte codecs, value validation, queueing and lifecycle logic free of
+OS-specific APIs. Confine peer credentials, socket flags and signal handling to
+small platform adapters. Preserve the distinction between the 9P2000.L wire's
+error numbers and the host's errno values.
+
+FreeBSD support requires native build, protocol, socket, retry, revocation and
+peer-authentication tests in CI. Cross-compilation alone is not qualification.
+Record OpenBSD and NetBSD separately when native runners and equivalent tests
+exist. No general BSD support claim follows from portable source or a Linux
+test pass. Initial Linux daily-driver adoption does not wait for BSD runners;
+broader Sophia server/compositor portability remains t256.
 
 ## Extraction and completion
 
