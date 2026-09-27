@@ -270,6 +270,29 @@ but that opt-in test still needs the final assembled release. No installer was
 deployed, no personal WM was changed, and the unrelated chezmoi edit was left
 untouched.
 
+Personal installer commit `287f771` now delegates WM-pair preparation and
+desktop packaging to the explicitly selected external integration repository.
+Its plan binds that signed commit, the matching Sophia pin, the committed
+lockfile digest and the accepted Cargo home; build revalidates them without
+implicit provisioning. Installation helpers come from integration rather than
+Sophia. Historical plans omit the new binding and retain their release IDs;
+new builds require it. Explicit WM preparation selects only the WM source and
+continues checking against the installed release, independently of the next
+desktop's provisioning. Go tests, vet and a read-only plan against integration
+`8e97f0d` and Sophia `de776c68` pass. Evidence is in
+`installer-external-packager/` under the development evidence directory. No
+installer or configuration was deployed.
+
+External E4 preparation produced a WM pair from signed Hagia `20ef2130` and
+Narthex `50b9014d`, then a schema-6 test package from integration `8e97f0d` and
+Sophia `de776c68`. The independent pair hashes match the tool's output, and
+the packaged checksum list passes for all 82 files. Both builds were offline
+and device-hidden. Evidence is in `integration-e4/`; root's independent
+checksum check is `installer-external-packager/phase-b-sums.log`. This package
+precedes the remaining deletions and is not the installation candidate. The
+final personal assembly, private install/rollback test and final pin updates
+remain necessary.
+
 Public WM startup errors and the activation ownership comment name the policy client.
 The reduced diagnostic vocabulary no longer gives two product names special
 treatment. The profile record now validates its mode independently: all five
