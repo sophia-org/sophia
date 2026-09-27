@@ -666,7 +666,8 @@ cases reach `NativeFocus`, an activation owner or the launch queue.
 
 The preceding outcomes describe candidate validation before renderer submission.
 There is also a revalidation when a pending native candidate is taken for
-renderer submission. A now-stale facts or interaction generation at that step
+renderer submission: facts generation, interaction generation, opening, catalog
+generation, state revision and allocation binding must still match. A mismatch
 returns an owner error; current Session terminates the component and revokes its
 grant. That path does not promise a Rejected outcome. These different stale-work
 results remain a role-outcome consistency question (t262).
@@ -736,14 +737,21 @@ at the later of issuance and the owner's last service timestamp. An unacknowledg
 input expires after `action_ack_timeout_ms`; Session closes its opening with
 reason 6 (Timeout). An Enter intent held while waiting for the requested revision
 to be presented expires after `presentation_timeout_ms`, also closing with
-reason 6. Late acknowledgements after close are consumed without effect. Using
+reason 6. Late acknowledgements within the connection's grant after close are
+consumed without effect; a wrong-grant acknowledgement is fatal. Using
 issuance plus the timeout is an earlier client scheduling deadline; client
-receipt time must not restart the server's deadline.
+receipt time must not restart the server's deadline. Eligibility and expiry are
+judged at Session service time. Sending before a local deadline does not
+guarantee timely arrival or service.
 
 `Action.kind` 1 is an invocation, 2 a dismissal, and 3 a cancellation. Kinds 1
 and 2 require an exact `ActionAck` with disposition 1 (Consumed) or 2 (Stale).
 Kind 3 requires no acknowledgement. A stale, cancelled, unknown or mismatched
-action acknowledgement has no effect. Native pointer activation (`cause` 2)
+action acknowledgement within the connection's grant has no effect; a wrong
+grant is fatal. A missing kind-1 acknowledgement produces a kind-3 cancellation
+after the deadline. The file codec requires disposition 1/2 for both acknowledged
+kinds; the dismissal owner itself does not separately validate that value.
+Native pointer activation (`cause` 2)
 names the invocation Action's `event_id`, its row slot as `slot`, the current
 focus binding and current state revision. It requires the matching eligible
 action before its deadline and may name any displayed, available row, not only
@@ -764,8 +772,12 @@ The owner expires an unused permit before ingesting later candidates. Expiry
 produces FramePermit state 2/reason 6; a candidate subsequently naming it follows
 the fatal stale-permit rule above. A client that judges a permit too old locally
 must not treat that judgement as a server cancellation or send a speculative
-cancel for it. It may wait for authoritative expiry/cancellation before asking
-for another permit. These rules provide no guarantee that a candidate sent
+cancel for it. It must wait for authoritative expiry/cancellation before asking
+for another permit when it leaves the old permit unused. A client must not send
+a new FrameDemand while that output has an outstanding permit or an assembling
+candidate: current Session propagates the resulting grant refusal as a fatal
+error. Grant refusal from saturated owner capacity is likewise fatal. These
+rules provide no guarantee that a candidate sent
 before a local deadline reaches the owner before expiry. Changing that failure
 policy or adding a usable issue timestamp is separate contract work (t262).
 
@@ -780,9 +792,12 @@ status 4/reason 12. Resources retain their normal retire/release lifecycle, and
 resource records remain serviceable after close.
 
 A late allocation request, including release, is rejected Stale or ignored if
-its request ID has already been processed. A new late candidate or demand for
-the closed opening receives a Cancelled outcome; old identifiers can instead be
-ignored. The client must stop using the allocation at close rather than waiting
+its request ID has already been processed. A new late candidate for the closed
+opening receives a Cancelled outcome; a late demand receives FramePermit state
+3/reason 11. Old identifiers can instead be ignored. After reopening, a late
+demand is recognized as belonging to the old opening only if it names a
+non-current allocation; an output-wide demand (allocation 0) is served as
+current. The client must stop using the allocation at close rather than waiting
 for its invalidation. Reopening requires a larger opening ID. Once a native
 activation is Admitted, focus is disarmed, new input/focus cannot be issued for
 that opening, and further activations are Stale. Session then closes it with
@@ -802,8 +817,9 @@ begin consumes the permit. Every new frame therefore needs a new demand.
 FrameDemand reason 3 means withdrawal and takes priority over reason 1 or 2
 (dirty or animation work, treated alike). Replacing a standing withdrawal with
 reason 1 or 2 is a fatal stale request. Activation responses are serviced one at
-a time; each Accept permits one attempt. Input receipts are bounded by
-`max_pending_actions`; other advertised allocation/candidate limits still apply.
+a time; each Accept permits one attempt. Input receipt capacity is at most 16 and
+at most `max_pending_actions` minus pending pointer-cancellation reservations;
+other advertised allocation/candidate limits still apply.
 An SDK may choose stricter single-operation bounds as local queue policy.
 
 ## Multiple writers, isolation and revocation

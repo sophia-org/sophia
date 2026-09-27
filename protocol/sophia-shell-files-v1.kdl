@@ -436,6 +436,8 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // demand per output; a newer demand replaces it, but replacing a standing
     // reason-3 demand with reason 1/2 is fatal. Grant consumes the demand;
     // candidate begin consumes its permit, so each frame needs a new demand.
+    // Do not demand while an output has a permit or assembling candidate;
+    // current Session treats the resulting grant refusal as fatal.
     body "FrameDemand" size=66 {
         field "transaction" type="u64" offset=0 nonzero=#true
         field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
@@ -916,8 +918,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // the launch queue. Production Session supplies interaction_generation=1;
     // it is not a client-allocated counter. facts_generation must match the
     // current Outputs facts. Both are checked again when pending work is
-    // taken for renderer submission; a mismatch at that later step currently
-    // terminates the component, rather than promising a Rejected outcome.
+    // taken for renderer submission, along with opening, catalog generation,
+    // state revision and allocation binding; a mismatch at that later step
+    // currently terminates the component, rather than promising a Rejected outcome.
     // candidate_generation strictly increases within the grant's owner.
     body-prefix "NativeCandidate" size=108 max-bytes=8192 {
         field "transaction" type="u64" offset=0 nonzero=#true
