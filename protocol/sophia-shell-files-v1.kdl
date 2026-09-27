@@ -155,9 +155,6 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "output_count" type="u32" offset=32 max=16
         field "reserved" type="u32" offset=36 value=0
     }
-    // Normative, per Outputs object: output_id values are unique among its
-    // rows, and each row's scale is a reduced fraction:
-    // gcd(scale_numerator, scale_denominator) == 1.
     row "ContentOutputFactsEntry" size=40 {
         field "output_id" type="u64" offset=0 nonzero=#true
         field "output_generation" type="u64" offset=8 nonzero=#true
