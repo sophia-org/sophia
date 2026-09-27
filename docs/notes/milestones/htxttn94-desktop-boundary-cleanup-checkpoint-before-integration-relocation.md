@@ -348,6 +348,9 @@ The protection section explicitly includes the backend's read-only `/usr`
 mount; it no longer implies that all ambient host files are hidden. The GPU
 proof section distinguishes synthetic content outcomes and byte-pattern
 checks from client GPU-execution evidence and physical presentation.
+The configuration contract likewise names the selected WM as the policy
+owner and uses role-based executable paths in the independent-components
+example. Client configuration and UI expectations remain externally owned.
 Historical attribution of the profile reducer's model is retained. This is a
 documentation correction, checked by source inspection and `git diff --check`;
 it changes no executable behavior or pinned SDK contract copy.

@@ -139,8 +139,8 @@ or Engine hard limits.
 
 No in-tree WM reads it. `sophia-wm-demo` lost its serving mode with the
 experimental WM API v7, and its remaining subcommands are protocol proof
-clients; Hagia is Sophia's native WM and speaks `sophia_wm_v1`. The `native`
-and `standalone` tool profiles consequently run no window manager at all, and
+clients. A production WM is selected explicitly and speaks `sophia_wm_v1`.
+The `native` and `standalone` tool profiles run no window manager at all, and
 a session without one registers no shortcuts, because shortcuts are resolved
 against a policy client's configuration. Those sessions end when their
 application does.
@@ -237,8 +237,9 @@ for proofs. The launcher still validates the exact assembled command with
 The trusted session coordinator validates and partitions all seven desktop
 authorities before constructing the graphical session. It stages owner-only
 fragments with one generation and digest in the private policy runtime
-directory and gives Hagia only the policy-fragment path. Hagia cannot read or
-replace the shell, shortcut, session, input, output, or broker candidates.
+directory and gives the selected WM only the policy-fragment path. The WM
+cannot read or replace the shell, shortcut, session, input, output, or broker
+candidates.
 The trusted side now also has a pure seven-authority activation reducer ported
 from Hagia's exhaustively checked lifecycle model. One generation/digest must
 prepare everywhere before activation effects are emitted, and promotion waits
@@ -248,9 +249,9 @@ generations advance monotonically even after rejection, so delayed completion
 cannot alias a retry.
 An injected startup executor boundary converts each typed effect into its
 matching authority call and returns the exact typed completion message. Its
-prepare, activate, and rollback handlers borrow the seven public Hagia startup
+prepare, activate, and rollback handlers borrow the seven public WM startup
 owners. Six authorities settle through their authority-local participant
-slots; Policy settles only after Hagia acknowledges the exact staged identity
+slots; Policy settles only after the WM acknowledges the exact staged identity
 over its private transport. The seam keeps filesystem or process work from
 re-entering the reducer implicitly.
 A synchronous startup driver now drains that boundary through the complete
@@ -263,15 +264,15 @@ settles all seven prepare effects and returns either `Prepared` or `Rejected`
 without emitting an activation effect. The existing full driver calls this same
 function before requesting activation, so offline proofs and future
 pre-graphical production wiring cannot drift into two implementations.
-For public Hagia startup, Sophia invokes that prepare-only driver immediately
+For public WM startup, Sophia invokes that prepare-only driver immediately
 after staging and exact fragment admission and before display sockets, seats,
 devices, or processes. The dispatcher has seven fixed authority fields that
 borrow the separate policy, shell, shortcut, session, input, output, and broker
 owners. Success retains the coordinator and every participant at the same
 `Prepared` key with no active identity; any local failure rolls all seven slots
 back and aborts startup. Before graphical construction, the launch gate then
-activates the six local owners, starts Hagia with the exact owner-only Policy
-fragment, and promotes the coordinator only after Hagia's matching completion.
+activates the six local owners, starts the selected WM with the exact owner-only
+Policy fragment, and promotes the coordinator only after its matching completion.
 Timeout, disconnect, identity rejection, or local failure rolls every owner
 back and leaves the graphical gate closed. There is no prepared-only
 `sophia_wm_v1` production branch; the former proof switch is a compatibility
@@ -439,7 +440,7 @@ Input and output now likewise have cohesive typed owner records around their
 prepared slots. Keyboard/pointer overlays and output reconciliation read those
 owners' candidate payloads. The transient typed bundle is discarded after
 partitioning, so startup does not keep a second coordinator-owned copy.
-For a public Hagia session, trusted startup next creates an owner-only policy
+For a public WM session, trusted startup next creates an owner-only policy
 launch context before display sockets, seats, input/output setup, or process
 launch. It stages the complete profile, re-admits all seven fragments through
 the owner-safe loader against the exact activation key, and retains named raw
@@ -772,12 +773,12 @@ A desktop may select a bar and an application launcher independently:
 shell { enabled #true; content #true; content-input #true; panel 24; gpu "denied"; }
 session {
     shell-component "panel" "bar" {
-        executable "/absolute/path/to/lom"
-        config "/absolute/path/to/lom.kdl"
+        executable "/absolute/path/to/bar-client"
+        config "/absolute/path/to/bar-client.kdl"
         gpu "direct"
     }
     shell-component "menu" "application-launcher" {
-        executable "/absolute/path/to/bemenu-sophia"
+        executable "/absolute/path/to/launcher-client"
         gpu "denied"
     }
     application-catalog "installed"
@@ -794,6 +795,12 @@ known catalog. Launcher-only selection has no panel reservation. GPU permission
 is per component; the global `gpu "direct"` mode is refused here. Explicit legacy
 `--shell-process` conflicts, while `--shell-process-default` and ambient
 `SOPHIA_SHELL_CONFIG` are not inherited by explicitly selected components.
+
+The executable paths and private configuration belong to the selected clients.
+Sophia validates the declared roles, capabilities and authority grants; it does
+not assign behavior from an executable's name. Each client must implement the
+public contract for its role. Client-specific configuration and UI expectations
+belong in that client's documentation or the external desktop integration.
 
 Each component may select its wire with `transport "current-ipc"` (the default)
 or `transport "9p2000.L"`, the `sophia_shell_fs_v1` file export of
