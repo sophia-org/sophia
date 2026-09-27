@@ -233,7 +233,7 @@ impl PublicProfilePreparationExecutor<'_> {
         key: sophia_config::DesktopProfileActivationKey,
     ) -> bool {
         match authority {
-            // Hagia, not this local slot, settles the external policy effect.
+            // The external policy client acknowledges activation over its protocol.
             sophia_config::DesktopAuthority::Policy => false,
             sophia_config::DesktopAuthority::Shell => activate_profile_slot(self.shell, key),
             sophia_config::DesktopAuthority::Shortcut => activate_profile_slot(self.shortcut, key),

@@ -259,6 +259,19 @@ extraction; product recipe commands and callers have not been removed.
 
 ## Remaining work
 
+Public WM startup errors and the activation ownership comment name the policy client.
+The reduced diagnostic vocabulary no longer gives two product names special
+treatment. The profile record now validates its mode independently: all five
+source modes accepted by startup are retained, including `packaged-promotion`,
+which the previous reducer silently dropped. Unknown modes remain redacted;
+the additional mode is not admitted into unrelated records. Focused positive
+and negative tests are in `diagnostics_profiles.rs`. The device-hidden focused
+gate passes those two tests and all 38 existing diagnostic tests. Session clippy
+passes for all targets and features with warnings denied; formatting and
+whitespace checks pass. Evidence is under `diagnostics-boundary/` in
+`focused.log` and `clippy.log`. These tests cover record reduction; the external
+profile-mode reader evidence must run against a pin containing this change.
+
 The generic launcher path is now concrete: `run_sophia_session.sh -- session run
 <arguments...>` takes a prebuilt absolute executable and preserves the supplied
 vector. Exactly one explicit input selector also selects the recovery reader.

@@ -101,6 +101,17 @@ pub fn reduced_record(line: &str) -> Option<String> {
             }
             continue;
         }
+        if name == "sophia_live_desktop_profile" && key == "mode" {
+            // These classify the profile's source, not the client that uses it.
+            if matches!(
+                value,
+                "user" | "system" | "explicit" | "packaged-fallback" | "packaged-promotion"
+            ) {
+                result.push(' ');
+                result.push_str(field);
+            }
+            continue;
+        }
         if let Some(limit) = match key {
             "major" | "code" => Some(u64::from(u8::MAX)),
             "minor" => Some(u64::from(u16::MAX)),
@@ -274,8 +285,6 @@ pub fn reduced_record(line: &str) -> Option<String> {
                 | "normal"
                 | "physical"
                 | "native"
-                | "hagia"
-                | "kitty"
                 | "queued"
                 | "preparing"
                 | "quiesced"

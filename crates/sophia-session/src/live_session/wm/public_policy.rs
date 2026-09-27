@@ -532,10 +532,10 @@ impl PreparedPublicPolicyLaunch {
         supervisor_state = state;
         let started = supervisor
             .apply(command)?
-            .ok_or("public WM supervisor did not start Hagia")?;
+            .ok_or("public WM supervisor did not start the policy client")?;
         let child_pid = supervisor
             .peer_id()
-            .ok_or("public WM supervisor did not retain Hagia's PID")?;
+            .ok_or("public WM supervisor did not retain the policy client's PID")?;
         transport.authorize(&supervisor)?;
         if let Some(output_transport) = output_transport.as_mut() {
             output_transport.authorize_supervised_pid(child_pid)?;
