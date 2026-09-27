@@ -45,8 +45,12 @@ impl Fixture {
         let source = include_str!("../../../tools/run_sophia_session.sh");
         let block = |start: &str, end: &str| {
             assert_eq!(source.matches(start).count(), 1);
-            let a = source.find(start).unwrap();
-            let b = source[a..].find(end).unwrap() + a;
+            let body = source.find(start).unwrap();
+            // Keep the legacy branch opener paired with its closing `fi`.
+            let a = source[..body]
+                .rfind("if [[ \"$EXPLICIT_ARGV\" == false ]]; then")
+                .unwrap();
+            let b = source[body..].find(end).unwrap() + body;
             &source[a..b]
         };
         let script = format!(
@@ -68,6 +72,7 @@ impl Fixture {
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
             )
             .env("STATE_DIR", &self.root)
+            .env("EXPLICIT_ARGV", "false")
             .env("SESSION_PROFILE", "hagia")
             .env("SESSION_STARTUP", "terminal")
             .env("TRUECOLOR_PROOF", "false")

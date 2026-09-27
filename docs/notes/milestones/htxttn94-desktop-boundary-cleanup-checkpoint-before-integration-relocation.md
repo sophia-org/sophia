@@ -217,6 +217,14 @@ opener, and a clippy style finding in the host checker; all were corrected
 without weakening the existing assertions. PTY tests supply guard/TTY/session
 effects and exercise the real parser; they do not take over a display.
 
+The first combined gate, at `e19c0e1c`, stopped in four application-recipe tests
+whose shell-source slices included the new branch's closing `fi` without its
+opener. Their extraction now includes the complete legacy branch; all five
+application-recipe tests pass with unchanged behavior assertions. The failed
+full run remains `bemenu-files/boundary-combined-e19c0e1c.log`; the focused repair
+is `boundary-recipe-slicing.log`. A new combined gate is required at the repaired
+commit, with devices hidden and no physical acceptance claim.
+
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 and [t252 acceptance plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
 retain the full exits. These slices have no combined full-workspace gate,
