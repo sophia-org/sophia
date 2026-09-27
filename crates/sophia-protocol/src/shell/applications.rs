@@ -1,6 +1,9 @@
 //! Wire-neutral typed model for the revision-4 shell application catalog.
 use crate::InvalidRecord;
 
+pub const SOPHIA_SHELL_MAX_APPLICATIONS: usize = 4096;
+pub const SOPHIA_SHELL_MAX_LAUNCHER_ROWS: usize = 32;
+
 /// A catalog identity is a display reference, not permission to execute.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShellApplicationDescriptor {
