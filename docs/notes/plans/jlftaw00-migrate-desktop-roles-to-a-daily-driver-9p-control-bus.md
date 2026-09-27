@@ -163,10 +163,19 @@ attended session's Hagia binary `464ae2fc`). Only the WM role moves; shell and
 output stay on current IPC. The product default in
 `WmTransportSelection` is unchanged until t255.
 
-Remaining for t250: the t249 release latency verdict (armed overnight). A
-refused budget does not silently stand: the operator then decides between
-keeping the default under a recorded limitation and rolling back to the
-current-IPC entry.
+**t249 release verdict (2026-09-27 01:01): refused.** The unchanged
+preregistered campaign ran 22:10-01:01 on a quiet machine with the operator
+logged out (evidence `t249-release-overnight-48c387dd-r2/VERDICT.md`; an
+earlier start aborted on a stale lock before measuring). `budgets_pass=false`,
+40/40 pairs refused: all 40 on survivor equality (timing-dependent coalescing
+happens on both wires, so identical retained updates are unattainable whenever
+any coalescing occurs), 21 on the one-interval p99 at 120 Hz (both wires run
+at p99 ~22 ms there; the fixture saturates at 120 Hz), and 3 relative 9P
+regressions (one a 60 Hz stall episode, two at 120 Hz). Elsewhere 9P tracks
+current IPC within tenths of a millisecond. The refusal stands for this
+method; it is not rerun. Open for the operator: a new declared method (rates
+the fixture sustains without coalescing, early stop), and whether the 9P
+default stays with this limitation recorded or rolls back to current IPC.
 
 ### t251 — Specify the shell file contract
 
