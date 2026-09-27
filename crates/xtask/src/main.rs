@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod bemenu_artifact;
 mod c_desktop_sdk;
 mod check;
 mod git_tree;
@@ -40,6 +41,9 @@ fn main() -> std::process::ExitCode {
 
 fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
+        Some("prepare-bemenu-artifact") => {
+            bemenu_artifact::run(&workspace_root()?, &arguments[1..]).map(print_lines)
+        }
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("panel") => panel::run(&workspace_root()?, &arguments[1..]),
         Some("dock") => match &arguments[1..] {
