@@ -48,7 +48,7 @@ A desktop profile may select several registered startup identities in order:
 
 ```kdl
 session {
-    startup "terminal" "quickshell-panel"
+    startup "terminal" "panel"
 }
 ```
 
@@ -61,8 +61,8 @@ paths and arguments; the WM never receives or launches them. Explicit
 `--session-start=ID` selections
 still override configuration. `--session-start-default=ID` is a launcher fallback
 used only when neither the desktop profile nor the core registry selects a
-startup list. The ordinary Hagia launcher uses this fallback for its terminal;
-proof invocations retain explicit startup selections.
+startup list. A desktop launcher can use this fallback for its terminal;
+proof invocations can select startup identities explicitly.
 
 ### Application commands beside bindings
 
@@ -364,9 +364,9 @@ Direct mode exposes exactly the selected render node under its kernel
 `/dev/dri/renderD<minor>` basename and binds its kernel identity to the shell
 connection epoch. It also supplies a generated read-only sysfs view containing
 only that render minor's bounded Linux PCI discovery facts; it does not mount
-host `/sys` or the whole physical-device directory. Lom matches the selected
-Vulkan adapter back to the granted render `dev_t`. It requires no custom kernel
-or `dmem` controller. It accepts GPU
+host `/sys` or the whole physical-device directory. The shell client must match
+its selected GPU adapter to the granted render `dev_t`. Direct mode requires no
+custom kernel or `dmem` controller. It accepts GPU
 execution/availability risk without a hard aggregate VRAM guarantee. The
 content ledger bounds known immutable resource and compositor-backing credit;
 it does not measure every driver allocation. Native GPU acceptance remains a
@@ -610,7 +610,7 @@ Validate the discovered files without starting a graphical session:
 cargo run --offline -q -p sophia-cli -- config check
 cargo run --offline -q -p sophia-cli -- config check --wm
 cargo run --offline -q -p sophia-cli -- config check \
-    --desktop-profile=/absolute/path/to/hagia/config.kdl
+    --desktop-profile=/absolute/path/to/sophia/desktop.kdl
 ```
 
 Inspect the parsed, default-expanded snapshots:
