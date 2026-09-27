@@ -1,6 +1,7 @@
 use super::*;
 use sophia_protocol::{
-    IpcCodecError, ShellApplicationCatalog, TransactionId, encode_shell_application_catalog,
+    IpcCodecError, ShellApplicationCatalog, ShellPersistentCatalog, TransactionId,
+    encode_shell_application_catalog,
 };
 use std::sync::Arc;
 
@@ -37,11 +38,40 @@ impl PublishedApplicationCatalog {
     pub fn wire(&self) -> &ShellApplicationCatalog {
         &self.wire
     }
+    /// The typed value `publish_catalog` hands to the transport: the plain
+    /// catalog when `persistent` is false (the native launcher's r4 view),
+    /// or the catalog with one r8 identity per entry when it is true (the
+    /// dock's persistent view). Same duplicate-identity contract as
+    /// `persistent_frames`, checked once here instead of per encoded frame.
+    pub fn value(&self, persistent: bool) -> Result<ShellPersistentCatalog, IpcCodecError> {
+        if !persistent {
+            return Ok(ShellPersistentCatalog {
+                catalog: self.wire.clone(),
+                identities: Default::default(),
+            });
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut identities = std::collections::BTreeMap::new();
+        for entry in &self.source.entries {
+            if !seen.insert(&entry.identity) {
+                return Err(IpcCodecError::InvalidRecord("duplicate catalog identity"));
+            }
+            identities.insert(entry.descriptor.slot, entry.identity.clone());
+        }
+        Ok(ShellPersistentCatalog {
+            catalog: self.wire.clone(),
+            identities,
+        })
+    }
+    /// The raw socket encoding of `value(false)`. Component-role transfer now
+    /// goes through `publish_catalog`/`value`; this stays for direct encoder
+    /// verification against `sophia_protocol::encode_shell_application_catalog`.
     pub fn frames(&self, transaction: TransactionId) -> Result<Vec<Vec<u8>>, IpcCodecError> {
         encode_shell_application_catalog(transaction, &self.wire)
     }
-    /// Revision-8 identity records share the catalog transaction and precede End.
-    /// Legacy callers retain the unchanged revision-4 catalog encoding.
+    /// The raw socket encoding of `value(true)`: revision-8 identity records
+    /// share the catalog transaction and precede End. Kept for direct encoder
+    /// verification; component-role transfer now goes through `publish_catalog`.
     pub fn persistent_frames(
         &self,
         transaction: TransactionId,
