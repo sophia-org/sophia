@@ -159,7 +159,7 @@ component's metadata audience.
 
 | Name | Access | Profiles | Meaning |
 | --- | --- | --- | --- |
-| `api` | read | all | Small immutable text: family `sophia_shell_fs_v1`, API version, role profile, `fd_transfer=none` |
+| `api` | read | all | Small immutable text, one line: `sophia-shell-files version=<api> role=<profile> epoch=<connection epoch> fd_transfer=none`. The epoch is the value every record header of this attach carries; a client reads it after attaching, before its first submit |
 | `limits` | read | content profiles | The granted `ContentLimits` as a binary record, immutable for the grant |
 | `events` | read | all | Ordered records by byte offset, retained until acknowledged |
 | `transaction` | read/write | all | The attach's single candidate buffer; at most one open `transaction` fid per attach, as in the WM contract |
