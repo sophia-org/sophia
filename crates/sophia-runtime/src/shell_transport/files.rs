@@ -14,7 +14,9 @@ use crate::ContentStoreProfile;
 mod export;
 mod journal;
 
-pub(super) use export::{Inbound, ShellFiles};
+pub(super) use export::{
+    CandidateFamily, CatalogCandidatePart, Inbound, NativeCandidatePart, ShellFiles,
+};
 pub(super) use journal::JournalBounds;
 
 /// Nonblocking turns spent flushing a revocation; bounded so a peer that

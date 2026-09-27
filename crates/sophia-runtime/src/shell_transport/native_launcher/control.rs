@@ -110,21 +110,18 @@ impl ShellComponentTransport {
             state_revision: shown.content.state_revision,
             focus_lease: lease,
         };
-        let frame = encode_shell_native_launcher_frame(
-            transaction,
-            &ShellNativeLauncherRecord::Focus(focus),
-        )?;
+        let focus_record = ShellNativeLauncherRecord::Focus(focus);
+        let frame = encode_shell_native_launcher_frame(transaction, &focus_record)?;
         let revoke = self
             .native_control
             .focus
             .map(|binding| {
-                encode_shell_native_launcher_frame(
-                    transaction,
-                    &ShellNativeLauncherRecord::FocusRevoked(NativeLauncherFocusRevoked {
-                        binding,
-                        reason: ContentReason::Stale as u16,
-                    }),
-                )
+                let record = ShellNativeLauncherRecord::FocusRevoked(NativeLauncherFocusRevoked {
+                    binding,
+                    reason: ContentReason::Stale as u16,
+                });
+                encode_shell_native_launcher_frame(transaction, &record)
+                    .map(|frame| (frame, record))
             })
             .transpose()?;
         // New Focus plus its future revocation; old revocation transfers its
@@ -132,10 +129,26 @@ impl ShellComponentTransport {
         if !self.control_capacity_available(epochs, 2) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        if let Some(frame) = revoke {
-            self.output.push(frame, true);
+        if let Some((revoke_frame, revoke_record)) = revoke {
+            self.push_family_frame(true, revoke_frame, || {
+                sophia_protocol::shell_files::encode_shell_file_native_launcher_transaction_body(
+                    &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+                        transaction,
+                        record: revoke_record,
+                    },
+                )
+                .map_err(|_| ShellTransportError::WrongContentRecord)
+            })?;
         }
-        self.output.push(frame, true);
+        self.push_family_frame(true, frame, || {
+            sophia_protocol::shell_files::encode_shell_file_native_launcher_transaction_body(
+                &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+                    transaction,
+                    record: focus_record,
+                },
+            )
+            .map_err(|_| ShellTransportError::WrongContentRecord)
+        })?;
         self.native_control.focus = Some(focus);
         self.native_control.next_lease = next_lease;
         self.native_control.inputs.iter_mut().for_each(|entry| {
@@ -255,15 +268,13 @@ impl ShellComponentTransport {
             event_id: self.native_control.next_event,
             state_revision: revision,
         };
-        let frame = encode_shell_native_launcher_frame(
-            transaction,
-            &ShellNativeLauncherRecord::Input(NativeLauncherInput {
-                event,
-                issued_mono_usec: issued,
-                kind,
-                text: text.to_owned(),
-            }),
-        )?;
+        let record = ShellNativeLauncherRecord::Input(NativeLauncherInput {
+            event,
+            issued_mono_usec: issued,
+            kind,
+            text: text.to_owned(),
+        });
+        let frame = encode_shell_native_launcher_frame(transaction, &record)?;
         if self.content_limits.as_ref().is_none_or(|limits| {
             frame.len() - SOPHIA_IPC_HEADER_LEN > limits.max_frame_payload as usize
         }) {
@@ -274,7 +285,19 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        self.output.push(frame, true);
+        self.push_family_frame(true, frame, || {
+            let body = sophia_protocol::shell_files::encode_shell_file_native_input_body(
+                &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+                    transaction,
+                    record,
+                },
+            )
+            .map_err(|_| ShellTransportError::WrongContentRecord)?;
+            Ok((
+                sophia_protocol::shell_files::ShellFileKind::NativeInput,
+                body,
+            ))
+        })?;
         self.native_control.inputs[slot] = Some(InputReceipt {
             event,
             kind,
@@ -342,21 +365,37 @@ impl ShellComponentTransport {
     pub(in crate::shell_transport::native_launcher) fn take_native_launcher_input_ack(
         &mut self,
     ) -> Result<Option<(TransactionId, NativeLauncherInputAck, bool)>, ShellTransportError> {
-        let Some(index) = self
-            .inbox
-            .iter()
-            .position(|f| u16::from_le_bytes([f[6], f[7]]) == 194)
-        else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
+        let (transaction, ack, index) = if self.files.is_some() {
+            let Some((transaction, ack)) = self
+                .files
+                .as_mut()
+                .and_then(|files| files.export_mut().take_native_input_ack())
+            else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
             };
-        };
-        let (transaction, ShellNativeLauncherRecord::InputAck(ack)) =
-            decode_shell_native_launcher_frame(&self.inbox[index])?
-        else {
-            return Err(ShellTransportError::WrongContentRecord);
+            (transaction, ack, None)
+        } else {
+            let Some(index) = self
+                .inbox
+                .iter()
+                .position(|f| u16::from_le_bytes([f[6], f[7]]) == 194)
+            else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
+            };
+            let (transaction, ShellNativeLauncherRecord::InputAck(ack)) =
+                decode_shell_native_launcher_frame(&self.inbox[index])?
+            else {
+                return Err(ShellTransportError::WrongContentRecord);
+            };
+            (transaction, ack, Some(index))
         };
         if Some(ack.event.binding.grant) != self.content_grant {
             return Err(ShellTransportError::WrongContentGrant);
@@ -366,17 +405,19 @@ impl ShellComponentTransport {
             .inputs
             .iter()
             .position(|v| v.is_some_and(|v| v.event == ack.event && v.ack.is_none()));
-        if let Some(index) = found {
-            let input = self.native_control.inputs[index]
+        if let Some(found_index) = found {
+            let input = self.native_control.inputs[found_index]
                 .as_mut()
                 .expect("exact receipt");
             if input.kind == NativeLauncherInputKind::Accept {
                 input.ack = Some(ack.disposition);
             } else {
-                self.native_control.inputs[index] = None;
+                self.native_control.inputs[found_index] = None;
             }
         }
-        self.inbox.remove(index);
+        if let Some(index) = index {
+            self.inbox.remove(index);
+        }
         Ok(Some((transaction, ack, found.is_some())))
     }
 
@@ -425,25 +466,21 @@ impl ShellComponentTransport {
             .native_control
             .opening
             .ok_or(ShellTransportError::WrongActivation)?;
-        let closed = encode_shell_native_launcher_frame(
-            tx,
-            &ShellNativeLauncherRecord::Closed(NativeLauncherClosed {
-                grant: opening.grant,
-                opening: opening.opening,
-                reason,
-            }),
-        )?;
+        let closed_record = ShellNativeLauncherRecord::Closed(NativeLauncherClosed {
+            grant: opening.grant,
+            opening: opening.opening,
+            reason,
+        });
+        let closed = encode_shell_native_launcher_frame(tx, &closed_record)?;
         let revoked = self
             .native_control
             .focus
             .map(|binding| {
-                encode_shell_native_launcher_frame(
-                    tx,
-                    &ShellNativeLauncherRecord::FocusRevoked(NativeLauncherFocusRevoked {
-                        binding,
-                        reason,
-                    }),
-                )
+                let record = ShellNativeLauncherRecord::FocusRevoked(NativeLauncherFocusRevoked {
+                    binding,
+                    reason,
+                });
+                encode_shell_native_launcher_frame(tx, &record).map(|frame| (frame, record))
             })
             .transpose()?;
         if !self.control_capacity_available(epochs, 0) {
@@ -459,10 +496,26 @@ impl ShellComponentTransport {
             .ok_or(ShellTransportError::MissingCapability)?
             .close_native_opening(opening)?;
         self.flush_content_candidate_events(epochs)?;
-        if let Some(frame) = revoked {
-            self.output.push(frame, true);
+        if let Some((revoked_frame, revoked_record)) = revoked {
+            self.push_family_frame(true, revoked_frame, || {
+                sophia_protocol::shell_files::encode_shell_file_native_launcher_transaction_body(
+                    &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+                        transaction: tx,
+                        record: revoked_record,
+                    },
+                )
+                .map_err(|_| ShellTransportError::WrongContentRecord)
+            })?;
         }
-        self.output.push(closed, true);
+        self.push_family_frame(true, closed, || {
+            sophia_protocol::shell_files::encode_shell_file_native_launcher_transaction_body(
+                &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+                    transaction: tx,
+                    record: closed_record,
+                },
+            )
+            .map_err(|_| ShellTransportError::WrongContentRecord)
+        })?;
         self.native_control.clear_opening();
         Ok(())
     }

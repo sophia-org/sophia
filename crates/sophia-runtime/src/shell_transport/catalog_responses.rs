@@ -21,20 +21,36 @@ impl ShellComponentTransport {
         if self.catalog_response.is_some() {
             return Ok(None);
         }
-        let Some(at) = self
-            .inbox
-            .iter()
-            .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 200)
-        else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
+        let (transaction, activation, at) = if self.files.is_some() {
+            let Some((transaction, activation)) = self
+                .files
+                .as_ref()
+                .and_then(|files| files.export().peek_catalog_activate())
+            else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
             };
-        };
-        let (transaction, record) = decode_shell_catalog_action_frame(&self.inbox[at])?;
-        let ShellCatalogActionRecord::Activate(activation) = record else {
-            return Err(ShellTransportError::WrongContentRecord);
+            (transaction, activation, None)
+        } else {
+            let Some(at) = self
+                .inbox
+                .iter()
+                .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 200)
+            else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
+            };
+            let (transaction, record) = decode_shell_catalog_action_frame(&self.inbox[at])?;
+            let ShellCatalogActionRecord::Activate(activation) = record else {
+                return Err(ShellTransportError::WrongContentRecord);
+            };
+            (transaction, activation, Some(at))
         };
         if Some(activation.action.grant) != self.content_grant {
             return Err(ShellTransportError::WrongContentGrant);
@@ -47,7 +63,13 @@ impl ShellComponentTransport {
             activation: activation.clone(),
             status: None,
         });
-        self.inbox.remove(at);
+        if let Some(at) = at {
+            self.inbox.remove(at);
+        } else {
+            self.files
+                .as_mut()
+                .and_then(|files| files.export_mut().take_catalog_activate());
+        }
         Ok(Some((transaction, activation)))
     }
 
@@ -86,21 +108,28 @@ impl ShellComponentTransport {
         let Some(status) = pending.status else {
             return Ok(false);
         };
-        let frame = encode_shell_catalog_action_frame(
-            pending.transaction,
-            &ShellCatalogActionRecord::ActivationOutcome(CatalogActivationOutcome {
-                activation: pending.activation.clone(),
-                status,
-                reason: 0,
-            }),
-        )?;
+        let transaction = pending.transaction;
+        let record = ShellCatalogActionRecord::ActivationOutcome(CatalogActivationOutcome {
+            activation: pending.activation.clone(),
+            status,
+            reason: 0,
+        });
+        let frame = encode_shell_catalog_action_frame(transaction, &record)?;
         if frame.len() > CONTROL_FRAME_BYTES {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
         if !self.frame_capacity_available(epochs, frame.len(), true, true) {
             return Ok(false);
         }
-        self.output.push(frame, true);
+        self.push_family_frame(true, frame, || {
+            sophia_protocol::shell_files::encode_shell_file_catalog_action_body(
+                &sophia_protocol::shell_files::ShellFileCatalogActionRecord {
+                    transaction,
+                    record,
+                },
+            )
+            .map_err(|_| ShellTransportError::WrongContentRecord)
+        })?;
         // This exact fixed-field request was validated before enqueue. Clearing
         // it cannot allocate, call user code or perform I/O after FIFO transfer.
         self.catalog_response = None;

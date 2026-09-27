@@ -22,7 +22,15 @@ impl ShellFiles {
                     ShellContentRecord::ResourceCancel(value) => Some(value.resource),
                     _ => None,
                 },
-                Inbound::Negotiate(_) | Inbound::Candidate(_) => None,
+                Inbound::Negotiate(_)
+                | Inbound::Candidate(_)
+                | Inbound::NativeAllocation(..)
+                | Inbound::NativeCandidate(_)
+                | Inbound::NativeInputAck(..)
+                | Inbound::NativeActivate(..)
+                | Inbound::CatalogCandidate(_)
+                | Inbound::CatalogActivate(..)
+                | Inbound::IndicatorActivate(..) => None,
             };
             (
                 inbound,
@@ -58,6 +66,74 @@ impl ShellFiles {
                 }
                 let candidate = decode_shell_file_candidate(bytes).map_err(|_| Errno::EINVAL)?;
                 Inbound::Candidate(Box::new(candidate))
+            }
+            ShellFileKind::NativeAllocationRequest => {
+                if !self.negotiated || !self.content || !self.supports_native_launcher() {
+                    return Err(Errno::EACCES);
+                }
+                let value = decode_shell_file_native_launcher_transaction(bytes, kind)
+                    .map_err(|_| Errno::EINVAL)?;
+                let ShellNativeLauncherRecord::AllocationRequest(request) = value.record else {
+                    return Err(Errno::EINVAL);
+                };
+                Inbound::NativeAllocation(value.transaction, Box::new(request))
+            }
+            ShellFileKind::NativeInputAck => {
+                if !self.negotiated || !self.content || !self.supports_native_launcher() {
+                    return Err(Errno::EACCES);
+                }
+                let value = decode_shell_file_native_launcher_transaction(bytes, kind)
+                    .map_err(|_| Errno::EINVAL)?;
+                let ShellNativeLauncherRecord::InputAck(ack) = value.record else {
+                    return Err(Errno::EINVAL);
+                };
+                Inbound::NativeInputAck(value.transaction, Box::new(ack))
+            }
+            ShellFileKind::NativeActivate => {
+                if !self.negotiated || !self.content || !self.supports_native_launcher() {
+                    return Err(Errno::EACCES);
+                }
+                let value = decode_shell_file_native_launcher_transaction(bytes, kind)
+                    .map_err(|_| Errno::EINVAL)?;
+                let ShellNativeLauncherRecord::Activate(activation) = value.record else {
+                    return Err(Errno::EINVAL);
+                };
+                Inbound::NativeActivate(value.transaction, Box::new(activation))
+            }
+            ShellFileKind::NativeCandidate => {
+                if !self.negotiated || !self.content || !self.supports_native_launcher() {
+                    return Err(Errno::EACCES);
+                }
+                let candidate =
+                    decode_shell_file_native_candidate(bytes).map_err(|_| Errno::EINVAL)?;
+                Inbound::NativeCandidate(Box::new(candidate))
+            }
+            ShellFileKind::CatalogCandidate => {
+                if !self.negotiated || !self.content || !self.supports_persistent_catalog() {
+                    return Err(Errno::EACCES);
+                }
+                let candidate =
+                    decode_shell_file_catalog_candidate(bytes).map_err(|_| Errno::EINVAL)?;
+                Inbound::CatalogCandidate(Box::new(candidate))
+            }
+            ShellFileKind::CatalogActivate => {
+                if !self.negotiated || !self.content || !self.supports_persistent_catalog() {
+                    return Err(Errno::EACCES);
+                }
+                let value =
+                    decode_shell_file_catalog_action(bytes, kind).map_err(|_| Errno::EINVAL)?;
+                let ShellCatalogActionRecord::Activate(activation) = value.record else {
+                    return Err(Errno::EINVAL);
+                };
+                Inbound::CatalogActivate(value.transaction, Box::new(activation))
+            }
+            ShellFileKind::IndicatorActivate => {
+                if !self.negotiated || !self.supports_indicator_activation() {
+                    return Err(Errno::EACCES);
+                }
+                let value =
+                    decode_shell_file_indicator_activate(bytes).map_err(|_| Errno::EINVAL)?;
+                Inbound::IndicatorActivate(value.transaction, Box::new(value.activation))
             }
             _ => return Err(Errno::EINVAL),
         };

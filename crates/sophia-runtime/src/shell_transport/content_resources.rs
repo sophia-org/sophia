@@ -140,6 +140,29 @@ impl ShellComponentTransport {
         }
     }
 
+    /// As `push_prepared`, for the native launcher, catalog and indicator
+    /// families: every existing capacity/budget check at the call site runs
+    /// first, against the socket frame's bytes on both wires unchanged; this
+    /// only chooses the push destination. `encode_file` builds the matching
+    /// file event body lazily, so the socket wire never pays for it.
+    pub(super) fn push_family_frame(
+        &mut self,
+        control: bool,
+        socket_frame: Vec<u8>,
+        encode_file: impl FnOnce() -> Result<
+            (sophia_protocol::shell_files::ShellFileKind, Vec<u8>),
+            ShellTransportError,
+        >,
+    ) -> Result<(), ShellTransportError> {
+        if self.files.is_some() {
+            let (kind, body) = encode_file()?;
+            self.output.push_file(kind, body, control);
+        } else {
+            self.output.push(socket_frame, control);
+        }
+        Ok(())
+    }
+
     pub(super) fn prepare_content_frame(
         &self,
         epochs: &crate::ContentEpochRegistry,
@@ -246,7 +269,7 @@ impl ShellComponentTransport {
             .files
             .as_ref()
             .ok_or(ShellTransportError::NotConnected)?;
-        let Some(record) = files.export().peek_content(resource) else {
+        let Some((_, record)) = files.export().peek_content(resource) else {
             return if self.peer_closed {
                 Err(ShellTransportError::NotConnected)
             } else {

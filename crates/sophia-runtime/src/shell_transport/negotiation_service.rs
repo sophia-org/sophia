@@ -294,9 +294,17 @@ impl ShellComponentTransport {
         if pending.wire.is_none() {
             let stream = pending.stream.take().expect("accepted stream retained");
             let (role, bounds) = super::files::role_bounds(profile);
+            // The launcher/dock profile discloses `catalog`; the bar's Legacy
+            // profile never does, no matter which capabilities it negotiates.
+            let catalog_allowed = matches!(
+                profile,
+                Some(crate::ContentStoreProfile::NativeLauncher)
+                    | Some(crate::ContentStoreProfile::PersistentCatalog)
+            );
             let export = super::files::ShellFiles::awaiting_negotiation(
                 pending.epoch,
                 role,
+                catalog_allowed,
                 bounds,
                 self.file_qids,
                 Instant::now(),
@@ -316,9 +324,8 @@ impl ShellComponentTransport {
         let hello = match wire.export_mut().take_inbound() {
             None => return Ok(None),
             Some(super::files::Inbound::Negotiate(hello)) => hello,
-            Some(super::files::Inbound::Content(..) | super::files::Inbound::Candidate(_)) => {
-                return Err(ShellTransportError::WrongContentRecord);
-            }
+            // No family record decodes before negotiation completes.
+            Some(_) => return Err(ShellTransportError::WrongContentRecord),
         };
         let epoch = pending.epoch;
         let policy = pending.policy;
@@ -337,7 +344,7 @@ impl ShellComponentTransport {
                     .transpose()?;
                 let body = super::files::encode_negotiated(welcome, limits.is_some())?;
                 wire.export_mut()
-                    .complete_negotiation(limits_object)
+                    .complete_negotiation(limits_object, welcome.capabilities)
                     .map_err(|error| ShellTransportError::Io(format!("{error:?}")))?;
                 if !wire.append(
                     sophia_protocol::shell_files::ShellFileKind::Negotiated,
