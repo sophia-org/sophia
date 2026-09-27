@@ -59,6 +59,25 @@ The C helper's FreeBSD credential adapter is unqualified source preparation.
 No SDK repository has been published at this checkpoint: GitHub CLI
 authentication needs renewal. Local signed repositories and snapshots exist.
 
+## C session review checkpoint
+
+Subsequent signed C SDK commits `e436f2c`, `0252f68` and `e1741ca` add
+submission progress, the bounded session queue and custody tickets, explicit
+acknowledgement barriers, paced retries, and upload helpers. Claude's session
+agent reports the standalone gate passing all six file test programs and the
+IPC programs/corpora, including upload and node-specific ESTALE controls.
+Commit `c885e16` adds the build/package integration. A separate consumer built
+against a staged files-only install links and runs through `pkg-config
+sophia-desktop`; the temporary evidence directory is
+`/tmp/sophia-sdk-install.JUAbYk`. These commits are not yet Sophia's vendor pin.
+
+Review identified two additional object-fetch cases for regression tests:
+trailing bytes beyond the declared record length, and fetching an object before
+consuming its announcement. The native lifecycle review also raised thirteen
+contract questions, especially permit timing, generation ownership, input
+acknowledgements and close settlement. Those authority-dependent paths await
+owner/test tracing and normative clarification before SDK adoption.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)

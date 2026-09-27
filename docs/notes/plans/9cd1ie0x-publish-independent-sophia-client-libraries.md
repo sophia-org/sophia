@@ -62,7 +62,8 @@ Claude extracts Rust blocking/pipelined 9P clients and neutral value types, and
 the shared shell protocol crate used by the SDK and Sophia server. Server
 connection/export/journal/admission owners stay in Sophia. B6c completes
 catalog/indicator objects, outcomes, candidates and activation responses, and
-fixes submit EAGAIN handling and premature transaction-fid cleanup.
+fixes submit EAGAIN handling and custody tracking. Keep staging available after
+EAGAIN; clunk after a successful submit reply cannot undo transferred custody.
 
 Codex extracts C transport/codecs/session support, preserving the existing
 same-ID EAGAIN retry. Add reusable lifecycle handling, bounded multi-record
