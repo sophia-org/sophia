@@ -122,12 +122,17 @@ impl ShellGpuProofEnd {
 pub enum ShellGpuProofPixels {
     /// No requirement beyond the contract: any number of placements and
     /// resources, including solid fills. The records carry byte counts and a
-    /// checksum over the placed resources, but no rendering claim.
+    /// checksum over the placed resources, and claim nothing about the pixels.
     Contract,
     /// Peer requirement for a client that rasters its whole surface into one
     /// resource: exactly one surface, whose first placement's resource has the
     /// allocation's exact size and bytes that are neither empty nor uniform.
-    /// Only this pattern shows that GPU-rendered pixels crossed the grant.
+    ///
+    /// This proves only that the requested pixel pattern crossed the content
+    /// path. It does not prove the pixels came from a GPU: a CPU peer can send
+    /// the same bytes. GPU execution is supported by other evidence -- the
+    /// protected device grant recorded here, together with the client's own
+    /// adapter and render evidence, which its external verifier checks.
     FullSurfaceRaster,
 }
 

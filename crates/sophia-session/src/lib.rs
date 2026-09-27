@@ -118,10 +118,12 @@ pub use live_session::metadata_shell::gpu_content_proof::{
     ShellGpuProofPixels, ShellGpuProofSurface, shell_gpu_proof_content_limits,
 };
 
-/// Exercise a shell client's real protected GPU/content path without
-/// acquiring DRM master or claiming native presentation. The parameters are
-/// validated before any device access. Client-specific expectations belong to
-/// that client's external verifier. An end state whose final render is
+/// Run a shell client through the protected GPU grant and the content path
+/// without acquiring DRM master or claiming native presentation. The
+/// parameters are validated before any device access. The pixel checks show
+/// what crossed the content path, not that a GPU drew it; GPU execution and
+/// other client-specific expectations belong to that client's external
+/// verifier. An end state whose final render is
 /// PresentedSynthetic has not run on hardware and stays unclaimed until the
 /// manual gate exercises it.
 #[cfg(feature = "native-session")]

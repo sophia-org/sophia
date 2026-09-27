@@ -5,7 +5,10 @@
 //! within the proof's content limits, and submit as many candidates as the
 //! parameters list outcomes. The proof answers each candidate synthetically;
 //! it never acquires DRM master or claims native presentation. The pixels are
-//! checked only as far as the selected [`ShellGpuProofPixels`] pattern says.
+//! checked only as far as the selected [`ShellGpuProofPixels`] pattern says,
+//! and no pattern proves GPU origin: the proof records the protected device
+//! grant, and whether the client actually rendered on that device is shown by
+//! the client's own adapter and render evidence, read by its verifier.
 //! Client-specific expectations -- what a particular shell prints, which
 //! adapter it selects, how it reacts to a failed render -- belong to that
 //! client's own verifier, which reads the records emitted here.
@@ -338,6 +341,10 @@ fn run_with_inventory(
                     }
                 }
             }
+            // One record per verified render: the bytes and checksum of the
+            // placed resources as they crossed the content path, and the
+            // synthetic outcome. It says nothing about which processor drew
+            // them.
             crate::session_println!(
                 "sophia_shell_gpu_content_render schema=1 index={} generation={} bytes={} checksum={:016x} outcome={}",
                 index,
@@ -374,6 +381,10 @@ fn run_with_inventory(
             {
                 return Err("content lease or backing survived the proof's end".into());
             }
+            // Completion: the protected grant, the geometry and the pixel
+            // pattern checked. native_presentation stays false because every
+            // outcome here is synthetic; GPU origin of the pixels is not
+            // claimed and belongs to the client's external verifier.
             crate::session_println!(
                 "sophia_shell_gpu_content_proof schema=1 status=complete protected=true revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} output_width={} output_height={} edge={} width={} height={} renders={} pixels={} discrete_input={} end={} backing_bytes=0 native_presentation=false",
                 welcome.selected_revision,
