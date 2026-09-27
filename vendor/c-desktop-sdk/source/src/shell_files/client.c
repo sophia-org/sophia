@@ -99,8 +99,15 @@ int sf_session_drive(struct sophia_sf_client *c)
             r = sophia_9p_clunk(c->wire, c->fids[1], &c->submit_op.handle);
         else if (c->submit_stage == 5)
             r = sophia_9p_walk(c->wire, c->root, &names[1], 1, &c->submit_op.handle, &c->fids[1]);
-        else if (c->submit_stage == 6)
-            r = sophia_9p_lopen(c->wire, c->fids[1], 2, &c->submit_op.handle);
+        else if (c->submit_stage == 6) {
+            /* Clunk cannot release accepted custody. A caller may defer its
+             * cumulative ack behind an object fetch or event consumption;
+             * keep servicing those lanes without opening a busy transaction. */
+            if (c->submitted && c->acked_sequence < c->submitted_sequence)
+                r = SOPHIA_9P_BUSY;
+            else
+                r = sophia_9p_lopen(c->wire, c->fids[1], 2, &c->submit_op.handle);
+        }
         else
             r = SOPHIA_9P_BUSY;
         r = sf_started(&c->submit_op, r);
@@ -290,6 +297,7 @@ static void submission_arm(struct sophia_sf_client *c, size_t n)
     c->tx_offset = 0;
     c->submit_stage = 1;
     c->submitted = c->submit_replied = 0;
+    c->submitted_sequence = 0;
     c->submit_wait = c->submit_sent = 0;
     c->submit_error = 0;
 }

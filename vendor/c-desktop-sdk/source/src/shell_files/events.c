@@ -44,6 +44,7 @@ int sf_session_event_parse(struct sophia_sf_client *c)
             r->value.submitted.candidate_kind != sf_get(c->tx + 6, 2))
             return SOPHIA_9P_INVALID;
         c->submitted = 1;
+        c->submitted_sequence = r->header.sequence;
         if (c->submit_replied)
             c->submit_stage = 4;
         break;

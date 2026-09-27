@@ -17,7 +17,7 @@ barriers, uploads, and poll integration. Applications still consume events,
 fetch announced objects, acknowledge progress, and enforce role deadlines.
 The native launcher layer (`sophia_shell_native_session.h`) adds opening,
 allocation, candidate, focus and input acknowledgement state. Its unit tests
-use a scripted session; production-export validation of this layer is pending.
+use a scripted session; Sophia maintains separate production-export harnesses.
 Permit deadlines are advisory and cannot guarantee server validity at ingest.
 
 The record-level API and explicit nonblocking connection helper
