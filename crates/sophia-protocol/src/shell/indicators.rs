@@ -1,4 +1,5 @@
 //! Wire-neutral typed model for the revision-6 shell indicator vocabulary.
+use crate::InvalidRecord;
 use crate::OutputId;
 
 pub const SOPHIA_SHELL_INDICATOR_REVISION: u16 = 6;
@@ -72,4 +73,28 @@ pub struct ShellIndicatorActivationOutcome {
     pub event_id: u64,
     pub status: ShellIndicatorActivationStatus,
     pub reason: u16,
+}
+
+fn require(ok: bool, field: &'static str) -> Result<(), InvalidRecord> {
+    if ok {
+        Ok(())
+    } else {
+        Err(InvalidRecord(field))
+    }
+}
+
+/// The bound check `sophia_protocol::ipc::shell_indicators` used to run
+/// inline before building its Begin/OutputStatus/Entry/End transfer: a
+/// snapshot's indicator and output-status counts stay within the granted
+/// maxima. Label bounds are enforced by the fixed-width text encoding
+/// itself, not restated here.
+pub(crate) fn validate(snapshot: &ShellIndicatorSnapshot) -> Result<(), InvalidRecord> {
+    require(
+        snapshot.indicators.len() <= SOPHIA_SHELL_MAX_INDICATORS,
+        "shell indicator count",
+    )?;
+    require(
+        snapshot.statuses.len() <= SOPHIA_SHELL_MAX_OUTPUT_STATUS,
+        "shell indicator output status count",
+    )
 }

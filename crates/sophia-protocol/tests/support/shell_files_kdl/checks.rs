@@ -45,6 +45,12 @@ pub fn verify_block(
 ) {
     let mut mapped: BTreeSet<&str> = BTreeSet::new();
     for spec in fields {
+        // Text fields carry a string, not an integer; a dedicated caller
+        // checks their bytes with `verify_text_field`, so they take no part
+        // in the numeric expected-value bookkeeping here.
+        if spec.ty == "text" {
+            continue;
+        }
         let actual = read_field(bytes, base, spec);
         if spec.is_reserved() {
             assert_eq!(
@@ -122,6 +128,67 @@ pub fn assert_no_gaps_or_overlaps(label: &str, size: usize, fields: &[FieldSpec]
     assert_eq!(
         cursor, size,
         "{label}: declared fields cover {cursor} bytes but size={size}"
+    );
+}
+
+/// Checks one length-prefixed, zero-padded text field
+/// (`shell::encoding::put_text_padded`/`take_text_padded`): the `u16`
+/// length at `spec`'s offset, a reserved `u16`, then `spec.size` bytes of
+/// UTF-8 text zero-padded past the length, against `expected`.
+pub fn verify_text_field(bytes: &[u8], base: usize, label: &str, spec: &FieldSpec, expected: &str) {
+    assert_eq!(
+        spec.ty, "text",
+        "{label}.{}: not a `type=\"text\"` field",
+        spec.name
+    );
+    let max = spec
+        .size
+        .unwrap_or_else(|| panic!("field `{}`: type=text needs size=", spec.name));
+    assert!(
+        expected.len() <= max,
+        "{label}.{}: fixture text is {} bytes, over the declared max={max}",
+        spec.name,
+        expected.len()
+    );
+    let start = base + spec.offset;
+    let prefix = bytes.get(start..start + 4).unwrap_or_else(|| {
+        panic!(
+            "{label}.{}: length/reserved prefix at offset {start} exceeds the encoded body's {} bytes",
+            spec.name,
+            bytes.len()
+        )
+    });
+    let len = u16::from_le_bytes([prefix[0], prefix[1]]) as usize;
+    assert_eq!(
+        len,
+        expected.len(),
+        "{label}.{}: length prefix disagrees with the fixture text",
+        spec.name
+    );
+    assert_eq!(
+        [prefix[2], prefix[3]],
+        [0, 0],
+        "{label}.{}: the reserved u16 after the length must be zero",
+        spec.name
+    );
+    let text_start = start + 4;
+    let text_bytes = bytes.get(text_start..text_start + max).unwrap_or_else(|| {
+        panic!(
+            "{label}.{}: text field at offset {text_start} exceeds the encoded body's {} bytes",
+            spec.name,
+            bytes.len()
+        )
+    });
+    assert_eq!(
+        &text_bytes[..len],
+        expected.as_bytes(),
+        "{label}.{}: text bytes disagree with the fixture",
+        spec.name
+    );
+    assert!(
+        text_bytes[len..].iter().all(|b| *b == 0),
+        "{label}.{}: the padding tail beyond the length must be zero",
+        spec.name
     );
 }
 
