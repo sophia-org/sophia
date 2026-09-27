@@ -1,0 +1,17 @@
+schema 1
+
+// Preserve the caller's policy and shortcuts while exercising a content bar.
+shell {
+    enabled #true
+    content #true
+    content-input #true
+    panel 24
+    gpu "direct"
+}
+session {
+    application-catalog "panel-conformance"
+    startup
+}
+input { inherit-sophia #true; }
+output { inherit-sophia #true; }
+broker { enabled #false; }

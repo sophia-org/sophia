@@ -63,10 +63,12 @@ if [[ "$SESSION_PROFILE" == hagia || "$SESSION_PROFILE" == native
 fi
 if [[ "$SESSION_PROFILE" == hagia ]]; then
     source "$ROOT_DIR/tools/lib/session_profile.sh"
-    sophia_check_hagia_profile \
+    # The desktop integration supplies its WM adapter. Deferral requires an
+    # explicit choice; never infer the validator from an executable name.
+    sophia_check_session_profile \
         "${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}" \
-        "${SOPHIA_HAGIA_BIN:-$(command -v hagia || true)}" \
-        "${SOPHIA_DESKTOP_PROFILE:-}"
+        "${SOPHIA_DESKTOP_PROFILE:-}" \
+        "${SOPHIA_POLICY_CHECKER:-}"
     if [[ -n "${SOPHIA_CORE_CONFIG:-}" ]]; then
         "${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}" config check \
             "--config=$SOPHIA_CORE_CONFIG"

@@ -12,7 +12,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: config check --wm [--wm-config=/absolute/path]");
     println!("commands: config check --desktop-profile=/absolute/path");
     println!(
-        "commands: config check-session-profile --desktop-profile=/absolute/path --default-wm=/path/to/hagia"
+        "commands: config check-session-profile --desktop-profile=/absolute/path [--default-wm=/path/to/wm] (--policy-checker=/path/to/adapter | --allow-deferred-policy)"
     );
     println!("commands: config print-effective --desktop-profile=/absolute/path");
     println!("commands: config print-policy --desktop-profile=/absolute/path");

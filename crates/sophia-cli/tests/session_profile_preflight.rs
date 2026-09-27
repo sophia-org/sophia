@@ -21,12 +21,11 @@ impl Fixture {
         let fixture = Self(root);
         fixture.profile("schema 1\npolicy { layout scroller; }\n");
         fixture.executable(
-            "hagia client",
+            "policy checker",
             r#"#!/bin/sh
 set -eu
-test "$1" = config
-test "$2" = check
-policy=${3#--config=}
+test "$#" = 1
+policy=$1
 test "$(stat -c %a "$policy")" = 600
 test "$(stat -c %a "$(dirname "$policy")")" = 700
 cp "$policy" "$SOPHIA_TEST_CAPTURE"
@@ -34,6 +33,7 @@ printf '%s' "$policy" > "$SOPHIA_TEST_POLICY_PATH"
 exit "${SOPHIA_TEST_STATUS:-0}"
 "#,
         );
+        fixture.executable("wm", "#!/bin/sh\nexit 99\n");
         fixture
     }
 
@@ -51,6 +51,15 @@ exit "${SOPHIA_TEST_STATUS:-0}"
     }
 
     fn command(&self) -> Command {
+        let mut command = self.command_with_policy(false);
+        command.arg(format!(
+            "--policy-checker={}",
+            self.0.join("policy checker").display()
+        ));
+        command
+    }
+
+    fn command_with_policy(&self, deferred: bool) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_sophia"));
         command
             .args(["config", "check-session-profile"])
@@ -58,16 +67,24 @@ exit "${SOPHIA_TEST_STATUS:-0}"
                 "--desktop-profile={}",
                 self.0.join("desktop profile.kdl").display()
             ))
-            .arg(format!(
-                "--default-wm={}",
-                self.0.join("hagia client").display()
-            ))
+            .arg(format!("--default-wm={}", self.0.join("wm").display()))
             .env("XDG_CONFIG_HOME", self.0.join("config"))
             .env("TMPDIR", &self.0)
             .env("SOPHIA_TEST_CAPTURE", self.0.join("captured.kdl"))
             .env("SOPHIA_TEST_SHELL_RAN", self.0.join("shell-ran"))
             .env("SOPHIA_TEST_POLICY_PATH", self.0.join("policy-path"));
+        if deferred {
+            command.arg("--allow-deferred-policy");
+        }
         command
+    }
+
+    fn component_command(&self, deferred: bool) -> Command {
+        if deferred {
+            self.command_with_policy(true)
+        } else {
+            self.command()
+        }
     }
 
     fn assert_cleaned_policy(&self) {
@@ -77,13 +94,13 @@ exit "${SOPHIA_TEST_STATUS:-0}"
     }
 
     fn component_profile(&self, deferred: bool) {
-        for name in ["lom", "bemenu"] {
+        for name in ["bar", "launcher"] {
             self.executable(
                 name,
                 "#!/bin/sh\ntouch \"$SOPHIA_TEST_SHELL_RAN\"\nexit 99\n",
             );
         }
-        fs::write(self.0.join("lom.kdl"), "opaque private asset\n").unwrap();
+        fs::write(self.0.join("bar.kdl"), "opaque private asset\n").unwrap();
         let wm = if deferred {
             let path = self.executable("different wm", "#!/bin/sh\nexit 99\n");
             format!("window-manager {:?};", path.to_str().unwrap())
@@ -95,8 +112,8 @@ exit "${SOPHIA_TEST_STATUS:-0}"
 shell {{ enabled #true; content #true; content-input #true; panel 24; }}
 session {{
     {wm}
-    shell-component "panel" "bar" {{ executable "{0}/lom"; config "{0}/lom.kdl"; gpu "direct"; reservation "top" 24; }}
-    shell-component "menu" "application-launcher" {{ executable "{0}/bemenu"; gpu "denied"; }}
+    shell-component "panel" "bar" {{ executable "{0}/bar"; config "{0}/bar.kdl"; gpu "direct"; reservation "top" 24; }}
+    shell-component "menu" "application-launcher" {{ executable "{0}/launcher"; gpu "denied"; }}
 }}
 "#,
             self.0.display()
@@ -135,7 +152,7 @@ fn rejected_policy_fails_preflight_and_releases_its_private_file() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("Hagia policy validation failed"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("policy validation failed"));
     fixture.assert_cleaned_policy();
 }
 
@@ -147,13 +164,13 @@ fn another_window_manager_keeps_its_own_policy_vocabulary() {
         "schema 1\nsession {{ window-manager {:?}; }}\npolicy {{ other-wm-value 3; }}\n",
         wm.to_str().unwrap()
     ));
-    fs::remove_file(fixture.0.join("hagia client")).unwrap();
-    assert_success(fixture.command().output().unwrap());
+    fs::remove_file(fixture.0.join("policy checker")).unwrap();
+    assert_success(fixture.command_with_policy(true).output().unwrap());
     assert!(!fixture.0.join("policy-path").exists());
 }
 
 #[test]
-fn missing_selected_shell_or_window_manager_is_refused_before_hagia() {
+fn missing_selected_shell_or_window_manager_is_refused_before_the_checker() {
     let fixture = Fixture::new();
     for component in ["window-manager", "shell-client"] {
         fixture.profile(&format!(
@@ -169,7 +186,7 @@ fn missing_selected_shell_or_window_manager_is_refused_before_hagia() {
 fn missing_two_component_artifacts_must_not_pass_package_preflight() {
     let mut incorrectly_accepted = vec![];
     for deferred in [false, true] {
-        for role in ["lom", "bemenu"] {
+        for role in ["bar", "launcher"] {
             for missing in [false, true] {
                 let fixture = Fixture::new();
                 fixture.component_profile(deferred);
@@ -179,7 +196,7 @@ fn missing_two_component_artifacts_must_not_pass_package_preflight() {
                 } else {
                     fs::set_permissions(victim, fs::Permissions::from_mode(0o600)).unwrap();
                 }
-                let output = fixture.command().output().unwrap();
+                let output = fixture.component_command(deferred).output().unwrap();
                 if output.status.success() {
                     incorrectly_accepted.push(format!(
                         "deferred={deferred} role={role} missing={missing}: {}",
@@ -208,17 +225,17 @@ fn component_config_resolution_is_opaque_and_never_executes_components() {
             let fixture = Fixture::new();
             fixture.component_profile(deferred);
             if symlink {
-                fs::rename(fixture.0.join("lom.kdl"), fixture.0.join("opaque")).unwrap();
-                std::os::unix::fs::symlink("opaque", fixture.0.join("lom.kdl")).unwrap();
+                fs::rename(fixture.0.join("bar.kdl"), fixture.0.join("opaque")).unwrap();
+                std::os::unix::fs::symlink("opaque", fixture.0.join("bar.kdl")).unwrap();
             }
-            let output = fixture.command().output().unwrap();
+            let output = fixture.component_command(deferred).output().unwrap();
             assert_success(output);
             assert!(!fixture.0.join("shell-ran").exists());
             assert_eq!(fixture.0.join("policy-path").exists(), !deferred);
             if !deferred {
                 let policy = fs::read_to_string(fixture.0.join("captured.kdl")).unwrap();
                 assert!(!policy.contains("shell-component"));
-                assert!(!policy.contains("lom.kdl"));
+                assert!(!policy.contains("bar.kdl"));
                 fixture.assert_cleaned_policy();
             }
         }
@@ -230,8 +247,8 @@ fn unresolved_component_config_refuses_before_policy_validation() {
     for deferred in [false, true] {
         let fixture = Fixture::new();
         fixture.component_profile(deferred);
-        fs::remove_file(fixture.0.join("lom.kdl")).unwrap();
-        let output = fixture.command().output().unwrap();
+        fs::remove_file(fixture.0.join("bar.kdl")).unwrap();
+        let output = fixture.component_command(deferred).output().unwrap();
         assert!(!output.status.success());
         assert!(
             String::from_utf8_lossy(&output.stderr).contains("private config cannot be resolved")
@@ -242,10 +259,10 @@ fn unresolved_component_config_refuses_before_policy_validation() {
 }
 
 #[test]
-fn selecting_a_hagia_alias_still_checks_hagias_policy() {
+fn selecting_a_default_wm_alias_still_checks_its_policy() {
     let fixture = Fixture::new();
-    let alias = fixture.0.join("hagia alias");
-    std::os::unix::fs::symlink(fixture.0.join("hagia client"), &alias).unwrap();
+    let alias = fixture.0.join("wm alias");
+    std::os::unix::fs::symlink(fixture.0.join("wm"), &alias).unwrap();
     fixture.profile(&format!(
         "schema 1\nsession {{ window-manager {:?}; }}\n",
         alias.to_str().unwrap()
@@ -281,11 +298,41 @@ fn invalid_envelope_and_duplicate_options_cannot_reach_the_policy_client() {
 }
 
 #[test]
+fn policy_validation_cannot_be_silently_deferred() {
+    let fixture = Fixture::new();
+    for mut command in [fixture.command_with_policy(false), fixture.command()] {
+        if command
+            .get_args()
+            .any(|arg| arg.to_string_lossy().starts_with("--policy-checker="))
+        {
+            command.arg("--allow-deferred-policy");
+        }
+        let output = command.output().unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("choose exactly one"));
+    }
+    assert!(!fixture.0.join("policy-path").exists());
+    let output = fixture.command_with_policy(true).output().unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("policy=deferred"));
+}
+
+#[test]
+fn mismatched_default_cannot_use_its_checker_for_another_wm() {
+    let fixture = Fixture::new();
+    fixture.component_profile(true);
+    let output = fixture.command().output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("selected WM differs"));
+    assert!(!fixture.0.join("policy-path").exists());
+}
+
+#[test]
 fn a_stalled_policy_checker_is_killed_at_the_preflight_deadline() {
     let fixture = Fixture::new();
     fixture.executable(
-        "hagia client",
-        "#!/bin/sh\nprintf '%s' \"${3#--config=}\" > \"$SOPHIA_TEST_POLICY_PATH\"\nsleep 60\n",
+        "policy checker",
+        "#!/bin/sh\nprintf '%s' \"$1\" > \"$SOPHIA_TEST_POLICY_PATH\"\nsleep 60\n",
     );
     let started = Instant::now();
     let output = fixture.command().output().unwrap();

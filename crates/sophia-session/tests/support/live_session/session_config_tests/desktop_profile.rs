@@ -33,24 +33,29 @@ session { terminal "terminal"; browser "browser"; }
         "--session-app=terminal=/usr/bin/true".to_owned(),
         "--session-start=terminal".to_owned(),
         "--session-app=browser=/usr/bin/true".to_owned(),
-        "--wm-process=/opt/hagia".to_owned(),
+        "--wm-process=/opt/wm".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
     ];
-    let config = PersistentXtermSessionConfig::from_args(&base).unwrap();
-    assert_eq!(config.shell_process.as_deref(), Some("/opt/narthex"));
+    assert!(PersistentXtermSessionConfig::from_args(&base).unwrap_err().to_string().contains("explicit shell executable"));
 
-    let mut explicit = base.to_vec();
-    explicit.push("--shell-process=/srv/narthex".to_owned());
+    let mut fallback = base.to_vec();
+    fallback.push("--shell-process-default=/opt/shell".to_owned());
+    let config = PersistentXtermSessionConfig::from_args(&fallback).unwrap();
+    assert_eq!(config.shell_process.as_deref(), Some("/opt/shell"));
+    assert_eq!(config.shell_config, None);
+
+    let mut explicit = fallback;
+    explicit.push("--shell-process=/srv/shell".to_owned());
     explicit.push("--shell-proof-restart-after-visible=2".to_owned());
     let config = PersistentXtermSessionConfig::from_args(&explicit).unwrap();
-    assert_eq!(config.shell_process.as_deref(), Some("/srv/narthex"));
+    assert_eq!(config.shell_process.as_deref(), Some("/srv/shell"));
     assert_eq!(config.shell_proof_restart_after_visible, Some(2));
 
     assert!(
         PersistentXtermSessionConfig::from_args(&[
             isolated_core_config_argument(),
             format!("--desktop-profile={}", path.display()),
-            "--shell-process=/srv/narthex".to_owned(),
+            "--shell-process=/srv/shell".to_owned(),
         ])
         .unwrap_err()
         .to_string()
@@ -307,16 +312,21 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         &config,
         "/usr/bin/hagia",
         std::path::Path::new("/run/user/1000/sophia/policy/endpoint/wm.sock"),
-        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/hagia-policy.checkpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/sophia-wm-policy.checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         false,
         None,
     )
     .unwrap();
     assert!(spec.environment.contains(&(
-        "HAGIA_POLICY_CANDIDATE".into(),
+        "SOPHIA_WM_POLICY_CANDIDATE".into(),
         "/run/user/1000/sophia/policy/policy.profile.kdl".into()
     )));
+    assert!(spec.environment.contains(&(
+        "SOPHIA_WM_POLICY_CHECKPOINT".into(),
+        "/run/user/1000/sophia/policy/checkpoint/sophia-wm-policy.checkpoint".into()
+    )));
+    assert!(spec.environment.iter().all(|(name, _)| !name.to_string_lossy().starts_with("HAGIA_")));
     assert!(
         spec.environment
             .iter()
@@ -325,7 +335,7 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
     assert!(
         spec.environment
             .iter()
-            .all(|(name, _)| name != "HAGIA_POLICY_PROFILE_ACTIVATION")
+            .all(|(name, _)| name != "SOPHIA_WM_POLICY_PROFILE_ACTIVATION")
     );
     let domain = spec
         .protection_domain
@@ -361,7 +371,7 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
         &config,
         "/usr/bin/hagia",
         std::path::Path::new("/run/user/1000/sophia/policy/endpoint/wm.sock"),
-        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/hagia-policy.checkpoint"),
+        std::path::Path::new("/run/user/1000/sophia/policy/checkpoint/sophia-wm-policy.checkpoint"),
         std::path::Path::new("/run/user/1000/sophia/policy/policy.profile.kdl"),
         true,
         Some(std::path::Path::new(
@@ -372,7 +382,7 @@ fn public_policy_launch_receives_only_the_staged_policy_candidate() {
     assert!(
         activated
             .environment
-            .contains(&("HAGIA_POLICY_PROFILE_ACTIVATION".into(), "required".into()))
+            .contains(&("SOPHIA_WM_POLICY_PROFILE_ACTIVATION".into(), "required".into()))
     );
     assert!(activated.environment.contains(&(
         sophia_runtime::SOPHIA_OUTPUT_SOCKET_ENV.into(),

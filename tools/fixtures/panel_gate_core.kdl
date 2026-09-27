@@ -1,0 +1,9 @@
+/- kdl-version 2
+schema 2
+
+session {
+    // Admit the catalog capability without starting any application. This
+    // fixture describes the server contract, independent of the WM or bar.
+    application-catalog "panel-conformance" launch-policy="trusted-host" {
+    }
+}

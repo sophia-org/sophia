@@ -32,7 +32,7 @@ impl PolicySessionDirectory {
 
     fn checkpoint_path(&self) -> std::path::PathBuf {
         self.checkpoint_directory()
-            .join("hagia-policy.checkpoint")
+            .join("sophia-wm-policy.checkpoint")
     }
 
     fn checkpoint_directory(&self) -> std::path::PathBuf {

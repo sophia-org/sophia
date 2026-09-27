@@ -3,7 +3,7 @@ use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _};
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use sophia_config::{ConfigDomain, ConfigGeneration, DesktopAuthority};
@@ -13,6 +13,8 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 pub(super) fn run(arguments: &[String]) -> Result<()> {
     let mut profile = None;
     let mut default_wm = None;
+    let mut policy_checker = None;
+    let mut allow_deferred = false;
     for argument in arguments {
         if let Some(value) = argument.strip_prefix("--desktop-profile=") {
             if profile.replace(PathBuf::from(value)).is_some() {
@@ -22,9 +24,20 @@ pub(super) fn run(arguments: &[String]) -> Result<()> {
             if default_wm.replace(PathBuf::from(value)).is_some() {
                 return Err("duplicate --default-wm".into());
             }
+        } else if let Some(value) = argument.strip_prefix("--policy-checker=") {
+            if policy_checker.replace(PathBuf::from(value)).is_some() {
+                return Err("duplicate --policy-checker".into());
+            }
+        } else if argument == "--allow-deferred-policy" {
+            if std::mem::replace(&mut allow_deferred, true) {
+                return Err("duplicate --allow-deferred-policy".into());
+            }
         } else {
             return Err(format!("unknown session profile preflight option {argument:?}").into());
         }
+    }
+    if policy_checker.is_some() == allow_deferred {
+        return Err("choose exactly one of --policy-checker or --allow-deferred-policy".into());
     }
     let profile = profile.ok_or("--desktop-profile is required")?;
     if !profile.is_absolute() || !profile.is_file() {
@@ -63,20 +76,26 @@ pub(super) fn run(arguments: &[String]) -> Result<()> {
                 .map(|wm| wm.executable)
         }
     };
-    if let Some(selected) = &selected
-        && !default_wm
-            .as_ref()
-            .is_some_and(|default| same_file(selected, default))
-    {
+    if let Some(selected) = selected.as_ref().or(default_wm.as_ref()) {
         require_executable(selected, "selected window manager")?;
+    }
+    if allow_deferred {
         println!("Selected WM will validate its policy during session activation.");
         println!("sophia_session_profile_preflight schema=1 status=accepted policy=deferred");
         return Ok(());
     }
-    let default_wm = default_wm.ok_or("--default-wm is required for Hagia policy validation")?;
-    require_executable(&default_wm, "default Hagia policy client")?;
+    let policy_checker = policy_checker.expect("validated policy choice");
+    if !policy_checker.is_absolute() {
+        return Err("--policy-checker requires an absolute executable path".into());
+    }
+    require_executable(&policy_checker, "policy checker")?;
+    if let (Some(selected), Some(default)) = (&selected, &default_wm)
+        && !same_file(selected, default)
+    {
+        return Err("selected WM differs from --default-wm; select its checker explicitly without --default-wm, or use --allow-deferred-policy".into());
+    }
 
-    // Only the WM-owned fragment reaches Hagia. The private directory protects
+    // Only the WM-owned fragment reaches the checker. The private directory protects
     // that fragment even when the caller's temporary root is shared.
     let directory = PrivateDirectory::new()?;
     let policy = directory.0.join("policy.kdl");
@@ -91,7 +110,7 @@ pub(super) fn run(arguments: &[String]) -> Result<()> {
     }
     writeln!(file, "}}")?;
     drop(file);
-    check_policy(&default_wm, &policy, Duration::from_secs(10))?;
+    check_policy(&policy_checker, &policy, Duration::from_secs(10))?;
     println!("sophia_session_profile_preflight schema=1 status=accepted policy=validated");
     Ok(())
 }
@@ -112,8 +131,12 @@ fn same_file(left: &Path, right: &Path) -> bool {
 
 fn check_policy(executable: &Path, policy: &Path, timeout: Duration) -> Result<()> {
     let mut child = Command::new(executable)
-        .args(["config", "check"])
-        .arg(format!("--config={}", policy.display()))
+        .arg(policy)
+        // Only the exit status is a verdict. A checker cannot fill output
+        // pipes or retain the caller's standard input after it exits.
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .process_group(0)
         .spawn()?;
     let deadline = Instant::now() + timeout;
@@ -122,7 +145,7 @@ fn check_policy(executable: &Path, policy: &Path, timeout: Duration) -> Result<(
             return if status.success() {
                 Ok(())
             } else {
-                Err(format!("Hagia policy validation failed: {status}").into())
+                Err(format!("policy validation failed: {status}").into())
             };
         }
         if Instant::now() >= deadline {
@@ -131,7 +154,7 @@ fn check_policy(executable: &Path, policy: &Path, timeout: Duration) -> Result<(
             }
             let _ = child.kill();
             let _ = child.wait();
-            return Err("Hagia policy validation exceeded ten seconds".into());
+            return Err("policy validation exceeded ten seconds".into());
         }
         std::thread::sleep(Duration::from_millis(10));
     }

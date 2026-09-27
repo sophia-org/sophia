@@ -123,7 +123,8 @@ pub(in super::super) fn selected_transport_startup(
     peer.ack(&negotiated);
     // Independent parent fixture key, written before launch; never derive the
     // expected profile from the server command under validation.
-    let checkpoint = std::path::PathBuf::from(std::env::var_os("HAGIA_POLICY_CHECKPOINT").unwrap());
+    let checkpoint =
+        std::path::PathBuf::from(std::env::var_os("SOPHIA_WM_POLICY_CHECKPOINT").unwrap());
     let expected = std::fs::read(checkpoint.parent().unwrap().join("expected-profile")).unwrap();
     assert_eq!(expected.len(), 40);
     let expected_generation = u64::from_le_bytes(expected[..8].try_into().unwrap());
@@ -137,7 +138,7 @@ pub(in super::super) fn selected_transport_startup(
         let event = peer.next_event();
         let command = decode_wm_file_profile_command(&event, kind, caps).unwrap();
         assert_eq!(command.identity, expected_identity);
-        let path = std::env::var_os("HAGIA_POLICY_CANDIDATE").unwrap();
+        let path = std::env::var_os("SOPHIA_WM_POLICY_CANDIDATE").unwrap();
         sophia_config::load_desktop_authority_fragment(
             std::path::Path::new(&path),
             sophia_config::DesktopAuthority::Policy,

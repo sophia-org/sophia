@@ -1,6 +1,6 @@
 // A desktop profile that must never be discovered by a proof session.
 //
-// Physical proofs run on a developer's machine, where ~/.config/hagia holds a
+// Physical proofs run on a developer's machine, where ~/.config/sophia holds a
 // real operator profile. A session whose argument vector does not pin its
 // configuration discovers that profile instead of the one the proof intends,
 // and in normal mode a profile naming a shell and shortcuts the session

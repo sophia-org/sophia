@@ -12,7 +12,7 @@ fn dock_only_profile_requires_catalog_and_input_before_endpoint_construction() {
     let profile =
         std::env::temp_dir().join(format!("sophia-dock-profile-{}.kdl", std::process::id()));
     let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/fixtures/lom_panel_core.kdl");
+        .join("../../tools/fixtures/panel_gate_core.kdl");
     for (input, catalog) in [(false, false), (true, false), (false, true), (true, true)] {
         let source = format!(
             r#"schema 1
@@ -25,7 +25,7 @@ session {{
 }}
 "#,
             if catalog {
-                "application-catalog \"lom-panel-gate\""
+                "application-catalog \"panel-conformance\""
             } else {
                 ""
             }

@@ -894,7 +894,7 @@ fn staging_revalidates_a_mutated_output_candidate() {
 #[test]
 fn desktop_profile_discovery_prefers_explicit_then_xdg() {
     let root = temporary_directory("discovery");
-    let user = root.join("hagia/config.kdl");
+    let user = root.join("sophia/desktop.kdl");
     fs::create_dir(user.parent().unwrap()).unwrap();
     write_profile(&user, "schema 1\n");
     let explicit = Path::new("/explicit/profile.kdl");
@@ -1291,15 +1291,20 @@ fn desktop_components_are_private_to_session_and_validate_paths() {
 }
 
 #[test]
-fn sophia_desktop_discovery_prefers_user_composition_without_merging_legacy() {
+fn sophia_desktop_discovery_ignores_client_configuration_and_keeps_invalid_sources() {
     let root = temporary_directory("composition-discovery");
     fs::create_dir(root.join("hagia")).unwrap();
     fs::create_dir(root.join("sophia")).unwrap();
     let legacy = root.join("hagia/config.kdl");
     let desktop = root.join("sophia/desktop.kdl");
     write_profile(&legacy, "schema 1\n");
-    assert_eq!(
+    assert_ne!(
         discover_desktop_profile_source(None, Some(&root)),
+        Some(legacy.clone())
+    );
+    // Client-owned files remain usable only when the caller selects one.
+    assert_eq!(
+        discover_desktop_profile_source(Some(&legacy), Some(&root)),
         Some(legacy)
     );
     write_profile(&desktop, "invalid");

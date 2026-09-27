@@ -292,7 +292,7 @@ impl ReloadFixture {
         assert!(spec.environment.contains(&previous_output));
         let public = self.wm.public.as_mut().unwrap();
         assert!(spec.environment.iter().any(|(name, path)| {
-            name == "HAGIA_POLICY_CANDIDATE"
+            name == "SOPHIA_WM_POLICY_CANDIDATE"
                 && Path::new(path)
                     == public
                         ._profile_fragments
@@ -577,8 +577,8 @@ fn rejected_policy_restores_the_exact_spec_fragments_and_commands() {
 }
 
 #[test]
-fn lom_panel_gate_admits_only_available_actions_from_the_wm_catalog() {
-    let core = include_str!("../../../../tools/fixtures/lom_panel_core.kdl");
+fn panel_gate_gate_admits_only_available_actions_from_the_wm_catalog() {
+    let core = include_str!("../../../../tools/fixtures/panel_gate_core.kdl");
     let arguments = [
         "--session-app=browser=/usr/bin/true",
         "--session-action-app=browser=browser",
@@ -592,7 +592,7 @@ fn lom_panel_gate_admits_only_available_actions_from_the_wm_catalog() {
         session { startup "terminal"; }
     "#, &arguments);
     let overrides = wm.directory.join("probe.kdl");
-    std::fs::write(&overrides, include_str!("../../../../tools/fixtures/lom_panel_desktop.kdl")).unwrap();
+    std::fs::write(&overrides, include_str!("../../../../tools/fixtures/panel_gate_desktop.kdl")).unwrap();
     // This bar-only WM deliberately has no launcher key. The native launcher
     // probe would refuse it; ordinary panel composition must still work.
     assert!(desktop_probe::require_launcher_binding(&wm.directory.join("desktop.kdl")).is_err());
@@ -626,7 +626,7 @@ fn lom_panel_gate_admits_only_available_actions_from_the_wm_catalog() {
     assert_eq!(admitted.source.config.shortcut_profile_candidate.bindings,
         wm.config.shortcut_profile_candidate.bindings);
     let catalog = admitted.source.config.application_catalog.as_ref().unwrap();
-    assert_eq!(catalog.name, "lom-panel-gate");
+    assert_eq!(catalog.name, "panel-conformance");
     assert!(catalog.sources.is_empty());
     assert!(catalog.applications.is_empty());
     assert!(catalog.terminal.is_none());

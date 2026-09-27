@@ -129,7 +129,7 @@ impl DesktopAuthority {
         Self::Broker,
     ];
 
-    /// Startup activates the external policy authority last. Once Hagia
+    /// Startup activates the external policy authority last. Once the WM
     /// acknowledges activation it may emit normal policy traffic, so every
     /// Sophia-owned participant must already be active.
     pub const STARTUP_ACTIVATION_ORDER: [Self; 7] = [
@@ -256,14 +256,12 @@ pub fn discover_desktop_profile_source(
         return Some(path.to_path_buf());
     }
     if let Some(root) = xdg_config_home {
-        for relative in ["sophia/desktop.kdl", "hagia/config.kdl"] {
-            let path = root.join(relative);
-            if path.symlink_metadata().is_ok() {
-                return Some(path);
-            }
+        let path = root.join("sophia/desktop.kdl");
+        if path.symlink_metadata().is_ok() {
+            return Some(path);
         }
     }
-    ["/etc/sophia/desktop.kdl", "/etc/hagia/config.kdl"]
+    ["/etc/sophia/desktop.kdl"]
         .into_iter()
         .map(PathBuf::from)
         .find(|path| path.symlink_metadata().is_ok())

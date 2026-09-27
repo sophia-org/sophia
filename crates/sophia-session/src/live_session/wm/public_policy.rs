@@ -798,8 +798,8 @@ fn public_policy_launch_spec(
 ) -> Result<ProcessLaunchSpec, sophia_runtime::ProtectionDomainSpecError> {
     let spec = ProcessLaunchSpec::new(process)
         .env(config.wm_transport.socket_env(), socket_path)
-        .env("HAGIA_POLICY_CHECKPOINT", checkpoint_path)
-        .env("HAGIA_POLICY_CANDIDATE", candidate_path)
+        .env("SOPHIA_WM_POLICY_CHECKPOINT", checkpoint_path)
+        .env("SOPHIA_WM_POLICY_CANDIDATE", candidate_path)
         .process_group();
     let spec = if let Some(output_socket_path) = output_socket_path {
         spec.env(
@@ -810,7 +810,7 @@ fn public_policy_launch_spec(
         spec
     };
     let spec = if require_profile_activation {
-        spec.env("HAGIA_POLICY_PROFILE_ACTIVATION", "required")
+        spec.env("SOPHIA_WM_POLICY_PROFILE_ACTIVATION", "required")
     } else {
         spec
     };

@@ -42,7 +42,7 @@ fn selected_transport_child() {
                 | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS),
         0
     );
-    let checkpoint = Path::new(&std::env::var_os("HAGIA_POLICY_CHECKPOINT").unwrap()).to_owned();
+    let checkpoint = Path::new(&std::env::var_os("SOPHIA_WM_POLICY_CHECKPOINT").unwrap()).to_owned();
     let marker = checkpoint
         .parent()
         .unwrap()

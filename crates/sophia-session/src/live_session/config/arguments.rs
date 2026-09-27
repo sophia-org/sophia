@@ -535,25 +535,16 @@ impl PersistentXtermSessionConfig {
         let resolved_shell_process = || -> Option<String> {
             explicit_shell_process.clone()
                 .or_else(|| components.shell_client.as_ref().map(|p| p.to_string_lossy().into_owned()))
-                .or_else(|| default_shell_process.clone()).or_else(|| {
-                wm_process.as_ref().and_then(|process| {
-                    let process = std::path::Path::new(process);
-                    process.is_absolute().then(|| {
-                        let parent = process
-                            .parent()
-                            .expect("an absolute executable has a parent");
-                        parent.join("narthex").to_string_lossy().into_owned()
-                    })
-                })
-            })
+                .or_else(|| default_shell_process.clone())
         };
         // The compiled default profile enables a shell, because it describes a
         // full desktop. A session running one application has no shell process
-        // and no window manager to infer one beside, and refusing on that made
+        // selected, and refusing on that made
         // every such session unstartable. A default asking for a desktop this
         // session is not gets the shell turned off and reported; an explicit
         // profile still refuses, because someone wrote that intent down.
         let shell_dropped = shell_enabled
+            && !independent_shell
             && normal_session
             && profile_is_compiled_default
             && (wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1
@@ -569,7 +560,7 @@ impl PersistentXtermSessionConfig {
                 return Err("an enabled shell requires --wm-interface=sophia_wm_v1".into());
             }
             let process = resolved_shell_process()
-                .ok_or("an enabled shell requires --shell-process or an absolute WM path")?;
+                .ok_or("an enabled shell requires an explicit shell executable in the profile or launcher")?;
             Some(process)
         } else {
             if explicit_shell_process.is_some() || components.shell_client.is_some() {
@@ -587,15 +578,6 @@ impl PersistentXtermSessionConfig {
         let shell_config = if independent_shell { None } else { std::env::var_os("SOPHIA_SHELL_CONFIG")
             .map(std::path::PathBuf::from)
             .or_else(|| components.shell_config.clone())
-            .or_else(|| {
-                // Preserve the installed Narthex default without disclosing
-                // its private settings to an explicitly selected replacement.
-                (shell_process.as_ref().is_some_and(|process| std::path::Path::new(process).file_name().is_some_and(|name| name == "narthex"))
-                    && explicit_shell_process.is_none()
-                    && components.shell_client.is_none())
-                    .then(|| user_config_root.as_ref().map(|root| root.join("narthex/config.kdl")))
-                    .flatten().filter(|path| path.is_file())
-            })
         };
         if let Some(path) = &shell_config {
             if shell_process.is_none() {

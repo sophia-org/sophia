@@ -1,10 +1,10 @@
 fn record_loaded_session_profiles(config: &PersistentXtermSessionConfig) -> Result<(), Box<dyn std::error::Error>> {
-    if let Ok(profile_mode) = std::env::var("SOPHIA_HAGIA_PROFILE_MODE") {
+    if let Ok(profile_mode) = std::env::var("SOPHIA_DESKTOP_PROFILE_MODE") {
         if !matches!(
             profile_mode.as_str(),
             "user" | "system" | "explicit" | "packaged-fallback" | "packaged-promotion"
         ) {
-            return Err("SOPHIA_HAGIA_PROFILE_MODE has an invalid value".into());
+            return Err("SOPHIA_DESKTOP_PROFILE_MODE has an invalid value".into());
         }
         let profile_sha256 = std::env::var("SOPHIA_DESKTOP_PROFILE_SHA256")?;
         if profile_sha256.len() != 64

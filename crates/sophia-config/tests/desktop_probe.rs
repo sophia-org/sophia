@@ -38,7 +38,7 @@ fn probe_preserves_real_wm_bindings_includes_and_commands_without_autostart() {
     );
     write(
         &overrides,
-        include_str!("../../../tools/fixtures/lom_panel_desktop.kdl"),
+        include_str!("../../../tools/fixtures/panel_gate_desktop.kdl"),
     );
     let original = load_prepared_desktop_profile(Some(&base), ConfigGeneration::INITIAL).unwrap();
     write(&output, &probe::compose(&base, &overrides).unwrap());

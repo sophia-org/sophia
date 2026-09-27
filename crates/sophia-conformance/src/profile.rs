@@ -186,7 +186,7 @@ fn decoy_config_home() -> Result<std::path::PathBuf, String> {
         .and_then(std::path::Path::parent)
         .ok_or("the conformance manifest has no workspace root")?
         .join("tools/fixtures/decoy-config-home");
-    if !root.join("hagia/config.kdl").is_file() {
+    if !root.join("sophia/desktop.kdl").is_file() {
         return Err(format!(
             "the decoy configuration fixture is missing: {}",
             root.display()
@@ -221,7 +221,7 @@ fn validate(arguments: &[String]) -> Result<(), String> {
         // Configuration discovery is pointed at a profile built to be refused.
         //
         // A vector that does not pin its configuration discovers whatever the
-        // operator has in ~/.config/hagia. On a developer's machine that is a
+        // operator has in ~/.config/sophia. On a developer's machine that is a
         // real profile naming a shell and shortcuts a proof session cannot
         // provide, and in normal mode the session refuses to start -- which
         // happened, on a TTY, with the session already down and greetd back.
@@ -235,7 +235,7 @@ fn validate(arguments: &[String]) -> Result<(), String> {
         .env("XDG_CONFIG_HOME", decoy_config_home()?)
         // HOME is isolated as well, so the decoy is the *only* configuration
         // this validation can discover. Without this the operator's own
-        // ~/.config/hagia stays reachable and refuses a leaking vector too --
+        // ~/.config/sophia stays reachable and refuses a leaking vector too --
         // which looks identical from here, and would let the decoy stop
         // working without anything noticing.
         .env("HOME", isolated_home()?)
@@ -323,7 +323,7 @@ fn require_discovery_leak_is_visible() -> Result<(), String> {
     ];
     if validate(&leaking).is_ok() {
         return Err(
-            "a normal-mode vector with no configuration pinned was accepted, so the decoy \nprofile is no longer refused and every profile check below proves nothing about \nconfiguration discovery. Check tools/fixtures/decoy-config-home/hagia/config.kdl \nagainst the current desktop-profile schema."
+            "a normal-mode vector with no configuration pinned was accepted, so the decoy \nprofile is no longer refused and every profile check below proves nothing about \nconfiguration discovery. Check tools/fixtures/decoy-config-home/sophia/desktop.kdl \nagainst the current desktop-profile schema."
                 .to_owned(),
         );
     }

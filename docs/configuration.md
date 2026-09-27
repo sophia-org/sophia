@@ -165,9 +165,10 @@ profile or synthetic X11 policy environment.
 Sessions use the unified desktop profile at
 `${XDG_CONFIG_HOME:-$HOME/.config}/sophia/desktop.kdl`. An explicit
 `--desktop-profile=/absolute/path` wins, followed by the user's Sophia file,
-the user's legacy `hagia/config.kdl`, `/etc/sophia/desktop.kdl`,
-`/etc/hagia/config.kdl`, and the compiled profile. The installed launcher uses
-its packaged profile as the last fallback. Discovery selects one source;
+`/etc/sophia/desktop.kdl`, and the compiled profile. Sophia does not discover
+configuration in a particular WM's private directory. An external desktop
+launcher may explicitly select its own profile or provide a migration from
+an older location. Discovery selects one source;
 an invalid preferred source fails validation rather than selecting another.
 Unlike Sophia's two
 authority-local files, this source permits bounded top-level includes: depth
@@ -178,36 +179,49 @@ The `policy` section transports ordered WM-owned KDL records. Sophia validates
 the envelope, structural limits, and reserved Engine controls; the selected WM
 owns setting names, layout names, value ranges, and duplicate-setting identities.
 Repeated node names are preserved, so `view-name 1 "code"` and
-`view-name 2 "web"` both reach Hagia. Sophia's `policy.<node-name>` labels are
+`view-name 2 "web"` both reach the WM. Sophia's `policy.<node-name>` labels are
 descriptive, not unique WM setting keys. Encoded record order and contents survive
 staging; staged-file provenance replaces the source-file provenance on reload.
 
 `sophia config check --desktop-profile=...` reports
 `policy_validation=delegated`: success validates the envelope, not WM semantics.
 Use `sophia config print-policy --desktop-profile=...` to export a policy-only
-profile for `hagia config check --config=...`. The Hagia TTY adapter calls
-`sophia config check-session-profile --desktop-profile=... --default-wm=/path/to/hagia`
+profile for the selected WM's validator. External desktop launchers can call
+`sophia config check-session-profile --desktop-profile=... --default-wm=/path/to/wm --policy-checker=/path/to/adapter`
 before display-manager takeover. This installed-runtime command checks the
 envelope and selected executables, including every independent shell component.
 It resolves each component's optional private config path without parsing its
 contents. These path checks precede both validated and deferred WM policy
 outcomes; they neither launch components nor authenticate artifact hashes.
-The command stages only the policy in a private temporary directory and gives
-Hagia ten seconds to validate it. Rejection or timeout
-refuses the handoff and removes the staged policy. An explicitly selected different WM validates its
-own vocabulary during protocol activation. Packaging also checks both.
-Runtime still gives Hagia only its private
-Policy fragment, and Hagia constructs a valid policy model before acknowledging
+The command requires exactly one of `--policy-checker` or
+`--allow-deferred-policy`. The checker is an absolute executable owned by the
+external integration. It receives the private policy file as its sole argument;
+its exit status is the verdict and its standard streams are discarded. Sophia
+gives it ten seconds, then kills its process group. Rejection or timeout refuses
+the handoff and removes the staged policy. If `--default-wm` is supplied, a
+different selected WM cannot use that default's checker. Choose the selected
+WM's checker explicitly without that fallback, or explicitly defer validation
+to activation. Packaging that requires offline policy validation must require
+`policy=validated`; `policy=deferred` is not that evidence.
+Runtime gives the WM only its private
+Policy fragment, and the WM constructs a valid policy model before acknowledging
 activation. Invalid values, duplicate WM settings, or unknown WM vocabulary keep
 Sophia's graphical gate closed through the existing rejection/rollback path.
 WM settings never grant renderer, scanout, input-admission, or session authority;
 Sophia continues to validate the resulting proposals against Engine constraints.
 
-Hagia's `policy { arrow-crosses-outputs #false }` disables directional arrow
-handoff at a column edge or from an empty output. The setting accepts an exact
-boolean and defaults to `#true` when omitted. Local navigation and explicit
-output switching remain available with it disabled. Sophia preserves this
-WM-owned setting in policy export; Hagia validates its type and rejects duplicates.
+The supervised WM receives `SOPHIA_WM_POLICY_CANDIDATE`, the read-only staged
+policy file, and `SOPHIA_WM_POLICY_CHECKPOINT`, a WM-owned state file in a private
+writable directory. When boot requires activation, Sophia also supplies
+`SOPHIA_WM_POLICY_PROFILE_ACTIVATION=required`. These names apply to every WM
+implementation. The checkpoint basename is `sophia-wm-policy.checkpoint`; the WM
+must use the supplied path. Sophia manages the directory's lifetime and does
+not interpret checkpoint contents. Desktop integrations must pair Sophia with
+a WM that supports these names; compatibility with older Sophia releases is
+the client's responsibility.
+
+Policy option names and behavior are documented by each WM. Sophia preserves
+these records in policy export; their interpretation belongs to that WM.
 
 The installed launcher delegates argument construction to
 `sophia session prepare-arguments` and environment construction to
@@ -292,17 +306,17 @@ one absolute path. These are Session-owned settings, never WM policy. Explicit
 `--wm-process` and `--shell-process` selections win over the profile; the profile
 wins over core `external-wm` and the launcher's `--wm-process-default` and
 `--shell-process-default`. Explicit WM replacement discards arguments from the
-replaced selection. The final compatibility fallback looks for `narthex` beside
-the absolute WM executable.
+replaced selection. Shell executables are never inferred from the WM's name or
+directory. An explicitly enabled shell requires a selection in the profile or
+launcher; an external desktop integration owns any defaults.
 
 The session launches the native shell with `--serve` in a metadata-shell Bubblewrap
 domain. It receives sanitized descriptors and opaque actions, never
 application identities or raw input. `SOPHIA_SHELL_CONFIG` overrides the profile's
 private shell file selection. Explicit selections require an existing file;
-the session mounts only that file and does not parse its contents. The inherited
-Narthex setup retains its optional `narthex/config.kdl` default. An explicitly
-selected replacement does not inherit Narthex's private configuration.
-Packaging records separate hashes for `hagia` and `narthex`.
+the session mounts only that file and does not parse its contents. It never
+discovers a client's private configuration by executable name. External desktop
+packaging selects defaults and records component identities.
 
 `sophia config print-effective --desktop-profile=...` shows the parsed component
 and startup choices before launcher overrides. `print-component` with

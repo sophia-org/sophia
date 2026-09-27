@@ -94,7 +94,7 @@ fn combined_role_child() {
     let (_, received) = decode_output_v1_snapshot_frame(&read_frame(&mut output)).unwrap();
     assert_eq!(received.connection_epoch, welcome.connection_epoch);
     assert_eq!(received.snapshot, snapshot());
-    let checkpoint = PathBuf::from(std::env::var_os("HAGIA_POLICY_CHECKPOINT").unwrap());
+    let checkpoint = PathBuf::from(std::env::var_os("SOPHIA_WM_POLICY_CHECKPOINT").unwrap());
     // This third socket is only a fixture witness: parent SO_PEERCRED measures
     // the child in its own PID namespace rather than trusting the child's PID.
     let mut witness =
