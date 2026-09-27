@@ -49,7 +49,11 @@ fn compile(directory: &Path, name: &str) -> PathBuf {
 #[test]
 fn independent_vectors_and_pipeline_regressions() {
     let scratch = Scratch::new();
-    for test in ["sophia_9p_client_test", "sophia_shell_files_test"] {
+    for test in [
+        "sophia_9p_client_test",
+        "sophia_shell_files_test",
+        "sophia_shell_files_roles_test",
+    ] {
         assert!(
             Command::new(compile(&scratch.0, test))
                 .status()

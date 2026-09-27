@@ -9,8 +9,40 @@ provide the independent base file records and `sophia_shell_files_client.h`
 orchestrates a file session. Compile these C99 sources together. They do not
 link the existing `shell_wire` sources or translate IPC frames.
 
+### Role record codecs
+
+`sophia_shell_files_roles.h` adds Catalog and Indicators objects, native launcher
+events/requests, and persistent catalog candidates/activations. These use the
+same `sophia_sf_encode` / `sophia_sf_decode` entry points. Session orchestration
+for the role families follows in phase 2; these codecs alone do not establish
+Bemenu or dock adoption.
+
+Candidate bodies also expose `sophia_sf_role_candidate_{encode,decode}_bytes`
+and `sophia_sf_role_candidate_validate_value`. Byte operations enforce field
+bounds; normal record operations additionally enforce family value rules.
+Native one-surface/nonempty-placement, slot uniqueness, selection membership
+and target/row-count rules are value checks (submit EINVAL, no journal entry).
+Catalog one-surface/nonempty-placement checks and state-dependent eligibility
+belong to the runtime owner. Byte decoding alone grants no authority.
+
+Catalog and Indicators rows borrow immutable encoded storage. A decoded
+`sophia_sf_catalog` points into the original record; `sophia_sf_catalog_entry_at`
+returns a typed row with borrowed text. Row encoders let the caller construct
+the storage without allocating a 4096-entry C struct array. Native input text
+also borrows its record buffer. Keep that storage alive until finished with
+the decoded value. Encode into separate storage: destinations must not overlap
+the input value or its borrowed data. Failed encoding leaves destinations
+unchanged; failed decoding leaves output values unchanged.
+
+The largest record cap is 4 MiB (`SOPHIA_SF_MAX_RECORD`); submission staging
+retains its 64 KiB cap (`SOPHIA_SF_MAX_TRANSACTION`), and native/catalog
+candidates remain bounded to 8192 bytes. The record union contains bounded
+typed candidates and snapshot views, never a full catalog allocation.
+
 Reference inputs are the shell file KDL at `bae4ec4a9` (including the Limits
-rules from `f64d670e0` and conditional-bound correction `6bb0c8f2e`),
+rules from `f64d670e0` and conditional-bound correction `6bb0c8f2e`), extended
+with role layouts and normative value rules from `ee5e7f809` and the validation
+layer clarification in `ae60576f8`,
 profile blob `de101e3d` and diod reference blob
 `48d63c80` (upstream `de51d1ee1bd5`). The KDL alone supplies record layouts
 and validation. The API lifecycle contract is pinned at `43e4530b3`.
@@ -62,10 +94,10 @@ allocation, permit, action and presentation lifecycle decisions.
 Run `sh tools/check_shell_c_wire_files.sh`. The Rust test harness compiles the
 independent C tests and exercises the production export with supplied protection
 evidence. Coverage includes R4-1 through R4-7, tag wrap, reply poisoning, clean
-EOF, 22 KDL-derived literal vectors, negotiation, rejected allocation, a split
+EOF, 22 base and 17 role KDL-derived literal vectors, negotiation, rejected allocation, a split
 64 KiB upload, cancellation and explicit acknowledgements. It does not start a
 desktop or prove protected launch. Base records include native whole Candidate
-rows, but r7 launcher records and Bemenu adoption remain separate work.
+rows. Live r7/r8 orchestration and Bemenu adoption remain separate work.
 
 ## Existing socket backend
 

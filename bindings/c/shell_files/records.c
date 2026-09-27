@@ -1,7 +1,10 @@
 /* Dispatch and lengths from the pinned file KDL. */
 #include "internal.h"
+#include "roles_internal.h"
 static size_t body_size(const struct sophia_sf_record *r)
 {
+    if (sf_role_kind(r->header.kind))
+        return sf_role_size(r);
     switch (r->header.kind) {
     case 1:
         return 264u;
@@ -72,6 +75,11 @@ int sophia_sf_encode(void *dst, size_t capacity, const struct sophia_sf_record *
     sf_put(b + 16, r->header.submission, 8);
     sf_put(b + 24, r->header.sequence, 8);
     b += 32;
+    if (sf_role_kind(r->header.kind)) {
+        sf_role_put(b, r);
+        *written = n;
+        return 0;
+    }
     switch (r->header.kind) {
     case 1:
         sf_put_limits(b, &r->value.limits);
@@ -173,6 +181,14 @@ int sophia_sf_decode(const void *src, size_t bytes, struct sophia_sf_record *out
     r.header.sequence = sf_get(b + 24, 8);
     b += 32;
     bytes -= 32;
+    if (sf_role_kind(r.header.kind)) {
+        if (sf_role_take(b, bytes, &r) || sf_validate(&r))
+            return -1;
+        *out = r;
+        return 0;
+    }
+    if (bytes + 32 > SOPHIA_SF_MAX_TRANSACTION)
+        return -1;
     switch (r.header.kind) {
     case 1:
         if (bytes != 264 || sf_take_limits(b, &r.value.limits))
@@ -289,6 +305,8 @@ int sophia_sf_decode(const void *src, size_t bytes, struct sophia_sf_record *out
 }
 int sf_value_check(const struct sophia_sf_record *r)
 {
+    if (sf_role_kind(r->header.kind))
+        return sf_role_check(r);
     switch (r->header.kind) {
     case 1:
         return sf_check_limits(&r->value.limits);
@@ -340,7 +358,7 @@ int sf_value_check(const struct sophia_sf_record *r)
 }
 int sophia_sf_submit_encode(uint8_t b[24], uint64_t epoch, uint64_t id, uint32_t bytes)
 {
-    if (!b || !epoch || !id || bytes < 32 || bytes > SOPHIA_SF_MAX_RECORD)
+    if (!b || !epoch || !id || bytes < 32 || bytes > SOPHIA_SF_MAX_TRANSACTION)
         return -4;
     sf_put(b, epoch, 8);
     sf_put(b + 8, id, 8);
