@@ -1,5 +1,0 @@
-desktop-comparison-stack schema=1 id="xlibre-xmonad" backend="native"
-session server="xlibre" wm="xmonad-0.18.1" wm_contrib="0.18.2" source_commit="56be9f4320ef121dc5d4bc40a6365d995512d3bc" profile="validation/desktop-comparison/profiles/xmonad.hs"
-output connector="DP-1" width=2560 height=1440 refresh_millihz=60000 x=0 y=0
-output connector="DP-2" width=1920 height=1080 refresh_millihz=60000 x=2560 y=0
-policy compositor=false animations=false diagnostic_only=true

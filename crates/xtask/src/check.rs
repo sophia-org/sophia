@@ -74,11 +74,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
     layout(repo)?;
     command(repo, "sh", &["tools/check_shell_c_wire.sh"])?;
     anchored_readers(repo)?;
-    for pattern in [
-        "layout_comparison_test.py",
-        "dri3_layout_probe_test.py",
-        "physical_gate_identity_test.py",
-    ] {
+    for pattern in ["layout_comparison_test.py", "dri3_layout_probe_test.py"] {
         command(
             repo,
             "python3",
@@ -107,33 +103,17 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
     )?);
     command(
         repo,
-        "tools/run_sophia_terminal_gate_tty3.sh",
-        &["--self-test"],
-    )?;
-    command(
-        repo,
         "tools/check_live_record_schema_readers.sh",
         &["--self-test"],
     )?;
     for tool in [
         "tools/check_session_profile_preflight.sh",
-        "tools/check_installed_session_type.sh",
+        "tools/check_session_lifecycle_diagnostics.sh",
         "tools/check_bounded_xterm_geometry.sh",
         "tools/check_live_record_schema_readers.sh",
-        "tools/check_retired_milestone_launchers.sh",
         "tools/check_live_session_milestone4_verifier.sh",
-        "tools/check_sophia_firefox_physical_verifier.sh",
         "tools/check_direct_scanout_verifier.sh",
         "tools/check_direct_scanout_archive_verifier.sh",
-        "tools/check_sophia_standalone_vkcube_verifier.sh",
-        "tools/check_hagia_native_matchers.sh",
-        "tools/check_firefox_m10_rendering_page.sh",
-        "tools/check_sophia_firefox_rendering_verifier.sh",
-        "tools/check_mirror_group_physical_verifier.sh",
-        "tools/check_keyboard_independence_verifier.sh",
-        "tools/check_keyboard_independence_session_verifier.sh",
-        "tools/check_sophia_terminal_performance_reporter.sh",
-        "tools/check_installed_native_verifiers.sh",
     ] {
         command(repo, tool, &[])?;
     }
@@ -154,20 +134,10 @@ fn archives(repo: &Path) -> Result<String, String> {
     let Some(root) = promotion_root() else {
         return Ok("archives: no state home, corpus skipped".to_owned());
     };
-    let families: [(&str, ArchiveVerifier); 3] = [
-        (
-            "hagia-native-runs",
-            ArchiveVerifier::Tool("tools/verify_hagia_native_session_archive.sh"),
-        ),
-        (
-            "mirror-group-runs",
-            ArchiveVerifier::Tool("tools/verify_mirror_group_physical_archive.sh"),
-        ),
-        ("direct-scanout-runs", ArchiveVerifier::DirectScanout),
-    ];
+    let families = ["direct-scanout-runs"];
     let mut summary = Vec::new();
     let mut absent = Vec::new();
-    for (family, verifier) in families {
+    for family in families {
         let directory = root.join(family);
         let Ok(entries) = std::fs::read_dir(&directory) else {
             absent.push(family);
@@ -185,16 +155,7 @@ fn archives(repo: &Path) -> Result<String, String> {
         }
         let total = runs.len();
         for run in runs {
-            let outcome = match verifier {
-                ArchiveVerifier::Tool(tool) => command_quiet(
-                    repo,
-                    &repo.join(tool).display().to_string(),
-                    &[&run.display().to_string()],
-                ),
-                ArchiveVerifier::DirectScanout => {
-                    sophia_conformance::direct_scanout_archive::verify_archive(repo, &run)
-                }
-            };
+            let outcome = sophia_conformance::direct_scanout_archive::verify_archive(repo, &run);
             outcome.map_err(|error| {
                 format!(
                     "promoted archive {} no longer verifies: {error}\nEither this change broke a verifier, or the archive was altered. Both are worth stopping for.",
@@ -208,11 +169,6 @@ fn archives(repo: &Path) -> Result<String, String> {
         summary.push(format!("(absent: {})", absent.join(" ")));
     }
     Ok(format!("archives: {}", summary.join("  ")))
-}
-
-enum ArchiveVerifier {
-    Tool(&'static str),
-    DirectScanout,
 }
 
 fn promotion_root() -> Option<PathBuf> {

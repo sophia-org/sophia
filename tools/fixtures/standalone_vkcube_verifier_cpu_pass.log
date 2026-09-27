@@ -1,9 +1,0 @@
-sophia_session_app schema=1 status=started id=standalone source=startup
-sophia_live_visual_candidate schema=1 status=selected transaction=42 surface=7 width=500 height=500 evidence=PresentedBuffer
-sophia_live_visual_admission schema=1 status=committed transaction=42 surface=7 source=cpu_snapshot
-sophia_live_session_startup schema=1 status=content_ready source=cpu_visual_detail
-sophia_live_session_startup schema=2 status=ready elapsed_msec=500 outputs_ready=1/1 recovery_attempts=0
-sophia_live_session_health schema=1 status=clean pending_input=0 wm_degraded=false
-sophia_live_session_protocol_errors schema=1 expected=0 unexpected=0
-sophia_live_session_cleanup schema=1 status=clean drm_master_released=true input_released=true
-sophia_live_session schema=15 status=bounded_complete authority_transactions=12 cpu_nonzero_pixel_bytes=100 cpu_nonzero_frames=12 native_presentation=enabled native_submissions=13 native_submit_failures=0 native_retirements=12 native_retire_failures=0 native_nonzero_exports=12 native_in_flight=false native_cleanup_pending=false wm_policy=disabled wm_restarts=0 wm_degraded=false present_complete_copy=12 present_complete_flip=0 present_complete_skip=0 present_idle=12 present_idle_fence_triggers=12 present_live_sources=0 present_live_fences=0 present_live_transactions=0

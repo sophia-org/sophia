@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
-export SOPHIA_INSTALLED_ATTEMPT_MODE=firefox
-exec "$RELEASE_DIR/bin/sophia-hagia-session" --firefox-m10-proof "$@"

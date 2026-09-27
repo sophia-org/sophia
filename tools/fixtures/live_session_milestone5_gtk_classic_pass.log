@@ -1,1 +1,0 @@
-sophia_x_application_session schema=1 status=passed class=gtk3_software client=zenity profile=classic_shared child_outcome=normal exit_code=0 stdout_match=true protocol_errors=0 first_error=none physical_text=true pointer_button=true surface_resize=committed buffer_path=cpu_shm native_presentation=enabled cleanup=clean

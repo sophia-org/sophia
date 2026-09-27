@@ -1,8 +1,0 @@
-xserver_rendering_benchmark schema=1 workload=vkcube-xcb requested_frames=900 surface_width=500 surface_height=500 vulkan_present_mode=2
-xserver_present_environment schema=1 vendor=The_X.Org_Foundation root_width=2560 root_height=1440 present_major=1 present_minor=2
-Selected GPU 0: llvmpipe (LLVM fixture), type: Cpu
-xserver_present_target schema=1 status=attached width_match=true target_count=1
-xserver_present_feedback schema=1 kind=complete mode=Copy ust=1000000 msc=1
-xserver_present_feedback schema=1 kind=complete mode=Copy ust=1016667 msc=2
-xserver_present_feedback schema=1 kind=complete mode=Copy ust=1033334 msc=3
-xserver_present_probe schema=1 status=complete child_status=0 target_windows=1 present_completions=3 flips=0 copies=3 skips=0 output_width=2560 output_height=1440 output_source=randr_monitor

@@ -15,31 +15,13 @@ SINGLE_SCHEMA = ('sophia_live_native_resources', 'sophia_live_rendering_efficien
 # Every session completion consumer has one purpose. Archive exceptions name
 # exact files, rather than exempting a directory that might acquire live gates.
 PROOF_READERS = (
-    'report_sophia_glxgears_performance.sh',
-    'report_sophia_rendering_performance.sh',
-    'verify_frame_fed_output_evidence.sh',
-    'verify_hagia_native_session.sh',
-    'verify_hagia_policy_physical.sh',
-    'verify_installed_fallback_session.sh',
-    'verify_installed_login_cycle.sh',
-    'verify_installed_native_chrome_session.sh',
-    'verify_installed_truecolor_session.sh',
-    'verify_installed_xterm_session.sh',
-    'verify_keyboard_independence_physical.sh',
     'verify_live_session_milestone4_evidence.sh',
     'verify_live_session_persistent_evidence.sh',
-    'verify_mirror_group_physical.sh',
     'verify_qemu_session_evidence.sh',
-    'verify_sophia_firefox_physical.sh',
-    'verify_sophia_native_chrome.sh',
-    'verify_sophia_standalone_vkcube.sh',
 )
 NORMAL_READERS = (
     # Frontend pixel checks plus a nonempty-scene witness; no startup-proof claim.
-    'run_gtk_redraw_probe.py',
     'run_qt_popup_probe.py',
-    'report_sophia_terminal_performance.sh',
-    'verify_installed_hagia_session.sh',
     'verify_qemu_emergency_recovery_evidence.sh',
     'verify_qemu_xtest_selection_evidence.sh',
 )
@@ -58,7 +40,7 @@ FIELD_ONLY_READERS = {
     'verify_qemu_emergency_recovery_evidence.sh': 'cleanup fields, no startup-proof claim',
     'verify_qemu_xtest_selection_evidence.sh': 'one bounded completion, no startup-proof claim',
 }
-WM_READERS = ('verify_hagia_native_session.sh', 'verify_sophia_firefox_physical.sh')
+WM_READERS = ()  # Product readiness verifiers moved to niltempus.
 RUST_PROOF_READER = 'crates/sophia-conformance/src/direct_scanout.rs'
 TOKEN = r'''([^\s\\/'"]+)'''
 

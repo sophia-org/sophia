@@ -11,17 +11,13 @@ fail() {
 
 [[ ! -e crates/sophia-x11-wm-bridge ]] ||
     fail "the removed bridge crate still exists"
-if rg -n 'sophia-x11-wm-bridge' Cargo.toml Cargo.lock crates \
-    --glob '!sophia-conformance/src/desktop_comparison/**' \
-    --glob '!sophia-conformance/src/desktop_comparison.rs' \
-    --glob '!sophia-conformance/tests/support/desktop_comparison.rs'; then
+if rg -n 'sophia-x11-wm-bridge' Cargo.toml Cargo.lock crates; then
     fail "a production crate still references the bridge"
 fi
 
 legacy_paths="$({
     find tools -type f \
-        \( -name '*xmonad*' -o -name '*x11-wm-bridge*' \) \
-        ! -path 'tools/desktop_comparison_tty3.sh'
+        \( -name '*xmonad*' -o -name '*x11-wm-bridge*' \)
 } || true)"
 [[ -z "$legacy_paths" ]] || {
     printf '%s\n' "$legacy_paths" >&2
@@ -34,13 +30,7 @@ active_hits="$({
     rg -n \
         'SOPHIA_X11_WM_BRIDGE_BIN|SOPHIA_LEGACY_X11_WM|run_sophia_xmonad_session|--profile=xmonad|SOPHIA_TTY_PROFILE=xmonad|sophia-x11-wm-bridge' \
         tools crates examples Cargo.toml Cargo.lock \
-        --glob '!check_no_legacy_wm_bridge.sh' \
-        --glob '!check_live_session_install.sh' \
-        --glob '!verify_packaged_policy.sh' \
-        --glob '!desktop_comparison_tty3.sh' \
-        --glob '!sophia-conformance/src/desktop_comparison/**' \
-        --glob '!sophia-conformance/src/desktop_comparison.rs' \
-        --glob '!sophia-conformance/tests/support/desktop_comparison.rs'
+        --glob '!check_no_legacy_wm_bridge.sh'
 } || true)"
 [[ -z "$active_hits" ]] || {
     printf '%s\n' "$active_hits" >&2

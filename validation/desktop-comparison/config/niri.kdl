@@ -1,5 +1,0 @@
-desktop-comparison-stack schema=1 id="niri" backend="native"
-session compositor="/usr/bin/niri" version="26.04" profile="validation/desktop-comparison/profiles/niri.kdl"
-output connector="DP-1" width=2560 height=1440 refresh_millihz=60000 x=0 y=0
-output connector="DP-2" width=1920 height=1080 refresh_millihz=60000 x=2560 y=0
-policy animations=false diagnostic_only=true

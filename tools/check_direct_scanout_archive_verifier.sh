@@ -14,6 +14,13 @@ archiver="$ROOT_DIR/tools/archive_direct_scanout_run.sh"
 temp_dir="$(mktemp -d)"
 trap 'rm -rf -- "$temp_dir"' EXIT
 
+# Signature mutations need one unsigned object. Keep that object and fetch
+# metadata in a private repository, even when the source checkout is read-only.
+identity_repo="$temp_dir/identity.git"
+git clone --quiet --bare --shared "$ROOT_DIR" "$identity_repo"
+verify_archive() { GIT_DIR="$identity_repo" "$verifier" "$@"; }
+archive_run() { GIT_DIR="$identity_repo" "$archiver" "$@"; }
+
 # A passing session, synthesised rather than borrowed: the checks here are
 # about the archive's identity chain, and the evidence verifier has its own
 # controls in check_direct_scanout_verifier.sh.
@@ -50,16 +57,16 @@ run_root="$temp_dir/runs"
 SOPHIA_DIRECT_SCANOUT_RUN_ROOT="$run_root" \
     SOPHIA_DIRECT_SCANOUT_SOPHIA_BIN="$sophia_bin" \
     SOPHIA_DIRECT_SCANOUT_CLIENT_BIN="$client_bin" \
-    "$archiver" "$evidence" >/dev/null
+    archive_run "$evidence" >/dev/null
 archive="$run_root/0001"
-"$verifier" "$archive" >/dev/null || {
+verify_archive "$archive" >/dev/null || {
     echo "the archive verifier rejected an archive it just wrote" >&2
     exit 1
 }
 
 reject() {
     local name="$1" candidate="$2" expected="$3" output
-    if output="$("$verifier" "$candidate" 2>&1)"; then
+    if output="$(verify_archive "$candidate" 2>&1)"; then
         echo "the archive verifier accepted $name" >&2
         exit 1
     fi
@@ -80,7 +87,7 @@ if mismatch_output="$(
     SOPHIA_DIRECT_SCANOUT_RUN_ROOT="$mismatch_root" \
     SOPHIA_DIRECT_SCANOUT_SOPHIA_BIN="$wrong_binary" \
     SOPHIA_DIRECT_SCANOUT_CLIENT_BIN="$client_bin" \
-        "$archiver" "$evidence" 2>&1
+        archive_run "$evidence" 2>&1
 )"; then
     echo "the archiver accepted a Sophia binary that differs from the bound hash" >&2
     exit 1
@@ -143,7 +150,7 @@ if git -C "$ROOT_DIR" cat-file -e "$unsigned_commit^{commit}" 2>/dev/null; then
     exit 1
 fi
 # Fetched in so the commit exists here but carries no signature.
-git -C "$ROOT_DIR" fetch -q "$unsigned_repo" HEAD
+git --git-dir="$identity_repo" fetch -q "$unsigned_repo" HEAD
 unsigned="$temp_dir/unsigned-archive"
 cp -r "$archive" "$unsigned"
 sed -i "s/^source_commit=.*/source_commit=$unsigned_commit/" "$unsigned/manifest"

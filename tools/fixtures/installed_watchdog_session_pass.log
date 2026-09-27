@@ -1,2 +1,0 @@
-sophia_live_session_startup schema=2 status=ready elapsed_msec=700 surface=true visual_detail=true presented=true outputs_ready=2/2 recovery_attempts=0
-sophia_session_watchdog schema=1 result=deadline_exceeded deadline_seconds=45 session_pid=1234 action=terminate_process_group

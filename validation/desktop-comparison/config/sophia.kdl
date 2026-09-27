@@ -1,5 +1,0 @@
-desktop-comparison-stack schema=1 id="sophia" backend="native"
-session wm="hagia" shell="narthex" compositor="sophia" profile="validation/desktop-comparison/profiles/hagia.kdl"
-output connector="DP-1" width=2560 height=1440 refresh_millihz=60000 x=0 y=0
-output connector="DP-2" width=1920 height=1080 refresh_millihz=60000 x=2560 y=0
-policy animations=false diagnostic_only=true

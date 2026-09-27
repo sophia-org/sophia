@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-RELEASE_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
-
-export SOPHIA_NATIVE_CHROME_INSTALLED=true
-exec "$RELEASE_DIR/tools/start_sophia_native_hot_reload_tty3.sh" "$@"

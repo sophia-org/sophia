@@ -1,7 +1,0 @@
-commit=3103e31000000000000000000000000000000000
-phase=ring_baseline focus_ring_width=2 frame_width=0
-phase=ring_wide generation=2 focus_ring_width=6 frame_width=0
-phase=invalid_rejected retained_focus_ring_width=6
-phase=deletion_rejected retained_focus_ring_width=6
-phase=frame_only generation=3 focus_ring_width=0 frame_width=4
-phase=combined generation=4 focus_ring_width=2 frame_width=6

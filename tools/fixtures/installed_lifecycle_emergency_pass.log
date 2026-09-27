@@ -1,8 +1,0 @@
-sophia_session_lifecycle schema=1 status=entering phase=preflight installed=true build=false manual_service=false runtime=owner vt=local
-sophia_session_lifecycle schema=1 status=complete phase=preflight installed=true build=false manual_service=false runtime=owner vt=local
-sophia_session_lifecycle schema=1 status=entering phase=input_guard installed=true build=false manual_service=false runtime=owner vt=local
-sophia_session_lifecycle schema=1 status=complete phase=input_guard installed=true build=false manual_service=false runtime=owner vt=local
-sophia_session_lifecycle schema=1 status=entering phase=graphics_takeover installed=true build=false manual_service=false runtime=owner vt=local
-sophia_session_lifecycle schema=1 status=complete phase=graphics_takeover installed=true build=false manual_service=false runtime=owner vt=local
-sophia_session_lifecycle schema=1 status=entering phase=session installed=true build=false manual_service=false runtime=owner vt=local
-sophia_session_lifecycle schema=1 status=returned phase=handoff installed=true exit_status=130 emergency=true handoff=display_manager

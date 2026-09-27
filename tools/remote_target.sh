@@ -98,7 +98,7 @@ case "$command" in
         echo "Physical proof staged on $REMOTE_HOST."
         echo "At the target's dedicated local text TTY, with its graphical session stopped:"
         echo "  cd ~/$REMOTE_DIR"
-        echo "  tools/run_current_hagia_native_gate_tty4.sh"
+    echo "  Use the niltempus desktop's attended native-session gate."
         echo
         echo "Retrieve logs afterward with:"
         echo "  SOPHIA_REMOTE_HOST=$REMOTE_HOST tools/remote_target.sh fetch-evidence"

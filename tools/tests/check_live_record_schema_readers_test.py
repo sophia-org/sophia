@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import sys
 
 sys.dont_write_bytecode = True
@@ -51,15 +52,19 @@ class SchemaReaderChecks(unittest.TestCase):
         self.assertEqual(self.failures(), [])
 
     def test_conditional_bumps_reach_the_right_readers(self):
-        self.sources['emitter.rs'] = self.sources['emitter.rs'].replace('{ 17 }', '{ 18 }')
-        failures = self.failures()
-        self.assertTrue(any('report_sophia_terminal_performance.sh' in f for f in failures))
-        self.assertFalse(any('verify_hagia_native_session.sh' in f for f in failures))
-        self.sources['emitter.rs'] = self.sources['emitter.rs'].replace('{ 16 }', '{ 19 }')
-        self.assertTrue(any('verify_hagia_native_session.sh' in f for f in self.failures()))
+        # Model a direct normal-completion reader without keeping a product
+        # script in Sophia solely to exercise the inventory classifier.
+        with patch.object(guard, 'NORMAL_READERS', (*guard.NORMAL_READERS, 'fixture-normal.sh')):
+            self.readers['tools/fixture-normal.sh'] = 'sophia_live_session schema=(16|17) status=bounded_complete '
+            self.sources['emitter.rs'] = self.sources['emitter.rs'].replace('{ 17 }', '{ 18 }')
+            failures = self.failures()
+            self.assertTrue(any('fixture-normal.sh' in f for f in failures))
+            self.assertFalse(any('verify_live_session_persistent_evidence.sh' in f for f in failures))
+            self.sources['emitter.rs'] = self.sources['emitter.rs'].replace('{ 16 }', '{ 19 }')
+            self.assertTrue(any('verify_live_session_persistent_evidence.sh' in f for f in self.failures()))
 
     def test_proof_reader_cannot_be_relaxed_to_normal_completion(self):
-        name = 'tools/verify_sophia_firefox_physical.sh'
+        name = guard.RUST_PROOF_READER
         self.readers[name] = self.readers[name].replace('schema=16', 'schema=(16|17)')
         self.assertTrue(any('unrequested-proof schema' in f for f in self.failures()))
 
@@ -79,13 +84,13 @@ class SchemaReaderChecks(unittest.TestCase):
             self.failures()
 
     def test_stale_native_readiness_is_detected_despite_generic_selector(self):
-        name = 'tools/verify_sophia_firefox_physical.sh'
-        self.readers[name] = self.readers[name].replace('schema=4 status=ready', 'schema=1 status=ready')
-        self.readers[name] += '\nsophia_live_wm schema=[0-9]+ status=ready '
-        self.assertTrue(any('no readiness branch' in f for f in self.failures()))
+        name = 'tools/fixture-wm.sh'
+        with patch.object(guard, 'WM_READERS', ('fixture-wm.sh',)):
+            self.readers[name] = 'sophia_live_wm schema=1 status=ready \nsophia_live_wm schema=[0-9]+ status=ready '
+            self.assertTrue(any('no readiness branch' in f for f in self.failures()))
 
     def test_every_direct_acceptance_site_is_checked(self):
-        self.readers['tools/verify_sophia_standalone_vkcube.sh'] += '\nsophia_live_session schema=15 status=bounded_complete '
+        self.readers[guard.RUST_PROOF_READER] += '\nsophia_live_session schema=15 status=bounded_complete '
         self.assertTrue(any('schema=15' in f for f in self.failures()))
 
     def test_parsed_acceptance_and_its_disappearance_are_checked(self):
@@ -100,7 +105,7 @@ class SchemaReaderChecks(unittest.TestCase):
         self.readers['tools/new.sh'] = 'sophia_live_session schema=16 status=bounded_complete '
         self.assertTrue(any('no reviewed purpose' in f for f in self.failures()))
         del self.readers['tools/new.sh']
-        del self.readers['tools/verify_hagia_native_session.sh']
+        del self.readers['tools/verify_live_session_persistent_evidence.sh']
         self.assertTrue(any('disappeared' in f for f in self.failures()))
 
     def test_archive_exception_is_narrow_and_explicit(self):

@@ -13,12 +13,10 @@
 //! <host>`); the package cannot be published or used through `cargo vendor`,
 //! whose versioned directory layout breaks those paths.
 
-pub mod desktop_comparison;
 pub mod direct_scanout;
 pub mod direct_scanout_archive;
 pub mod direct_scanout_cost;
 pub mod direct_scanout_cursor;
-pub mod direct_scanout_gate;
 pub mod direct_scanout_overlay;
 pub mod private_instance;
 pub mod profile;

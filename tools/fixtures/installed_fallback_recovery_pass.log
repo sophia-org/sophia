@@ -1,1 +1,0 @@
-sophia_tty_recovery schema=3 profile=kitty kd_mode_before=0 kd_mode_after=0 termios_restored=true emergency=false session_shutdown=not_requested session_exit_status=none

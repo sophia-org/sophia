@@ -12,6 +12,14 @@ import offline_check as gate
 
 
 class OfflineCheckTests(unittest.TestCase):
+    def setUp(self):
+        # Exercise the generic isolated identity helper with synthetic peers;
+        # the actual Sophia gate must have no sibling checkout requirements.
+        self.assertEqual(gate.SIBLINGS, ())
+        peers = patch.object(gate, 'SIBLINGS', ('peer_a', 'peer_b'))
+        peers.start()
+        self.addCleanup(peers.stop)
+
     def repository(self, base):
         source = base / 'original'
         source.mkdir()
@@ -47,19 +55,19 @@ class OfflineCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
             valid = (source, '1' * 40)
-            for values in ({}, {'hagia': valid}, {'narthex': valid},
-                           {'hagia': (source, None), 'narthex': valid},
-                           {'hagia': valid, 'narthex': (None, '2' * 40)}):
+            for values in ({}, {'peer_a': valid}, {'peer_b': valid},
+                           {'peer_a': (source, None), 'peer_b': valid},
+                           {'peer_a': valid, 'peer_b': (None, '2' * 40)}):
                 with self.subTest(values=values), self.assertRaises(ValueError):
                     gate.sibling_arguments(False, values)
-            selected = gate.sibling_arguments(False, {'hagia': valid, 'narthex': valid})
-            self.assertEqual(set(selected), {'hagia', 'narthex'})
-            self.assertEqual(gate.sibling_arguments(True, {}), {'hagia': None, 'narthex': None})
+            selected = gate.sibling_arguments(False, {'peer_a': valid, 'peer_b': valid})
+            self.assertEqual(set(selected), {'peer_a', 'peer_b'})
+            self.assertEqual(gate.sibling_arguments(True, {}), {'peer_a': None, 'peer_b': None})
             for revision in ('HEAD', 'main', '1' * 8, 'A' * 40, '1' * 40 + '^', 'z' * 40):
                 with self.subTest(revision=revision), self.assertRaisesRegex(ValueError, '40-hex'):
-                    gate.sibling_arguments(True, {'hagia': (source, revision)})
+                    gate.sibling_arguments(True, {'peer_a': (source, revision)})
             with self.assertRaises(ValueError):
-                gate.sibling_arguments(True, {'hagia': (source, None)})
+                gate.sibling_arguments(True, {'peer_a': (source, None)})
 
     def test_missing_sibling_args_block_main_before_tools_or_canonical_launch(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -158,7 +166,7 @@ class OfflineCheckTests(unittest.TestCase):
                 self.assertEqual(result[name]['signature'], 'PASS')
             self.assertNotIn('SOPHIA_HAGIA_ROOT', environment)
             gate.unchanged_siblings(result, directory)
-            (directory / 'hagia/.git/HEAD').write_text('0' * 40 + '\n')
+            (directory / 'peer_a/.git/HEAD').write_text('0' * 40 + '\n')
             with self.assertRaisesRegex(ValueError, 'HEAD'):
                 gate.unchanged_siblings(result, directory)
 
@@ -170,7 +178,7 @@ class OfflineCheckTests(unittest.TestCase):
             gate.prepare_siblings({name: (source, commit) for name in gate.SIBLINGS}, directory)
             home = base / 'private-gpg'; home.mkdir(mode=0o700)
             environment = {**gate.GIT_ENVIRONMENT, 'GNUPGHOME': str(home)}
-            with self.assertRaisesRegex(gate.VerificationError, 'hagia commit signature failed'):
+            with self.assertRaisesRegex(gate.VerificationError, 'peer_a commit signature failed'):
                 gate.verify_siblings(False, directory, environment, {'status': 'PASS'})
 
     def test_metadata_omitted_siblings_stay_not_run_and_full_missing_is_blocked(self):
@@ -182,7 +190,7 @@ class OfflineCheckTests(unittest.TestCase):
                 self.assertTrue(all(value['status'] == 'NOT_RUN' for value in result.values()))
                 self.assertNotIn('SOPHIA_HAGIA_ROOT', environment)
                 self.assertNotIn('SOPHIA_NARTHEX_ROOT', environment)
-                with self.assertRaisesRegex(gate.VerificationError, 'explicit hagia'):
+                with self.assertRaisesRegex(gate.VerificationError, 'explicit peer_a'):
                     gate.verify_siblings(False, directory, gate.ENVIRONMENT, {'status': 'PASS'})
             command.assert_not_called()
 
@@ -413,7 +421,7 @@ class OfflineCheckTests(unittest.TestCase):
 
     def test_sibling_signature_failure_blocks_before_canonical_command(self):
         self.check_blocked_inside(has_key=True, verification={'status': 'PASS'},
-                                 sibling_error=gate.VerificationError('narthex commit signature failed'))
+                                 sibling_error=gate.VerificationError('peer_b commit signature failed'))
 
     def test_changed_public_input_identity_blocks_before_canonical_command(self):
         report = self.check_blocked_inside(has_key=True, expected_hash='0' * 64,

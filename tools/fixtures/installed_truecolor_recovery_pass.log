@@ -1,1 +1,0 @@
-sophia_tty_recovery schema=3 profile=hagia kd_mode_before=text kd_mode_after=text termios_restored=true emergency=false session_shutdown=not_requested session_exit_status=none

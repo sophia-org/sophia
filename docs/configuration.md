@@ -541,7 +541,7 @@ Core reload is whole-file atomic:
 - `diagnostics application-stderr=#true` defaults on for recorded daily sessions.
   Disabling stops retention on existing application pipes while continuing to
   drain them; re-enabling captures only later launches. See the private storage,
-  inspection and export limits in [Operations](operations.md).
+  inspection and export limits in the niltempus operator guide.
 - input source, XKB, outputs, namespace, cursor asset, and external-WM launch
   changes mark the entire candidate `pending_restart`;
 - a pending-restart candidate does not partially apply its otherwise-live
@@ -623,35 +623,11 @@ Use `--config=/absolute/path` for the core domain and
 `--wm-config=/absolute/path --wm` for the native-WM domain. The example files
 are [config.kdl](../examples/config.kdl) and [wm.kdl](../examples/wm.kdl).
 
-## Guarded native hot-reload proof
+## Desktop assembly and reload
 
-From a logged-in TTY 3, run:
-
-```sh
-tools/start_sophia_native_hot_reload_tty3.sh
-```
-
-For an installed release, select `Sophia Native Chrome Proof` in greetd. It
-uses the same sequence without a checkout or build and automatically reserves,
-finalizes, and checksums a commit-pinned archive. After normal logout, run
-`sophia-verify-native-chrome` from a text session.
-
-The launcher uses a private runtime `wm.kdl`; it does not modify the user's
-default configuration. After two Kitty surfaces are visible, it advances a
-2-pixel ring to 6 pixels, rejects an invalid edit, rejects deletion while
-retaining the last-known-good state, applies a 4-pixel frame-only policy, then
-applies a 2-pixel ring with a 6-pixel focused/unfocused frame. Each width
-change must cross a matching two-surface resize epoch before the reduced
-chrome-set observation can advance. Intermediate retired frames remain visible
-for three seconds so the physical proof can be inspected instead of merely
-logged.
-
-The proof retains a commit-bearing ordered sequence log. Validate its verifier
-logic without physical hardware with:
-
-```sh
-tools/check_sophia_native_chrome_verifier.sh
-```
+Named desktop launch, packaging and reload recipes live in niltempus. Sophia
+accepts explicit component commands and profiles; a desktop owns its policy
+checker, application defaults and operator workflow.
 
 ## Application catalogs
 
@@ -716,52 +692,11 @@ select a catalog by name and bind `session:application-launcher`. Catalog policy
 and selection take effect at the next login. See
 [application launcher](application-launcher.md) for the complete configuration.
 
-### Globally numbered, monitor-owned workspaces
+### Workspace policy
 
-The WM profile owns both assignments and shortcuts. For independent DP-1 and
-DP-2 workspace sets, add these settings to the selected desktop/WM profile,
-retaining its existing named-output mode, position and scale settings:
-
-```kdl
-policy {
-    workspace 1 output-key=1
-    workspace 2 output-key=1
-    workspace 3 output-key=1
-    workspace 4 output-key=2
-    workspace 5 output-key=2
-    workspace 6 output-key=2
-}
-output {
-    inherit-sophia #true
-    named "DP-1" { policy-key 1; }
-    named "DP-2" { policy-key 2; }
-}
-shortcut {
-    bind "Super+1" "policy:focus-workspace 1"
-    bind "Super+2" "policy:focus-workspace 2"
-    bind "Super+3" "policy:focus-workspace 3"
-    bind "Super+4" "policy:focus-workspace 4"
-    bind "Super+5" "policy:focus-workspace 5"
-    bind "Super+6" "policy:focus-workspace 6"
-}
-```
-
-Numbers are unique across the session. Selection follows the workspace's live
-host; after unplug, the existing fallback migration keeps those numbers and
-preferred ownership. Reconnection uses the configured key, not enumeration
-order. A cold-start absent output has no fabricated live view. Profiles without
-`workspace` assignments retain legacy per-output slots. Assignment changes on
-an established Hagia model require an explicit migration; arbitrary live
-renumbering is refused. Initial migration of an unambiguous legacy ordinal
-profile preserves view/window identity, layout and focus. Ambiguous tag or
-dynamic-workspace collisions refuse the candidate without changing committed
-state. Assigned dynamic workspaces use unused action-addressable numbers up to
-9 and refuse exhaustion.
-
-The panel gate builds Hagia from the clean signed `SOPHIA_HAGIA_ROOT` checkout
-and records its commit and resulting binary hash. It no longer trusts an older
-prebuilt binary at the same filesystem path. All profile bindings remain WM
-configuration; the gate adds none.
+Workspace numbering, layout keys and migration rules belong to the window
+manager. The niltempus documentation describes its selected WM policy. Sophia
+validates the resulting protocol proposals without selecting that policy.
 
 ### Independent shell components
 
@@ -826,6 +761,6 @@ Omitting the host's transport flag preserves its existing IPC peer interface.
 
 This is implemented selection/configuration, not completed native acceptance.
 The attended launcher and multi-component desktop smoke tests belong to
-`sophia-org/sophia-desktop-integration` (`tools/probes/native_launcher/README.md`).
+`sophia-org/niltempus` (`tools/probes/native_launcher/README.md`).
 They retain independent component identities and leave installation and migration
 of the user's normal desktop configuration to the operator.

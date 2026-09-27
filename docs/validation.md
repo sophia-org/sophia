@@ -185,10 +185,9 @@ must pass the canonical reducer without losing an assigned surface or changing
 the declared active output; rejected work must not poison later cycles. Each
 client also runs the corpus across two supervised processes and fresh
 connection epochs; the host pins the last committed projection across the
-replacement boundary. Hagia's check below runs both exact sequences.
+replacement boundary.
 
-The authenticated black-box host covers three direct `sophia_wm_v1` peers:
-Rust, C, and Hagia. The host exercises normal replacement plus timeout, stale,
+The authenticated black-box host covers generic Rust and C `sophia_wm_v1` peers. The host exercises normal replacement plus timeout, stale,
 and invalid replacement/recovery boundaries. `tools/check_archived_policy_client.sh`
 separately verifies fixed
 digests before compiling the frozen C99 codec/client snapshot and running it
@@ -196,80 +195,9 @@ against the current server. Shared restart and archived-client freeze coverage
 are therefore closed. The separately authorized physical output apply/rollback
 archive described below supplies the hardware evidence.
 
-The separate, standalone Hagia checkout verifies its independently written Nim
-decoder against the same retained corpus, then runs its proof client through
-the authenticated Sophia transport and canonical reducer with:
-
-```sh
-cd ~/dev/hagia
-SOPHIA_ROOT=~/dev/sophia-stack tools/check_sophia_policy.sh
-```
-
-The focused live recovery gate runs real Kitty under the public session path,
-terminates the first supervised Hagia process, admits only its replacement,
-and requires epoch advancement, startup readiness, retained layout, and clean
-session/layout health:
-
-`tools/hagia_client_lifecycle_fault_smoke.sh` applies the same replacement
-requirements to explicitly armed post-negotiation and complete-snapshot client
-faults. Session-operation client faults remain outside that gate until a
-deterministic opaque-operation activation driver is retained.
-
-```sh
-SOPHIA_HAGIA_BIN=~/dev/hagia/hagia tools/hagia_live_session_smoke.sh
-```
-
-This is bounded offline integration evidence. The installed physical output
-apply/rollback gate below supplies the separate freeze evidence.
-
-The dynamic-output physical gate is separately armed because it takes
-exclusive DRM/input ownership and asks the operator to disconnect and reconnect
-one of the connected outputs:
-
-```sh
-tools/run_output_topology_gate_tty4.sh
-```
-
-Run it from `/dev/tty4` with at least two connected physical outputs. It supplies
-the arm and `seat0` defaults, builds Hagia from the adjacent clean signed
-checkout so its policy wire matches current Sophia, builds the clean signed
-Sophia revision, and preserves timestamped evidence under `/tmp`. Environment
-variables remain available for nonstandard rigs. The gate requires one
-security-epoch barrier per change, complete `N - 1` loss and `N` return
-publications with advancing generations, matching policy settlements, later
-page-flip retirements, a surviving Kitty input proof, and clean
-non-quarantined shutdown.
-
-Revision 3's final output-authority proof is a separate two-phase TTY4 gate:
-
-```sh
-SOPHIA_FRAME_FED_OUTPUT_ARM=1 tools/run_frame_fed_output_gate_tty4.sh
-```
-
-It is reference-rig-specific and refuses anything except connected `DP-1`
-2560×1440 and `DP-2` 1920×1080. Before taking DRM or input ownership it requires
-clean, signed Sophia and Hagia HEADs, then builds and hashes the exact release
-binaries. Local signed commits qualify without pushing or fetching; upstream
-publication is separate from the identity bound by the proof. The first
-normal public-Hagia session applies, first-presents, and publishes the checked-in
-profile. The second applies the same startup candidate and forces reverse-card
-rollback after final KMS acceptance but before candidate installation. Both
-require distinct physical text confirmation and clean teardown. A verified pair
-is archived under
-`$XDG_STATE_HOME/sophia/promotion/frame-fed-output-runs/`; duplicate evidence,
-configuration outside the signed commit, identity drift, forbidden rollback
-publication, or checksum drift is refused. This gate changes real output state
-and must not be run without explicit operator authorization.
-
-The retained run is frame-fed archive `0001`. It binds Sophia
-`870ba46ae231081220b982ecc3a5a95517df7a90`, Hagia
-`a83c8fa022a4ceff5d8b96a01c46052bbd8ba64a`, success evidence
-`7dbcc54326d48168df930edf88d81f5cf64fb64251f3b2a9b150e159a37431e5`, and
-rollback evidence
-`267f8b11cc3de692708ee4c634efe6a09b6eb31da992483566e3ba520114f69d`.
-Independent archive verification reports `status=passed`, boundary
-`after_apply`, and two phases. This closes the hardware gate for stable
-interface major 1, wire revision 3.
+Client-specific policy, restart and physical desktop acceptance runs live in
+niltempus and the client repositories. They bind the exact Sophia and client
+artifacts; their results do not replace the generic protocol checks above.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The
@@ -308,30 +236,8 @@ mapping, focuses the mapped surface, routes `ll` plus Return, and requires both
 the exact shell result and a later Present. A failure is actionable evidence;
 do not replace it with a wire-write-only assertion.
 
-Milestone 5 uses one unattended local QEMU acceptance command. It boots a
-diskless, networkless Linux guest that owns virtio DRM/KMS, guest console state,
-libinput keyboard and pointer devices, and the Sophia session:
-
-```sh
-tools/qemu_milestone5_acceptance.sh
-```
-
-The runner rebuilds the initramfs, runs the strict two-xterm native-session
-regression, exercises Ctrl-Alt-Backspace emergency recovery, then runs classic
-shared-X and confined GTK3 Zenity profiles. The GTK profiles require exact
-virtio `sophia` text, a routed pointer button before Return is accepted,
-CPU/SHM pixels changed by a committed resize, native presentation on both
-guest outputs, normal application exit, zero protocol errors, and clean
-retirement. Evidence is retained below `.evidence/qemu-milestone5/`.
-
-`tools/live_session_milestone5_gtk_hardware_proof.sh` remains an optional
-compatibility diagnostic for any machine where direct DRM/KMS, VT, and physical
-input behavior needs investigation. It is not a milestone gate. Its independent
-input guard, bounded process-group termination, and KD/termios restoration remain
-fail-closed safeguards for direct hardware use.
-
-The fixture-backed GTK and TTY recovery verifier check remains available through
-`tools/check_live_session_milestone5_verifier.sh`.
+Whole-desktop QEMU acceptance and attended GTK/TTY recipes live in niltempus.
+Sophia retains their generic evidence readers and protocol regression checks.
 
 The real-client smokes are regression smokes, not full X server conformance
 tests. Their reduced output must keep `first_error=none`, report the
@@ -367,9 +273,6 @@ cargo run --offline -q -p sophia-cli --features native-session -- session run --
 # Operator TTY proof: add --input-devices=/dev/input/by-path/...-event-kbd,
 # type into xterm, and require physical_keys_routed>0 plus changed pixels.
 tools/live_session_content_hardware_proof.sh
-tools/live_session_persistent_hardware_proof.sh
-tools/live_session_milestone4_hardware_proof.sh
-tools/operator_keyboard_hardware_proof.sh
 tools/vrr_hardware_proof.sh
 tools/build_qemu_session_initramfs.sh
 tools/qemu_session_harness.sh
@@ -390,15 +293,6 @@ zero live resources. On an AMDGPU command-stream rejection, capture
 `sudo dmesg -T` immediately before another graphical session obscures the
 kernel validator record.
 
-Before repeating the full paired proof, run
-`tools/native_egl_vkcube_mixed_smoke.sh` from the same dedicated text TTY. It
-uses the real native-X `vkcube` DRI3 handoff, executes the CPU-plus-DMA-BUF
-native EGL export in a watchdog child, stops before KMS submit, and verifies a
-single `sophia_native_egl_mixed schema=1` line with positive CPU and DMA-BUF
-layers plus zero live presentation resources. The full proof preauthorizes
-`sudo` and retains `kernel-before.log`, `kernel-after.log`, and environment
-identity beside the software and GPU session logs.
-
 After changing deferred admission or production transaction intake, run the
 real-client ordering preflight on a host with an openable DRM render node:
 
@@ -411,388 +305,14 @@ It keeps policy-managed mapping deferred, delivers only the generic
 Present Complete/Idle round trips. This is a transport/admission regression;
 it does not replace visible native KMS proof.
 
-Before involving a multi-client native desktop, run the visible single-client
-isolation proof from tty3:
+## Desktop acceptance and benchmarks
 
-```sh
-tools/start_sophia_vkcube_standalone_tty3.sh
-```
-
-Sophia launches default `vkcube --wsi xcb` directly. The external reference WM
-uses its generic `natural` layout policy: it receives only the opaque node,
-centers the node's natural allocation, and requests no policy resize. The
-ordinary policy-managed deferred admission, X11 Present, renderer, and KMS
-paths remain active. The launcher installs its checked-in KDL2 policy template
-into the owner-only runtime directory as mode `0600`, so config safety does not
-depend on repository checkout permissions. After visually confirming the
-spinning cube, use Super-Shift-Q for normal logout and run:
-
-```sh
-tools/verify_sophia_standalone_vkcube.sh
-```
-
-The verifier requires exactly one presented-frame admission candidate, its
-exact visual-admission completion, nonzero scanout pixels, normal logout, zero
-protocol/resource debt, and clean teardown. A DMA-BUF candidate must have its
-exact page-flip retirement. A software candidate must advance through at least
-three authority transactions and produce positive Present Complete, Idle, and
-idle-fence-trigger evidence, so a visible but frozen first frame cannot pass.
-Presented-frame evidence may use imported DMA-BUF storage or an immutable CPU
-snapshot materialized from a software/MIT-SHM Present request. An unresolved
-X pixmap, unrelated backing snapshot, blank bordered window, process-only
-success, or emergency exit cannot pass. The launcher knows that the validation
-client is `vkcube`; Engine, the X authority, and the natural layout reducer
-contain no application identity branches.
-
-The staged CPU-buffer regression deliberately separates the first immutable
-buffer update from the later released transaction. It must retain the
-renderer-private buffer while Engine has no committed surface, then compose
-visual detail and route Copy Idle-before-Complete after release. It also separates
-an update-only replacement from a later patch, bounds the recent update
-working set at 16 handles, and requires post-reduction committed surfaces to
-retain a materialized renderer buffer:
-
-```sh
-cargo test --offline -q -p sophia-backend-live --all-features \
-  --test software_present_feedback
-```
-
-Startup failure evidence reports staged and resident CPU-buffer counts,
-resident bytes, missing committed buffers, and software Present submissions.
-`layout_pending` identifies blocked convergence; `cpu_buffer_missing`
-identifies a broken renderer residency root. Do not increase the startup
-timeout to make either failure disappear.
-
-To measure the software-Present path after correctness passes, run the bounded
-benchmark from the same dedicated tty:
-
-```sh
-tools/benchmark_sophia_vkcube_tty3.sh
-```
-
-It runs an explicit 500-by-500, 900-frame, FIFO `vkcube` workload, exits with
-the startup application, and reports `sophia_rendering_performance schema=2`.
-The report derives FPS and p95 frame
-cadence from routed displayed Present timestamps rather than process wall time. It
-also joins the session's CPU replacement/patch counts, patch rectangles and
-payload bytes, exact-versus-damage-scoped metric counts, native composition
-target reuse, maximum CPU composition time, maximum native upload time, and
-retirement count. The raw report can be regenerated without another graphical
-run:
-
-```sh
-tools/report_sophia_rendering_performance.sh
-```
-
-The terminal CPU-path workload is a separate bounded standalone proof:
-
-```sh
-tools/check_bounded_xterm_geometry.sh
-tools/check_sophia_terminal_performance_reporter.sh
-tools/run_sophia_terminal_gate_tty3.sh
-```
-
-Before the physical command, require `sudo sv status socklog-unix nanoklogd`
-to report both services running and confirm
-`/var/log/socklog/kernel/current` is nonempty. The commit-pinned runner enforces
-those checks, refuses a dirty worktree, and archives the session, launcher,
-guard, recovery, performance report, and kernel-log delta under
-`$XDG_STATE_HOME/sophia/rendering-benchmarks/<commit>/terminal-cpu/`. Run it
-from a logged-in local TTY3, arm Ctrl-Alt-Backspace when prompted, and confirm
-the centered xterm scrolls continuously. The default 20-second, 500-by-500
-pixel intent resolves against the pinned `6x13` font rather than being passed
-to xterm as character cells. It emits one line every 16 ms so visible motion
-maps cleanly to the display cadence. `SOPHIA_XTERM_LINES=8` retains the previous
-burst workload as an explicit stress override; it is not the visual default.
-Both profiles keep the software-Present path continuously active. An inner
-process-external timer bounds the producer even when terminal
-backpressure blocks a write, and its incremental count preserves completed
-bursts before xterm's process-level safety timeout. The independent 30-second
-watchdog bounds the complete session. Let the xterm exit automatically; the
-logout shortcut intentionally produces an incomplete benchmark.
-
-The wrapper runs exactly one physical attempt under `attempt-001/`, promotes
-that attempt's artifacts to the archive root, and never retries. After the
-benchmark returns, it always asks the operator whether the centered xterm
-scrolled continuously, even when the machine path failed. The schema-2
-`terminal-gate-result` records independent `machine-status` and
-`visual-status` verdicts; the overall result passes only when both pass.
-
-A page-flip stall remains retained evidence for diagnosis. It is not an
-automatic retry classification: a clean final `WouldBlock` observation does
-not establish where an earlier completion was lost, and repeating unchanged
-physical state cannot repair teardown or event-delivery defects. Run the gate
-again only after the retained evidence is diagnosed and the relevant code or
-system state has materially changed.
-
-The trailing `sophia_terminal_performance schema=6` report retains those
-resource, patch, damage, client-metadata, failure, drain, and composition-budget
-checks and additionally requires exactly one
-`sophia_live_cpu_visual_progress schema=3 status=complete` record with exact
-microsecond gap fields. Post-readiness updates must balance exactly as presented
-plus superseded with zero pending or discarded updates. The record separately
-names native logical-target bindings and lifecycle supersessions. Bindings may
-not exceed logical compositions, presentations may not exceed bindings, and
-lifecycle supersessions may not exceed all supersessions.
-
-An accepted update carries exact transaction, surface, handle, and generation
-identity. Only ready, admitted work may enter the ledger. A target is bound only
-after logical CPU or head-composition content is actually queued. Retirement
-reads the presented content variant's own logical checksum rather than the
-head's retained numeric checksum; mixed and retained-mixed content can neither
-acquire nor inherit a logical target. Removing the same surface
-lifecycle-supersedes its pending update, while an unrelated removal cannot
-settle it. At least three content-changing primary retirements must occur. The
-first and final source and display observations retain their one-second liveness
-bounds. During steady state, the source gap budget is the greater of three
-configured producer intervals or two refresh periods plus one millisecond; the
-display gap and accepted-update-to-exact-retirement budgets are two refresh
-periods plus one millisecond. A startup-only burst cannot pass.
-
-The default composition budget remains 25 ms;
-`SOPHIA_TERMINAL_COMPOSE_BUDGET_MSEC` accepts only a positive integer and is
-reserved for a separately documented gate. The raw report can be regenerated
-from the retained standalone session log:
-
-```sh
-tools/report_sophia_terminal_performance.sh
-```
-
-If the machine locks or the report fails, retain the standalone session,
-launcher, input-guard, recovery, lifecycle, and protected kernel logs. The
-wrapper never retries a failed physical takeover; diagnose its retained
-evidence before running another candidate. This benchmark does not establish
-Xserver parity. Optional X Present cadence remains a
-diagnostic; the gate's screen-progress authority is the session's exact primary
-composition and KMS-retirement evidence.
-
-After greetd restores the normal Xorg or XLibre session, open a terminal in
-that session and run:
-
-```sh
-tools/benchmark_xserver_graphics.sh
-```
-
-The Xserver runner compiles a bounded XCB observer, launches the identical
-`vkcube` command, and measures the server's Present Complete timestamps. It
-does not infer cadence from process wall time. The final comparison refuses
-different workload geometry, frame count, Vulkan present mode, Vulkan provider,
-or output pixel count. The default gate requires at least 90% of Xserver FPS
-and permits at most `xserver_p95 / 0.90`. Override
-`SOPHIA_RENDER_MIN_BASELINE_RATIO` only when a documented milestone sets a
-different threshold.
-
-The X Present completion path is an observed result, not a comparability input.
-An unredirected Xserver may report `Flip`; a composited desktop may report
-`Copy`. Both carry advancing FIFO UST/MSC cadence, but `Copy` can complete
-before the desktop compositor's eventual scanout. The comparison therefore
-labels unlike paths `comparability=cadence_only` and never promotes their p95
-ratio to an end-to-end scanout- or input-latency claim. Sophia's mixed/CPU
-composition record is post-KMS `Copy`. `Flip` is reserved for a future frame
-that reaches direct scanout without composition.
-
-If `glxgears` is installed, the Xserver runner also records a bounded mean-FPS
-sample as `role=compatibility_probe`. On Void Linux it is supplied by
-`mesa-demos`. This result establishes the reference Xserver's GLX/OpenGL
-cadence and exposes gross reference-path regressions. It is not a renderer
-benchmark and never supplies Sophia's Vulkan parity threshold. Set
-`SOPHIA_XSERVER_GLXGEARS=false` to skip it or `true` to require the binary.
-
-The paired Sophia-side compatibility proof is one command from the dedicated
-TTY:
-
-```sh
-tools/benchmark_sophia_glxgears_tty3.sh
-```
-
-It starts `glxgears` directly in the standalone natural-layout profile, without
-Kitty or a shell. The default 500-by-500, swap-interval-one workload
-runs for 20 seconds and exits automatically. Before graphics takeover, a
-bounded external-client preflight must reach classic visual discovery, direct
-context creation, DRI3 import, and Present submission. Move the pointer over
-the centered window and confirm that the three gears remain smooth, then let
-the bounded client end the session automatically; Super-Shift-Q intentionally
-preempts the benchmark completion. The trailing
-`sophia_glxgears_performance` record reports the client's sampled FPS
-separately from Sophia's routed post-KMS Copy FPS and p95 interval. It also
-requires an identified GL renderer, positive DRI3/mixed-composition evidence,
-Present idle-fence progress, at least one retained-image cache hit, zero
-descriptor mismatch or cache-capacity rejection, no submission or retirement
-failure, and clean resource drain. This remains a GLX compatibility diagnostic
-rather than a substitute for the fixed Vulkan acceptance workload.
-
-The same benchmark under a synthetic shake, for a cadence claim that does not
-depend on a hand:
-
-```sh
-tools/benchmark_sophia_glxgears_shake_tty3.sh
-```
-
-It creates a virtual mouse through uinput before the session opens its seat,
-so udev enumerates it beside the physical devices, then drives alternating
-relative motion at `SOPHIA_GLXGEARS_SHAKE_HZ` (default 1000) reports a second
-and `SOPHIA_GLXGEARS_SHAKE_AMPLITUDE` (default 8) pixels from the moment the
-the client starts rendering until the bounded run ends. Keep hands off the mouse. A
-trailing `sophia_glxgears_shake` record, appended to `shake.log` beside the
-session log, pairs the rate the probe actually achieved with the client's
-sampled FPS and Sophia's present cadence; `status=pass` requires the benchmark
-to pass and the shake to have started when the client began rendering rather than on its deadline.
-`/dev/uinput` must be writable (`tools/setup_sophia_uinput.sh`).
-
-What the shaken run is for is the benchmark's own rule -- at least 55 FPS with
-a p95 of at most 25 ms -- which until this harness existed had only ever been
-checked against a fixture. It now holds under 1 kHz motion: 59.9 FPS at a p95
-of 16.7 ms, one frame interval rather than two. The cursor record beside it
-says why, and is worth reading when the rule fails. `cursor_only` counts the
-blocking cursor-only commits taken while the client was drawing and should be
-near zero; `rides` should be close to the frame count, because a cursor that
-rides a frame going out anyway costs nothing. A high `cursor_only` with a p95
-at twice the frame interval is the signature of frames losing their vblank to
-the cursor.
-
-An installed desktop reports a nonzero `cursor_only_total_msec` and that is
-ordinary: it idles, so the commits that move the pointer on an idle desktop
-are taken often, each bounded by one vblank. The benchmark reads zero only
-because `glxgears` never stops drawing.
-
-The session log must not contain a CPU submission between the first mixed
-Present retirement and its successor, a repeated cold import of one live image
-generation, nor an AMD `context is guilty` recovery. The first run that
-rendered only a flash of gears violated these invariants: stale CPU fallback
-blanked the composed output, and a focus repaint recreated the current
-DMA-BUF's EGLImage/texture. That second import blocked in `glFinish` until AMD
-recovered the guilty context. These are generic mixed-presentation lifecycle
-failures, not GLX workload failures.
-
-The raw reports and comparison can be regenerated without rerunning either
-graphical session:
-
-```sh
-tools/report_sophia_rendering_performance.sh
-tools/report_xserver_rendering_performance.sh
-tools/compare_sophia_xserver_rendering.sh
-```
-
-Never compare a hardware Xserver run to a Sophia Lavapipe run; provider
-mismatch measures the Vulkan implementation, not the compositor pipeline. The
-comparison rejects that mismatch by hashing `vkcube`'s provider description.
-Offline regressions are
-`tools/check_sophia_glxgears_performance_reporter.sh`,
-`tools/check_sophia_rendering_performance_reporter.sh`,
-`tools/check_sophia_terminal_performance_reporter.sh`, and
-`tools/check_xserver_rendering_performance_reporter.sh`.
-
-## Development-Session Readiness
-
-CP-14.3 in [the active roadmap](notes/indexes/plans.md) owns Milestone 14's
-current exit: a recoverable Hagia development session using terminal, Firefox,
-clipboard, layouts/tabs, two monitors, dependable input, VT recovery, and logout.
-The native evidence-lifetime and suspended-deadline implementation passes its
-lifecycle model, regression tests, and repository gate. The two
-[physical recovery canaries](native-recovery-canary.md) remain the first operator
-task. This does not establish development-session workflow acceptance.
-Diagnostics improvements and the broader session checklist remain queued.
-
-Start with a short physical Firefox/VT/deadline canary after the lifecycle
-regressions pass. The normal-session acceptance check then covers startup,
-terminal and Firefox launch, typing/focus, resize, both outputs, basic tabs,
-VT return, and clean logout. Full tab behavior follows the
-[tab acceptance contract](tabbed-layouts.md#verification-and-operator-acceptance).
-The operator can perform normal work; no benchmark controller or foreign-stack
-comparison is required. Reuse the existing session entry and fallback path.
-
-For each workflow observation retain the exact source, binaries, profiles,
-session identity, outcome, and relevant diagnostics. A usage failure needs a
-diagnosis, focused regression where feasible, correction, and revalidation of
-affected behavior. Code changes retain `cargo xtask check`; protocol changes
-also retain independent client checks. Startup, rendering, input, or lifecycle
-changes require the short physical acceptance check and any defect-specific
-probe. Documentation-only changes need inspection, link checks, and
-`git diff --check`, not an operator session.
-
-Previous evidence keeps its original identity. Relying on it for a newer
-candidate requires a recorded impact review; changed behavior requires relevant
-retesting. Unrelated changes do not reset every demonstrated workflow. Real use
-complements deterministic and physical tests, and cannot establish unobserved
-properties. Readiness requires no fixed hour/day counter or consecutive clean
-workdays.
-
-Promotion requires observations for every declared workflow and no unresolved
-blocking failures: unrecoverable sessions, lost input, application-blocking
-failures, visible corruption, undrained work, or unbounded resource growth.
-Review warmed resource populations and steady-state allocation growth against
-the observed workload, clean teardown, and relevant refresh-relative latency
-evidence; record limits rather than extrapolating unobserved durability. Longer
-use is useful evidence. The optional two-hour soak and CP-14.2 matrix remain
-separate and non-blocking, with their own existing verification requirements.
-
-## Deferred Same-Hardware Comparison
-
-CP-14.2 is deferred and incomplete. Resume it only for an explicitly selected
-stable candidate or a named performance investigation. Its 36-row requirement
-applies to comparison verification, not permission to use Hagia or close the
-revised Milestone 14. Existing artifacts and strict verification remain intact.
-The comparison is owned by typed conformance code:
-
-```sh
-cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
-cargo xtask conformance desktop-comparison prepare RUN
-cargo xtask conformance desktop-comparison prepare-soak SOAK_RUN
-cargo xtask conformance desktop-comparison gate RUN
-cargo xtask conformance desktop-comparison status RUN
-cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
-cargo xtask conformance desktop-comparison preflight RUN
-cargo xtask conformance desktop-comparison qualify RUN
-cargo xtask conformance desktop-comparison capture RUN
-cargo xtask conformance desktop-comparison finalize RUN
-cargo xtask conformance desktop-comparison verify RUN
-cargo xtask conformance desktop-comparison report RUN
-```
-
-Preparation refuses a dirty or unsigned Sophia candidate. It hashes the
-repository-owned stack configurations, isolated profiles, capture adapter, and
-local Firefox fixture, pins the
-candidate and reference-stack identities, and records the common two-output
-topology plus detected kernel, Mesa, and GPU identities. The schedule
-rotates Sophia, XLibre+xmonad, and niri across three repetitions of Kitty 60 s,
-the loopback-only animated Firefox fixture, 120 resize requests, and a 16-Kitty
-launch burst: 36 required raw samples total. `prepare-soak` creates a separate
-one-row Sophia run for an optional two-hour overnight durability check. The
-soak never blocks `verify` or `report` for the interactive matrix.
-
-`gate` owns one complete TTY3 row: it checks the clean prepared commit, builds
-before display takeover, selects only the next typed stack, launches it without
-an operator application, attests its supervisor, resolves DP-1's active CRTC,
-captures, and tears down. `attest` publishes an owner-only local record.
-Privileged preflight confirms the DRM completion tracepoint before creating an
-attempt, even when tracefs is root-private. Before the first Sophia row,
-`qualify` displays four candidate-derived targets and requires physical cursor
-motion plus a click in each; that interaction is excluded from the measured
-window. `capture` rejects a controller or workload launcher inside the measured
-supervisor tree, continuously verifies the exact supervisor and required stack
-components, owns an isolated workload, and samples stack, workload, and
-aggregate resource populations separately. It uses a private tracefs instance
-for authoritative kernel DRM completion timestamps; repeated tracepoint
-deliveries of one kernel sequence are counted but do not become extra frames,
-and an active cross-card CRTC-index alias is rejected as ambiguous. Kitty
-control sockets live in a short owner-only runtime namespace and never load
-personal Kitty configuration. Capture stages six raw inputs while the stack is
-live. After stack exit and TTY recovery, `finalize` proves the attested
-supervisor is gone, records clean teardown, and seals the row. Passive replay
-derives the sole schema-4 sample only after the normalized visibility series proves an empty
-baseline plus focused workload ownership on DP-1 with zero foreign toplevels,
-and duration, resource cadence, frame monotonicity, resize population, crash,
-sample-loss, and teardown checks pass. The sealed attempt has an exact file set
-and internal checksums; the run ledger separately binds its result to the typed
-schedule. A partial capture blocks later progress within its own comparison run
-until diagnosed; it does not block the development-session work in CP-14.3.
-
-`verify` requires the exact complete matrix. `report` retains memory,
-allocation, CPU/fault, process/thread/fd, launch/settle/resize, and kernel-frame
-distribution fields with `verdict=none`. Reference performance is never a
-Sophia correctness threshold. The XLibre+xmonad entry is a direct reference
-desktop: it never connects xmonad to Sophia and does not define a supported
-Sophia policy path.
+The niltempus repository owns installation, desktop workflow acceptance,
+standalone client recipes, hardware comparison and benchmark orchestration.
+Those checks bind their selected WM, shell and applications to a Sophia revision.
+Sophia retains the generic renderer, protocol and archive readers used by them.
+Deterministic checks do not establish physical display or input acceptance.
+Previous evidence keeps its original source and binary identities.
 
 ## Evidence reader compatibility
 
@@ -817,99 +337,11 @@ for current sessions. The Milestone 4 GPU diagnostic remains available: it reads
 historical schema 14 and current proof schema 16, accounting for Copy and Flip
 separately while retaining its mixed-export and controlled-rejection requirements.
 
-## Native Session Integration
+## Installed desktop validation
 
-The retained QEMU harness covers only Sophia-native session behavior. It builds
-the session artifact from the current workspace and supports the base session,
-emergency recovery, and classic/confined GTK scenarios:
-
-```sh
-SOPHIA_QEMU_SCENARIO=session tools/qemu_session_harness.sh
-SOPHIA_QEMU_SCENARIO=emergency-recovery tools/qemu_session_harness.sh
-SOPHIA_QEMU_SCENARIO=gtk-classic tools/qemu_session_harness.sh
-SOPHIA_QEMU_SCENARIO=gtk-confined tools/qemu_session_harness.sh
-SOPHIA_QEMU_SCENARIO=xtest-selection tools/qemu_session_harness.sh
-```
-
-These scenarios validate Sophia session ownership and X Authority application
-compatibility. They do not host an X11 WM as Sophia policy. A WM or shell under
-test must connect directly through `sophia_wm_v1` or `sophia_shell_v1`.
-
-The primary physical policy gate is Hagia:
-
-```sh
-tools/run_current_hagia_native_gate_tty4.sh
-```
-
-The gate builds clean signed Sophia and Hagia checkouts, installs a temporary
-native session, exercises policy negotiation and visible output, restores the
-display manager, and archives reduced evidence. Use the dedicated text TTY
-named by the launcher. The gate is bounded; long soaks are optional overnight
-diagnostics and do not block ordinary development.
-
-Focused native physical gates remain available for the mixed-output and
-frame-fed output paths:
-
-```sh
-tools/run_mixed_output_gate_tty4.sh
-tools/run_frame_fed_output_gate_tty4.sh
-```
-
-Their archive verifiers bind results to the current schema, exact checkout,
-session identity, visual confirmation, teardown, and retained checksums.
-
-## Installed Native Candidate
-
-The [installed operations runbook](operations.md) defines the supported host
-boundary, logs, stop/recovery behavior, fallback login, and rollback.
-
-Build and install an immutable release separately from login:
-
-```sh
-tools/install_live_session.sh
-```
-
-A base artifact provides the diagnostic Sophia session. A Hagia-enabled artifact
-adds the production-shaped native WM/shell entry. Packaging records exact
-digests and Git identities, and installation verifies the artifact before an
-atomic `/opt/sophia/current` switch. No package contains an X11 WM bridge, an
-embedded legacy WM, or bridge-specific configuration.
-
-Local installation does not require pushing or fetching either repository.
-Hagia may be ahead of `origin/master` or have no remote-tracking branch;
-packaging still verifies its source-commit signature and committed default
-profile, records exact commit and binary hashes, and requires a clean Sophia
-worktree. Publication is a separate step. Rebuild changed Hagia sources before
-`just install-session`, since the installer can reuse an existing executable.
-
-Run the self-contained packaging/install regression with:
-
-```sh
-tools/check_live_session_install.sh
-```
-
-It proves schema and digest validation, rejects retired bridge fields and
-artifacts, checks executable native components, exercises base and Hagia
-activation, verifies rollback, removes only Sophia-owned stale entries, and
-preserves foreign desktop entries.
-
-Installed native evidence can be inspected with:
-
-```sh
-sophia-status
-sophia-verify-recovery
-sophia-verify-login-cycle
-sophia-verify-truecolor-runs 1
-sophia-verify-xterm-runs 1
-```
-
-The Firefox, TrueColor, xterm, watchdog, emergency-recovery, runtime-identity,
-and login-cycle recorders all identify the Hagia native session. Their verifiers
-consume checksummed archives and fail closed on an unexpected revision, binary
-identity, result, protocol fault, or teardown residue.
-
-Use `sophia-stop` or the independent recovery entry to leave a failed session.
-Neither route depends on the policy process continuing to answer.
+Installed-session packaging, activation, rollback and physical evidence gates
+live in niltempus. They must validate their chosen desktop independently of
+Sophia's deterministic repository gate.
 
 ## Native-only Surface Audit
 
@@ -923,14 +355,11 @@ tools/check_atomic_scanout_local.sh
 ```
 
 The first gate prevents the bridge crate, bridge runtime variables, legacy
-profiles, and bridge launchers from returning. The policy matrix requires the
-language-neutral Rust, C, and Hagia clients. The broad local gate checks source
+profiles, and bridge launchers from returning. The policy matrix covers generic language-neutral peers. The broad local gate checks source
 layout, generated protocol artifacts, launch safety, package behavior, shell
 syntax, model inputs, and the self-contained verifier regressions.
 
-The direct XLibre+xmonad desktop-comparison profile is the sole active xmonad
-exception. It is an external baseline measured beside Sophia and never receives
-a Sophia policy socket.
+Desktop comparisons live in niltempus and never give a foreign WM a Sophia policy socket.
 
 ## Client buffer negotiation and pixels
 
@@ -1152,52 +581,12 @@ Check their deterministic fixtures without taking hardware ownership:
 tools/check_atomic_scanout_verifiers.sh
 ```
 
-## Keyboard Independence on Hardware
+## Keyboard independence on hardware
 
-Two physical keyboards on one seat, for t094. The backend mints an identity
-per device and announces arrivals and departures on the packet stream; the
-session releases whatever a departed device still held that the kernel did
-not. Headless controls pin each of those pieces; hardware shows them on two
-real keyboards, one of them unplugged and replugged.
-
-**The ordinary-session path, which is the acceptance path.** Install the
-candidate as the live session (`just install-session`), log in, type on the
-keyboard you will unplug, unplug it, type on the other, plug it back in, type
-on it, and log out; typing on the other keyboard before the unplug instead
-is also accepted. Keep the session short: the recorder rotates early segments
-of a long session away. Then:
-
-```sh
-tools/verify_keyboard_independence_session.sh            # newest finished session
-tools/verify_keyboard_independence_session.sh ~/.local/state/sophia/sessions/<id>
-```
-
-It reads the session's manifest (release commit and binary digest), outcome
-and lifecycle (a clean, installed, non-emergency exit), health (no storage
-errors) and the retained event records, and requires two hardware keyboards
-typed on, a removal of one of them, keys routed by the seat between that
-removal and the return, the return announced under an identity never seen
-before and typed on, and no class-identity fallbacks. The kernel releases a
-USB keyboard's keys itself when it goes, so `released=0` on the removal is
-the ordinary reading; a nonzero count must carry the session's flush record.
-`tools/check_keyboard_independence_session_verifier.sh` pins the verifier
-against a fixture session and sixteen mutations and runs under
-`cargo xtask check`. The summary it prints is the evidence for the milestone
-note. A uinput keyboard is admitted and announced with `virtual=true`; the
-verifier requires hardware on both sides, so a rehearsal with a virtual
-keyboard exercises the path but never satisfies the claim.
-
-**The attended gate, optional.** `tools/keyboard_independence_physical_gate.sh`
-through `tools/run_keyboard_independence_gate_tty4.sh` (any text console but
-the display manager's) adds what a passive record cannot witness: the
-emergency chord split across the two keyboards must not arm the input guard,
-on the seat and pinned to one keyboard, and the proof phrase typed after the
-unplug must be unshifted. It runs two guard phases and a session with a guide
-in Kitty, verified by `tools/verify_keyboard_independence_physical.sh` and
-archived by `tools/archive_keyboard_independence_physical_run.sh`;
-`tools/keyboard_independence_walkthrough.py` checks its preconditions, names
-the keyboards and explains each phase. It refuses while a key remapper such as
-keyd runs, since a remapper presents every keyboard as one virtual device.
+Sophia's headless tests cover per-device identity, arrival/departure and release
+of held state. The attended two-keyboard and ordinary-session acceptance recipes
+live in niltempus. Only physical observations establish unplug/replug behavior;
+virtual input and deterministic tests are not hardware acceptance.
 
 ## Retiring `DEFAULT_DISPLAY`
 

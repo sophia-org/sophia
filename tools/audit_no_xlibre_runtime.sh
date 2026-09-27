@@ -15,7 +15,7 @@ if grep -qiE 'sophia-x-bridge|xlibre-research' Cargo.toml crates/sophia-cli/Carg
     exit 1
 fi
 if grep -qE '/usr/libexec/Xorg|xlibre-25|dummy_drv|--client-backend=xlibre-compat|configure_xlibre' \
-    tools/run_sophia_session.sh tools/install_live_session.sh; then
+    tools/run_sophia_session.sh; then
     echo "Installed Sophia launcher still contains an XLibre/Xorg launch dependency." >&2
     exit 1
 fi

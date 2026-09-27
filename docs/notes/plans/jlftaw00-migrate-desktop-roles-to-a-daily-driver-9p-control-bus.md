@@ -311,8 +311,22 @@ conformance and xtask clippy pass. Evidence is under
 `development-evidence/final-9p/{retained-launch,host-wrapper-reduced,watchdog-reduced,lifecycle-reduced,cleanup-clippy}.log`.
 The product-specific X error tolerance moved with Quickshell. Sophia keeps the
 Present-after-destroy and SHAPE wire regressions; no client/GPU claim follows
-from those tests. The remaining desktop-tool deletion closure and combined
-gate are still required; this does not complete t252 or authorize a live change.
+from those tests. The remaining gated S3–S5 desktop-tool closure is now removed, including the
+comparison crate, installed stack and physical runners. Generic evidence readers,
+fixtures and launch safety remain. The canonical offline wrapper no longer needs
+sibling desktop checkouts; its 32 regressions pass. Niltempus owns the moved
+coverage. The combined isolated gate passes in
+`development-evidence/final-9p/combined-removal-run6.log`: 5,858 workspace
+tests, zero failures, 62 ignored; SDK tests, clippy, layout and retained
+verifier controls pass. Device-dependent pixel checks report unavailable,
+and no promoted archive corpus was mounted. Earlier failed logs remain:
+the sandbox needed private runtime/Go-cache paths; nested SDK and profile
+checks needed to honor the selected Cargo target; the shutdown test helper
+needed to preserve its requested phase after a budget yield. The helper's
+three deterministic controls and the real shutdown case pass without
+changing production scheduling or weakening the identity/history assertions.
+E1's independent descriptor serve/bar peer remains an explicit gap. This
+does not complete t252 or authorize a live change.
 
 Role families, owner handoff (2026-09-27): the launcher, dock and bar
 families run over the file wire through the existing owners (a52f93f7);

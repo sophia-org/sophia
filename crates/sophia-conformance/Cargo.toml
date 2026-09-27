@@ -62,8 +62,6 @@ test = false
 doc = false
 
 [dependencies]
-drm = { version = "0.15", default-features = false }
-niri-ipc = "=26.4.0"
 rustix.workspace = true
 nix = { version = "0.30.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
@@ -73,7 +71,6 @@ sophia-config = { path = "../sophia-config" }
 sophia-engine = { path = "../sophia-engine" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
-x11rb = "0.13.1"
 
 [lints]
 workspace = true

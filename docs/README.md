@@ -144,10 +144,8 @@ candidates that role may exchange.
   language-neutral spatial-policy protocol. Legacy X11 WMs are porting
   references, not supported Sophia policy clients.
 - [Renderer Import Boundary](renderer-import-boundary.md), [Live Backend
-  Dependency Policy](live-backend-dependency-policy.md), and [Live Session
-  Bootstrap](live-session-bootstrap.md) define backend/runtime seams.
-- [Installed Operations](operations.md) defines the supported installed-host
-  boundary and the status, stop, recovery, fallback, and rollback procedures.
+  Dependency Policy](live-backend-dependency-policy.md), define backend/runtime seams.
+- Installed desktop operations and release procedures live in niltempus.
 
 Subsystem documents may describe implementation details, but they may not
 override the ownership and trust rules in the normative architecture.
@@ -166,8 +164,8 @@ override the ownership and trust rules in the normative architecture.
   concepts, milestone records, and the `zk` maintenance workflow.
 - [Architecture Decision Records](notes/indexes/decisions.md) explain significant
   choices and their consequences; normative documents retain the current contracts.
-- [Project Hagia](project-hagia.md) is the design note for a standalone
-  Sophia-native spatial-policy project.
+- WM-specific design and desktop acceptance belong to their client repositories
+  and niltempus.
 - [Sophia Shell Interface Direction](sophia-shell-v1-direction.md) is the design
   note recording how `sophia_shell_v1` should be specified, the external shell
   evidence that method draws on, and how the experimental shell and WM

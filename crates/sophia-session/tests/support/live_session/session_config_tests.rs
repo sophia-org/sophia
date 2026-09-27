@@ -1320,7 +1320,7 @@ fn the_two_cursor_flags_are_mutually_exclusive() {
 ///
 /// It is covered by evidence instead. A session records
 /// `sophia_live_cursor_path schema=1 status=selected path=...` at readiness,
-/// and `tools/verify_hagia_native_session.sh` requires that line, so a run
+/// and the external desktop verifier requires that line, so a run
 /// that took the path it was not asked for is refused by the gate rather than
 /// by a unit test.
 #[test]

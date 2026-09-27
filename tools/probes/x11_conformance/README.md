@@ -440,10 +440,6 @@ unrelated descriptors before starting the unchanged canonical command.
 python3 -B tools/probes/x11_conformance/offline_check.py \
   --source /absolute/clean-checkout \
   --verification-key /absolute/public-verification.gpg \
-  --hagia-source /absolute/hagia \
-  --hagia-commit a12fc5cc398fd4692bfb693df25184bbec9ebc76 \
-  --narthex-source /absolute/narthex \
-  --narthex-commit f270248f7368cef2e5a18023958627d12f8bf7eb \
   --target-dir /absolute/main-checkout/.artifacts/offline-target \
   --output /absolute/main-checkout/.artifacts/offline-check-new
 ```
@@ -466,29 +462,11 @@ binary discovery. These fixtures expose neither an installed Sophia nor host `/e
 versions are checked before the workspace suite, so a missing helper cannot be
 mistaken for source-layout evidence.
 
-Full checks require both explicit sibling source/commit pairs. Commits must be
-complete lowercase 40-hex identities, never branch names or moving `HEAD`.
-The sibling repositories may contain unrelated working edits: the wrapper reads
-only the specified immutable commit object and never looks for sibling checkouts
-implicitly. The pinned values above are explicit inputs, not automatic upgrades.
-
-Each sibling becomes a fresh, non-bare **identity repository**, not a source
-snapshot. It contains the exact raw commit object, detached `HEAD` and a depth-one
-shallow boundary. There is no checkout, index, remote, copied configuration,
-alternate object store or external Git link. Tree identities are recorded, but
-tree/blob objects and binaries are omitted; their contents are **not verified**.
-Consumers needing those objects must fail instead of reaching a host checkout.
-Only these generated identity repositories are mounted read-only, at
-`/work/dependencies/hagia` and `/work/dependencies/narthex`. The wrapper sets
-`SOPHIA_HAGIA_ROOT` and `SOPHIA_NARTHEX_ROOT` to those paths only inside containment.
-Commit payloads have a 1-MiB bound enforced while reading subprocess output,
-separate from the verifier's default 256-KiB output limit, and bounded Git waits. Object IDs
-and SHA256 hashes are checked during copying, before/after signature verification
-and after the contained command; sibling moving-HEAD and worktree state are not
-used as identity evidence.
+The canonical gate requires no sibling desktop checkouts. Its matcher fixtures
+use synthetic identities, so no WM or shell source is mounted or built.
 
 Full checks also require an explicit public OpenPGP export containing the
-signers of the source commit, its parent and the two pinned sibling commits.
+signers of the source commit and its parent.
 The archive-verifier fixtures use these identities and genuine signature
 verification. Export only those known
 fingerprints; for example, after identifying the required signer:

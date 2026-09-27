@@ -130,20 +130,6 @@ cargo xtask conformance verify direct-scanout-overlay LOG
 cargo xtask conformance verify direct-scanout-cost LOG
 cargo xtask conformance verify direct-scanout-cursor LOG
 cargo xtask conformance verify direct-scanout-archive [RUN]
-cargo xtask conformance run direct-scanout WIDTH HEIGHT HOLD WORKLOAD [PROOF]
-cargo xtask conformance gate direct-scanout [PROOF]
-cargo xtask conformance desktop-comparison install-reference XLIBRE_SOURCE PREFIX
-cargo xtask conformance desktop-comparison prepare RUN
-cargo xtask conformance desktop-comparison prepare-soak SOAK_RUN
-cargo xtask conformance desktop-comparison gate RUN
-cargo xtask conformance desktop-comparison status RUN
-cargo xtask conformance desktop-comparison attest RUN SUPERVISOR_PID [CRTC]
-cargo xtask conformance desktop-comparison preflight RUN
-cargo xtask conformance desktop-comparison qualify RUN
-cargo xtask conformance desktop-comparison capture RUN
-cargo xtask conformance desktop-comparison finalize RUN
-cargo xtask conformance desktop-comparison verify RUN
-cargo xtask conformance desktop-comparison report RUN
 sophia session run [OPTIONS]
 sophia session input-guard [OPTIONS]
 ```
@@ -152,7 +138,8 @@ sophia session input-guard [OPTIONS]
 `sophia-live-session`, and `sophia-session-input-guard` remain compatibility
 aliases. They are not the spelling for new code.
 
-`PROOF` selects what a probe run exercises beyond ordinary direct scanout:
+Desktop comparisons and physical direct-scanout runs live in niltempus.
+The external niltempus direct-scanout runner selects what a probe exercises:
 `--overlay-proof` opens an overlay over a directly scanned frame and proves the
 return to composition, `--cost` measures direct against composed frames in one
 session, `--cursor` sweeps the hardware cursor, and `--atomic-cursor` asserts
@@ -163,8 +150,7 @@ The active development-session path is CP-14.3 in `todo.md`. Reuse the existing
 `sophia session run` entry, installed launcher, and necessary TTY adapter, with
 exact binary/profile identity and a known working fallback. The lifecycle fixes have passed deterministic verification; the
 [two recovery canaries](native-recovery-canary.md) remain pending. Installed daily sessions now provide `sophia session mark`, `inspect`, `keep`,
-and `list`. The [operator guide](operations.md#mark-and-investigate-a-problem)
-defines their selection, retention, and disclosure rules. The installed launcher
+and `list`. The niltempus operator guide defines desktop selection, retention and disclosure rules. The installed launcher
 uses the internal `session _supervise` adapter to bind the TTY wrapper's lifetime
 to its record before takeover. This adapter is not a display-control endpoint.
 The CLI owns the concrete output callbacks; Session owns bounded recording,

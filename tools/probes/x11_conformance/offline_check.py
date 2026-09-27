@@ -29,7 +29,8 @@ GIT_ENVIRONMENT = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent',
                    'GIT_NO_REPLACE_OBJECTS': '1', 'GIT_NO_LAZY_FETCH': '1',
                    'GIT_TERMINAL_PROMPT': '0', 'LANG': 'C.UTF-8'}
 
-SIBLINGS = ('hagia', 'narthex')
+# The canonical Sophia gate has no external desktop checkout inputs.
+SIBLINGS = ()
 MAX_COMMIT_BYTES = 1024 * 1024
 IDENTITY_CONFIG = b'[core]\n\trepositoryformatversion = 0\n\tbare = false\n'
 
