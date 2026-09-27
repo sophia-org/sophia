@@ -531,16 +531,36 @@ fixed before the peer connected.
   are bit 0 (required in every offer), work-area reservation, the granted
   content bits, and the indicator bits only when requested at revision 6. `limits_published` is 1
   and the `limits` object is readable once the event is visible.
+- Accepted (native launcher, r7): one `Negotiated` event with
+  `selected_revision`=7 for any offer with minimum <= 7 <= maximum (any other
+  offer is not served at all; see below). `required_capabilities` must equal
+  exactly bits 5, 7, 8 and 11 (application catalog, content surface, content
+  discrete input, native launcher) -- not a superset or subset -- and the
+  granted `capabilities` echo that same exact mask.
+- Accepted (persistent catalog, r8): one `Negotiated` event with
+  `selected_revision`=8 for any offer with minimum <= 8 <= maximum.
+  `required_capabilities` must equal exactly bits 1, 5, 7, 8 and 12
+  (work-area reservation, application catalog, content surface, content
+  discrete input, persistent catalog); the granted `capabilities` echo that
+  same exact mask.
 - Refused by content policy: one `Refused` event, then revocation. Reason 1
   (permission denied) when the operator denied content, with
   `denied_capabilities` the requested content bits (or only bit 8 when just
   discrete input is denied); reason 4 (unavailable) when content is
-  unavailable or its budget cannot be admitted.
+  unavailable or its budget cannot be admitted. For r7 and r8,
+  `denied_capabilities` is instead the whole exact mask above, never a
+  partial one: reason 4 when content is unavailable, reason 1 otherwise
+  (denied outright, or granted without discrete input).
 - An offer the profile cannot serve at all (minimum revision 0 or above the
   profile's maximum, minimum above maximum, bit 0 missing, discrete input
   without surface, or a required bit the profile cannot grant) ends the attach
   without a `Refused` event: the peer observes the export's revocation.
-  Reasons 2 and 3 are reserved and not used by this version.
+  Reasons 2 and 3 are reserved and not used by this version. For r7 and r8,
+  the same "ends the attach" outcome (no `Refused` event) also covers: a
+  revision window that does not include the exact fixed revision;
+  `required_capabilities` other than the exact mask above; reaching
+  negotiation with no content limits already reserved for this connection;
+  and reserved limits whose grant names a different connection epoch.
 - A second `Negotiate` submit after one was accepted fails with `EALREADY`;
   any content record before negotiation fails with `EACCES`. Neither is
   journaled.
@@ -563,6 +583,81 @@ fixed before the peer connected.
   `CandidateOutcome`, and the component's authority is revoked. (Open product
   question, not a transport rule: whether a refused permit should instead
   yield `CandidateOutcome` rejected with reason 1 on both wires.)
+
+### Role family outcomes (normative)
+
+These are the observable outcomes for the native launcher (r7), persistent
+catalog (r8) and view indicator (r6) families: which record, status and
+reason a client sees for each negative case. Per-record field layouts and
+byte-level rules are in the KDL; this section fixes lifecycle behaviour that
+spans several records. `reason` values are the shared `ContentReason` codes
+used throughout this contract (1 Stale, 2 Budget, 3 Malformed, 4
+Unauthorized, ... 12 Revoked) unless noted otherwise.
+
+**Native launcher activation (`NativeActivate` to `NativeActivationOutcome`).**
+An activation is checked against the connection's current focus binding,
+state revision, published catalog and (for a keyboard cause) outstanding
+Accept receipt, in that order; the first failure decides the outcome.
+
+| Status | Reason | Trigger |
+| --- | --- | --- |
+| 1 Admitted | 0 | Every check passes and the launch queue admits it. Admission is queue ownership only, not application startup. |
+| 2 Stale | 1 | The binding does not match the current focus exactly (any field, including one already superseded by a later `NativeFocus`); the named `state_revision` does not equal the connection's current state revision (a query `NativeInput` since the binding was observed disarms an activation issued against the older revision); the catalog generation or connection epoch does not match; for `cause`=1 (keyboard), no matching un-acknowledged Accept `NativeInput` is outstanding within `action_ack_timeout_ms`, or `slot` is not the presented candidate's `selected` slot; or the activation reaches the connection after `NativeClosed` for that opening (no Presented candidate remains). |
+| 3 Unknown | 3 | `slot` is absent from the current catalog. |
+| 4 Unauthorized | 4 | `slot` is present but not `available`, or not among the presented candidate's displayed rows. |
+| 5 Capacity | 2 | Every check above passes but the launch queue itself refuses for capacity. |
+
+A `NativeActivate` is never accepted "before a Presented candidate" or
+"without a focus lease" as a distinct case: both collapse into Stale above,
+because `native_launcher_focus()` is `None` until an actual Presented
+mints a `NativeFocus`, so the binding-match check already fails.
+
+**Native launcher input acknowledgement (`NativeInputAck`).** The
+`disposition` a client declares is not itself checked; the session instead
+checks whether the named `event` has an outstanding, not yet acknowledged
+receipt. If it does, the receipt is retired (a non-Accept receipt regardless
+of the declared disposition; an Accept receipt keeps the declared value,
+which does not by itself affect activation eligibility above). If it does
+not -- unknown, already acknowledged, or from an opening `NativeClosed` has
+since cleared -- the ack is consumed with no reply and no other effect:
+there is no outcome record for a stale `NativeInputAck`.
+
+**Native and persistent-catalog candidates.** A `NativeCandidate` or
+`CatalogCandidate` naming a stale `catalog_generation` (or, for the native
+launcher, a stale `opening` or `state_revision`) is refused with
+`CandidateOutcome` kind 3 (Rejected), reason 1 (Stale). A candidate that
+violates a structural rule in the KDL (surface/placement/target counts,
+row/slot uniqueness, a displayed row or target naming a catalog slot that is
+not currently present and `available`) is refused with the same kind 3,
+reason 3 (Malformed). Neither case reaches `NativeFocus`, an activation
+owner or the launch queue.
+
+**Persistent catalog activation (`CatalogActivate` to
+`CatalogActivationOutcome`).** `reason` is always 0 here regardless of
+`status`, unlike the native launcher above; only `status` varies.
+
+| Status | Trigger |
+| --- | --- |
+| 1 Admitted | The wrapped action's `event_id` is a live, already-issued one; `catalog_generation` and the grant's connection epoch match the currently published catalog exactly; a matching, still-awaiting, not cancelled, not expired ledger entry exists for that exact action; that entry's target is still part of the currently Presented candidate (activation is accepted only against the Presented target); `action_id` names a slot present in the current publication; and the launch queue admits it. |
+| 2 Stale | Any eligibility check above (other than the slot lookup) fails. |
+| 4 Unauthorized | `action_id` names a slot absent from the current publication, or the launch queue itself refuses as unauthorized. |
+| 5 Capacity | Every eligibility check passes but the launch queue refuses for capacity. |
+
+Status 3 (Unknown) is never produced for `CatalogActivationOutcome` in the
+current code; an unrecognized slot is Unauthorized (4) here, where the
+native launcher's analogous case above is Unknown (3).
+
+**Indicator activation (`IndicatorActivate` to
+`IndicatorActivationOutcome`).**
+
+| Status | Reason | Trigger |
+| --- | --- | --- |
+| 0 Accepted | 0 | A snapshot has been published; the named `connection_epoch`/`snapshot_generation` match the snapshot last published; a published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple exactly; that entry's `action` is nonzero; and (when ordinary input is disabled) `event_id` exceeds every previously accepted `event_id` on this connection; and the downstream admission step admits it. |
+| 1 Stale | 0 | No snapshot has ever been published, or the named `connection_epoch`/`snapshot_generation` do not match the one last published. |
+| 1 Stale | 1 | Otherwise-eligible, but (with ordinary input disabled) `event_id` does not exceed the connection's high-water mark, or the downstream admission step reports a duplicate. |
+| 2 Unknown | 0 | No published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple. |
+| 2 Unknown | 2 | Otherwise-eligible, but the downstream admission step refuses for capacity. This family has no dedicated Capacity status; a capacity refusal is folded into Unknown/Budget here. |
+| 3 Unauthorized | 0 | A matching `IndicatorEntry` exists but its `action` is 0 (published but not activatable). |
 
 ## Multiple writers, isolation and revocation
 
