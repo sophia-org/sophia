@@ -40,15 +40,36 @@ func margins(b []byte) {
 	}
 }
 func decode(bytes []byte) (r record, err error) {
+	return decodeRecord(bytes, true)
+}
+
+// Candidate negative controls can inspect byte-valid records independently
+// of the family value validator which production submit also runs.
+func decodeCandidateBytes(bytes []byte) (r record, err error) {
+	if len(bytes) < 32 || (u16(bytes, 6) != 267 && u16(bytes, 6) != 270) {
+		return r, fmt.Errorf("not a role candidate")
+	}
+	return decodeRecord(bytes, false)
+}
+func decodeRecord(bytes []byte, values bool) (r record, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("record: %v", p)
 		}
 	}()
-	need(len(bytes) >= 32 && len(bytes) <= 65536 && int(u32(bytes, 0)) == len(bytes), "length")
+	need(len(bytes) >= 32 && len(bytes) <= 4194304 && int(u32(bytes, 0)) == len(bytes), "length")
 	need(u16(bytes, 4) == 1 && u64(bytes, 8) != 0, "header")
 	r = record{u16(bytes, 6), u64(bytes, 8), u64(bytes, 16), u64(bytes, 24), bytes[32:], bytes}
-	need(r.submission == 0 && ((r.kind < 16 && r.sequence == 0) || (r.kind >= 16 && r.kind < 256 && r.sequence != 0)), "record class")
+	need((r.submission == 0 && ((r.kind < 16 && r.sequence == 0) || (r.kind >= 16 && r.kind < 256 && r.sequence != 0))) || (r.kind >= 266 && r.kind <= 272 && r.submission != 0 && r.sequence == 0), "record class")
+	if r.kind == 3 || r.kind == 4 || (r.kind >= 38 && r.kind <= 45) || (r.kind >= 266 && r.kind <= 272) {
+		if !values && (r.kind == 267 || r.kind == 270) {
+			validateRoleCandidateBytes(r.kind, r.body)
+			return r, nil
+		}
+		validateRole(r)
+		return r, nil
+	}
+	need(len(bytes) <= 65536, "base record cap")
 	sizes := map[uint16]int{1: 264, 16: 32, 17: 16, 18: 16, 19: 24, 32: 168, 33: 56, 34: 42, 35: 76, 36: 72, 37: 120}
 	b := r.body
 	if r.kind != 2 {
@@ -77,9 +98,9 @@ func decode(bytes []byte) (r record, err error) {
 		need(u16(b, 0) >= 1 && u16(b, 0) <= 4 && zero(b[2:8]), "Refused")
 	case 18:
 		nonzero64(b, 0)
-		need(u16(b, 8) >= 256 && u16(b, 8) <= 265 && zero(b[10:]), "Submitted")
+		need(u16(b, 8) >= 256 && u16(b, 8) <= 272 && zero(b[10:]), "Submitted")
 	case 19:
-		need(u16(b, 0) >= 1 && u16(b, 0) <= 2 && zero(b[2:8]) && u64(b, 16) != 0, "ObjectPublished")
+		need(u16(b, 0) >= 1 && u16(b, 0) <= 4 && zero(b[2:8]) && u64(b, 16) != 0, "ObjectPublished")
 	case 32:
 		validateAllocation(b)
 	case 33:

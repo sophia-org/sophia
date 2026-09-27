@@ -10,6 +10,14 @@ Its scenarios and `sophia_9p_oracle schema=1` verdict remain unchanged.
 It uses only the Go standard library. The director owns the t252 task and
 plan-note updates.
 
+The approved extension plan is in [ROLE-COVERAGE.md](ROLE-COVERAGE.md). Phase 1
+adds independent codecs for the 17 Catalog, Indicators, native launcher and
+persistent catalog kinds, from KDL commits `ee5e7f809` and `ae60576f8`.
+The unit tests use separate KDL-derived literals, truncations, text and revision
+controls, maximum counts, and separate candidate byte/value validation. The live
+verdict remains the 54 base checks until the phase-2 production-owner scenarios
+execute; the approved extended count is 96.
+
 ### Files
 
 - `cmd/shell-oracle/main.go`: startup barrier and command entry point.
