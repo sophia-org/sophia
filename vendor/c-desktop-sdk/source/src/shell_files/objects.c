@@ -17,6 +17,7 @@ int sophia_sf_client_object(struct sophia_sf_client *c, uint16_t kind, uint64_t 
     c->object_generation = generation;
     c->object_qid = qid;
     c->object_used = 0;
+    c->object_probe = 0;
     c->object_stage = 1;
     c->object_status = 0;
     return 0;
@@ -42,7 +43,8 @@ int sf_session_object_drive(struct sophia_sf_client *c)
         r = sophia_9p_lopen(c->wire, c->object_fid, 0, &c->object_op.handle);
         break;
     case 3:
-        r = sophia_9p_read(c->wire, c->object_fid, c->object_used, count, &c->object_op.handle);
+        r = sophia_9p_read(c->wire, c->object_fid, c->object_used, c->object_probe ? 1 : count,
+                           &c->object_op.handle);
         break;
     default:
         r = sophia_9p_clunk(c->wire, c->object_fid, &c->object_op.handle);
@@ -92,21 +94,32 @@ int sf_session_object_reply(struct sophia_sf_client *c, const struct sophia_9p_r
         c->object_iounit = r->iounit;
         if (c->object_qid && c->object_qid != r->qid.path)
             return object_finish(c, SOPHIA_9P_AGAIN);
+        /* Record the pinned qid so a result can be matched to its announcement. */
+        c->object_qid = r->qid.path;
         c->object_stage = 3;
         return 0;
     }
-    if (r->type != 117 || !r->count || r->count > c->object_capacity - c->object_used)
-        return object_finish(c, SOPHIA_9P_INVALID);
-    memcpy(c->object_storage + c->object_used, r->data, r->count);
-    c->object_used += r->count;
-    if (c->object_used < 4)
+    if (!c->object_probe) {
+        if (r->type != 117 || !r->count || r->count > c->object_capacity - c->object_used)
+            return object_finish(c, SOPHIA_9P_INVALID);
+        memcpy(c->object_storage + c->object_used, r->data, r->count);
+        c->object_used += r->count;
+        if (c->object_used < 4)
+            return 0;
+        n = (size_t)sf_get(c->object_storage, 4);
+        if (n < 32 || n > c->object_capacity || c->object_used > n ||
+            (c->object_kind == SOPHIA_SF_INDICATORS && n > 32768))
+            return object_finish(c, SOPHIA_9P_INVALID);
+        if (c->object_used < n)
+            return 0;
+        /* A positive short read is not EOF. After the exact record, one
+         * bounded probe must find EOF; any trailing byte refuses the object. */
+        c->object_probe = 1;
         return 0;
-    n = (size_t)sf_get(c->object_storage, 4);
-    if (n < 32 || n > c->object_capacity || c->object_used > n ||
-        (c->object_kind == SOPHIA_SF_INDICATORS && n > 32768))
+    }
+    if (r->type != 117 || r->count)
         return object_finish(c, SOPHIA_9P_INVALID);
-    if (c->object_used < n)
-        return 0;
+    n = c->object_used;
     if (sophia_sf_decode(c->object_storage, n, &c->object) ||
         c->object.header.kind != c->object_kind || c->object.header.epoch != c->epoch)
         return object_finish(c, SOPHIA_9P_INVALID);

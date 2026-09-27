@@ -7,6 +7,20 @@
  * admitted fd through wire. No discovery, protocol sniffing or fallback.
  * Role-aware initialization supports bar, native launcher and persistent dock. */
 enum sophia_sf_profile { SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK };
+/* Progress of the most recent submission. STAGED: its Tsubmit is not queued or
+ * outstanding (transaction writes, or deferred after EAGAIN, which transferred
+ * nothing). ISSUED: a Tsubmit is queued, outstanding or accepted without an
+ * observed Submitted. CUSTODIED: Submitted observed. REFUSED: after
+ * negotiation, any valid Rlerror on submit other than EAGAIN (11), EALREADY
+ * (114) or ESTALE (116), unknown errno values included; submit_error holds the
+ * errno with no further meaning attached. Nothing was journaled. */
+enum sophia_sf_submission {
+    SOPHIA_SF_SUBMISSION_NONE,
+    SOPHIA_SF_SUBMISSION_STAGED,
+    SOPHIA_SF_SUBMISSION_ISSUED,
+    SOPHIA_SF_SUBMISSION_CUSTODIED,
+    SOPHIA_SF_SUBMISSION_REFUSED
+};
 struct sophia_sf_operation {
     struct sophia_9p_handle handle;
     uint8_t active;
@@ -27,6 +41,10 @@ struct sophia_sf_client {
     uint8_t bootstrap, negotiated, have_limits, event_ready, object_ready;
     uint8_t submit_stage, submitted, submit_replied, object_stage, upload_stage, refused,
         upload_closing;
+    /* stale: ESTALE answered events, submit or ack (not object/upload).
+     * object_probe: the exact object was read; the next read must be EOF. */
+    uint8_t submit_wait, submit_sent, stale, object_probe;
+    uint32_t submit_error;
     size_t tx_size, tx_offset, event_used, object_used, upload_sent, upload_size, api_used;
     uint64_t upload_offset;
     uint16_t upload_slot;
@@ -57,11 +75,25 @@ int sophia_sf_client_ready(const struct sophia_sf_client *);
 /* Copies one whole value; header epoch/submission are assigned here. Return
  * BUSY preserves caller ownership. Submitted means custody only. */
 int sophia_sf_client_submit(struct sophia_sf_client *, const struct sophia_sf_record *);
+/* Copies one complete encoded candidate whose header carries the live epoch,
+ * submission 0 and sequence 0; the id is assigned here and the whole record
+ * is validated. Negotiate is refused. BUSY preserves caller ownership. */
+int sophia_sf_client_submit_bytes(struct sophia_sf_client *, const void *, size_t);
+/* id is the latest submission (0 before any). Negotiate is submission 1. */
+int sophia_sf_client_submission(const struct sophia_sf_client *, uint64_t *id,
+                                enum sophia_sf_submission *);
+/* API change: a submit refused with EAGAIN is no longer re-sent by service.
+ * It waits, unsent (submit_wait), until this call, which callers make only
+ * after event/ack progress or a bounded backoff. The retry reuses its epoch,
+ * id and staged transaction. ARGUMENT when none waits. */
+int sophia_sf_client_submit_retry(struct sophia_sf_client *);
 /* Borrow until event_consume. Consumption advances local processing; ack is a
  * separate explicit operation releasing only server journal retention. */
 int sophia_sf_client_event(struct sophia_sf_client *, const struct sophia_sf_record **);
 int sophia_sf_client_event_consume(struct sophia_sf_client *);
 int sophia_sf_client_ack(struct sophia_sf_client *);
+/* Acknowledge through a consumed sequence at most event consumption. */
+int sophia_sf_client_ack_through(struct sophia_sf_client *, uint64_t sequence);
 /* Fetch the announced object through a fresh pin; compare generation and qid.
  * A superseded announcement returns AGAIN via object_result, ready to retry. */
 int sophia_sf_client_object(struct sophia_sf_client *, uint16_t kind, uint64_t generation,

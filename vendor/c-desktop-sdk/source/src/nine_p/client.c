@@ -215,6 +215,16 @@ int sophia_9p_service(struct sophia_9p_client *c, size_t budget)
     }
     return 0;
 }
+int sophia_9p_wants_write(const struct sophia_9p_client *c)
+{
+    size_t i;
+    if (!c || c->terminal)
+        return 0;
+    for (i = 0; i < 2 * c->capacity; i++)
+        if (c->slots[i].state == P9_QUEUED)
+            return 1;
+    return 0;
+}
 int sophia_9p_peek(struct sophia_9p_client *c, struct sophia_9p_reply *r)
 {
     size_t i, best;

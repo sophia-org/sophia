@@ -55,7 +55,11 @@ static void phase(const char *name)
 static void step(void)
 {
     struct timespec now, pause = {0, 100000};
-    int status = sophia_sf_client_service(&client, 65536);
+    int status;
+    /* EAGAIN deferred a submit in an earlier step; the pause is the backoff. */
+    if (client.submit_wait)
+        assert(!sophia_sf_client_submit_retry(&client));
+    status = sophia_sf_client_service(&client, 65536);
     if (status)
         fprintf(stderr, "role service=%d remote=%u boot=%u submit=%u\n", status,
                 client.remote_error, client.bootstrap, client.submit_stage);

@@ -40,6 +40,9 @@ int main(int argc, char **argv)
     assert(!sophia_sf_client_init(&c, &wire, offer));
     assert(!clock_gettime(CLOCK_MONOTONIC, &start));
     while (stage != 9) {
+        /* EAGAIN deferred a submit in an earlier pass; the pause is the backoff. */
+        if (c.submit_wait)
+            assert(!sophia_sf_client_submit_retry(&c));
         status = sophia_sf_client_service(&c, 65536);
         if (status)
             fprintf(stderr, "service=%d remote=%u boot=%u submit=%u upload=%u stage=%d\n", status,

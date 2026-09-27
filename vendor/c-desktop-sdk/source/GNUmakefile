@@ -11,7 +11,7 @@ override CFLAGS += -std=c99 -Wall -Wextra -Werror -pedantic
 CPPFLAGS += -Isrc
 
 NINE_P = $(sort $(wildcard src/nine_p/*.c))
-FILES = $(sort $(wildcard src/shell_files/*.c))
+FILES = $(sort $(wildcard src/shell_files/*.c src/shell_session/*.c src/native_session/*.c)) src/desktop_connection.c
 IPC = $(sort $(wildcard src/shell_wire/*.c)) src/sophia_wm_v1.c
 objects = $(patsubst %.c,$(BUILD)/%.o,$(1))
 LIBRARIES = $(BUILD)/libsophia-9p.a $(BUILD)/libsophia-desktop.a
@@ -39,9 +39,12 @@ $(BUILD)/%.pc: pkgconfig/%.pc.in GNUmakefile
 	@mkdir -p $(@D)
 	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@LIBDIR@|$(LIBDIR)|g' -e 's|@INCLUDEDIR@|$(INCLUDEDIR)|g' -e 's|@VERSION@|$(VERSION)|g' $< > $@
 
-FILE_TESTS = sophia_9p_client_test sophia_shell_files_test sophia_shell_files_roles_test
-$(addprefix $(BUILD)/,$(FILE_TESTS)): $(BUILD)/%: src/tests/%.c $(BUILD)/libsophia-desktop.a $(BUILD)/libsophia-9p.a
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(LDFLAGS) $(LDLIBS) -o $@
+FILE_TESTS = sophia_9p_client_test sophia_shell_files_test sophia_shell_files_roles_test desktop_connection_test shell_session_custody_test shell_session_events_test native_session_test
+ifeq ($(shell uname -s),Linux)
+$(BUILD)/desktop_connection_test: WRAPS = -Wl,--wrap=getsockopt
+endif
+$(addprefix $(BUILD)/,$(FILE_TESTS)): $(BUILD)/%: src/tests/%.c $(wildcard src/tests/*.h) $(BUILD)/libsophia-desktop.a $(BUILD)/libsophia-9p.a
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop -lsophia-9p $(WRAPS) $(LDFLAGS) $(LDLIBS) -o $@
 check-files: $(addprefix $(BUILD)/,$(FILE_TESTS))
 	@set -e; for test in $^; do "$$test"; done
 
@@ -51,7 +54,7 @@ $(BUILD)/ipc-native_lifecycle_test: WRAPS = -Wl,--wrap=sophia_shell_outbox_commi
 $(BUILD)/ipc-upload_test: WRAPS = -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=free
 $(BUILD)/ipc-outbox_test: WRAPS = -Wl,--wrap=malloc -Wl,--wrap=free -Wl,--wrap=send
 $(addprefix $(BUILD)/ipc-,$(IPC_TESTS)): $(BUILD)/ipc-%: src/tests/sophia_shell_wire_%.c $(BUILD)/libsophia-desktop-ipc.a
-	$(CC) $(CPPFLAGS) $(CFLAGS) $< -L$(BUILD) -lsophia-desktop-ipc $(WRAPS) $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $< -L$(BUILD) -lsophia-desktop-ipc $(WRAPS) $(LDFLAGS) $(LDLIBS) -o $@
 check-ipc: $(addprefix $(BUILD)/ipc-,$(IPC_TESTS))
 	$(BUILD)/ipc-test
 	$(BUILD)/ipc-budget_test

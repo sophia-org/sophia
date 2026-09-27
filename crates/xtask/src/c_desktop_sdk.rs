@@ -70,6 +70,7 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
         ("spec/sophia-shell-v1.kdl", "protocol/sophia-shell-v1.kdl"),
         ("spec/sophia-9p-profile.md", "docs/sophia-9p-profile.md"),
         ("spec/sophia-shell-files.md", "docs/sophia-shell-files.md"),
+        ("spec/sophia-wm-files.md", "docs/sophia-wm-files.md"),
         (
             "spec/references/diod-9p2000L-protocol.md",
             "docs/references/diod-9p2000L-protocol.md",
