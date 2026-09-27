@@ -384,9 +384,10 @@ fn last_record<'a>(text: &'a str, marker: &str) -> Option<&'a str> {
 /// of the marker in a verbose session log; records emitted through the
 /// session's own printer start at column zero. A reader that anchors to the
 /// line start silently sees only the second kind, and a rule that sees no
-/// records passes -- or refuses -- vacuously.
+/// records passes -- or refuses -- vacuously. The public reader is
+/// [`crate::record::after_marker`]; this name stays for the crate's readers.
 pub(crate) fn record_after_marker<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
-    line.find(marker).map(|start| &line[start + marker.len()..])
+    crate::record::after_marker(line, marker)
 }
 
 /// Readers that must stay anchored, and why.
