@@ -1,4 +1,4 @@
-use super::{BTreeMap, Result, Write, discovery, env};
+use super::{BTreeMap, Result, Write, env, validation};
 
 fn choice(name: &str, default: &str, choices: &[&str]) -> Result<String> {
     let value = env(name, default)?;
@@ -44,9 +44,9 @@ pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Resul
     };
     let watchdog = env("SOPHIA_SESSION_WATCHDOG_SECONDS", "")?;
     if !watchdog.is_empty() {
-        discovery::positive("SOPHIA_SESSION_WATCHDOG_SECONDS", "")?;
+        validation::positive("SOPHIA_SESSION_WATCHDOG_SECONDS", "")?;
     }
-    let timeout = discovery::positive("SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS", "30")?;
+    let timeout = validation::positive("SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS", "30")?;
     let seconds = timeout.parse::<u32>()?;
     if seconds > 300 {
         return Err("SOPHIA_INPUT_GUARD_ARM_TIMEOUT_SECONDS must be in 1..300".into());

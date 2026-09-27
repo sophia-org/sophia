@@ -1,6 +1,6 @@
 //! Validate with the same installed executable, environment and argument vector
 //! that will own the session, without starting a bus or acquiring devices.
-use super::{BTreeMap, Result, bounded, proofs};
+use super::{BTreeMap, Result, bounded, validation};
 use std::{
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader},
@@ -26,7 +26,7 @@ pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Resul
     if extra.get(..2) != Some(&["session".to_owned(), "run".to_owned()]) {
         return Err("check-launch requires the prepared session run vector".into());
     }
-    let state = proofs::private_state(options)?;
+    let state = validation::private_state(options)?;
     let output = state.join("session-args-check.log");
     let errors = state.join("session-args-check.err");
     let mut command = Command::new(std::env::current_exe()?);

@@ -1,7 +1,8 @@
+use super::validation::{positive, private_state};
 use super::{BTreeMap, Result, Write, bounded, discovery, enabled, env, required};
 use std::{
     fs::{self, DirBuilder, OpenOptions},
-    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -21,19 +22,6 @@ fn nonce() -> Result<String> {
     let mut bytes = [0u8; 16];
     rustix::rand::getrandom(&mut bytes, rustix::rand::GetRandomFlags::empty())?;
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
-}
-
-pub(super) fn private_state(options: &BTreeMap<String, String>) -> Result<PathBuf> {
-    let path = PathBuf::from(required(options, "state-dir")?);
-    let meta = fs::symlink_metadata(&path)?;
-    if !path.is_absolute()
-        || !meta.is_dir()
-        || meta.uid() != rustix::process::geteuid().as_raw()
-        || meta.permissions().mode() & 0o077 != 0
-    {
-        return Err("state-dir must be an absolute private owner directory".into());
-    }
-    Ok(path)
 }
 
 fn install_private(source: &Path, destination: &Path) -> Result<()> {
@@ -98,8 +86,8 @@ pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Resul
         }
         if env("SOPHIA_STANDALONE_WORKLOAD", "vkcube")? == "kitty" {
             let executable = required(options, "standalone")?;
-            let width = discovery::positive("SOPHIA_STANDALONE_WIDTH", "2560")?;
-            let height = discovery::positive("SOPHIA_STANDALONE_HEIGHT", "1440")?;
+            let width = positive("SOPHIA_STANDALONE_WIDTH", "2560")?;
+            let height = positive("SOPHIA_STANDALONE_HEIGHT", "1440")?;
             let log = OpenOptions::new()
                 .write(true)
                 .create(true)

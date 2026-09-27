@@ -1,14 +1,5 @@
+use super::validation::positive;
 use super::{BTreeMap, Result, append, enabled, env, existing_absolute, required};
-
-fn positive(name: &str, default: &str) -> Result<String> {
-    let value = env(name, default)?;
-    if !value.starts_with(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
-        || !value.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return Err(format!("{name} must be a positive integer").into());
-    }
-    Ok(value)
-}
 
 pub(super) fn arguments(args: &mut Vec<String>, options: &BTreeMap<String, String>) -> Result<()> {
     let direct = enabled("SOPHIA_ENABLE_DIRECT_SCANOUT")?;

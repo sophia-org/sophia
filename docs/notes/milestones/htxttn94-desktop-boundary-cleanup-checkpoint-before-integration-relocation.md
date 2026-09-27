@@ -236,6 +236,27 @@ and layout also pass. Evidence is under `contract-shell-peers/`:
 kept. These checks prove the scripted protocol/owner paths, not product-client
 interoperability or physical presentation.
 
+## Retained launch preparation
+
+The root G4 preparation separates two generic validators from product recipe
+modules: `private_state` moves out of proof staging, and `positive` moves out of
+application discovery (including its identical standalone copy). Launch
+acceptance and control preparation now depend on the neutral validation module.
+The function bodies and existing recipe behavior are unchanged; the legacy
+commands and callers remain until their external closure is green.
+
+The existing `exact_launch_acceptance_uses_prepared_environment_and_rejects_invalid_values`
+test moves, with its assertions unchanged, into `session_launch_acceptance.rs`.
+It stays with Sophia when the recipe/discovery tests leave, retaining parser
+acceptance, prepared-environment refusal, private diagnostic modes and symlink
+protection. The device-hidden focused gate passes 17 tests: four argument
+preparation, seven input preparation, one launch acceptance and five explicit
+argv tests. CLI clippy passes for all targets and features with warnings denied.
+The extracted validator bodies and moved test body were compared with their
+originals and are identical. Evidence is under `retained-launch-controls/`:
+`focused.log`, `clippy.log` and `verbatim-check.log`. This is a preparatory
+extraction; product recipe commands and callers have not been removed.
+
 ## Remaining work
 
 The generic launcher path is now concrete: `run_sophia_session.sh -- session run

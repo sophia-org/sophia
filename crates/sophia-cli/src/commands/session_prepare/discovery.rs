@@ -1,3 +1,4 @@
+use super::validation::positive;
 use super::{BTreeMap, Result, Write, env, required};
 use std::path::Path;
 
@@ -40,16 +41,6 @@ pub(super) fn firefox(extra: &[String]) -> bool {
                 | "--firefox-m10-lifecycle-proof"
         )
     })
-}
-
-pub(super) fn positive(name: &str, default: &str) -> Result<String> {
-    let value = env(name, default)?;
-    if !value.starts_with(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
-        || !value.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return Err(format!("{name} must be a positive integer").into());
-    }
-    Ok(value)
 }
 
 pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Result<()> {
