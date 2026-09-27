@@ -102,10 +102,24 @@ pub(super) trait PolicyFileCodec {
     ) -> Result<Vec<u8>, Errno>;
 }
 
+/// Nonblocking turns spent flushing a revocation; bounded so a peer that
+/// stops reading cannot hold the worker.
+const REVOKE_TURNS: usize = 4;
+
 pub(super) struct NinePReactor<C: PolicyFileCodec> {
     server: Server<WmFiles<C>>,
     stopped: Arc<AtomicBool>,
     cancellation: Arc<NinePCancellation>,
+}
+
+impl<C: PolicyFileCodec> Drop for NinePReactor<C> {
+    /// A stopped reactor that is dropped without another turn still tells
+    /// its peer why before the socket closes.
+    fn drop(&mut self) {
+        if self.stopped.load(Ordering::SeqCst) {
+            self.revoke_and_flush();
+        }
+    }
 }
 
 /// One cancellation owner spans endpoint accept and reactor adoption. The lock
@@ -152,9 +166,11 @@ struct NinePStop(Arc<NinePCancellation>);
 impl PolicyAdapterStop for NinePStop {
     fn stop(&self) {
         self.0.stopped.store(true, Ordering::SeqCst);
+        // Only wake the reactor: its next turn revokes and flushes, so
+        // waiting reads answer ESTALE instead of seeing the socket close.
         let wake = self.0.wake.lock().ok().and_then(|wake| wake.clone());
         if let Some(wake) = wake {
-            wake.stop();
+            wake.wake();
         }
     }
 }
@@ -191,13 +207,25 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
     pub(super) fn stop_handle(&self) -> Box<dyn PolicyAdapterStop> {
         self.cancellation.handle()
     }
+    /// Ends the epoch. A few nonblocking turns answer every waiting read
+    /// ESTALE and flush replies already owed before the socket closes.
+    fn revoke_and_flush(&mut self) {
+        self.server.export_mut().revoke();
+        self.server.wake().wake();
+        for _ in 0..REVOKE_TURNS {
+            match self.server.turn(Some(Duration::ZERO)) {
+                Ok(true) if self.server.connection_count() > 0 => {}
+                _ => break,
+            }
+        }
+    }
     pub(super) fn owner_mut(&mut self) -> &mut WmFiles<C> {
         self.server.export_mut()
     }
 
     fn turn(&mut self, timeout: Duration) -> Result<(), String> {
         if self.stopped.load(Ordering::SeqCst) {
-            self.server.export_mut().revoke();
+            self.revoke_and_flush();
             return Err("WM file stopped".into());
         }
         // Staging expiry is another wake deadline, not progress-based renewal.
