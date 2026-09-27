@@ -16,8 +16,8 @@ use crate::shell::encoding::ValueError;
 use crate::*;
 use std::collections::BTreeMap;
 
-const LABEL_MAX: usize = 128;
-const KEYWORDS_MAX: usize = 256;
+const LABEL_MAX: usize = crate::SOPHIA_SHELL_APPLICATION_LABEL_MAX_BYTES;
+const KEYWORDS_MAX: usize = crate::SOPHIA_SHELL_APPLICATION_KEYWORDS_MAX_BYTES;
 
 impl Wire for ShellApplicationDescriptor {
     fn put(&self, bytes: &mut Vec<u8>) {

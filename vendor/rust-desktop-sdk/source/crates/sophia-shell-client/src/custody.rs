@@ -104,7 +104,8 @@ impl Ledger {
     }
 
     /// Records a new state. An evicted ticket is ignored: its outcome is
-    /// simply no longer reported.
+    /// simply no longer reported. A settled outcome is final: nothing later
+    /// replaces `Submitted` (or any other settled state) for the same unit.
     pub(crate) fn set(&mut self, ticket: u64, custody: Custody) {
         let Some(oldest) = self.recent.front().map(|(issued, _)| *issued) else {
             return;
@@ -114,6 +115,7 @@ impl Ledger {
         };
         if let Some(entry) = self.recent.get_mut(index as usize)
             && entry.0 == ticket
+            && matches!(entry.1, Custody::Queued | Custody::InFlight)
         {
             entry.1 = custody;
         }
@@ -137,6 +139,12 @@ mod tests {
         assert_eq!(ledger.get(Ticket(1)), None);
         assert_eq!(ledger.get(Ticket(2)), None);
         ledger.set(2, Custody::Unknown);
+        let settled = ledger.issue(1).first;
+        ledger.set(settled.0, Custody::Submitted);
+        ledger.set(settled.0, Custody::Refused(22));
+        ledger.set(settled.0, Custody::Unknown);
+        assert_eq!(ledger.get(settled), Some(Custody::Submitted));
+        ledger.issue(1);
         let newest = Ticket(ledger.peek() - 1);
         assert_eq!(ledger.get(newest), Some(Custody::Queued));
         assert_eq!(ledger.get(Ticket(ledger.peek())), None);

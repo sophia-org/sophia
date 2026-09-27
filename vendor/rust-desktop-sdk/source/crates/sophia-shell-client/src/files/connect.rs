@@ -298,6 +298,7 @@ impl FileWire {
         let wire = FileWire {
             pipeline,
             epoch: connection_epoch,
+            capabilities: welcome.capabilities,
             root,
             events_fid,
             submit_fid,
@@ -313,6 +314,8 @@ impl FileWire {
             object_fetch: None,
             holds: [None; 3],
             progress: 0,
+            pass: 0,
+            early_submitted: None,
             pending: VecDeque::new(),
             staged: Vec::new(),
             staged_begin: None,
@@ -323,6 +326,7 @@ impl FileWire {
             uploads: Default::default(),
             forgettable: pending_forgettable.into_iter().collect(),
             peer_closed: false,
+            event_fault: false,
             fatal: None,
         };
         Ok((wire, welcome, inbox))

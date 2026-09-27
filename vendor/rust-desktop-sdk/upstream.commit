@@ -1,35 +1,33 @@
-tree 67e1bec094ffce8415c05d4ce3aea5e8c11b1fba
-parent cd5b1033e434f224457da2be77b722e1497acade
-author Mason Green <mason@greenm01.net> 1790509955 -0400
-committer Mason Green <mason@greenm01.net> 1790509955 -0400
+tree 6b955c77ad11088c6a85a82e3404f924b68cb615
+parent 8a508299140b9ee4d20602de67c6e7a20fdcfbee
+author Mason Green <mason@greenm01.net> 1790511932 -0400
+committer Mason Green <mason@greenm01.net> 1790511932 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkDgwAKCRBXGEu2KoAA
- Ygb9AQCrLp+QZYLa3rXZilkc53DHQfjPCgoP0zYo5ZMwGn4TzwD/Tik20/wIzu3m
- SUWKfwI2rOUWxEqbLKhhJhCDVPMfOA0=
- =PShm
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkLPAAKCRBXGEu2KoAA
+ Yim0AP9/V5BvXWFJ9MOoHaKq6+Nt85xVj+W3KBBzMhoeIoyX2QEA73401qR62rDP
+ sWyeYEr8BrIbOdEEJ9MuYScDnnqSxAA=
+ =s4EC
  -----END PGP SIGNATURE-----
 
-Settle custody per unit, retry refused submits, and carry every shell family
+Test the file wire against a scripted peer; fix four faults it found
 
-Admission is local queue ownership; each unit now gets a ticket whose
-custody (Queued, InFlight, Submitted, Stored, Written, Refused, Unknown,
-DroppedUnsent) the connection reports, through additive *_tracked methods
-beside the existing Result<()> ones. A file-wire record is Submitted only
-when its Submitted event is observed, which may precede the submit reply;
-a unit stays queued until settled, and a disconnect classifies it. A submit
-refused with EAGAIN keeps its staged record and goes again after a consumed
-event or a doubling backoff, never in the same pass; EALREADY is custody
-only after an observed Submitted; ESTALE is revocation; any other error is
-a definitive refusal and the lane moves on. Slot writes back off the same
-way and settle as Stored.
+A scripted 9P shell-files peer now drives the client through every B6c
+behavior: EAGAIN retries of the same submit after progress or the backoff,
+never in the refusing pass; Submitted before the submit reply and in the
+final read before EOF; disconnect classification; both EALREADY branches;
+refusal continuation and refusal after Submitted; exact write counts;
+foreign epochs and kinds; object reads past msize, the cap probe, qid and
+generation mismatches, undisclosed feeds and supersession; the catalog and
+indicator families; the close scan stopping at a record full decoding
+refuses; a Submitted and the submit error in one drain, either order; and a
+clunk the pipeline cannot queue.
 
-Snapshot objects: each announcement holds acknowledgement at the earliest
-unfetched announcement per feed; an announcement already superseded in the
-buffered events is not fetched; an opened object whose qid differs is
-newer and delivers nothing; reads continue to a zero-length end, respecting
-iounit, with a 1-byte probe at the feed's cap; the decoded generation must
-match; node ESTALE or EAGAIN restarts a fetch twice at most. The catalog
-and indicator objects and their activation outcomes, indicator and catalog
-activations, action responses and catalog candidates now ride the file
-wire.
+Faults it found and this fixes: replies drained in a pass did not count as
+progress, so a request queued by a reply waited for the next call; an
+EAGAIN retry could go in the refusing pass once an event was consumed; a
+housekeeping clunk on a failed pipeline replaced the real error, while on a
+live pipeline an unqueueable clunk now fails closed instead of leaking the
+fid; and a submit error drained ahead of its Submitted misjudged custody,
+so a drain now buffers its events before judging other replies. Event
+intake and the close scan share one full decoder.

@@ -79,7 +79,9 @@ impl FileWire {
             return Ok(false);
         }
         let progress_backoff = match reply {
-            Reply::Error(errno) if *errno == Errno::EAGAIN => Some(self.next_backoff()),
+            Reply::Error(errno) if *errno == Errno::EAGAIN => {
+                Some((std::time::Instant::now() + self.next_backoff(), self.pass))
+            }
             _ => None,
         };
         let Some(Current::SlotWrite {
@@ -109,7 +111,7 @@ impl FileWire {
                 // Nothing transferred; write again after a backoff, never in
                 // the pass that saw the refusal.
                 *current_tag = None;
-                *not_before = progress_backoff.map(|backoff| std::time::Instant::now() + backoff);
+                *not_before = progress_backoff;
             }
             Reply::Error(errno) => {
                 // A node-specific refusal (`ESTALE` once the resource is
@@ -137,7 +139,9 @@ impl FileWire {
                 *resource,
                 tag.is_none()
                     && !remaining.is_empty()
-                    && not_before.is_none_or(|at| std::time::Instant::now() >= at),
+                    && not_before.is_none_or(|(at, pass)| {
+                        self.pass != pass && std::time::Instant::now() >= at
+                    }),
             ),
             _ => return Ok(false),
         };
@@ -211,8 +215,7 @@ impl FileWire {
                 }
                 self.uploads[slot] = None;
                 if let Some(fid) = fid_to_clunk {
-                    let clunk_tag = self.pipeline.clunk(fid)?;
-                    self.forgettable.insert(clunk_tag);
+                    self.forget(fid)?;
                 }
             }
         }

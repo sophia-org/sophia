@@ -34,6 +34,7 @@ use crate::custody::Custody;
 use crate::wire::Outbound;
 use crate::{ShellClientError, client_record};
 
+mod budget;
 mod connect;
 mod drive;
 mod events;
@@ -107,6 +108,8 @@ enum SubmissionPhase {
         fid: Fid,
         not_before: Instant,
         progress: u64,
+        /// The `poll_io` pass that saw the refusal; a retry needs a later one.
+        pass: u64,
     },
     /// `submit` returned `Rwrite`; waiting for the `Submitted` event.
     AwaitSubmitted,
@@ -116,6 +119,8 @@ enum Current {
     Submission {
         bytes: Vec<u8>,
         submission_id: u64,
+        /// The record's kind, which its `Submitted` event must name.
+        kind: ShellFileKind,
         ticket: u64,
         /// The exact `submit` bytes, once built, for an `EAGAIN` retry.
         submit: Vec<u8>,
@@ -130,8 +135,9 @@ enum Current {
         remaining: Vec<u8>,
         tag: Option<Tag>,
         ticket: u64,
-        /// Set after `EAGAIN`: no write before this instant.
-        not_before: Option<Instant>,
+        /// Set after `EAGAIN`: no write before this instant, nor in the
+        /// same `poll_io` pass.
+        not_before: Option<(Instant, u64)>,
         /// Some bytes already returned `Rwrite`.
         wrote_any: bool,
     },
@@ -214,6 +220,8 @@ const MAX_FETCH_RESTARTS: u8 = 2;
 pub(crate) struct FileWire {
     pipeline: Pipeline,
     epoch: u64,
+    /// The negotiated capabilities: which snapshot feeds may be announced.
+    capabilities: u64,
     root: Fid,
     events_fid: Fid,
     submit_fid: Fid,
@@ -236,6 +244,12 @@ pub(crate) struct FileWire {
     holds: [Option<u64>; 3],
     /// Events handled so far; an `EAGAIN` retry waits for this to move.
     progress: u64,
+    /// `poll_io` calls so far.
+    pass: u64,
+    /// A `Submitted` found among the buffered events while the submit reply
+    /// was being settled, before normal intake reaches it; intake accepts
+    /// that one event once.
+    early_submitted: Option<(u64, ShellFileKind)>,
 
     // Outbound: a single lane, mirroring `ClientOutbox`'s FIFO order.
     pending: VecDeque<QueuedKind>,
@@ -257,6 +271,8 @@ pub(crate) struct FileWire {
     forgettable: HashSet<Tag>,
 
     peer_closed: bool,
+    /// An event failed to parse or apply: bytes after it prove nothing.
+    event_fault: bool,
     /// A connection-ending failure, returned again by every later call.
     fatal: Option<ShellClientError>,
 }
@@ -344,6 +360,21 @@ fn assemble_candidate(
 }
 
 impl FileWire {
+    /// Releases `fid` without waiting for the answer. On a pipeline that has
+    /// already failed there is nothing left to release, and the failure that
+    /// ended it is reported where it happened, not as this housekeeping step.
+    /// On a live pipeline a clunk that cannot be queued (a local bound) is an
+    /// error: the fid would otherwise stay open on the server, holding its
+    /// pin or staging, while this side forgot it.
+    fn forget(&mut self, fid: Fid) -> Result<(), ShellClientError> {
+        if self.pipeline.is_poisoned() {
+            return Ok(());
+        }
+        let tag = self.pipeline.clunk(fid)?;
+        self.forgettable.insert(tag);
+        Ok(())
+    }
+
     pub(crate) fn peer_closed(&self) -> bool {
         self.peer_closed
     }

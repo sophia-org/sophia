@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 use sophia_9p_client::pipeline::Reply;
 use sophia_9p_records::{Errno, Tag};
 use sophia_shell_protocol::shell_files::{
-    ShellFileClass, ShellFileSubmit, decode_shell_file_record, encode_shell_file_submit,
+    ShellFileClass, ShellFileKind, ShellFileSubmit, decode_shell_file_record,
+    encode_shell_file_submit,
 };
 
 use super::{Current, FileWire, O_RDWR, QueuedKind, RETRY_FIRST, RETRY_MAX, SubmissionPhase};
@@ -53,13 +54,13 @@ impl FileWire {
         self.custody.push((ticket, Custody::InFlight));
         match kind {
             QueuedKind::Record => {
-                let submission_id = decode_shell_file_record(&bytes, ShellFileClass::Candidate)?
-                    .header
-                    .submission_id;
+                let header = decode_shell_file_record(&bytes, ShellFileClass::Candidate)?.header;
+                let (submission_id, kind) = (header.submission_id, header.kind);
                 let (tag, fid) = self.pipeline.walk(self.root, &[b"transaction"])?;
                 self.current = Some(Current::Submission {
                     bytes,
                     submission_id,
+                    kind,
                     ticket,
                     submit: Vec::new(),
                     phase: SubmissionPhase::Walk { tag, fid },
@@ -95,9 +96,20 @@ impl FileWire {
     /// The current submission's `Submitted` event arrived. Custody is
     /// settled at once; the unit itself completes when `submit` has also
     /// answered.
-    pub(super) fn on_submitted(&mut self, submission: u64) -> Result<(), ShellClientError> {
+    pub(super) fn on_submitted(
+        &mut self,
+        submission: u64,
+        candidate_kind: ShellFileKind,
+    ) -> Result<(), ShellClientError> {
+        if self.early_submitted == Some((submission, candidate_kind)) {
+            // Already settled from the buffered events (see
+            // `settle_buffered_submitted`); this is that same event.
+            self.early_submitted = None;
+            return Ok(());
+        }
         let Some(Current::Submission {
             submission_id,
+            kind,
             ticket,
             phase,
             submitted,
@@ -110,7 +122,7 @@ impl FileWire {
             phase,
             SubmissionPhase::WriteSubmit { .. } | SubmissionPhase::AwaitSubmitted
         );
-        if *submission_id != submission || *submitted || !issued {
+        if *submission_id != submission || *kind != candidate_kind || *submitted || !issued {
             return Err(ShellClientError::Protocol("unexpected Submitted event"));
         }
         *submitted = true;
@@ -133,13 +145,14 @@ impl FileWire {
                     fid,
                     not_before,
                     progress,
+                    pass,
                 },
             ..
         }) = &self.current
         else {
             return Ok(false);
         };
-        if self.progress == *progress && now < *not_before {
+        if self.pass == *pass || (self.progress == *progress && now < *not_before) {
             return Ok(false);
         }
         let fid = *fid;
@@ -148,6 +161,28 @@ impl FileWire {
             *phase = SubmissionPhase::WriteSubmit { tag, fid };
         }
         Ok(true)
+    }
+
+    /// Marks the current submission Submitted if its `Submitted` event is
+    /// among the buffered events that pass normal intake's checks, and lets
+    /// intake accept that event once when it gets there.
+    fn settle_buffered_submitted(&mut self) {
+        let Some(Current::Submission {
+            submission_id,
+            kind,
+            submitted: false,
+            phase: SubmissionPhase::WriteSubmit { .. } | SubmissionPhase::AwaitSubmitted,
+            ..
+        }) = &self.current
+        else {
+            return;
+        };
+        let target = (*submission_id, *kind);
+        if self.buffered_submissions().contains(&target)
+            && self.on_submitted(target.0, target.1).is_ok()
+        {
+            self.early_submitted = Some(target);
+        }
     }
 
     /// The instant a pending `EAGAIN` retry becomes due without event
@@ -159,7 +194,7 @@ impl FileWire {
                 ..
             }) => Some(*not_before),
             Some(Current::SlotWrite {
-                not_before: Some(not_before),
+                not_before: Some((not_before, _)),
                 ..
             }) => Some(*not_before),
             _ => None,
@@ -187,7 +222,6 @@ impl FileWire {
             submission_id,
             submit,
             phase,
-            submitted,
             ..
         }) = &mut self.current
         else {
@@ -232,21 +266,37 @@ impl FileWire {
                 )),
             },
             SubmissionPhase::WriteSubmit { tag: t, fid } if t == tag => {
+                if matches!(reply, Reply::Error(_)) {
+                    // The same drain may have buffered this submission's
+                    // Submitted ahead of the error; settle from it first.
+                    self.settle_buffered_submitted();
+                }
+                let Some(Current::Submission {
+                    submitted, submit, ..
+                }) = &self.current
+                else {
+                    return Ok(true);
+                };
                 let seen = *submitted;
+                let exact = submit.len();
                 match reply {
-                    Reply::Write(_) => {}
+                    Reply::Write(count) if *count as usize == exact => {}
+                    Reply::Write(_) => {
+                        return Err(ShellClientError::Protocol("short submit write"));
+                    }
                     Reply::Error(errno) if *errno == Errno::EALREADY && seen => {}
                     Reply::Error(errno) if *errno == Errno::EAGAIN => {
                         if seen {
                             return Err(ShellClientError::Protocol("EAGAIN after Submitted"));
                         }
-                        let progress = self.progress;
+                        let (progress, pass) = (self.progress, self.pass);
                         let not_before = Instant::now() + self.next_backoff();
                         if let Some(Current::Submission { phase, .. }) = &mut self.current {
                             *phase = SubmissionPhase::RetryWait {
                                 fid,
                                 not_before,
                                 progress,
+                                pass,
                             };
                         }
                         return Ok(true);
@@ -262,11 +312,16 @@ impl FileWire {
                         self.peer_closed = true;
                         return Ok(true);
                     }
+                    Reply::Error(_) if seen => {
+                        // Custody was already observed; a refusal now
+                        // contradicts it. Custody stays settled as
+                        // Submitted, and the connection fails closed.
+                        return Err(ShellClientError::Protocol("submit refused after Submitted"));
+                    }
                     Reply::Error(errno) => {
                         // A definitive refusal: nothing was journaled.
                         let errno = errno.0;
-                        let clunk = self.pipeline.clunk(fid)?;
-                        self.forgettable.insert(clunk);
+                        self.forget(fid)?;
                         self.backoff = RETRY_FIRST;
                         self.settle_current(Custody::Refused(errno));
                         return Ok(true);
@@ -276,8 +331,7 @@ impl FileWire {
                 // `submit` accepted: clunk the transaction (a submitted
                 // candidate is immutable; clunk cannot undo it) and settle
                 // once `Submitted` has been observed too.
-                let clunk = self.pipeline.clunk(fid)?;
-                self.forgettable.insert(clunk);
+                self.forget(fid)?;
                 self.backoff = RETRY_FIRST;
                 if let Some(Current::Submission { phase, .. }) = &mut self.current {
                     *phase = SubmissionPhase::AwaitSubmitted;

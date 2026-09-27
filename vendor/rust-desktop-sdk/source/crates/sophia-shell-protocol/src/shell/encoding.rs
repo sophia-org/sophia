@@ -115,8 +115,15 @@ pub(crate) fn table_count(cursor: &mut Cursor<'_>, maximum: usize) -> Result<usi
 
 /// Reads exactly `count` rows of `T`, each row's own shape doing its own
 /// bounds checking.
+/// Takes `count` rows into a vector of exactly that capacity (collecting a
+/// fallible iterator would grow it by doubling instead). Callers bound
+/// `count` first, so decoded memory follows the declared counts exactly.
 pub(crate) fn rows<T: Wire>(cursor: &mut Cursor<'_>, count: usize) -> Result<Vec<T>, ValueError> {
-    (0..count).map(|_| T::take(cursor)).collect()
+    let mut rows = Vec::with_capacity(count);
+    for _ in 0..count {
+        rows.push(T::take(cursor)?);
+    }
+    Ok(rows)
 }
 
 /// Writes a length-prefixed, zero-padded fixed-width text field: a `u16`

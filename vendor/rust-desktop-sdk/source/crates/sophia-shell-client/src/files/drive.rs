@@ -7,7 +7,9 @@ use std::collections::VecDeque;
 
 use sophia_9p_client::pipeline::{PipelineError, Reply};
 use sophia_9p_records::Tag;
-use sophia_shell_protocol::shell_files::{ShellFileAck, encode_shell_file_ack};
+use sophia_shell_protocol::shell_files::{
+    SHELL_FILE_ACK_BYTES, ShellFileAck, encode_shell_file_ack,
+};
 
 use super::{Current, FileWire, MAX_ROUNDS, SubmissionPhase, is_disconnect};
 use crate::custody::{Custody, Ledger};
@@ -24,9 +26,13 @@ impl FileWire {
         if let Some(error) = &self.fatal {
             return Err(error.clone());
         }
+        self.pass += 1;
         let result = self.drive(output, inbox);
         if let Err(error) = &result {
             self.fatal = Some(error.clone());
+            // Buffered events are still trusted unless one of them caused
+            // the failure: a Submitted among them settles custody.
+            self.observe_custody_after_close();
         }
         if result.is_err() || self.peer_closed {
             self.classify_terminal(output);
@@ -106,16 +112,21 @@ impl FileWire {
             // `connect::wait_ok`'s doc comment for why one may still be
             // sitting in the pipeline's completed queue) before treating the
             // peer as gone.
-            self.drain_replies(inbox)?;
+            // A reply handler may queue the next request (an open after a
+            // walk); the next round's `poll` writes it, in this same pass.
+            let drained = self.drain_replies(inbox)?;
             if eof || self.peer_closed || self.pipeline.is_poisoned() {
                 self.peer_closed = true;
                 // Whatever complete events already arrived still count
                 // (a final `Submitted` among them settles custody), each
                 // under the same checks as ever; nothing past a bad one.
                 while self.process_buffered_event(inbox)? {}
+                // Events the drain could not reach (a fetch holds them back,
+                // or the inbox is full) still settle custody.
+                self.observe_custody_after_close();
                 return Ok(());
             }
-            let mut progressed = false;
+            let mut progressed = drained;
             for _ in 0..std::mem::take(&mut self.retire) {
                 output.retire_front();
             }
@@ -134,14 +145,23 @@ impl FileWire {
     }
 
     fn drain_replies(&mut self, inbox: &mut VecDeque<Inbound>) -> Result<bool, ShellClientError> {
-        let mut progressed = false;
+        // Buffer the events this drain carries before judging any other
+        // reply: a submit error must see a Submitted that arrived in the same
+        // drain, whichever order the two replies came in. Buffering events
+        // only appends; handling them stays strictly in order.
+        let mut replies = Vec::new();
+        let mut read = false;
         while let Some((tag, reply)) = self.pipeline.take_reply() {
-            progressed = true;
-            if self.forgettable.remove(&tag) {
-                continue;
-            }
             if Some(tag) == self.read_tag {
                 self.on_read_reply(tag, reply)?;
+                read = true;
+            } else {
+                replies.push((tag, reply));
+            }
+        }
+        let progressed = read || !replies.is_empty();
+        for (tag, reply) in replies {
+            if self.forgettable.remove(&tag) {
                 continue;
             }
             if Some(tag) == self.ack_tag {
@@ -171,6 +191,9 @@ impl FileWire {
         match reply {
             Reply::Read(data) => {
                 self.read_offset += data.len() as u64;
+                self.event_buf
+                    .try_reserve_exact(data.len())
+                    .map_err(|_| ShellClientError::Protocol("event buffer allocation"))?;
                 self.event_buf.extend_from_slice(&data);
                 Ok(())
             }
@@ -181,7 +204,7 @@ impl FileWire {
     fn on_ack_reply(&mut self, reply: &Reply) -> Result<(), ShellClientError> {
         self.ack_tag = None;
         match reply {
-            Reply::Write(_) => Ok(()),
+            Reply::Write(count) if *count as usize == SHELL_FILE_ACK_BYTES => Ok(()),
             _ => Err(ShellClientError::Protocol("unexpected ack reply")),
         }
     }
@@ -193,7 +216,9 @@ impl FileWire {
         if self.read_tag.is_some() {
             return Ok(false);
         }
-        if inbox.len() >= crate::MAX_QUEUED_FRAMES {
+        if inbox.len() >= crate::MAX_QUEUED_FRAMES
+            || self.event_buf.len() >= super::events::MAX_EVENT_BYTES
+        {
             return Ok(false);
         }
         let tag = self
