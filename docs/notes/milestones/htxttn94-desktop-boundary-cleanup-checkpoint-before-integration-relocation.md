@@ -341,6 +341,17 @@ full run remains `bemenu-files/boundary-combined-e19c0e1c.log`; the focused repa
 is `boundary-recipe-slicing.log`. The repaired combined gate at `de776c68` is
 recorded above, with devices hidden and no physical acceptance claim.
 
+The normative architecture now describes startup, protection and qualification
+by protocol role. The descriptions were checked against `public_policy.rs`,
+the supervisor protection backend and the parameterized shell GPU proof.
+The protection section explicitly includes the backend's read-only `/usr`
+mount; it no longer implies that all ambient host files are hidden. The GPU
+proof section distinguishes synthetic content outcomes and byte-pattern
+checks from client GPU-execution evidence and physical presentation.
+Historical attribution of the profile reducer's model is retained. This is a
+documentation correction, checked by source inspection and `git diff --check`;
+it changes no executable behavior or pinned SDK contract copy.
+
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 and [t252 acceptance plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
 retain the full exits. The remaining relocations and the new descriptor tests

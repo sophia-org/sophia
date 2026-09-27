@@ -25,6 +25,14 @@ mediate deliberate namespace crossings. Engine boundaries remain
 protocol-neutral so future translators can be evaluated without redesigning
 visual authority.
 
+These roles are defined by their contracts. Sophia must accept interchangeable
+WM and shell implementations without client-specific startup rules or policy
+expectations. Sophia owns server behavior and generic conformance peers;
+client repositories own their UI and policy tests, and external desktop
+integration tooling owns named stacks, packaging and live-client qualification.
+The [shell and WM independence requirement](style-guide.md#shell-and-wm-independence-required)
+applies to tests and tooling as well as production code.
+
 The accepted [9P public-interface direction](sophia-9p-control-bus.md) targets
 9P2000.L for replaceable desktop roles and a new application frontend alongside
 X authority. This is a target, not current support: the existing native role
@@ -100,8 +108,8 @@ toolkits are downstream choices, not Sophia dependencies or public wire types.
 The shell's own pixels are distinct from foreign scene pixels, which remain
 accessible only through the existing Engine/portal authorities.
 
-GPU execution is an independent, default-denied startup permission. The accepted
-first Lom path grants one selected render node explicitly, keeps the existing
+GPU execution is an independent, default-denied startup permission. The direct
+device path grants one selected render node explicitly, keeps the existing
 immutable CPU-byte handoff after GPU readback, and requires no custom Linux
 kernel or `dmem` controller. That permission accepts GPU-driver and availability
 risk; it does not promise a portable hard aggregate VRAM quota. Sophia must
@@ -112,9 +120,16 @@ from device access.
 The [presentation/execution decision](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md)
 supersedes the earlier mandatory GPU-quota design. A GPU bridge is optional
 future execution work, and a different image transport needs measurements and
-its own admission. The current production gate still fails closed; the
-[paired Lom/Sophia critical path](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
-names the launch, input, recovery and acceptance work remaining.
+its own admission.
+
+The generic `shell-gpu-content-proof` takes explicit client, geometry, pixel
+pattern and outcome parameters. It validates the requested device grant and
+content lifecycle using synthetic presentation outcomes; its records state
+`native_presentation=false`. Even the full-surface raster pattern proves only
+that the requested bytes crossed the content path. A CPU renderer can produce
+the same bytes. Client adapter and render evidence, checked by an external
+verifier, is needed to support a GPU-execution claim. Physical presentation,
+input and recovery require separate desktop integration evidence.
 
 ## Current And Target State
 
@@ -189,18 +204,18 @@ names the launch, input, recovery and acceptance work remaining.
   native-X `CLIPBOARD`/`PRIMARY` source-proxy executor are complete. The other
   portal kinds do not yet have complete native executors.
 - Metadata broker interface revision 1 is a bounded, owner-only production
-  transport. In a Hagia session the broker runs as its own protected process,
+  transport. The broker runs as its own protected process,
   publishes `MetadataDisclosureRule` records to the X Authority, receives only
   reduced candidates, and returns sanitized descriptors to Engine's session-owned
   `ChromeDescriptorTable`. The production default is `ClassOnly`; raw titles,
   classes, PIDs, paths, and icons remain authority-private. Engine now has a
   title-only projection from this table: bounded generic rectangle/text nodes,
   per-head lowering, and opaque presented targets. Experimental
-  `sophia_shell_v1` now consumes it through a separately protected Hagia Shell.
+  `sophia_shell_v1` consumes it through a separately protected metadata shell.
   Core and admitted XI explicit pointer grabs share Engine's application lease
   arbitration, so the compiled profile enables that path. Signed installed
   evidence remains open.
-- Public Hagia policy and the metadata broker are launched through the production
+- Public WM policy and the metadata broker are launched through the production
   Bubblewrap protection backend. The backend rejects forbidden role composition,
   clears the ambient environment, inherits only selected standard streams, denies
   networking, creates private user/PID/IPC/UTS/cgroup namespaces and filesystem
@@ -241,7 +256,7 @@ or protocol state.
 
 A stale reply is also a private-model lifetime boundary. The external WM may
 have already applied that request to speculative state, so later work must not
-continue against the same model. A stateful policy such as Hagia is stopped and
+continue against the same model. A stateful external policy is stopped and
 reseeded from committed Engine state. The bundled Rust proof policy is a
 stateless pure projection of each received snapshot and therefore needs no
 private-model rebuild. In either case, no speculative policy state survives
@@ -318,7 +333,8 @@ against committed visual state, the prepared retirement commit-before-feedback g
 asynchronous KMS phase order from reduced observations. Backend-live executes
 requested retire, Present-schedule, and pending-submit phases; it is not a
 second phase coordinator. The production session-loop architecture target is
-complete; native Hagia/Narthex evidence owns current desktop qualification.
+complete; external desktop integration owns qualification with real WM and
+shell clients.
 
 The production target is one protocol-neutral session coordinator in
 `sophia-engine::runtime_driver`. It owns the ordered visual state machine while
@@ -1142,7 +1158,7 @@ before opening the graphical session. Keyboard RMLVO and repeat values overlay
 the effective Sophia configuration, explicit CLI RMLVO values remain superior,
 and initial lock state is held only by the X authority adapter. The live backend
 owns the translated libinput pointer policy and fails startup when a requested
-device setting cannot be applied. Hagia receives neither this candidate nor a
+device setting cannot be applied. The WM receives neither this candidate nor a
 raw device handle. Watched activation remains disabled pending the shared
 prepare/activate/rollback barrier. The trusted coordinator now has the pure
 seven-authority reducer for that barrier, ported from Hagia's model-checked
@@ -1157,7 +1173,7 @@ position. A second integration case feeds those slots the exact seven
 owner-safe fragments emitted by staging and proves semantic payload promotion
 for every authority. The startup launch gate is the only permitted visibility
 boundary for this model. Production prepare/rollback dispatch is now wired for
-public Hagia startup; activation, cross-process authority protocols, and a
+public WM startup; activation, cross-process authority protocols, and a
 live-reload visibility barrier remain unwired.
 
 The startup configuration boundary constructs one immutable prepared desktop
@@ -1229,7 +1245,7 @@ own typed operation. It begins one exact key, drains the seven prepare effects,
 performs generation-wide rollback on any rejection, and otherwise stops at
 `Prepared` with the previous active identity untouched. It emits no activation
 effects. The complete startup driver reuses this operation before its activate
-phase. Public Hagia startup now constructs a fixed-field dispatcher that
+phase. Public WM startup now constructs a fixed-field dispatcher that
 borrows the seven separate owners, invokes this operation before any graphical
 setup, and retains the settled coordinator model at `Prepared`. Every local
 failure triggers generation-wide owner rollback and aborts startup. The
@@ -1357,14 +1373,16 @@ processes without such ambient channels. Exact UID/PID endpoint admission is
 authentication, not proof of that isolation, so the metadata-bearing role
 sockets refuse it outright: they admit only the peer their supervisor launched
 into a domain carrying that role, while the blind policy and output roles still
-admit on a supervised PID. Production public Hagia policy and the metadata
+admit on a supervised PID. Production public WM policy and the metadata
 broker therefore run in separate Bubblewrap domains. A shell-enabled session
-launches Hagia Shell in a third domain carrying only the metadata-shell role
+launches each configured shell in a domain carrying only the metadata-shell role
 and its read-only socket path.
-Their environments and inherited descriptors are cleared, networking and the
-ambient host filesystem are unavailable, and only explicit read-only role/profile
-paths plus Hagia's private checkpoint directory are bound. A protected broker
-executable smoke checks those negative claims. This backend establishes the
+Their environments are cleared, inherited descriptors are explicitly selected,
+and networking is denied. The filesystem starts with the backend's runtime
+mounts, including read-only `/usr`, a private `/tmp` and a minimal `/dev`.
+Additional role/profile paths and the WM's private checkpoint directory are
+explicit grants. A protected broker executable smoke checks those negative
+claims. This backend establishes the
 current external-role floor; it does not imply that every future broker has
 already been admitted.
 
@@ -1481,10 +1499,11 @@ credentials, titles, PIDs, paths, payloads, icons, or buffer contents.
 
 ## Development Order
 
-The native-X foundations, production session loop, paired software/GPU gates,
-namespace and portal reference flows, native Hagia policy, and Firefox
-daily-driver workload are complete. The session can explicitly install
-Hagia through `sophia_wm_v1`: it binds and authenticates the endpoint before
+The native-X foundations, production session loop, software/GPU contract gates,
+and namespace and portal reference flows establish Sophia's server behavior.
+Qualification of a particular desktop and its application workloads belongs
+to external integration. The session can explicitly select a WM through
+`sophia_wm_v1`: it binds and authenticates the endpoint before
 spawn, sends complete Engine snapshots, stages complete projections in the
 canonical reducer, and promotes them only with frontend/renderable-content
 settlement. Policy replacement advances the connection epoch and preserves the
