@@ -9,7 +9,12 @@
  * or reads a clock: callers pass CLOCK_MONOTONIC milliseconds. Nothing is
  * presented, focused or activated until the server's own event says so, and
  * nothing is replayed. The ss stays the caller's: poll, dispatch, event
- * acknowledgement and object fetches remain there. While an ns is attached,
+ * acknowledgement and object fetches remain there. After each dispatch and
+ * event-processing pass, call sophia_ss_ack and promptly fetch announced
+ * objects. Multi-record responses (including activation plus input ack) wait
+ * for custody acknowledgement between records; an unfetched object can hold
+ * that acknowledgement and delay a response past its deadline.
+ * While an ns is attached,
  * events are read through sophia_ns_next, and every launcher record is
  * submitted through this API, which owns the transaction IDs it names.
  * Return values are sophia_9p_result codes: AGAIN (no event), BUSY (nothing

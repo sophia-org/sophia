@@ -40,7 +40,7 @@ static void ack_bounded_by_undelivered_events(void)
 {
     struct rig r;
     struct sophia_ss_obligations o;
-    rig_ready(&r, &rig_config);
+    rig_ready_unacked(&r, &rig_config);
     assert(sophia_ss_ack_limit(&r.s) == 2);
     assert(!sophia_ss_obligations(&r.s, &o) && o.consumed == 2 && !o.acked);
     assert(o.ack_due_ms == 1000 + SOPHIA_SS_ACK_PROGRESS_MS && !o.objects && !o.blocked);
@@ -211,6 +211,7 @@ static void poll_reports_queued_output(void)
     assert(sophia_ss_poll_events(&r.s) == POLLIN);
     assert(rig_until(&r, first, 32) == SOPHIA_SS_SUBMITTED);
     /* Quiescent once the transaction is reopened and the events read is held. */
+    rig_ack(&r);
     rig_run(&r, 12);
     assert(r.s.files.submit_stage == 0 && r.p.event_held);
     assert(sophia_ss_poll_events(&r.s) == POLLIN);
@@ -245,6 +246,7 @@ static void consume_status(struct rig *r, const struct sophia_sf_resource_begin 
     assert(e->value.resource_status.resource_id == b->resource_id);
     assert(e->value.resource_status.status == status);
     assert(!sophia_ss_consume(&r->s));
+    rig_ack(r);
     rig_run(r, 6);
 }
 /* Upload records wait for the single submission slot: BUSY changes nothing. */
@@ -283,6 +285,7 @@ static void uploads(void)
     peer_answer_submit(&r.p, 0);
     peer_submitted(&r.p, rig_last_id(&r), SOPHIA_SF_ALLOCATION_REQUEST);
     assert(rig_until(&r, first, 16) == SOPHIA_SS_SUBMITTED);
+    rig_ack(&r);
     r.p.policy = P_ACCEPT;
 
     /* Begin, one chunk, End: each record is a ticket with custody. */
@@ -392,6 +395,7 @@ static void outcome_eviction(void)
     for (i = 1; i <= SOPHIA_SS_OUTCOMES + 2; i++) {
         assert(!sophia_ss_submit(&r.s, &request, 1, &ticket) && ticket == i);
         assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+        rig_ack(&r);
     }
     /* Evicted tickets report unavailable; they never alias a later one. */
     assert(!sophia_ss_outcome(&r.s, 1, &o, &error) && o == SOPHIA_SS_UNAVAILABLE && !error);
@@ -399,6 +403,55 @@ static void outcome_eviction(void)
     assert(!sophia_ss_outcome(&r.s, 3, &o, NULL) && o == SOPHIA_SS_SUBMITTED);
     assert(sophia_ss_outcome(&r.s, SOPHIA_SS_OUTCOMES + 3, &o, NULL) == SOPHIA_9P_ARGUMENT);
     assert(sophia_ss_outcome(&r.s, 0, &o, NULL) == SOPHIA_9P_ARGUMENT);
+    rig_close(&r);
+}
+/* Accepted custody occupies the server's single transaction slot until its
+ * Submitted is acknowledged, even if the application queues nothing else. */
+static void transaction_reopen_waits_for_custody_ack(void)
+{
+    struct rig r;
+    struct sophia_sf_record request = rig_request(1);
+    uint64_t ticket;
+    rig_ready(&r, &rig_config);
+    ack(&r, 2);
+    r.p.require_custody_ack = 1;
+    assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+    assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+    rig_run(&r, 16); /* Deliberately defer the caller's cumulative ack. */
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+    assert(!r.p.transaction_busy && r.p.acked == 2);
+    ack(&r, 3);
+    request = rig_request(2);
+    assert(!sophia_ss_submit(&r.s, &request, 1, &ticket));
+    assert(rig_until(&r, ticket, 32) == SOPHIA_SS_SUBMITTED);
+    assert(!r.p.transaction_busy);
+    rig_close(&r);
+}
+static void transaction_reopen_waits_for_object_hold(void)
+{
+    struct rig r;
+    struct sophia_sf_record request = rig_request(1);
+    uint64_t first, second;
+    rig_ready(&r, &rig_config);
+    r.p.require_custody_ack = 1;
+    r.p.outputs_generation = 5;
+    peer_published(&r.p, SOPHIA_SF_OUTPUTS, 5, OUTPUTS_QID);
+    next_event(&r, 3);
+    assert(!sophia_ss_consume(&r.s));
+    assert(!sophia_ss_submit(&r.s, &request, 1, &first));
+    request = rig_request(2);
+    assert(!sophia_ss_submit(&r.s, &request, 1, &second));
+    assert(rig_until(&r, first, 32) == SOPHIA_SS_SUBMITTED);
+    assert(sophia_ss_ack_limit(&r.s) == 2);
+    rig_ack(&r); /* Cumulative ack cannot cross the unfetched publication. */
+    rig_run(&r, 16);
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY && !r.p.transaction_busy);
+    assert(rig_outcome(&r, second) == SOPHIA_SS_ADMITTED_LOCAL);
+    assert(fetch(&r, SOPHIA_SF_OUTPUTS, 5, OUTPUTS_QID)->value.outputs.facts_generation == 5);
+    assert(sophia_ss_ack_limit(&r.s) == 4);
+    rig_ack(&r);
+    assert(rig_until(&r, second, 32) == SOPHIA_SS_SUBMITTED);
+    assert(!r.p.transaction_busy);
     rig_close(&r);
 }
 int main(void)
@@ -414,6 +467,8 @@ int main(void)
     object_stale_is_not_terminal();
     negotiation_refusal();
     outcome_eviction();
+    transaction_reopen_waits_for_custody_ack();
+    transaction_reopen_waits_for_object_hold();
     puts("shell session: ack bounds, object obligations, poll, uploads, node ESTALE, refusal, "
          "outcome ring passed");
     return 0;

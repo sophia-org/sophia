@@ -125,7 +125,10 @@ size_t sophia_ss_record_bytes(const struct sophia_sf_record *);
 /* READY only. Validates and encodes every record (header epoch, submission
  * and sequence are assigned here and at hand-off) before any state changes:
  * all are admitted, or none. BUSY: not READY, or no slot/byte room now.
- * INVALID: a record fails validation. ARGUMENT: bad kind, count or size. */
+ * INVALID: a record fails validation. ARGUMENT: bad kind, count or size.
+ * A queued record is handed off only after the previous Submitted has been
+ * acknowledged. Call sophia_ss_ack after each dispatch and event-processing
+ * pass, and promptly fetch announced objects that hold acknowledgements. */
 int sophia_ss_submit(struct sophia_ss *, const struct sophia_sf_record *records, size_t count,
                      uint64_t *first_ticket);
 /* Reserve room before an irreversible local step (for example a UI edit
@@ -155,6 +158,10 @@ int sophia_ss_event(struct sophia_ss *, const struct sophia_sf_record **);
 int sophia_ss_consume(struct sophia_ss *);
 /* Highest sequence safe to acknowledge: consumed, and below every unfetched
  * ObjectPublished. Ack sends it when it advances; BUSY while one is pending.
+ * Call after every dispatch and event-processing pass: the next queued record
+ * waits for the previous Submitted's acknowledgement. Fetch announced objects
+ * promptly so their holds do not stall queued responses. Do not wait only for
+ * ack_due_ms, a full journal, or obligations.blocked before calling ack.
  * The server closes a reader whose acknowledgement makes no progress within
  * SOPHIA_SS_ACK_PROGRESS_MS while its journal is full. Consume, fetch
  * announced objects and ack before ack_due_ms. Frame permit and action ack

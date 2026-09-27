@@ -29,6 +29,8 @@ struct sophia_sf_client {
     struct sophia_9p_client *wire;
     uint64_t epoch, next_submission, sequence, consumed_sequence, acked_sequence;
     uint64_t event_offset, ack_pending, object_generation, object_qid;
+    /* Retained custody blocks the next transaction open until this is acked. */
+    uint64_t submitted_sequence;
     struct sophia_sf_negotiate offer;
     enum sophia_sf_profile profile;
     uint8_t *object_storage;
@@ -73,7 +75,9 @@ int sophia_sf_client_init_profile(struct sophia_sf_client *, struct sophia_9p_cl
 int sophia_sf_client_service(struct sophia_sf_client *, size_t byte_budget);
 int sophia_sf_client_ready(const struct sophia_sf_client *);
 /* Copies one whole value; header epoch/submission are assigned here. Return
- * BUSY preserves caller ownership. Submitted means custody only. */
+ * BUSY preserves caller ownership. Submitted means custody only. The next
+ * transaction stays unavailable until the caller acknowledges that Submitted;
+ * service continues events/object/upload work while waiting. */
 int sophia_sf_client_submit(struct sophia_sf_client *, const struct sophia_sf_record *);
 /* Copies one complete encoded candidate whose header carries the live epoch,
  * submission 0 and sequence 0; the id is assigned here and the whole record

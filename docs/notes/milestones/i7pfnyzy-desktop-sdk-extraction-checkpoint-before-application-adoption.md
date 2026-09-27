@@ -114,11 +114,70 @@ Rust B6c review found missing event/object epoch checks, submission-kind and
 write-count checks, and a custody overwrite path. Claude has reported fixes in
 progress; those require their own regression evidence before integration.
 
+## Bemenu adoption and Rust regression checkpoint
+
+Bemenu branch `sdk/desktop-9p` now has signed commit
+`a354251a53368b1f99483b5015a20747afab9804`, directly after `7d2d239`; its five
+earlier unpushed commits are preserved. It pins C SDK `6a59a13` and selects
+the native file session or IPC from exactly one supplied endpoint. Catalog,
+menu filtering and Cairo raster ownership remain shared between the paths.
+
+The strict `check-sophia` gate passes at nice 19, jobs 2, in bubblewrap with
+devices hidden and two fixed DejaVu font files. It covers the new adapter with
+supplied session outcomes, six snapshot mutation controls and existing IPC,
+executable, font and raster tests. The adapter test links the actual native
+lifecycle and codec, but replaces the lower session; it is not a production
+export test. The Bemenu plan records the font hashes and retained failure logs:
+the ambient font scan exceeded the existing executable watchdog even with the
+unchanged binary, and the first adapter compile rejected an oversized test
+stack frame. Neither warning nor watchdog was relaxed.
+
+Claude reports signed Rust SDK `87ab93f` with 33 scripted file-peer tests,
+five repeated passes and clippy passing with and without IPC compatibility.
+The regressions exposed progress, same-pass retry and reply-order custody
+bugs, now fixed on that branch. The production-owner B6c fixtures remain
+required; the older nine file-wire tests alone do not establish role completion.
+
+## Actual Bemenu executable over the production export
+
+Sophia C integration commits `8d1680713` and `c23a38453` add artifact preparation
+and the opt-in `shell_bemenu_files` test. They are signed and awaiting integration
+review. Preparation verifies Bemenu's signed commit, hashes the extracted tree,
+requires the exact Sophia C SDK snapshot, and builds the archive with strict
+warnings, nice 19 and two jobs. The source checkout is read-only throughout.
+
+The prepared Bemenu revision is
+`a354251a53368b1f99483b5015a20747afab9804`, binary SHA-256
+`d64a527da40851404825f4bc307aad7286ecaf94517a6a8c1b3bfd12938cb044`, SDK
+`6a59a13f026111a7a277943d71c1fdb090613a23`. The first production-export run
+passes: two openings, three candidates, one text edit and one keyboard
+activation. Real allocation/resource/candidate/focus owners serve the actual
+Bemenu process under the production protected supervisor. The test observes
+changed uploaded pixels, close-time resource settlement, reopen with reset
+query, graceful exit and quiescent accounting.
+
+The domain exposes only the pinned in-tree JetBrains Mono font and one shell
+endpoint. Runtime checks verify the executed binary, environment, private PID
+namespace, nice value, font visibility and hidden devices. Input timestamps use
+the actual monotonic-clock API, enabled only for Sophia's tests. The C SDK and
+Bemenu remain C; the Rust harness lives in Sophia.
+
+Evidence is under `~/.local/state/sophia/development-evidence/bemenu-files/`:
+`prepare-a354251.log`, `live-a354251-first.log`, `missing-artifact.log` and
+`mismatched-artifact.log`. The latter two deliberately fail before process
+launch. Four artifact-helper refusal/timeout controls pass, as do targeted
+runtime and xtask clippy with warnings denied, formatting and layout. Session
+policy and presentation observations remain scripted; content time is frozen.
+This establishes no physical rendering, real launch policy, pointer activation,
+expiry, reconnect or attended daily-driver result.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 defines lifecycle completion, release and application-adoption exits. The C
-session/native lifecycle layers and Rust B6c are being implemented separately
-from this extraction. Bemenu's adoption worktree starts at `7d2d239`, preserving
-its five unpushed commits; no application pin or installed default changed in
-this checkpoint. Task state remains in [todo.md](../../../todo.md).
+session/native lifecycle layers and Bemenu's application pin have production
+export coverage. The new harness awaits review/merge; Rust B6c needs its live
+fixtures and final integration gate. SDK publication,
+the other application adoptions and attended daily-driver acceptance remain.
+No installed default has changed. Task state remains in
+[todo.md](../../../todo.md).

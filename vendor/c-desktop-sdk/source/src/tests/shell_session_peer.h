@@ -28,6 +28,9 @@ struct peer {
     uint8_t journal[16384];
     size_t journal_used;
     uint64_t sequence, acked;
+    uint64_t accepted_sequence;
+    unsigned transaction_busy;
+    int require_custody_ack;
     int event_held, tx_held, submit_held, hold_tx, refuse_negotiation, policy, once;
     uint16_t event_tag, tx_tag, submit_tag;
     uint32_t event_count, event_error, tx_count, error;
@@ -110,6 +113,7 @@ static inline void peer_submitted(struct peer *p, uint64_t id, uint16_t kind)
     r.value.submitted.submission_id = id;
     r.value.submitted.candidate_kind = kind;
     peer_record(p, &r);
+    p->accepted_sequence = p->sequence;
 }
 static inline void peer_app_event(struct peer *p)
 {
@@ -308,6 +312,12 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
         peer_send(p, 111, tag, b, 2 + 13 * count);
         return;
     case 12:
+        if (peer_file(p, (uint32_t)peer_get(body, 4)) == F_TX &&
+            p->require_custody_ack && p->accepted_sequence > p->acked) {
+            ++p->transaction_busy;
+            peer_error(p, tag, 16);
+            return;
+        }
         peer_qid(b, peer_file(p, (uint32_t)peer_get(body, 4)));
         peer_put(b + 13, 0, 4);
         peer_send(p, 13, tag, b, 17);
@@ -438,6 +448,7 @@ static inline void rig_start(struct rig *r, const struct sophia_ss_config *confi
     r->storage = malloc(bytes);
     assert(r->storage);
     r->p.fd = r->fd[1];
+    r->p.require_custody_ack = 1;
     r->now = 1000;
     assert(!sophia_ss_open_fd(&r->s, r->fd[0], config, r->storage, bytes));
     assert(sophia_ss_state(&r->s) == SOPHIA_SS_NEGOTIATING);
@@ -448,7 +459,7 @@ static inline void rig_settle(struct rig *r)
     for (i = 0; i < 64 && sophia_ss_state(&r->s) == SOPHIA_SS_NEGOTIATING; i++)
         rig_step(r);
 }
-static inline void rig_ready(struct rig *r, const struct sophia_ss_config *config)
+static inline void rig_ready_unacked(struct rig *r, const struct sophia_ss_config *config)
 {
     rig_start(r, config);
     rig_settle(r);
@@ -458,6 +469,16 @@ static inline void rig_ready(struct rig *r, const struct sophia_ss_config *confi
     assert(sophia_ss_state(&r->s) == SOPHIA_SS_READY && sophia_ss_epoch(&r->s) == PEER_EPOCH);
     /* Negotiation settled: its Submitted and Negotiated were consumed. */
     rig_run(r, 4);
+}
+static inline void rig_ack(struct rig *r)
+{
+    assert(!sophia_ss_ack(&r->s));
+    rig_run(r, 6);
+}
+static inline void rig_ready(struct rig *r, const struct sophia_ss_config *config)
+{
+    rig_ready_unacked(r, config);
+    rig_ack(r);
 }
 static inline void rig_close(struct rig *r)
 {

@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod bemenu_artifact;
 mod c_desktop_sdk;
 mod check;
 mod git_tree;
@@ -41,6 +42,9 @@ fn main() -> std::process::ExitCode {
 
 fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
+        Some("prepare-bemenu-artifact") => {
+            bemenu_artifact::run(&workspace_root()?, &arguments[1..]).map(print_lines)
+        }
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
         Some("panel") => panel::run(&workspace_root()?, &arguments[1..]),
         Some("vendor-rust-desktop-sdk") => {
@@ -464,6 +468,9 @@ fn print_lines(lines: Vec<String>) {
 
 const USAGE: &str = "\
 usage: cargo xtask <command>
+
+  prepare-bemenu-artifact SOURCE-REPO SIGNED-COMMIT NEW-OUTPUT-DIR
+      Build a verified Bemenu archive for the opt-in production file-export test.
 
   panel --quickshell=/PATH [--renderer=gpu|software]
         [--probe --renderer=software --wm=/PATH --display=:298] [--output=/NEW/DIR]

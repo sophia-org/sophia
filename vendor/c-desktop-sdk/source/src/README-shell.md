@@ -78,7 +78,10 @@ four service files and temporary object/upload pins (32 is a suitable setting).
 It holds at most one staged submission, one decoded event, one object fetch and
 one upload. An events read can remain outstanding while other operations run.
 Call `service`, inspect and consume events, and explicitly call `ack` after
-processing them. Submitted proves custody, not semantic acceptance. Positive
+every service and event-processing pass. Fetch announced objects promptly:
+their acknowledgement holds also block the next queued submission. Do not wait
+for a full journal or an acknowledgement deadline. Submitted proves custody,
+not semantic acceptance. Positive
 short writes advance the acknowledged cursor; submit EAGAIN retries the same
 submission. Every completed submission closes and reopens its transaction fid.
 The client validates the selected revision and required capabilities.
