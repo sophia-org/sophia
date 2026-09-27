@@ -1,8 +1,9 @@
 //! Typed publication for the persistent catalog and view-indicator objects.
 //! The socket wire still emits exactly today's multi-frame transfers, built
 //! from the same protocol encoders Session uses; the file wire publishes the
-//! whole value as one snapshot object. Session is not switched to call these
-//! yet: this only gives the transport a typed seam for a later phase.
+//! whole value as one snapshot object. Socket publications drain
+//! within the bulk budget across I/O turns; file objects follow the export's
+//! own object rules.
 use super::{ShellComponentTransport, ShellSessionTransport, ShellTransportError};
 use sophia_protocol::{
     ShellCatalogActionRecord, ShellCatalogIdentity, ShellIndicatorSnapshot, ShellPersistentCatalog,
@@ -13,8 +14,7 @@ use sophia_protocol::{
 impl ShellComponentTransport {
     /// Publishes the whole indicator snapshot: the socket wire as today's
     /// `ShellIndicatorsBegin`/status/indicator/.../End frames, the file wire
-    /// as the `Indicators` object. Each socket frame is throttled exactly as
-    /// `send_async` throttles Session's own outbound frames today.
+    /// as the `Indicators` object.
     pub fn publish_indicators(
         &mut self,
         epochs: &crate::ContentEpochRegistry,
@@ -32,23 +32,13 @@ impl ShellComponentTransport {
                 },
             )
             .map_err(|_| ShellTransportError::WrongContentRecord)?;
-            if !self.bulk_capacity_available(epochs, body.len()) {
-                return Err(ShellTransportError::ActivationQueueSaturated);
-            }
-            self.output.push_file(
+            return self.publish_object(
                 sophia_protocol::shell_files::ShellFileKind::Indicators,
-                body,
-                false,
+                &body,
             );
-            return Ok(());
         }
-        for frame in encode_shell_indicator_snapshot(transaction, snapshot)? {
-            if !self.bulk_capacity_available(epochs, frame.len()) {
-                return Err(ShellTransportError::ActivationQueueSaturated);
-            }
-            self.output.push(frame, false);
-        }
-        Ok(())
+        let frames = encode_shell_indicator_snapshot(transaction, snapshot)?;
+        self.queue_publication(epochs, frames)
     }
 
     /// Publishes the whole application catalog, plain or with r8 identities:
@@ -74,15 +64,8 @@ impl ShellComponentTransport {
                 },
             )
             .map_err(|_| ShellTransportError::WrongContentRecord)?;
-            if !self.bulk_capacity_available(epochs, body.len()) {
-                return Err(ShellTransportError::ActivationQueueSaturated);
-            }
-            self.output.push_file(
-                sophia_protocol::shell_files::ShellFileKind::Catalog,
-                body,
-                false,
-            );
-            return Ok(());
+            return self
+                .publish_object(sophia_protocol::shell_files::ShellFileKind::Catalog, &body);
         }
         let mut frames = encode_shell_application_catalog(transaction, &catalog.catalog)?;
         if !catalog.identities.is_empty() {
@@ -106,13 +89,59 @@ impl ShellComponentTransport {
             }
             frames.push(end);
         }
-        for frame in frames {
+        self.queue_publication(epochs, frames)
+    }
+
+    /// The file wire publishes a snapshot object into the export under the
+    /// object's own cap and retention rules; it is not a streamed record, so
+    /// the output queue's byte budget does not apply. Events queued before it
+    /// are journaled first, so the announcement never overtakes them. If they
+    /// cannot all be journaled now, or the journal cannot take the
+    /// announcement, nothing is published and the caller retries.
+    fn publish_object(
+        &mut self,
+        kind: sophia_protocol::shell_files::ShellFileKind,
+        body: &[u8],
+    ) -> Result<(), ShellTransportError> {
+        let files = self
+            .files
+            .as_mut()
+            .ok_or(ShellTransportError::NotConnected)?;
+        if !Self::drain_file_output(files, &mut self.output)? {
+            return Err(ShellTransportError::ActivationQueueSaturated);
+        }
+        if files.publish(kind, body, false)? {
+            Ok(())
+        } else {
+            Err(ShellTransportError::ActivationQueueSaturated)
+        }
+    }
+
+    /// Takes custody of one whole socket publication. Its frames enter the
+    /// output queue as bulk capacity allows, now and on later I/O turns, so a
+    /// catalog larger than the queue is still delivered whole and in order.
+    /// A publication still draining refuses the next one until it is done.
+    fn queue_publication(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        frames: Vec<Vec<u8>>,
+    ) -> Result<(), ShellTransportError> {
+        if !self.publication.is_empty() {
+            return Err(ShellTransportError::ActivationQueueSaturated);
+        }
+        self.publication.extend(frames);
+        self.flush_publication(epochs);
+        Ok(())
+    }
+
+    pub(super) fn flush_publication(&mut self, epochs: &crate::ContentEpochRegistry) {
+        while let Some(frame) = self.publication.front() {
             if !self.bulk_capacity_available(epochs, frame.len()) {
-                return Err(ShellTransportError::ActivationQueueSaturated);
+                break;
             }
+            let frame = self.publication.pop_front().expect("front checked");
             self.output.push(frame, false);
         }
-        Ok(())
     }
 }
 

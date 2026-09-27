@@ -201,6 +201,12 @@ impl ShellComponentTransport {
                         ),
                 };
                 let reported = candidates.pending_event().is_some();
+                if result.is_err()
+                    && reported
+                    && let Some(files) = self.files.as_mut()
+                {
+                    files.export_mut().discard_catalog_candidate_parts();
+                }
                 self.flush_content_candidate_events(epochs)?;
                 if let Err(error) = result
                     && !reported

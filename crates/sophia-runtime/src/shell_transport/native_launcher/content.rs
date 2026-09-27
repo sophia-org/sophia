@@ -240,6 +240,12 @@ impl ShellComponentTransport {
                     | NativeContentRecord::Demand(_)
                     | NativeContentRecord::Cancel(_) => unreachable!(),
                 };
+                if result.is_err()
+                    && candidates.pending_event().is_some()
+                    && let Some(files) = self.files.as_mut()
+                {
+                    files.export_mut().discard_native_candidate_parts();
+                }
                 if let Err(error) = result
                     && candidates.pending_event().is_none()
                 {

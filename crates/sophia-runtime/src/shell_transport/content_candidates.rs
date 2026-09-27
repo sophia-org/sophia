@@ -252,6 +252,12 @@ impl ShellComponentTransport {
                 );
             }
             processed += 1;
+            if outcome.is_err()
+                && reported
+                && let Some(files) = self.files.as_mut()
+            {
+                files.export_mut().discard_candidate_parts();
+            }
             self.flush_content_candidate_events(epochs)?;
             if let Err(error) = outcome
                 && !reported

@@ -184,6 +184,24 @@ impl ShellFiles {
         }
     }
 
+    /// Drops the rest of the whole candidate whose earlier part the owner has
+    /// just answered with a rejecting outcome. A whole candidate is one
+    /// submission and gets one outcome; its later parts must not reach the
+    /// owner as if a new candidate had started.
+    pub(in crate::shell_transport) fn discard_candidate_parts(&mut self) {
+        self.candidate_parts.clear();
+    }
+
+    /// As [`Self::discard_candidate_parts`], for a whole `NativeCandidate`.
+    pub(in crate::shell_transport) fn discard_native_candidate_parts(&mut self) {
+        self.native_candidate_parts.clear();
+    }
+
+    /// As [`Self::discard_candidate_parts`], for a whole `CatalogCandidate`.
+    pub(in crate::shell_transport) fn discard_catalog_candidate_parts(&mut self) {
+        self.catalog_candidate_parts.clear();
+    }
+
     /// The next candidate part: the rest of the candidate already begun, or
     /// the first part of the oldest queued candidate. Other queued records
     /// keep their order.

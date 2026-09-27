@@ -129,6 +129,9 @@ pub struct ShellComponentTransport {
     action_cancellations: Vec<sophia_protocol::ContentAction>,
     indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
     catalog_response: Option<catalog_responses::PendingCatalogResponse>,
+    /// Socket frames of one indicator or catalog publication not yet queued;
+    /// drained within the bulk budget on each I/O turn.
+    publication: VecDeque<Vec<u8>>,
     native_control: native_launcher::control::NativeControl,
     inbox: VecDeque<Vec<u8>>,
     connection_epoch: u64,
@@ -173,6 +176,7 @@ impl ShellComponentTransport {
             action_cancellations: Vec::with_capacity(16),
             indicator_response: None,
             catalog_response: None,
+            publication: VecDeque::new(),
             native_control: native_launcher::control::NativeControl::default(),
             inbox: VecDeque::new(),
             connection_epoch: 0,
@@ -419,6 +423,7 @@ impl ShellComponentTransport {
         self.action_cancellations.clear();
         self.indicator_response = None;
         self.catalog_response = None;
+        self.publication.clear();
         self.native_control = native_launcher::control::NativeControl::default();
         self.inbox.clear();
         self.requested_candidate = None;
@@ -538,6 +543,7 @@ impl ShellComponentTransport {
         self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
+        self.flush_publication(epochs);
         if self.files.is_some() {
             return self.poll_files();
         }
@@ -816,6 +822,31 @@ impl ShellComponentTransport {
     /// the journal in FIFO order, then serve again so waiting reads see them.
     /// A socket frame in this FIFO is a family the file contract does not
     /// carry yet; it closes the component rather than crossing as old IPC.
+    /// Moves queued file events into the journal in FIFO order; `Ok(false)`
+    /// when the journal is full and events remain queued.
+    fn drain_file_output(
+        files: &mut files::ShellFileWire,
+        output: &mut outbox::ShellOutbox,
+    ) -> Result<bool, ShellTransportError> {
+        while !output.is_empty() {
+            let Some((kind, body, credited)) = output.front_file() else {
+                return Err(ShellTransportError::WrongContentRecord);
+            };
+            let taken = if sophia_protocol::shell_files::shell_file_class(kind)
+                == sophia_protocol::shell_files::ShellFileClass::Object
+            {
+                files.publish(kind, body, credited)?
+            } else {
+                files.append(kind, body, credited)?
+            };
+            if !taken {
+                return Ok(false);
+            }
+            output.pop_file();
+        }
+        Ok(true)
+    }
+
     fn poll_files(&mut self) -> Result<(), ShellTransportError> {
         let files = self
             .files
@@ -828,24 +859,7 @@ impl ShellComponentTransport {
             }
             return Err(error);
         }
-        let mut blocked = false;
-        while !self.output.is_empty() {
-            let Some((kind, body, credited)) = self.output.front_file() else {
-                return Err(ShellTransportError::WrongContentRecord);
-            };
-            let taken = if sophia_protocol::shell_files::shell_file_class(kind)
-                == sophia_protocol::shell_files::ShellFileClass::Object
-            {
-                files.publish(kind, body, credited)?
-            } else {
-                files.append(kind, body, credited)?
-            };
-            if !taken {
-                blocked = true;
-                break;
-            }
-            self.output.pop_file();
-        }
+        let blocked = !Self::drain_file_output(files, &mut self.output)?;
         files.check_ack_progress(blocked, std::time::Instant::now())?;
         if let Err(error) = files.turn() {
             if error == ShellTransportError::NotConnected {

@@ -48,6 +48,25 @@ fn dock_transport() -> (ShellComponentTransport, std::path::PathBuf) {
     (transport, directory)
 }
 
+// A monotonic counter, not `Instant::now().elapsed()` (too coarse to stay
+// unique across threads run concurrently by the test harness), so these
+// regression tests' socket directories never collide with a sibling test's.
+static T252_NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn dock_transport_t252(tag: &str) -> (ShellComponentTransport, std::path::PathBuf) {
+    let directory = std::env::temp_dir().join(format!(
+        "shell-dock-files-t252-{tag}-{}-{}",
+        std::process::id(),
+        T252_NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let transport = ShellComponentTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    (transport, directory)
+}
+
 fn header(kind: ShellFileKind, epoch: u64, id: u64) -> ShellFileHeader {
     ShellFileHeader {
         kind,
@@ -546,6 +565,329 @@ fn catalog_object_candidate_and_activate_cross_the_file_wire() {
     transport
         .connection(&mut registry)
         .finish_catalog_activation(activation_transaction, &activation, 1)
+        .unwrap();
+
+    while !peer.is_finished() {
+        transport.poll_io(&mut registry).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    peer.join().unwrap();
+    transport.disconnect(&mut registry).unwrap();
+    registry.collect();
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+// Regression for t252 fix A (catalog): as
+// `a_stale_catalog_generation_native_candidate_is_rejected_once_and_the_connection_survives`
+// in shell_native_launcher_files.rs, for a whole `CatalogCandidate`.
+#[test]
+fn a_stale_catalog_generation_catalog_candidate_is_rejected_once_and_the_connection_survives() {
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let (mut transport, directory) = dock_transport_t252("stale");
+    transport
+        .authorize_protected_peer(&ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid: std::process::id(),
+            peer_pid: std::process::id(),
+            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+        })
+        .unwrap();
+    transport
+        .reserve_content_with_profile(
+            &mut registry,
+            limits(),
+            ContentStoreProfile::PersistentCatalog,
+        )
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+
+    let (submitted_tx, submitted_rx) = std::sync::mpsc::channel::<()>();
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+
+        let offer = encode_shell_file_negotiate(
+            header(ShellFileKind::Negotiate, GRANT.connection_epoch, 1),
+            ShellV1ClientHello {
+                minimum_revision: 8,
+                maximum_revision: 8,
+                required_capabilities: CAPS,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        decode_shell_file_negotiated(&negotiated).unwrap();
+        peer.ack(&negotiated);
+
+        let permit_a = {
+            let event = peer.next_event();
+            let value = decode_shell_file_transaction(&event, ShellFileKind::FramePermit).unwrap();
+            let ShellContentRecord::FramePermit(p) = value.record else {
+                panic!("frame permit");
+            };
+            peer.ack(&event);
+            p
+        };
+
+        // Value-valid in every other respect, naming the granted permit;
+        // only its catalog_generation (999) does not match the live catalog
+        // (generation 8, supplied directly to the servicer below).
+        let mut begin = candidate_begin(999);
+        begin.content.pacing_permit = permit_a.permit_id;
+        let stale_bytes = encode_shell_file_catalog_candidate(
+            header(ShellFileKind::CatalogCandidate, GRANT.connection_epoch, 2),
+            &ShellFileCatalogCandidate {
+                transaction: tx(25),
+                candidate: CatalogContentCandidate {
+                    candidate: ContentCandidate {
+                        grant: begin.content.grant,
+                        candidate_generation: begin.content.candidate_generation,
+                        output: begin.content.output,
+                        facts_generation: begin.content.facts_generation,
+                        pacing_permit: begin.content.pacing_permit,
+                        interaction_generation: begin.content.interaction_generation,
+                        surfaces: candidate_chunk().surfaces,
+                        placements: candidate_chunk().placements,
+                        targets: vec![],
+                    },
+                    catalog_generation: begin.catalog_generation,
+                },
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&stale_bytes, 2);
+        submitted_tx.send(()).unwrap();
+
+        // Exactly one outcome for the stale candidate: Rejected/Stale.
+        let event = peer.next_event();
+        let value = decode_shell_file_transaction(&event, ShellFileKind::CandidateOutcome).unwrap();
+        let ShellContentRecord::CandidateOutcome(outcome) = value.record else {
+            panic!("candidate outcome");
+        };
+        assert_eq!(outcome.kind, 3);
+        assert_eq!(outcome.reason, ContentReason::Stale as u16);
+        peer.ack(&event);
+
+        let permit_b = {
+            let event = peer.next_event();
+            let value = decode_shell_file_transaction(&event, ShellFileKind::FramePermit).unwrap();
+            let ShellContentRecord::FramePermit(p) = value.record else {
+                panic!("frame permit");
+            };
+            peer.ack(&event);
+            p
+        };
+
+        // A fresh, fully valid candidate naming the live catalog generation:
+        // the discarded parts above did not leak, and the store still works.
+        let mut begin2 = candidate_begin(8);
+        begin2.content.pacing_permit = permit_b.permit_id;
+        begin2.content.candidate_generation = 2;
+        let valid_bytes = encode_shell_file_catalog_candidate(
+            header(ShellFileKind::CatalogCandidate, GRANT.connection_epoch, 3),
+            &ShellFileCatalogCandidate {
+                transaction: tx(26),
+                candidate: CatalogContentCandidate {
+                    candidate: ContentCandidate {
+                        grant: begin2.content.grant,
+                        candidate_generation: begin2.content.candidate_generation,
+                        output: begin2.content.output,
+                        facts_generation: begin2.content.facts_generation,
+                        pacing_permit: begin2.content.pacing_permit,
+                        interaction_generation: begin2.content.interaction_generation,
+                        surfaces: candidate_chunk().surfaces,
+                        placements: candidate_chunk().placements,
+                        targets: vec![],
+                    },
+                    catalog_generation: begin2.catalog_generation,
+                },
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&valid_bytes, 3);
+
+        let event = peer.next_event();
+        let value = decode_shell_file_transaction(&event, ShellFileKind::CandidateOutcome).unwrap();
+        let ShellContentRecord::CandidateOutcome(outcome) = value.record else {
+            panic!("candidate outcome");
+        };
+        assert_eq!(outcome.kind, 1);
+        peer.ack(&event);
+    });
+
+    let start = Instant::now();
+    let welcome = negotiate(&mut transport, &mut registry, GRANT.connection_epoch, &peer);
+    assert_eq!(welcome.capabilities, CAPS);
+
+    // The resource the valid candidate's one placement leases, supplied
+    // directly; no resource handshake crosses the wire in this test.
+    fixtures::upload(&mut registry, GRANT, 255);
+
+    transport
+        .grant_content_permit(&mut registry, tx(10), OUTPUT, 1, 1, 0)
+        .unwrap();
+    // Drive the stale candidate: only its Begin is ever serviced, and the
+    // call keeps returning `Ok` even though the Begin was refused.
+    loop {
+        let processed = transport
+            .connection(&mut registry)
+            .service_catalog_candidates(&[], &dock_catalog(8), 1)
+            .unwrap();
+        if processed == 0 && submitted_rx.try_recv().is_ok() {
+            while transport
+                .connection(&mut registry)
+                .service_catalog_candidates(&[], &dock_catalog(8), 1)
+                .unwrap()
+                > 0
+            {}
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+
+    transport
+        .grant_content_permit(&mut registry, tx(11), OUTPUT, 2, 2, 2)
+        .unwrap();
+    let allocations = [dock_allocation()];
+    let context = ContentCandidateContext {
+        output: OUTPUT,
+        facts_generation: 5,
+        interaction_generation: 4,
+        allocations: &allocations,
+    };
+    let mut processed = 0;
+    while processed < 3 {
+        processed += transport
+            .connection(&mut registry)
+            .service_catalog_candidates(&[context], &dock_catalog(8), 3)
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    let render = transport
+        .connection(&mut registry)
+        .begin_catalog_submission(2, context, &dock_catalog(8), 4)
+        .unwrap();
+    transport
+        .content_prepared(&mut registry, GRANT, OUTPUT, 2, 1, 1, 5)
+        .unwrap();
+    drop(render);
+
+    while !peer.is_finished() {
+        transport.poll_io(&mut registry).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    peer.join().unwrap();
+    transport.disconnect(&mut registry).unwrap();
+    registry.collect();
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+// Regression for t252 fix B (file wire): a maximal r8 catalog -- 4096
+// entries at their text maxima, each with an identity -- publishes straight
+// into the export (no longer limited by the output queue's bulk budget) and
+// reads back byte-for-byte through one pinned open.
+fn maximal_catalog() -> ShellPersistentCatalog {
+    let label = "L".repeat(128);
+    let keywords = "K".repeat(256);
+    let identity_tail = "I".repeat(SOPHIA_SHELL_CATALOG_IDENTITY_MAX_BYTES - "registered:".len());
+    let entries: Vec<ShellApplicationDescriptor> = (1..=SOPHIA_SHELL_MAX_APPLICATIONS as u16)
+        .map(|slot| ShellApplicationDescriptor {
+            slot,
+            available: true,
+            label: label.clone(),
+            keywords: keywords.clone(),
+        })
+        .collect();
+    let identities = entries
+        .iter()
+        .map(|entry| (entry.slot, format!("registered:{identity_tail}")))
+        .collect();
+    ShellPersistentCatalog {
+        catalog: ShellApplicationCatalog {
+            connection_epoch: GRANT.connection_epoch,
+            generation: 8,
+            entries,
+        },
+        identities,
+    }
+}
+
+#[test]
+fn a_maximal_r8_catalog_publishes_on_the_file_wire_and_reads_back_exactly() {
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let (mut transport, directory) = dock_transport_t252("maximal");
+    transport
+        .authorize_protected_peer(&ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid: std::process::id(),
+            peer_pid: std::process::id(),
+            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+        })
+        .unwrap();
+    transport
+        .reserve_content_with_profile(
+            &mut registry,
+            limits(),
+            ContentStoreProfile::PersistentCatalog,
+        )
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+    let expected = maximal_catalog();
+    let expected_for_peer = expected.clone();
+
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+
+        let offer = encode_shell_file_negotiate(
+            header(ShellFileKind::Negotiate, GRANT.connection_epoch, 1),
+            ShellV1ClientHello {
+                minimum_revision: 8,
+                maximum_revision: 8,
+                required_capabilities: CAPS,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        decode_shell_file_negotiated(&negotiated).unwrap();
+        peer.ack(&negotiated);
+
+        let published = peer.next_event();
+        let announced = decode_shell_file_object_published(&published).unwrap();
+        assert_eq!(
+            (announced.object, announced.generation),
+            (ShellFileKind::Catalog, 8)
+        );
+        peer.ack(&published);
+
+        peer.open(7, b"catalog", 0);
+        let mut bytes = Vec::new();
+        let mut offset = 0u64;
+        loop {
+            let chunk = peer.read(7, offset);
+            let short = chunk.len() < 65500;
+            offset += chunk.len() as u64;
+            bytes.extend_from_slice(&chunk);
+            if short {
+                break;
+            }
+        }
+        let value = decode_shell_file_catalog(&bytes).unwrap();
+        assert_eq!(value.catalog, expected_for_peer);
+    });
+
+    let start = Instant::now();
+    let welcome = negotiate(&mut transport, &mut registry, GRANT.connection_epoch, &peer);
+    assert_eq!(welcome.capabilities, CAPS);
+
+    transport
+        .publish_catalog(&registry, tx(1), &expected)
         .unwrap();
 
     while !peer.is_finished() {

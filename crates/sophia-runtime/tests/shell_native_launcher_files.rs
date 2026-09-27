@@ -50,6 +50,25 @@ fn transport() -> (ShellComponentTransport, std::path::PathBuf) {
     (transport, directory)
 }
 
+// A monotonic counter, not `Instant::now().elapsed()` (too coarse to stay
+// unique across threads run concurrently by the test harness), so this
+// regression test's socket directory never collides with a sibling test's.
+static T252_NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn transport_t252() -> (ShellComponentTransport, std::path::PathBuf) {
+    let directory = std::env::temp_dir().join(format!(
+        "shell-native-files-t252-{}-{}",
+        std::process::id(),
+        T252_NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let transport = ShellComponentTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    (transport, directory)
+}
+
 fn header(kind: ShellFileKind, epoch: u64, id: u64) -> ShellFileHeader {
     ShellFileHeader {
         kind,
@@ -541,6 +560,198 @@ fn opening_allocation_candidate_focus_input_activation_and_close_cross_the_file_
     transport
         .close_native_launcher(&mut registry, opening(), tx(32), ContentReason::Revoked)
         .unwrap();
+
+    while !peer.is_finished() {
+        transport.poll_io(&mut registry).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    peer.join().unwrap();
+    transport.disconnect(&mut registry).unwrap();
+    registry.collect();
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+// Regression for t252 fix A (native): the owner's rejecting outcome for the
+// earlier part of a whole `NativeCandidate` must be the candidate's only
+// outcome, and the connection must stay usable. Before the fix, the
+// exploded Chunk/End of a Begin-rejected candidate still reached the store
+// on later service visits, found no matching assembly and returned an
+// unreported `Stale`, which `service_native_launcher_content` propagated as
+// an `Err` -- the signal callers use to revoke the whole component.
+#[test]
+fn a_stale_catalog_generation_native_candidate_is_rejected_once_and_the_connection_survives() {
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let (mut transport, directory) = transport_t252();
+    transport
+        .authorize_protected_peer(&ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid: std::process::id(),
+            peer_pid: std::process::id(),
+            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+        })
+        .unwrap();
+    transport
+        .reserve_content_with_profile(&mut registry, limits(), ContentStoreProfile::NativeLauncher)
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+
+    let (submitted_tx, submitted_rx) = mpsc::channel::<()>();
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+
+        let offer = encode_shell_file_negotiate(
+            header(ShellFileKind::Negotiate, GRANT.connection_epoch, 1),
+            ShellV1ClientHello {
+                minimum_revision: 7,
+                maximum_revision: 7,
+                required_capabilities: CAPS,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        decode_shell_file_negotiated(&negotiated).unwrap();
+        peer.ack(&negotiated);
+
+        let opening_event = peer.next_event();
+        let value = decode_shell_file_native_launcher_transaction(
+            &opening_event,
+            ShellFileKind::NativeOpening,
+        )
+        .unwrap();
+        assert_eq!(value.record, ShellNativeLauncherRecord::Opening(opening()));
+        peer.ack(&opening_event);
+
+        let permit_a = {
+            let event = peer.next_event();
+            let value = decode_shell_file_transaction(&event, ShellFileKind::FramePermit).unwrap();
+            let ShellContentRecord::FramePermit(p) = value.record else {
+                panic!("frame permit");
+            };
+            peer.ack(&event);
+            p
+        };
+
+        // Otherwise exactly the working `native_candidate` shape (a valid
+        // permit, one row-consistent surface/target), naming a
+        // catalog_generation the store never published.
+        let mut stale = native_candidate(permit_a.permit_id);
+        stale.catalog_generation = 9999;
+        let stale_bytes = encode_shell_file_native_candidate(
+            header(ShellFileKind::NativeCandidate, GRANT.connection_epoch, 2),
+            &ShellFileNativeCandidate {
+                transaction: tx(24),
+                candidate: stale,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&stale_bytes, 2);
+        submitted_tx.send(()).unwrap();
+
+        // Exactly one outcome for the stale candidate: Rejected/Stale. Its
+        // Chunk and End must never surface as if a fresh candidate began.
+        let event = peer.next_event();
+        let value = decode_shell_file_transaction(&event, ShellFileKind::CandidateOutcome).unwrap();
+        let ShellContentRecord::CandidateOutcome(outcome) = value.record else {
+            panic!("candidate outcome");
+        };
+        assert_eq!(outcome.kind, 3);
+        assert_eq!(outcome.reason, ContentReason::Stale as u16);
+        peer.ack(&event);
+
+        let permit_b = {
+            let event = peer.next_event();
+            let value = decode_shell_file_transaction(&event, ShellFileKind::FramePermit).unwrap();
+            let ShellContentRecord::FramePermit(p) = value.record else {
+                panic!("frame permit");
+            };
+            peer.ack(&event);
+            p
+        };
+
+        // A fresh, fully valid candidate on the very same connection: the
+        // discarded parts above did not leak, and the store was not revoked.
+        let mut valid = native_candidate(permit_b.permit_id);
+        valid.candidate.candidate_generation = 2;
+        let valid_bytes = encode_shell_file_native_candidate(
+            header(ShellFileKind::NativeCandidate, GRANT.connection_epoch, 3),
+            &ShellFileNativeCandidate {
+                transaction: tx(25),
+                candidate: valid,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&valid_bytes, 3);
+
+        let event = peer.next_event();
+        let value = decode_shell_file_transaction(&event, ShellFileKind::CandidateOutcome).unwrap();
+        let ShellContentRecord::CandidateOutcome(outcome) = value.record else {
+            panic!("candidate outcome");
+        };
+        assert_eq!(outcome.kind, 1);
+        peer.ack(&event);
+    });
+
+    let start = Instant::now();
+    let welcome = negotiate(&mut transport, &mut registry, GRANT.connection_epoch, &peer);
+    assert_eq!(welcome.capabilities, CAPS);
+    assert!(transport.supports_native_launcher());
+
+    transport
+        .publish_native_launcher_opening(&registry, tx(2), opening())
+        .unwrap();
+    // The candidate's allocation and resource are supplied directly, as the
+    // store-level fixtures already do for the socket wire's own suite; no
+    // allocation or resource handshake crosses the wire in this test.
+    resources(&mut registry);
+
+    let allocations = [allocation()];
+    let ctx = context(&allocations);
+    let catalog_value = catalog();
+    let native_ctx = native(&catalog_value);
+
+    transport
+        .grant_content_permit(&mut registry, tx(10), OUTPUT, 1, 1, 0)
+        .unwrap();
+    // Drive the stale candidate. The fix means only its Begin is ever
+    // serviced -- the discarded Chunk/End leave nothing further queued --
+    // and the call keeps returning `Ok` even though the Begin was refused.
+    loop {
+        let processed = transport
+            .service_native_launcher_content(&mut registry, ctx, native_ctx, 1)
+            .unwrap();
+        if processed == 0 && submitted_rx.try_recv().is_ok() {
+            while transport
+                .service_native_launcher_content(&mut registry, ctx, native_ctx, 1)
+                .unwrap()
+                > 0
+            {}
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+
+    transport
+        .grant_content_permit(&mut registry, tx(11), OUTPUT, 2, 2, 2)
+        .unwrap();
+    let mut processed = 0;
+    while processed < 3 {
+        processed += transport
+            .service_native_launcher_content(&mut registry, ctx, native_ctx, 3)
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::yield_now();
+    }
+    let render = transport
+        .begin_native_launcher_submission(&mut registry, 2, ctx, native_ctx, 4)
+        .unwrap();
+    transport
+        .content_prepared(&mut registry, GRANT, OUTPUT, 2, 1, 1, 5)
+        .unwrap();
+    drop(render);
 
     while !peer.is_finished() {
         transport.poll_io(&mut registry).unwrap();
