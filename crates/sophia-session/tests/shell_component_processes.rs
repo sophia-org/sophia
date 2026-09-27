@@ -806,17 +806,22 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
 
 #[cfg(feature = "native-session")]
 #[test]
-#[ignore = "requires explicit device-hidden protected Bemenu binary"]
-fn joined_bemenu_evidence_requires_exact_current_negotiation() {
+#[ignore = "requires nested user namespaces; run explicitly inside the device-hidden fixture"]
+fn joined_launcher_evidence_requires_exact_current_negotiation() {
     use sophia_session::shell_component_session::ShellComponentSession;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     use std::time::{Duration, Instant};
-    let binary = std::env::var_os("SOPHIA_TEST_BEMENU").expect("explicit candidate required");
-    let root = std::env::temp_dir().join(format!("joined-bemenu-evidence-{}", std::process::id()));
-    std::fs::create_dir(&root).unwrap();
+    let root =
+        std::env::temp_dir().join(format!("joined-launcher-evidence-{}", std::process::id()));
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&root)
+        .unwrap();
+    let binary = root.join("menu/fixture-launcher");
     let selection = sophia_config::ShellComponentConfig {
         id: "menu".into(),
         role: ShellComponentRole::ApplicationLauncher,
-        executable: binary.into(),
+        executable: binary.clone(),
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
@@ -832,6 +837,20 @@ fn joined_bemenu_evidence_requires_exact_current_negotiation() {
         },
     )
     .unwrap();
+    // The production launcher supplies --serve and binds only the executable
+    // and endpoint directory. Keep the contract peer inside that directory;
+    // this adapter changes its test-harness argv, not the launch authority.
+    let peer_binary = root.join("menu/peer");
+    let current = std::env::current_exe().unwrap();
+    if std::fs::hard_link(&current, &peer_binary).is_err() {
+        std::fs::copy(&current, &peer_binary).unwrap();
+    }
+    std::fs::write(
+        &binary,
+        "#!/bin/sh\nset -eu\n[ \"$#\" -eq 1 ] && [ \"$1\" = --serve ]\nexport SOPHIA_FIXTURE_ROLE=1\nexec \"$(dirname -- \"$0\")/peer\" --exact protected_component_peer --ignored\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
     let outputs = [sophia_engine::HeadlessOutput {
         id: sophia_protocol::OutputId::from_raw(1),
         size: sophia_protocol::Size {
