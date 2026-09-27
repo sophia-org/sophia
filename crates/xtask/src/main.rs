@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod c_desktop_sdk;
 mod check;
 mod headless_client_gate;
 mod m3_acceptance;
