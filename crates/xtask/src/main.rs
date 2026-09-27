@@ -465,6 +465,9 @@ fn print_lines(lines: Vec<String>) {
 const USAGE: &str = "\
 usage: cargo xtask <command>
 
+  prepare-bemenu-artifact SOURCE-REPO SIGNED-COMMIT NEW-OUTPUT-DIR
+      Build a verified Bemenu archive for the opt-in production file-export test.
+
   panel --quickshell=/PATH [--renderer=gpu|software]
         [--probe --renderer=software --wm=/PATH --display=:298] [--output=/NEW/DIR]
       Launch the opt-in X11 panel with renderer and binary identity logs.
