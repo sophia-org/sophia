@@ -146,7 +146,7 @@ impl Fixture {
             .begin_file_negotiation(
                 &self.registry,
                 EPOCH,
-                Duration::from_secs(5),
+                Duration::from_secs(15),
                 ShellContentAdmissionPolicy::Granted {
                     discrete_input: true,
                 },

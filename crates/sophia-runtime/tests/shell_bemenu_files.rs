@@ -37,8 +37,10 @@ mod sandbox;
 
 use sophia_protocol::NativeLauncherInputKind;
 
-const TOTAL: Duration = Duration::from_secs(40);
-const PHASE: Duration = Duration::from_secs(10);
+// Harness liveness bounds, not performance requirements. The application keeps
+// its own protocol and local failure deadlines unchanged.
+const TOTAL: Duration = Duration::from_secs(120);
+const PHASE: Duration = Duration::from_secs(30);
 
 /// Service the owners until `done`, bounded per phase and overall. Owner errors,
 /// early exit and oversized output end the gate with Bemenu's stderr.

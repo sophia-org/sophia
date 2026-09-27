@@ -11,7 +11,7 @@ use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -99,9 +99,11 @@ pub(crate) fn run(repo: &Path, args: &[String]) -> Result<Vec<String>, String> {
             .map_err(|e| e.to_string())?
             .as_nanos()
     ));
-    std::fs::create_dir(&scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&scratch)
+        .map_err(|e| format!("{}: {e}", scratch.display()))?;
     let _scratch = RemoveOnDrop(scratch.clone());
-    set_mode(&scratch, 0o700)?;
     let archive = scratch.join("source.tar");
     let tree_dir = scratch.join("source");
     std::fs::create_dir(&tree_dir).map_err(|e| e.to_string())?;

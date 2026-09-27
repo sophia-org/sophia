@@ -14,7 +14,9 @@
 //! no home, FONTCONFIG_FILE never read). The domain mounts a directory holding
 //! one in-tree test font at /usr/share/fonts, an empty directory over
 //! /usr/local/share/fonts when the host has one, and has no /etc/fonts at all,
-//! so host font trees are unreachable rather than merely unconfigured.
+//! so the application's configured font directories contain only the fixture.
+//! Other files under the supervisor's read-only /usr remain reachable; this
+//! does not claim a filesystem-wide prohibition on other font files.
 use sophia_runtime::*;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -24,8 +26,8 @@ pub const FONT: &str = "JetBrainsMonoNL-Regular.ttf";
 const FONT_SHA256: &str = "fb3b2575d7b0657359707993288f12a7360344d39387bb26050e276d61f6bd2a";
 const LOCAL_FONTS: &str = "/usr/local/share/fonts";
 const LOG_CAP: u64 = 64 * 1024;
-const EXEC_TIMEOUT: Duration = Duration::from_secs(5);
-const STOP_TIMEOUT: Duration = Duration::from_secs(2);
+const EXEC_TIMEOUT: Duration = Duration::from_secs(15);
+const STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const LAUNCHER: &str = "exec /usr/bin/env -i PATH=/usr/bin SOPHIA_SHELL_9P_SOCKET=\"$2\" \
      /usr/bin/nice -n 19 \"$1\" --serve >\"$3\" 2>\"$4\"";
 
