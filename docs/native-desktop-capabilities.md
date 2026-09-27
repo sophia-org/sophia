@@ -83,7 +83,7 @@ distinct facts.
 The independent C and Nim consumers are interoperability evidence for their
 tested subsets; an SDK helper or golden-frame parser alone does not establish
 the complete lifecycle. See the [family contract](sophia-policy-ipc.md),
-the C client guide at `bindings/c/README-shell.md`, and
+the [C client guide](../vendor/c-desktop-sdk/source/src/README-shell.md), and
 [component configuration](desktop-composition.md).
 
 ## Follow-up order

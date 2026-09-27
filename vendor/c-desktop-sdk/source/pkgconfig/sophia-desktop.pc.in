@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: sophia-desktop
+Description: Sophia native desktop file client
+Version: @VERSION@
+Requires: sophia-9p = @VERSION@
+Libs: -L${libdir} -lsophia-desktop
+Cflags: -I${includedir}

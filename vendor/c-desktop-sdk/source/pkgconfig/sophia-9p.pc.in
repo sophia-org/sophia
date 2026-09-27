@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: sophia-9p
+Description: Bounded nonblocking 9P2000.L client
+Version: @VERSION@
+Libs: -L${libdir} -lsophia-9p
+Cflags: -I${includedir}

@@ -9,7 +9,7 @@ id-length = 8
 id-case = "lower"
 exclude = [
   "target/**", "crates/**", "assets/**", "bindings/**", "examples/**",
-  "protocol/**", "research/**", "tools/**", "validation/**",
+  "protocol/**", "research/**", "tools/**", "validation/**", "vendor/**",
   "docs/history/**", "docs/generated/**", "docs/roadmap-archive-*.md",
   "docs/research-log*.md",
 ]

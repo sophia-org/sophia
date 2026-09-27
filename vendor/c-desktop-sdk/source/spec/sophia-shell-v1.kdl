@@ -1,0 +1,833 @@
+protocol "sophia_shell_v1" frame-version=1 interface-major=1 interface-revision=8 max-descriptors=16 max-label-bytes=128 max-pending-activations=16 max-shortcuts=256 {
+    capability "descriptor_switcher" bit=0
+    capability "work_area_reservation" bit=1
+    capability "tab_groups" bit=2 since=2
+    capability "shortcut_catalog" bit=3 since=3
+    capability "reference_sheet" bit=4 since=3
+    capability "application_catalog" bit=5 since=4
+    capability "application_launcher" bit=6 since=4 requires="application_catalog"
+    // Wire support does not grant runtime content or GPU access.
+    capability "content_surface" bit=7 since=5
+    capability "content_discrete_input" bit=8 since=5 requires="content_surface"
+    capability "view_indicators" bit=9 since=6
+    capability "indicator_activation" bit=10 since=6 requires="view_indicators"
+    // Codec support is not runtime admission. The independent launcher role is
+    // exclusive: bits 5,7,8,11 only; no descriptor, reservation or device grant.
+    capability "native_launcher" bit=11 since=7 requires="application_catalog,content_surface,content_discrete_input"
+
+    capability "persistent_catalog" bit=12 since=8 requires="application_catalog,content_surface,content_discrete_input,work_area_reservation"
+
+    outcome "prepared" value=1
+    outcome "presented" value=2
+    outcome "rejected" value=3
+    outcome "superseded" value=4
+
+    activation-disposition "consumed" value=1
+    activation-disposition "rejected_stale" value=2
+
+    // Every action is issued for one broker epoch, revoked as a class by one
+    // broker revocation epoch, narrowed to one shell connection, and bound to
+    // one opaque descriptor slot and generation. Surface ids never cross.
+    record "ToplevelActionCapability" {
+        field "token" type="u64"
+        field "issuer_epoch" type="u64"
+        field "issuer_revocation_epoch" type="u64"
+        field "recipient_epoch" type="u64"
+        field "target_slot" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "target_generation" type="u64"
+    }
+
+    message "ClientHello" kind=96 direction="shell-to-session" transaction="zero" {
+        field "minimum_revision" type="u16"
+        field "maximum_revision" type="u16"
+        field "required_capabilities" type="u64"
+    }
+    message "ServerWelcome" kind=97 direction="session-to-shell" transaction="zero" {
+        field "selected_revision" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "connection_epoch" type="u64"
+        field "capabilities" type="u64"
+        field "max_descriptors" type="u16"
+        field "max_label_bytes" type="u16"
+        field "max_pending_activations" type="u16"
+        field "trailing_reserved" type="u16" reserved=#true
+    }
+    message "DescriptorSnapshot" kind=98 direction="session-to-shell" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "output" type="opaque-u64"
+        field "output_generation" type="u64"
+        field "broker_epoch" type="u64"
+        field "broker_revocation_epoch" type="u64"
+        field "descriptor_count" type="u16" max=16
+        field "reserved" type="u16" reserved=#true
+        repeated "descriptor" count="descriptor_count" {
+            field "slot" type="u16"
+            field "trust_level" type="u8"
+            field "attention" type="u8"
+            field "generation" type="u64"
+            record-ref "action" record="ToplevelActionCapability"
+            field "label_present" type="bool-u8"
+            field "label_len" type="u16" max=128
+            field "label" type="utf8" length="label_len"
+            field "label_redacted" type="bool-u8" present-if="label_present"
+        }
+    }
+    message "Candidate" kind=99 direction="shell-to-session" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "output" type="opaque-u64"
+        field "visible" type="bool-u8"
+        field "reservation_edge" type="u8" zero="none" max=4
+        field "selected_slot" type="u16" zero="none"
+        field "entry_count" type="u16" max=16
+        field "reservation_thickness" type="u16" zero="none" max=512
+        repeated "entry" count="entry_count" {
+            field "slot" type="u16"
+            field "reserved" type="u16" reserved=#true
+            field "generation" type="u64"
+        }
+    }
+    message "CandidateOutcome" kind=100 direction="session-to-shell" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64" zero="unless-presented"
+        field "outcome" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "Activation" kind=101 direction="session-to-shell" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        record-ref "action" record="ToplevelActionCapability"
+    }
+    message "ActivationAck" kind=102 direction="shell-to-session" transaction="required" {
+        field "connection_epoch" type="u64"
+        field "activation" type="u64"
+        field "disposition" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+
+    // Revision 2 only, capability tab_groups. Begin/group/entry/end share one
+    // transaction and epoch/generation. A candidate confirms the exact group
+    // order; membership, selected member and geometry remain committed WM facts.
+    message "TabsBegin" kind=103 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "group_count" type="u16"
+        field "entry_count" type="u16"
+    }
+    message "TabsGroup" kind=104 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "group_slot" type="opaque-u64"
+        field "output" type="opaque-u64"
+        field "selected_slot" type="u16"
+        field "focused" type="bool-u16"
+        field "entry_count" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "TabsEntry" kind=105 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "group_slot" type="opaque-u64"
+        field "descriptor_snapshot" type="descriptor-snapshot-payload-single-entry"
+    }
+    message "TabsEnd" kind=106 direction="session-to-shell" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+    }
+    message "TabsCandidate" kind=107 direction="shell-to-session" transaction="required" since=2 gate="tab_groups" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "group_count" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "groups" type="opaque-u64-array"
+    }
+
+    // Revision 3 is read-only. Slots identify catalog rows, never actions.
+    // Text is UTF-8, length-prefixed u16 bytes, without controls or bidi overrides.
+    // A complete catalog transfer is atomic and contains at most 256 rows.
+    message "ShortcutsBegin" kind=108 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "entry_count" type="u16" max=256
+        field "reserved" type="u16" reserved=#true
+    }
+    message "ShortcutsEntry" kind=109 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "slot" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "chord_length" type="u16" max=64
+        field "chord" type="bytes" length="chord_length"
+        field "action_length" type="u16" max=128
+        field "action" type="bytes" length="action_length"
+        field "label_length" type="u16" max=128
+        field "label" type="bytes" length="label_length"
+        field "group_length" type="u16" max=64
+        field "group" type="bytes" length="group_length"
+    }
+    message "ShortcutsEnd" kind=110 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+    }
+    message "ReferenceRequest" kind=111 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "output" type="u64"
+        field "output_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "operation" type="u16" max=4
+        field "reserved" type="u16" reserved=#true
+    }
+    message "ReferenceCandidate" kind=112 direction="shell-to-session" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "output" type="u64"
+        field "visible" type="u16" max=1
+        field "page" type="u16"
+        field "entry_count" type="u16" max=256
+        field "reserved" type="u16" reserved=#true
+        field "body_size" type="u16" max=32
+        field "title_size" type="u16" max=48
+        field "padding" type="u16" max=64
+        field "row_gap" type="u16" max=32
+        field "key_gap" type="u16" max=64
+        field "column_gap" type="u16" max=64
+        field "border" type="u16" max=16
+        field "margin" type="u16" max=128
+        field "columns" type="u16" max=4
+        field "background_argb" type="u32"
+        field "border_argb" type="u32"
+        field "key_text_argb" type="u32"
+        field "label_text_argb" type="u32"
+        field "key_background_argb" type="u32"
+        field "title_text_argb" type="u32"
+        field "title_length" type="u16" max=128
+        field "title" type="bytes" length="title_length"
+        repeated "entry" count="entry_count" {
+        field "slot" type="u16"
+        field "entry_reserved" type="u16" reserved=#true
+        field "key_length" type="u16" max=64
+        field "key" type="bytes" length="key_length"
+        field "label_length" type="u16" max=128
+        field "label" type="bytes" length="label_length"
+        }
+    }
+    message "ReferenceOutcome" kind=113 direction="session-to-shell" transaction="required" since=3 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "page" type="u16"
+        field "pages" type="u16"
+        field "outcome" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+
+    // Revision 4 catalog slots are display references, never launch grants.
+    // See docs/application-launcher.md for state, bounds and revocation rules.
+    // Revision 6 republishes to a shell the indicator set the Engine already
+    // holds from `sophia_wm_v1` revision 3. The shell renders where focus is;
+    // it does not learn policy.
+
+    // CPU content codec vocabulary; transport admission remains default denied.
+    record "ContentGrant" {
+        field "connection_epoch" type="u64"
+        field "content_grant_epoch" type="u64"
+    }
+    record "ContentResourceId" {
+        field "id" type="opaque-u64"
+        field "generation" type="u64"
+    }
+    record "ContentAllocationId" {
+        field "id" type="opaque-u64"
+        field "generation" type="u64"
+    }
+    record "ContentOutputId" {
+        field "id" type="opaque-u64"
+        field "generation" type="u64"
+    }
+    record "ContentLogicalRect" {
+        field "x" type="i32"
+        field "y" type="i32"
+        field "width" type="u32"
+        field "height" type="u32"
+    }
+    record "ContentPixelRect" {
+        field "x" type="i32"
+        field "y" type="i32"
+        field "width" type="u32"
+        field "height" type="u32"
+    }
+    record "ContentMargins" {
+        field "top" type="i16"
+        field "right" type="i16"
+        field "bottom" type="i16"
+        field "left" type="i16"
+    }
+    record "ContentOutputFactsEntry" {
+        record-ref "output" record="ContentOutputId"
+        field "local_width" type="u32"
+        field "local_height" type="u32"
+        field "scale_numerator" type="u32"
+        field "scale_denominator" type="u32"
+        field "scale_generation" type="u64"
+    }
+    record "ContentSurface" {
+        record-ref "allocation" record="ContentAllocationId"
+        field "scale_generation" type="u64"
+        field "role" type="u16"
+        field "edge" type="u16"
+        record-ref "margins" record="ContentMargins"
+        field "reservation_extent" type="u32"
+        field "parent_surface_index" type="u16"
+        field "reserved" type="u16" reserved=#true
+        record-ref "anchor_parent_rect" record="ContentPixelRect"
+        field "flags" type="u32" reserved=#true
+    }
+    record "ContentPlacement" {
+        record-ref "resource" record="ContentResourceId"
+        field "surface_index" type="u16"
+        field "flags" type="u16" reserved=#true
+        field "destination_x_px" type="i32"
+        field "destination_y_px" type="i32"
+        field "reserved" type="u32" reserved=#true
+    }
+    // target_generation is a button lifetime, not an indicator publication or
+    // raster revision. Preserve across equivalent redraws; advance on changed
+    // meaning/geometry/owner and removal/reappearance. Actions still name the
+    // exact currently presented candidate; no capture token crosses the wire.
+    record "ContentTarget" {
+        field "surface_index" type="u16"
+        field "action_kind" type="u16"
+        field "target_id" type="u64"
+        field "target_generation" type="u64"
+        field "action_id" type="u64"
+        record-ref "bounds_px" record="ContentPixelRect"
+        field "flags" type="u32" reserved=#true
+    }
+    message "ContentAdmissionRefused" kind=160 direction="session-to-shell" transaction="zero" since=5 gate="content_request" {
+        field "reason" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "denied_capabilities" type="u64"
+    }
+    message "ContentLimits" kind=161 direction="session-to-shell" transaction="zero" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        field "limits_generation" type="u64"
+        field "max_resource_bytes" type="u64"
+        field "max_staging_bytes" type="u64"
+        field "max_resident_bytes" type="u64"
+        field "max_retiring_bytes" type="u64"
+        field "max_session_retiring_bytes" type="u64"
+        field "pixel_format_mask" type="u64"
+        field "effect_mask" type="u64"
+        field "max_frame_payload" type="u32"
+        field "max_chunk_bytes" type="u32"
+        field "max_width_px" type="u32"
+        field "max_height_px" type="u32"
+        field "max_live_resources" type="u32"
+        field "max_resource_ids" type="u32"
+        field "max_open_transfers" type="u32"
+        field "max_outputs" type="u32"
+        field "max_allocations_total" type="u32"
+        field "max_allocations_per_output" type="u32"
+        field "max_panels_per_output" type="u32"
+        field "max_popouts_per_output" type="u32"
+        field "max_candidate_surfaces" type="u32"
+        field "max_candidate_placements" type="u32"
+        field "max_candidate_targets" type="u32"
+        field "max_candidate_bytes" type="u32"
+        field "max_pending_allocation_requests" type="u32"
+        field "max_open_candidates_total" type="u32"
+        field "max_open_candidates_per_output" type="u32"
+        field "max_pending_candidates_total" type="u32"
+        field "max_pending_candidates_per_output" type="u32"
+        field "max_pending_actions" type="u32"
+        field "max_frame_demands_per_output" type="u32"
+        field "max_control_records" type="u32"
+        field "reserved_control_queue_bytes" type="u32"
+        field "max_input_queue_bytes" type="u32"
+        field "max_output_queue_bytes" type="u32"
+        field "max_frames_per_service_tick" type="u32"
+        field "max_panel_extent" type="u32"
+        field "max_popout_extent_px" type="u32"
+        field "max_reservation_extent" type="u32"
+        field "max_content_coverage_percent" type="u32"
+        field "max_margin_logical" type="u32"
+        field "max_scale_numerator" type="u32"
+        field "max_scale_denominator" type="u32"
+        field "allocation_timeout_ms" type="u32"
+        field "transfer_timeout_ms" type="u32"
+        field "transfer_idle_timeout_ms" type="u32"
+        field "candidate_timeout_ms" type="u32"
+        field "preparation_timeout_ms" type="u32"
+        field "presentation_timeout_ms" type="u32"
+        field "action_ack_timeout_ms" type="u32"
+        field "permit_timeout_ms" type="u32"
+        field "peer_write_timeout_ms" type="u32"
+        field "max_candidate_rate_millihz" type="u32"
+        field "reserved" type="u32" reserved=#true
+    }
+    message "ContentOutputFacts" kind=162 direction="session-to-shell" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        field "facts_generation" type="u64"
+        field "output_count" type="u32" max=16
+        field "reserved" type="u32" reserved=#true
+        repeated "output" count="output_count" {
+            record-ref "facts" record="ContentOutputFactsEntry"
+        }
+    }
+    message "ContentAllocationRequest" kind=163 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "output" record="ContentOutputId"
+        field "allocation_request_id" type="u64"
+        field "operation" type="u16"
+        field "role" type="u16"
+        field "edge" type="u16"
+        field "reserved" type="u16" reserved=#true
+        record-ref "prior" record="ContentAllocationId"
+        record-ref "parent" record="ContentAllocationId"
+        field "parent_presentation_epoch" type="u64"
+        record-ref "anchor_parent_rect" record="ContentPixelRect"
+        field "desired_width" type="u32"
+        field "desired_height" type="u32"
+        record-ref "margins" record="ContentMargins"
+    }
+    message "ContentAllocationResult" kind=164 direction="session-to-shell" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        field "allocation_request_id" type="u64"
+        field "status" type="u16"
+        field "reason" type="u16"
+        field "reserved" type="u32" reserved=#true
+        record-ref "output" record="ContentOutputId"
+        record-ref "allocation" record="ContentAllocationId"
+        record-ref "parent" record="ContentAllocationId"
+        field "scale_generation" type="u64"
+        record-ref "logical" record="ContentLogicalRect"
+        record-ref "pixel" record="ContentPixelRect"
+        field "scale_numerator" type="u32"
+        field "scale_denominator" type="u32"
+        field "allowed_reservation_extent" type="u32"
+        record-ref "margins" record="ContentMargins"
+        record-ref "acknowledged_anchor" record="ContentPixelRect"
+        field "reserved2" type="u32" reserved=#true
+    }
+    message "ContentResourceBegin" kind=165 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "resource" record="ContentResourceId"
+        field "width_px" type="u32"
+        field "height_px" type="u32"
+        field "rendered_scale_numerator" type="u32"
+        field "rendered_scale_denominator" type="u32"
+        field "pixel_format" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "chunk_count" type="u32"
+        field "total_bytes" type="u64"
+    }
+    message "ContentResourceStatus" kind=166 direction="session-to-shell" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "resource" record="ContentResourceId"
+        field "status" type="u16"
+        field "reason" type="u16"
+        field "next_ordinal" type="u32"
+        field "admitted_bytes" type="u64"
+    }
+    message "ContentResourceChunk" kind=167 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "resource" record="ContentResourceId"
+        field "ordinal" type="u32"
+        field "byte_count" type="u32" max=65488
+        field "offset" type="u64"
+        field "bytes" type="bytes" length="byte_count"
+    }
+    message "ContentResourceEnd" kind=168 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "resource" record="ContentResourceId"
+        field "total_bytes" type="u64"
+        field "chunk_count" type="u32"
+        field "reserved" type="u32" reserved=#true
+    }
+    message "ContentResourceCancel" kind=169 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "resource" record="ContentResourceId"
+    }
+    message "ContentResourceRetire" kind=170 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "resource" record="ContentResourceId"
+    }
+    message "ContentResourceReleased" kind=171 direction="session-to-shell" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "resource" record="ContentResourceId"
+        field "reason" type="u16"
+    }
+    message "ContentCandidateBegin" kind=172 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        // Grant-wide and strictly increasing. Chunk and End omit output, so
+        // two outputs cannot reuse one candidate generation.
+        field "candidate_generation" type="u64"
+        record-ref "output" record="ContentOutputId"
+        field "facts_generation" type="u64"
+        field "pacing_permit" type="u64"
+        field "interaction_generation" type="u64"
+        field "surface_count" type="u32"
+        field "placement_count" type="u32"
+        field "target_count" type="u32"
+        field "effect_count" type="u32" reserved=#true
+    }
+    message "ContentCandidateChunk" kind=173 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        field "candidate_generation" type="u64"
+        field "chunk_ordinal" type="u32"
+        field "surface_count" type="u32" max=8
+        field "placement_count" type="u32" max=32
+        field "target_count" type="u32" max=64
+        repeated "surface" count="surface_count" { record-ref "surface" record="ContentSurface"; }
+        repeated "placement" count="placement_count" { record-ref "placement" record="ContentPlacement"; }
+        repeated "target" count="target_count" { record-ref "target" record="ContentTarget"; }
+    }
+    message "ContentCandidateEnd" kind=174 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        field "candidate_generation" type="u64"
+        field "surface_count" type="u32"
+        field "placement_count" type="u32"
+        field "target_count" type="u32"
+        field "reserved" type="u32" reserved=#true
+    }
+    message "ContentCandidateOutcome" kind=175 direction="session-to-shell" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        field "candidate_generation" type="u64"
+        record-ref "output" record="ContentOutputId"
+        field "kind" type="u16"
+        field "reason" type="u16"
+        field "presentation_epoch" type="u64"
+        field "work_area_generation" type="u64"
+        field "wm_commit_generation" type="u64"
+    }
+    message "ContentFrameDemand" kind=176 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "output" record="ContentOutputId"
+        record-ref "allocation" record="ContentAllocationId"
+        field "demand_id" type="u64"
+        field "reason" type="u16"
+    }
+    message "ContentFramePermit" kind=177 direction="session-to-shell" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "output" record="ContentOutputId"
+        field "demand_id" type="u64"
+        field "permit_id" type="u64"
+        field "state" type="u16"
+        field "reason" type="u16"
+        field "ttl_ms" type="u32"
+        field "max_candidate_bytes" type="u32"
+        field "reserved" type="u32" reserved=#true
+    }
+    message "ContentFrameDemandCancel" kind=178 direction="shell-to-session" transaction="required" since=5 gate="content_surface" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "output" record="ContentOutputId"
+        field "demand_id" type="u64"
+        field "permit_id" type="u64"
+    }
+    message "ContentAction" kind=179 direction="session-to-shell" transaction="required" since=5 gate="content_discrete_input" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "output" record="ContentOutputId"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "interaction_generation" type="u64"
+        record-ref "allocation" record="ContentAllocationId"
+        field "target_id" type="u64"
+        field "target_generation" type="u64"
+        field "action_id" type="u64"
+        field "event_id" type="u64"
+        field "kind" type="u16"
+        field "reason" type="u16"
+        field "reserved" type="u32" reserved=#true
+    }
+    message "ContentActionAck" kind=180 direction="shell-to-session" transaction="required" since=5 gate="content_discrete_input" {
+        record-ref "grant" record="ContentGrant"
+        record-ref "output" record="ContentOutputId"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "interaction_generation" type="u64"
+        record-ref "allocation" record="ContentAllocationId"
+        field "target_id" type="u64"
+        field "target_generation" type="u64"
+        field "action_id" type="u64"
+        field "event_id" type="u64"
+        field "disposition" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "reserved2" type="u32" reserved=#true
+    }
+
+    message "IndicatorsBegin" kind=181 direction="session-to-shell" transaction="required" since=6 gate="view_indicators" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "active_output" type="opaque-u64"
+        field "active_output_present" type="bool-u16"
+        field "indicator_count" type="u16"
+        field "status_count" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "IndicatorsOutputStatus" kind=182 direction="session-to-shell" transaction="required" since=6 gate="view_indicators" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "output" type="opaque-u64"
+        field "focus_bits" type="u16"
+        field "layout_len" type="u16"
+        field "reserved" type="u32" reserved=#true
+        field "layout" type="u8" count=32
+    }
+    message "IndicatorsEntry" kind=183 direction="session-to-shell" transaction="required" since=6 gate="view_indicators" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "output" type="opaque-u64"
+        field "indicator" type="opaque-u64"
+        field "action" type="opaque-u64"
+        field "slot" type="u32"
+        field "state_bits" type="u16"
+        field "label_len" type="u16"
+        field "label" type="u8" count=32
+    }
+    message "IndicatorsEnd" kind=184 direction="session-to-shell" transaction="required" since=6 gate="view_indicators" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+    }
+    // The shell echoes the opaque action it was given, for the exact snapshot
+    // it was presenting, so a stale pill cannot switch a view that has moved.
+    message "IndicatorActivate" kind=185 direction="shell-to-session" transaction="required" since=6 gate="indicator_activation" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "output" type="opaque-u64"
+        field "indicator" type="opaque-u64"
+        field "action" type="opaque-u64"
+        field "event_id" type="u64"
+    }
+    message "IndicatorActivateOutcome" kind=186 direction="session-to-shell" transaction="required" since=6 gate="indicator_activation" {
+        field "connection_epoch" type="u64"
+        field "snapshot_generation" type="u64"
+        field "event_id" type="u64"
+        field "status" type="u16"
+        field "reason" type="u16"
+    }
+    message "ApplicationsBegin" kind=114 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "entry_count" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "ApplicationsEntry" kind=115 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "slot" type="u16"
+        field "available" type="u16"
+        field "label" type="string-u16"
+        field "keywords" type="string-u16"
+    }
+    message "ApplicationsEnd" kind=116 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+    }
+    message "LauncherRequest" kind=117 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "output" type="u64"
+        field "output_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "operation" type="u16"
+        field "reserved" type="u16" reserved=#true
+        field "query" type="string-u16"
+    }
+    message "LauncherCandidate" kind=118 direction="shell-to-session" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "output" type="u64"
+        field "visible" type="u16"
+        field "selected" type="u16"
+        field "entry_count" type="u16"
+        field "font_size" type="u16"
+        field "colors" type="u32[4]"
+        field "entries" type="u16[entry_count]"
+    }
+    message "LauncherOutcome" kind=119 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "kind" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "LauncherActivation" kind=120 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        field "slot" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "LauncherActivationAck" kind=121 direction="shell-to-session" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        field "slot" type="u16"
+        field "consumed" type="u16"
+    }
+    message "LaunchOutcome" kind=122 direction="session-to-shell" transaction="required" since=4 {
+        field "connection_epoch" type="u64"
+        field "catalog_generation" type="u64"
+        field "request_generation" type="u64"
+        field "candidate_generation" type="u64"
+        field "presentation_epoch" type="u64"
+        field "activation" type="u64"
+        field "slot" type="u16"
+        field "status" type="u16"
+    }
+
+    // R7 native launcher. All integers little-endian, no implicit padding.
+    // Runtime admission remains disabled until the owner/lifecycle integration.
+    // Allocation replies, resources, pacing, CandidateEnd/outcomes and discrete
+    // actions reuse r5. Kinds 163/173 retain their original role restrictions.
+    // Native CandidateBegin replaces kind 172 in the SAME candidate transaction;
+    // native chunks replace 173. No parallel candidate or response owner exists.
+    record "NativeLauncherBinding" bytes=104 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64" nonzero=#true
+        record-ref "output" record="ContentOutputId"
+        record-ref "allocation" record="ContentAllocationId"
+        field "catalog_generation" type="u64" nonzero=#true
+        field "candidate_generation" type="u64" nonzero=#true
+        field "presentation_epoch" type="u64" nonzero=#true
+        field "interaction_generation" type="u64" nonzero=#true
+        field "state_revision" type="u64" nonzero=#true
+        field "focus_lease" type="u64" nonzero=#true
+    }
+    record "NativeLauncherEvent" bytes=120 {
+        record-ref "binding" record="NativeLauncherBinding"
+        field "event_id" type="u64" nonzero=#true
+        field "state_revision" type="u64" minimum="binding.state_revision"
+    }
+    record "NativeLauncherActivation" bytes=124 {
+        record-ref "event" record="NativeLauncherEvent"
+        field "cause" type="u16" values="1=keyboard_accept,2=content_action"
+        field "slot" type="u16" min=1 max=4096
+    }
+    // Input commands 1..17: Text,Left,Right,Home,End,Backspace,Delete,Previous,
+    // Next,PagePrevious,PageNext,First,Last,DeleteToStart,DeleteToEnd,DeleteWord,Accept.
+    // Accept/activation require state_revision == binding.state_revision;
+    // other input commands require a later state_revision. Session disarms
+    // activation while that newer state awaits presentation. Committed text is
+    // UTF-8, no controls or bidi formatting controls; never helper/clipboard data.
+    // Catalog membership, current lease, exact targets, event/cause and ordered
+    // monotonic revisions are validated by the owner, not established by codec.
+    message "NativeLauncherOpening" kind=187 direction="session-to-shell" transaction="required" since=7 bytes=56 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64"
+        record-ref "output" record="ContentOutputId"
+        field "catalog_generation" type="u64"
+        field "state_revision" type="u64"
+    }
+    message "NativeLauncherAllocationRequest" kind=188 direction="shell-to-session" transaction="required" since=7 bytes=84 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64"
+        record-ref "output" record="ContentOutputId"
+        field "request_id" type="u64"
+        record-ref "prior" record="ContentAllocationId"
+        field "operation" type="u16"
+        field "edge" type="u16"
+        field "desired_width" type="u32"
+        field "desired_height" type="u32"
+        record-ref "margins" record="ContentMargins"
+    }
+    message "NativeLauncherCandidateBegin" kind=189 direction="shell-to-session" transaction="required" since=7 {
+        payload-ref "content" message="ContentCandidateBegin"
+        field "opening" type="u64"
+        field "catalog_generation" type="u64"
+        field "state_revision" type="u64"
+        field "selected" type="u16"
+        field "row_count" type="u16"
+        field "rows" type="u16[row_count]"
+    }
+    message "NativeLauncherCandidateChunk" kind=190 direction="shell-to-session" transaction="required" since=7 surface-role=3 target-action-kind=2 max-surfaces=1 max-targets=32 {
+        payload-ref "content" message="ContentCandidateChunk"
+    }
+    message "NativeLauncherFocus" kind=191 direction="session-to-shell" transaction="required" since=7 bytes=104 {
+        record-ref "binding" record="NativeLauncherBinding"
+    }
+    message "NativeLauncherFocusRevoked" kind=192 direction="session-to-shell" transaction="required" since=7 bytes=108 {
+        record-ref "binding" record="NativeLauncherBinding"
+        field "reason" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "NativeLauncherInput" kind=193 direction="session-to-shell" transaction="required" since=7 {
+        record-ref "event" record="NativeLauncherEvent"
+        field "issued_mono_usec" type="u64"
+        field "command" type="u16"
+        field "text_len" type="u16"
+        field "text" type="utf8[text_len]"
+    }
+    message "NativeLauncherInputAck" kind=194 direction="shell-to-session" transaction="required" since=7 bytes=124 {
+        record-ref "event" record="NativeLauncherEvent"
+        field "disposition" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    message "NativeLauncherActivate" kind=195 direction="shell-to-session" transaction="required" since=7 bytes=124 {
+        record-ref "activation" record="NativeLauncherActivation"
+    }
+    message "NativeLauncherActivationOutcome" kind=196 direction="session-to-shell" transaction="required" since=7 bytes=128 {
+        record-ref "activation" record="NativeLauncherActivation"
+        field "status" type="u16"
+        field "reason" type="u16"
+    }
+    message "NativeLauncherClosed" kind=197 direction="session-to-shell" transaction="required" since=7 bytes=28 {
+        record-ref "grant" record="ContentGrant"
+        field "opening" type="u64"
+        field "reason" type="u16"
+        field "reserved" type="u16" reserved=#true
+    }
+    // Persistent panels use catalog authority without transient openings or focus.
+    // Every entry has one unique Identity within its ApplicationsBegin/End
+    // transaction. A receiver commits only a complete slot/identity bijection.
+    message "CatalogIdentity" kind=202 direction="session-to-shell" transaction="required" since=8 {
+        field "connection_epoch" type="u64" nonzero=#true
+        field "catalog_generation" type="u64" nonzero=#true
+        field "slot" type="u16" min=1 max=4096
+        field "reserved0" type="u16" reserved=#true
+        field "identity_len" type="u16" min=1 max=256
+        field "reserved1" type="u16" reserved=#true
+        field "identity" type="utf8[identity_len]" namespace="registered: or desktop:"
+    }
+    message "CatalogCandidateBegin" kind=198 direction="shell-to-session" transaction="required" since=8 {
+        payload-ref "content" message="ContentCandidateBegin"
+        field "catalog_generation" type="u64" nonzero=#true
+    }
+    message "CatalogCandidateChunk" kind=199 direction="shell-to-session" transaction="required" since=8 surface-role=1 target-action-kind=3 {
+        payload-ref "content" message="ContentCandidateChunk"
+    }
+    // End, Prepared/Presented, resource release and Action/Ack reuse r5 records.
+    // action_id names a catalog slot in the bound generation, not a command.
+    message "CatalogActivate" kind=200 direction="shell-to-session" transaction="required" since=8 {
+        payload-ref "action" message="ContentAction" kind=1 reason=0
+        field "catalog_generation" type="u64" nonzero=#true
+    }
+    message "CatalogActivationOutcome" kind=201 direction="session-to-shell" transaction="required" since=8 {
+        payload-ref "activation" message="CatalogActivate"
+        field "status" type="u16" min=1 max=5
+        field "reason" type="u16" reserved=#true
+    }
+}

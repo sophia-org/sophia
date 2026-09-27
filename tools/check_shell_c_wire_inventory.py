@@ -9,7 +9,7 @@ records = re.findall(
     r'message "[^"]+" kind=(\d+) direction="([^"]+)" transaction="([^"]+)"', schema
 )
 assert len(records) == len({kind for kind, _, _ in records}), "duplicate shell kind"
-fields = (root / "bindings/c/shell_wire/fields.h").read_text()
+fields = (root / "vendor/c-desktop-sdk/source/src/shell_wire/fields.h").read_text()
 direction_body = fields.split("switch (kind)", 1)[1].split("default:", 1)[0]
 actual = {}
 for cases, direction in re.findall(r"((?:\s*case \d+:)+)\s*return ([01]);", direction_body):
@@ -20,7 +20,7 @@ assert actual == {kind: direction for kind, direction, _ in records}, "C/schema 
 transaction_body = fields.split("shell_transaction_valid", 1)[1]
 zero = set(re.findall(r"kind == (\d+)", transaction_body))
 assert zero == {kind for kind, _, tx in records if tx == "zero"}, "C/schema transaction drift"
-header = (root / "bindings/c/sophia_shell_wire.h").read_text()
+header = (root / "vendor/c-desktop-sdk/source/src/sophia_shell_wire.h").read_text()
 caps = re.findall(r"#define SOPHIA_SHELL_CAP_(\w+) \(UINT64_C\(1\) << (\d+)\)", header)
 assert {name.lower(): bit for name, bit in caps} == dict(
     re.findall(r'capability "([^"]+)" bit=(\d+)', schema)
@@ -28,13 +28,13 @@ assert {name.lower(): bit for name, bit in caps} == dict(
 revision = re.search(r"SOPHIA_SHELL_WIRE_MAX_REVISION (\d+)u", header).group(1)
 assert revision == re.search(r"interface-revision=(\d+)", schema).group(1), "C/schema revision drift"
 
-paths = [root / "bindings/c/sophia_shell_wire.h", root / "bindings/c/sophia_shell_catalog.h", root / "bindings/c/sophia_shell_native_launcher.h", root / "bindings/c/sophia_shell_content_resource.h", root / "bindings/c/sophia_shell_content_types.h"]
-paths += [root / ("bindings/c/" + name) for name in [
+paths = [root / "vendor/c-desktop-sdk/source/src/sophia_shell_wire.h", root / "vendor/c-desktop-sdk/source/src/sophia_shell_catalog.h", root / "vendor/c-desktop-sdk/source/src/sophia_shell_native_launcher.h", root / "vendor/c-desktop-sdk/source/src/sophia_shell_content_resource.h", root / "vendor/c-desktop-sdk/source/src/sophia_shell_content_types.h"]
+paths += [root / ("vendor/c-desktop-sdk/source/src/" + name) for name in [
     "sophia_shell_content_limits.h", "sophia_shell_content_feedback.h",
     "sophia_shell_content_control.h", "sophia_shell_outbox.h", "sophia_shell_upload.h", "sophia_shell_native_lifecycle.h", "sophia_shell_catalog_actions.h",
 ]]
-paths += list((root / "bindings/c/shell_wire").glob("*.[ch]"))
-paths += list((root / "bindings/c/tests").glob("sophia_shell_wire_*.c"))
+paths += list((root / "vendor/c-desktop-sdk/source/src/shell_wire").glob("*.[ch]"))
+paths += list((root / "vendor/c-desktop-sdk/source/src/tests").glob("sophia_shell_wire_*.c"))
 for path in paths:
     size = len(path.read_text().splitlines())
     assert size <= 1000, f"source length exceeds 1000: {path} ({size})"

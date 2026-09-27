@@ -13,7 +13,7 @@ mod process;
 mod roles;
 
 fn compile(repo: &Path, root: &Path) -> PathBuf {
-    let bindings = repo.join("bindings/c");
+    let bindings = repo.join("vendor/c-desktop-sdk/source/src");
     let output = root.join("c-role-peer");
     let mut command = Command::new("nice");
     command

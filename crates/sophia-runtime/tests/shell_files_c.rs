@@ -27,11 +27,20 @@ impl Drop for Scratch {
     }
 }
 fn compile(directory: &Path, name: &str) -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bindings/c");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
     let binary = directory.join(name);
-    let mut cc = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
-    cc.args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic"]);
-    for domain in ["nine_p", "shell_files"] {
+    let mut cc = Command::new("nice");
+    cc.args(["-n", "19"])
+        .arg(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
+        .args([
+            "-std=c99",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic",
+            "-UNDEBUG",
+        ]);
+    for domain in ["nine_p", "shell_files", "shell_session"] {
         let mut sources: Vec<_> = std::fs::read_dir(root.join(domain))
             .unwrap()
             .map(|entry| entry.unwrap().path())
@@ -40,7 +49,8 @@ fn compile(directory: &Path, name: &str) -> PathBuf {
         sources.sort();
         cc.args(sources);
     }
-    cc.arg(root.join("tests").join(format!("{name}.c")))
+    cc.arg(root.join("desktop_connection.c"))
+        .arg(root.join("tests").join(format!("{name}.c")))
         .arg("-o")
         .arg(&binary);
     assert!(cc.status().unwrap().success(), "C99 strict build failed");
@@ -64,8 +74,15 @@ fn independent_vectors_and_pipeline_regressions() {
 }
 #[test]
 fn c_session_negotiates_uploads_and_cancels_over_native_files() {
+    session_peer("sophia_shell_files_peer");
+}
+#[test]
+fn public_c_session_tracks_custody_and_uploads_against_production_owners() {
+    session_peer("desktop_session_peer");
+}
+fn session_peer(name: &str) {
     let scratch = Scratch::new();
-    let binary = compile(&scratch.0, "sophia_shell_files_peer");
+    let binary = compile(&scratch.0, name);
     let directory = scratch.0.join("socket");
     let mut transport = ShellComponentTransport::bind_for_supervised_uid(
         &directory,

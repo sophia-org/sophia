@@ -1,0 +1,1178 @@
+// Shell file byte contract. Bodies are this contract's own layouts, defined
+// here from the neutral shell content codec; they are not sophia-shell-v1
+// frame payloads, and a client author needs nothing from that protocol or
+// its Rust to implement any record below. These records grant no admission
+// or authority.
+protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes=4194304 {
+    header size=32 {
+        field "total_bytes" type="u32" offset=0
+        field "api_version" type="u16" offset=4 value=1
+        field "kind" type="u16" offset=6
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "submission_id" type="u64" offset=16
+        field "sequence" type="u64" offset=24
+    }
+
+    object "Limits" kind=1
+    object "Outputs" kind=2 max-bytes=1024
+    // t252 B5: the launcher (r7), dock (r8) and bar (r6) families, as whole
+    // typed values with native layouts. No Begin/Entry/End transfer, no
+    // chunk ordinals, no repeated counts.
+    object "Catalog" kind=3 max-bytes=4194304
+    object "Indicators" kind=4 max-bytes=32768
+    event "Negotiated" kind=16
+    event "Refused" kind=17
+    event "Submitted" kind=18
+    event "ObjectPublished" kind=19
+    event "AllocationResult" kind=32
+    event "ResourceStatus" kind=33
+    event "ResourceReleased" kind=34
+    event "CandidateOutcome" kind=35
+    event "FramePermit" kind=36
+    event "Action" kind=37
+    event "NativeOpening" kind=38
+    event "NativeFocus" kind=39
+    event "NativeFocusRevoked" kind=40
+    event "NativeInput" kind=41
+    event "NativeActivationOutcome" kind=42
+    event "NativeClosed" kind=43
+    event "CatalogActivationOutcome" kind=44
+    event "IndicatorActivationOutcome" kind=45
+    candidate "Negotiate" kind=256
+    candidate "AllocationRequest" kind=257
+    candidate "ResourceBegin" kind=258
+    candidate "ResourceEnd" kind=259
+    candidate "ResourceCancel" kind=260
+    candidate "ResourceRetire" kind=261
+    candidate "Candidate" kind=262 max-bytes=8192
+    candidate "FrameDemand" kind=263
+    candidate "FrameDemandCancel" kind=264
+    candidate "ActionAck" kind=265
+    candidate "NativeAllocationRequest" kind=266
+    candidate "NativeCandidate" kind=267 max-bytes=8192
+    candidate "NativeInputAck" kind=268
+    candidate "NativeActivate" kind=269
+    candidate "CatalogCandidate" kind=270 max-bytes=8192
+    candidate "CatalogActivate" kind=271
+    candidate "IndicatorActivate" kind=272
+
+    // The full granted profile. Every max below is the fixed prototype cap.
+    // A Limits object is valid only if, in addition to every field's own
+    // bounds, ALL of these hold (normative; a reader refuses otherwise):
+    //   grant_connection_epoch, grant_content_epoch, limits_generation != 0
+    //   pixel_format_mask == 1; effect_mask == 0
+    //   max_width_px, max_height_px, max_resource_bytes != 0
+    //   max_open_transfers, max_live_resources, max_outputs != 0
+    //   max_allocations_per_output != 0
+    //   max_candidate_surfaces, max_candidate_placements != 0
+    //   max_open_candidates_per_output, max_pending_candidates_per_output != 0
+    //   max_scale_numerator, max_scale_denominator != 0
+    //   max_candidate_rate_millihz, max_frames_per_service_tick != 0
+    //   max_frame_demands_per_output == 1; max_control_records >= 1
+    //   max_candidate_bytes >= 40
+    //   max_resource_ids >= max_live_resources
+    //   max_allocations_total >= max_allocations_per_output
+    //   max_open_candidates_total >= max_open_candidates_per_output
+    //   max_pending_candidates_total >= max_pending_candidates_per_output
+    //   reserved_control_queue_bytes >= 1024
+    //   max_output_queue_bytes >= reserved_control_queue_bytes
+    //   max_input_queue_bytes >= max_frame_payload + 24
+    //   max_chunk_bytes >= max_width_px * 4
+    //   max_chunk_bytes + 48 <= max_frame_payload
+    //   max_staging_bytes, max_resident_bytes, max_retiring_bytes >= max_resource_bytes
+    //   max_session_retiring_bytes >= max_staging_bytes + max_resident_bytes + max_retiring_bytes
+    //   max_reservation_extent <= max_panel_extent
+    //   every *_timeout_ms != 0; transfer_idle_timeout_ms <= transfer_timeout_ms
+    // max_frame_payload, max_input_queue_bytes and the +24/+48 terms describe
+    // the socket wire's frames; they are carried unchanged for now and are
+    // listed for removal from this object when the socket wire is purged.
+    body "Limits" size=264 {
+        field "grant_connection_epoch" type="u64" offset=0 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=8 nonzero=#true
+        field "limits_generation" type="u64" offset=16 nonzero=#true
+        field "max_resource_bytes" type="u64" offset=24 nonzero=#true max=4194304
+        field "max_staging_bytes" type="u64" offset=32 max=8388608
+        field "max_resident_bytes" type="u64" offset=40 max=16777216
+        field "max_retiring_bytes" type="u64" offset=48 max=16777216
+        field "max_session_retiring_bytes" type="u64" offset=56 max=67108864
+        field "pixel_format_mask" type="u64" offset=64 value=1
+        field "effect_mask" type="u64" offset=72 value=0
+        field "max_frame_payload" type="u32" offset=80 max=65536
+        field "max_chunk_bytes" type="u32" offset=84 max=65488
+        field "max_width_px" type="u32" offset=88 nonzero=#true max=8192
+        field "max_height_px" type="u32" offset=92 nonzero=#true max=4096
+        field "max_live_resources" type="u32" offset=96 nonzero=#true max=64
+        field "max_resource_ids" type="u32" offset=100 max=4096
+        field "max_open_transfers" type="u32" offset=104 nonzero=#true max=4
+        field "max_outputs" type="u32" offset=108 nonzero=#true max=16
+        field "max_allocations_total" type="u32" offset=112 max=16
+        field "max_allocations_per_output" type="u32" offset=116 nonzero=#true max=4
+        field "max_panels_per_output" type="u32" offset=120 max=1
+        field "max_popouts_per_output" type="u32" offset=124 max=3
+        field "max_candidate_surfaces" type="u32" offset=128 nonzero=#true max=8
+        field "max_candidate_placements" type="u32" offset=132 nonzero=#true max=32
+        field "max_candidate_targets" type="u32" offset=136 max=64
+        field "max_candidate_bytes" type="u32" offset=140 min=40 max=8192
+        field "max_pending_allocation_requests" type="u32" offset=144 max=8
+        field "max_open_candidates_total" type="u32" offset=148 max=2
+        field "max_open_candidates_per_output" type="u32" offset=152 nonzero=#true max=1
+        field "max_pending_candidates_total" type="u32" offset=156 max=8
+        field "max_pending_candidates_per_output" type="u32" offset=160 nonzero=#true max=1
+        field "max_pending_actions" type="u32" offset=164 max=16
+        field "max_frame_demands_per_output" type="u32" offset=168 value=1
+        field "max_control_records" type="u32" offset=172 min=1 max=64
+        field "reserved_control_queue_bytes" type="u32" offset=176 min=1024 max=65536
+        field "max_input_queue_bytes" type="u32" offset=180 max=131072
+        field "max_output_queue_bytes" type="u32" offset=184 max=262144
+        field "max_frames_per_service_tick" type="u32" offset=188 nonzero=#true max=16
+        field "max_panel_extent" type="u32" offset=192 max=512
+        field "max_popout_extent_px" type="u32" offset=196 max=1024
+        field "max_reservation_extent" type="u32" offset=200 max=512
+        field "max_content_coverage_percent" type="u32" offset=204 max=50
+        field "max_margin_logical" type="u32" offset=208 max=512
+        field "max_scale_numerator" type="u32" offset=212 nonzero=#true max=32
+        field "max_scale_denominator" type="u32" offset=216 nonzero=#true max=4
+        field "allocation_timeout_ms" type="u32" offset=220 nonzero=#true max=1000
+        field "transfer_timeout_ms" type="u32" offset=224 nonzero=#true max=2000
+        field "transfer_idle_timeout_ms" type="u32" offset=228 nonzero=#true max=500
+        field "candidate_timeout_ms" type="u32" offset=232 nonzero=#true max=1000
+        field "preparation_timeout_ms" type="u32" offset=236 nonzero=#true max=1000
+        field "presentation_timeout_ms" type="u32" offset=240 nonzero=#true max=2000
+        field "action_ack_timeout_ms" type="u32" offset=244 nonzero=#true max=1000
+        field "permit_timeout_ms" type="u32" offset=248 nonzero=#true max=250
+        field "peer_write_timeout_ms" type="u32" offset=252 nonzero=#true max=2000
+        field "max_candidate_rate_millihz" type="u32" offset=256 nonzero=#true max=120000
+        field "reserved" type="u32" offset=260 value=0
+    }
+    // Followed by output_count ContentOutputFactsEntry rows. Distinct output
+    // ids across rows and a reduced (coprime) scale fraction per row are
+    // codec-enforced but are not single-field bounds.
+    body-prefix "Outputs" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "facts_generation" type="u64" offset=24 nonzero=#true
+        field "output_count" type="u32" offset=32 max=16
+        field "reserved" type="u32" offset=36 value=0
+    }
+    row "ContentOutputFactsEntry" size=40 {
+        field "output_id" type="u64" offset=0 nonzero=#true
+        field "output_generation" type="u64" offset=8 nonzero=#true
+        field "local_width" type="u32" offset=16 nonzero=#true
+        field "local_height" type="u32" offset=20 nonzero=#true
+        field "scale_numerator" type="u32" offset=24 min=1 max=32
+        field "scale_denominator" type="u32" offset=28 min=1 max=4
+        field "scale_generation" type="u64" offset=32 nonzero=#true
+    }
+    // Normative: 1 <= minimum_revision <= maximum_revision.
+    body "Negotiate" size=16 {
+        field "minimum_revision" type="u16" offset=0
+        field "maximum_revision" type="u16" offset=2
+        field "reserved" type="u32" offset=4 value=0
+        field "required_capabilities" type="u64" offset=8
+    }
+    // Normative: selected_revision != 0; connection_epoch != 0 and equal to
+    // the record header's epoch; limits_published is 0 or 1. The CLIENT also
+    // refuses a selection outside the range it offered, or capabilities that
+    // lack a bit it required; the exact role profile is Session's decision.
+    body "Negotiated" size=32 {
+        field "selected_revision" type="u16" offset=0
+        field "reserved" type="u16" offset=2 value=0
+        field "connection_epoch" type="u64" offset=4 nonzero=#true
+        field "capabilities" type="u64" offset=12
+        field "max_descriptors" type="u16" offset=20
+        field "max_label_bytes" type="u16" offset=22
+        field "max_pending_activations" type="u16" offset=24
+        field "limits_published" type="u16" offset=26 min=0 max=1
+        field "reserved_tail" type="u32" offset=28 value=0
+    }
+    body "Refused" size=16 {
+        field "reason" type="u16" offset=0 min=1 max=4
+        field "reserved" type="u16" offset=2 value=0
+        field "reserved_tail" type="u32" offset=4 value=0
+        field "denied_capabilities" type="u64" offset=8
+    }
+    body "Submitted" size=16 {
+        field "submission_id" type="u64" offset=0 nonzero=#true
+        field "candidate_kind" type="u16" offset=8 min=256 max=272
+        field "reserved" type="bytes" offset=10 size=6 value=0
+    }
+    body "ObjectPublished" size=24 {
+        field "object_kind" type="u16" offset=0 min=1 max=4
+        field "reserved" type="bytes" offset=2 size=6 value=0
+        field "generation" type="u64" offset=8
+        field "qid" type="u64" offset=16 nonzero=#true
+    }
+    // operation 1 acquire, 2 modify, 3 release; role 1 panel, 2 popout; edge
+    // 1-4; allocation_request_id != 0. Normative rules (a reader refuses
+    // otherwise). An identity pair (id, generation) is either both nonzero or,
+    // where zero is allowed, both zero; never mixed.
+    //   prior: operation=1 requires (0,0); operation 2 or 3 requires nonzero.
+    //   operation=3: parent (0,0), parent_presentation_epoch 0, anchor all
+    //     zero, desired_width/height 0 and every margin 0.
+    //   operation 1 or 2: desired_width and desired_height != 0, and
+    //     role=1: parent (0,0), parent_presentation_epoch 0, anchor all zero;
+    //     role=2: parent nonzero, parent_presentation_epoch != 0, and a valid
+    //     anchor: width > 0, height > 0, x >= 0, y >= 0,
+    //     x + width <= 2147483647, y + height <= 2147483647 (as i64).
+    body "AllocationRequest" size=128 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "allocation_request_id" type="u64" offset=40 nonzero=#true
+        field "operation" type="u16" offset=48 min=1 max=3
+        field "role" type="u16" offset=50 min=1 max=2
+        field "edge" type="u16" offset=52 min=1 max=4
+        field "reserved" type="u16" offset=54 value=0
+        field "prior_id" type="u64" offset=56
+        field "prior_generation" type="u64" offset=64
+        field "parent_id" type="u64" offset=72
+        field "parent_generation" type="u64" offset=80
+        field "parent_presentation_epoch" type="u64" offset=88
+        field "anchor_x" type="i32" offset=96
+        field "anchor_y" type="i32" offset=100
+        field "anchor_width" type="u32" offset=104
+        field "anchor_height" type="u32" offset=108
+        field "desired_width" type="u32" offset=112
+        field "desired_height" type="u32" offset=116
+        field "margin_top" type="i16" offset=120 min=-512 max=512
+        field "margin_right" type="i16" offset=122 min=-512 max=512
+        field "margin_bottom" type="i16" offset=124 min=-512 max=512
+        field "margin_left" type="i16" offset=126 min=-512 max=512
+    }
+    // status 1 Granted, 2 Rejected, 3 Released, 4 Invalidated. Normative:
+    //   allocation_request_id == 0 exactly when status == 4 (Session-initiated).
+    //   output nonzero; reason <= 12; margins in -512..=512.
+    //   allocation nonzero, except (0,0) is allowed only when status == 2.
+    //   parent is (0,0) or nonzero, never mixed.
+    //   status 1: reason 0; scale_numerator 1..=32, scale_denominator 1..=4,
+    //     gcd(numerator, denominator) == 1; scale_generation != 0; pixel and
+    //     logical width and height != 0; allowed_reservation_extent <= 512.
+    //     acknowledged_anchor carries no further constraint.
+    //   status 2 or 3: pixel, logical, scale fields, scale_generation,
+    //     allowed_reservation_extent, margins and acknowledged_anchor all 0.
+    //   status 4: no constraint beyond the general rules above; its geometry
+    //     fields carry no meaning and a client must ignore them.
+    body "AllocationResult" size=168 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "allocation_request_id" type="u64" offset=24
+        field "status" type="u16" offset=32 min=1 max=4
+        field "reason" type="u16" offset=34 max=12
+        field "reserved" type="u32" offset=36 value=0
+        field "output_id" type="u64" offset=40 nonzero=#true
+        field "output_generation" type="u64" offset=48 nonzero=#true
+        field "allocation_id" type="u64" offset=56
+        field "allocation_generation" type="u64" offset=64
+        field "parent_id" type="u64" offset=72
+        field "parent_generation" type="u64" offset=80
+        field "scale_generation" type="u64" offset=88
+        field "logical_x" type="i32" offset=96
+        field "logical_y" type="i32" offset=100
+        field "logical_width" type="u32" offset=104
+        field "logical_height" type="u32" offset=108
+        field "pixel_x" type="i32" offset=112
+        field "pixel_y" type="i32" offset=116
+        field "pixel_width" type="u32" offset=120
+        field "pixel_height" type="u32" offset=124
+        field "scale_numerator" type="u32" offset=128
+        field "scale_denominator" type="u32" offset=132
+        field "allowed_reservation_extent" type="u32" offset=136
+        field "margin_top" type="i16" offset=140 min=-512 max=512
+        field "margin_right" type="i16" offset=142 min=-512 max=512
+        field "margin_bottom" type="i16" offset=144 min=-512 max=512
+        field "margin_left" type="i16" offset=146 min=-512 max=512
+        field "acknowledged_anchor_x" type="i32" offset=148
+        field "acknowledged_anchor_y" type="i32" offset=152
+        field "acknowledged_anchor_width" type="u32" offset=156
+        field "acknowledged_anchor_height" type="u32" offset=160
+        field "reserved_tail" type="u32" offset=164 value=0
+    }
+    // pixel_format is fixed at 1 (premultiplied BGRA8).
+    // rendered_scale_numerator/denominator form the reduced scale fraction;
+    // row_bytes = width_px*4 and total_bytes = row_bytes*height_px, and
+    // chunk_count is derived from the connection's granted limits. Those
+    // derivations are verified, not asserted, by the codec.
+    body "ResourceBegin" size=80 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "slot" type="u16" offset=8 min=0 max=3
+        field "reserved" type="bytes" offset=10 size=6 value=0
+        field "grant_connection_epoch" type="u64" offset=16 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=24 nonzero=#true
+        field "resource_id" type="u64" offset=32 nonzero=#true
+        field "resource_generation" type="u64" offset=40 nonzero=#true
+        field "width_px" type="u32" offset=48 nonzero=#true max=8192
+        field "height_px" type="u32" offset=52 nonzero=#true max=4096
+        field "rendered_scale_numerator" type="u32" offset=56 min=1 max=32
+        field "rendered_scale_denominator" type="u32" offset=60 min=1 max=4
+        field "pixel_format" type="u16" offset=64 value=1
+        field "reserved_tail" type="u16" offset=66 value=0
+        field "chunk_count" type="u32" offset=68
+        field "total_bytes" type="u64" offset=72
+    }
+    body "ResourceEnd" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+        field "total_bytes" type="u64" offset=40 nonzero=#true max=4194304
+        field "chunk_count" type="u32" offset=48 nonzero=#true max=4096
+        field "reserved" type="u32" offset=52 value=0
+    }
+    body "ResourceCancel" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+    }
+    body "ResourceRetire" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+    }
+    // status 1 Admitted (transfer admitted; upload may start), 2 Accepted
+    // (validated and stored), 3 Rejected, 4 Cancelled. Normative: reason is 0
+    // for status 1 and 2 and <= 12 for status 3 and 4; admitted_bytes <= 4 MiB.
+    body "ResourceStatus" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+        field "status" type="u16" offset=40 min=1 max=4
+        field "reason" type="u16" offset=42 max=12
+        field "next_ordinal" type="u32" offset=44
+        field "admitted_bytes" type="u64" offset=48 max=4194304
+    }
+    // reason names why the last consumer dropped the lease.
+    body "ResourceReleased" size=42 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "resource_id" type="u64" offset=24 nonzero=#true
+        field "resource_generation" type="u64" offset=32 nonzero=#true
+        field "reason" type="u16" offset=40 max=12
+    }
+    // One complete candidate as a whole value. Rows follow the prefix in
+    // order: surface_count ContentSurface, placement_count ContentPlacement,
+    // target_count ContentTarget rows. No chunk ordinals or repeated counts.
+    body-prefix "Candidate" size=80 max-bytes=8192 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "facts_generation" type="u64" offset=48 nonzero=#true
+        field "pacing_permit" type="u64" offset=56 nonzero=#true
+        field "interaction_generation" type="u64" offset=64 nonzero=#true
+        field "surface_count" type="u16" offset=72 max=8
+        field "placement_count" type="u16" offset=74 max=32
+        field "target_count" type="u16" offset=76 max=64
+        field "reserved" type="u16" offset=78 value=0
+    }
+    // allocation and scale_generation are always nonzero. role 1 panel, 2
+    // popout; edge 1-4; each margin within [-512, 512]; reservation_extent at
+    // most 512. A panel (role=1) has parent_surface_index=65535 (none) and a
+    // zero anchor rectangle; a popout has parent_surface_index<8, a zero
+    // reservation_extent and a valid nonzero anchor rectangle.
+    row "ContentSurface" size=64 {
+        field "allocation_id" type="u64" offset=0 nonzero=#true
+        field "allocation_generation" type="u64" offset=8 nonzero=#true
+        field "scale_generation" type="u64" offset=16 nonzero=#true
+        field "role" type="u16" offset=24 min=1 max=2
+        field "edge" type="u16" offset=26 min=1 max=4
+        field "margin_top" type="i16" offset=28 min=-512 max=512
+        field "margin_right" type="i16" offset=30 min=-512 max=512
+        field "margin_bottom" type="i16" offset=32 min=-512 max=512
+        field "margin_left" type="i16" offset=34 min=-512 max=512
+        field "reservation_extent" type="u32" offset=36 max=512
+        field "parent_surface_index" type="u16" offset=40
+        field "reserved" type="u16" offset=42 value=0
+        field "anchor_x" type="i32" offset=44
+        field "anchor_y" type="i32" offset=48
+        field "anchor_width" type="u32" offset=52
+        field "anchor_height" type="u32" offset=56
+        field "reserved_tail" type="u32" offset=60 value=0
+    }
+    // resource is always a live identity. surface_index selects a row of the
+    // same record's surface table.
+    row "ContentPlacement" size=32 {
+        field "resource_id" type="u64" offset=0 nonzero=#true
+        field "resource_generation" type="u64" offset=8 nonzero=#true
+        field "surface_index" type="u16" offset=16 max=7
+        field "reserved" type="u16" offset=18 value=0
+        field "destination_x_px" type="i32" offset=20 min=0
+        field "destination_y_px" type="i32" offset=24 min=0
+        field "reserved_tail" type="u32" offset=28 value=0
+    }
+    // surface_index selects a row of the same record's surface table.
+    // action_kind is fixed at 1 for this base profile. NativeTarget uses 2
+    // and CatalogTarget uses 3 in their separate row families below. target_id,
+    // target_generation and action_id are always nonzero.
+    row "ContentTarget" size=48 {
+        field "surface_index" type="u16" offset=0 max=7
+        field "action_kind" type="u16" offset=2 value=1
+        field "target_id" type="u64" offset=4 nonzero=#true
+        field "target_generation" type="u64" offset=12 nonzero=#true
+        field "action_id" type="u64" offset=20 nonzero=#true
+        field "bounds_x" type="i32" offset=28 min=0
+        field "bounds_y" type="i32" offset=32 min=0
+        field "bounds_width" type="u32" offset=36 nonzero=#true
+        field "bounds_height" type="u32" offset=40 nonzero=#true
+        field "reserved" type="u32" offset=44 value=0
+    }
+    // allocation is zero-or-nonzero as a pair (zero for an output-wide
+    // demand). reason 1/2 is dirty or animation work (treated alike), 3 is
+    // withdrawal. demand_id strictly increases within the grant's owner,
+    // across outputs; a non-rising id is a fatal stale request. One standing
+    // demand per output; a newer demand replaces it, but replacing a standing
+    // reason-3 demand with reason 1/2 is fatal. Grant consumes the demand;
+    // candidate begin consumes its permit, so each frame needs a new demand.
+    // Do not demand while an output has a permit or assembling candidate;
+    // current Session treats the resulting grant refusal as fatal.
+    body "FrameDemand" size=66 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "allocation_id" type="u64" offset=40
+        field "allocation_generation" type="u64" offset=48
+        field "demand_id" type="u64" offset=56 nonzero=#true
+        field "reason" type="u16" offset=64 min=1 max=3
+    }
+    body "FrameDemandCancel" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "demand_id" type="u64" offset=40 nonzero=#true
+        field "permit_id" type="u64" offset=48
+    }
+    // state 1 Granted, 2-4 not granted (expiry, cancellation, refusal).
+    // Normative: demand_id != 0; reason <= 12; max_candidate_bytes <= 8192.
+    //   state 1: permit_id != 0, ttl_ms 1..=250, max_candidate_bytes != 0,
+    //     reason 0.
+    //   state 2-4: permit_id, ttl_ms and max_candidate_bytes carry no further
+    //     constraint and no meaning beyond naming the permit, if any.
+    // ttl_ms starts at the owner's grant-time sample, not client receipt.
+    // Current Session samples elapsed Instant milliseconds before polling
+    // demands in that visit. No issue timestamp is carried; neither client
+    // receipt+TTL nor enqueue+TTL guarantees server validity. A client margin
+    // is advisory only. An expired permit named by a candidate is fatal;
+    // see the normative lifecycle and clocks rules in sophia-shell-files.md.
+    body "FramePermit" size=72 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "demand_id" type="u64" offset=40 nonzero=#true
+        field "permit_id" type="u64" offset=48
+        field "state" type="u16" offset=56 min=1 max=4
+        field "reason" type="u16" offset=58 max=12
+        field "ttl_ms" type="u32" offset=60
+        field "max_candidate_bytes" type="u32" offset=64 max=8192
+        field "reserved" type="u32" offset=68 value=0
+    }
+    // kind 1 Activation (target_id, target_generation and action_id nonzero,
+    // reason=0), 2 Dismissal (target_id, target_generation and action_id
+    // zero, reason=0), 3 Cancel (reason may be nonzero). allocation is always
+    // nonzero. Kinds 1/2 require ActionAck; kind 3 requires no ack.
+    body "Action" size=120 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "candidate_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48 nonzero=#true
+        field "interaction_generation" type="u64" offset=56 nonzero=#true
+        field "allocation_id" type="u64" offset=64 nonzero=#true
+        field "allocation_generation" type="u64" offset=72 nonzero=#true
+        field "target_id" type="u64" offset=80
+        field "target_generation" type="u64" offset=88
+        field "action_id" type="u64" offset=96
+        field "event_id" type="u64" offset=104 nonzero=#true
+        field "kind" type="u16" offset=112 min=1 max=3
+        field "reason" type="u16" offset=114 max=12
+        field "reserved" type="u32" offset=116 value=0
+    }
+    // disposition 1 Consumed, 2 Stale. target_id, target_generation and
+    // action_id are all zero or all nonzero, echoing the acknowledged
+    // action. allocation is always nonzero.
+    body "ActionAck" size=120 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "candidate_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48 nonzero=#true
+        field "interaction_generation" type="u64" offset=56 nonzero=#true
+        field "allocation_id" type="u64" offset=64 nonzero=#true
+        field "allocation_generation" type="u64" offset=72 nonzero=#true
+        field "target_id" type="u64" offset=80
+        field "target_generation" type="u64" offset=88
+        field "action_id" type="u64" offset=96
+        field "event_id" type="u64" offset=104 nonzero=#true
+        field "disposition" type="u16" offset=112 min=1 max=2
+        field "reserved" type="u16" offset=114 value=0
+        field "reserved_tail" type="u32" offset=116 value=0
+    }
+    // kind 1 Prepared, 2 Presented (presentation_epoch nonzero only when
+    // kind=2), 3 Rejected, 4 Superseded; reason is 0 unless kind>2.
+    body "CandidateOutcome" size=76 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "kind" type="u16" offset=48 min=1 max=4
+        field "reason" type="u16" offset=50 max=12
+        field "presentation_epoch" type="u64" offset=52
+        field "work_area_generation" type="u64" offset=60
+        field "wm_commit_generation" type="u64" offset=68
+    }
+
+    // -----------------------------------------------------------------
+    // t252 B5: native launcher (r7), persistent catalog (r8) and view
+    // indicator (r6) families. Whole typed values, no transfer shapes: no
+    // Begin/Entry/End, no chunk ordinals, no repeated counts.
+    // -----------------------------------------------------------------
+
+    // The whole application catalog, plain for the launcher and legacy
+    // descriptor profiles, or with an r8 identity carried on every entry for
+    // the dock. `identities_present` names which shape a reader is holding
+    // without inspecting every row; when nonzero every entry below carries a
+    // nonempty identity, and when zero none does (no partial catalog). When
+    // `entry_count` is 0 this flag carries no meaning: a writer may set it
+    // either way and a reader must accept either.
+    body-prefix "Catalog" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "generation" type="u64" offset=16 nonzero=#true
+        field "entry_count" type="u16" offset=24 max=4096
+        field "identities_present" type="u16" offset=26 min=0 max=1
+        field "reserved" type="u32" offset=28 value=0
+    }
+    // Distinct slots across rows, a nonempty label and a `registered:`/
+    // `desktop:` identity when disclosed are codec-enforced but not single-
+    // field bounds. `label`, `keywords` and `identity` are length-prefixed,
+    // zero-padded text fields (`type="text"`): a `u16` length, a reserved
+    // `u16`, then `size` bytes of text padded with zeros past the length.
+    // Normative, current code (`shell_launcher_text_valid`, applied to
+    // `label`, `keywords` and `identity` here -- not to any `Indicators`
+    // text field below): the declared length is a byte count that must not
+    // exceed `size`; every byte from the length to the end of `size` must be
+    // zero; the declared bytes must be valid UTF-8; and no character may be
+    // a C0/C1 control character (U+0000-U+001F, U+007F, U+0080-U+009F --
+    // so NUL is refused) or a bidi override/isolate (U+202A-U+202E,
+    // U+2066-U+2069). `label` must be nonempty; `keywords` may be empty.
+    // `identity`, when disclosed, must additionally start with
+    // `registered:` or `desktop:` and have a nonempty tail after that
+    // prefix; no further character rule applies to the tail beyond the
+    // text-validity rule above.
+    row "CatalogEntry" size=656 {
+        field "slot" type="u16" offset=0 min=1 max=4096
+        field "available" type="u16" offset=2 min=0 max=1
+        field "label" type="text" offset=4 size=128
+        field "keywords" type="text" offset=136 size=256
+        field "identity" type="text" offset=396 size=256
+    }
+
+    // The whole indicator snapshot: active output, output statuses,
+    // indicators. `active_output_id` is zero exactly when
+    // `active_output_present` is zero (no stale identity behind a false
+    // flag); that pairing is codec-enforced, not a single-field bound.
+    // `connection_epoch` and `generation` are not bounded here: there is no
+    // validator for this record beyond the two row-count maxima below.
+    body-prefix "Indicators" size=40 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8
+        field "generation" type="u64" offset=16
+        field "active_output_id" type="u64" offset=24
+        field "active_output_present" type="u16" offset=32 min=0 max=1
+        field "status_count" type="u16" offset=34 max=16
+        field "indicator_count" type="u16" offset=36 max=256
+        field "reserved" type="u16" offset=38 value=0
+    }
+    // Normative, current code: neither row below is bound beyond the two
+    // row-count maxima above. `output_id`, `indicator`, `action` and `slot`
+    // may each be zero; the reference Session sets `action`=0 on an
+    // `IndicatorEntry` on purpose, to mark a pill that is shown but not
+    // activatable (see `IndicatorActivationOutcome` below). No row need be
+    // distinct from another: two `IndicatorOutputStatus` rows may repeat an
+    // `output_id`, and two `IndicatorEntry` rows may repeat any field,
+    // including the whole (`output_id`, `indicator`, `action`) triple or
+    // `slot`; a reader must not assume uniqueness, and the reference
+    // Session's own activation lookup takes the first row that matches.
+    // `layout` and `label` use the same length-prefixed, zero-padded text
+    // encoding as the `Catalog` object's text fields above (byte length,
+    // zero padding past the length, valid UTF-8), but -- unlike
+    // `label`/`keywords`/`identity` there -- carry no further character
+    // rule: a control character or a bidi override/isolate code point is
+    // not refused here.
+    row "IndicatorOutputStatus" size=46 {
+        field "output_id" type="u64" offset=0
+        field "focus_bits" type="u16" offset=8
+        field "layout" type="text" offset=10 size=32
+    }
+    row "IndicatorEntry" size=66 {
+        field "output_id" type="u64" offset=0
+        field "indicator" type="u64" offset=8
+        field "action" type="u64" offset=16
+        field "slot" type="u32" offset=24
+        field "state_bits" type="u16" offset=28
+        field "label" type="text" offset=30 size=32
+    }
+
+    // Opening, catalog generation, state revision (native launcher r7).
+    // Normative, current code: `state_revision` is always 1 here -- every
+    // opening starts its native launcher state at revision 1.
+    body "NativeOpening" size=64 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "catalog_generation" type="u64" offset=48 nonzero=#true
+        field "state_revision" type="u64" offset=56 nonzero=#true
+    }
+    // The focus lease binding, minted only after an actual Presented. Every
+    // field is nonzero.
+    body "NativeFocus" size=112 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "allocation_id" type="u64" offset=48 nonzero=#true
+        field "allocation_generation" type="u64" offset=56 nonzero=#true
+        field "catalog_generation" type="u64" offset=64 nonzero=#true
+        field "candidate_generation" type="u64" offset=72 nonzero=#true
+        field "presentation_epoch" type="u64" offset=80 nonzero=#true
+        field "interaction_generation" type="u64" offset=88 nonzero=#true
+        field "state_revision" type="u64" offset=96 nonzero=#true
+        field "focus_lease" type="u64" offset=104 nonzero=#true
+    }
+    // Binding and reason (1-12): the shared `ContentReason` codes.
+    // Normative, current code: a new `NativeFocus` superseding an old one
+    // for the same opening revokes the old one with reason 1 (Stale);
+    // closing the opening (see `NativeClosed` below) revokes any current
+    // focus with that close's own reason. This contract fixes no other
+    // trigger-to-reason mapping; the session may choose any of the 12
+    // reasons when closing.
+    body "NativeFocusRevoked" size=116 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "allocation_id" type="u64" offset=48 nonzero=#true
+        field "allocation_generation" type="u64" offset=56 nonzero=#true
+        field "catalog_generation" type="u64" offset=64 nonzero=#true
+        field "candidate_generation" type="u64" offset=72 nonzero=#true
+        field "presentation_epoch" type="u64" offset=80 nonzero=#true
+        field "interaction_generation" type="u64" offset=88 nonzero=#true
+        field "state_revision" type="u64" offset=96 nonzero=#true
+        field "focus_lease" type="u64" offset=104 nonzero=#true
+        field "reason" type="u16" offset=112 min=1 max=12
+        field "reserved" type="u16" offset=114 value=0
+    }
+    // Semantic input event with its text: never raw keycodes, X events or a
+    // clipboard/helper channel. `kind`: 1 Text, 2 Left, 3 Right, 4 Home,
+    // 5 End, 6 Backspace, 7 Delete, 8 Previous, 9 Next, 10 PagePrevious,
+    // 11 PageNext, 12 First, 13 Last, 14 DeleteToStart, 15 DeleteToEnd,
+    // 16 DeleteWord, 17 Accept. `binding_state_revision` is the presented
+    // binding's revision; `state_revision` is the revision this input was
+    // issued against (equal to it for `kind`=17 Accept, strictly greater
+    // otherwise) -- codec-enforced, not a single-field bound. In the current
+    // Session, a non-Accept input's `state_revision` is always exactly one
+    // more than the revision it follows (the prior input's, or the
+    // binding's when there is no prior input); a reader must not assume a
+    // future Session never jumps by more. `text` is a length-prefixed,
+    // zero-padded text field (see `CatalogEntry.label` above for the byte
+    // layout and the control-character/bidi-override rule it shares); it
+    // must be nonempty and satisfy that rule when `kind`=1 (Text), and must
+    // be empty for every other `kind`, including 17 (Accept).
+    // issued_mono_usec uses Session's host CLOCK_MONOTONIC microseconds.
+    // Missing acknowledgement by action_ack_timeout_ms from the later of
+    // issuance and last owner service closes the opening with reason 6.
+    body "NativeInput" size=398 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "allocation_id" type="u64" offset=48 nonzero=#true
+        field "allocation_generation" type="u64" offset=56 nonzero=#true
+        field "catalog_generation" type="u64" offset=64 nonzero=#true
+        field "candidate_generation" type="u64" offset=72 nonzero=#true
+        field "presentation_epoch" type="u64" offset=80 nonzero=#true
+        field "interaction_generation" type="u64" offset=88 nonzero=#true
+        field "binding_state_revision" type="u64" offset=96 nonzero=#true
+        field "focus_lease" type="u64" offset=104 nonzero=#true
+        field "event_id" type="u64" offset=112 nonzero=#true
+        field "state_revision" type="u64" offset=120 nonzero=#true
+        field "issued_mono_usec" type="u64" offset=128 nonzero=#true
+        field "kind" type="u16" offset=136 min=1 max=17
+        field "text" type="text" offset=138 size=256
+    }
+    // Activation, status (1-5) and reason (0-12); admitted means a queue
+    // slot only, not application startup. `status`=1 iff `reason`=0 is
+    // codec-enforced, not a single-field bound. Normative, current code
+    // (the reference Session's native launcher activation owner): only
+    // these exact (status, reason) pairs are ever produced -- 1 Admitted/0;
+    // 2 Stale/1; 3 Unknown/3; 4 Unauthorized/4; 5 Capacity/2 (the reason
+    // values are the shared `ContentReason` codes used elsewhere in this
+    // contract). Stale covers: the activation's binding does not match the
+    // connection's current focus exactly, field for field (including a
+    // focus lease superseded by a later `NativeFocus`); its
+    // `state_revision` does not equal the connection's current state
+    // revision (a query edit since the binding was observed disarms an
+    // activation issued against the older revision); the named catalog
+    // does not match the binding's `catalog_generation` and connection
+    // epoch; for a keyboard (`cause`=1) activation, no matching
+    // unattempted Accept receipt remains within `action_ack_timeout_ms`
+    // from the later of issuance and last service at receipt creation (an
+    // acknowledged Accept remains eligible), or the named `slot` is not
+    // the presented candidate's `selected` slot; and any `NativeActivate`
+    // received after `NativeClosed` for that opening. Unknown covers a
+    // `slot` absent from the current catalog. Unauthorized covers a `slot`
+    // present but not `available`, or not among the presented candidate's
+    // displayed rows. Capacity covers the launch queue refusing admission
+    // for capacity reasons once every other check has passed.
+    body "NativeActivationOutcome" size=136 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "allocation_id" type="u64" offset=48 nonzero=#true
+        field "allocation_generation" type="u64" offset=56 nonzero=#true
+        field "catalog_generation" type="u64" offset=64 nonzero=#true
+        field "candidate_generation" type="u64" offset=72 nonzero=#true
+        field "presentation_epoch" type="u64" offset=80 nonzero=#true
+        field "interaction_generation" type="u64" offset=88 nonzero=#true
+        field "binding_state_revision" type="u64" offset=96 nonzero=#true
+        field "focus_lease" type="u64" offset=104 nonzero=#true
+        field "event_id" type="u64" offset=112 nonzero=#true
+        field "state_revision" type="u64" offset=120 nonzero=#true
+        field "cause" type="u16" offset=128 min=1 max=2
+        field "slot" type="u16" offset=130 min=1 max=4096
+        field "status" type="u16" offset=132 min=1 max=5
+        field "reason" type="u16" offset=134 max=12
+    }
+    // Opening and reason (1-12): the shared `ContentReason` codes, chosen
+    // freely by the session (for example Cancelled when dismissing an
+    // admitted but not yet executed launch); this contract fixes no
+    // trigger-to-reason mapping.
+    body "NativeClosed" size=36 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "reason" type="u16" offset=32 min=1 max=12
+        field "reserved" type="u16" offset=34 value=0
+    }
+    // Parentless allocation, no reservation: this record carries no parent,
+    // parent-presentation-epoch, anchor or reservation-extent field at all,
+    // unlike the base `AllocationRequest` above. operation 1 acquire, 2
+    // resize, 3 release; edge 1-4. Normative (a reader refuses otherwise):
+    // `prior` is (0,0) when operation=1 and a nonzero pair for operation 2
+    // or 3 (the same identity-pair rule as the base `AllocationRequest`).
+    // operation=3 additionally requires `desired_width`=0, `desired_height`=0
+    // and every margin 0; operations 1 and 2 require `desired_width`>0 and
+    // `desired_height`>0, with margins unconstrained beyond their own
+    // -512..=512 bound (a resize may still change margins).
+    body "NativeAllocationRequest" size=92 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "request_id" type="u64" offset=48 nonzero=#true
+        field "prior_id" type="u64" offset=56
+        field "prior_generation" type="u64" offset=64
+        field "operation" type="u16" offset=72 min=1 max=3
+        field "edge" type="u16" offset=74 min=1 max=4
+        field "desired_width" type="u32" offset=76
+        field "desired_height" type="u32" offset=80
+        field "margin_top" type="i16" offset=84 min=-512 max=512
+        field "margin_right" type="i16" offset=86 min=-512 max=512
+        field "margin_bottom" type="i16" offset=88 min=-512 max=512
+        field "margin_left" type="i16" offset=90 min=-512 max=512
+    }
+    // Event and disposition (1 Consumed, 2 Stale), declared by the client;
+    // independent of launch admission. Normative, current code: the session
+    // accepts an ack only for an event it holds an outstanding, not yet
+    // acknowledged receipt for (a receipt is retired once acknowledged, and
+    // every receipt for an opening is discarded when that opening closes);
+    // an ack naming any other event -- unknown, already acknowledged, or
+    // from a closed opening -- is consumed off the wire with no effect and
+    // no receipt of any kind in reply. A non-Accept receipt is retired on
+    // its first ack regardless of the declared disposition; only an Accept
+    // receipt keeps the declared disposition, and that value does not by
+    // itself affect activation eligibility (see `NativeActivationOutcome`
+    // above). Ack and activation may arrive in either order; one Accept
+    // receipt can authorize at most one activation attempt.
+    body "NativeInputAck" size=132 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "allocation_id" type="u64" offset=48 nonzero=#true
+        field "allocation_generation" type="u64" offset=56 nonzero=#true
+        field "catalog_generation" type="u64" offset=64 nonzero=#true
+        field "candidate_generation" type="u64" offset=72 nonzero=#true
+        field "presentation_epoch" type="u64" offset=80 nonzero=#true
+        field "interaction_generation" type="u64" offset=88 nonzero=#true
+        field "binding_state_revision" type="u64" offset=96 nonzero=#true
+        field "focus_lease" type="u64" offset=104 nonzero=#true
+        field "event_id" type="u64" offset=112 nonzero=#true
+        field "state_revision" type="u64" offset=120 nonzero=#true
+        field "disposition" type="u16" offset=128 min=1 max=2
+        field "reserved" type="u16" offset=130 value=0
+    }
+    // Event, cause (1 keyboard Accept, 2 presented ContentAction) and slot.
+    // Normative: `state_revision` must equal `binding_state_revision`
+    // exactly here (never strictly greater, unlike a query `NativeInput`);
+    // `slot` is 1..=4096 (a catalog slot). See `NativeActivationOutcome`
+    // above for how an activation naming a stale binding, revision, catalog
+    // or slot is resolved -- never accepted as a fresh activation.
+    body "NativeActivate" size=132 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "opening" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "allocation_id" type="u64" offset=48 nonzero=#true
+        field "allocation_generation" type="u64" offset=56 nonzero=#true
+        field "catalog_generation" type="u64" offset=64 nonzero=#true
+        field "candidate_generation" type="u64" offset=72 nonzero=#true
+        field "presentation_epoch" type="u64" offset=80 nonzero=#true
+        field "interaction_generation" type="u64" offset=88 nonzero=#true
+        field "binding_state_revision" type="u64" offset=96 nonzero=#true
+        field "focus_lease" type="u64" offset=104 nonzero=#true
+        field "event_id" type="u64" offset=112 nonzero=#true
+        field "state_revision" type="u64" offset=120 nonzero=#true
+        field "cause" type="u16" offset=128 min=1 max=2
+        field "slot" type="u16" offset=130 min=1 max=4096
+    }
+    // A whole candidate plus opening, catalog generation, state revision,
+    // selection and the displayed catalog rows. Rows follow the prefix in
+    // order: surface_count `NativeSurface`, placement_count
+    // `NativePlacement`, target_count `NativeTarget`, then row_count
+    // `NativeCandidateRow` (the displayed catalog slots). No chunk ordinals
+    // or repeated counts. Normative, current code: `surface_count` is
+    // exactly 1, never 0, so the launcher's panel-shaped row is always
+    // present -- tighter than this field's own `max=1` bound, which alone
+    // would also admit 0; `placement_count` is at least 1; `target_count`
+    // equals `row_count` exactly (one clickable `NativeTarget` per
+    // displayed slot); `selected` is 0 exactly when `row_count` is 0, and
+    // otherwise must be one of the `NativeCandidateRow.slot` values below
+    // (selected-slot membership); every `NativeCandidateRow.slot` is
+    // distinct from every other one in the same record (displayed-row
+    // uniqueness). Every `NativeTarget` shares `surface_index`=0 (the one
+    // surface). Every rule just listed is a value-validator rule, checked by
+    // the same decoder both wires share before the record reaches the owner
+    // at all: a record violating any one of them is refused at `submit`
+    // with `EINVAL`, and nothing is journaled, not even `Submitted`.
+    // Two kinds of rule need live connection state the decoder does not
+    // have, so only the owner -- after custody has already transferred --
+    // can check them, and a violation there is `CandidateOutcome` kind 3
+    // Rejected: a `NativeCandidateRow.slot` (checked at Begin, against the
+    // catalog snapshot named by `catalog_generation`) or a
+    // `NativeTarget.action_id` (checked at End, for consistency with that
+    // same Begin-time row) naming a slot that is not currently present and
+    // `available` is malformed (reason 3); and the base `Candidate` rules,
+    // also checked only at End -- within one record, every `NativeTarget`'s
+    // (`target_id`, `target_generation`, `action_id`) triple must be
+    // distinct from every other, and no two `NativeTarget` rows sharing a
+    // `surface_index` may have overlapping bounds rectangles -- are
+    // likewise malformed (reason 3) on violation. A candidate whose
+    // `opening`, `catalog_generation` or `state_revision` does not match
+    // the connection's current native launcher state exactly is also only
+    // checked by the owner, at Begin, which rejects it as stale (reason 1)
+    // instead. Neither case reaches `NativeFocus`, an activation owner or
+    // the launch queue. Production Session supplies interaction_generation=1;
+    // it is not a client-allocated counter. facts_generation must match the
+    // current Outputs facts. Both are checked again when pending work is
+    // taken for renderer submission, along with opening, catalog generation,
+    // state revision and allocation binding; a mismatch at that later step
+    // currently terminates the component, rather than promising a Rejected outcome.
+    // candidate_generation strictly increases within the grant's owner.
+    body-prefix "NativeCandidate" size=108 max-bytes=8192 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "facts_generation" type="u64" offset=48 nonzero=#true
+        field "pacing_permit" type="u64" offset=56 nonzero=#true
+        field "interaction_generation" type="u64" offset=64 nonzero=#true
+        field "opening" type="u64" offset=72 nonzero=#true
+        field "catalog_generation" type="u64" offset=80 nonzero=#true
+        field "state_revision" type="u64" offset=88 nonzero=#true
+        field "selected" type="u16" offset=96 max=4096
+        field "surface_count" type="u16" offset=98 max=1
+        field "placement_count" type="u16" offset=100 max=32
+        field "target_count" type="u16" offset=102 max=32
+        field "row_count" type="u16" offset=104 max=32
+        field "reserved" type="u16" offset=106 value=0
+    }
+    // Always role=3 (native), a zero anchor and no reservation: the native
+    // launcher's one row is always panel-shaped. The base `ContentSurface`
+    // field rules also apply otherwise: `allocation_id`, `allocation_generation`
+    // and `scale_generation` nonzero, `edge` 1-4.
+    row "NativeSurface" size=64 {
+        field "allocation_id" type="u64" offset=0 nonzero=#true
+        field "allocation_generation" type="u64" offset=8 nonzero=#true
+        field "scale_generation" type="u64" offset=16 nonzero=#true
+        field "role" type="u16" offset=24 value=3
+        field "edge" type="u16" offset=26 min=1 max=4
+        field "margin_top" type="i16" offset=28 min=-512 max=512
+        field "margin_right" type="i16" offset=30 min=-512 max=512
+        field "margin_bottom" type="i16" offset=32 min=-512 max=512
+        field "margin_left" type="i16" offset=34 min=-512 max=512
+        field "reservation_extent" type="u32" offset=36 value=0
+        field "parent_surface_index" type="u16" offset=40 value=65535
+        field "reserved" type="u16" offset=42 value=0
+        field "anchor_x" type="i32" offset=44 value=0
+        field "anchor_y" type="i32" offset=48 value=0
+        field "anchor_width" type="u32" offset=52 value=0
+        field "anchor_height" type="u32" offset=56 value=0
+        field "reserved_tail" type="u32" offset=60 value=0
+    }
+    // surface_index is always 0: the native launcher's one surface.
+    // `resource_id`/`resource_generation` are always a live identity (both
+    // nonzero, never both zero), as with the base `ContentPlacement`.
+    row "NativePlacement" size=32 {
+        field "resource_id" type="u64" offset=0 nonzero=#true
+        field "resource_generation" type="u64" offset=8 nonzero=#true
+        field "surface_index" type="u16" offset=16 value=0
+        field "reserved" type="u16" offset=18 value=0
+        field "destination_x_px" type="i32" offset=20 min=0
+        field "destination_y_px" type="i32" offset=24 min=0
+        field "reserved_tail" type="u32" offset=28 value=0
+    }
+    // surface_index is always 0; action_kind is fixed at 2 for this
+    // profile. action_id is at most 4096 (a catalog slot). As with the base
+    // `ContentTarget`, `bounds_x + bounds_width` and `bounds_y +
+    // bounds_height` must each fit in an `i32` (<= 2147483647); see the
+    // body-prefix comment above for the cross-row uniqueness and
+    // non-overlap rules every `NativeTarget` in one record must satisfy.
+    row "NativeTarget" size=48 {
+        field "surface_index" type="u16" offset=0 value=0
+        field "action_kind" type="u16" offset=2 value=2
+        field "target_id" type="u64" offset=4 nonzero=#true
+        field "target_generation" type="u64" offset=12 nonzero=#true
+        field "action_id" type="u64" offset=20 min=1 max=4096
+        field "bounds_x" type="i32" offset=28 min=0
+        field "bounds_y" type="i32" offset=32 min=0
+        field "bounds_width" type="u32" offset=36 nonzero=#true
+        field "bounds_height" type="u32" offset=40 nonzero=#true
+        field "reserved" type="u32" offset=44 value=0
+    }
+    // One displayed catalog slot: distinct from every other row's `slot` in
+    // the same record (see the body-prefix comment above).
+    row "NativeCandidateRow" size=2 {
+        field "slot" type="u16" offset=0 min=1 max=4096
+    }
+
+    // Activation, catalog generation, status (1-5); admission is queue
+    // ownership, not application startup. `content_reason` is the wrapped
+    // content action's own reason, always 0 here; `reason` is this
+    // outcome's own reason, also always 0 regardless of `status` -- both
+    // codec-enforced, not single-field bounds. `kind`=1 (Activation)
+    // always. Normative, current code (the reference Session's persistent
+    // catalog activation owner): eligibility requires the wrapped action's
+    // `event_id` to be a live, already-issued one; `catalog_generation` and
+    // the grant's connection epoch to match the currently published catalog
+    // exactly; a matching, still-awaiting, not cancelled, not expired
+    // ledger entry for that exact action; and that entry's target to still
+    // be part of the currently Presented candidate. Any failure of the
+    // above yields status 2 (Stale). Otherwise, `action_id` naming a slot
+    // absent from the current publication yields status 4 (Unauthorized);
+    // the launch queue may itself refuse with status 4 (Unauthorized) or 5
+    // (Capacity); success is status 1 (Admitted). In the current code,
+    // status 3 (Unknown) is never produced for this record, unlike
+    // `NativeActivationOutcome` above, which uses it for an unrecognized
+    // slot.
+    body "CatalogActivationOutcome" size=132 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "candidate_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48 nonzero=#true
+        field "interaction_generation" type="u64" offset=56 nonzero=#true
+        field "allocation_id" type="u64" offset=64 nonzero=#true
+        field "allocation_generation" type="u64" offset=72 nonzero=#true
+        field "target_id" type="u64" offset=80 nonzero=#true
+        field "target_generation" type="u64" offset=88 nonzero=#true
+        field "action_id" type="u64" offset=96 min=1 max=4096
+        field "event_id" type="u64" offset=104 nonzero=#true
+        field "kind" type="u16" offset=112 value=1
+        field "content_reason" type="u16" offset=114 value=0
+        field "reserved" type="u32" offset=116 value=0
+        field "catalog_generation" type="u64" offset=120 nonzero=#true
+        field "status" type="u16" offset=128 min=1 max=5
+        field "reason" type="u16" offset=130 value=0
+    }
+    // The content action and catalog generation, never a command. `kind`=1
+    // (Activation) and `content_reason`=0 always. See
+    // `CatalogActivationOutcome` above for the eligibility rules a
+    // submission here is checked against.
+    body "CatalogActivate" size=128 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "candidate_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48 nonzero=#true
+        field "interaction_generation" type="u64" offset=56 nonzero=#true
+        field "allocation_id" type="u64" offset=64 nonzero=#true
+        field "allocation_generation" type="u64" offset=72 nonzero=#true
+        field "target_id" type="u64" offset=80 nonzero=#true
+        field "target_generation" type="u64" offset=88 nonzero=#true
+        field "action_id" type="u64" offset=96 min=1 max=4096
+        field "event_id" type="u64" offset=104 nonzero=#true
+        field "kind" type="u16" offset=112 value=1
+        field "content_reason" type="u16" offset=114 value=0
+        field "reserved" type="u32" offset=116 value=0
+        field "catalog_generation" type="u64" offset=120 nonzero=#true
+    }
+    // A whole candidate plus the catalog generation it presents. Rows
+    // follow the prefix in order: surface_count `ContentSurface`,
+    // placement_count `ContentPlacement`, target_count `CatalogTarget`. No
+    // chunk ordinals or repeated counts. Every provided `ContentSurface`'s
+    // role=1 (panel), never a popout, is a value-validator rule the decoder
+    // checks before the record reaches the owner: a record with any other
+    // role is refused at `submit` with `EINVAL`, and nothing is journaled.
+    // The decoder does not check the surface *count*, so the rest is the
+    // persistent-catalog candidate owner's to enforce once `Submitted`
+    // custody has already transferred -- not merely this contract's own
+    // `max=8`/`max=32` field bounds -- and a violation is `CandidateOutcome`
+    // kind 3 Rejected, reason 3 (Malformed): `surface_count` must be exactly
+    // 1 and `placement_count` at least 1 (checked at Begin); every
+    // `CatalogTarget.action_id` must name a slot present and `available` in
+    // the catalog generation this candidate declares (checked at End,
+    // against the live catalog); and the base `Candidate` rules apply, also
+    // checked at End -- within one record, every `CatalogTarget`'s
+    // (`target_id`, `target_generation`, `action_id`) triple is distinct
+    // from every other, and no two `CatalogTarget` rows sharing a
+    // `surface_index` may have overlapping bounds rectangles. A candidate
+    // whose `catalog_generation` or connection epoch does not match the
+    // currently published catalog exactly is instead rejected as stale
+    // (reason 1), checked at Begin (and rechecked at End).
+    body-prefix "CatalogCandidate" size=88 max-bytes=8192 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "grant_connection_epoch" type="u64" offset=8 nonzero=#true
+        field "grant_content_epoch" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "facts_generation" type="u64" offset=48 nonzero=#true
+        field "pacing_permit" type="u64" offset=56 nonzero=#true
+        field "interaction_generation" type="u64" offset=64 nonzero=#true
+        field "catalog_generation" type="u64" offset=72 nonzero=#true
+        field "surface_count" type="u16" offset=80 max=8
+        field "placement_count" type="u16" offset=82 max=32
+        field "target_count" type="u16" offset=84 max=64
+        field "reserved" type="u16" offset=86 value=0
+    }
+    // action_kind is fixed at 3 for this profile; action_id is at most 4096
+    // (a catalog slot; see the body-prefix comment above for its
+    // availability and staleness rules). As with the base `ContentTarget`,
+    // `bounds_x + bounds_width` and `bounds_y + bounds_height` must each
+    // fit in an `i32` (<= 2147483647).
+    row "CatalogTarget" size=48 {
+        field "surface_index" type="u16" offset=0 max=7
+        field "action_kind" type="u16" offset=2 value=3
+        field "target_id" type="u64" offset=4 nonzero=#true
+        field "target_generation" type="u64" offset=12 nonzero=#true
+        field "action_id" type="u64" offset=20 min=1 max=4096
+        field "bounds_x" type="i32" offset=28 min=0
+        field "bounds_y" type="i32" offset=32 min=0
+        field "bounds_width" type="u32" offset=36 nonzero=#true
+        field "bounds_height" type="u32" offset=40 nonzero=#true
+        field "reserved" type="u32" offset=44 value=0
+    }
+
+    // The exact activation echo, status (0 Accepted, 1 Stale, 2 Unknown, 3
+    // Unauthorized) and reason. There is no validator for this record's
+    // fields beyond `status`, so none of the identity fields are bounded
+    // here. Normative, current code (the reference Session's
+    // `classify_indicator_activation`): Stale covers no snapshot ever
+    // published, or the named `connection_epoch`/`snapshot_generation` not
+    // matching the snapshot last published; Unknown covers no published
+    // `IndicatorEntry` matching the named (`output`, `indicator`, `action`)
+    // triple exactly; Unauthorized covers a matching entry whose `action`
+    // is 0 (published but not activatable). `reason` is 0 for all three of
+    // the above and for Accepted; the current code separately uses the
+    // shared `ContentReason` codes Stale (1) and Budget (2) on a Stale or,
+    // respectively, Unknown outcome produced by a later admission step
+    // rather than this classification -- unlike the native and
+    // persistent-catalog families, this record has no dedicated Capacity
+    // status, so a capacity refusal there is folded into Unknown/Budget
+    // here. Where ordinary input is disabled, an otherwise-Accepted
+    // activation additionally requires `event_id` to exceed every
+    // previously accepted `event_id` on this connection, else it is
+    // downgraded to Stale/0.
+    body "IndicatorActivationOutcome" size=36 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8
+        field "snapshot_generation" type="u64" offset=16
+        field "event_id" type="u64" offset=24
+        field "status" type="u16" offset=32 min=0 max=3
+        field "reason" type="u16" offset=34
+    }
+    // Snapshot generation, output, indicator, action and event. Every field
+    // may be zero; none is bounded here (see `IndicatorActivationOutcome`
+    // above for how a submission is classified).
+    body "IndicatorActivate" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8
+        field "snapshot_generation" type="u64" offset=16
+        field "output_id" type="u64" offset=24
+        field "indicator" type="u64" offset=32
+        field "action" type="u64" offset=40
+        field "event_id" type="u64" offset=48
+    }
+
+    submit size=24 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "submission_id" type="u64" offset=8 nonzero=#true
+        field "candidate_bytes" type="u32" offset=16
+        field "reserved" type="u32" offset=20 value=0
+    }
+
+    ack size=16 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "sequence" type="u64" offset=8 nonzero=#true
+    }
+}
