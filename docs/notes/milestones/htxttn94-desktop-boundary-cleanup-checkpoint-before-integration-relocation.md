@@ -259,6 +259,17 @@ extraction; product recipe commands and callers have not been removed.
 
 ## Remaining work
 
+Personal installer commit `fd52d3f` in chezmoi preserves an existing owned WM
+and its preparation metadata during install and rollback. The prior helper
+unconditionally replaced it from the selected release. Initial setup now uses
+a no-replace publication when the path is absent; explicit `prepare-hagia` and
+reload preparation retain their replacement behavior. Go tests and vet pass
+offline at nice 19 with two jobs (`personal-wm-preservation/tests.log` and
+`vet.log`). The private release-install test also gains a preservation assertion,
+but that opt-in test still needs the final assembled release. No installer was
+deployed, no personal WM was changed, and the unrelated chezmoi edit was left
+untouched.
+
 Public WM startup errors and the activation ownership comment name the policy client.
 The reduced diagnostic vocabulary no longer gives two product names special
 treatment. The profile record now validates its mode independently: all five
