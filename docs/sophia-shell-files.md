@@ -607,7 +607,7 @@ Accept receipt, in that order; the first failure decides the outcome.
 | Status | Reason | Trigger |
 | --- | --- | --- |
 | 1 Admitted | 0 | Every check passes and the launch queue admits it. Admission is queue ownership only, not application startup. |
-| 2 Stale | 1 | The binding does not match the current focus exactly (any field, including one already superseded by a later `NativeFocus`); the named `state_revision` does not equal the connection's current state revision (a query `NativeInput` since the binding was observed disarms an activation issued against the older revision); the catalog generation or connection epoch does not match; for `cause`=1 (keyboard), no matching un-acknowledged Accept `NativeInput` is outstanding within `action_ack_timeout_ms`, or `slot` is not the presented candidate's `selected` slot; or the activation reaches the connection after `NativeClosed` for that opening (no Presented candidate remains). |
+| 2 Stale | 1 | The binding does not match the current focus exactly (any field, including one already superseded by a later `NativeFocus`); the named `state_revision` does not equal the connection's current state revision (a query `NativeInput` since the binding was observed disarms an activation issued against the older revision); the catalog generation or connection epoch does not match; for `cause`=1 (keyboard), no matching Accept receipt remains eligible within `action_ack_timeout_ms`, or `slot` is not the presented candidate's `selected` slot; or the activation reaches the connection after `NativeClosed` for that opening (no Presented candidate remains). |
 | 3 Unknown | 3 | `slot` is absent from the current catalog. |
 | 4 Unauthorized | 4 | `slot` is present but not `available`, or not among the presented candidate's displayed rows. |
 | 5 Capacity | 2 | Every check above passes but the launch queue itself refuses for capacity. |
@@ -626,6 +626,12 @@ which does not by itself affect activation eligibility above). If it does
 not -- unknown, already acknowledged, or from an opening `NativeClosed` has
 since cleared -- the ack is consumed with no reply and no other effect:
 there is no outcome record for a stale `NativeInputAck`.
+
+An Accept receipt remains eligible after its acknowledgement, regardless of
+disposition, until its activation has been attempted, its eligibility deadline
+passes, or its binding/opening is invalidated. Ack and activation may arrive in
+either order. A receipt cannot authorize a second attempt. Local atomic queue
+admission of both records does not make their server custody or effects atomic.
 
 **Native and persistent-catalog candidates.** Most of a `NativeCandidate`'s
 structure is a value-validator rule the decoder checks, on both wires,
@@ -658,6 +664,13 @@ the base `Candidate` pacing rule above instead: `Submitted` custody only, no
 `CandidateOutcome`, and the component's authority is revoked. None of these
 cases reach `NativeFocus`, an activation owner or the launch queue.
 
+The preceding outcomes describe candidate validation before renderer submission.
+There is also a revalidation when a pending native candidate is taken for
+renderer submission. A now-stale facts or interaction generation at that step
+returns an owner error; current Session terminates the component and revokes its
+grant. That path does not promise a Rejected outcome. These different stale-work
+results remain a role-outcome consistency question (t262).
+
 **Persistent catalog activation (`CatalogActivate` to
 `CatalogActivationOutcome`).** `reason` is always 0 here regardless of
 `status`, unlike the native launcher above; only `status` varies.
@@ -685,6 +698,113 @@ native launcher's analogous case above is Unknown (3).
 | 2 Unknown | 0 | No published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple. |
 | 2 Unknown | 2 | Otherwise-eligible, but the downstream admission step refuses for capacity. This family has no dedicated Capacity status; a capacity refusal is folded into Unknown/Budget here. |
 | 3 Unauthorized | 0 | A matching `IndicatorEntry` exists but its `action` is 0 (published but not activatable). |
+
+### Native launcher lifecycle and clocks (normative)
+
+These rules describe the current production Session. Runtime fixtures may
+supply different owner contexts; such a fixture does not establish a different
+production value or clock domain. No additional authority is inferred from
+client receipt time, an object read, or local queue admission.
+
+**Catalog and facts.** Production Session publishes one native catalog per
+grant, at generation 1. It does not republish that catalog during an opening.
+There is therefore no supported transition in which an existing opening adopts
+a new catalog generation. A client observing that situation must disarm new
+candidates and activations for the old generation; it can continue acknowledging
+input while awaiting close or termination. An arbitrary runtime fixture that
+republishes a catalog is not evidence that production Session supports it.
+
+Session advances `facts_generation` when output facts change. The Outputs object
+and its ObjectPublished announcement carry that same generation. A candidate
+must name the Session's current facts when validated and when taken for renderer
+submission. Fetch the facts used to build the candidate, and disarm that local
+scene when a newer Outputs announcement arrives. This reduces stale work but
+does not eliminate a race with a later server update. The announcement does not
+reserve that generation for the client.
+
+Production Session supplies `interaction_generation` **1** to the native and
+ordinary shell candidate owners. It is not client-selected authority and is not
+a counter the client may advance. The codec's field bound remains nonzero;
+owner validation requires equality with the supplied context. Native focus,
+input and activation bindings carry the presented candidate's value. A future
+policy that changes this value needs a defined way to communicate it first.
+
+**Input and actions.** `NativeInput.issued_mono_usec` uses Session's host
+`CLOCK_MONOTONIC` microseconds. An admitted local client using the same clock
+domain may compare it with its own clock. The acknowledgement deadline starts
+at the later of issuance and the owner's last service timestamp. An unacknowledged
+input expires after `action_ack_timeout_ms`; Session closes its opening with
+reason 6 (Timeout). An Enter intent held while waiting for the requested revision
+to be presented expires after `presentation_timeout_ms`, also closing with
+reason 6. Late acknowledgements after close are consumed without effect. Using
+issuance plus the timeout is an earlier client scheduling deadline; client
+receipt time must not restart the server's deadline.
+
+`Action.kind` 1 is an invocation, 2 a dismissal, and 3 a cancellation. Kinds 1
+and 2 require an exact `ActionAck` with disposition 1 (Consumed) or 2 (Stale).
+Kind 3 requires no acknowledgement. A stale, cancelled, unknown or mismatched
+action acknowledgement has no effect. Native pointer activation (`cause` 2)
+names the invocation Action's `event_id`, its row slot as `slot`, the current
+focus binding and current state revision. It requires the matching eligible
+action before its deadline and may name any displayed, available row, not only
+the selected row. Native targets use `action_kind` 2 and `action_id` equal to the
+row slot. This is distinct from the base ContentTarget profile's reserved kinds.
+A keyboard-only SDK convenience layer may omit pointer activation while still
+exposing Actions and their acknowledgement obligations.
+
+**Permit time.** `FramePermit.ttl_ms` is the lifetime from the owner's grant-time
+sample, not from client receipt. Current Session uses elapsed milliseconds from
+its content service's `Instant` origin and samples before polling and servicing
+demands in that visit. The timestamp and origin are not transmitted. Neither
+receipt plus TTL nor enqueue plus TTL is a guaranteed client-side expiry bound:
+the sample can precede ingestion, and queueing and scheduling delays are not
+bounded by this protocol. A margin is an advisory scheduling policy only.
+
+The owner expires an unused permit before ingesting later candidates. Expiry
+produces FramePermit state 2/reason 6; a candidate subsequently naming it follows
+the fatal stale-permit rule above. A client that judges a permit too old locally
+must not treat that judgement as a server cancellation or send a speculative
+cancel for it. It may wait for authoritative expiry/cancellation before asking
+for another permit. These rules provide no guarantee that a candidate sent
+before a local deadline reaches the owner before expiry. Changing that failure
+policy or adding a usable issue timestamp is separate contract work (t262).
+
+**Close and launch admission.** NativeClosed clears presentation, focus and input
+authority immediately; it is not a resource-release barrier. Closing rejects
+pending allocation proposals as Stale, cancels a standing demand or unused
+permit with FramePermit state 3/reason 11, and rejects assembling or pending
+candidates with CandidateOutcome kind 3/reason 11. Work already submitted to the
+renderer remains with its owner and can still settle. After the old pixels are
+removed, Session invalidates the opening's allocations with AllocationResult
+status 4/reason 12. Resources retain their normal retire/release lifecycle, and
+resource records remain serviceable after close.
+
+A late allocation request, including release, is rejected Stale or ignored if
+its request ID has already been processed. A new late candidate or demand for
+the closed opening receives a Cancelled outcome; old identifiers can instead be
+ignored. The client must stop using the allocation at close rather than waiting
+for its invalidation. Reopening requires a larger opening ID. Once a native
+activation is Admitted, focus is disarmed, new input/focus cannot be issued for
+that opening, and further activations are Stale. Session then closes it with
+reason 11 (Cancelled); admission is still not proof that an application started.
+
+**Identifiers and concurrency.** Within the grant's candidate owner,
+`demand_id` must strictly increase across outputs; a non-rising value is a fatal
+stale request. `candidate_generation` must strictly increase; a non-rising value
+is rejected Stale. Allocation request IDs must strictly increase; a non-rising
+value is rejected with AllocationResult status 2/reason 1. A transaction need
+only be nonzero; these rules do not require it to be monotonic. Submission IDs
+remain a separate strictly increasing attach-scoped sequence.
+
+There is at most one standing demand and one permit/assembly per output. A newer
+demand can replace the standing demand; grant consumes the demand and candidate
+begin consumes the permit. Every new frame therefore needs a new demand.
+FrameDemand reason 3 means withdrawal and takes priority over reason 1 or 2
+(dirty or animation work, treated alike). Replacing a standing withdrawal with
+reason 1 or 2 is a fatal stale request. Activation responses are serviced one at
+a time; each Accept permits one attempt. Input receipts are bounded by
+`max_pending_actions`; other advertised allocation/candidate limits still apply.
+An SDK may choose stricter single-operation bounds as local queue policy.
 
 ## Multiple writers, isolation and revocation
 
@@ -867,7 +987,7 @@ is the accepted default:
 | Area | IPC code |
 | --- | --- |
 | Shell | socket transport (`shell_transport` socket branch, inbox/outbox frames), `ipc::shell_*` codecs (`fields.rs`, `codec.rs`), `packets/shell_*` |
-| Shell clients | `sophia-shell-client` socket wire; `bindings/c/shell_wire` socket half |
+| Shell clients | Rust desktop SDK `sophia-shell-client` socket wire; C desktop SDK `src/shell_wire` socket half (Sophia pins the latter under `vendor/c-desktop-sdk/source`) |
 | Shell file contract | the socket-shaped `Limits` fields (`max_frame_payload`, `max_input_queue_bytes`) and the relations that use the socket header sizes (+24, +48); with them, the response budget's byte charges (`control_budget.rs`: bulk records charged in socket-frame bytes, `max_output_queue_bytes` and the control reserve) become per-record credits with each wire enforcing its own byte bounds. Until then the budget holds its bounds on both wires; control credits are already per record |
 | WM | `policy_transport_worker/current_ipc.rs`, `ipc::wm_v1*` and `ipc::policy_*` codecs, Hagia's legacy policy wire |
 | WM file wire (relocate, not delete) | the neutral row-section codec now under `ipc::wm_v1_records` and `ipc::policy_records`, and the row layouts `sophia-wm-files-v1.kdl` cites from `sophia-wm-v1.kdl`, move to wire-neutral homes before the WM IPC codecs go |
