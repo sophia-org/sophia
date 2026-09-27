@@ -373,11 +373,32 @@ Historical attribution of the profile reducer's model is retained. This is a
 documentation correction, checked by source inspection and `git diff --check`;
 it changes no executable behavior or pinned SDK contract copy.
 
+## Live session checkpoint, 2026-09-27
+
+At niltempus's request, the existing release
+`niltempus-a37a709ccd67d55ab57b` was selected for installation through the Go
+installer. The installer now lives in the niltempus repository; its old source
+and launcher were removed from chezmoi, with personal configuration and state
+paths retained. Signed niltempus commit `9b6867d` adds the prepared-release
+selection used by bare `niltempus install`. Tests exercised that exact command,
+repeat installation and rollback in private mounts before deploying the command.
+They also checked that installation preserves the personal WM.
+
+After niltempus installed and logged in, read-only inspection confirmed this
+release was running: Hagia had the WM 9P endpoint and a ready record; Bemenu had
+only the shell 9P endpoint and negotiated revision 7; Lom used its IPC endpoint.
+The session records are under
+`~/.local/state/sophia/sessions/00000001790531297794-8d0e33cd-4470-4a42-a522-bc7338db4c86/`.
+Niltempus then reported successfully launching Alacritty from Bemenu. This is
+user-observed live launcher evidence for the installed release. It does not
+qualify the unfinished boundary cleanup or the later dependency-bound build.
+No restart, input injection or display takeover was performed during inspection.
+
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 and [t252 acceptance plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
 retain the full exits. The remaining relocations and the new descriptor tests
-still need a final combined full-workspace gate. There is no physical acceptance,
-publication or installed-release claim. The final
+still need a final combined full-workspace gate. Full physical acceptance and
+publication of the cleanup candidate remain outstanding. The final
 candidate must combine the remaining relocations, matching
 external clients and installer inputs, then pass the affected gates before
 release preparation.
