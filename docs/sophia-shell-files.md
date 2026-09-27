@@ -654,7 +654,8 @@ native launcher's analogous case above is Unknown (3).
 | --- | --- | --- |
 | 0 Accepted | 0 | A snapshot has been published; the named `connection_epoch`/`snapshot_generation` match the snapshot last published; a published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple exactly; that entry's `action` is nonzero; and (when ordinary input is disabled) `event_id` exceeds every previously accepted `event_id` on this connection; and the downstream admission step admits it. |
 | 1 Stale | 0 | No snapshot has ever been published, or the named `connection_epoch`/`snapshot_generation` do not match the one last published. |
-| 1 Stale | 1 | Otherwise-eligible, but (with ordinary input disabled) `event_id` does not exceed the connection's high-water mark, or the downstream admission step reports a duplicate. |
+| 1 Stale | 0 | Ordinary input disabled: otherwise eligible, but `event_id` does not exceed the connection's high-water mark. |
+| 1 Stale | 1 | Ordinary input enabled: the linked action admission is not eligible (the event was not issued, or has already been answered, for this snapshot); or, in either mode, the WM admission reports a duplicate. |
 | 2 Unknown | 0 | No published `IndicatorEntry` matches the named (`output`, `indicator`, `action`) triple. |
 | 2 Unknown | 2 | Otherwise-eligible, but the downstream admission step refuses for capacity. This family has no dedicated Capacity status; a capacity refusal is folded into Unknown/Budget here. |
 | 3 Unauthorized | 0 | A matching `IndicatorEntry` exists but its `action` is 0 (published but not activatable). |
