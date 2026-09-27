@@ -3,7 +3,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 narthex_root=${SOPHIA_NARTHEX_ROOT:-"$(dirname -- "$root")/narthex"}
-lom_client=${SOPHIA_LOM_CONTENT_CLIENT:-}
+content_client=${SOPHIA_CONTENT_LIFECYCLE_CLIENT:-}
 build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
@@ -133,26 +133,26 @@ cargo run --offline -q -p sophia-runtime \
 
 cargo run --offline -q -p sophia-runtime --example shell_launcher_conformance_host -- "$build_dir/narthex"
 
-lom_content=unavailable
-if [ -n "$lom_client" ]; then
-    case "$lom_client" in
+content_lifecycle=unavailable
+if [ -n "$content_client" ]; then
+    case "$content_client" in
         /*) ;;
-        *) echo 'SOPHIA_LOM_CONTENT_CLIENT must be an absolute path' >&2; exit 2 ;;
+        *) echo 'SOPHIA_CONTENT_LIFECYCLE_CLIENT must be an absolute path' >&2; exit 2 ;;
     esac
-    if [ ! -x "$lom_client" ]; then
-        echo "Lom content client is not executable: $lom_client" >&2
+    if [ ! -x "$content_client" ]; then
+        echo "Content lifecycle client is not executable: $content_client" >&2
         exit 2
     fi
     cargo run --offline -q -p sophia-runtime \
-        --example shell_content_conformance_host -- "$lom_client"
-    SOPHIA_CONTENT_LIFECYCLE_CLIENT="$lom_client" \
+        --example shell_content_conformance_host -- "$content_client"
+    SOPHIA_CONTENT_LIFECYCLE_CLIENT="$content_client" \
         cargo test --offline -q -p sophia-backend-live --all-features --lib \
         protected_popout_client -- --ignored
-    lom_content=complete
+    content_lifecycle=complete
 else
     printf '%s\n' \
-        'sophia_shell_lom_content schema=1 status=unavailable reason=client_not_supplied native_presentation=false'
+        'sophia_shell_content_lifecycle schema=1 status=unavailable reason=client_not_supplied native_presentation=false'
 fi
 
 printf '%s\n' \
-    "sophia_shell_behavior_corpus schema=1 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1 lom_content=$lom_content"
+    "sophia_shell_behavior_corpus schema=2 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1 content_lifecycle=$content_lifecycle"

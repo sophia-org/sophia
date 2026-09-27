@@ -53,8 +53,8 @@ experimental. Corpus readers prove byte agreement; protected socket clients
 prove admitted lifecycles. Hosts supply presentation completions, topology and
 activation facts where documented by their scenarios, so neither proves native
 scanout, physical input, GPU execution permission or installed-session acceptance.
-An optional externally supplied Lom content client retains its existing
-`SOPHIA_LOM_CONTENT_CLIENT` path and is reported separately by the shell phase;
+An optional externally supplied content client is selected by the absolute
+`SOPHIA_CONTENT_LIFECYCLE_CLIENT` path and reported separately by the shell phase;
 its absence does not erase the required C/Nim evidence.
 
 The [native family contract](sophia-policy-ipc.md), role contracts and checked-in
