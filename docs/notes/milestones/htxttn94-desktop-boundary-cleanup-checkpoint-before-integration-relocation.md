@@ -160,18 +160,42 @@ held lease. The logs are `integration-g2/live1-bemenu_files-run6.log` and
 `live2-bemenu_ipc-run6.log`. Font/device isolation and scripted Session decisions
 remain the test boundary.
 
-The Session aggregate smoke is still failed. Two migrated tests exposed stale
+The first Session aggregate smoke failed. Two migrated tests exposed stale
 setup in Sophia's retained shared helper: it added the menu after starting the
 bar, but `ShellComponentConnections::add_with_transport` has refused additions
 after the first start since `06fa46b88`. The helper now adds both roles first;
 all negotiation, pixel, neighbour, stop and settlement assertions remain intact.
 This is a setup repair, not a successful live-test result. The joined Session
-test separately timed out during negotiation and remains under diagnosis.
+test separately timed out during negotiation; its cause remains unexplained.
 `AcceptTimedOut` covers accepting and completing the hello, so it does not by
 itself prove that the peer never connected. The ignored fixture child was also
 invoked directly in that failed run and is excluded from the top-level rerun.
 All failures remain in `integration-g2/live3-bemenu_session_ipc-run6.log`.
-Sophia's two retained Bemenu tests are not removed by this repair.
+That repair did not remove Sophia's two retained Bemenu tests.
+
+External Session run7 at signed `31f5e511c925183b1e87cbcee61166f990e5b293`
+passes all three real-Bemenu Session tests, excluding the fixture child entry.
+The final offline gate at that exact head passes pin/provision checks, 18 tests
+(seven ignored), clippy, formatting and 47 verifier mutations. The lock digest
+`07997d25baa4ba38d2ed4c468c267e0ad9b8ce8cde536574fbf50910cdc1fb33`
+matches the provisioning marker. Evidence: `integration-g2/*-final.log` and
+`live3-bemenu_session_ipc-run7.log`. The earlier timeout remains unreproduced and
+unexplained; the proposed cold-start diagnostic was cancelled before code was
+written, and no handshake deadline changed.
+
+With that external coverage green, Sophia removes the two retained Bemenu tests
+and their product fixture. The generic joined-launcher test and the other
+contract-derived process tests stay. Focused process tests pass 7/7, with three
+explicit namespace/child entries ignored in the ordinary invocation
+(`bemenu-files/boundary-g2-removal.log`). No cold-start reliability or physical
+acceptance claim follows from this relocation.
+
+The retained generic joined-launcher test also passes explicitly with devices
+hidden (`boundary-g2-removal-joined-run3.log`). The first invocation paired a
+private PID namespace with the host procfs and timed out during isolation; the
+second corrected procfs but encountered the first run's PID-named scratch path.
+Both failed logs remain. The passing invocation mounts matching procfs and a
+private tmpfs, without changing the test or production code.
 
 ## Remaining work
 
