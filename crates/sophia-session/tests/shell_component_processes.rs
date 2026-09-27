@@ -311,6 +311,16 @@ fn protected_bemenu(
             rustix::process::geteuid().as_raw(),
         )
         .unwrap();
+    // The aggregate owner's selection is frozen by the first start. Admit both
+    // roles before it computes their shared budget and starts either process.
+    let slot = owner
+        .add(
+            "menu",
+            ShellComponentRole::ApplicationLauncher,
+            &directory.join("menu"),
+            rustix::process::geteuid().as_raw(),
+        )
+        .unwrap();
     let bar = owner
         .start(
             bar_slot,
@@ -335,14 +345,6 @@ fn protected_bemenu(
         )
         .unwrap();
     let bar_pixels = peer::receive_resource(&mut owner, bar);
-    let slot = owner
-        .add(
-            "menu",
-            ShellComponentRole::ApplicationLauncher,
-            &directory.join("menu"),
-            rustix::process::geteuid().as_raw(),
-        )
-        .unwrap();
     let plan = ShellComponentLaunch::new(
         sophia_config::ShellComponentConfig {
             id: "menu".into(),

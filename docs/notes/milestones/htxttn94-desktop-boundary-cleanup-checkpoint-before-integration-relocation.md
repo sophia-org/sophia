@@ -142,6 +142,28 @@ remain. Named product recipes and their assertions continue in the external
 repository. This relocation establishes no new GPU execution, native display
 or physical acceptance result. The combined cleanup tree still needs its gate.
 
+## G2 runtime evidence and retained Session setup
+
+External G2 run6 at `e6939c7` passes both runtime-level Bemenu wires with the
+same `52a6e309` artifact recorded above. Both report two openings, three
+candidates, one edit and activation, an unchanged neighbouring bar and a retired
+held lease. The logs are `integration-g2/live1-bemenu_files-run6.log` and
+`live2-bemenu_ipc-run6.log`. Font/device isolation and scripted Session decisions
+remain the test boundary.
+
+The Session aggregate smoke is still failed. Two migrated tests exposed stale
+setup in Sophia's retained shared helper: it added the menu after starting the
+bar, but `ShellComponentConnections::add_with_transport` has refused additions
+after the first start since `06fa46b88`. The helper now adds both roles first;
+all negotiation, pixel, neighbour, stop and settlement assertions remain intact.
+This is a setup repair, not a successful live-test result. The joined Session
+test separately timed out during negotiation and remains under diagnosis.
+`AcceptTimedOut` covers accepting and completing the hello, so it does not by
+itself prove that the peer never connected. The ignored fixture child was also
+invoked directly in that failed run and is excluded from the top-level rerun.
+All failures remain in `integration-g2/live3-bemenu_session_ipc-run6.log`.
+Sophia's two retained Bemenu tests are not removed by this repair.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
