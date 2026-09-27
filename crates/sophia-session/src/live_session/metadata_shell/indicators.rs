@@ -1,6 +1,6 @@
 use super::LiveMetadataShell;
 use crate::shell_indicator_projection::indicator_snapshot;
-use sophia_protocol::{OutputId, ShellIndicatorSnapshot, encode_shell_indicator_snapshot};
+use sophia_protocol::{OutputId, ShellIndicatorSnapshot};
 
 impl LiveMetadataShell {
     /// Republish the indicator set the Engine already holds, plus which output
@@ -58,11 +58,7 @@ impl LiveIndicatorState {
         }
 
         let tx = transaction()?;
-        let frames = encode_shell_indicator_snapshot(tx, &snapshot)
-            .map_err(sophia_runtime::ShellTransportError::Codec)?;
-        for frame in frames {
-            transport.send_async(frame)?;
-        }
+        transport.publish_indicators(tx, &snapshot)?;
         self.last_published = Some(snapshot);
         // Evidence of the exact enqueued publication, not peer consumption.
         // Repeat publications may share a generation when only focus moves;

@@ -1037,3 +1037,153 @@ fn a_file_selected_bar_and_an_ipc_launcher_negotiate_in_one_registry() {
     h.owner.close(menu).unwrap();
     assert!(h.owner.collect().quiescent());
 }
+
+/// t252 B5: Session no longer builds Indicators frames for component roles;
+/// `PanelComponentService::service_indicators` hands the typed snapshot to
+/// `publish_indicators`, which owns per-wire encoding. On the file wire that
+/// must reach the peer as the `Indicators` object the runtime-level file-wire
+/// tests exercise directly (`shell_indicators_files.rs`), now reached only
+/// through Session's own component service.
+#[cfg(feature = "native-session")]
+#[test]
+fn a_file_wire_bar_receives_the_indicators_object_when_session_publishes() {
+    use sophia_protocol::shell_files::*;
+    use sophia_session::shell_panel_service::PanelComponentService;
+    let directory = std::env::temp_dir().join(format!(
+        "session-component-indicators-files-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let mut owner = ShellComponentConnections::new().unwrap();
+    let uid = rustix::process::geteuid().as_raw();
+    owner
+        .add_with_transport(
+            "panel",
+            ShellComponentRole::Bar,
+            &directory.join("panel"),
+            uid,
+            sophia_config::ShellTransportSelection::NineP2000L,
+        )
+        .unwrap();
+    let mut h = Harness { owner, directory };
+
+    let bar = h.owner.reserve_attempt(0).unwrap();
+    h.owner
+        .begin_negotiation(
+            bar,
+            &evidence(),
+            Duration::from_secs(2),
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: false,
+            },
+        )
+        .unwrap();
+    let socket = h.owner.socket_path(0).unwrap().to_owned();
+    let epoch = bar.grant.connection_epoch;
+
+    let (negotiated_tx, negotiated_rx) = std::sync::mpsc::channel::<()>();
+    let peer = std::thread::spawn(move || {
+        let mut peer = shell_file_peer::Peer::connect(&socket);
+        peer.setup();
+        let offer = encode_shell_file_negotiate(
+            ShellFileHeader {
+                kind: ShellFileKind::Negotiate,
+                connection_epoch: epoch,
+                submission_id: 1,
+                sequence: 0,
+            },
+            ShellV1ClientHello {
+                minimum_revision: 5,
+                maximum_revision: 6,
+                required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+                    | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                    | SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
+                    | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        let value = decode_shell_file_negotiated(&negotiated).unwrap();
+        assert_eq!(
+            value.welcome.capabilities & SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS,
+            SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS,
+            "bit 9 must be granted for the bar to see `indicators` at all"
+        );
+        peer.ack(&negotiated);
+        negotiated_tx.send(()).unwrap();
+
+        // The whole snapshot, published as one object by Session's typed call.
+        let published = peer.next_event();
+        let announced = decode_shell_file_object_published(&published).unwrap();
+        assert_eq!(announced.object, ShellFileKind::Indicators);
+        peer.ack(&published);
+        peer.open(6, b"indicators", 0);
+        decode_shell_file_indicators(&peer.read(6, 0)).unwrap()
+    });
+
+    let start = std::time::Instant::now();
+    let welcome = loop {
+        if let Some((key, result)) = h
+            .owner
+            .poll_negotiations(65536)
+            .into_iter()
+            .flatten()
+            .next()
+        {
+            assert_eq!(key, bar);
+            break result.unwrap();
+        }
+        assert!(start.elapsed() < Duration::from_secs(3));
+        std::thread::yield_now();
+    };
+    assert_eq!(welcome.connection_epoch, epoch);
+
+    // Keep the file wire serviced while the peer finishes negotiating.
+    while negotiated_rx.try_recv().is_err() {
+        h.owner
+            .with_connection(bar, |t| t.poll_io())
+            .unwrap()
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(3));
+        std::thread::yield_now();
+    }
+
+    let publication = sophia_engine::PolicyIndicatorPublication {
+        tab_groups: vec![],
+        generation: 9,
+        connection_epoch: Some(epoch),
+        indicators: vec![],
+        output_statuses: vec![],
+    };
+    let mut service = h
+        .owner
+        .with_connection(bar, |t| PanelComponentService::new(t, 64, false))
+        .unwrap()
+        .unwrap();
+    h.owner
+        .with_connection(bar, |t| {
+            service
+                .service_indicators(t, Some(&publication), None)
+                .unwrap();
+            t.poll_io().unwrap();
+        })
+        .unwrap();
+
+    while !peer.is_finished() {
+        h.owner
+            .with_connection(bar, |t| t.poll_io())
+            .unwrap()
+            .unwrap();
+        assert!(start.elapsed() < Duration::from_secs(3));
+        std::thread::yield_now();
+    }
+    let received = peer.join().unwrap();
+    let expected =
+        sophia_session::shell_indicator_publication::indicator_snapshot(&publication, None, epoch);
+    assert_eq!(received.snapshot, expected);
+
+    h.owner.close(bar).unwrap();
+    assert!(h.owner.collect().quiescent());
+}

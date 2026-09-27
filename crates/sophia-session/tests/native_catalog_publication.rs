@@ -1,6 +1,7 @@
 #![cfg(feature = "native-session")]
 //! Real private transport, supplied protection and real bounded FIFO ownership.
 //! No supervised child, display, native renderer or application execution.
+use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
 use sophia_session::application_catalog::*;
@@ -8,6 +9,8 @@ use sophia_session::application_catalog::*;
 #[path = "../../sophia-runtime/tests/support/native_launcher_socket.rs"]
 mod socket;
 use socket::*;
+#[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]
+mod shell_file_peer;
 
 fn connected(epochs: &mut ContentEpochRegistry, limits: ContentLimits) -> Peer {
     let mut peer = Peer::with_limits(epochs, ContentStoreProfile::NativeLauncher, limits);
@@ -48,10 +51,19 @@ fn publication(epoch: u64, count: usize) -> PublishedApplicationCatalog {
 }
 
 #[test]
-fn catalog_retains_exact_front_on_saturation_and_precedes_opening_in_fifo() {
+fn catalog_declines_whole_publication_under_saturation_and_precedes_opening_in_fifo() {
+    // The transport now owns the whole publication as one typed value
+    // (`publish_catalog`): under saturation it takes nothing, so there is no
+    // partial front left to retain here any more. A retried `service` call
+    // either publishes the exact same bytes as the direct encoder or, while
+    // the queue has no room at all, publishes nothing.
     let mut epochs = empty();
     let mut peer = connected(&mut epochs, limits());
-    let source = publication(GRANT.connection_epoch, 70);
+    // Small enough (with Begin/End) to fit under this connection's
+    // `max_control_records` (64) in the one visit the retried call takes
+    // once capacity frees; pacing a catalog too large for that is the
+    // transport's job now, not Session's.
+    let source = publication(GRANT.connection_epoch, 40);
     let expected = source.frames(tx(50)).unwrap();
     let mut transfer =
         NativeCatalogPublication::new(&peer.transport.connection(&mut epochs), tx(50), source)
@@ -71,6 +83,8 @@ fn catalog_retains_exact_front_on_saturation_and_precedes_opening_in_fifo() {
         assert!(queued <= 1024);
     }
     assert!(queued > 0);
+    // Fully saturated: the transport cannot take even the first record of the
+    // publication, so `service` declines and leaves it unpublished.
     assert!(
         !transfer
             .service(&mut peer.transport.connection(&mut epochs))
@@ -84,47 +98,30 @@ fn catalog_retains_exact_front_on_saturation_and_precedes_opening_in_fifo() {
             assert_eq!(peer.read(), filler);
         }
     }
-    let mut received = vec![];
-    for count in [32, 32, 8] {
-        let complete = transfer
-            .service(&mut peer.transport.connection(&mut epochs))
-            .unwrap();
-        assert_eq!(complete, count == 8);
-        assert_eq!(transfer.published().is_some(), complete);
-        if complete {
-            peer.transport
-                .publish_native_launcher_opening(&epochs, tx(51), opening())
-                .unwrap();
-        }
-        use std::io::Read;
-        peer.client.set_nonblocking(true).unwrap();
-        assert_eq!(
-            peer.client.read(&mut [0u8; 1]).unwrap_err().kind(),
-            std::io::ErrorKind::WouldBlock
-        );
-        peer.client.set_nonblocking(false).unwrap();
-        peer.transport.poll_io(&mut epochs).unwrap();
-        for _ in 0..count {
-            received.push(peer.read());
-        }
-        assert_eq!(&received, &expected[..received.len()]);
-    }
-    assert_eq!(received, expected);
-    assert_eq!(
-        decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
-        ShellNativeLauncherRecord::Opening(opening())
-    );
+    // Capacity is free again: the retried call publishes the whole catalog
+    // in one visit and reports it published.
     assert!(
         transfer
             .service(&mut peer.transport.connection(&mut epochs))
             .unwrap()
     );
+    assert!(transfer.published().is_some());
+    // A second visit after publication is a harmless no-op.
+    assert!(
+        transfer
+            .service(&mut peer.transport.connection(&mut epochs))
+            .unwrap()
+    );
+    peer.transport
+        .publish_native_launcher_opening(&epochs, tx(51), opening())
+        .unwrap();
     peer.transport.poll_io(&mut epochs).unwrap();
-    use std::io::Read;
-    peer.client.set_nonblocking(true).unwrap();
+    let received: Vec<Vec<u8>> = (0..expected.len()).map(|_| peer.read()).collect();
+    assert_eq!(received, expected, "byte-identical to the direct encoder");
     assert_eq!(
-        peer.client.read(&mut [0u8; 1]).unwrap_err().kind(),
-        std::io::ErrorKind::WouldBlock
+        decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
+        ShellNativeLauncherRecord::Opening(opening()),
+        "the catalog precedes the Opening it gates on the same FIFO"
     );
 }
 
@@ -320,4 +317,142 @@ fn opening_waits_for_publication_and_retains_exact_transfer_under_saturation() {
         !content.request_open(outputs[0].id, 9),
         "active opening is not replaced by another request"
     );
+}
+
+/// t252 B5: the dock's r8 catalog transfer now hands the whole typed value
+/// to `publish_catalog` instead of building socket frames, so it reaches a
+/// dock connected over the file wire as the `Catalog` object with identities
+/// -- the same object the runtime-level file-wire test exercises directly
+/// (`shell_persistent_catalog_files.rs`), now reached only through Session's
+/// own `NativeCatalogPublication`.
+#[test]
+fn a_file_wire_dock_receives_the_catalog_object_with_identities_when_session_publishes() {
+    const DOCK_CAPS: u64 = SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
+        | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+        | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
+        | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+        | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
+
+    let mut epochs = empty();
+    let directory = std::env::temp_dir().join(format!(
+        "session-native-catalog-files-{}-{}",
+        std::process::id(),
+        std::time::Instant::now().elapsed().as_nanos()
+    ));
+    let mut transport = ShellComponentTransport::bind_for_supervised_uid(
+        &directory,
+        rustix::process::geteuid().as_raw(),
+    )
+    .unwrap();
+    transport
+        .authorize_protected_peer(&ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid: std::process::id(),
+            peer_pid: std::process::id(),
+            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+        })
+        .unwrap();
+    transport
+        .reserve_content_with_profile(
+            &mut epochs,
+            limits(),
+            ContentStoreProfile::PersistentCatalog,
+        )
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+
+    let (negotiated_tx, negotiated_rx) = std::sync::mpsc::channel::<()>();
+    let peer = std::thread::spawn(move || {
+        let mut peer = shell_file_peer::Peer::connect(&socket);
+        peer.setup();
+        let offer = encode_shell_file_negotiate(
+            ShellFileHeader {
+                kind: ShellFileKind::Negotiate,
+                connection_epoch: GRANT.connection_epoch,
+                submission_id: 1,
+                sequence: 0,
+            },
+            ShellV1ClientHello {
+                minimum_revision: 8,
+                maximum_revision: 8,
+                required_capabilities: DOCK_CAPS,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        let value = decode_shell_file_negotiated(&negotiated).unwrap();
+        assert_eq!(value.welcome.selected_revision, 8);
+        assert_eq!(value.welcome.capabilities, DOCK_CAPS);
+        peer.ack(&negotiated);
+        negotiated_tx.send(()).unwrap();
+
+        // The whole catalog, with r8 identities, published as one object by
+        // Session's typed `NativeCatalogPublication::service`.
+        let published = peer.next_event();
+        let announced = decode_shell_file_object_published(&published).unwrap();
+        assert_eq!(announced.object, ShellFileKind::Catalog);
+        peer.ack(&published);
+        peer.open(6, b"catalog", 0);
+        decode_shell_file_catalog(&peer.read(6, 0)).unwrap()
+    });
+
+    let start = std::time::Instant::now();
+    transport
+        .begin_file_negotiation(
+            &epochs,
+            GRANT.connection_epoch,
+            std::time::Duration::from_secs(2),
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        )
+        .unwrap();
+    let welcome = loop {
+        if let Some(welcome) = transport.poll_negotiation(&mut epochs, 64 * 1024).unwrap() {
+            break welcome;
+        }
+        assert!(!peer.is_finished(), "peer ended before negotiation");
+        assert!(start.elapsed() < std::time::Duration::from_secs(3));
+        std::thread::yield_now();
+    };
+    assert_eq!(welcome.capabilities, DOCK_CAPS);
+
+    while negotiated_rx.try_recv().is_err() {
+        transport.poll_io(&mut epochs).unwrap();
+        assert!(start.elapsed() < std::time::Duration::from_secs(3));
+        std::thread::yield_now();
+    }
+
+    let source = publication(GRANT.connection_epoch, 2);
+    let mut publish =
+        NativeCatalogPublication::new(&transport.connection(&mut epochs), tx(1), source).unwrap();
+    assert!(
+        publish
+            .service(&mut transport.connection(&mut epochs))
+            .unwrap()
+    );
+
+    while !peer.is_finished() {
+        transport.poll_io(&mut epochs).unwrap();
+        assert!(start.elapsed() < std::time::Duration::from_secs(3));
+        std::thread::yield_now();
+    }
+    let received = peer.join().unwrap();
+    assert_eq!(received.catalog.identities.len(), 2);
+    assert_eq!(
+        received.catalog.identities[&1],
+        format!("registered:app{:04}", 0)
+    );
+    assert_eq!(
+        received.catalog.identities[&2],
+        format!("registered:app{:04}", 1)
+    );
+    assert_eq!(
+        received.catalog.catalog,
+        *publish.published().unwrap().wire()
+    );
+
+    transport.disconnect(&mut epochs).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
 }
