@@ -1,4 +1,5 @@
 use super::Result;
+use rustix::process::{Pid, WaitId, WaitIdOptions};
 use std::{
     os::unix::process::CommandExt as _,
     process::{Child, Command},
@@ -17,17 +18,24 @@ impl Drop for ProcessGroup {
     }
 }
 
-/// A preparation child never inherits custody of session processes. Reap its
-/// whole group on every exit, including a successful parent with stray children.
+/// A preparation child never inherits custody of session processes. Signal its
+/// group before reaping on every exit, including a successful leader. Trusted
+/// checkers must not escape cleanup by changing their session or process group.
 pub(super) fn check(command: &mut Command, label: &str) -> Result<()> {
-    let mut child = ProcessGroup(command.process_group(0).spawn()?);
+    let child = ProcessGroup(command.process_group(0).spawn()?);
+    let pid = Pid::from_raw(child.0.id() as i32).expect("spawned child has a process ID");
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if let Some(status) = child.0.try_wait()? {
-            return if status.success() {
+        // Keep the exited leader waitable until Drop has sent its final signal;
+        // reaping here could let an unrelated process reuse the group number.
+        if let Some(status) = rustix::process::waitid(
+            WaitId::Pid(pid),
+            WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+        )? {
+            return if status.exit_status() == Some(0) {
                 Ok(())
             } else {
-                Err(format!("{label} refused preparation: {status}").into())
+                Err(format!("{label} refused preparation: {status:?}").into())
             };
         }
         if Instant::now() >= deadline {

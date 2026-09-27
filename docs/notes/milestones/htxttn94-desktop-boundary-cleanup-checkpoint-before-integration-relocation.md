@@ -115,6 +115,15 @@ and `boundary-host-watchdog.log`. The supplied clear checker in recovery and
 watchdog fixtures is test data, not a host detection result. No graphics or
 input device was opened by these checks.
 
+The retained `check-launch` preparation helper had the same reap-before-signal
+ordering as the original host checker. It now observes exit with WNOWAIT and
+leaves reaping to cleanup after the last group signal. The preparation argument
+tests pass 4/4 and input/staging tests 8/8, including timeout group cleanup;
+focused clippy, formatting and diff checks pass. Evidence:
+`bemenu-files/boundary-preparation-wnowait.log` and
+`boundary-preparation-wnowait-clippy.log`. The external recipe migration must
+preserve that ordering in copied preparation helpers.
+
 ## Public conformance seams and E2 relocation
 
 The public seams at signed Sophia `d20faf3709ae21d94491f7a628ac9a4a86619cdf`
