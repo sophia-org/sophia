@@ -1,0 +1,20 @@
+[package]
+name = "sophia-shell-protocol"
+description = "Sophia shell records and the sophia_shell_fs_v1 file contract codec."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+sophia-desktop-ids = { workspace = true }
+
+[dev-dependencies]
+kdl = { workspace = true }
+# Parity: a file body's value bytes equal the retiring socket frame's payload.
+sophia-shell-ipc = { workspace = true }
+
+[lints]
+workspace = true

@@ -3,7 +3,7 @@ mod options;
 mod render;
 
 use options::{Operation, Options};
-use sophia_9p::client::{Client, ClientLimits, File};
+use sophia_9p_client::client::{Client, ClientLimits, File};
 use sophia_protocol::inspection::*;
 use std::error::Error;
 use std::io::{Write, stdout};

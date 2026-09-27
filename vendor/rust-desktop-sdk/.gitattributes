@@ -1,0 +1,2 @@
+# The raw commit object keeps its signature's whitespace-only continuation line.
+upstream.commit -whitespace

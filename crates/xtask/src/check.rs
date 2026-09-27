@@ -40,6 +40,7 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
         [subject, rest @ ..] if subject == "9p-conformance" => {
             crate::nine_p_conformance::run(repo, rest)
         }
+        [subject] if subject == "rust-desktop-sdk" => crate::rust_desktop_sdk::run(repo),
         [subject] if subject == "layout" => layout(repo).map(|()| Vec::new()),
         [subject] => Err(format!("unknown check subject {subject:?}")),
         _ => Err("check accepts at most one subject".to_owned()),
@@ -61,6 +62,7 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         ],
     )?;
     workspace_tests(repo)?;
+    crate::rust_desktop_sdk::run(repo)?;
     // `clippy.toml` sits at the workspace root, and clippy resolves it from
     // the crate being linted rather than walking up to find it, so a
     // workspace run would silently use the defaults instead. Pointing it here

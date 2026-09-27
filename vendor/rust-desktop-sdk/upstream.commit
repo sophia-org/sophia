@@ -1,0 +1,19 @@
+tree d926898371d26dd5cfb1224a09cad5f2e15658f3
+parent 0f840d9ae3e0c74c7834d50fad7d8daa340485d1
+author Mason Green <mason@greenm01.net> 1790507804 -0400
+committer Mason Green <mason@greenm01.net> 1790507842 -0400
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarj7QgAKCRBXGEu2KoAA
+ Yg6dAQCQFD7ZdJHe1Q1URei5Ce6mDXZgTpvwhx7bFzBXDZRoxAD+Oi4QCcuXcxwB
+ 6uxl1BsEoIl3/Cq3bXdFqdVNrThFXgw=
+ =ouqm
+ -----END PGP SIGNATURE-----
+
+Build the default file-only client without warnings
+
+io_error serves only the socket wire, so it is compiled with ipc-compat.
+The indicator and catalog units the file wire does not carry yet are
+expected dead code without ipc-compat (the expectation fails once they are
+used), and commit_encoded matches both wires explicitly. Clippy is clean
+with and without the feature.

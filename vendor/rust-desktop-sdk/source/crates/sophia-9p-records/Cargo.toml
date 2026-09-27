@@ -1,0 +1,13 @@
+[package]
+name = "sophia-9p-records"
+description = "Sophia's 9P2000.L value records, shared by its clients and its server core."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+
+[lints]
+workspace = true

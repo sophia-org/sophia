@@ -18,6 +18,7 @@ mod m3_acceptance;
 mod native_protocol_family;
 mod nine_p_conformance;
 mod panel;
+mod rust_desktop_sdk;
 mod xterm_pointer_oracle;
 mod xtest_selection;
 

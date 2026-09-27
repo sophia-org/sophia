@@ -10,9 +10,9 @@ use std::os::unix::net::UnixStream;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use sophia_9p::pipeline::{Pipeline, PipelineError, PipelineLimits, Reply};
 use sophia_9p::unix::{Server, Wake};
 use sophia_9p::{Errno, Fid, Limits, QidKind, Tag};
+use sophia_9p_client::pipeline::{Pipeline, PipelineError, PipelineLimits, Reply};
 use support::StaticExport;
 
 /// The static export served by the real driver on its own thread.

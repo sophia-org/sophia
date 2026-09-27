@@ -1,5 +1,5 @@
 use super::*;
-use sophia_9p::client::{Client, ClientLimits, File};
+use sophia_9p_client::client::{Client, ClientLimits, File};
 use sophia_protocol::inspection::*;
 
 fn attach(public: &LivePublicPolicyState) -> (Client, File) {
