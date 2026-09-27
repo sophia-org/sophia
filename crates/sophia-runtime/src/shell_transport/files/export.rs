@@ -198,8 +198,10 @@ impl ShellFiles {
     ) -> Self {
         Self {
             epoch,
+            // The attach's epoch is disclosed here, so a client learns it in
+            // band before writing its first record header.
             api: format!(
-                "sophia-shell-files version={SHELL_FILE_API_VERSION} role={role} fd_transfer=none\n"
+                "sophia-shell-files version={SHELL_FILE_API_VERSION} role={role} epoch={epoch} fd_transfer=none\n"
             )
             .into_bytes(),
             connection: None,
