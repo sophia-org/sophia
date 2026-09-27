@@ -71,7 +71,9 @@ pub(crate) fn print(verbose: bool) {
     println!(
         "session prepare-environment --tty=PATH --firefox-probe=PATH -- [session arguments]: prepare NUL-delimited bus mode and environment entries without starting a session or bus"
     );
-    println!("session check-host --tty=/dev/ttyN [--allow-active=true|false]: run the explicit SOPHIA_SESSION_PREFLIGHT checker before device takeover; never discovers a desktop client");
+    println!(
+        "session check-host --tty=/dev/ttyN [--allow-active=true|false]: run the explicit SOPHIA_SESSION_PREFLIGHT checker before device takeover; never discovers a desktop client"
+    );
     println!("compatibility aliases: sophia-live-session, sophia-session-input-guard");
     #[cfg(feature = "native-session")]
     println!(
@@ -81,7 +83,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: live-session-composition-smoke");
     #[cfg(feature = "native-session")]
     println!(
-        "commands: sophia-shell-gpu-content-hardware-proof --client=/absolute/lom --config=/absolute/live-shell.kdl [--seat=seat0] [--render-node=/dev/dri/renderD128]"
+        "commands: shell-gpu-content-proof --client=/absolute/client [--client-arg=ARG]... [--config=/absolute/file] [--seat=seat0] [--render-node=/dev/dri/renderD128] --output=WxH --surface=WxH --edge=top|bottom|left|right --outcomes=presented|renderer-failed[,...] --end=client-exits|stop-client --pixels=contract|full-surface-raster --discrete-input=granted|denied [--timeout-ms=15000] (needs SOPHIA_SHELL_GPU_PROOF_ARM=1; optional SOPHIA_SHELL_GPU_EXPECTED_DEVICE=MAJOR:MINOR@PCI)"
     );
     #[cfg(feature = "native-session")]
     println!("commands: atomic-scanout-preflight");

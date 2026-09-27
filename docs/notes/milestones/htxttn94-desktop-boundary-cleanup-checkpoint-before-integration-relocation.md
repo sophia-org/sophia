@@ -100,6 +100,33 @@ corrected without changing production behavior. Formatting and diff checks pass.
 The wrapper migration remains separate; these tests open no display or input
 device and do not claim a live host-policy decision.
 
+## Public conformance seams and E2 relocation
+
+The public seams at signed Sophia `d20faf3709ae21d94491f7a628ac9a4a86619cdf`
+provide a strict record reader, five conformance-host binaries from an exact Git
+checkout, and a parameterized protected shell content proof. Their focused gates,
+the fragmented-intake mutation control and the offline host-install proof pass.
+Evidence is under `seams-bcd/gate-c6ecebfca`, `seams-bcd/gate-d20faf370` and
+`seams-bcd/install-c6ecebfca5bc4e76aa7e64165dc78e25b4af0d19`.
+
+External integration commit `995f941` pins that exact Sophia revision and binds
+the moved dock/workload checks and GPU verifier to those public interfaces.
+Its post-format E2 run3 passes check-pins, check-provision, 16 workspace tests,
+clippy, formatting and 47 verifier mutations; one live test remains ignored.
+Logs are under `integration-e2/`. Provisioning used a private Cargo home outside
+both source trees and a copied registry seed. No crates were downloaded; run2
+refreshed the crates.io index and obtained Sophia from a local Git route. Run3
+needed no network. Earlier provisioning, missing-dev-dependency and formatting
+failures remain recorded.
+
+Sophia removes the five Lom gate/verifier scripts, product probes and fixtures,
+dock profile/transcript code and its xtask entry points in the same merge as the
+new public proof interface. Generic panel fixtures, launcher output-protection
+assertions, content/SDK tests and direct-scanout fixtures and archive verifier
+remain. Named product recipes and their assertions continue in the external
+repository. This relocation establishes no new GPU execution, native display
+or physical acceptance result. The combined cleanup tree still needs its gate.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)

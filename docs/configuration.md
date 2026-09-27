@@ -806,6 +806,7 @@ development selection under t252: record families the file wire does not yet
 carry close that component rather than falling back.
 
 This is implemented selection/configuration, not completed native acceptance.
-The [attended launcher smoke](../tools/probes/native_launcher/README.md) keeps the
-working single-shell probe available and records independent identities. It does
-not install or migrate the user's normal desktop configuration.
+The attended launcher and multi-component desktop smoke tests belong to
+`sophia-org/sophia-desktop-integration` (`tools/probes/native_launcher/README.md`).
+They retain independent component identities and leave installation and migration
+of the user's normal desktop configuration to the operator.

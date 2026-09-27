@@ -1,44 +1,20 @@
 # Private graphics probes
 
-## Lom protected GPU/content proof
+## Protected shell GPU/content proof
 
-`tools/lom_gpu_content_hardware_proof.sh` launches the exact source-built Lom
-`--serve` client through Sophia's production metadata-shell protection policy.
-The private domain receives one render node under its real kernel basename and
-a generated read-only sysfs discovery view for that same device, with no card
-node, host sysfs tree, input device, display socket or network. Lom validates
-the enumerated Vulkan adapter's DRM render major/minor before rendering a 256x24 Vello
-panel and sends its real complete content candidate. The host verifies the
-nonempty immutable pixels, returns the real `RendererFailed` outcome, and
-requires resource and backing cleanup. This is a hardware render and protocol
-proof; it deliberately records `native_presentation=false` and does not acquire
-DRM master.
+`sophia shell-gpu-content-proof` accepts an explicit client, geometry, outcome
+sequence and pixel policy. It exercises the protected render-device grant and
+content protocol without acquiring DRM master. The `contract` pixel policy
+checks transport validation; `full-surface-raster` additionally requires the
+declared raster pattern. Neither proves GPU execution by itself. Client adapter
+and rendering evidence belongs to the external client verifier, and the proof
+always reports `native_presentation=false`.
 
-```sh
-SOPHIA_LOM_GPU_PROOF_ARM=1 tools/lom_gpu_content_hardware_proof.sh
-```
-
-The separate `tools/run_current_lom_panel_gate_tty4.sh` is the native acceptance
-candidate. Run it only from tty4 after ending the graphical session, with
-`SOPHIA_LOM_NATIVE_GATE_ARM=1`. It builds from clean signed Sophia and Lom tips,
-first runs the protected GPU/content proof while Sophia does not own the display,
-then runs the 90-second normal-exit workload (110-second failure watchdog). A failed prerequisite therefore
-stops before graphics takeover and retains the client's boundary error. The native
-stage restores the TTY through the existing session harness and retains exact
-identities and structured session diagnostics. A machine-independent
-gate or isolated proof cannot establish that the bar was visible; the attended
-run still requires the operator to confirm its placement and appearance.
-
-Wait ten clock ticks after both bars appear, then make 20 state-changing workspace
-clicks per output within 60 seconds (40 total). No clicks during warmup or after
-the 40; wait for automatic exit. The checked-in candidate budget is ACK p95/max
-50/100 ms and exact native retirement p95/max 150/300 ms. These are predeclared
-workload acceptance values, not claims of historical approval or driver guarantees.
-The launcher copies/hashes budgets and profiles before GPU use, checks them again
-after proof and session, and refuses any reused evidence directory. It requires
-normal exit 0, existing strict health/recovery proof, complete causal outcomes,
-bounded in-run inventory and exact zero final content accounting. See
-[workload evidence](lom_workload/README.md) for scope and interpretation.
+Named-client GPU proofs, workload budgets, native launcher and dock acceptance
+recipes now live in `sophia-org/sophia-desktop-integration`. Their external E2
+gate at `995f941` pins Sophia's public proof interface at `d20faf370` and retains
+the workload and verifier controls. See that repository's `tools/probes/README.md`
+for operator inputs and physical acceptance limits.
 
 ## Private GLX pixmap probe
 
@@ -241,15 +217,3 @@ t069 or t070 complete.
 `cargo xtask check` runs the bounded reader/CLI regressions and a private frontend
 test that checks both exact formats without mapping, importing or presenting a
 window. That test uses a render node and does not acquire DRM master.
-
-### Independent native launcher
-
-The [three-component dock smoke](dock/README.md) adds `lom-test dock` for independent
-Lom, Bemenu and Provlita processes. Its profile generator and host transcript
-reader are Rust `xtask dock` commands; visual/native acceptance remains attended.
-
-The [native launcher smoke](native_launcher/README.md) adds `lom-test launcher`
-without changing plain `lom-test`. It retains separate component identities,
-per-role GPU policy and host presentation/accounting evidence. Its offline
-controls substitute builds/VT/native effects; no automated physical run is part
-of those controls. See the linked readiness qualification before an attended run.

@@ -19,7 +19,10 @@ fn protected_proof_exec_checks_exclusions_before_releasing_the_client() {
     let marker = root.join("executed");
     fs::write(
         &client,
-        format!("#!/bin/sh\nprintf accepted > '{}'\n", marker.display()),
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            marker.display()
+        ),
     )
     .unwrap();
     fs::set_permissions(&client, fs::Permissions::from_mode(0o700)).unwrap();
@@ -85,6 +88,9 @@ fn protected_proof_exec_checks_exclusions_before_releasing_the_client() {
         let mut spec = ProcessLaunchSpec::new(env!("CARGO_BIN_EXE_sophia"))
             .arg("sophia-shell-gpu-proof-exec")
             .arg(format!("--client={}", client.display()))
+            .arg("--client-arg=--first")
+            .arg("--client-arg=two words")
+            .arg("--client-arg=")
             .env("SOPHIA_SHELL_GPU_MODE", "direct")
             .env(
                 "SOPHIA_GPU_PROOF_OBSERVATION_ID",
@@ -116,6 +122,13 @@ fn protected_proof_exec_checks_exclusions_before_releasing_the_client() {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(marker.exists(), case == "valid", "exec boundary: {case}");
+        if case == "valid" {
+            // The client runs with exactly the proof's arguments, in order.
+            assert_eq!(
+                fs::read_to_string(&marker).unwrap(),
+                "--first\ntwo words\n\n"
+            );
+        }
     }
     let status = std::process::Command::new(env!("CARGO_BIN_EXE_sophia"))
         .arg("sophia-shell-gpu-proof-exec")

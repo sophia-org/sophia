@@ -134,7 +134,6 @@ fn all(repo: &Path) -> Result<Vec<String>, String> {
         "tools/check_keyboard_independence_session_verifier.sh",
         "tools/check_sophia_terminal_performance_reporter.sh",
         "tools/check_installed_native_verifiers.sh",
-        "tools/check_lom_gpu_content_proof_verifiers.sh",
     ] {
         command(repo, tool, &[])?;
     }
@@ -275,7 +274,7 @@ fn anchored_readers(repo: &Path) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "these conformance readers anchor a session record to the line start, so a \n`tracing`-decorated record is invisible to them:\n  {}\nUse `record_after_marker`. If a reader genuinely parses bare stdout rather \nthan a session log, add its file to ANCHORED_READER_ALLOWLIST with the reason.",
+        "these conformance readers anchor a session record to the line start, so a \n`tracing`-decorated record is invisible to them:\n  {}\nUse `record_after_marker` (public: `sophia_conformance::record::after_marker`). If a reader genuinely parses bare stdout rather \nthan a session log, add its file to ANCHORED_READER_ALLOWLIST with the reason.",
         offenders.into_iter().collect::<Vec<_>>().join("\n  ")
     ))
 }
