@@ -3,10 +3,9 @@ schema 1
 // Desktop profile for the direct-scanout probe.
 //
 // Passed explicitly so the probe is hermetic. Without it the session discovers
-// whatever desktop profile the operator has installed -- on this machine
-// `~/.config/hagia/config.kdl`, which enables a shell and binds spawn-terminal
-// and spawn-browser, none of which a one-application proof can provide. A
-// proof that reads the operator's desktop is not a proof of anything.
+// whatever desktop profile the operator has installed, which may enable a
+// shell or bind session operations this one-application fixture cannot supply.
+// The fixture must be independent of the operator's desktop configuration.
 //
 // The core configuration is passed for the same reason and is separate:
 // `--config` and `--no-config` are mutually exclusive, so a probe that needs a

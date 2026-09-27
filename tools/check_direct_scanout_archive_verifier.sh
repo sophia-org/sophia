@@ -37,7 +37,8 @@ if [[ ! -f "$sophia_bin" || ! -x "$sophia_bin" ]]; then
     echo "archive verifier fixture needs a built Sophia executable: $sophia_bin" >&2
     exit 1
 fi
-client_bin="${SOPHIA_DIRECT_SCANOUT_CLIENT_BIN:-$(command -v kitty || command -v true)}"
+# This synthetic identity is hashed only; no installed desktop client is needed.
+client_bin="${SOPHIA_DIRECT_SCANOUT_CLIENT_BIN:-/usr/bin/true}"
 printf 'sophia_direct_scanout_identity schema=1 status=bound source_commit=%s sophia_sha256=%s client=%s client_sha256=%s core_sha256=%s desktop_sha256=%s\n' \
     "$commit" "$(sha256sum "$sophia_bin" | awk '{ print $1 }')" \
     "$(basename "$client_bin")" "$(sha256sum "$client_bin" | awk '{ print $1 }')" \
