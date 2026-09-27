@@ -171,13 +171,51 @@ policy and presentation observations remain scripted; content time is frozen.
 This establishes no physical rendering, real launch policy, pointer activation,
 expiry, reconnect or attended daily-driver result.
 
+## C and Bemenu integration merged
+
+Sophia master `17b1709a4` merges the reviewed artifact helper, live Bemenu
+harness and C SDK custody fix. Bemenu master `2e0fd78` merges the adoption
+branch without rewriting its five earlier unpushed commits. Both merges are
+signed and local; nothing has been installed or pushed by this integration.
+
+The final C SDK pin is `a0ab8c853fe56b68e01ae69b82d06c15fc177484`.
+Its production fix (`3ff46a2`) waits for the acknowledgement of the previous
+Submitted before opening the next transaction. The old client could reopen
+early and receive EBUSY. The retained before run fails; the fixed tests prove
+ordering and continued object-fetch progress while an acknowledgement is held.
+The final follow-up documents prompt application acknowledgements and object
+fetches, and enables the custody rule by default in the scripted peer.
+
+The final tested Bemenu source is
+`fc79f64d722b09b6b4f08fd538d74ee2b1dbf35e`; its prepared binary SHA-256 is
+`81cf4008d43e59cc944de141737de9404384922415846ee9f628636a9b5cd678`.
+The actual executable passes the production-export test with two openings,
+three candidates, one text edit and one keyboard activation. C production
+tests pass 5/5, the standalone C suite and strict isolated Bemenu gate pass,
+and the pin check, formatting and layout pass. Artifact cleanup controls now
+assert that descendant processes die. Harness timeout headroom increased;
+application protocol deadlines did not change. Font isolation applies to the
+configured font directories, not every file reachable under `/usr`.
+
+Evidence remains in `~/.local/state/sophia/development-evidence/bemenu-files/`:
+`c-custody-before.log`, `c-custody-after.log`, `c-custody-strict-default.log`,
+`c-live-a0ab8c8.log`, `prepare-fc79f64.log`, and `live-fc79f64.log`.
+Bemenu's worktree retains `.artifacts/sdk-isolated-a0ab8c8.log`.
+These are deterministic integration results with scripted Session policy and
+presentation; the physical, timing and policy limits above still apply.
+
+Claude reports Rust SDK `0da1042` and Sophia integration `93ac7747c` passing
+35 scripted tests and nine production-export tests, including a live EBUSY
+before/after control. Rust's full workspace gate remains required. The compile
+slot has returned to that lane to merge the C master base and run the gate.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 defines lifecycle completion, release and application-adoption exits. The C
 session/native lifecycle layers and Bemenu's application pin have production
-export coverage. The new harness awaits review/merge; Rust B6c needs its live
-fixtures and final integration gate. SDK publication,
+export coverage and are merged locally. Rust B6c needs its final integration
+gate and merge. SDK publication,
 the other application adoptions and attended daily-driver acceptance remain.
 No installed default has changed. Task state remains in
 [todo.md](../../../todo.md).
