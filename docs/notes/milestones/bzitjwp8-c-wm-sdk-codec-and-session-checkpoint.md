@@ -38,16 +38,36 @@ Evidence is under `~/.local/state/sophia/development-evidence/` in
 `c-wm-sdk-codec/` and `c-wm-sdk-session/`. The session test links the real generic
 9P pipeline, C codecs and session, against a scripted peer using the C encoder.
 Literal codec vectors and twenty-two golden row layouts are separate checks.
-These results do not establish operation against the production WM export,
-independent peer encoding, policy acceptance or native presentation.
+Those SDK-only results do not establish operation against the production WM
+export, independent peer encoding, policy acceptance or native presentation.
+
+## Production-export checkpoint
+
+Sophia `c4e17899eed0aecff19346b1a5e4521be9955f7a` pins the signed SDK session
+commit and adds a generic C peer against the production WM file export, reactor,
+profile reducer and transport driver. Its first strict compile and run passed:
+profile preparation/activation, configuration, Dirty, a 64-surface snapshot
+larger than the 4096-byte msize, projection, session operation and a supplied
+presentation receipt. The peer links only the SDK's generic 9P, WM codec and
+WM session modules. Its encoding is independent of the server's Rust codecs.
+
+The related `policy_transport_worker::ninep` tests passed: 51 passed, three
+ignored (two opt-in Nim peer cases and one supervised child entry). Focused
+session/xtask clippy with all targets and features, `check c-desktop-sdk`, layout
+and formatting passed. The snapshot regression fixture initially failed because
+its temporary contract tree omitted the four newly required WM contracts. The
+fixture now copies and checks drift for all four; its regression and repeated
+focused lint/layout/format checks passed. No SDK or server behavior changed
+during this gate. The failed fixture log is retained.
+
+Evidence is in `~/.local/state/sophia/development-evidence/c-wm-sdk-production/`.
+The gate used offline/locked Cargo, a private target, nice 19 and two jobs inside
+bwrap with a read-only source and no network, hardware devices or display
+access. Admission and policy outcomes remain fixture decisions: this is not
+supervisor authentication, Engine policy acceptance or native presentation
+evidence. It does not close the descriptor-shell independent-peer gaps.
 
 ## Remaining work
-
-The production-export harness is being added in Sophia with a generic C peer.
-Its initial scenario covers profile preparation/activation, configuration,
-Dirty, a snapshot larger than msize, projection, session operation and a supplied
-presentation receipt. Admission and policy outcomes remain fixture decisions.
-At this checkpoint the harness is code-only, with no run result.
 
 Hagia's vendored SDK binding and policy regression gate remain open. Output and
 admin file contracts and SDK modules are separate gaps. The SDK's
