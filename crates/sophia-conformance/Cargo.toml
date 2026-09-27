@@ -7,6 +7,54 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+# Conformance hosts and probes as executables, so an external integration
+# repository can install them from a pinned Sophia revision:
+#
+#   cargo install --git <sophia> --rev <sha> --locked sophia-conformance \
+#       --bin <host> --root <dir>
+#
+# The targets point at the existing example sources in sophia-runtime and
+# sophia-config, which still own them and keep their `--example` callers.
+# They cannot be bins of sophia-runtime: three hosts use sophia-engine, which
+# depends on sophia-runtime, so that would be a package cycle. They live here
+# rather than beside their examples because Cargo warns when two targets of
+# one package share a source file.
+#
+# THIS WORKS ONLY FROM AN EXACT GIT CHECKOUT, which Cargo builds in place with
+# the whole repository present. The `../` paths and the launcher host's
+# `#[path]` include of sophia-protocol's test fixture do not survive
+# `cargo package` or the versioned directory layout of `cargo vendor`. This
+# package is neither publishable nor vendorable.
+[[bin]]
+name = "policy_c_conformance_host"
+path = "../sophia-runtime/examples/policy_c_conformance_host.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "shell_content_conformance_host"
+path = "../sophia-runtime/examples/shell_content_conformance_host.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "shell_descriptor_conformance_host"
+path = "../sophia-runtime/examples/shell_descriptor_conformance_host.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "shell_launcher_conformance_host"
+path = "../sophia-runtime/examples/shell_launcher_conformance_host.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "desktop_profile_probe"
+path = "../sophia-config/examples/desktop_profile_probe.rs"
+test = false
+doc = false
+
 [dependencies]
 drm = { version = "0.15", default-features = false }
 niri-ipc = "=26.4.0"
@@ -15,11 +63,11 @@ nix = { version = "0.30.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2.workspace = true
+sophia-config = { path = "../sophia-config" }
 sophia-engine = { path = "../sophia-engine" }
+sophia-protocol = { path = "../sophia-protocol" }
+sophia-runtime = { path = "../sophia-runtime" }
 x11rb = "0.13.1"
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-sophia-config = { path = "../sophia-config" }
