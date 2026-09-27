@@ -71,12 +71,26 @@ against a staged files-only install links and runs through `pkg-config
 sophia-desktop`; the temporary evidence directory is
 `/tmp/sophia-sdk-install.JUAbYk`. These commits are not yet Sophia's vendor pin.
 
-Review identified two additional object-fetch cases for regression tests:
-trailing bytes beyond the declared record length, and fetching an object before
-consuming its announcement. The native lifecycle review also raised thirteen
-contract questions, especially permit timing, generation ownership, input
-acknowledgements and close settlement. Those authority-dependent paths await
-owner/test tracing and normative clarification before SDK adoption.
+Review found two additional object-fetch cases: trailing bytes beyond the
+declared record length, and fetching an object before consuming its announcement.
+Signed SDK `7f0f04d` fixes both with regression controls. The public session's
+production-export peer is `cd55618`: its new test passes together with the two
+existing base tests (3/3), and the existing r7/r8 role test passes (1/1).
+
+Native lifecycle commit `6196078` passes the standalone strict C gate: seven file
+test programs, including ten native-session unit scenarios, and the IPC corpus.
+Those native tests replace the session with a scripted fake; they establish no
+live native lifecycle coverage. A mutation removing the post-Admitted focus
+guard fails the relevant unit test. Packaging/reference commit `df94211` adds
+the native layer and the clarified contracts. Its 142-file snapshot passes the
+pin checker and mutation tests, including all 18 authoritative reference pairs;
+xtask clippy and workspace format checks pass.
+
+The [native contract audit](../investigations/c6z62h49-native-launcher-sdk-audit-exposes-timing-and-generation-assumptions.md)
+records thirteen questions traced to owners and tests. Clarifications
+`436fb1ac` and `e9750572` preserve current behavior, including its fatal expiry
+and renderer-revalidation races. The native layer's production-export test is
+the next validation boundary; no application or installed default has changed.
 
 ## Remaining work
 
