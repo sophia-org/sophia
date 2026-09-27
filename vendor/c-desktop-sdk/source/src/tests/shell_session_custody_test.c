@@ -18,6 +18,7 @@ static void admission_atomicity(void)
     rig_settle(&r);
     rig_run(&r, 4);
     assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+    rig_ack(&r);
     r.p.policy = P_HOLD;
     for (i = 0; i < 5; i++)
         group[i] = rig_request(i + 1);
@@ -246,6 +247,7 @@ static void ealready(void)
     assert(rig_until(&r, first, 16) == SOPHIA_SS_SUBMITTED);
     assert(r.p.submit_held);
     peer_answer_submit(&r.p, 114);
+    rig_ack(&r);
     rig_run(&r, 8);
     assert(sophia_ss_state(&r.s) == SOPHIA_SS_READY);
     assert(rig_outcome(&r, first) == SOPHIA_SS_SUBMITTED);
@@ -301,6 +303,7 @@ static void eagain_waits_for_progress(void)
     assert(r.p.tx_writes == writes);
     assert(rig_until(&r, first, 16) == SOPHIA_SS_SUBMITTED);
     assert(sophia_ss_timeout(&r.s, r.now) == -1);
+    rig_ack(&r);
 
     /* Consuming an event is progress: the retry needs no clock. */
     r.p.policy = P_ERROR;
@@ -342,6 +345,7 @@ static void clock_rules(void)
     assert(!sophia_ss_obligations(&r.s, &o) && o.consumed == 2 && o.ack_due_ms == UINT64_MAX);
     assert(sophia_ss_dispatch(&r.s, POLLIN, 65536, top - 1) == SOPHIA_9P_ARGUMENT);
     assert(r.s.now_ms == top && sophia_ss_state(&r.s) == SOPHIA_SS_READY);
+    rig_ack(&r);
     r.p.policy = P_ERROR;
     r.p.error = 11;
     r.p.once = 1;

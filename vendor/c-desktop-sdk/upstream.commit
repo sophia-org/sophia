@@ -1,21 +1,13 @@
-tree e91d55e9cf7714d11f87381bfc4aa4ea349b732d
-parent df9421192da2758dc1981d6eaeb588b92a43c9e9
-author Mason Green <mason@greenm01.net> 1790510242 -0400
-committer Mason Green <mason@greenm01.net> 1790510242 -0400
+tree 5f79419b34dc0cb1e3452ffd7bcc4faf604d0a14
+parent 3ff46a2c44e840e8439b1567cc004665ba4bb762
+author Mason Green <mason@greenm01.net> 1790513831 -0400
+committer Mason Green <mason@greenm01.net> 1790513831 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkEogAKCRBXGEu2KoAA
- YorEAP97PUOOr39PTAIet6UlJrQOSFVgZPoJL/4HwkWDD9sxSwEAso9xS1gyG5ao
- 75X7RLOYgv8aikVN8In6Uc8RPwIUxQI=
- =VNGj
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkSpwAKCRBXGEu2KoAA
+ Ymv4AP9lS9KRGdp0gdI38uhfgWWleo4DxbRvfC6RKeHW8jblpAD/VNzVFUvG/qsk
+ Er1+ntzMIrjAe4S6HJPrFBytE6JqZAg=
+ =JpHM
  -----END PGP SIGNATURE-----
 
-Add a live native launcher peer over the native and shell sessions
-
-desktop_native_peer drives sophia_ns over sophia_ss and 9P, through public
-APIs only, against a production file export: opening, allocation, upload,
-permit, candidate, Prepared and Presented, exact focus, reserved input
-edit and ack, keyboard activation, close, allocation invalidation and
-resource release. A control socket only schedules scripted Session steps;
-the session stays serviced while a barrier waits. The fixture's frozen
-clock means no deadline or production timing is covered.
+Document prompt custody acknowledgements and enforce them in peers
