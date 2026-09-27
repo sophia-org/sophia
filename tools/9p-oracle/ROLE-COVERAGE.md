@@ -31,6 +31,8 @@ also validates outgoing extended records before an oracle submits them.
 Extend the oracle to **96 named checks: the existing 54 plus 42 below**. Update
 both verdict producers and the independent Rust exact-name parser together.
 Setup failures, skipped cases and unknown names can never produce a pass.
+The [fixture sequences](ROLE-FIXTURES.md) specify requests, barriers, expected
+events and negative controls for each name, including validation precedence.
 
 | IDs | Names and expectations |
 | --- | --- |
