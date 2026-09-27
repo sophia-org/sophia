@@ -19,10 +19,12 @@ serve.
 
 ## Contracts
 
-`spec/sophia-shell-files-v1.kdl` is a pinned copy of the contract Sophia owns
-(`protocol/sophia-shell-files-v1.kdl` in the Sophia repository);
-`spec/SHA256SUMS` holds its digest, and Sophia's gate refuses a vendored SDK
-whose copy differs. This crate's conformance tests read the pinned copy.
+`spec/sophia-shell-files-v1.kdl` is a pinned copy of the file contract Sophia
+owns (`protocol/sophia-shell-files-v1.kdl` in the Sophia repository), and
+`spec/sophia-shell-v1.kdl` with `spec/golden/*.frames` are pinned copies of the
+retiring socket contract and its golden corpus, which `sophia-shell-ipc`'s
+tests read. `spec/SHA256SUMS` holds their digests; Sophia's gate refuses a
+vendored SDK whose copies differ from its own.
 
 The dialect is plain 9P2000.L; wire error numbers are the Linux values
 9P2000.L defines, whatever the host (see `PLATFORMS.md`).

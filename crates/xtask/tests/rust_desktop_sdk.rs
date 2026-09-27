@@ -31,7 +31,7 @@ fn scratch() -> (Scratch, PathBuf) {
     )));
     let snapshot = root.0.join("vendor/rust-desktop-sdk");
     std::fs::create_dir_all(&snapshot).unwrap();
-    std::fs::create_dir_all(root.0.join("protocol")).unwrap();
+    std::fs::create_dir_all(root.0.join("protocol/golden")).unwrap();
     assert!(
         std::process::Command::new("cp")
             .args(["-R", "--"])
@@ -48,11 +48,9 @@ fn scratch() -> (Scratch, PathBuf) {
         )
         .unwrap();
     }
-    std::fs::copy(
-        repo().join("protocol/sophia-shell-files-v1.kdl"),
-        root.0.join("protocol/sophia-shell-files-v1.kdl"),
-    )
-    .unwrap();
+    for (_, authoritative) in rust_desktop_sdk::CONTRACTS {
+        std::fs::copy(repo().join(authoritative), root.0.join(authoritative)).unwrap();
+    }
     (root, snapshot)
 }
 
@@ -141,18 +139,17 @@ fn bad_identities_and_entries_are_refused() {
 }
 
 #[test]
-fn contract_drift_and_an_unrecorded_digest_are_refused() {
-    let (root, snapshot) = scratch();
-    std::fs::write(
-        root.0.join("protocol/sophia-shell-files-v1.kdl"),
-        b"changed contract",
-    )
-    .unwrap();
-    refused(
-        &snapshot,
-        &root.0,
-        "contract drift: protocol/sophia-shell-files-v1.kdl",
-    );
+fn drift_in_every_contract_pair_and_an_unrecorded_digest_are_refused() {
+    assert_eq!(rust_desktop_sdk::CONTRACTS.len(), 9);
+    for (_, authoritative) in rust_desktop_sdk::CONTRACTS {
+        let (root, snapshot) = scratch();
+        std::fs::write(root.0.join(authoritative), b"changed contract").unwrap();
+        refused(
+            &snapshot,
+            &root.0,
+            &format!("contract drift: {authoritative}"),
+        );
+    }
 
     // A copy and a pin that agree with each other, but not with the recorded
     // digest, still fail.

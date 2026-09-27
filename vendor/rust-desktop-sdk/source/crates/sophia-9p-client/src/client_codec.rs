@@ -291,11 +291,14 @@ pub(crate) fn decode_rlerror(body: &[u8]) -> Option<Errno> {
     fields.0.is_empty().then_some(Errno(errno))
 }
 
-/// Why [`connect_by`] could not deliver a connected stream.
+/// Why [`connect_by`], or the blocking handshake over its stream, failed.
 pub(crate) enum ConnectError {
     Io(io::ErrorKind),
     Timeout,
+    /// A local bound refused the call.
     Limit(&'static str),
+    /// The peer broke the protocol.
+    Protocol(&'static str),
 }
 
 fn time_left(deadline: Instant) -> Result<Duration, ConnectError> {
@@ -370,7 +373,7 @@ pub(crate) fn receive_blocking(
         } else {
             let size = u32::from_le_bytes(buffer[..4].try_into().unwrap()) as usize;
             if size < HEADER || size > msize as usize {
-                return Err(ConnectError::Limit("reply frame size"));
+                return Err(ConnectError::Protocol("reply frame size"));
             }
             size
         };

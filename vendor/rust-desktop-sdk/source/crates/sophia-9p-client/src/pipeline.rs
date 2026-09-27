@@ -162,6 +162,10 @@ pub enum PipelineError {
     Io(io::ErrorKind),
     /// The server broke the protocol; the pipeline is poisoned.
     Protocol(&'static str),
+    /// The server refused the version handshake with `Rlerror`, carrying its
+    /// wire errno exactly (after the handshake, `Rlerror` is delivered as
+    /// [`Reply::Error`] instead).
+    Remote(Errno),
     /// An earlier failure poisoned the pipeline.
     Poisoned,
     /// A local bound or rule refused the call before anything was queued.
@@ -176,6 +180,7 @@ impl std::fmt::Display for PipelineError {
         match self {
             Self::Io(kind) => write!(formatter, "9P socket: {kind}"),
             Self::Protocol(what) => write!(formatter, "9P protocol violation: {what}"),
+            Self::Remote(errno) => write!(formatter, "9P server error {}", errno.0),
             Self::Poisoned => formatter.write_str("9P pipeline poisoned by an earlier failure"),
             Self::Limit(what) => write!(formatter, "9P pipeline limit: {what}"),
             Self::Timeout => formatter.write_str("9P wait deadline passed"),
@@ -941,6 +946,7 @@ fn connect_error(error: client_codec::ConnectError) -> PipelineError {
         client_codec::ConnectError::Io(kind) => PipelineError::Io(kind),
         client_codec::ConnectError::Timeout => PipelineError::Timeout,
         client_codec::ConnectError::Limit(what) => PipelineError::Limit(what),
+        client_codec::ConnectError::Protocol(what) => PipelineError::Protocol(what),
     }
 }
 
@@ -983,6 +989,14 @@ fn negotiate(
     .map_err(connect_error)?;
     let (kind, tag, body) =
         client_codec::receive_blocking(stream, deadline, offered_msize).map_err(connect_error)?;
+    if tag == client_codec::NOTAG && kind == client_codec::RLERROR {
+        // The server's refusal, its wire errno kept exactly as
+        // `Client::over` keeps it.
+        return Err(match client_codec::decode_rlerror(&body) {
+            Some(errno) => PipelineError::Remote(errno),
+            None => PipelineError::Protocol("Rlerror shape"),
+        });
+    }
     if tag != client_codec::NOTAG || kind != client_codec::RVERSION {
         return Err(PipelineError::Protocol("Rversion shape"));
     }

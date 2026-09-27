@@ -2,7 +2,8 @@
 
 | Target | Status |
 | --- | --- |
-| Linux (x86_64, aarch64) | Supported and tested; Sophia's gate builds and runs these crates. |
+| Linux x86_64 | Supported and tested: Sophia's gate builds and runs these crates. |
+| Linux aarch64 | Expected to work (no architecture-specific code) but not tested; not claimed. |
 | FreeBSD | Planned next, with native CI. Not claimed until that CI passes. |
 | OpenBSD, NetBSD | Not qualified; each is qualified separately. |
 | macOS, Windows | Out of scope. |

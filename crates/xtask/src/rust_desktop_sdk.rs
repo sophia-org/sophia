@@ -16,10 +16,41 @@ use sha2::{Digest, Sha256};
 const REPOSITORY: &str = "https://github.com/sophia-org/sophia-desktop-sdk-rs";
 
 /// Each SDK copy, and the Sophia file it must equal byte for byte.
-const CONTRACTS: &[(&str, &str)] = &[(
-    "spec/sophia-shell-files-v1.kdl",
-    "protocol/sophia-shell-files-v1.kdl",
-)];
+pub const CONTRACTS: &[(&str, &str)] = &[
+    (
+        "spec/sophia-shell-files-v1.kdl",
+        "protocol/sophia-shell-files-v1.kdl",
+    ),
+    ("spec/sophia-shell-v1.kdl", "protocol/sophia-shell-v1.kdl"),
+    (
+        "spec/golden/sophia-shell-content.frames",
+        "protocol/golden/sophia-shell-content.frames",
+    ),
+    (
+        "spec/golden/sophia-shell-content-malformed.frames",
+        "protocol/golden/sophia-shell-content-malformed.frames",
+    ),
+    (
+        "spec/golden/sophia-shell-catalog-actions.frames",
+        "protocol/golden/sophia-shell-catalog-actions.frames",
+    ),
+    (
+        "spec/golden/sophia-shell-indicators.frames",
+        "protocol/golden/sophia-shell-indicators.frames",
+    ),
+    (
+        "spec/golden/sophia-shell-launcher.frames",
+        "protocol/golden/sophia-shell-launcher.frames",
+    ),
+    (
+        "spec/golden/sophia-shell-v1.frames",
+        "protocol/golden/sophia-shell-v1.frames",
+    ),
+    (
+        "spec/golden/sophia-shell-v1-malformed.frames",
+        "protocol/golden/sophia-shell-v1-malformed.frames",
+    ),
+];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -127,10 +158,9 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
     let sums = String::from_utf8(read(&source.join("spec/SHA256SUMS"))?)
         .map_err(|_| "spec/SHA256SUMS is not UTF-8".to_owned())?;
     for (local, _) in CONTRACTS {
-        let name = Path::new(local)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or("contract without a file name")?;
+        let name = local
+            .strip_prefix("spec/")
+            .ok_or("contract copy outside spec/")?;
         let digest = format!("{:x}", Sha256::digest(read(&source.join(local))?));
         if !sums.lines().any(|line| line == format!("{digest}  {name}")) {
             return Err(format!("Rust SDK spec/SHA256SUMS does not record {name}"));

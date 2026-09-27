@@ -721,6 +721,7 @@ fn connect_by(path: &Path, deadline: Instant) -> Result<UnixStream, ClientError>
         client_codec::ConnectError::Io(kind) => ClientError::Io(kind),
         client_codec::ConnectError::Timeout => ClientError::Timeout,
         client_codec::ConnectError::Limit(what) => ClientError::Limit(what),
+        client_codec::ConnectError::Protocol(what) => ClientError::Protocol(what),
     })
 }
 

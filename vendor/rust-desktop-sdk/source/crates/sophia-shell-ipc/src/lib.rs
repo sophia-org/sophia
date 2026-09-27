@@ -6,7 +6,10 @@
 //! header, the handshake, and the content, application catalog, catalog-action, indicator and
 //! persistent-catalog frames. Values and their byte shapes come from
 //! [`sophia_shell_protocol`]; nothing here is part of the file contract.
-//! Sophia's gate checks these codecs against its own, byte for byte.
+//! `tests/corpus.rs` runs it over Sophia's golden shell corpus as pinned in
+//! `spec/golden`; Sophia's gate compares it with Sophia's own codec over that
+//! corpus and every truncation and single-byte change of each frame
+//! (`crates/sophia-protocol/tests/sdk_ipc_parity.rs`).
 
 mod byte_cursor;
 mod cursor;

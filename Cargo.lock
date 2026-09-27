@@ -1107,6 +1107,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sophia-desktop-ids",
+ "sophia-shell-ipc",
  "sophia-shell-protocol",
 ]
 
