@@ -138,13 +138,46 @@ The regressions exposed progress, same-pass retry and reply-order custody
 bugs, now fixed on that branch. The production-owner B6c fixtures remain
 required; the older nine file-wire tests alone do not establish role completion.
 
+## Actual Bemenu executable over the production export
+
+Sophia C integration commits `8d1680713` and `c23a38453` add artifact preparation
+and the opt-in `shell_bemenu_files` test. They are signed and awaiting integration
+review. Preparation verifies Bemenu's signed commit, hashes the extracted tree,
+requires the exact Sophia C SDK snapshot, and builds the archive with strict
+warnings, nice 19 and two jobs. The source checkout is read-only throughout.
+
+The prepared Bemenu revision is
+`a354251a53368b1f99483b5015a20747afab9804`, binary SHA-256
+`d64a527da40851404825f4bc307aad7286ecaf94517a6a8c1b3bfd12938cb044`, SDK
+`6a59a13f026111a7a277943d71c1fdb090613a23`. The first production-export run
+passes: two openings, three candidates, one text edit and one keyboard
+activation. Real allocation/resource/candidate/focus owners serve the actual
+Bemenu process under the production protected supervisor. The test observes
+changed uploaded pixels, close-time resource settlement, reopen with reset
+query, graceful exit and quiescent accounting.
+
+The domain exposes only the pinned in-tree JetBrains Mono font and one shell
+endpoint. Runtime checks verify the executed binary, environment, private PID
+namespace, nice value, font visibility and hidden devices. Input timestamps use
+the actual monotonic-clock API, enabled only for Sophia's tests. The C SDK and
+Bemenu remain C; the Rust harness lives in Sophia.
+
+Evidence is under `~/.local/state/sophia/development-evidence/bemenu-files/`:
+`prepare-a354251.log`, `live-a354251-first.log`, `missing-artifact.log` and
+`mismatched-artifact.log`. The latter two deliberately fail before process
+launch. Four artifact-helper refusal/timeout controls pass, as do targeted
+runtime and xtask clippy with warnings denied, formatting and layout. Session
+policy and presentation observations remain scripted; content time is frozen.
+This establishes no physical rendering, real launch policy, pointer activation,
+expiry, reconnect or attended daily-driver result.
+
 ## Remaining work
 
 The [t263 plan](../plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
 defines lifecycle completion, release and application-adoption exits. The C
-session/native lifecycle layers have production-owner coverage. Bemenu's new
-application pin still needs the actual executable production-export gate, and
-Rust B6c needs its live fixtures and final integration gate. SDK publication,
+session/native lifecycle layers and Bemenu's application pin have production
+export coverage. The new harness awaits review/merge; Rust B6c needs its live
+fixtures and final integration gate. SDK publication,
 the other application adoptions and attended daily-driver acceptance remain.
 No installed default has changed. Task state remains in
 [todo.md](../../../todo.md).
