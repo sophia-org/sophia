@@ -1161,6 +1161,7 @@ dependencies = [
 name = "sophia-shell-client"
 version = "0.1.0"
 dependencies = [
+ "sophia-9p",
  "sophia-protocol",
 ]
 
