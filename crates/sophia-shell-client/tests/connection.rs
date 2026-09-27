@@ -251,3 +251,74 @@ fn indicator_publications_and_activation_outcomes_share_the_connection_without_r
     assert_eq!(outcome.status, ShellIndicatorActivationStatus::Accepted);
     server.join().unwrap();
 }
+
+// `connect_from_env`'s selection rule as pure logic: no process-global env
+// mutation is needed (or, under this workspace's forbidden `unsafe_code`
+// lint, possible: `std::env::set_var`/`remove_var` are `unsafe` since
+// edition 2024).
+
+#[test]
+fn neither_or_both_env_wire_is_refused_outright() {
+    assert!(matches!(
+        select_env_wire(None, None, None),
+        Err(ShellClientError::Environment(_))
+    ));
+    assert!(matches!(
+        select_env_wire(Some("a".into()), Some("b".into()), None),
+        Err(ShellClientError::Environment(_))
+    ));
+    // Both set is refused even when a usable epoch is also present: there is
+    // no fallback and no sniffing.
+    assert!(matches!(
+        select_env_wire(Some("a".into()), Some("b".into()), Some("7".into())),
+        Err(ShellClientError::Environment(_))
+    ));
+}
+
+#[test]
+fn env_socket_alone_selects_the_socket_wire() {
+    let selection = select_env_wire(Some("/tmp/shell.sock".into()), None, None).unwrap();
+    assert_eq!(
+        selection,
+        EnvWireSelection::Socket("/tmp/shell.sock".into())
+    );
+    // An unset or garbage epoch is irrelevant to the socket wire.
+    let selection = select_env_wire(
+        Some("/tmp/shell.sock".into()),
+        None,
+        Some("not-a-number".into()),
+    )
+    .unwrap();
+    assert_eq!(
+        selection,
+        EnvWireSelection::Socket("/tmp/shell.sock".into())
+    );
+}
+
+#[test]
+fn env_files_alone_needs_a_nonzero_epoch() {
+    assert!(matches!(
+        select_env_wire(None, Some("/tmp/shell.9p".into()), None),
+        Err(ShellClientError::Environment(_))
+    ));
+    assert!(matches!(
+        select_env_wire(None, Some("/tmp/shell.9p".into()), Some("0".into())),
+        Err(ShellClientError::Environment(_))
+    ));
+    assert!(matches!(
+        select_env_wire(
+            None,
+            Some("/tmp/shell.9p".into()),
+            Some("not-a-number".into())
+        ),
+        Err(ShellClientError::Environment(_))
+    ));
+    let selection = select_env_wire(None, Some("/tmp/shell.9p".into()), Some("7".into())).unwrap();
+    assert_eq!(
+        selection,
+        EnvWireSelection::Files {
+            socket: "/tmp/shell.9p".into(),
+            connection_epoch: 7,
+        }
+    );
+}

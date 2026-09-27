@@ -8,6 +8,7 @@
 mod candidate;
 mod catalog;
 pub use catalog::{CatalogInbox, CatalogObservation};
+mod files;
 mod lifecycle;
 mod outbox;
 pub use lifecycle::*;
@@ -43,6 +44,11 @@ pub struct ShellClientOptions {
 pub enum ShellClientError {
     Io(String),
     Codec(IpcCodecError),
+    /// A `sophia_shell_fs_v1` envelope or record failed to encode/decode.
+    FileCodec(sophia_protocol::shell_files::ShellFilePayloadError),
+    /// The underlying 9P pipeline failed (I/O, or a protocol violation it
+    /// detected in a reply).
+    Pipeline(sophia_9p::pipeline::PipelineError),
     AdmissionRefused(ContentAdmissionRefused),
     Lifecycle(ContentLifecycleError),
     UnsupportedRevision,
@@ -50,6 +56,17 @@ pub enum ShellClientError {
     WrongDirection,
     QueueSaturated,
     PeerClosed,
+    /// The current wire has no file-contract shape for this record family
+    /// yet (indicator activations, catalog candidates/responses, native
+    /// launcher records, or a lone Candidate Begin/Chunk/End outside a
+    /// `ContentGroup`).
+    UnsupportedOnWire,
+    /// A local invariant the file wire's own state machine relies on did not
+    /// hold (an unexpected 9P reply shape, or an event out of the sequence
+    /// the wire's own bookkeeping expected).
+    Protocol(&'static str),
+    /// `connect_from_env`'s environment selection was invalid.
+    Environment(&'static str),
 }
 
 impl core::fmt::Display for ShellClientError {
@@ -63,6 +80,24 @@ impl std::error::Error for ShellClientError {}
 impl From<IpcCodecError> for ShellClientError {
     fn from(error: IpcCodecError) -> Self {
         Self::Codec(error)
+    }
+}
+
+impl From<sophia_protocol::shell_files::ShellFilePayloadError> for ShellClientError {
+    fn from(error: sophia_protocol::shell_files::ShellFilePayloadError) -> Self {
+        Self::FileCodec(error)
+    }
+}
+
+impl From<sophia_protocol::shell_files::ShellFileCodecError> for ShellClientError {
+    fn from(error: sophia_protocol::shell_files::ShellFileCodecError) -> Self {
+        Self::FileCodec(error.into())
+    }
+}
+
+impl From<sophia_9p::pipeline::PipelineError> for ShellClientError {
+    fn from(error: sophia_9p::pipeline::PipelineError) -> Self {
+        Self::Pipeline(error)
     }
 }
 
@@ -103,6 +138,54 @@ impl ShellConnection {
         })
     }
 
+    /// Connect over the native 9P file wire: Pipeline connect, attach, open
+    /// the fixed nodes, then negotiate exactly as `connect` does. The file
+    /// contract gives no in-band way to learn this attach's connection epoch
+    /// before the first submission (every record header must already carry
+    /// it); `connection_epoch` is whatever Session pre-assigned this attach
+    /// (see the crate's final report for detail).
+    pub fn connect_files(
+        path: impl AsRef<Path>,
+        connection_epoch: u64,
+        options: ShellClientOptions,
+    ) -> Result<Self, ShellClientError> {
+        if options.minimum_revision == 0
+            || options.minimum_revision > options.maximum_revision
+            || options.handshake_timeout.is_zero()
+        {
+            return Err(ShellClientError::UnsupportedRevision);
+        }
+        let (wire, welcome, inbox) =
+            files::FileWire::connect(path.as_ref(), connection_epoch, &options)?;
+        Ok(Self {
+            wire: Wire::Files(Box::new(wire)),
+            welcome,
+            output: outbox::ClientOutbox::default(),
+            inbox,
+        })
+    }
+
+    /// Selects a wire from the environment: exactly one of
+    /// `SOPHIA_SHELL_9P_SOCKET` (file wire) or `SOPHIA_SHELL_SOCKET` (socket
+    /// wire) must be set. Neither, or both, is refused outright: there is no
+    /// fallback and no sniffing. The file wire also needs
+    /// `SOPHIA_SHELL_9P_EPOCH`, this attach's connection epoch (see
+    /// `connect_files`).
+    pub fn connect_from_env(options: ShellClientOptions) -> Result<Self, ShellClientError> {
+        let selection = select_env_wire(
+            std::env::var_os("SOPHIA_SHELL_SOCKET"),
+            std::env::var_os("SOPHIA_SHELL_9P_SOCKET"),
+            std::env::var("SOPHIA_SHELL_9P_EPOCH").ok(),
+        )?;
+        match selection {
+            EnvWireSelection::Socket(path) => Self::connect(path, options),
+            EnvWireSelection::Files {
+                socket,
+                connection_epoch,
+            } => Self::connect_files(socket, connection_epoch, options),
+        }
+    }
+
     pub const fn welcome(&self) -> ShellV1ServerWelcome {
         self.welcome
     }
@@ -131,7 +214,9 @@ impl ShellConnection {
         let outbound = Outbound::Content(transaction, record.clone());
         let control = outbound.is_control();
         let units = self.wire.encode(outbound)?;
-        self.output.enqueue(units, control)
+        self.output.enqueue(units, control)?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Atomically own a bounded group of bulk content records (for example a
@@ -144,7 +229,9 @@ impl ShellConnection {
         let units = self
             .wire
             .encode(Outbound::ContentGroup(transaction, records.to_vec()))?;
-        self.output.enqueue(units, false)
+        self.output.enqueue(units, false)?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Own a complete candidate and its exact lifecycle metadata together.
@@ -164,7 +251,9 @@ impl ShellConnection {
             lifecycle
                 .register(metadata)
                 .map_err(ShellClientError::Lifecycle)
-        })
+        })?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Atomically own both ACK and indicator request before committing a UI
@@ -181,7 +270,9 @@ impl ShellConnection {
             activation: activation.map(|(transaction, activation)| (transaction, *activation)),
         };
         let units = self.wire.encode(outbound)?;
-        self.output.enqueue(units, true)
+        self.output.enqueue(units, true)?;
+        self.wire.commit_encoded();
+        Ok(())
     }
 
     /// Take the oldest session-to-client content record while retaining other
@@ -255,6 +346,7 @@ impl ShellConnection {
             .wire
             .encode(Outbound::IndicatorActivation(transaction, *activation))?;
         self.output.enqueue(units, false)?;
+        self.wire.commit_encoded();
         self.poll_io()
     }
 
@@ -329,4 +421,53 @@ fn server_record(record: &ShellContentRecord) -> bool {
 
 fn io_error(error: std::io::Error) -> ShellClientError {
     ShellClientError::Io(error.to_string())
+}
+
+/// What [`ShellConnection::connect_from_env`] selects and what it needs to
+/// open it. Exposed so the selection rule below is testable directly, with
+/// no process-global environment mutation: `std::env::set_var`/`remove_var`
+/// are `unsafe` since edition 2024, and this workspace forbids unsafe code
+/// outright.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EnvWireSelection {
+    Socket(std::ffi::OsString),
+    Files {
+        socket: std::ffi::OsString,
+        connection_epoch: u64,
+    },
+}
+
+/// The pure selection rule behind [`ShellConnection::connect_from_env`]:
+/// exactly one of `socket` (the `SOPHIA_SHELL_SOCKET` value) or
+/// `files_socket` (`SOPHIA_SHELL_9P_SOCKET`) must be given, and the file wire
+/// additionally needs `epoch` (`SOPHIA_SHELL_9P_EPOCH`) parsed as a nonzero
+/// `u64`. Kept apart from actually reading the environment so it is directly
+/// testable; see this crate's `tests/connection.rs`.
+pub fn select_env_wire(
+    socket: Option<std::ffi::OsString>,
+    files_socket: Option<std::ffi::OsString>,
+    epoch: Option<String>,
+) -> Result<EnvWireSelection, ShellClientError> {
+    match (socket, files_socket) {
+        (Some(_), Some(_)) => Err(ShellClientError::Environment(
+            "both SOPHIA_SHELL_SOCKET and SOPHIA_SHELL_9P_SOCKET are set",
+        )),
+        (None, None) => Err(ShellClientError::Environment(
+            "neither SOPHIA_SHELL_SOCKET nor SOPHIA_SHELL_9P_SOCKET is set",
+        )),
+        (Some(path), None) => Ok(EnvWireSelection::Socket(path)),
+        (None, Some(path)) => {
+            let connection_epoch = epoch
+                .as_deref()
+                .and_then(|value| value.parse::<u64>().ok())
+                .filter(|epoch| *epoch != 0)
+                .ok_or(ShellClientError::Environment(
+                    "SOPHIA_SHELL_9P_EPOCH must be set to a nonzero connection epoch",
+                ))?;
+            Ok(EnvWireSelection::Files {
+                socket: path,
+                connection_epoch,
+            })
+        }
+    }
 }
