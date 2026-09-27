@@ -105,6 +105,9 @@ block publication but does not block local implementation.
 
 ## Dependencies and connections
 
+The [extraction checkpoint](../milestones/i7pfnyzy-desktop-sdk-extraction-checkpoint-before-application-adoption.md)
+records the first merged C snapshot, validation and the scope still unclaimed.
+
 Prerequisites are the accepted t251 contract and reviewed t252 foundation, now
 merged. This replaces the former dependency on completed t252 acceptance.
 The initial SDK release supports t252 application adoption. Keep t249/t250
