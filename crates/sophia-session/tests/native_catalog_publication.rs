@@ -5,6 +5,7 @@ use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
 use sophia_session::application_catalog::*;
+use std::io::Read;
 #[allow(dead_code)]
 #[path = "../../sophia-runtime/tests/support/native_launcher_socket.rs"]
 mod socket;
@@ -50,25 +51,90 @@ fn publication(epoch: u64, count: usize) -> PublishedApplicationCatalog {
     PublishedApplicationCatalog::new(epoch, 8, source).unwrap()
 }
 
+/// One length-prefixed IPC frame from `client`, or `None` if none has
+/// arrived within a short read timeout. `read_exact`'s first underlying
+/// read either returns the whole header at once or times out having
+/// consumed nothing (the sender, `poll_io`, writes each turn's whole flush
+/// synchronously before returning, so a header is never split across
+/// turns): only that first read is short-timed, so a `None` never loses
+/// bytes already on the wire.
+fn try_read_frame(client: &mut std::os::unix::net::UnixStream) -> Option<Vec<u8>> {
+    client
+        .set_read_timeout(Some(std::time::Duration::from_millis(200)))
+        .unwrap();
+    let mut bytes = vec![0u8; SOPHIA_IPC_HEADER_LEN];
+    let header = client.read_exact(&mut bytes);
+    client
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .unwrap();
+    match header {
+        Ok(()) => {
+            let n = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
+            assert!(n <= 65536);
+            bytes.resize(SOPHIA_IPC_HEADER_LEN + n, 0);
+            client
+                .read_exact(&mut bytes[SOPHIA_IPC_HEADER_LEN..])
+                .unwrap();
+            Some(bytes)
+        }
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            None
+        }
+        Err(e) => panic!("{e}"),
+    }
+}
+
+/// Drives `poll_io` until exactly `count` frames have arrived, without
+/// assuming how many the transport's bulk budget lets through on any one
+/// turn: a publication larger than the budget now drains across however
+/// many turns that takes, decided by the transport, not by this test.
+fn drain_frames(
+    peer: &mut Peer,
+    epochs: &mut ContentEpochRegistry,
+    count: usize,
+    deadline: std::time::Instant,
+) -> Vec<Vec<u8>> {
+    let mut received = Vec::with_capacity(count);
+    while received.len() < count {
+        peer.transport.poll_io(epochs).unwrap();
+        while received.len() < count
+            && let Some(frame) = try_read_frame(&mut peer.client)
+        {
+            received.push(frame);
+        }
+        if received.len() < count {
+            assert!(std::time::Instant::now() < deadline, "drain timed out");
+            std::thread::yield_now();
+        }
+    }
+    received
+}
+
+/// t252 B5 (corrected transport semantics, `shell_transport/publication.rs`
+/// `queue_publication`/`flush_publication`): `publish_catalog` takes custody
+/// of the whole publication whenever no earlier one is still draining, even
+/// if the output queue has no room for any of it yet, and pushes what fits
+/// now, draining the rest across later `poll_io` turns. A publication still
+/// draining refuses a competing one and changes nothing.
 #[test]
-fn catalog_declines_whole_publication_under_saturation_and_precedes_opening_in_fifo() {
-    // The transport now owns the whole publication as one typed value
-    // (`publish_catalog`): under saturation it takes nothing, so there is no
-    // partial front left to retain here any more. A retried `service` call
-    // either publishes the exact same bytes as the direct encoder or, while
-    // the queue has no room at all, publishes nothing.
+fn catalog_publication_is_accepted_under_saturation_drains_whole_and_in_order_and_precedes_opening()
+{
     let mut epochs = empty();
     let mut peer = connected(&mut epochs, limits());
-    // Small enough (with Begin/End) to fit under this connection's
-    // `max_control_records` (64) in the one visit the retried call takes
-    // once capacity frees; pacing a catalog too large for that is the
-    // transport's job now, not Session's.
-    let source = publication(GRANT.connection_epoch, 40);
+    // Larger than one visit's bulk budget: several `poll_io` turns are
+    // needed to drain it, decided by the transport now, not by Session.
+    let source = publication(GRANT.connection_epoch, 70);
     let expected = source.frames(tx(50)).unwrap();
     let mut transfer =
         NativeCatalogPublication::new(&peer.transport.connection(&mut epochs), tx(50), source)
             .unwrap();
     assert!(transfer.published().is_none());
+
     let filler = publication(GRANT.connection_epoch, 0)
         .frames(tx(99))
         .unwrap()
@@ -83,45 +149,59 @@ fn catalog_declines_whole_publication_under_saturation_and_precedes_opening_in_f
         assert!(queued <= 1024);
     }
     assert!(queued > 0);
-    // Fully saturated: the transport cannot take even the first record of the
-    // publication, so `service` declines and leaves it unpublished.
-    assert!(
-        !transfer
-            .service(&mut peer.transport.connection(&mut epochs))
-            .unwrap()
-    );
-    assert!(transfer.published().is_none());
-    // These were queue-only admissions. Draining is a separate production call.
-    for group in (0..queued).collect::<Vec<_>>().chunks(32) {
-        peer.transport.poll_io(&mut epochs).unwrap();
-        for _ in group {
-            assert_eq!(peer.read(), filler);
-        }
-    }
-    // Capacity is free again: the retried call publishes the whole catalog
-    // in one visit and reports it published.
+
+    // The output queue is fully saturated by filler, yet the publication is
+    // still accepted: custody moves to the transport immediately, before a
+    // single byte of it can be written.
     assert!(
         transfer
             .service(&mut peer.transport.connection(&mut epochs))
             .unwrap()
     );
     assert!(transfer.published().is_some());
+
+    // A competing publish while this one is still draining is refused and
+    // takes nothing: what eventually arrives is exactly the first catalog.
+    let competing = publication(GRANT.connection_epoch, 0).value(false).unwrap();
+    assert!(matches!(
+        peer.transport.publish_catalog(&epochs, tx(60), &competing),
+        Err(ShellTransportError::ActivationQueueSaturated)
+    ));
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+
+    // Only the filler comes off the wire until it is fully drained: the
+    // catalog has had no room to start writing yet.
+    for frame in drain_frames(&mut peer, &mut epochs, queued, deadline) {
+        assert_eq!(frame, filler);
+    }
+
+    // Once capacity frees, the whole catalog drains -- across however many
+    // `poll_io` turns the transport's bulk budget takes -- whole, in order,
+    // and byte-identical to the direct encoder.
+    let received = drain_frames(&mut peer, &mut epochs, expected.len(), deadline);
+    assert_eq!(received, expected, "byte-identical to the direct encoder");
+
     // A second visit after publication is a harmless no-op.
     assert!(
         transfer
             .service(&mut peer.transport.connection(&mut epochs))
             .unwrap()
     );
+
+    // The catalog precedes the Opening it gates on the same FIFO: it is
+    // read out here only after every catalog byte already has been.
     peer.transport
         .publish_native_launcher_opening(&epochs, tx(51), opening())
         .unwrap();
-    peer.transport.poll_io(&mut epochs).unwrap();
-    let received: Vec<Vec<u8>> = (0..expected.len()).map(|_| peer.read()).collect();
-    assert_eq!(received, expected, "byte-identical to the direct encoder");
+    let opening_frame = drain_frames(&mut peer, &mut epochs, 1, deadline)
+        .pop()
+        .unwrap();
     assert_eq!(
-        decode_shell_native_launcher_frame(&peer.read()).unwrap().1,
-        ShellNativeLauncherRecord::Opening(opening()),
-        "the catalog precedes the Opening it gates on the same FIFO"
+        decode_shell_native_launcher_frame(&opening_frame)
+            .unwrap()
+            .1,
+        ShellNativeLauncherRecord::Opening(opening())
     );
 }
 
