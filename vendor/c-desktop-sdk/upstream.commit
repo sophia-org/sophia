@@ -1,0 +1,16 @@
+tree bdca39ff01ae0d0d1be7494aefb03af41861792a
+author Mason Green <mason@greenm01.net> 1790506788 -0400
+committer Mason Green <mason@greenm01.net> 1790506788 -0400
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarj3JAAKCRBXGEu2KoAA
+ Yog9AQD/AlQHPsoeESR8VrMgTWhCZr/rA0whigpu+PMdulsZgwD/UO6FNXZqX1B5
+ MsHV8oSoFBqDm3LDH9dq8ieyF3p0VAY=
+ =9Azp
+ -----END PGP SIGNATURE-----
+
+Extract native C desktop records and transport with a standalone build
+
+Import bindings/c verbatim from Sophia 987cfd393a11edaa99e8b3c58be80d21167fb287. Preserve shell IPC and the WM socket codec as optional compatibility. Pin contracts and provenance; provide static libraries and pkg-config metadata.
+
+Validation: nice 19 make -j2 check all, including literal file vectors, 9P scripted regressions, and the socket codec/lifecycle corpus. App lifecycle completion and production-export integration remain separate steps. Retain three upstream trailing-space lines in the immutable diod reference.

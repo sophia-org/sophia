@@ -12,7 +12,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod c_desktop_sdk;
 mod check;
+mod git_tree;
 mod headless_client_gate;
 mod m3_acceptance;
 mod native_protocol_family;

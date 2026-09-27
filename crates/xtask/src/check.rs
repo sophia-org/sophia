@@ -41,12 +41,14 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
             crate::nine_p_conformance::run(repo, rest)
         }
         [subject] if subject == "layout" => layout(repo).map(|()| Vec::new()),
+        [subject] if subject == "c-desktop-sdk" => crate::c_desktop_sdk::run(repo),
         [subject] => Err(format!("unknown check subject {subject:?}")),
         _ => Err("check accepts at most one subject".to_owned()),
     }
 }
 
 fn all(repo: &Path) -> Result<Vec<String>, String> {
+    crate::c_desktop_sdk::run(repo)?;
     command(repo, "cargo", &["fmt", "--all", "--check"])?;
     command(repo, "git", &["diff", "--check"])?;
     command_quiet(

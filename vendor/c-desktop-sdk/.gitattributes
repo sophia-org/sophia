@@ -1,0 +1,3 @@
+# Raw signed commit and frozen upstream text retain their exact bytes.
+upstream.commit -whitespace
+source/spec/references/diod-9p2000L-protocol.md -whitespace

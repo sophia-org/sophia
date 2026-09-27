@@ -27,7 +27,7 @@ impl Drop for Scratch {
     }
 }
 fn compile(directory: &Path, name: &str) -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bindings/c");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/c-desktop-sdk/source/src");
     let binary = directory.join(name);
     let mut cc = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()));
     cc.args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic"]);

@@ -13,8 +13,8 @@ cargo run --offline -q -p sophia-protocol --example shell_catalog_action_corpus 
 cmp "$build_dir/catalog-actions.frames" protocol/golden/sophia-shell-catalog-actions.frames
 cargo run --offline -q -p sophia-protocol --example shell_catalog_action_corpus -- --mutations >"$build_dir/catalog-action-mutations.frames"
 "${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
-    bindings/c/shell_wire/frame.c bindings/c/shell_wire/catalog_actions.c \
-    bindings/c/tests/sophia_shell_wire_catalog_actions_test.c -o "$build_dir/catalog-action-decoder"
+    vendor/c-desktop-sdk/source/src/shell_wire/frame.c vendor/c-desktop-sdk/source/src/shell_wire/catalog_actions.c \
+    vendor/c-desktop-sdk/source/src/tests/sophia_shell_wire_catalog_actions_test.c -o "$build_dir/catalog-action-decoder"
 "$build_dir/catalog-action-decoder" "$build_dir/catalog-actions.frames"
 "$build_dir/catalog-action-decoder" "$build_dir/catalog-action-mutations.frames"
 cargo test --offline -q -p sophia-protocol --test shell_catalog_actions
@@ -22,8 +22,8 @@ cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus
 cmp "$build_dir/native-launcher.frames" protocol/golden/sophia-shell-native-launcher.frames
 cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus -- --mutations >"$build_dir/native-launcher-mutations.frames"
 "${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
-    bindings/c/shell_wire/frame.c bindings/c/shell_wire/native_launcher.c \
-    bindings/c/tests/sophia_shell_wire_native_test.c -o "$build_dir/native-launcher-decoder"
+    vendor/c-desktop-sdk/source/src/shell_wire/frame.c vendor/c-desktop-sdk/source/src/shell_wire/native_launcher.c \
+    vendor/c-desktop-sdk/source/src/tests/sophia_shell_wire_native_test.c -o "$build_dir/native-launcher-decoder"
 "$build_dir/native-launcher-decoder" "$build_dir/native-launcher-mutations.frames"
 
 cargo run --offline -q -p sophia-protocol --example shell_content_corpus \
@@ -37,7 +37,7 @@ cargo test --offline -q -p sophia-runtime --test shell_content_resources
 cargo test --offline -q -p sophia-runtime --test shell_content_admission
 cargo test --offline -q -p sophia-runtime --test shell_content_transport
 cc -std=c11 -Wall -Wextra -Werror -pedantic \
-    bindings/c/tests/sophia_shell_content_client.c -o "$build_dir/content-client"
+    vendor/c-desktop-sdk/source/src/tests/sophia_shell_content_client.c -o "$build_dir/content-client"
 "$build_dir/content-client" --valid protocol/golden/sophia-shell-content.frames
 "$build_dir/content-client" --malformed protocol/golden/sophia-shell-content-malformed.frames
 # These inverse expectations prove the independent reader rejects invalid bytes
@@ -73,14 +73,14 @@ cargo test --offline -q -p sophia-protocol --test shell_reference
 cargo test --offline -q -p sophia-runtime --test shell_transport
 
 ${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic \
-    bindings/c/tests/sophia_shell_v1_client.c \
+    vendor/c-desktop-sdk/source/src/tests/sophia_shell_v1_client.c \
     -o "$build_dir/sophia-shell-v1-c-client"
 cargo run --offline -q -p sophia-runtime \
     --example shell_descriptor_conformance_host -- \
     "$build_dir/sophia-shell-v1-c-client"
 
 ${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
-    bindings/c/tests/sophia_shell_content_live_client.c \
+    vendor/c-desktop-sdk/source/src/tests/sophia_shell_content_live_client.c \
     -o "$build_dir/sophia-shell-content-live-c-client"
 cargo run --offline -q -p sophia-runtime --example shell_content_conformance_host -- \
     "$build_dir/sophia-shell-content-live-c-client"
@@ -89,14 +89,14 @@ SOPHIA_CONTENT_LIFECYCLE_CLIENT="$build_dir/sophia-shell-content-live-c-client" 
     protected_popout_client -- --ignored
 
 ${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
-    bindings/c/tests/sophia_shell_launcher_client.c -o "$build_dir/sophia-shell-launcher-c-client"
+    vendor/c-desktop-sdk/source/src/tests/sophia_shell_launcher_client.c -o "$build_dir/sophia-shell-launcher-c-client"
 cargo run --offline -q -p sophia-runtime --example shell_launcher_conformance_host -- "$build_dir/sophia-shell-launcher-c-client"
 
 # An independent decoder written from the schema, not from the Rust. It must
 # also refuse malformed frames itself: a second implementation that accepts
 # everything proves nothing about the format being described well enough.
 ${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
-    bindings/c/tests/sophia_shell_indicator_client.c -o "$build_dir/sophia-shell-indicator-c-client"
+    vendor/c-desktop-sdk/source/src/tests/sophia_shell_indicator_client.c -o "$build_dir/sophia-shell-indicator-c-client"
 "$build_dir/sophia-shell-indicator-c-client" protocol/golden/sophia-shell-indicators.frames
 for mutation in stale-active label-padding bad-count; do
     python3 tools/mutate_shell_indicator_corpus.py "$mutation" \
