@@ -293,6 +293,24 @@ precedes the remaining deletions and is not the installation candidate. The
 final personal assembly, private install/rollback test and final pin updates
 remain necessary.
 
+Subsequent source review found that the pair builder invoked `nim c` with
+ambient Nimble search paths and inherited configuration. The signed product
+manifests specify minimum dependency versions, with no dependency lockfile.
+Network isolation prevented fetching but did not identify the installed package
+versions used. The recorded binary hashes bind those test outputs; they do not
+prove a complete build-input dependency set. Preserve Phase A/B as test-package
+evidence with this limitation. The final pair and installation candidate must
+be rebuilt with a reviewed transitive dependency inventory, independently bound
+manifest digest, isolated package/configuration paths and recorded toolchain
+identities. Do not infer the earlier dependency selection from today's store.
+
+The shared external build helper also still needs cleanup corrections before
+reuse: observe child exit without reaping, clean up its process group before
+reaping the leader even on success, and check the final log size before accepting
+success. Required controls cover a successful leader leaving a pipe-free child
+and a successful process that exceeds the log cap before the next poll. These
+findings do not assert that either event occurred in the retained E4 run.
+
 The retained X11 contract coverage now includes Present unselection after
 window destruction, using a real socket in both byte orders. The control
 checks the exact BadWindow request identity and then receives a reply and
