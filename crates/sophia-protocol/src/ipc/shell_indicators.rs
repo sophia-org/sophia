@@ -1,5 +1,6 @@
 use super::cursor::{Cursor, push_u16, push_u32, push_u64};
 use super::{IpcCodecError, IpcMessageKind, decode_frame, encode_frame};
+use crate::shell::encoding::ValueError;
 use crate::*;
 
 fn invalid(field: &'static str) -> IpcCodecError {
@@ -60,6 +61,12 @@ fn take_fixed_label(cursor: &mut Cursor<'_>, len: usize) -> Result<String, IpcCo
 pub fn validate_shell_indicator_snapshot(
     snapshot: &ShellIndicatorSnapshot,
 ) -> Result<(), IpcCodecError> {
+    // Kept as the exact original count checks and error (`CountTooLarge`),
+    // not a delegation to `shell::indicators::validate` (which the file
+    // wire's own whole-object codec uses, and which reports a different,
+    // file-contract-specific error): this function's public error is part
+    // of the IPC codec's observable behaviour and must stay byte/value
+    // identical to what it returned before the neutral split.
     if snapshot.indicators.len() > SOPHIA_SHELL_MAX_INDICATORS {
         return Err(IpcCodecError::CountTooLarge {
             count: snapshot.indicators.len(),
@@ -261,11 +268,8 @@ pub fn encode_shell_indicator_activation(
     tx: TransactionId,
     activation: &ShellIndicatorActivation,
 ) -> Result<Vec<u8>, IpcCodecError> {
-    let mut b = prefix(activation.connection_epoch, activation.snapshot_generation);
-    push_u64(&mut b, activation.output.raw());
-    push_u64(&mut b, activation.indicator);
-    push_u64(&mut b, activation.action);
-    push_u64(&mut b, activation.event_id);
+    let b =
+        crate::shell::encoding::indicators::encode_shell_indicator_activation_value(activation)?;
     frame(IpcMessageKind::ShellIndicatorActivate, tx, b)
 }
 
@@ -277,16 +281,8 @@ pub fn decode_shell_indicator_activation(
     if header.message_kind != IpcMessageKind::ShellIndicatorActivate || !tx.is_valid() {
         return Err(invalid("shell_indicator_activate"));
     }
-    let mut cursor = Cursor::new(payload);
-    let activation = ShellIndicatorActivation {
-        connection_epoch: cursor.u64()?,
-        snapshot_generation: cursor.u64()?,
-        output: OutputId::from_raw(cursor.u64()?),
-        indicator: cursor.u64()?,
-        action: cursor.u64()?,
-        event_id: cursor.u64()?,
-    };
-    cursor.finish()?;
+    let activation =
+        crate::shell::encoding::indicators::decode_shell_indicator_activation_value(payload)?;
     Ok((tx, activation))
 }
 
@@ -294,10 +290,9 @@ pub fn encode_shell_indicator_activation_outcome(
     tx: TransactionId,
     outcome: &ShellIndicatorActivationOutcome,
 ) -> Result<Vec<u8>, IpcCodecError> {
-    let mut b = prefix(outcome.connection_epoch, outcome.snapshot_generation);
-    push_u64(&mut b, outcome.event_id);
-    push_u16(&mut b, outcome.status as u16);
-    push_u16(&mut b, outcome.reason);
+    let b = crate::shell::encoding::indicators::encode_shell_indicator_activation_outcome_value(
+        outcome,
+    )?;
     frame(IpcMessageKind::ShellIndicatorActivateOutcome, tx, b)
 }
 
@@ -309,32 +304,19 @@ pub fn decode_shell_indicator_activation_outcome(
     if header.message_kind != IpcMessageKind::ShellIndicatorActivateOutcome || !tx.is_valid() {
         return Err(invalid("shell_indicator_activate_outcome"));
     }
-    let mut cursor = Cursor::new(payload);
-    let connection_epoch = cursor.u64()?;
-    let snapshot_generation = cursor.u64()?;
-    let event_id = cursor.u64()?;
-    let status = match cursor.u16()? {
-        0 => ShellIndicatorActivationStatus::Accepted,
-        1 => ShellIndicatorActivationStatus::Stale,
-        2 => ShellIndicatorActivationStatus::Unknown,
-        3 => ShellIndicatorActivationStatus::Unauthorized,
-        other => {
-            return Err(IpcCodecError::InvalidEnum {
+    let outcome =
+        crate::shell::encoding::indicators::decode_shell_indicator_activation_outcome_value(
+            payload,
+        )
+        .map_err(|err| match err {
+            // The neutral decoder names this field with its own spelling
+            // (spaces, for the file contract's own diagnostics); the IPC
+            // codec's public error keeps the original identifier.
+            ValueError::InvalidEnum { value, .. } => IpcCodecError::InvalidEnum {
                 field: "shell_indicator_activation_status",
-                value: u32::from(other),
-            });
-        }
-    };
-    let reason = cursor.u16()?;
-    cursor.finish()?;
-    Ok((
-        tx,
-        ShellIndicatorActivationOutcome {
-            connection_epoch,
-            snapshot_generation,
-            event_id,
-            status,
-            reason,
-        },
-    ))
+                value,
+            },
+            other => IpcCodecError::from(other),
+        })?;
+    Ok((tx, outcome))
 }

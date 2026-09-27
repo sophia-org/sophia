@@ -6,7 +6,7 @@
 //! rules stay with the frame codec, which maps its own message kinds onto
 //! [`ShellNativeLauncherValueKind`] and wraps [`ValueError`] into its own
 //! error type at the boundary.
-use super::{Wire, fields, reserved};
+use super::{Wire, fields, reserved, rows, table_count};
 use crate::byte_cursor::Cursor;
 use crate::shell::encoding::ValueError;
 use crate::*;
@@ -252,6 +252,148 @@ pub fn encode_shell_native_launcher_value(
         ShellNativeLauncherRecord::Closed(v) => v.put(&mut bytes),
     }
     Ok(bytes)
+}
+
+/// Encodes the whole native-launcher candidate as one native file layout:
+/// the base content-candidate header fields, the launcher's own opening,
+/// catalog generation, state revision and selection, four row counts, then
+/// the surface/placement/target rows and the displayed catalog-slot rows.
+/// No chunk ordinals, no repeated identities. Every part the owner will
+/// receive (`CandidateBegin`, `CandidateChunk`, the shared `CandidateEnd`)
+/// is validated first, exactly as [`crate::encode_content_candidate`] does
+/// for the base profile.
+pub fn encode_native_content_candidate(
+    value: &NativeContentCandidate,
+) -> Result<Vec<u8>, ValueError> {
+    let (begin, chunk, end) = value.parts();
+    crate::shell::native_launcher::validation::validate(&begin)?;
+    crate::shell::native_launcher::validation::validate(&chunk)?;
+    crate::shell::content::validation::validate(&end)?;
+    let candidate = &value.candidate;
+    let mut bytes = Vec::new();
+    candidate.grant.put(&mut bytes);
+    candidate.candidate_generation.put(&mut bytes);
+    candidate.output.put(&mut bytes);
+    candidate.facts_generation.put(&mut bytes);
+    candidate.pacing_permit.put(&mut bytes);
+    candidate.interaction_generation.put(&mut bytes);
+    value.opening.put(&mut bytes);
+    value.catalog_generation.put(&mut bytes);
+    value.state_revision.put(&mut bytes);
+    value.selected.put(&mut bytes);
+    (candidate.surfaces.len() as u16).put(&mut bytes);
+    (candidate.placements.len() as u16).put(&mut bytes);
+    (candidate.targets.len() as u16).put(&mut bytes);
+    (value.rows.len() as u16).put(&mut bytes);
+    0u16.put(&mut bytes);
+    for row in &candidate.surfaces {
+        row.put(&mut bytes);
+    }
+    for row in &candidate.placements {
+        row.put(&mut bytes);
+    }
+    for row in &candidate.targets {
+        row.put(&mut bytes);
+    }
+    for slot in &value.rows {
+        slot.put(&mut bytes);
+    }
+    Ok(bytes)
+}
+
+pub fn decode_native_content_candidate(bytes: &[u8]) -> Result<NativeContentCandidate, ValueError> {
+    let mut cursor = Cursor::new(bytes);
+    let grant = ContentGrant::take(&mut cursor)?;
+    let candidate_generation = u64::take(&mut cursor)?;
+    let output = ContentOutputId::take(&mut cursor)?;
+    let facts_generation = u64::take(&mut cursor)?;
+    let pacing_permit = u64::take(&mut cursor)?;
+    let interaction_generation = u64::take(&mut cursor)?;
+    let opening = u64::take(&mut cursor)?;
+    let catalog_generation = u64::take(&mut cursor)?;
+    let state_revision = u64::take(&mut cursor)?;
+    let selected = u16::take(&mut cursor)?;
+    let surface_count = table_count(&mut cursor, 1)?;
+    let placement_count = table_count(&mut cursor, 32)?;
+    let target_count = table_count(&mut cursor, SOPHIA_SHELL_MAX_LAUNCHER_ROWS)?;
+    let row_count = table_count(&mut cursor, SOPHIA_SHELL_MAX_LAUNCHER_ROWS)?;
+    reserved::<u16>(&mut cursor)?;
+    let surfaces = rows(&mut cursor, surface_count)?;
+    let placements = rows(&mut cursor, placement_count)?;
+    let targets = rows(&mut cursor, target_count)?;
+    let launcher_rows = (0..row_count)
+        .map(|_| u16::take(&mut cursor))
+        .collect::<Result<Vec<_>, _>>()?;
+    cursor.finish()?;
+    let value = NativeContentCandidate {
+        candidate: ContentCandidate {
+            grant,
+            candidate_generation,
+            output,
+            facts_generation,
+            pacing_permit,
+            interaction_generation,
+            surfaces,
+            placements,
+            targets,
+        },
+        opening,
+        catalog_generation,
+        state_revision,
+        selected,
+        rows: launcher_rows,
+    };
+    let (begin, chunk, end) = value.parts();
+    crate::shell::native_launcher::validation::validate(&begin)?;
+    crate::shell::native_launcher::validation::validate(&chunk)?;
+    crate::shell::content::validation::validate(&end)?;
+    Ok(value)
+}
+
+/// The file wire's own layout for [`NativeLauncherInput`]: identical event
+/// fields, but `text` rides a fixed, zero-padded 256-byte field
+/// ([`super::put_text_padded`]) instead of a variable-length tail, so the
+/// whole `NativeInput` event is one fixed-size body like every other native
+/// launcher event. This is a fresh native layout, not the IPC frame's
+/// variable-length encoding (which stays exactly as it is; see
+/// [`Wire for NativeLauncherInput`](struct@NativeLauncherInput) above).
+pub fn encode_native_launcher_input_padded(
+    value: &NativeLauncherInput,
+) -> Result<Vec<u8>, ValueError> {
+    crate::shell::native_launcher::validation::validate(&ShellNativeLauncherRecord::Input(
+        value.clone(),
+    ))?;
+    let mut bytes = Vec::new();
+    value.event.put(&mut bytes);
+    value.issued_mono_usec.put(&mut bytes);
+    (value.kind as u16).put(&mut bytes);
+    super::put_text_padded(
+        &mut bytes,
+        &value.text,
+        SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES,
+    );
+    Ok(bytes)
+}
+
+pub fn decode_native_launcher_input_padded(
+    bytes: &[u8],
+) -> Result<NativeLauncherInput, ValueError> {
+    let mut cursor = Cursor::new(bytes);
+    let event = NativeLauncherEvent::take(&mut cursor)?;
+    let issued_mono_usec = u64::take(&mut cursor)?;
+    let kind = NativeLauncherInputKind::try_from(u16::take(&mut cursor)?)?;
+    let text = super::take_text_padded(&mut cursor, SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES)?;
+    cursor.finish()?;
+    let value = NativeLauncherInput {
+        event,
+        issued_mono_usec,
+        kind,
+        text,
+    };
+    crate::shell::native_launcher::validation::validate(&ShellNativeLauncherRecord::Input(
+        value.clone(),
+    ))?;
+    Ok(value)
 }
 
 /// Decodes one record's value body for the given kind. Rejects trailing

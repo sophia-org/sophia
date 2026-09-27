@@ -27,6 +27,15 @@ impl FieldSpec {
             "bytes" => self
                 .size
                 .unwrap_or_else(|| panic!("field `{}`: type=bytes needs size=", self.name)),
+            // A length-prefixed, zero-padded text field
+            // (`shell::encoding::put_text_padded`): a `u16` length, a
+            // reserved `u16`, then `size` bytes of text. `size` names the
+            // maximum text length, not the field's total wire width.
+            "text" => {
+                4 + self
+                    .size
+                    .unwrap_or_else(|| panic!("field `{}`: type=text needs size=", self.name))
+            }
             other => panic!("field `{}`: unknown type `{other}`", self.name),
         }
     }
@@ -214,10 +223,12 @@ pub fn find_block<'a>(blocks: &'a [Block], name: &str) -> &'a Block {
         .unwrap_or_else(|| panic!("no `{}` block named `{name}`", blocks[0].keyword))
 }
 
-pub fn all_shell_file_kinds() -> [ShellFileKind; 22] {
+pub fn all_shell_file_kinds() -> [ShellFileKind; 39] {
     [
         ShellFileKind::Limits,
         ShellFileKind::Outputs,
+        ShellFileKind::Catalog,
+        ShellFileKind::Indicators,
         ShellFileKind::Negotiated,
         ShellFileKind::Refused,
         ShellFileKind::Submitted,
@@ -228,6 +239,14 @@ pub fn all_shell_file_kinds() -> [ShellFileKind; 22] {
         ShellFileKind::CandidateOutcome,
         ShellFileKind::FramePermit,
         ShellFileKind::Action,
+        ShellFileKind::NativeOpening,
+        ShellFileKind::NativeFocus,
+        ShellFileKind::NativeFocusRevoked,
+        ShellFileKind::NativeInput,
+        ShellFileKind::NativeActivationOutcome,
+        ShellFileKind::NativeClosed,
+        ShellFileKind::CatalogActivationOutcome,
+        ShellFileKind::IndicatorActivationOutcome,
         ShellFileKind::Negotiate,
         ShellFileKind::AllocationRequest,
         ShellFileKind::ResourceBegin,
@@ -238,6 +257,13 @@ pub fn all_shell_file_kinds() -> [ShellFileKind; 22] {
         ShellFileKind::FrameDemand,
         ShellFileKind::FrameDemandCancel,
         ShellFileKind::ActionAck,
+        ShellFileKind::NativeAllocationRequest,
+        ShellFileKind::NativeCandidate,
+        ShellFileKind::NativeInputAck,
+        ShellFileKind::NativeActivate,
+        ShellFileKind::CatalogCandidate,
+        ShellFileKind::CatalogActivate,
+        ShellFileKind::IndicatorActivate,
     ]
 }
 
@@ -248,6 +274,8 @@ pub fn kind_name(kind: ShellFileKind) -> &'static str {
     match kind {
         ShellFileKind::Limits => "Limits",
         ShellFileKind::Outputs => "Outputs",
+        ShellFileKind::Catalog => "Catalog",
+        ShellFileKind::Indicators => "Indicators",
         ShellFileKind::Negotiated => "Negotiated",
         ShellFileKind::Refused => "Refused",
         ShellFileKind::Submitted => "Submitted",
@@ -258,6 +286,14 @@ pub fn kind_name(kind: ShellFileKind) -> &'static str {
         ShellFileKind::CandidateOutcome => "CandidateOutcome",
         ShellFileKind::FramePermit => "FramePermit",
         ShellFileKind::Action => "Action",
+        ShellFileKind::NativeOpening => "NativeOpening",
+        ShellFileKind::NativeFocus => "NativeFocus",
+        ShellFileKind::NativeFocusRevoked => "NativeFocusRevoked",
+        ShellFileKind::NativeInput => "NativeInput",
+        ShellFileKind::NativeActivationOutcome => "NativeActivationOutcome",
+        ShellFileKind::NativeClosed => "NativeClosed",
+        ShellFileKind::CatalogActivationOutcome => "CatalogActivationOutcome",
+        ShellFileKind::IndicatorActivationOutcome => "IndicatorActivationOutcome",
         ShellFileKind::Negotiate => "Negotiate",
         ShellFileKind::AllocationRequest => "AllocationRequest",
         ShellFileKind::ResourceBegin => "ResourceBegin",
@@ -268,6 +304,13 @@ pub fn kind_name(kind: ShellFileKind) -> &'static str {
         ShellFileKind::FrameDemand => "FrameDemand",
         ShellFileKind::FrameDemandCancel => "FrameDemandCancel",
         ShellFileKind::ActionAck => "ActionAck",
+        ShellFileKind::NativeAllocationRequest => "NativeAllocationRequest",
+        ShellFileKind::NativeCandidate => "NativeCandidate",
+        ShellFileKind::NativeInputAck => "NativeInputAck",
+        ShellFileKind::NativeActivate => "NativeActivate",
+        ShellFileKind::CatalogCandidate => "CatalogCandidate",
+        ShellFileKind::CatalogActivate => "CatalogActivate",
+        ShellFileKind::IndicatorActivate => "IndicatorActivate",
     }
 }
 

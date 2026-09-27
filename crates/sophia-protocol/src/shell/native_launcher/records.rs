@@ -1,7 +1,7 @@
 //! Wire-neutral typed native launcher records.
 use crate::{
-    ContentAllocationId, ContentCandidateBegin, ContentCandidateChunk, ContentGrant,
-    ContentMargins, ContentOutputId,
+    ContentAllocationId, ContentCandidate, ContentCandidateBegin, ContentCandidateChunk,
+    ContentCandidateEnd, ContentGrant, ContentMargins, ContentOutputId, ShellContentRecord,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -134,6 +134,80 @@ pub struct NativeLauncherClosed {
     pub grant: ContentGrant,
     pub opening: u64,
     pub reason: u16,
+}
+
+/// One whole native-launcher candidate: the underlying content candidate
+/// (grant, generations, output, rows) plus the launcher's own opening,
+/// catalog generation, state revision, selection and the catalog rows
+/// currently displayed. Transports that carry it in parts reassemble it; the
+/// candidate owner receives it as [`NativeLauncherCandidateBegin`], a
+/// [`ContentCandidateChunk`] and the shared r5 `CandidateEnd`, exactly as
+/// [`ContentCandidate::parts`] documents for the base profile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeContentCandidate {
+    pub candidate: ContentCandidate,
+    pub opening: u64,
+    pub catalog_generation: u64,
+    pub state_revision: u64,
+    pub selected: u16,
+    pub rows: Vec<u16>,
+}
+
+impl NativeContentCandidate {
+    /// The candidate as the owner's `CandidateBegin`, `CandidateChunk` (both
+    /// native-launcher records) and the shared r5 `CandidateEnd`.
+    pub fn parts(
+        &self,
+    ) -> (
+        ShellNativeLauncherRecord,
+        ShellNativeLauncherRecord,
+        ShellContentRecord,
+    ) {
+        let candidate = &self.candidate;
+        let (surfaces, placements, targets) = (
+            candidate.surfaces.len() as u32,
+            candidate.placements.len() as u32,
+            candidate.targets.len() as u32,
+        );
+        let begin = NativeLauncherCandidateBegin {
+            content: ContentCandidateBegin {
+                grant: candidate.grant,
+                candidate_generation: candidate.candidate_generation,
+                output: candidate.output,
+                facts_generation: candidate.facts_generation,
+                pacing_permit: candidate.pacing_permit,
+                interaction_generation: candidate.interaction_generation,
+                surface_count: surfaces,
+                placement_count: placements,
+                target_count: targets,
+            },
+            opening: self.opening,
+            catalog_generation: self.catalog_generation,
+            state_revision: self.state_revision,
+            selected: self.selected,
+            rows: self.rows.clone(),
+        };
+        let chunk = ContentCandidateChunk {
+            grant: candidate.grant,
+            candidate_generation: candidate.candidate_generation,
+            chunk_ordinal: 0,
+            surfaces: candidate.surfaces.clone(),
+            placements: candidate.placements.clone(),
+            targets: candidate.targets.clone(),
+        };
+        let end = ShellContentRecord::CandidateEnd(ContentCandidateEnd {
+            grant: candidate.grant,
+            candidate_generation: candidate.candidate_generation,
+            surface_count: surfaces,
+            placement_count: placements,
+            target_count: targets,
+        });
+        (
+            ShellNativeLauncherRecord::CandidateBegin(begin),
+            ShellNativeLauncherRecord::CandidateChunk(chunk),
+            end,
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

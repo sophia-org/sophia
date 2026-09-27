@@ -11,6 +11,10 @@ pub const SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS: u32 = 2_000;
 pub const SHELL_FILE_MAX_OBJECT_BYTES: usize = 4_194_304;
 /// The `outputs` object cap (docs/sophia-shell-files.md, snapshot objects).
 pub const SHELL_FILE_OUTPUTS_MAX_BYTES: usize = 1024;
+/// The `indicators` object cap (docs/sophia-shell-files.md, t252 B5 draft
+/// table): the whole indicator snapshot, well under the shared 4 MiB object
+/// cap.
+pub const SHELL_FILE_INDICATORS_MAX_BYTES: usize = 32_768;
 /// The number of upload slots a connection may address in a `ResourceBegin`.
 pub const SHELL_FILE_MAX_UPLOAD_SLOTS: u16 = 4;
 /// One complete `Candidate` record, header included: the content limits'
@@ -22,6 +26,8 @@ pub const SHELL_FILE_MAX_CANDIDATE_BYTES: usize = 8192;
 pub enum ShellFileKind {
     Limits = 1,
     Outputs = 2,
+    Catalog = 3,
+    Indicators = 4,
     Negotiated = 16,
     Refused = 17,
     Submitted = 18,
@@ -32,6 +38,14 @@ pub enum ShellFileKind {
     CandidateOutcome = 35,
     FramePermit = 36,
     Action = 37,
+    NativeOpening = 38,
+    NativeFocus = 39,
+    NativeFocusRevoked = 40,
+    NativeInput = 41,
+    NativeActivationOutcome = 42,
+    NativeClosed = 43,
+    CatalogActivationOutcome = 44,
+    IndicatorActivationOutcome = 45,
     Negotiate = 256,
     AllocationRequest = 257,
     ResourceBegin = 258,
@@ -42,6 +56,13 @@ pub enum ShellFileKind {
     FrameDemand = 263,
     FrameDemandCancel = 264,
     ActionAck = 265,
+    NativeAllocationRequest = 266,
+    NativeCandidate = 267,
+    NativeInputAck = 268,
+    NativeActivate = 269,
+    CatalogCandidate = 270,
+    CatalogActivate = 271,
+    IndicatorActivate = 272,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

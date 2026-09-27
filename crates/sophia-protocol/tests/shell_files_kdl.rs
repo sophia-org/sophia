@@ -19,9 +19,25 @@ mod support;
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use std::collections::BTreeMap;
-use support::checks::{checked, header_expected, transaction_body, verify_block, verify_rows};
+use support::checks::{
+    checked, header_expected, transaction_body, verify_block, verify_rows, verify_text_field,
+};
 use support::kdl_model::{all_shell_file_kinds, find_block, kind_class, kind_name, parse_kdl};
-use support::{fixtures, fixtures_limits, fixtures_tables};
+use support::{
+    fixtures, fixtures_catalog, fixtures_indicators, fixtures_limits, fixtures_native_launcher,
+    fixtures_tables,
+};
+
+fn text_field<'a>(
+    block: &'a support::kdl_model::Block,
+    name: &str,
+) -> &'a support::kdl_model::FieldSpec {
+    block
+        .fields
+        .iter()
+        .find(|f| f.name == name)
+        .unwrap_or_else(|| panic!("no field named `{name}` in `{}`", block.name))
+}
 
 // ---------------------------------------------------------------------
 // Structural tests: every block is gap/overlap free, and every codec kind
@@ -586,5 +602,530 @@ fn candidate_body_and_rows_match_kdl() {
         "Candidate.ContentTarget",
         &target_row_block.fields,
         &targets_expected,
+    );
+}
+
+// ---------------------------------------------------------------------
+// t252 B5: native launcher (r7)
+// ---------------------------------------------------------------------
+
+fn native_launcher_header(
+    kind: ShellFileKind,
+    submission_id: u64,
+    sequence: u64,
+) -> ShellFileHeader {
+    ShellFileHeader {
+        kind,
+        connection_epoch: 1,
+        submission_id,
+        sequence,
+    }
+}
+
+#[test]
+fn native_opening_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_opening();
+    let header = native_launcher_header(ShellFileKind::NativeOpening, 0, 1);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::Opening(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeOpening"),
+        "NativeOpening",
+        &expected,
+    );
+}
+
+#[test]
+fn native_focus_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_focus();
+    let header = native_launcher_header(ShellFileKind::NativeFocus, 0, 1);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::Focus(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeFocus"),
+        "NativeFocus",
+        &expected,
+    );
+}
+
+#[test]
+fn native_focus_revoked_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_focus_revoked();
+    let header = native_launcher_header(ShellFileKind::NativeFocusRevoked, 0, 1);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::FocusRevoked(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeFocusRevoked"),
+        "NativeFocusRevoked",
+        &expected,
+    );
+}
+
+#[test]
+fn native_input_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_input();
+    let header = native_launcher_header(ShellFileKind::NativeInput, 0, 1);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::Input(value.clone()),
+    };
+    let encoded = encode_shell_file_native_input(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    let block = find_block(&kdl.bodies, "NativeInput");
+    assert_eq!(body.len(), block.size);
+    verify_block(&body, 0, "NativeInput", &block.fields, &expected);
+    verify_text_field(
+        &body,
+        0,
+        "NativeInput",
+        text_field(block, "text"),
+        &value.text,
+    );
+}
+
+#[test]
+fn native_activation_outcome_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_activation_outcome();
+    let header = native_launcher_header(ShellFileKind::NativeActivationOutcome, 0, 1);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::ActivationOutcome(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeActivationOutcome"),
+        "NativeActivationOutcome",
+        &expected,
+    );
+}
+
+#[test]
+fn native_closed_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_closed();
+    let header = native_launcher_header(ShellFileKind::NativeClosed, 0, 1);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::Closed(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeClosed"),
+        "NativeClosed",
+        &expected,
+    );
+}
+
+#[test]
+fn native_allocation_request_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_allocation_request();
+    let header = native_launcher_header(ShellFileKind::NativeAllocationRequest, 1, 0);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::AllocationRequest(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeAllocationRequest"),
+        "NativeAllocationRequest",
+        &expected,
+    );
+}
+
+#[test]
+fn native_input_ack_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_input_ack();
+    let header = native_launcher_header(ShellFileKind::NativeInputAck, 1, 0);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::InputAck(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeInputAck"),
+        "NativeInputAck",
+        &expected,
+    );
+}
+
+#[test]
+fn native_activate_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_native_launcher::native_activate();
+    let header = native_launcher_header(ShellFileKind::NativeActivate, 1, 0);
+    let tx_record = ShellFileNativeLauncherRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellNativeLauncherRecord::Activate(value),
+    };
+    let encoded = encode_shell_file_native_launcher_transaction(header, &tx_record).unwrap();
+    let body = encoded[SHELL_FILE_HEADER_BYTES..].to_vec();
+    checked(
+        body,
+        find_block(&kdl.bodies, "NativeActivate"),
+        "NativeActivate",
+        &expected,
+    );
+}
+
+#[test]
+fn native_candidate_body_and_rows_match_kdl() {
+    let kdl = parse_kdl();
+    let prefix = find_block(&kdl.prefixes, "NativeCandidate");
+    let surface_row = find_block(&kdl.rows, "NativeSurface");
+    let placement_row = find_block(&kdl.rows, "NativePlacement");
+    let target_row = find_block(&kdl.rows, "NativeTarget");
+    let slot_row = find_block(&kdl.rows, "NativeCandidateRow");
+
+    let (
+        transaction,
+        candidate,
+        prefix_expected,
+        surface_expected,
+        placement_expected,
+        target_expected,
+        row_expected,
+    ) = fixtures_native_launcher::native_candidate();
+
+    let header = native_launcher_header(ShellFileKind::NativeCandidate, 1, 0);
+    let value = ShellFileNativeCandidate {
+        transaction: TransactionId::from_raw(transaction),
+        candidate,
+    };
+    let encoded = encode_shell_file_native_candidate(header, &value).unwrap();
+    let body = &encoded[SHELL_FILE_HEADER_BYTES..];
+
+    let expected_size =
+        prefix.size + surface_row.size + placement_row.size + target_row.size + slot_row.size;
+    assert_eq!(body.len(), expected_size);
+    verify_block(body, 0, "NativeCandidate", &prefix.fields, &prefix_expected);
+
+    verify_rows(
+        body,
+        prefix.size,
+        surface_row.size,
+        "NativeCandidate.NativeSurface",
+        &surface_row.fields,
+        &[surface_expected],
+    );
+    let placements_base = prefix.size + surface_row.size;
+    verify_rows(
+        body,
+        placements_base,
+        placement_row.size,
+        "NativeCandidate.NativePlacement",
+        &placement_row.fields,
+        &[placement_expected],
+    );
+    let targets_base = placements_base + placement_row.size;
+    verify_rows(
+        body,
+        targets_base,
+        target_row.size,
+        "NativeCandidate.NativeTarget",
+        &target_row.fields,
+        &[target_expected],
+    );
+    let rows_base = targets_base + target_row.size;
+    verify_rows(
+        body,
+        rows_base,
+        slot_row.size,
+        "NativeCandidate.NativeCandidateRow",
+        &slot_row.fields,
+        &[row_expected],
+    );
+}
+
+// ---------------------------------------------------------------------
+// t252 B5: persistent catalog (r8)
+// ---------------------------------------------------------------------
+
+#[test]
+fn catalog_body_and_rows_match_kdl() {
+    let kdl = parse_kdl();
+    let prefix = find_block(&kdl.prefixes, "Catalog");
+    let row_block = find_block(&kdl.rows, "CatalogEntry");
+    let (transaction, catalog, expected_prefix, rows_expected) = fixtures_catalog::catalog();
+    let value = ShellFileCatalog {
+        transaction: TransactionId::from_raw(transaction),
+        catalog,
+    };
+    let body = encode_shell_file_catalog_body(&value).unwrap();
+    assert_eq!(
+        body.len(),
+        prefix.size + rows_expected.len() * row_block.size
+    );
+    verify_block(&body, 0, "Catalog", &prefix.fields, &expected_prefix);
+    verify_rows(
+        &body,
+        prefix.size,
+        row_block.size,
+        "Catalog.CatalogEntry",
+        &row_block.fields,
+        &rows_expected,
+    );
+
+    let label_field = text_field(row_block, "label");
+    let keywords_field = text_field(row_block, "keywords");
+    let identity_field = text_field(row_block, "identity");
+    for (index, (label, keywords, identity)) in
+        fixtures_catalog::catalog_row_text().into_iter().enumerate()
+    {
+        let base = prefix.size + index * row_block.size;
+        verify_text_field(&body, base, "Catalog.CatalogEntry", label_field, label);
+        verify_text_field(
+            &body,
+            base,
+            "Catalog.CatalogEntry",
+            keywords_field,
+            keywords,
+        );
+        verify_text_field(
+            &body,
+            base,
+            "Catalog.CatalogEntry",
+            identity_field,
+            identity,
+        );
+    }
+}
+
+#[test]
+fn catalog_activation_outcome_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_catalog::catalog_activation_outcome();
+    let tx_record = ShellFileCatalogActionRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellCatalogActionRecord::ActivationOutcome(value),
+    };
+    let (kind, body) = encode_shell_file_catalog_action_body(&tx_record).unwrap();
+    assert_eq!(kind, ShellFileKind::CatalogActivationOutcome);
+    checked(
+        body,
+        find_block(&kdl.bodies, "CatalogActivationOutcome"),
+        "CatalogActivationOutcome",
+        &expected,
+    );
+}
+
+#[test]
+fn catalog_activate_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, value, expected) = fixtures_catalog::catalog_activate();
+    let tx_record = ShellFileCatalogActionRecord {
+        transaction: TransactionId::from_raw(transaction),
+        record: ShellCatalogActionRecord::Activate(value),
+    };
+    let (kind, body) = encode_shell_file_catalog_action_body(&tx_record).unwrap();
+    assert_eq!(kind, ShellFileKind::CatalogActivate);
+    checked(
+        body,
+        find_block(&kdl.bodies, "CatalogActivate"),
+        "CatalogActivate",
+        &expected,
+    );
+}
+
+#[test]
+fn catalog_candidate_body_and_rows_match_kdl() {
+    let kdl = parse_kdl();
+    let prefix = find_block(&kdl.prefixes, "CatalogCandidate");
+    let surface_row = find_block(&kdl.rows, "ContentSurface");
+    let placement_row = find_block(&kdl.rows, "ContentPlacement");
+    let target_row = find_block(&kdl.rows, "CatalogTarget");
+
+    let (
+        transaction,
+        candidate,
+        prefix_expected,
+        surfaces_expected,
+        placements_expected,
+        targets_expected,
+    ) = fixtures_catalog::catalog_candidate();
+
+    let header = ShellFileHeader {
+        kind: ShellFileKind::CatalogCandidate,
+        connection_epoch: 1,
+        submission_id: 1,
+        sequence: 0,
+    };
+    let value = ShellFileCatalogCandidate {
+        transaction: TransactionId::from_raw(transaction),
+        candidate,
+    };
+    let encoded = encode_shell_file_catalog_candidate(header, &value).unwrap();
+    let body = &encoded[SHELL_FILE_HEADER_BYTES..];
+
+    let expected_size = prefix.size
+        + surfaces_expected.len() * surface_row.size
+        + placements_expected.len() * placement_row.size
+        + targets_expected.len() * target_row.size;
+    assert_eq!(body.len(), expected_size);
+    verify_block(
+        body,
+        0,
+        "CatalogCandidate",
+        &prefix.fields,
+        &prefix_expected,
+    );
+
+    verify_rows(
+        body,
+        prefix.size,
+        surface_row.size,
+        "CatalogCandidate.ContentSurface",
+        &surface_row.fields,
+        &surfaces_expected,
+    );
+    let placements_base = prefix.size + surfaces_expected.len() * surface_row.size;
+    verify_rows(
+        body,
+        placements_base,
+        placement_row.size,
+        "CatalogCandidate.ContentPlacement",
+        &placement_row.fields,
+        &placements_expected,
+    );
+    let targets_base = placements_base + placements_expected.len() * placement_row.size;
+    verify_rows(
+        body,
+        targets_base,
+        target_row.size,
+        "CatalogCandidate.CatalogTarget",
+        &target_row.fields,
+        &targets_expected,
+    );
+}
+
+// ---------------------------------------------------------------------
+// t252 B5: view indicators (r6)
+// ---------------------------------------------------------------------
+
+#[test]
+fn indicators_body_and_rows_match_kdl() {
+    let kdl = parse_kdl();
+    let prefix = find_block(&kdl.prefixes, "Indicators");
+    let status_row = find_block(&kdl.rows, "IndicatorOutputStatus");
+    let entry_row = find_block(&kdl.rows, "IndicatorEntry");
+
+    let (transaction, snapshot, expected_prefix, statuses_expected, entries_expected) =
+        fixtures_indicators::indicators();
+    let value = ShellFileIndicators {
+        transaction: TransactionId::from_raw(transaction),
+        snapshot,
+    };
+    let body = encode_shell_file_indicators_body(&value).unwrap();
+    let expected_size = prefix.size
+        + statuses_expected.len() * status_row.size
+        + entries_expected.len() * entry_row.size;
+    assert_eq!(body.len(), expected_size);
+    verify_block(&body, 0, "Indicators", &prefix.fields, &expected_prefix);
+    verify_rows(
+        &body,
+        prefix.size,
+        status_row.size,
+        "Indicators.IndicatorOutputStatus",
+        &status_row.fields,
+        &statuses_expected,
+    );
+    let entries_base = prefix.size + statuses_expected.len() * status_row.size;
+    verify_rows(
+        &body,
+        entries_base,
+        entry_row.size,
+        "Indicators.IndicatorEntry",
+        &entry_row.fields,
+        &entries_expected,
+    );
+
+    let layout_field = text_field(status_row, "layout");
+    for (index, layout) in fixtures_indicators::indicators_status_text()
+        .into_iter()
+        .enumerate()
+    {
+        verify_text_field(
+            &body,
+            prefix.size + index * status_row.size,
+            "Indicators.IndicatorOutputStatus",
+            layout_field,
+            layout,
+        );
+    }
+    let label_field = text_field(entry_row, "label");
+    for (index, label) in fixtures_indicators::indicators_entry_text()
+        .into_iter()
+        .enumerate()
+    {
+        verify_text_field(
+            &body,
+            entries_base + index * entry_row.size,
+            "Indicators.IndicatorEntry",
+            label_field,
+            label,
+        );
+    }
+}
+
+#[test]
+fn indicator_activation_outcome_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, outcome, expected) = fixtures_indicators::indicator_activation_outcome();
+    let value = ShellFileIndicatorActivationOutcome {
+        transaction: TransactionId::from_raw(transaction),
+        outcome,
+    };
+    let body = encode_shell_file_indicator_activation_outcome_body(&value).unwrap();
+    checked(
+        body,
+        find_block(&kdl.bodies, "IndicatorActivationOutcome"),
+        "IndicatorActivationOutcome",
+        &expected,
+    );
+}
+
+#[test]
+fn indicator_activate_body_matches_kdl() {
+    let kdl = parse_kdl();
+    let (transaction, activation, expected) = fixtures_indicators::indicator_activate();
+    let value = ShellFileIndicatorActivate {
+        transaction: TransactionId::from_raw(transaction),
+        activation,
+    };
+    let body = encode_shell_file_indicator_activate_body(&value).unwrap();
+    checked(
+        body,
+        find_block(&kdl.bodies, "IndicatorActivate"),
+        "IndicatorActivate",
+        &expected,
     );
 }

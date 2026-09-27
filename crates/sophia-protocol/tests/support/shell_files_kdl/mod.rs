@@ -14,7 +14,10 @@
 
 pub mod checks;
 pub mod fixtures;
+pub mod fixtures_catalog;
+pub mod fixtures_indicators;
 pub mod fixtures_limits;
+pub mod fixtures_native_launcher;
 pub mod fixtures_tables;
 pub mod kdl_model;
 
