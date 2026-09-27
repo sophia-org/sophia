@@ -35,18 +35,34 @@ impl ShellComponentTransport {
         if self.indicator_response.is_some() {
             return Ok(None);
         }
-        let at = self.inbox.iter().position(|frame| {
-            u16::from_le_bytes([frame[6], frame[7]])
-                == IpcMessageKind::ShellIndicatorActivate as u16
-        });
-        let Some(at) = at else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
+        let (transaction, activation, at) = if self.files.is_some() {
+            let Some((transaction, activation)) = self
+                .files
+                .as_ref()
+                .and_then(|files| files.export().peek_indicator_activate())
+            else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
             };
+            (transaction, activation, None)
+        } else {
+            let at = self.inbox.iter().position(|frame| {
+                u16::from_le_bytes([frame[6], frame[7]])
+                    == IpcMessageKind::ShellIndicatorActivate as u16
+            });
+            let Some(at) = at else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
+            };
+            let (transaction, activation) = decode_shell_indicator_activation(&self.inbox[at])?;
+            (transaction, activation, Some(at))
         };
-        let (transaction, activation) = decode_shell_indicator_activation(&self.inbox[at])?;
         let capacity = if self.content_limits.is_some() {
             self.control_capacity_available(epochs, 1)
         } else {
@@ -54,14 +70,20 @@ impl ShellComponentTransport {
                 && self.output.len().saturating_add(CONTROL_FRAME_BYTES) <= 2 * 1024 * 1024
         };
         if !capacity {
-            return Ok(None); // The input frame still owns the unadmitted request.
+            return Ok(None); // The input record still owns the unadmitted request.
         }
         self.indicator_response = Some(PendingIndicatorResponse {
             transaction,
             activation,
             outcome: None,
         });
-        self.inbox.remove(at);
+        if let Some(at) = at {
+            self.inbox.remove(at);
+        } else {
+            self.files
+                .as_mut()
+                .and_then(|files| files.export_mut().take_indicator_activate());
+        }
         Ok(Some((transaction, activation)))
     }
 
@@ -107,7 +129,8 @@ impl ShellComponentTransport {
         let Some(outcome) = pending.outcome else {
             return Ok(false);
         };
-        let frame = encode_shell_indicator_activation_outcome(pending.transaction, &outcome)?;
+        let transaction = pending.transaction;
+        let frame = encode_shell_indicator_activation_outcome(transaction, &outcome)?;
         if frame.len() > CONTROL_FRAME_BYTES {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
@@ -120,7 +143,20 @@ impl ShellComponentTransport {
         if !capacity {
             return Ok(false);
         }
-        self.output.push(frame, true);
+        self.push_family_frame(true, frame, || {
+            let body =
+                sophia_protocol::shell_files::encode_shell_file_indicator_activation_outcome_body(
+                    &sophia_protocol::shell_files::ShellFileIndicatorActivationOutcome {
+                        transaction,
+                        outcome,
+                    },
+                )
+                .map_err(|_| ShellTransportError::WrongContentRecord)?;
+            Ok((
+                sophia_protocol::shell_files::ShellFileKind::IndicatorActivationOutcome,
+                body,
+            ))
+        })?;
         // Exact pending record was copied/validated above. This infallible clear
         // has no allocation, callback or socket I/O after FIFO ownership.
         self.indicator_response = None;

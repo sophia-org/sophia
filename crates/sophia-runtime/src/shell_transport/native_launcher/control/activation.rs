@@ -62,21 +62,37 @@ impl ShellComponentTransport {
         if self.native_control.activation_response.is_some() {
             return Ok(None);
         }
-        let Some(index) = self
-            .inbox
-            .iter()
-            .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 195)
-        else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
+        let (transaction, activation, index) = if self.files.is_some() {
+            let Some((transaction, activation)) = self
+                .files
+                .as_ref()
+                .and_then(|files| files.export().peek_native_activate())
+            else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
             };
-        };
-        let (transaction, ShellNativeLauncherRecord::Activate(activation)) =
-            decode_shell_native_launcher_frame(&self.inbox[index])?
-        else {
-            return Err(ShellTransportError::WrongContentRecord);
+            (transaction, activation, None)
+        } else {
+            let Some(index) = self
+                .inbox
+                .iter()
+                .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 195)
+            else {
+                return if self.peer_closed {
+                    Err(ShellTransportError::NotConnected)
+                } else {
+                    Ok(None)
+                };
+            };
+            let (transaction, ShellNativeLauncherRecord::Activate(activation)) =
+                decode_shell_native_launcher_frame(&self.inbox[index])?
+            else {
+                return Err(ShellTransportError::WrongContentRecord);
+            };
+            (transaction, activation, Some(index))
         };
         if Some(activation.event.binding.grant) != self.content_grant {
             return Err(ShellTransportError::WrongContentGrant);
@@ -89,7 +105,13 @@ impl ShellComponentTransport {
             activation,
             outcome: None,
         });
-        self.inbox.remove(index);
+        if let Some(index) = index {
+            self.inbox.remove(index);
+        } else {
+            self.files
+                .as_mut()
+                .and_then(|files| files.export_mut().take_native_activate());
+        }
         Ok(Some((transaction, activation)))
     }
 
@@ -220,16 +242,23 @@ impl ShellComponentTransport {
         let Some(outcome) = pending.outcome else {
             return Ok(false);
         };
-        let frame = encode_shell_native_launcher_frame(
-            pending.transaction,
-            &ShellNativeLauncherRecord::ActivationOutcome(outcome),
-        )?;
+        let transaction = pending.transaction;
+        let record = ShellNativeLauncherRecord::ActivationOutcome(outcome);
+        let frame = encode_shell_native_launcher_frame(transaction, &record)?;
         if frame.len() > self.control_frame_bytes()
             || !self.frame_capacity_available(epochs, frame.len(), true, true)
         {
             return Ok(false);
         }
-        self.output.push(frame, true);
+        self.push_family_frame(true, frame, || {
+            sophia_protocol::shell_files::encode_shell_file_native_launcher_transaction_body(
+                &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+                    transaction,
+                    record,
+                },
+            )
+            .map_err(|_| ShellTransportError::WrongContentRecord)
+        })?;
         // Copy pending record: no allocation, callback, or I/O after transfer.
         self.native_control.activation_response = None;
         Ok(true)

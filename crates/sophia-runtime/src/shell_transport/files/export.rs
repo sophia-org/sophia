@@ -13,13 +13,19 @@ use sophia_9p::{
 };
 use sophia_protocol::shell_files::*;
 use sophia_protocol::{
+    CatalogActivation, CatalogCandidateBegin, ContentCandidateChunk, ContentCandidateEnd,
     ContentGrant, ContentLimits, ContentResourceCancel, ContentResourceChunk, ContentResourceId,
-    ContentResourceLayout, ShellContentRecord, ShellV1ClientHello, TransactionId,
+    ContentResourceLayout, NativeLauncherActivation, NativeLauncherAllocationRequest,
+    NativeLauncherCandidateBegin, NativeLauncherInputAck, ShellCatalogActionRecord,
+    ShellContentRecord, ShellIndicatorActivation, ShellNativeLauncherRecord, ShellV1ClientHello,
+    TransactionId,
 };
 
 use super::journal::{Journal, JournalBounds};
 use sophia_9p::journal::{Staging, StagingBounds};
 
+mod inbound;
+mod objects;
 mod submission;
 
 /// Not in `sophia-9p`'s set; the WM file owner defines the same values.
@@ -38,17 +44,6 @@ const STAGING: StagingBounds = StagingBounds {
 /// socket transport's inbox does.
 pub(in crate::shell_transport) const INBOUND_RECORDS: usize = 64;
 
-const ROOT_ENTRIES: [(&[u8], Node); 8] = [
-    (b"api", Node::Api),
-    (b"limits", Node::Limits),
-    (b"outputs", Node::Outputs),
-    (b"events", Node::Events),
-    (b"transaction", Node::Transaction),
-    (b"submit", Node::Submit),
-    (b"ack", Node::Ack),
-    (b"upload", Node::Uploads),
-];
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::shell_transport) enum Node {
     Root,
@@ -62,6 +57,10 @@ pub(in crate::shell_transport) enum Node {
     /// The fixed `upload` directory of transfer slots.
     Uploads,
     Upload(u8),
+    /// The launcher/dock application catalog, plain or with r8 identities.
+    Catalog,
+    /// The bar's indicator snapshot, disclosed only with bit 9 negotiated.
+    Indicators,
 }
 
 impl Node {
@@ -78,11 +77,23 @@ impl Node {
             Self::Ack => 7,
             Self::Uploads => 8,
             Self::Upload(slot) => 9 + u64::from(slot),
+            Self::Catalog => 13,
+            Self::Indicators => 14,
+        }
+    }
+
+    /// The object kind this node names, for the three pinned snapshot feeds.
+    fn object_kind(self) -> Option<ShellFileKind> {
+        match self {
+            Self::Outputs => Some(ShellFileKind::Outputs),
+            Self::Catalog => Some(ShellFileKind::Catalog),
+            Self::Indicators => Some(ShellFileKind::Indicators),
+            _ => None,
         }
     }
 }
 
-/// Logical qids reserved per epoch for the fixed nodes (root .. upload/3).
+/// Logical qids reserved per epoch for the fixed nodes (root .. indicators).
 const NODE_QIDS: u64 = 16;
 
 pub(in crate::shell_transport) enum Handle {
@@ -132,8 +143,41 @@ impl Binding {
 /// One published snapshot object. A new publication never edits it; it
 /// lives while it is current or pinned by an open fid.
 pub(in crate::shell_transport) struct Object {
+    kind: ShellFileKind,
     qid: u64,
     bytes: Vec<u8>,
+}
+
+/// One feed's current object and whether an open fid pins it. Publication
+/// continues while a pin is held; the pinned bytes never change underneath it.
+#[derive(Default)]
+struct ObjectSlot {
+    current: Option<Arc<Object>>,
+    pinned: bool,
+}
+
+/// The family of a queued whole candidate, before it is exploded into parts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::shell_transport) enum CandidateFamily {
+    Base,
+    Native,
+    Catalog,
+}
+
+/// The exploded parts of one whole native-launcher candidate, in wire order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::shell_transport) enum NativeCandidatePart {
+    Begin(NativeLauncherCandidateBegin),
+    Chunk(ContentCandidateChunk),
+    End(ContentCandidateEnd),
+}
+
+/// The exploded parts of one whole catalog candidate, in wire order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::shell_transport) enum CatalogCandidatePart {
+    Begin(CatalogCandidateBegin),
+    Chunk(ContentCandidateChunk),
+    End(ContentCandidateEnd),
 }
 
 /// A submission whose custody the export has taken; the owners decide it.
@@ -143,6 +187,17 @@ pub(in crate::shell_transport) enum Inbound {
     Content(TransactionId, Box<ShellContentRecord>),
     /// One whole candidate; its parts reach the owner in wire order.
     Candidate(Box<ShellFileCandidate>),
+    NativeAllocation(TransactionId, Box<NativeLauncherAllocationRequest>),
+    /// One whole native-launcher candidate; its parts reach the owner in
+    /// wire order through `take_native_candidate_part`.
+    NativeCandidate(Box<ShellFileNativeCandidate>),
+    NativeInputAck(TransactionId, Box<NativeLauncherInputAck>),
+    NativeActivate(TransactionId, Box<NativeLauncherActivation>),
+    /// One whole catalog candidate; its parts reach the owner in wire order
+    /// through `take_catalog_candidate_part`.
+    CatalogCandidate(Box<ShellFileCatalogCandidate>),
+    CatalogActivate(TransactionId, Box<CatalogActivation>),
+    IndicatorActivate(TransactionId, Box<ShellIndicatorActivation>),
 }
 
 struct Accepted {
@@ -161,14 +216,20 @@ pub(in crate::shell_transport) struct ShellFiles {
     negotiate_accepted: bool,
     negotiated: bool,
     content: bool,
+    /// The role profile discloses `catalog`, decided before the peer
+    /// connects (launcher and dock; never the bar's Legacy profile).
+    catalog_allowed: bool,
+    /// The negotiated welcome's capability set, once negotiation completed.
+    capabilities: u64,
     qid_base: u64,
     next_qid: u64,
     limits: Option<Vec<u8>>,
     content_limits: Option<ContentLimits>,
     upload_slots: u8,
     uploads: [Option<Binding>; SHELL_FILE_MAX_UPLOAD_SLOTS as usize],
-    outputs: Option<Arc<Object>>,
-    outputs_pinned: bool,
+    outputs: ObjectSlot,
+    catalog: ObjectSlot,
+    indicators: ObjectSlot,
     staging: Option<Staging>,
     accepted: Option<Accepted>,
     submission_watermark: u64,
@@ -176,6 +237,10 @@ pub(in crate::shell_transport) struct ShellFiles {
     inbound: VecDeque<Inbound>,
     /// The Begin, Chunk and End of the candidate being handed to the owner.
     candidate_parts: VecDeque<(TransactionId, ShellContentRecord)>,
+    /// As `candidate_parts`, for a whole `NativeCandidate` under assembly.
+    native_candidate_parts: VecDeque<(TransactionId, NativeCandidatePart)>,
+    /// As `candidate_parts`, for a whole `CatalogCandidate` under assembly.
+    catalog_candidate_parts: VecDeque<(TransactionId, CatalogCandidatePart)>,
 }
 
 fn slice(bytes: &[u8], offset: u64, count: u32) -> ReadOutcome {
@@ -189,9 +254,12 @@ fn slice(bytes: &[u8], offset: u64, count: u32) -> ReadOutcome {
 impl ShellFiles {
     /// An export awaiting exactly one Negotiate record for `epoch`. Qids are
     /// logical per component and continue from `qid_base` across epochs.
+    /// `catalog_allowed` is fixed by the role profile Session selected before
+    /// the peer connected (launcher, dock), independent of negotiation.
     pub(in crate::shell_transport) fn awaiting_negotiation(
         epoch: u64,
         role: &str,
+        catalog_allowed: bool,
         bounds: JournalBounds,
         qid_base: u64,
         now: Instant,
@@ -210,20 +278,25 @@ impl ShellFiles {
             negotiate_accepted: false,
             negotiated: false,
             content: false,
+            catalog_allowed,
+            capabilities: 0,
             qid_base,
             next_qid: qid_base + NODE_QIDS,
             limits: None,
             content_limits: None,
             upload_slots: 0,
             uploads: Default::default(),
-            outputs: None,
-            outputs_pinned: false,
+            outputs: ObjectSlot::default(),
+            catalog: ObjectSlot::default(),
+            indicators: ObjectSlot::default(),
             staging: None,
             accepted: None,
             submission_watermark: 0,
             journal: Journal::new(epoch, bounds, now),
             inbound: VecDeque::with_capacity(INBOUND_RECORDS),
             candidate_parts: VecDeque::with_capacity(3),
+            native_candidate_parts: VecDeque::with_capacity(3),
+            catalog_candidate_parts: VecDeque::with_capacity(3),
         }
     }
 
@@ -244,10 +317,13 @@ impl ShellFiles {
     }
 
     /// Records the owners' selection: the immutable limits object, if the
-    /// profile has one, and whether content records may be submitted.
+    /// profile has one, whether content records may be submitted, and the
+    /// negotiated capability set that gates the native, catalog and
+    /// indicator families and the `indicators` root name.
     pub(in crate::shell_transport) fn complete_negotiation(
         &mut self,
         limits: Option<(Vec<u8>, ContentLimits)>,
+        capabilities: u64,
     ) -> Result<(), Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);
@@ -263,6 +339,7 @@ impl ShellFiles {
             self.limits = Some(bytes);
             self.content_limits = Some(limits);
         }
+        self.capabilities = capabilities;
         self.negotiated = true;
         Ok(())
     }
@@ -368,111 +445,8 @@ impl ShellFiles {
         Ok(take as u32)
     }
 
-    /// Makes one snapshot object current and journals its publication, as one
-    /// step: the event's room is checked before a qid is spent, and nothing
-    /// changes on refusal. `Ok(false)` means the journal has no room yet.
-    pub(in crate::shell_transport) fn publish_object(
-        &mut self,
-        kind: ShellFileKind,
-        body: &[u8],
-        credited: bool,
-    ) -> Result<bool, Errno> {
-        if self.revoked {
-            return Err(Errno::ESTALE);
-        }
-        if kind != ShellFileKind::Outputs {
-            return Err(Errno::EINVAL);
-        }
-        let bytes = encode_shell_file_record(
-            ShellFileHeader {
-                kind,
-                connection_epoch: self.epoch,
-                submission_id: 0,
-                sequence: 0,
-            },
-            body,
-        )
-        .map_err(|_| Errno::EINVAL)?;
-        let facts = decode_shell_file_outputs(&bytes).map_err(|_| Errno::EINVAL)?;
-        let sophia_protocol::ShellContentRecord::OutputFacts(facts) = facts.record else {
-            return Err(Errno::EINVAL);
-        };
-        let event = SHELL_FILE_HEADER_BYTES + 24;
-        if !self.journal.fits(event, credited) {
-            return Ok(false);
-        }
-        let qid = self.allocate_qid()?;
-        let published = encode_shell_file_object_published_body(ShellFileObjectPublished {
-            object: kind,
-            generation: facts.facts_generation,
-            qid,
-        })
-        .map_err(|_| Errno::EINVAL)?;
-        self.journal
-            .append(ShellFileKind::ObjectPublished, &published, credited)?;
-        self.outputs = Some(Arc::new(Object { qid, bytes }));
-        Ok(true)
-    }
-
     pub(in crate::shell_transport) fn journal(&self) -> &Journal {
         &self.journal
-    }
-
-    /// The first queued content record the predicate selects, left queued.
-    pub(in crate::shell_transport) fn peek_content(
-        &self,
-        select: impl Fn(&ShellContentRecord) -> bool,
-    ) -> Option<&ShellContentRecord> {
-        self.inbound.iter().find_map(|item| match item {
-            Inbound::Content(_, record) if select(record) => Some(record.as_ref()),
-            _ => None,
-        })
-    }
-
-    pub(in crate::shell_transport) fn take_inbound(&mut self) -> Option<Inbound> {
-        self.inbound.pop_front()
-    }
-
-    /// Removes the first queued content record the predicate selects,
-    /// preserving the order of everything else.
-    pub(in crate::shell_transport) fn take_content(
-        &mut self,
-        select: impl Fn(&ShellContentRecord) -> bool,
-    ) -> Option<(TransactionId, ShellContentRecord)> {
-        let at = self
-            .inbound
-            .iter()
-            .position(|item| matches!(item, Inbound::Content(_, record) if select(record)))?;
-        match self.inbound.remove(at) {
-            Some(Inbound::Content(transaction, record)) => Some((transaction, *record)),
-            _ => None,
-        }
-    }
-
-    /// The next candidate part: the rest of the candidate already begun, or
-    /// the first part of the oldest queued candidate. Other queued records
-    /// keep their order.
-    pub(in crate::shell_transport) fn take_candidate_part(
-        &mut self,
-    ) -> Option<(TransactionId, ShellContentRecord)> {
-        if self.candidate_parts.is_empty() {
-            let at = self
-                .inbound
-                .iter()
-                .position(|item| matches!(item, Inbound::Candidate(_)))?;
-            let Some(Inbound::Candidate(candidate)) = self.inbound.remove(at) else {
-                return None;
-            };
-            let transaction = candidate.transaction;
-            self.candidate_parts.extend(
-                candidate
-                    .candidate
-                    .parts()
-                    .into_iter()
-                    .map(|record| (transaction, record)),
-            );
-        }
-        self.candidate_parts.pop_front()
     }
 
     pub(in crate::shell_transport) fn expire(&mut self) {
@@ -563,10 +537,11 @@ impl Export for ShellFiles {
         }
         match name {
             WalkName::Parent => Ok(Node::Root),
-            WalkName::Child(name) => ROOT_ENTRIES
-                .iter()
+            WalkName::Child(name) => self
+                .root_entries()
+                .into_iter()
                 .find(|(entry, _)| *entry == name)
-                .map(|&(_, node)| node)
+                .map(|(_, node)| node)
                 .ok_or(Errno::ENOENT),
         }
     }
@@ -578,8 +553,10 @@ impl Export for ShellFiles {
             Some(Handle::Object(object)) => qid_path = object.qid,
             Some(Handle::Upload { binding, .. }) => qid_path = *binding,
             _ => {
-                if *node == Node::Outputs
-                    && let Some(object) = &self.outputs
+                if let Some(kind) = node.object_kind()
+                    && let Some(object) = self
+                        .object_slot(kind)
+                        .and_then(|slot| slot.current.as_ref())
                 {
                     qid_path = object.qid;
                 }
@@ -588,8 +565,14 @@ impl Export for ShellFiles {
         let size = match (node, handle) {
             (Node::Api, _) => self.api.len() as u64,
             (Node::Limits, _) => self.limits.as_ref().map_or(0, |l| l.len() as u64),
-            (Node::Outputs, Some(Handle::Object(object))) => object.bytes.len() as u64,
-            (Node::Outputs, _) => self.outputs.as_ref().map_or(0, |o| o.bytes.len() as u64),
+            (Node::Outputs | Node::Catalog | Node::Indicators, Some(Handle::Object(object))) => {
+                object.bytes.len() as u64
+            }
+            (Node::Outputs | Node::Catalog | Node::Indicators, _) => node
+                .object_kind()
+                .and_then(|kind| self.object_slot(kind))
+                .and_then(|slot| slot.current.as_ref())
+                .map_or(0, |o| o.bytes.len() as u64),
             // The live binding's accepted append cursor; a fenced fid sees 0.
             (Node::Upload(slot), Some(Handle::Upload { binding, .. })) => {
                 self.binding_of(*slot, *binding).map_or(0, Binding::cursor)
@@ -657,13 +640,15 @@ impl Export for ShellFiles {
                 self.allocate_qid()?;
                 Ok(handle)
             }
-            Node::Outputs => {
+            Node::Outputs | Node::Catalog | Node::Indicators => {
+                let kind = node.object_kind().expect("object node");
+                let slot = self.object_slot_mut(kind).expect("valid object kind");
                 // One pin per feed per attach; publication continues meanwhile.
-                if self.outputs_pinned {
+                if slot.pinned {
                     return Err(EBUSY);
                 }
-                let object = self.outputs.clone().ok_or(Errno::EAGAIN)?;
-                self.outputs_pinned = true;
+                let object = slot.current.clone().ok_or(Errno::EAGAIN)?;
+                slot.pinned = true;
                 Ok(Handle::Object(object))
             }
             Node::Transaction => {
@@ -693,7 +678,9 @@ impl Export for ShellFiles {
                 .as_ref()
                 .map(|limits| slice(limits, offset, count))
                 .ok_or(Errno::EAGAIN),
-            (Node::Outputs, Handle::Object(object)) => Ok(slice(&object.bytes, offset, count)),
+            (Node::Outputs | Node::Catalog | Node::Indicators, Handle::Object(object)) => {
+                Ok(slice(&object.bytes, offset, count))
+            }
             (Node::Events, _) => self.journal.read(offset, count),
             (Node::Transaction, Handle::Transaction(id)) => {
                 self.expire();
@@ -777,10 +764,11 @@ impl Export for ShellFiles {
         if *directory != Node::Root {
             return Err(Errno::ENOTDIR);
         }
+        let entries = self.root_entries();
         let start = usize::try_from(cookie)
             .unwrap_or(usize::MAX)
-            .min(ROOT_ENTRIES.len());
-        Ok(ROOT_ENTRIES[start..]
+            .min(entries.len());
+        Ok(entries[start..]
             .iter()
             .take(max_entries)
             .zip(start as u64 + 1..)
@@ -799,7 +787,11 @@ impl Export for ShellFiles {
             {
                 self.staging = None
             }
-            Some(Handle::Object(_)) => self.outputs_pinned = false,
+            Some(Handle::Object(object)) => {
+                if let Some(slot) = self.object_slot_mut(object.kind) {
+                    slot.pinned = false;
+                }
+            }
             Some(Handle::Upload { binding, writer }) => self.release_writer(binding, writer),
             _ => {}
         }

@@ -106,16 +106,22 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::WrongActivation);
         }
-        let frame = encode_shell_native_launcher_frame(
-            transaction,
-            &ShellNativeLauncherRecord::Opening(opening),
-        )?;
+        let record = ShellNativeLauncherRecord::Opening(opening);
+        let frame = encode_shell_native_launcher_frame(transaction, &record)?;
         if frame.len() > super::control_budget::CONTROL_FRAME_BYTES
             || !self.control_capacity_available(epochs, 2)
         {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        self.output.push(frame, true);
+        self.push_family_frame(true, frame, || {
+            sophia_protocol::shell_files::encode_shell_file_native_launcher_transaction_body(
+                &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
+                    transaction,
+                    record,
+                },
+            )
+            .map_err(|_| ShellTransportError::WrongContentRecord)
+        })?;
         self.native_control.opening = Some(opening);
         self.native_control.last_opening = opening.opening;
         self.native_control.revision = opening.state_revision;

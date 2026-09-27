@@ -123,6 +123,97 @@ impl ShellComponentTransport {
             .expire(now)?;
         self.flush_content_candidate_events(epochs)?;
         let mut processed = 0;
+        if self.files.is_some() {
+            while processed < max_records {
+                if !self.control_capacity_available(epochs, 0) {
+                    break;
+                }
+                // Continue draining a candidate already exploding first, so a
+                // later-queued foreign-family record cannot interrupt it. Only
+                // once nothing catalog-shaped is left does a different
+                // candidate family become a hard protocol violation, exactly
+                // as the socket wire's raw-kind scan treats it.
+                let part = self
+                    .files
+                    .as_mut()
+                    .and_then(|files| files.export_mut().peek_catalog_candidate_part());
+                let Some((transaction, part)) = part else {
+                    match self
+                        .files
+                        .as_ref()
+                        .and_then(|files| files.export().peek_candidate_family())
+                    {
+                        None => break,
+                        Some(super::files::CandidateFamily::Catalog) => {
+                            unreachable!("peek_catalog_candidate_part already covers this")
+                        }
+                        Some(_) => return Err(ShellTransportError::WrongContentRecord),
+                    }
+                };
+                let grant = match &part {
+                    super::files::CatalogCandidatePart::Begin(value) => value.content.grant,
+                    super::files::CatalogCandidatePart::Chunk(value) => value.grant,
+                    super::files::CatalogCandidatePart::End(value) => value.grant,
+                };
+                if grant != self.store_grant {
+                    return Err(ShellTransportError::WrongContentGrant);
+                }
+                let context = if let super::files::CatalogCandidatePart::End(end) = &part {
+                    let output = epochs
+                        .active_candidates(self.store_grant)
+                        .and_then(|store| store.assembling_output(end.candidate_generation))
+                        .ok_or(ShellTransportError::WrongCandidate)?;
+                    let mut matches = contexts.iter().filter(|context| context.output == output);
+                    let context = matches
+                        .next()
+                        .copied()
+                        .ok_or(ShellTransportError::WrongCandidate)?;
+                    if matches.next().is_some() {
+                        return Err(ShellTransportError::WrongCandidate);
+                    }
+                    Some(context)
+                } else {
+                    None
+                };
+                // All identity and current-context checks precede dequeue. The
+                // store already owns the permit's terminal response credit.
+                self.files
+                    .as_mut()
+                    .and_then(|files| files.export_mut().take_catalog_candidate_part());
+                let (resources, candidates) = epochs
+                    .active_parts_mut(self.store_grant)
+                    .ok_or(ShellTransportError::MissingCapability)?;
+                let result = match part {
+                    super::files::CatalogCandidatePart::Begin(value) => {
+                        candidates.begin_persistent_catalog(transaction, value, catalog, now)
+                    }
+                    super::files::CatalogCandidatePart::Chunk(value) => {
+                        candidates.chunk_persistent_catalog(transaction, value, now)
+                    }
+                    super::files::CatalogCandidatePart::End(value) => candidates
+                        .end_persistent_catalog(
+                            transaction,
+                            value,
+                            context.expect("validated End context"),
+                            catalog,
+                            resources,
+                            now,
+                        ),
+                };
+                let reported = candidates.pending_event().is_some();
+                self.flush_content_candidate_events(epochs)?;
+                if let Err(error) = result
+                    && !reported
+                {
+                    return Err(error.into());
+                }
+                processed += 1;
+            }
+            if processed == 0 && self.peer_closed {
+                return Err(ShellTransportError::NotConnected);
+            }
+            return Ok(processed);
+        }
         let mut remaining = 64 * 1024;
         while processed < max_records {
             let Some(index) = self.inbox.iter().position(|frame| {

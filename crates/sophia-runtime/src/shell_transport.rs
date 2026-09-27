@@ -48,6 +48,7 @@ mod control_budget;
 mod files;
 mod indicator_responses;
 mod outbox;
+mod publication;
 pub use accounting::{ShellContentAccounting, ShellContentShutdown};
 pub use content_admission::ShellContentAdmissionPolicy;
 
@@ -533,13 +534,13 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::NotConnected);
         }
         self.flush_indicator_response(epochs)?;
-        if self.files.is_some() {
-            return self.poll_files();
-        }
         self.flush_catalog_response(epochs)?;
         self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
+        if self.files.is_some() {
+            return self.poll_files();
+        }
         let stream = self
             .stream
             .as_mut()
