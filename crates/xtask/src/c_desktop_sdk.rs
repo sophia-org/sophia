@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path};
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,7 +21,7 @@ pub fn run(repo: &Path) -> Result<Vec<String>, String> {
 }
 
 pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
-    let bytes = std::fs::read(snapshot.join("manifest.json")).map_err(|e| e.to_string())?;
+    let bytes = read(&snapshot.join("manifest.json"))?;
     let manifest: Manifest = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     if manifest.schema != 1
         || manifest.repository != "https://github.com/sophia-org/sophia-desktop-sdk-c"
@@ -34,6 +33,7 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
     for (name, digest) in &manifest.files {
         let path = Path::new(name);
         if name.is_empty()
+            || name.split('/').any(|part| matches!(part, "" | "." | ".."))
             || path
                 .components()
                 .any(|part| !matches!(part, Component::Normal(_)))
@@ -43,8 +43,8 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
         }
     }
     let source = snapshot.join("source");
-    let mut actual = BTreeMap::new();
-    collect(&source, &source, &mut actual)?;
+    let inventory = crate::git_tree::inventory(&source)?;
+    let actual = inventory.files;
     if actual != manifest.files {
         let changed = actual
             .iter()
@@ -60,6 +60,8 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             .unwrap_or("unknown");
         return Err(format!("C SDK snapshot differs from its pin: {changed}"));
     }
+    let commit = read(&snapshot.join("upstream.commit"))?;
+    crate::git_tree::verify_commit(&commit, &manifest.revision, &inventory.tree)?;
     for (local, authoritative) in [
         (
             "spec/sophia-shell-files-v1.kdl",
@@ -72,12 +74,28 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             "spec/references/diod-9p2000L-protocol.md",
             "docs/references/diod-9p2000L-protocol.md",
         ),
+        ("src/sophia_wm_v1.c", "bindings/c/sophia_wm_v1.c"),
+        ("src/sophia_wm_v1.h", "bindings/c/sophia_wm_v1.h"),
     ] {
-        if std::fs::read(source.join(local)).map_err(|e| e.to_string())?
-            != std::fs::read(repo.join(authoritative)).map_err(|e| e.to_string())?
-        {
-            return Err(format!("C SDK contract drift: {authoritative}"));
-        }
+        same_contract(&source.join(local), &repo.join(authoritative))?;
+    }
+    for name in [
+        "catalog-actions",
+        "content-malformed",
+        "content",
+        "indicators",
+        "launcher",
+        "native-launcher",
+        "reference",
+        "tabs",
+        "v1-malformed",
+        "v1",
+    ] {
+        let file = format!("sophia-shell-{name}.frames");
+        same_contract(
+            &source.join("spec/golden").join(&file),
+            &repo.join("protocol/golden").join(&file),
+        )?;
     }
     Ok(manifest.revision)
 }
@@ -89,32 +107,13 @@ fn hex(value: &str, length: usize) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-fn collect(
-    root: &Path,
-    directory: &Path,
-    files: &mut BTreeMap<String, String>,
-) -> Result<(), String> {
-    for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let kind = entry.file_type().map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if kind.is_dir() {
-            collect(root, &path, files)?;
-        } else if kind.is_file() {
-            let name = path
-                .strip_prefix(root)
-                .map_err(|e| e.to_string())?
-                .to_str()
-                .ok_or("non-UTF-8 SDK path")?
-                .to_owned();
-            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-            files.insert(name, format!("{:x}", Sha256::digest(bytes)));
-        } else {
-            return Err(format!(
-                "SDK source must contain only regular files: {}",
-                path.display()
-            ));
-        }
+fn read(path: &Path) -> Result<Vec<u8>, String> {
+    std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn same_contract(copy: &Path, authoritative: &Path) -> Result<(), String> {
+    if read(copy)? != read(authoritative)? {
+        return Err(format!("C SDK contract drift: {}", authoritative.display()));
     }
     Ok(())
 }
