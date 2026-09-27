@@ -7,9 +7,7 @@ trap 'rm -rf -- "$TEMP_DIR"' EXIT
 
 state_home="$TEMP_DIR/state"
 runtime_dir="$TEMP_DIR/runtime"
-prefix="$TEMP_DIR/prefix"
-release="$prefix/releases/diagnostic-test"
-mkdir -p "$state_home" "$runtime_dir" "$release"
+mkdir -p "$state_home" "$runtime_dir"
 chmod 700 "$state_home" "$runtime_dir"
 session_state="$state_home/sophia/native-session"
 install -d -m 700 "$session_state"
@@ -29,7 +27,7 @@ env \
     SOPHIA_MANAGE_KEYD=false \
     SOPHIA_TTY_PROFILE=native \
     SOPHIA_BIN="${SOPHIA_BIN:-${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/sophia}" \
-    "$ROOT_DIR/tools/run_sophia_session.sh" \
+    "$ROOT_DIR/tools/run_sophia_session.sh" -- session run --input-seat=fixture \
     </dev/null >"$TEMP_DIR/runner.out" 2>"$TEMP_DIR/runner.err"
 runner_status=$?
 set -e
@@ -50,32 +48,8 @@ grep -Fxq \
     'sophia_session_diagnostic schema=1 status=failed phase=preflight installed=true version=0.1.0 commit=0123456789abcdef exit_status=1' \
     "$lifecycle"
 
-printf 'schema=1\nversion=0.1.0\ncommit=0123456789abcdef\nrelease_id=diagnostic-test\n' \
-    >"$release/manifest"
-(
-    cd "$release"
-    sha256sum manifest >SHA256SUMS
-)
-ln -s releases/diagnostic-test "$prefix/current"
-
-status_output="$(
-    env \
-        XDG_STATE_HOME="$state_home" \
-        SOPHIA_INSTALL_PREFIX="$prefix" \
-        "$ROOT_DIR/tools/status_live_session.sh"
-)"
-grep -Fq \
-    'sophia_install_status schema=1 prefix=' \
-    <<<"$status_output"
-grep -Fq \
-    'sophia_session_diagnostic schema=1 status=failed phase=preflight installed=true version=0.1.0 commit=0123456789abcdef exit_status=1' \
-    <<<"$status_output"
-[[ "$(
-    grep -Fc \
-        'sophia_session_diagnostic schema=1 status=failed phase=preflight installed=true version=0.1.0 commit=0123456789abcdef exit_status=1' \
-        <<<"$status_output"
-)" == 1 ]]
-
+# Installed-release status output is covered by niltempus. The generic
+# log rotation, private modes and lifecycle records stay here.
 source "$ROOT_DIR/tools/lib/session_lifecycle.sh"
 rotation_log="$TEMP_DIR/rotation.log"
 printf 'first generation\n' >"$rotation_log"

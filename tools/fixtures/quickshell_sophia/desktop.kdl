@@ -1,5 +1,0 @@
-schema 1
-// Isolated X11 compatibility probe. The installed native shell is untouched.
-policy { layout "scroller"; }
-shell { enabled #false; }
-shortcut { profile "panel-probe"; }

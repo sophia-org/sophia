@@ -19,9 +19,6 @@ wins when prose disagrees.
   users select their WM, shell, and login applications, how component settings
   stay private, and how existing Hagia profiles migrate.
 
-- [Quickshell X11 panel check](quickshell-x11-panel.md) is the opt-in live client
-  and isolated CPU-content probe for CP-14.3.
-
 - [Building on Sophia](building-on-sophia.md) is the map for third-party
   developers: which component owns what, which protocol each piece speaks, and
   how a window manager, a shell, or a full desktop environment composes from

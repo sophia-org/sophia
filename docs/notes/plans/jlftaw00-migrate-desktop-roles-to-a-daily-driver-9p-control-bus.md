@@ -300,6 +300,20 @@ kinds, traced against the owners (ee5e7f80, 19a21c84, ae60576f), and
 independent codecs for all 17 B5 kinds in C (ef50d220) and in the Go oracle
 (72eef656) by Codex, written from the KDL alone. The live oracle verdict is
 still the 54 base checks; no role-family runtime pass is claimed yet.
+**Desktop boundary cleanup (2026-09-27).** The external recipe and Quickshell
+probe gates were preserved in niltempus before removing their Sophia copies.
+Sophia's CLI now retains only generic launch controls, environment, host check
+and exact-vector validation; the wrapper requires explicit arguments and a
+prebuilt executable. Named recipes and source builds are gone from that path.
+The focused launch/preflight tests, PTY host-refusal and recovery cases,
+watchdog and lifecycle checks pass in the device-hidden sandbox; CLI,
+conformance and xtask clippy pass. Evidence is under
+`development-evidence/final-9p/{retained-launch,host-wrapper-reduced,watchdog-reduced,lifecycle-reduced,cleanup-clippy}.log`.
+The product-specific X error tolerance moved with Quickshell. Sophia keeps the
+Present-after-destroy and SHAPE wire regressions; no client/GPU claim follows
+from those tests. The remaining desktop-tool deletion closure and combined
+gate are still required; this does not complete t252 or authorize a live change.
+
 Role families, owner handoff (2026-09-27): the launcher, dock and bar
 families run over the file wire through the existing owners (a52f93f7);
 Session publishes component catalogs and indicators through the typed

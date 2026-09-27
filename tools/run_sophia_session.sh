@@ -4,58 +4,52 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/tools/lib/session_lifecycle.sh"
 source "$ROOT_DIR/tools/lib/session_preparation.sh"
-EXPLICIT_ARGV=false
-controls_options=()
-if [[ "${1:-}" == -- ]]; then
-    EXPLICIT_ARGV=true
-    shift
-    [[ "${1:-}" == session && "${2:-}" == run ]] || {
-        echo "Expected -- session run <arguments...>." >&2
-        exit 1
-    }
-    [[ "${SOPHIA_BIN:-}" == /* && -f "$SOPHIA_BIN" && -x "$SOPHIA_BIN" ]] || {
-        echo "Explicit session arguments require an absolute executable SOPHIA_BIN." >&2
-        exit 1
-    }
-    [[ "${SOPHIA_BUILD_SESSION:-false}" == false ]] || {
-        echo "Explicit session arguments require a prebuilt Sophia binary." >&2
-        exit 1
-    }
-    SOPHIA_BUILD_SESSION=false
-    controls_options=("--profile=${SOPHIA_TTY_PROFILE:-session}")
-    session_args=("$@")
-    # The recovery reader must watch the same input source as the session.
-    # Require one explicit selector; never infer it from recipe environment.
-    explicit_input_args=()
-    for argument in "$@"; do
-        case "$argument" in
-            --input-seat=?*|--input-devices=?*) explicit_input_args+=("$argument") ;;
-            --input-seat*|--input-devices*)
-                echo "Input selectors require --name=value." >&2; exit 1 ;;
-        esac
-    done
-    [[ "${#explicit_input_args[@]}" == 1 ]] || {
-        echo "Explicit session arguments require exactly one input selector." >&2
-        exit 1
-    }
-fi
-SOPHIA_BIN="${SOPHIA_BIN:-$ROOT_DIR/target/release/sophia}"
+[[ "${1:-}" == -- ]] || {
+    echo "Expected -- session run <arguments...>." >&2
+    exit 1
+}
+shift
+[[ "${1:-}" == session && "${2:-}" == run ]] || {
+    echo "Expected -- session run <arguments...>." >&2
+    exit 1
+}
+[[ "${SOPHIA_BIN:-}" == /* && -f "$SOPHIA_BIN" && -x "$SOPHIA_BIN" ]] || {
+    echo "Explicit session arguments require an absolute executable SOPHIA_BIN." >&2
+    exit 1
+}
+[[ "${SOPHIA_BUILD_SESSION:-false}" == false ]] || {
+    echo "Explicit session arguments require a prebuilt Sophia binary." >&2
+    exit 1
+}
+SOPHIA_BUILD_SESSION=false
+controls_options=("--profile=${SOPHIA_TTY_PROFILE:-session}")
+session_args=("$@")
+# The recovery reader must watch the same input source as the session.
+# Require one explicit selector; never infer it from recipe environment.
+explicit_input_args=()
+for argument in "$@"; do
+    case "$argument" in
+        --input-seat=?*|--input-devices=?*) explicit_input_args+=("$argument") ;;
+        --input-seat*|--input-devices*)
+            echo "Input selectors require --name=value." >&2; exit 1 ;;
+    esac
+done
+[[ "${#explicit_input_args[@]}" == 1 ]] || {
+    echo "Explicit session arguments require exactly one input selector." >&2
+    exit 1
+}
 TTY_MODE_HELPER="${SOPHIA_TTY_MODE_HELPER:-$ROOT_DIR/tools/sophia_tty_mode.py}"
-BUILD_SESSION="${SOPHIA_BUILD_SESSION:-true}"
+BUILD_SESSION=false
 MANAGE_KEYD="${SOPHIA_MANAGE_KEYD:-true}"
 INSTALLED_SESSION="${SOPHIA_INSTALLED_SESSION:-false}"
 REQUIRE_RUNTIME_DIR="${SOPHIA_REQUIRE_RUNTIME_DIR:-false}"
 REQUIRE_LOCAL_VT="${SOPHIA_REQUIRE_LOCAL_VT:-false}"
-DISPLAY_NAME="${SOPHIA_LIVE_SESSION_DISPLAY:-:77}"
 # The development bootstrap supplies the validator. Installed startup must use
 # its packaged executable and can never enter Cargo or service management here.
 if [[ "$INSTALLED_SESSION" == true
     && ( "$BUILD_SESSION" != false || "$MANAGE_KEYD" != false ) ]]; then
     echo "Installed Sophia forbids source builds and manual service control." >&2
     exit 1
-fi
-if [[ "$BUILD_SESSION" == true ]]; then
-    cargo build --manifest-path "$ROOT_DIR/Cargo.toml" --offline --release -p sophia-cli --features native-session
 fi
 sophia_load_preparation 'sophia_session_controls schema=1 status=prepared' prepare-controls "${controls_options[@]}"
 [[ "${#prepared_vector[@]}" == 9 ]] || { echo "Incomplete session controls." >&2; exit 1; }
@@ -78,8 +72,6 @@ WATCHDOG_TRIGGERED_FILE="$STATE_DIR/session-watchdog.triggered"
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
-firefox_m10_probe_dir=""
-firefox_m10_profile_dir=""
 if [[ -s "$PID_FILE" ]]; then
     previous_pid="$(<"$PID_FILE")"
     if [[ "$previous_pid" =~ ^[0-9]+$ ]] && kill -0 "$previous_pid" 2>/dev/null; then
@@ -160,40 +152,8 @@ fi
 # missing policy, malformed verdicts and timeout before any input/service work.
 "$SOPHIA_BIN" session check-host "--tty=$tty_name"
 
-input_seat="${SOPHIA_OPERATOR_INPUT_SEAT:-seat0}"
-input_devices="${SOPHIA_OPERATOR_INPUT_DEVICES:-}"
-input_source_args=()
-if [[ "$EXPLICIT_ARGV" == true ]]; then
-    input_source_args=("${explicit_input_args[@]}")
-elif [[ -n "$input_devices" ]]; then
-    input_source_args+=("--input-devices=$input_devices")
-else
-    input_source_args+=("--input-seat=$input_seat")
-fi
+input_source_args=("${explicit_input_args[@]}")
 
-cd "$ROOT_DIR"
-if [[ "$BUILD_SESSION" == true ]]; then
-    if [[ "$SESSION_PROFILE" == native || "$SESSION_PROFILE" == standalone ]]; then
-        cargo build --offline --release -p sophia-wm-demo
-    fi
-    tools/atomic_scanout_preflight.sh
-fi
-[[ -x "$SOPHIA_BIN" ]] || {
-    echo "Sophia session binary is not executable: $SOPHIA_BIN" >&2
-    exit 1
-}
-session_benchmark=""
-if [[ "$EXPLICIT_ARGV" == false ]]; then
-    sophia_load_preparation 'sophia_session_inputs schema=1 status=prepared' prepare-inputs \
-        "--profile=$SESSION_PROFILE" "--root=$ROOT_DIR" -- "$@"
-    [[ "${#prepared_vector[@]}" == 7 ]] || { echo "Incomplete session inputs." >&2; exit 1; }
-    terminal_bin="${prepared_vector[1]}"
-    terminal_kind="${prepared_vector[2]}"
-    hagia_browser_bin="${prepared_vector[3]}"
-    standalone_bin="${prepared_vector[4]}"
-    SOPHIA_HAGIA_BIN="${prepared_vector[5]}"
-    session_benchmark="${prepared_vector[6]}"
-fi
 lifecycle_phase complete preflight
 
 keyd_was_running=false
@@ -241,11 +201,6 @@ cleanup() {
     session_pid=""
     [[ -z "$guard_pid" ]] || terminate_bounded "$guard_pid" "Sophia input guard"
     guard_pid=""
-    if [[ -n "$firefox_m10_probe_dir" ]]; then
-        rm -rf -- "$firefox_m10_probe_dir"
-        firefox_m10_probe_dir=""
-        firefox_m10_profile_dir=""
-    fi
     rm -f "$PID_FILE"
     if [[ -n "$kd_mode" ]] && ! python3 "$TTY_MODE_HELPER" "$kd_mode" 2>/dev/null; then
         status=1
@@ -330,15 +285,6 @@ trap 'stop_from_signal 130' INT
 trap 'stop_from_signal 143' TERM
 printf '%s\n' "$$" >"$PID_FILE"
 
-if [[ "$EXPLICIT_ARGV" == false ]]; then
-    sophia_load_preparation 'sophia_session_proofs schema=1 status=prepared' stage-proofs \
-        "--profile=$SESSION_PROFILE" "--root=$ROOT_DIR" "--state-dir=$STATE_DIR" \
-        "--standalone=$standalone_bin" -- "$@"
-    [[ "${#prepared_vector[@]}" == 3 ]] || { echo "Incomplete proof staging." >&2; exit 1; }
-    firefox_m10_probe_dir="${prepared_vector[1]}"
-    firefox_m10_profile_dir="${prepared_vector[2]}"
-fi
-
 tty_state="$(stty -g)"
 kd_mode="$(python3 "$TTY_MODE_HELPER" get)"
 keyboard_mode="$(python3 "$TTY_MODE_HELPER" get-keyboard)"
@@ -381,57 +327,13 @@ done
 echo "Emergency input guard armed."
 lifecycle_phase complete input_guard
 
-if [[ "$EXPLICIT_ARGV" == true ]]; then
-    echo "Starting $SESSION_LABEL with the supplied arguments."
-elif [[ "$SESSION_PROFILE" == standalone ]]; then
-    echo "Starting Sophia's standalone single-application proof on $DISPLAY_NAME."
-    echo "No terminal, window manager, or status bar will run."
-    echo "There are no shortcuts: they need a policy client and none runs here."
-    echo "Quit the application to end the session; Ctrl+Alt+Backspace is the"
-    echo "emergency path and is recorded as one."
-elif [[ "$SESSION_PROFILE" == native ]]; then
-    echo "Starting Sophia's session-lifecycle proof on $DISPLAY_NAME."
-    echo "No window manager runs; Hagia is Sophia's native WM."
-    echo "There are no shortcuts: they need a policy client and none runs here."
-    echo "Exit the terminal to end the session; Ctrl+Alt+Backspace is the"
-    echo "emergency path and is recorded as one."
-elif [[ "$SESSION_PROFILE" == hagia ]]; then
-    echo "Starting Sophia with Hagia's native policy on $DISPLAY_NAME."
-    echo "Use Super+Enter for Kitty or Ctrl+Alt+Delete to log out."
-else
-    echo "Starting the supported Kitty-only Sophia input session on $DISPLAY_NAME."
-    echo "A policy client and Super+Enter are intentionally disabled for this input gate."
-    echo "Exit Kitty normally to return to tty3."
-fi
+echo "Starting $SESSION_LABEL with the supplied arguments."
 echo "Press Ctrl-Alt-Backspace for local emergency recovery."
 echo "The outside control plane may also run tools/stop_sophia_session.sh $SESSION_PROFILE."
-if [[ "$EXPLICIT_ARGV" == false ]]; then
-    prepared_arguments="$STATE_DIR/session-arguments.bin"
-    if ! "$SOPHIA_BIN" session prepare-arguments \
-        "--profile=$SESSION_PROFILE" "--root=$ROOT_DIR" "--state-dir=$STATE_DIR" \
-        "--binary=$SOPHIA_BIN" "--terminal=$terminal_bin" \
-        "--terminal-kind=${terminal_kind:-}" "--browser=$hagia_browser_bin" \
-        "--standalone=$standalone_bin" "--wm=$SOPHIA_HAGIA_BIN" \
-        "--firefox-profile=$firefox_m10_profile_dir" -- "$@" >"$prepared_arguments"; then
-        echo "The installed binary refused session argument preparation." >&2
-        exit 1
-    fi
-    chmod 600 "$prepared_arguments"
-    mapfile -d '' -t prepared_vector <"$prepared_arguments"
-    rm -f "$prepared_arguments"
-    if [[ "${prepared_vector[0]:-}" != 'sophia_session_arguments schema=1 status=prepared' ]]; then
-        echo "This binary does not support session argument preparation; rebuild it." >&2
-        exit 1
-    fi
-    session_args=("${prepared_vector[@]:1}")
-fi
 prepared_environment="$STATE_DIR/session-environment.bin"
 # Product environment is supplied by the caller. Do not interpret application
 # arguments as proof selectors on the explicit path.
 environment_options=("--tty=$tty_name")
-if [[ "$EXPLICIT_ARGV" == false ]]; then
-    environment_options+=("--firefox-probe=$firefox_m10_probe_dir" -- "$@")
-fi
 if ! "$SOPHIA_BIN" session prepare-environment \
     "${environment_options[@]}" \
     >"$prepared_environment"; then
@@ -487,7 +389,6 @@ if [[ "$launch_acceptance" != 'sophia_session_launch schema=1 status=accepted' ]
     echo "Missing session launch acceptance record; rebuild Sophia." >&2
     exit 1
 fi
-[[ -z "$session_benchmark" ]] || printf '%s\n' "$session_benchmark" >>"$SESSION_LOG"
 # Preparation can outlive guard readiness. Never take over after recovery was
 # requested or after the independent reader failed while we were preparing.
 if [[ -s "$GUARD_TRIGGERED_FILE" ]]; then

@@ -54,8 +54,6 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: x-authority-kitty-input-smoke");
     println!("commands: x-authority-vkcube-admission-smoke");
     println!("commands: x-authority-xmobar-smoke");
-    println!("commands: x-authority-quickshell-smoke");
-    println!("commands: x-authority-quickshell-software-smoke");
     println!("commands: x-authority-present-pixmap-smoke");
     #[cfg(feature = "native-session")]
     println!(
@@ -66,10 +64,7 @@ pub(crate) fn print(verbose: bool) {
         "diagnostics: session mark [--session=ID|latest] [LABEL] | session inspect ID|latest [--marker=ID] | session keep ID|latest [--include-application-stderr] | session launches ID|latest | session stderr ID|latest --launch=ID [--raw] | session list"
     );
     println!(
-        "session prepare-arguments --profile=hagia|native|kitty|standalone --root=PATH --state-dir=PATH --binary=PATH --terminal=PATH --terminal-kind=kitty|xterm --browser=PATH --standalone=PATH --wm=PATH --firefox-profile=PATH -- [session arguments]: prepare a NUL-delimited launch vector without starting a session"
-    );
-    println!(
-        "session prepare-environment --tty=PATH --firefox-probe=PATH -- [session arguments]: prepare NUL-delimited bus mode and environment entries without starting a session or bus"
+        "session prepare-environment --tty=PATH: prepare NUL-delimited bus mode and environment entries without starting a session or bus"
     );
     println!(
         "session prepare-controls --profile=LABEL: prepare generic guard/watchdog controls with an opaque state/log label"

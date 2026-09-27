@@ -23,5 +23,3 @@ pub mod direct_scanout_overlay;
 pub mod private_instance;
 pub mod profile;
 pub mod record;
-
-pub mod panel;

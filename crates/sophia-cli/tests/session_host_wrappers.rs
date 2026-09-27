@@ -92,7 +92,7 @@ fn session_host_refusal_stops_before_preparing_inputs_or_service_changes() {
         let checker = body.map(|body| f.script("host", body));
         let output = f.run(
             &format!(
-                "exec bash '{}'",
+                "exec bash '{}' -- session run --input-seat=fixture",
                 source.join("tools/run_sophia_session.sh").display()
             ),
             checker.as_deref(),
@@ -102,7 +102,7 @@ fn session_host_refusal_stops_before_preparing_inputs_or_service_changes() {
         let calls = fs::read_to_string(f.0.join("calls")).unwrap();
         let calls = calls.lines().collect::<Vec<_>>();
         assert_eq!(calls.len(), 2, "{calls:?}");
-        assert_eq!(calls[0], "session prepare-controls");
+        assert_eq!(calls[0], "session prepare-controls --profile=native");
         assert!(
             calls[1].starts_with("session check-host --tty=/dev/pts/"),
             "{calls:?}"

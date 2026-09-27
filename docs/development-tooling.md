@@ -113,8 +113,8 @@ contain 1–64 ASCII letters, digits, dots, dashes or underscores, starting with
 letter or digit. `tools/stop_sophia_session.sh <label>` stops the wrapper recorded
 under that same label. `sophia session prepare-controls --profile=<label>` exposes
 these generic controls without interpreting startup or proof recipe variables.
-The invocation without `--` temporarily retains the old recipe behavior until
-the external replacement has passed its migration gates.
+Invocations without `--` are refused. Application recipes and proof staging
+live in the desktop integration; the wrapper never builds from a checkout.
 
 ## Canonical Commands
 

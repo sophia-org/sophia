@@ -223,16 +223,14 @@ the client's responsibility.
 Policy option names and behavior are documented by each WM. Sophia preserves
 these records in policy export; their interpretation belongs to that WM.
 
-The installed launcher delegates argument construction to
-`sophia session prepare-arguments` and environment construction to
-`sophia session prepare-environment`. These commands prepare data without
-starting a session, acquiring devices, or starting a session bus. Their output
-starts with a versioned preparation record and contains NUL-delimited fields;
-the adapter loads arrays without evaluating shell text and refuses binaries
-that do not return the expected record. Preparation preserves the distinction
-between application defaults for ordinary Hagia desktops and explicit adapters
-for proofs. The launcher still validates the exact assembled command with
-`--validate-session-args` before graphics takeover.
+Desktop integrations construct application arguments and pass a plain
+`-- session run ...` vector to Sophia's safety wrapper. Sophia retains
+`prepare-controls`, `prepare-environment`, `check-host` and `check-launch`.
+These commands do not start a session or acquire devices. Preparation records
+use NUL-delimited fields; the wrapper loads arrays without shell evaluation
+and validates the exact assembled vector before graphics takeover. Named
+application recipes, proof staging and installed-release management belong to
+the desktop integration.
 
 The trusted session coordinator validates and partitions all seven desktop
 authorities before constructing the graphical session. It stages owner-only

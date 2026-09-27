@@ -340,11 +340,6 @@ fn run_x_authority_external_probe_smoke(
             "DRI3:PixmapFromBuffers",
             "PRESENT:Pixmap",
         ],
-        // Measured, not assumed: once RENDER was advertised this trace grew
-        // from 33 opcodes to 34 and from 326 requests to 329, so Qt does ask.
-        // Asserting the stage keeps a future regression in the advertisement
-        // from silently returning the shell to core drawing.
-        "quickshell" => &["RENDER:QueryPictFormats"],
         _ => &[],
     };
     for required in required_graphics_stages {
@@ -356,9 +351,7 @@ fn run_x_authority_external_probe_smoke(
         }
     }
 
-    if let Some(error) = &first_error
-        && !probe_tolerates_client_error(label, error)
-    {
+    if let Some(error) = &first_error {
         return Err(format!(
             "{label} produced an X protocol error for {display}: status={status} requests={requests} opcode_count={opcode_count} opcodes={opcodes} details={details} first_error={error} stderr={}",
             String::from_utf8_lossy(&output.stderr).trim(),
@@ -531,21 +524,6 @@ fn two_output_external_probe_topology() -> sophia_protocol::OutputTopologySnapsh
             },
         ],
     }
-}
-
-/// Errors a client asks for itself, which say nothing about the server.
-///
-/// The bar is otherwise `first_error=none`, and it stays there: this admits
-/// one exact shape and nothing else.
-///
-/// Qt's xcb backend destroys and recreates its window when the requested
-/// format changes, and Mesa's DRI3 loader then unselects Present events during
-/// drawable teardown -- naming, three requests later on the same connection, a
-/// window the client has already destroyed. `BadWindow` is the correct answer
-/// and Xorg gives the same one; the client ignores it and carries on. Failing
-/// the probe for it would be reporting a client's own race as a server defect.
-fn probe_tolerates_client_error(label: &str, error: &str) -> bool {
-    label == "quickshell" && error.starts_with("BadWindow:major=138:minor=3:")
 }
 
 fn fixed_text_scroll_proof(

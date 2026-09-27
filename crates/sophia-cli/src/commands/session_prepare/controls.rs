@@ -40,7 +40,7 @@ pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Resul
         }
         label.clone()
     } else {
-        legacy_profile()?
+        "session".to_owned()
     };
     let watchdog = env("SOPHIA_SESSION_WATCHDOG_SECONDS", "")?;
     if !watchdog.is_empty() {
@@ -78,23 +78,4 @@ pub(super) fn run(options: &BTreeMap<String, String>, extra: &[String]) -> Resul
         output.write_all(b"\0")?;
     }
     Ok(())
-}
-
-// Kept until the external recipe gate covers the old invocation without a
-// profile argument. The explicit-label path has no recipe dependencies.
-fn legacy_profile() -> Result<String> {
-    let profile = choice(
-        "SOPHIA_TTY_PROFILE",
-        "",
-        &["hagia", "native", "kitty", "standalone"],
-    )?;
-    let startup = choice("SOPHIA_SESSION_STARTUP", "terminal", &["terminal", "none"])?;
-    if startup == "none" && profile != "hagia" {
-        return Err("terminal-free startup requires Hagia".into());
-    }
-    let truecolor = choice("SOPHIA_TRUECOLOR_PROOF", "false", &["true", "false"])?;
-    if truecolor == "true" && profile != "hagia" {
-        return Err("TrueColor proof requires Hagia".into());
-    }
-    Ok(profile)
 }

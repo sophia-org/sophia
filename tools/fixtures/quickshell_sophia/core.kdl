@@ -1,4 +1,0 @@
-/- kdl-version 2
-schema 2
-// The launcher passes --no-input; compiled input settings are never opened.
-diagnostics verbose=#true

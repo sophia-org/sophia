@@ -41,40 +41,7 @@ if SOPHIA_TEST_ENGINE_STATUS=1 sophia_check_session_profile "$work/sophia" "$wor
     echo 'Engine rejection was ignored' >&2; exit 1
 fi
 [[ "$(wc -l <"$work/calls")" == 1 ]]
-# Run the real TTY adapter on a disposable PTY. Refused policy must stop before
-# the first TTY-mode query or privileged handoff. Neither can touch the host.
-python3 - "$root" "$work" <<'PY'
-import os, pathlib, pty, shlex, shutil, subprocess, sys
-root, work = map(pathlib.Path, sys.argv[1:])
-tree = work/'tree'
-(tree/'tools/lib').mkdir(parents=True)
-for rel in ('tools/start_sophia_tty3.sh', 'tools/lib/session_profile.sh'):
-    shutil.copy2(root/rel, tree/rel)
-launcher = tree/'tools/start_sophia_tty3.sh'
-launcher.write_text(launcher.read_text().replace(
-    'LAUNCH_LOG="/tmp/sophia-${SESSION_PROFILE}-tty${TARGET_VT}-launch.log"',
-    'LAUNCH_LOG='+shlex.quote(str(work/'shared-launcher.log'))))
-marker = work/'takeover'
-for name, script in {
-    'tty': '#!/bin/sh\necho /dev/tty3\n',
-    'sudo': '#!/bin/sh\ntouch "$SOPHIA_TAKEOVER_MARKER"\nexit 97\n',
-    'python3': '#!/bin/sh\ntouch "$SOPHIA_TAKEOVER_MARKER"\nexit 97\n',
-}.items():
-    p=work/name; p.write_text(script); p.chmod(0o700)
-env=dict(os.environ, PATH=str(work)+':'+os.environ['PATH'],
-    SOPHIA_TTY_PROFILE='hagia', SOPHIA_TTY_NUMBER='3', SOPHIA_BUILD_SESSION='false',
-    SOPHIA_BIN=str(work/'sophia'), SOPHIA_POLICY_CHECKER=str(work/'checker'),
-    SOPHIA_DESKTOP_PROFILE=str(work/'profile.kdl'), SOPHIA_TEST_ENGINE_STATUS='1',
-    XDG_STATE_HOME=str(work/'state'), SOPHIA_TAKEOVER_MARKER=str(marker))
-master, slave=pty.openpty()
-try:
-    with (work/'launcher.log').open('w') as log:
-        result=subprocess.run(['bash',str(tree/'tools/start_sophia_tty3.sh')],
-            stdin=slave,stdout=log,stderr=log,env=env,timeout=15)
-    assert result.returncode == 1, (work/'launcher.log').read_text()
-    assert not marker.exists(), 'Handoff began before WM validation passed'
-    assert (work/'calls').read_text().splitlines()[-1].startswith('engine:config check-session-profile')
-finally:
-    os.close(slave); os.close(master)
-PY
+# The product TTY adapter and its refusal-before-handoff test live in
+# niltempus. Sophia's real parser/checker behavior stays in
+# crates/sophia-cli/tests/session_profile_preflight.rs.
 echo 'Session profile preflight checks passed'

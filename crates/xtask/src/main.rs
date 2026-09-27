@@ -19,7 +19,6 @@ mod headless_client_gate;
 mod m3_acceptance;
 mod native_protocol_family;
 mod nine_p_conformance;
-mod panel;
 mod rust_desktop_sdk;
 mod xterm_pointer_oracle;
 mod xtest_selection;
@@ -42,7 +41,6 @@ fn main() -> std::process::ExitCode {
 fn run(arguments: &[String]) -> Result<(), String> {
     match arguments.first().map(String::as_str) {
         Some("check") => check::run(&workspace_root()?, &arguments[1..]).map(print_lines),
-        Some("panel") => panel::run(&workspace_root()?, &arguments[1..]),
         Some("vendor-rust-desktop-sdk") => {
             rust_desktop_sdk::vendor(&workspace_root()?, &arguments[1..]).map(print_lines)
         }
@@ -91,10 +89,6 @@ fn run_profile(arguments: &[String]) -> Result<(), String> {
 
 fn run_conformance(arguments: &[String]) -> Result<(), String> {
     match arguments {
-        [command, subject, log] if command == "verify" && subject == "panel" => {
-            let log = std::fs::read_to_string(log).map_err(|error| error.to_string())?;
-            sophia_conformance::panel::verify(&log).map(|line| println!("{line}"))
-        }
         [subject, rest @ ..] if subject == "desktop-comparison" => run_desktop_comparison(rest),
         [command, subject, logs @ ..] if command == "verify" && subject == "direct-scanout" => {
             direct_scanout::verify_logs(logs).map(print_lines)
@@ -443,10 +437,6 @@ fn print_lines(lines: Vec<String>) {
 
 const USAGE: &str = "\
 usage: cargo xtask <command>
-
-  panel --quickshell=/PATH [--renderer=gpu|software]
-        [--probe --renderer=software --wm=/PATH --display=:298] [--output=/NEW/DIR]
-      Launch the opt-in X11 panel with renderer and binary identity logs.
 
   check [layout]
       Run the full offline gate, or only the exact source-layout debt gate.
