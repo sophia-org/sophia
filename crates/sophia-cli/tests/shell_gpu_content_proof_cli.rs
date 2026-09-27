@@ -126,6 +126,7 @@ fn invalid_parameters_are_refused_by_validation() {
     let seventeen = vec!["presented"; 17].join(",");
     for (flag, value) in [
         ("--output=", "0x600"),
+        ("--output=", "2147483648x600"),
         ("--surface=", "800x0"),
         ("--surface=", "801x24"),
         ("--surface=", "8193x24"),

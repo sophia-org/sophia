@@ -20,6 +20,11 @@ pub const SHELL_GPU_PROOF_MAX_TIMEOUT: Duration = Duration::from_secs(120);
 pub const SHELL_GPU_PROOF_DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Bytes per pixel of the one content pixel format the limits admit.
 pub const SHELL_GPU_PROOF_BYTES_PER_PIXEL: u32 = 4;
+/// Largest output dimension the proof accepts. The content limits bound
+/// resources, not outputs, but every allocation is placed with a
+/// `ContentPixelRect`, whose origin is `i32`: an output wider or taller than
+/// `i32::MAX` has right or bottom edges that rectangle cannot address.
+pub const SHELL_GPU_PROOF_MAX_OUTPUT_EXTENT: u32 = i32::MAX as u32;
 
 /// The content limits the proof's transport negotiates. The proof reserves no
 /// session limits, so negotiation grants the prototype profile; `run` refuses
@@ -60,21 +65,29 @@ impl ShellGpuProofSurface {
 
     /// Where the surface sits on the output: against its edge, with no margin.
     /// This matches Session's placement of an edge-anchored allocation.
-    pub fn placement(self, output: ShellGpuProofExtent) -> ContentPixelRect {
+    ///
+    /// `None` when the surface does not fit the output or its rectangle's
+    /// origin or far edge cannot be expressed in `i32`. Validated parameters
+    /// always place; nothing here clamps.
+    pub fn placement(self, output: ShellGpuProofExtent) -> Option<ContentPixelRect> {
         let x = match self.edge {
-            ShellComponentEdge::Right => output.width.saturating_sub(self.width),
+            ShellComponentEdge::Right => output.width.checked_sub(self.width)?,
             _ => 0,
         };
         let y = match self.edge {
-            ShellComponentEdge::Bottom => output.height.saturating_sub(self.height),
+            ShellComponentEdge::Bottom => output.height.checked_sub(self.height)?,
             _ => 0,
         };
-        ContentPixelRect {
-            x: i32::try_from(x).unwrap_or(i32::MAX),
-            y: i32::try_from(y).unwrap_or(i32::MAX),
+        let x = i32::try_from(x).ok()?;
+        let y = i32::try_from(y).ok()?;
+        x.checked_add(i32::try_from(self.width).ok()?)?;
+        y.checked_add(i32::try_from(self.height).ok()?)?;
+        Some(ContentPixelRect {
+            x,
+            y,
             width: self.width,
             height: self.height,
-        }
+        })
     }
 }
 
@@ -181,6 +194,12 @@ pub enum ShellGpuProofError {
     ZeroExtent {
         name: &'static str,
     },
+    /// An output dimension exceeds what a pixel rectangle can address.
+    OutputExtent {
+        name: &'static str,
+        value: u32,
+        limit: u32,
+    },
     /// A surface dimension exceeds the resource width or height limit.
     ResourceExtent {
         name: &'static str,
@@ -217,6 +236,10 @@ impl fmt::Display for ShellGpuProofError {
             Self::RelativePath { name } => write!(formatter, "{name} must be an absolute path"),
             Self::EmptySeat => formatter.write_str("seat must not be empty"),
             Self::ZeroExtent { name } => write!(formatter, "{name} must not be zero"),
+            Self::OutputExtent { name, value, limit } => write!(
+                formatter,
+                "{name} {value} exceeds the addressable output extent {limit}"
+            ),
             Self::ResourceExtent { name, value, limit } => {
                 write!(
                     formatter,
@@ -282,6 +305,18 @@ impl ShellGpuContentProof {
                 return Err(ShellGpuProofError::ZeroExtent { name });
             }
         }
+        for (name, value) in [
+            ("output width", self.output.width),
+            ("output height", self.output.height),
+        ] {
+            if value > SHELL_GPU_PROOF_MAX_OUTPUT_EXTENT {
+                return Err(ShellGpuProofError::OutputExtent {
+                    name,
+                    value,
+                    limit: SHELL_GPU_PROOF_MAX_OUTPUT_EXTENT,
+                });
+            }
+        }
         for (name, value, limit) in [
             ("surface width", self.surface.width, limits.max_width_px),
             ("surface height", self.surface.height, limits.max_height_px),
@@ -290,7 +325,10 @@ impl ShellGpuContentProof {
                 return Err(ShellGpuProofError::ResourceExtent { name, value, limit });
             }
         }
-        if self.surface.width > self.output.width || self.surface.height > self.output.height {
+        if self.surface.width > self.output.width
+            || self.surface.height > self.output.height
+            || self.surface.placement(self.output).is_none()
+        {
             return Err(ShellGpuProofError::SurfaceOutsideOutput);
         }
         // Allocation refuses a panel thicker than the panel extent and a

@@ -34,10 +34,11 @@ mod domain;
 mod parameters;
 pub use domain::exec_client;
 pub use parameters::{
-    SHELL_GPU_PROOF_BYTES_PER_PIXEL, SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_RENDERS,
-    SHELL_GPU_PROOF_MAX_TIMEOUT, SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof,
-    ShellGpuProofEnd, ShellGpuProofError, ShellGpuProofExtent, ShellGpuProofOutcome,
-    ShellGpuProofPixels, ShellGpuProofSurface, shell_gpu_proof_content_limits,
+    SHELL_GPU_PROOF_BYTES_PER_PIXEL, SHELL_GPU_PROOF_DEFAULT_TIMEOUT,
+    SHELL_GPU_PROOF_MAX_OUTPUT_EXTENT, SHELL_GPU_PROOF_MAX_RENDERS, SHELL_GPU_PROOF_MAX_TIMEOUT,
+    SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof, ShellGpuProofEnd, ShellGpuProofError,
+    ShellGpuProofExtent, ShellGpuProofOutcome, ShellGpuProofPixels, ShellGpuProofSurface,
+    shell_gpu_proof_content_limits,
 };
 
 /// Candidate intake across the proof's visits to the transport.
@@ -231,7 +232,11 @@ fn run_with_inventory(
                     "client allocation request differs from the proof's surface parameters".into(),
                 );
             }
-            let pixel = proof.surface.placement(proof.output);
+            // validate() refused every geometry that does not place.
+            let pixel = proof
+                .surface
+                .placement(proof.output)
+                .ok_or("validated surface geometry did not place")?;
             let snapshot = ContentAllocationSnapshot {
                 native_opening: None,
                 output,

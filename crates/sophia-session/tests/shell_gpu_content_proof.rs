@@ -3,9 +3,10 @@
 use sophia_config::ShellComponentEdge;
 use sophia_protocol::ContentPixelRect;
 use sophia_session::{
-    SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_RENDERS, SHELL_GPU_PROOF_MAX_TIMEOUT,
-    SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof, ShellGpuProofEnd, ShellGpuProofError,
-    ShellGpuProofExtent, ShellGpuProofOutcome, ShellGpuProofPixels, ShellGpuProofSurface,
+    SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_OUTPUT_EXTENT,
+    SHELL_GPU_PROOF_MAX_RENDERS, SHELL_GPU_PROOF_MAX_TIMEOUT, SHELL_GPU_PROOF_MIN_TIMEOUT,
+    ShellGpuContentProof, ShellGpuProofEnd, ShellGpuProofError, ShellGpuProofExtent,
+    ShellGpuProofOutcome, ShellGpuProofPixels, ShellGpuProofSurface,
     shell_gpu_proof_content_limits,
 };
 use std::time::Duration;
@@ -76,12 +77,12 @@ fn surfaces_fit_and_sit_against_each_edge() {
         assert_eq!(parameters.surface.thickness(), thickness, "{edge:?}");
         assert_eq!(
             parameters.surface.placement(output),
-            ContentPixelRect {
+            Some(ContentPixelRect {
                 x,
                 y,
                 width,
                 height
-            },
+            }),
             "{edge:?}"
         );
     }
@@ -149,8 +150,15 @@ fn resource_width_and_height_limits_hold_at_and_one_past() {
             limit: height
         })
     );
+    let mut huge = on_output(ShellComponentEdge::Top, (8192, 4096), (u32::MAX, 1));
     assert!(matches!(
-        on_output(ShellComponentEdge::Top, (u32::MAX, u32::MAX), (u32::MAX, 1)).validate(),
+        huge.validate(),
+        Err(ShellGpuProofError::ResourceExtent { .. })
+    ));
+    huge.surface.width = 1;
+    huge.surface.height = u32::MAX;
+    assert!(matches!(
+        huge.validate(),
         Err(ShellGpuProofError::ResourceExtent { .. })
     ));
 }
@@ -312,5 +320,55 @@ fn paths_seat_and_device_pin_are_checked() {
             Err(ShellGpuProofError::MalformedExpectedDevice),
             "{pin:?}"
         );
+    }
+}
+
+/// A small right or bottom surface on an output too large for a pixel
+/// rectangle is refused, never placed at a clamped origin.
+#[test]
+fn right_and_bottom_surfaces_need_an_addressable_output() {
+    let limit = SHELL_GPU_PROOF_MAX_OUTPUT_EXTENT;
+    assert_eq!(limit, i32::MAX as u32);
+    for (edge, surface) in [
+        (ShellComponentEdge::Right, (32, 600)),
+        (ShellComponentEdge::Bottom, (800, 64)),
+    ] {
+        assert!(matches!(
+            on_output(edge, (u32::MAX, u32::MAX), surface).validate(),
+            Err(ShellGpuProofError::OutputExtent { .. })
+        ));
+        let (width, height) = match edge {
+            ShellComponentEdge::Right => (limit, 600),
+            _ => (800, limit),
+        };
+        let at = on_output(edge, (width, height), surface);
+        at.validate().unwrap();
+        let rect = at.surface.placement(at.output).unwrap();
+        match edge {
+            ShellComponentEdge::Right => {
+                assert_eq!(i64::from(rect.x) + i64::from(rect.width), i64::from(limit));
+            }
+            _ => {
+                assert_eq!(i64::from(rect.y) + i64::from(rect.height), i64::from(limit));
+            }
+        }
+        let past = match edge {
+            ShellComponentEdge::Right => on_output(edge, (limit + 1, 600), surface),
+            _ => on_output(edge, (800, limit + 1), surface),
+        };
+        let name = match edge {
+            ShellComponentEdge::Right => "output width",
+            _ => "output height",
+        };
+        assert_eq!(
+            past.validate(),
+            Err(ShellGpuProofError::OutputExtent {
+                name,
+                value: limit + 1,
+                limit
+            })
+        );
+        // Placement itself refuses rather than clamping.
+        assert_eq!(past.surface.placement(past.output), None);
     }
 }
