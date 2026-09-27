@@ -4,9 +4,9 @@ The existing command at this module's root tests Sophia's 9P core through the
 pinned `github.com/hugelgupf/p9 v0.4.1` client and raw protocol scenarios.
 Its scenarios and `sophia_9p_oracle schema=1` verdict remain unchanged.
 
-## Shell file oracle (t252 B8 base)
+## Shell file oracle (t252 B8)
 
-`cmd/shell-oracle` judges the production shell file export with 54 named checks.
+`cmd/shell-oracle` judges the production shell file export with 96 named checks.
 It uses only the Go standard library. The director owns the t252 task and
 plan-note updates.
 
@@ -15,8 +15,9 @@ adds independent codecs for the 17 Catalog, Indicators, native launcher and
 persistent catalog kinds, from KDL commits `ee5e7f809` and `ae60576f8`.
 The unit tests use separate KDL-derived literals, truncations, text and revision
 controls, maximum counts, and separate candidate byte/value validation. The live
-verdict remains the 54 base checks until the phase-2 production-owner scenarios
-execute; the approved extended count is 96.
+verdict includes 54 base checks and 42 role checks; every named check and all of
+its negative controls must execute successfully. See [ROLE-FIXTURES.md](ROLE-FIXTURES.md)
+for the request/event sequences and scheduling barriers.
 
 ### Files
 
@@ -47,8 +48,8 @@ source changes belong to this slice.
 ### Reference inputs
 
 - Base kinds in `protocol/sophia-shell-files-v1.kdl` at `d64bb5dd1`, including
-  normative changes from `f64d670e0`, `bae4ec4a9` and `6bb0c8f2e`. Later role
-  records in that revision remain outside this base oracle.
+  normative changes from `f64d670e0`, `bae4ec4a9` and `6bb0c8f2e`. Role layouts
+  and value rules are pinned at `ee5e7f809` and `ae60576f8`.
 - `docs/sophia-9p-profile.md`, blob
   `de101e3daed32fd7dad45d958d6f76d2e179af43`.
 - `docs/references/diod-9p2000L-protocol.md`, blob
@@ -56,20 +57,21 @@ source changes belong to this slice.
 - `docs/sophia-shell-files.md` at `43e4530b3`, including `5f79a2784` normative
   negotiation/pacing outcomes, for node, custody, retention, pin, upload and
   revocation lifecycle. Record layouts and body rules still come only from KDL.
+  Role lifecycle and negative outcomes use `ae60576f8`.
 
-### Named checks: expected total 54
+### Named checks: expected total 96
 
 Every check must execute exactly once. The harness requires the exact name set,
-54 checks, zero failures, successful process exit and this final line:
+96 checks, zero failures, successful process exit and this final line:
 
 ```text
-sophia_shell_files_oracle schema=1 status=pass checks=54 failed=0
+sophia_shell_files_oracle schema=1 status=pass checks=96 failed=0
 ```
 
 Missing, duplicate or unexpected check names fail the harness. Setup failure
 must produce a failure verdict, never a smaller successful run. Every received
 event and object passes the independent KDL validator before a scenario uses it;
-body validation is also exercised by Go unit tests beyond these 54 live checks.
+body validation is also exercised by Go unit tests beyond these 96 live checks.
 
 | IDs | Group | Checks, in order |
 | --- | --- | --- |
@@ -82,6 +84,9 @@ body validation is also exercised by Go unit tests beyond these 54 live checks.
 | 36–46 | Custody/journal | Submitted precedes semantic outcome; identical retry before ack is idempotent; replay below watermark EALREADY; EAGAIN journals nothing; same-ID retry after EAGAIN executes once; event reads continue by byte offset; retained reread is identical; ack advances retention and old offset is ESTALE; past-tail EINVAL; tail read remains pending; submission IDs correlate independently from domain transaction IDs |
 | 47–50 | Malformed submit | bad length; nonzero reserved bytes; excessive row counts; unknown kind—each EINVAL and no journal entry |
 | 51–54 | Stream/flush | fragmented 9P requests; partial transaction staging; Rflush settles pending events read; subsequent publication never answers the flushed tag |
+| 55–64 | r6 indicators | exact profile; object pin/republish/qid, including changed bytes at the same generation; activation custody and exact echo; stale generation and duplicate-event outcomes |
+| 65–84 | r7 launcher | catalog/opening/allocation; permit/candidate custody and negative controls; Prepared before Presented/focus; Text and ack; query disarm; repaint; Accept/activation; stale ack; revocation and close |
+| 85–96 | r8 dock | exact profile; identities and immutable pins; 4096-row catalog; allocation/permit/candidate and negative controls; presentation; activation echo and stale generation/slot |
 
 The malformed cases run in a negotiated session. Absence assertions use
 flush/barrier ordering rather than a quiet sleep.
@@ -91,10 +96,11 @@ presentation.
 
 ### Served-export harness
 
-One Go child runs the complete check set against eight isolated production
+One Go child runs the complete check set against thirteen isolated production
 exports: main content flow, policy refusal, unservable negotiation, custody
 pressure, malformed records, stream/flush, missing permit and cancelled permit.
-Each uses a fresh registry and epoch (17 through 24). The oracle discovers the
+Five additional exports serve bar, launcher, dock and separate launcher/dock
+fatal-permit controls. Each uses a fresh registry and epoch. The oracle discovers the
 epoch by reading `api` to EOF; no argument or control message supplies it. The harness
 authorizes that child's PID before releasing its startup barrier. Admission is
 supplied evidence, not a supervisor-authentication result.
@@ -104,6 +110,16 @@ demand, candidate and action owners. It explicitly calls the preparation and
 presentation joins, retains the render lease through those joins, then releases
 it and checks resource/accounting cleanup. It also checks the owner-side result
 of the exact ActionAck; the Go check reports only its wire-visible custody.
+
+The role fixtures use the real native focus/input and candidate/allocation/resource
+owners. **Catalog and indicator admission decisions are scripted from the
+normative rules.** The oracle checks their wire echoes; it makes no claim about
+Session launch/admission policy. Native activation eligibility uses the runtime
+owner, with queue admission supplied by the fixture. No fixture starts an app.
+Session eligibility remains covered by Session's own tests.
+The phase-A file wire's cross-family arrival ordering limitation is not an
+ordering guarantee of this verdict. These fixtures use explicit owner barriers
+where one family's completion is a prerequisite for the next request.
 
 A bounded test-only control channel carries scheduling phases, such as
 republish-after-pin and release-journal-pressure. It carries no encoded shell
@@ -127,6 +143,11 @@ getattr barrier, then release the owner. Its stale error revokes the epoch;
 the pending read must receive ESTALE before clean EOF. This check exposed the
 premature-close bug fixed by `ef0b94537`.
 
+The extended 96-check verdict passes against runtime `3856d1014`. Its fixes
+discard the remaining parts of a whole candidate after a rejecting outcome and
+publish large file objects under their object cap, preserving prior event order.
+The strict role controls cover both fixes, including the 4096-row catalog.
+
 Build offline with `GOFLAGS=-mod=readonly`, `GOPROXY=off`,
 `GOTOOLCHAIN=local`, `GOWORK=off`; validate the existing module and sum pins.
 Use `GOMAXPROCS=2`, `go build -p 2` and a private Go build cache. Bound child
@@ -139,7 +160,7 @@ failure rows paired with a pass footer, truncated output and nonzero exit.
 Independent body-validator tests mutate valid literals, including every
 conditional rule clarified in the KDL.
 
-### Gates and deferred role coverage
+### Gates and scope limits
 
 From the repository root:
 
@@ -155,12 +176,10 @@ nice -n 19 go vet -p 2 ./...
 Run offline Go tests/vet, the new runtime integration test, Rust formatting,
 Clippy for the new test and `xtask check layout`. Recheck the existing C1 Go
 build and tests. All gates use nice 19, jobs 2 and private output directories;
-no heavy runs from 00:45 to 04:00 local time. Signed commits go to the director
-for review and merge.
+respect operator pauses for latency measurements. Signed commits go to the
+director for review and merge.
 
-Later B5-dependent work: exact r7/r8 negotiation; launcher opening/focus lease,
-semantic input, activation and close; dock catalog identities and activation
-by generation/slot. These checks are absent from the base verdict, never stubbed
-as passes. Shared xtask integration is a separate follow-up. This fixture proves
-wire/owner interoperability, not native rendering, protected launch, latency
-budgets or attended desktop acceptance.
+Shared xtask integration and any future Session-policy harness are separate
+follow-ups. This fixture proves wire/owner interoperability within the boundary
+above; it does not prove native rendering, protected launch, latency budgets or
+attended desktop acceptance.

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -55,7 +56,14 @@ func (r *runner) connect(name string, msize uint32) *session {
 	}
 	role, epoch, err := parseAPI(api)
 	must(err)
-	need(role == "bar", "fixture api role %q", role)
+	wantRole := "bar"
+	if strings.HasPrefix(name, "launcher") {
+		wantRole = "launcher"
+	}
+	if strings.HasPrefix(name, "dock") {
+		wantRole = "dock"
+	}
+	need(role == wantRole, "fixture api role %q want %q", role, wantRole)
 	s.epoch = epoch
 	w.clunk(10)
 	w.file(2, 0, "events")
@@ -183,12 +191,14 @@ func (s *session) object(fid uint32) record {
 		if len(part) == 0 {
 			break
 		}
-		need(len(raw)+len(part) <= 1024, "object cap")
+		need(len(raw)+len(part) <= 4194304, "object cap")
 		raw = append(raw, part...)
 	}
 	e, err := decode(raw)
 	must(err)
 	need(e.epoch == s.epoch, "object epoch")
+	caps := map[uint16]int{1: 1024, 2: 1024, 3: 4194304, 4: 32768}
+	need(caps[e.kind] != 0 && len(raw) <= caps[e.kind], "object kind cap")
 	return e
 }
 func (s *session) noEvents() {
