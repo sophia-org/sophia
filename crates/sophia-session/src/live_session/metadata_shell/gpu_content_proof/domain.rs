@@ -1,5 +1,6 @@
 //! Proof-only observation immediately before exec in the admitted namespace.
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::Write as _;
 use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
@@ -11,8 +12,9 @@ use super::super::gpu;
 const INVENTORY_BOUND: usize = 64;
 pub(super) const OBSERVATION_ENV: &str = "SOPHIA_GPU_PROOF_OBSERVATION_ID";
 
-/// This replaces the probe with Lom: its PID, namespace and grant stay intact.
-pub fn exec_client(client: &Path) -> Result<(), Box<dyn std::error::Error>> {
+/// This replaces the probe with the shell client, executed with exactly the
+/// proof's client arguments: its PID, namespace and grant stay intact.
+pub fn exec_client(client: &Path, args: &[OsString]) -> Result<(), Box<dyn std::error::Error>> {
     super::validate_input(client, "shell client")?;
     let observation = std::env::var(OBSERVATION_ENV)?;
     if observation.len() != 32
@@ -50,10 +52,7 @@ pub fn exec_client(client: &Path) -> Result<(), Box<dyn std::error::Error>> {
         minor,
     );
     std::io::stdout().flush()?;
-    Err(std::process::Command::new(client)
-        .arg("--serve")
-        .exec()
-        .into())
+    Err(std::process::Command::new(client).args(args).exec().into())
 }
 
 fn number(key: &str) -> Result<u64, Box<dyn std::error::Error>> {

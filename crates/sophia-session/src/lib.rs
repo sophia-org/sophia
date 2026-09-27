@@ -109,24 +109,36 @@ pub fn run_input_guard(args: &[String]) -> Result<(), Box<dyn std::error::Error>
     live_session::input_guard::run(args)
 }
 
-/// Exercise Lom's real protected GPU/content path without acquiring DRM master
-/// or claiming native presentation.
+/// Typed parameters of the shell GPU content proof.
 #[cfg(feature = "native-session")]
-pub fn run_shell_gpu_content_hardware_proof(
-    client: &std::path::Path,
-    config: &std::path::Path,
-    seat: &str,
-    render_node: &std::path::Path,
+pub use live_session::metadata_shell::gpu_content_proof::{
+    SHELL_GPU_PROOF_DEFAULT_TIMEOUT, SHELL_GPU_PROOF_MAX_EXTENT, SHELL_GPU_PROOF_MAX_RENDERS,
+    SHELL_GPU_PROOF_MAX_TIMEOUT, SHELL_GPU_PROOF_MIN_TIMEOUT, ShellGpuContentProof,
+    ShellGpuProofEnd, ShellGpuProofError, ShellGpuProofExtent, ShellGpuProofOutcome,
+    ShellGpuProofSurface,
+};
+
+/// Exercise a shell client's real protected GPU/content path without
+/// acquiring DRM master or claiming native presentation. The parameters are
+/// validated before any device access. Client-specific expectations belong to
+/// that client's external verifier. An end state whose final render is
+/// PresentedSynthetic has not run on hardware and stays unclaimed until the
+/// manual gate exercises it.
+#[cfg(feature = "native-session")]
+pub fn run_shell_gpu_content_proof(
+    proof: &ShellGpuContentProof,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    live_session::metadata_shell::gpu_content_proof::run(client, config, seat, render_node)
+    live_session::metadata_shell::gpu_content_proof::run(proof)
 }
 
-/// Proof-only pre-exec observation inside the admitted protection domain.
+/// Proof-only pre-exec observation inside the admitted protection domain;
+/// on success the process becomes `client` with exactly `args`.
 #[cfg(feature = "native-session")]
 pub fn exec_shell_gpu_proof_client(
     client: &std::path::Path,
+    args: &[std::ffi::OsString],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    live_session::metadata_shell::gpu_content_proof::exec_client(client)
+    live_session::metadata_shell::gpu_content_proof::exec_client(client, args)
 }
 
 #[cfg(feature = "native-session")]
