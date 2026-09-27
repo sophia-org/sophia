@@ -94,6 +94,8 @@ int sophia_ws_timeout(const struct sophia_ws *s, uint64_t now) {
   uint64_t d;
   if (!s || ws_final(s))
     return -1;
+  if (s->drive_pending)
+    return 0;
   d = earlier(deadline(s), earlier(s->retry_at, s->object_retry_at));
   if (!d)
     return -1;
@@ -229,6 +231,7 @@ int sophia_ws_dispatch(struct sophia_ws *s, short revents, size_t budget,
   due = deadline(s);
   if (due && due <= now)
     return ws_finish(s, SOPHIA_9P_CLOSED);
+  s->drive_pending = 0;
   r = ws_drive(s);
   return r ? ws_finish(s, r) : 0;
 }

@@ -278,6 +278,53 @@ static void idle_partial_and_clock_deadlines(void) {
   assert(sophia_ws_dispatch(r->session, POLLIN, 65536, r->now) < 0);
   wr_drop(r);
 }
+static void complete_held_event_outlives_assembly_deadline(void) {
+  struct wm_rig *r = wr_new();
+  const struct sophia_wf_record *event;
+  wr_ready(r);
+  wp_outcome(&r->peer, 91);
+  steps(r, 4);
+  assert(!sophia_ws_event(r->session, &event) &&
+         event->value.configuration_outcome.transaction == 91);
+  assert(sophia_ws_timeout(r->session, r->now) == -1);
+  r->now += 20000;
+  assert(!sophia_ws_dispatch(r->session, POLLIN | POLLOUT, 65536, r->now));
+  assert(sophia_ws_state(r->session) == SOPHIA_WS_READY &&
+         !sophia_ws_event(r->session, &event) &&
+         event->value.configuration_outcome.transaction == 91);
+  assert(!sophia_ws_consume(r->session));
+  steps(r, 4);
+  assert(r->peer.acked == 3);
+  wr_drop(r);
+}
+static void partial_event_deadline_runs_during_pending_ack(void) {
+  struct wm_rig *r = wr_new();
+  struct sophia_ws_obligations before, later;
+  const struct sophia_wf_record *event;
+  wr_ready(r);
+  wp_outcome(&r->peer, 92);
+  steps(r, 4);
+  assert(!sophia_ws_event(r->session, &event));
+  r->peer.ack_hold = 1;
+  assert(!sophia_ws_consume(r->session));
+  steps(r, 4);
+  assert(!sophia_ws_obligations(r->session, &before));
+  assert(r->peer.acked == 3 && before.acked == 2 && !before.deadline_ms);
+  r->peer.event_chunk = 1;
+  wp_outcome(&r->peer, 93);
+  steps(r, 2);
+  assert(!sophia_ws_obligations(r->session, &before));
+  assert(before.deadline_ms > r->now && before.acked == 2);
+  r->now += 1000;
+  steps(r, 2); /* More partial bytes do not renew the record deadline. */
+  assert(!sophia_ws_obligations(r->session, &later));
+  assert(later.deadline_ms == before.deadline_ms && later.acked == 2);
+  r->now = before.deadline_ms;
+  assert(sophia_ws_dispatch(r->session, POLLIN | POLLOUT, 65536, r->now) ==
+         SOPHIA_9P_CLOSED);
+  assert(sophia_ws_state(r->session) == SOPHIA_WS_CLOSED);
+  wr_drop(r);
+}
 static void deadline_never_sends_and_close_classifies(void) {
   struct wm_rig *r = wr_new();
   struct sophia_wf_record value = {0};
@@ -317,6 +364,19 @@ static void bad_limits_and_negotiation_refuse(void) {
              8); /* Selected beyond the ceiling. */
     terminal(r);
     assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+    wr_drop(r);
+  }
+}
+static void impossible_offer_refuses_before_submission(void) {
+  unsigned profile;
+  for (profile = 0; profile < 2; ++profile) {
+    struct wm_rig *r = wr_new_caps(
+        profile ? WP_CAPS & ~SOPHIA_WF_CAP_PROFILE_ACTIVATION : WP_CAPS);
+    if (!profile)
+      wp_put(r->peer.limits + 32, WP_CAPS & ~SOPHIA_WF_CAP_CONFIGURATION, 8);
+    terminal(r);
+    assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+    assert(r->peer.submits == 0 && r->peer.tx_size == 0);
     wr_drop(r);
   }
 }
@@ -415,12 +475,94 @@ static void full_retained_journal_still_observes_submitted(void) {
          sophia_ws_event(r->session, &event) == SOPHIA_9P_AGAIN);
   wr_drop(r);
 }
+static void presentation_receipt_requires_negotiated_capability(void) {
+  unsigned enabled;
+  for (enabled = 0; enabled < 2; ++enabled) {
+    uint64_t caps = WP_CAPS;
+    struct wm_rig *r;
+    struct sophia_wf_record receipt = {0};
+    const struct sophia_wf_record *event = NULL;
+    if (!enabled)
+      caps &= ~(SOPHIA_WF_CAP_SURFACE_INSTANCES |
+                SOPHIA_WF_CAP_PRESENTATION_ACTIONS);
+    r = wr_new_caps(caps);
+    wr_ready(r);
+    receipt.header.kind = SOPHIA_WF_PRESENTATION_RECEIPT;
+    receipt.value.presentation_receipt =
+        (struct sophia_wf_presentation_receipt){1, 2, 3, 4, 5, 1};
+    /* The peer encodes a structurally valid receipt even when disclosure was
+     * not negotiated. Admission must fail before an application sees it. */
+    wp_record(&r->peer, &receipt);
+    if (enabled) {
+      steps(r, 20);
+      assert(!sophia_ws_event(r->session, &event));
+      assert(event->header.kind == SOPHIA_WF_PRESENTATION_RECEIPT &&
+             event->value.presentation_receipt.presentation_epoch == 5);
+      assert(!sophia_ws_consume(r->session));
+    } else {
+      terminal(r);
+      assert(sophia_ws_state(r->session) == SOPHIA_WS_FAILED);
+      assert(sophia_ws_event(r->session, &event) != 0 && event == NULL);
+    }
+    wr_drop(r);
+  }
+}
+static void local_work_wakes_a_poll_first_caller(void) {
+  unsigned kind, missed = 0;
+  for (kind = 0; kind < 3; ++kind) {
+    struct wm_rig *r = wr_new();
+    const struct sophia_wf_record *event;
+    struct pollfd fd;
+    uint64_t ticket = 0;
+    int wait;
+    wr_ready(r);
+    if (kind == 1)
+      wp_outcome(&r->peer, 77);
+    else if (kind == 2)
+      snapshot_and_cycle(r);
+    steps(r, 20);
+    /* No peer bytes or queued client writes can hide a missing local wakeup. */
+    fd = (struct pollfd){sophia_ws_poll_fd(r->session),
+                         sophia_ws_poll_events(r->session), 0};
+    assert(!(fd.events & POLLOUT) && poll(&fd, 1, 0) == 0);
+    assert(sophia_ws_timeout(r->session, r->now) == -1);
+    if (kind == 0)
+      ticket = wr_submit(r, 1);
+    else if (kind == 1) {
+      assert(!sophia_ws_event(r->session, &event));
+      assert(!sophia_ws_consume(r->session));
+    } else
+      assert(!sophia_ws_snapshot(r->session, r->now + 1000));
+    wait = sophia_ws_timeout(r->session, r->now);
+    if (wait != 0) {
+      fprintf(stderr, "local work kind=%u: poll timeout=%d, expected 0\n",
+              kind, wait);
+      ++missed;
+    }
+    /* One dispatch queues the work; ordinary wire readiness then drives it.
+     * An acknowledged idle session must return to sleeping, not spin. */
+    assert(!sophia_ws_dispatch(r->session, 0, 65536, r->now));
+    assert(sophia_ws_poll_events(r->session) & POLLOUT);
+    steps(r, 40);
+    if (kind == 0)
+      assert(wr_custody(r, ticket) == SOPHIA_WS_SUBMITTED);
+    else if (kind == 1)
+      assert(r->peer.acked == 3);
+    else
+      assert(!sophia_ws_snapshot_result(r->session, &event));
+    assert(sophia_ws_timeout(r->session, r->now) == -1);
+    assert(!(sophia_ws_poll_events(r->session) & POLLOUT));
+    wr_drop(r);
+  }
+  assert(!missed);
+}
 int main(void) {
 #define RUN(test)                                                              \
   do {                                                                         \
     test_case = #test;                                                         \
     test();                                                                    \
   } while (0)
+  RUN(local_work_wakes_a_poll_first_caller);
   RUN(bootstrap_and_partial_writes);
   RUN(submitted_and_error_both_orders);
   RUN(ealready_without_custody_is_unknown);
@@ -432,12 +574,16 @@ int main(void) {
   RUN(snapshot_is_complete_bound_and_pin_released);
   RUN(mismatched_snapshot_refuses);
   RUN(idle_partial_and_clock_deadlines);
+  RUN(complete_held_event_outlives_assembly_deadline);
+  RUN(partial_event_deadline_runs_during_pending_ack);
   RUN(deadline_never_sends_and_close_classifies);
   RUN(bad_limits_and_negotiation_refuse);
+  RUN(impossible_offer_refuses_before_submission);
   RUN(event_lengths_and_sequences_fail_immediately);
   RUN(ack_faults_and_revocation_keep_custody);
   RUN(snapshot_retry_is_paced_and_truncation_refuses);
   RUN(full_retained_journal_still_observes_submitted);
+  RUN(presentation_receipt_requires_negotiated_capability);
 #undef RUN
   puts("wm_session_test: scripted 9P custody, snapshot and deadline controls "
        "passed");

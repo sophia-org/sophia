@@ -186,7 +186,18 @@ static void scalar_vectors(void) {
   for (i = 0; i < 5; ++i)
     put(p + 32 + i * 8, i + 1, 8);
   put(p + 72, 3, 2);
-  roundtrip(p, n, 0);
+  roundtrip(p, n, SOPHIA_WF_CAP_SURFACE_INSTANCES);
+  reject(p, n, 0);
+  reject(p, n, UINT64_MAX & ~SOPHIA_WF_CAP_SURFACE_INSTANCES);
+  assert(!sophia_wf_decode(p, n, SOPHIA_WF_CAP_SURFACE_INSTANCES, &r));
+  {
+    uint8_t encoded[512], sentinel[512];
+    size_t used = 909;
+    memset(sentinel, 0xa5, sizeof(sentinel));
+    memcpy(encoded, sentinel, sizeof(encoded));
+    assert(sophia_wf_encode(encoded, sizeof(encoded), 0, &r, &used) == -1);
+    assert(used == 909 && !memcmp(encoded, sentinel, sizeof(encoded)));
+  }
 }
 static size_t cycle(uint8_t *p, unsigned cause, size_t bytes) {
   size_t i, n = record(p, 22, 48 + 16 + bytes);

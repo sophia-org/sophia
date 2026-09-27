@@ -88,6 +88,12 @@ int ws_boot_reply(struct sophia_ws *s, const struct sophia_9p_reply *r) {
         return SOPHIA_9P_INVALID;
       s->epoch = value.header.epoch;
       s->limits = value.value.limits;
+      /* Refuse an impossible offer before opening the candidate lane. */
+      if ((s->config.offer.required & ~s->limits.capability_ceiling) ||
+          (s->limits.profile_required &&
+           !((s->config.offer.required | s->config.offer.optional) &
+             SOPHIA_WF_CAP_PROFILE_ACTIVATION)))
+        return SOPHIA_9P_INVALID;
       s->have_limits = 1;
     }
   }

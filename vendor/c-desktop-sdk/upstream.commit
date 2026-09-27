@@ -1,13 +1,13 @@
-tree a538d819cada04b29ad37864be465734eef9dbd7
-parent 32f9c4a53e79602311fdeffa796a78e88c09940a
-author Mason Green <mason@greenm01.net> 1790538016 -0400
-committer Mason Green <mason@greenm01.net> 1790538016 -0400
+tree 04c3cc178d2bc0c8688b71003791a9c60d46da9a
+parent 93bdf3c3b47c837af79023bec482760e1f1ceb80
+author Mason Green <mason@greenm01.net> 1790546557 -0400
+committer Mason Green <mason@greenm01.net> 1790546557 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarlxIAAKCRBXGEu2KoAA
- YkgcAQD95qIwlogX/neKhRQKu//uiv4BYDtb4kRvfEmjO6caqQEA3Gs6wXPhCeRj
- uHC4w/3gFDL1mrB/WpmVQtauyYCk1QE=
- =RpQM
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarmSfQAKCRBXGEu2KoAA
+ YlFtAQDHvXfvMWxCdsP8Ok0jUVgRXtzO5vEK2d5g/NQ6l3oRxwEA1dw2EE58kOtq
+ zXp4U5jrkmstc+OP4bQQ+W3H+KEq+gE=
+ =8a53
  -----END PGP SIGNATURE-----
 
-Add a bounded WM file session with explicit custody and snapshot lifetimes
+Wake WM polling after staging local session work

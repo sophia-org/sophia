@@ -16,6 +16,7 @@ int sophia_ws_snapshot(struct sophia_ws *s, uint64_t deadline) {
   s->object_retry_at = 0;
   s->object_retry_delay = 0;
   s->object_stage = WS_OBJECT_WALK;
+  s->drive_pending = 1;
   return 0;
 }
 int ws_object_drive(struct sophia_ws *s) {

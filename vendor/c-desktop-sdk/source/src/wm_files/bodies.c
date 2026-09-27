@@ -175,6 +175,8 @@ static uint64_t family_cap(uint16_t kind) {
     return SOPHIA_WF_CAP_POLICY_DIRTY;
   case SOPHIA_WF_SESSION_OPERATION:
     return SOPHIA_WF_CAP_SESSION_OPERATIONS;
+  case SOPHIA_WF_PRESENTATION_RECEIPT:
+    return SOPHIA_WF_CAP_SURFACE_INSTANCES;
   default:
     return 0;
   }

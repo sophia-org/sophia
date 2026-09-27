@@ -47,7 +47,7 @@ struct sophia_ws {
   uint32_t boot_iounit, events_iounit, tx_iounit, object_iounit;
   struct ws_operation boot_op, event_op, tx_op, ack_op, object_op;
   uint8_t bootstrap, have_limits, negotiated, event_ready, tx_replied,
-      event_fault;
+      event_fault, drive_pending;
   uint64_t epoch, selected, now, pass, sequence, consumed, acked, ack_pending;
   uint64_t event_offset, fragment_deadline, bootstrap_deadline;
   uint64_t next_ticket, tx_ticket, tx_domain, next_domain, submitted_domain;

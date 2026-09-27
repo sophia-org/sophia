@@ -64,13 +64,17 @@ int ws_queue(struct sophia_ws *s, const struct sophia_wf_record *record,
 }
 int sophia_ws_submit(struct sophia_ws *s, const struct sophia_wf_record *record,
                      uint64_t deadline, uint64_t *ticket) {
+  int r;
   if (!s || !record || !ticket || record->header.kind == SOPHIA_WF_NEGOTIATE)
     return SOPHIA_9P_ARGUMENT;
   if (ws_final(s))
     return s->terminal;
   if (s->state != SOPHIA_WS_READY)
     return SOPHIA_9P_BUSY;
-  return ws_queue(s, record, deadline, ticket);
+  r = ws_queue(s, record, deadline, ticket);
+  if (!r)
+    s->drive_pending = 1;
+  return r;
 }
 int sophia_ws_next_transaction(struct sophia_ws *s, uint64_t *transaction) {
   if (!s || !transaction || !s->next_domain)

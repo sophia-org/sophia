@@ -52,6 +52,10 @@ uint64_t sophia_ws_capabilities(const struct sophia_ws *);
 const struct sophia_wf_limits *sophia_ws_limits(const struct sophia_ws *);
 int sophia_ws_poll_fd(const struct sophia_ws *);
 short sophia_ws_poll_events(const struct sophia_ws *);
+/* Poll with this timeout even when no fd event is ready. Successful submit,
+ * snapshot and consume request one immediate dispatch (timeout 0) to schedule
+ * local work. Dispatch clears that wakeup; wire readiness, deadlines and retry
+ * backoff govern subsequent waits. Recompute both hints after API calls. */
 int sophia_ws_timeout(const struct sophia_ws *, uint64_t now_ms);
 int sophia_ws_obligations(const struct sophia_ws *,
                           struct sophia_ws_obligations *);

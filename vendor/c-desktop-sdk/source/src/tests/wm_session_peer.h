@@ -323,9 +323,9 @@ static inline void wp_pump(struct wm_peer *p) {
     p->close_after = 0;
   }
 }
-static inline struct wm_rig *wr_new(void) {
+static inline struct wm_rig *wr_new_caps(uint64_t caps) {
   struct wm_rig *r = calloc(1, sizeof(*r));
-  struct sophia_ws_config cfg = {8192, {WP_CAPS, 0}, 10000};
+  struct sophia_ws_config cfg = {8192, {caps, 0}, 10000};
   struct sophia_wf_record value = {0};
   size_t n;
   int sockets[2];
@@ -334,7 +334,7 @@ static inline struct wm_rig *wr_new(void) {
   r->peer.fd = sockets[1];
   r->peer.submit_count = 24;
   r->peer.ack_count = 16;
-  r->peer.selected = WP_CAPS;
+  r->peer.selected = caps;
   r->session = calloc(1, sophia_ws_state_bytes());
   r->storage = malloc(sophia_ws_storage_bytes(8192));
   assert(r->session && r->storage);
@@ -348,6 +348,9 @@ static inline struct wm_rig *wr_new(void) {
   assert(!sophia_ws_open_fd(r->session, r->client_fd, &cfg, r->storage,
                             sophia_ws_storage_bytes(8192), 0));
   return r;
+}
+static inline struct wm_rig *wr_new(void) {
+  return wr_new_caps(WP_CAPS);
 }
 static inline int wr_step(struct wm_rig *r) {
   int status;

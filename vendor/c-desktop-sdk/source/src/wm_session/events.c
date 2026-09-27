@@ -123,5 +123,7 @@ int sophia_ws_consume(struct sophia_ws *s) {
     return SOPHIA_9P_ARGUMENT;
   remove_head(s);
   r = ws_event_head(s);
+  if (!r)
+    s->drive_pending = 1;
   return r ? ws_finish(s, r) : 0;
 }
