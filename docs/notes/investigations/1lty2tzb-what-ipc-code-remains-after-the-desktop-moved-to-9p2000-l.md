@@ -971,6 +971,32 @@ large candidate staging and feed acknowledgement holds remain client work;
 the independent C production-export peer, protected Engine work-area commit
 proof and Narthex migration are still required before retiring IPC.
 
+### C file client transaction storage (t271)
+
+C SDK `0a09c298fd36d7d09c0f23a35116985deadd8c4e` adds an initializer with
+caller-owned object and transaction scratch. Existing initializers keep their
+inline defaults. External transaction storage is bounded at 4 MiB and checked
+for overlap with the client, wire, wire storage and object scratch before
+initialization changes state. No allocator or extra inline record array was
+added. The queued session still has its 8 KiB per-record limit; this change is
+the low-level transport prerequisite for descriptor client work.
+
+The scripted peer receives complete 8260-byte tabs and 52488-byte reference
+candidates through both value and encoded-byte submission, with 127-byte
+writes. Changing the caller's input immediately after submission does not alter
+the staged record. Submitted custody holds the transaction reopen until its
+acknowledgement; EAGAIN waits for explicit retry and retains the same id and
+bytes. Undersized, malformed and wrong-epoch submissions consume no id.
+
+`t271-c-staging-check1.log` and `t271-c-staging-final.log` pass full strict
+checks without and with IPC. `t271-c-staging-ubsan-trap.log` passes the full
+file suite. `t271-c-staging-mutant-capacity.log` compiles a fresh overlay with
+the old fixed-size encoding limit and exits 134 at the maximum-candidate
+submission assertion. Device/network/display isolation and private outputs
+match the snapshot gates above. These tests do not establish descriptor role
+authorization or real-export interoperability. Negotiation, feed holds, queued
+large records and the independent C peer remain unfinished.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
