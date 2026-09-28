@@ -208,10 +208,7 @@ pub fn decode_policy_projection_records(
         });
     }
     if placement_cursor.next().is_some() {
-        return Err(invalid(
-            "placement_count",
-            0,
-        ));
+        return Err(invalid("placement_count", 0));
     }
     Ok(PolicyProjectionProposal {
         presentation: decode_policy_presentation_records(sections)?,
