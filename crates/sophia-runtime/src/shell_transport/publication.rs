@@ -73,7 +73,7 @@ impl ShellComponentTransport {
     /// are journaled first, so the announcement never overtakes them. If they
     /// cannot all be journaled now, or the journal cannot take the
     /// announcement, nothing is published and the caller retries.
-    fn publish_object(
+    pub(super) fn publish_object(
         &mut self,
         kind: sophia_protocol::shell_files::ShellFileKind,
         body: &[u8],

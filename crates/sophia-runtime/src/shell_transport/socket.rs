@@ -4,9 +4,9 @@
 //! writes stay here. Deleting this module and `Wire::Socket` removes the socket
 //! without touching an owner.
 //!
-//! Besides typed records, this wire carries frames only it can express: the
-//! legacy descriptor families and the multi-frame catalog and indicator
-//! transfers. They wait in its own lane, stamped from the FIFO's admission
+//! Besides typed records, this wire carries the legacy framed descriptor
+//! exchange and multi-frame catalog and indicator transfers. They wait in
+//! its own lane, stamped from the FIFO's admission
 //! sequence, and are charged to the same record and byte budget.
 use std::collections::VecDeque;
 use std::io::{Read as _, Write as _};
@@ -60,7 +60,6 @@ pub(super) struct SocketWire {
     writing: Option<Writing>,
     /// Payload bytes the current owner visit may still take.
     visit: usize,
-    pub(super) descriptor: descriptor::DescriptorState,
 }
 
 struct LaneFrame {
@@ -93,13 +92,15 @@ impl SocketWire {
             publication: VecDeque::new(),
             writing: None,
             visit: VISIT_PAYLOAD_BYTES,
-            descriptor: descriptor::DescriptorState::default(),
         }
     }
 
     /// The frame a typed record becomes on this wire.
     pub(super) fn encode(record: &OutboundRecord) -> Result<Vec<u8>, ShellTransportError> {
         Ok(match record {
+            // Descriptor socket owners retain their original frame lane until
+            // their replacement is accepted; native file records never fall back.
+            OutboundRecord::Descriptor(_) => return Err(ShellTransportError::WrongContentRecord),
             OutboundRecord::Content(transaction, record) => {
                 encode_shell_content_frame(*transaction, record)?
             }

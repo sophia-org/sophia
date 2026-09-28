@@ -42,7 +42,7 @@ impl ShellComponentTransport {
         let capacity = if self.content_limits.is_some() {
             self.control_capacity_available(epochs, 1)
         } else {
-            self.unlimited_capacity_available(CONTROL_RECORD_BYTES)
+            self.unlimited_capacity_available(self.control_record_bytes())
         };
         if !capacity {
             return Ok(None); // The input record still owns the unadmitted request.

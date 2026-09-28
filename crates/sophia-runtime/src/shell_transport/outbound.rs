@@ -29,6 +29,7 @@ const OUTPUT_FACT_BYTES: usize = 40;
 /// One Session-to-client record owed to the component.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum OutboundRecord {
+    Descriptor(sophia_protocol::shell_files::ShellFileDescriptorRecord),
     Content(TransactionId, ShellContentRecord),
     NativeLauncher(TransactionId, ShellNativeLauncherRecord),
     CatalogAction(TransactionId, ShellCatalogActionRecord),
@@ -52,6 +53,10 @@ impl OutboundRecord {
     pub(super) fn native(&self) -> Result<(ShellFileKind, Vec<u8>), ShellTransportError> {
         let refused = |_| ShellTransportError::WrongContentRecord;
         match self {
+            Self::Descriptor(value) => {
+                sophia_protocol::shell_files::encode_shell_file_descriptor_body(value)
+                    .map_err(refused)
+            }
             Self::Content(transaction, record) => content_body(*transaction, record),
             Self::NativeLauncher(transaction, record) => {
                 let value = ShellFileNativeLauncherRecord {

@@ -17,6 +17,9 @@ const BASE: u64 = 3;
 const METADATA: u64 =
     BASE | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 9) | (1 << 10);
 
+#[path = "support/shell_file_descriptor_owner.rs"]
+mod owner;
+
 struct Fixture {
     transport: ShellComponentTransport,
     epochs: ContentEpochRegistry,

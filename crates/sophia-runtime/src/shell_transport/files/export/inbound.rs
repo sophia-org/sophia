@@ -7,6 +7,28 @@
 use super::*;
 
 impl ShellFiles {
+    pub(in crate::shell_transport) fn peek_descriptor(
+        &self,
+        kind: ShellFileKind,
+    ) -> Option<&ShellFileDescriptorRecord> {
+        self.inbound.iter().find_map(|v| match v {
+            Inbound::Descriptor(value) if shell_file_descriptor_kind(&value.record) == kind => {
+                Some(value.as_ref())
+            }
+            _ => None,
+        })
+    }
+
+    pub(in crate::shell_transport) fn take_descriptor(
+        &mut self,
+        kind: ShellFileKind,
+    ) -> Option<ShellFileDescriptorRecord> {
+        let at = self.inbound.iter().position(|v| matches!(v, Inbound::Descriptor(value) if shell_file_descriptor_kind(&value.record) == kind))?;
+        match self.inbound.remove(at) {
+            Some(Inbound::Descriptor(value)) => Some(*value),
+            _ => unreachable!("selected descriptor input"),
+        }
+    }
     /// No accepted submission waits for the owners: neither a typed record
     /// nor the rest of a whole candidate already being handed over in parts.
     /// A candidate the client is still writing is not Session's input yet.

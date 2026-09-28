@@ -33,6 +33,9 @@ mod content_allocations;
 mod content_candidates;
 mod content_resources;
 mod control_budget;
+mod descriptor;
+mod descriptor_files;
+mod descriptor_state;
 mod files;
 mod indicator_responses;
 pub(crate) mod outbound;
@@ -119,6 +122,7 @@ pub struct ShellComponentTransport {
     indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
     catalog_response: Option<catalog_responses::PendingCatalogResponse>,
     native_control: native_launcher::control::NativeControl,
+    descriptor_state: descriptor_state::DescriptorState,
     connection_epoch: u64,
     reserved_limits: Option<ContentLimits>,
     content_grant: Option<ContentGrant>,
@@ -147,6 +151,7 @@ impl ShellComponentTransport {
             indicator_response: None,
             catalog_response: None,
             native_control: native_launcher::control::NativeControl::default(),
+            descriptor_state: descriptor_state::DescriptorState::default(),
             connection_epoch: 0,
             reserved_limits: None,
             content_grant: None,
@@ -192,6 +197,7 @@ impl ShellComponentTransport {
         self.indicator_response = None;
         self.catalog_response = None;
         self.native_control = native_launcher::control::NativeControl::default();
+        self.descriptor_state = descriptor_state::DescriptorState::default();
         self.content_grant = None;
         self.content_limits = None;
         self.reserved_limits = None;

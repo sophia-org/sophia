@@ -256,6 +256,9 @@ fn slice(bytes: &[u8], offset: u64, count: u32) -> ReadOutcome {
 }
 
 impl ShellFiles {
+    pub(in crate::shell_transport) fn is_descriptor(&self) -> bool {
+        self.descriptor && self.negotiated
+    }
     /// An export awaiting exactly one Negotiate record for `epoch`. Qids are
     /// logical per component and continue from `qid_base` across epochs.
     /// `catalog_allowed` is fixed by the role profile Session selected before

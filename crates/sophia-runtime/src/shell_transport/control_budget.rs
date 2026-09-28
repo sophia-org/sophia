@@ -30,7 +30,9 @@ pub(super) enum Class {
 
 impl ShellComponentTransport {
     pub(super) fn control_record_bytes(&self) -> usize {
-        if self.supports_native_launcher() {
+        if self.file_descriptor() {
+            super::files::DESCRIPTOR_RECORD_BYTES
+        } else if self.supports_native_launcher() {
             NATIVE_CONTROL_RECORD_BYTES
         } else {
             CONTROL_RECORD_BYTES
@@ -125,6 +127,7 @@ impl ShellComponentTransport {
             + usize::from(self.indicator_response.is_some())
             + usize::from(self.catalog_response.is_some())
             + self.native_control.credits()
+            + self.descriptor_state.response_credits
     }
 
     /// Checks the post-transfer inventory of one admitted record without
@@ -179,9 +182,14 @@ impl ShellComponentTransport {
         if self.content_limits.is_some() {
             self.record_capacity_available(epochs, bytes, false, false)
         } else {
-            self.fifo_records() + usize::from(self.indicator_response.is_some()) < UNLIMITED_RECORDS
+            self.fifo_records()
+                + usize::from(self.indicator_response.is_some())
+                + self.descriptor_state.response_credits
+                < UNLIMITED_RECORDS
                 && self.fifo_bytes().saturating_add(bytes).saturating_add(
-                    usize::from(self.indicator_response.is_some()) * CONTROL_RECORD_BYTES,
+                    (usize::from(self.indicator_response.is_some())
+                        + self.descriptor_state.response_credits)
+                        * self.control_record_bytes(),
                 ) <= UNLIMITED_BYTES
         }
     }
@@ -189,8 +197,10 @@ impl ShellComponentTransport {
     /// The FIFO bound of a connection without content limits, for one more
     /// control record of `bytes`.
     pub(super) fn unlimited_capacity_available(&self, bytes: usize) -> bool {
-        self.fifo_records() < UNLIMITED_RECORDS
-            && self.fifo_bytes().saturating_add(bytes) <= UNLIMITED_BYTES
+        self.fifo_records() + self.descriptor_state.response_credits < UNLIMITED_RECORDS
+            && self.fifo_bytes().saturating_add(bytes).saturating_add(
+                self.descriptor_state.response_credits * self.control_record_bytes(),
+            ) <= UNLIMITED_BYTES
     }
 }
 
