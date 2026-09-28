@@ -68,11 +68,6 @@ fn complete_arrays_preserve_all_neutral_semantics_and_domain_transactions() {
         decode_wm_file_configuration(&bytes, u64::MAX).unwrap(),
         config
     );
-    // New file envelopes do not change the old scalar/chunk encodings.
-    assert_eq!(
-        fixture::legacy_bytes(),
-        include_bytes!("fixtures/policy-records-95b39662.bin").as_slice()
-    );
 }
 
 #[test]

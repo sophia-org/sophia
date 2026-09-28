@@ -3,8 +3,11 @@
 //! preserved deliberately rather than inherited from the strict owner.
 #[path = "support/policy_scalar_fixture.rs"]
 mod fixture;
+#[path = "support/policy_scalar_ipc_fixture.rs"]
+mod fixture_ipc;
 
 use fixture::*;
+use fixture_ipc::*;
 use sophia_protocol::*;
 
 const INVALID_TARGET: SurfaceId = SurfaceId::new(u32::MAX, 1);
