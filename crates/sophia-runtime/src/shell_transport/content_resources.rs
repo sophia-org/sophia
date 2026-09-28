@@ -1,20 +1,11 @@
 use super::ShellComponentTransport;
 use sophia_protocol::{ContentReason, ContentResourceStatus, ShellContentRecord, TransactionId};
 
+use super::control_budget::{CONTROL_RECORD_BYTES, Class};
+use super::outbound::{Admitted, OutboundRecord};
+use super::wire::ContentWant;
 use super::{ShellSessionTransport, ShellTransportError, content_admission};
 use crate::ContentStoreError;
-
-/// One encoded server record before custody moves into the wire's FIFO:
-/// a socket frame, or a file event body whose header the journal supplies.
-pub(super) struct PreparedRecord {
-    pub bytes: Vec<u8>,
-    pub control: bool,
-    pub file_kind: Option<sophia_protocol::shell_files::ShellFileKind>,
-}
-
-// Header plus the fixed 48-byte ResourceStatus payload. Every resource request
-// produces at most one immediate status/release record of no greater size.
-const MAX_RESOURCE_RESPONSE_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN + 48;
 
 impl ShellComponentTransport {
     /// Service only immutable resource-transfer records. Candidate and
@@ -34,15 +25,9 @@ impl ShellComponentTransport {
         }
         self.flush_content_resource_events(epochs)?;
         let mut processed = 0;
+        // Each request's possible response is bounded by its control credit,
+        // checked before the request leaves the wire's queue.
         while processed < limits.max_frames_per_service_tick as usize {
-            if self
-                .output
-                .len()
-                .saturating_add(MAX_RESOURCE_RESPONSE_BYTES)
-                > limits.max_output_queue_bytes as usize
-            {
-                break;
-            }
             let Some((transaction, record)) = self.poll_content_resource_record(epochs)? else {
                 break;
             };
@@ -124,52 +109,21 @@ impl ShellComponentTransport {
         record: &ShellContentRecord,
         reserved: bool,
     ) -> Result<(), ShellTransportError> {
-        let prepared = self.prepare_content_frame(epochs, transaction, record, reserved)?;
-        self.push_prepared(prepared);
+        let admitted = self.prepare_content_record(epochs, transaction, record, reserved)?;
+        self.transfer_record(admitted);
         Ok(())
     }
 
-    /// Transfers one prepared record into the wire's FIFO. Custody moves here
-    /// and nowhere else, so neither wire can recreate an owned response.
-    pub(super) fn push_prepared(&mut self, prepared: PreparedRecord) {
-        match prepared.file_kind {
-            None => self.output.push(prepared.bytes, prepared.control),
-            Some(kind) => self
-                .output
-                .push_file(kind, prepared.bytes, prepared.control),
-        }
-    }
-
-    /// As `push_prepared`, for the native launcher, catalog and indicator
-    /// families: every existing capacity/budget check at the call site runs
-    /// first, against the socket frame's bytes on both wires unchanged; this
-    /// only chooses the push destination. `encode_file` builds the matching
-    /// file event body lazily, so the socket wire never pays for it.
-    pub(super) fn push_family_frame(
-        &mut self,
-        control: bool,
-        socket_frame: Vec<u8>,
-        encode_file: impl FnOnce() -> Result<
-            (sophia_protocol::shell_files::ShellFileKind, Vec<u8>),
-            ShellTransportError,
-        >,
-    ) -> Result<(), ShellTransportError> {
-        if self.files.is_some() {
-            let (kind, body) = encode_file()?;
-            self.output.push_file(kind, body, control);
-        } else {
-            self.output.push(socket_frame, control);
-        }
-        Ok(())
-    }
-
-    pub(super) fn prepare_content_frame(
+    /// Admits one server content record against its grant, its wire and the
+    /// FIFO. `reserved` names a record whose producer credit (or registry
+    /// charge) moves with it. Nothing changes on refusal.
+    pub(super) fn prepare_content_record(
         &self,
         epochs: &crate::ContentEpochRegistry,
         transaction: TransactionId,
         record: &ShellContentRecord,
         reserved: bool,
-    ) -> Result<PreparedRecord, ShellTransportError> {
+    ) -> Result<Admitted, ShellTransportError> {
         let grant = self
             .content_grant
             .ok_or(ShellTransportError::MissingCapability)?;
@@ -179,58 +133,38 @@ impl ShellComponentTransport {
         if content_admission::record_grant(record) != Some(grant) {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        let (bytes, file_kind, size, charged) = if self.files.is_some() {
-            let (kind, body) = super::files::encode_content_event(transaction, record)?;
-            let size = body.len() + sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES;
-            // Producers charged the socket frame: its header and the payload,
-            // which is this body less its leading transaction ID.
-            let charged = sophia_protocol::SOPHIA_IPC_HEADER_LEN + body.len() - 8;
-            (body, Some(kind), size, charged)
-        } else {
-            let frame = sophia_protocol::encode_shell_content_frame(transaction, record)?;
-            let size = frame.len();
-            (frame, None, size, size)
-        };
         let bulk = matches!(
             record,
             ShellContentRecord::Limits(_) | ShellContentRecord::OutputFacts(_)
         );
-        if (!bulk && size > super::control_budget::CONTROL_FRAME_BYTES)
-            || !self.transfer_capacity_available(epochs, size, charged, !bulk, reserved)
-        {
+        let class = if bulk {
+            Class::Bulk
+        } else {
+            Class::Control {
+                limit: CONTROL_RECORD_BYTES,
+                oversize: ShellTransportError::ContentQueueSaturated,
+            }
+        };
+        let admitted =
+            self.admit_record(OutboundRecord::Content(transaction, record.clone()), class)?;
+        if !self.record_capacity_available(epochs, admitted.charge, !bulk, reserved) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
         // No wire I/O after ownership transfer. A later partial/failed write
         // cannot make the producer recreate an already-owned response.
-        Ok(PreparedRecord {
-            bytes,
-            control: !bulk,
-            file_kind,
-        })
+        Ok(admitted)
     }
 
+    /// The oldest resource request whose response credit is available. The
+    /// record stays queued, on either wire, until that credit is.
     fn poll_content_resource_record(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
-        if self.files.is_some() {
-            return self.poll_file_resource_record(epochs);
-        }
-        let at = self.inbox.iter().position(|frame| {
-            matches!(
-                u16::from_le_bytes([frame[6], frame[7]]),
-                165 | 167 | 168 | 169 | 170
-            )
-        });
-        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
-            };
+        let Some((_, record)) = self.peek_content(ContentWant::Resource)? else {
+            return self.nothing_inbound();
         };
-        let (transaction, record) = sophia_protocol::decode_shell_content_frame(&frame)?;
         if !content_admission::client_record(&record) {
             return Err(ShellTransportError::WrongContentRecord);
         }
@@ -242,54 +176,9 @@ impl ShellComponentTransport {
             .ok_or(ShellTransportError::MissingCapability)?
             .additional_response_credit(&record);
         if !self.control_capacity_available(epochs, needed) {
-            self.inbox
-                .insert(at.expect("selected frame has an index"), frame);
             return Ok(None);
         }
-        Ok(Some((transaction, record)))
-    }
-
-    /// The file wire's typed queue, with the socket path's checks. The record
-    /// stays queued until its response credit is available.
-    fn poll_file_resource_record(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-    ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
-        let resource = |record: &ShellContentRecord| {
-            matches!(
-                record,
-                ShellContentRecord::ResourceBegin(_)
-                    | ShellContentRecord::ResourceChunk(_)
-                    | ShellContentRecord::ResourceEnd(_)
-                    | ShellContentRecord::ResourceCancel(_)
-                    | ShellContentRecord::ResourceRetire(_)
-            )
-        };
-        let files = self
-            .files
-            .as_ref()
-            .ok_or(ShellTransportError::NotConnected)?;
-        let Some((_, record)) = files.export().peek_content(resource) else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
-            };
-        };
-        if !content_admission::client_record(record) {
-            return Err(ShellTransportError::WrongContentRecord);
-        }
-        if content_admission::record_grant(record) != self.content_grant {
-            return Err(ShellTransportError::WrongContentGrant);
-        }
-        let needed = epochs
-            .resources(self.store_grant)
-            .ok_or(ShellTransportError::MissingCapability)?
-            .additional_response_credit(record);
-        if !self.control_capacity_available(epochs, needed) {
-            return Ok(None);
-        }
-        Ok(self.take_file_content(resource))
+        self.take_content(ContentWant::Resource)
     }
 
     pub(super) fn flush_content_resource_events(
@@ -303,8 +192,8 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let prepared =
-                self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
+            let admitted =
+                self.prepare_content_record(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.resources_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
             };
@@ -313,7 +202,7 @@ impl ShellComponentTransport {
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
-            self.push_prepared(prepared);
+            self.transfer_record(admitted);
             store.take_event();
         }
     }

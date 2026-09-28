@@ -4,6 +4,7 @@ mod native_service;
 pub use execution::*;
 pub use native_service::*;
 mod publication;
+mod socket_frames;
 mod transfer;
 pub use transfer::NativeCatalogPublication;
 mod types;

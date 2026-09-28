@@ -1,7 +1,69 @@
+use super::super::outbound::{Admitted, OutboundRecord};
+use super::super::socket::SocketWire;
+use super::super::wire::{ContentWant, Wire};
 use super::*;
 use crate::ShellSessionTransport;
 use sophia_protocol::*;
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Attaches a real socket wire to the fixture's connection. The returned peer
+/// never reads, so written bytes stay exactly where a partial write left them.
+fn attach_socket(transport: &mut ShellSessionTransport) -> UnixStream {
+    let (local, peer) = UnixStream::pair().unwrap();
+    local.set_nonblocking(true).unwrap();
+    let limits = transport.state.content_limits.clone();
+    transport.state.wire = Some(Wire::Socket(Box::new(SocketWire::new(
+        local,
+        limits.as_ref(),
+    ))));
+    peer
+}
+
+/// Writes at most `bytes` of the front output record through the wire.
+fn write_bytes(transport: &mut ShellSessionTransport, bytes: usize) {
+    transport.poll_io_bounded(bytes).unwrap();
+}
+
+/// The wire frame of the front record: its whole-record write size.
+fn front_frame_bytes(transport: &ShellSessionTransport) -> usize {
+    SocketWire::encode(&transport.state.output.front().unwrap().record)
+        .unwrap()
+        .len()
+}
+
+/// A real typed bulk record: output facts with `outputs` rows, admitted as
+/// the owners admit one. Its charge is its native body, 40 + 40 per row.
+fn output_facts(transport: &ShellSessionTransport, outputs: usize) -> Admitted {
+    let grant = transport.state.content_grant.unwrap();
+    let facts = ContentOutputFacts {
+        grant,
+        facts_generation: 1,
+        outputs: (0..outputs)
+            .map(|index| ContentOutputFactsEntry {
+                output: ContentOutputId {
+                    id: index as u64 + 1,
+                    generation: 1,
+                },
+                local_width: 100,
+                local_height: 100,
+                scale_numerator: 1,
+                scale_denominator: 1,
+                scale_generation: 1,
+            })
+            .collect(),
+    };
+    transport
+        .state
+        .admit_record(
+            OutboundRecord::Content(
+                TransactionId::from_raw(90),
+                ShellContentRecord::OutputFacts(facts),
+            ),
+            super::Class::Bulk,
+        )
+        .unwrap()
+}
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Fixture {
@@ -54,12 +116,12 @@ fn final_collection_refuses_a_live_socket_even_without_a_content_epoch() {
     assert_eq!(owner.as_ptr(), address);
     transport.disconnect().unwrap();
     let (socket, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
-    transport.state.stream = Some(socket);
+    transport.state.wire = Some(Wire::Socket(Box::new(SocketWire::new(socket, None))));
     let owner = transport
         .finish_content_after_backend_drop(owner)
         .unwrap_err();
     assert_eq!(owner.as_ptr(), address);
-    assert!(transport.state.stream.is_some());
+    assert!(transport.state.wire.is_some());
     transport.disconnect().unwrap();
     let report = transport.finish_content_after_backend_drop(owner).unwrap();
     assert_eq!(report.settled_candidates, 0);
@@ -220,19 +282,20 @@ fn all_store_credits_and_fifo_frames_share_one_capacity() {
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    let frame_bytes = transport.state.output.front().len();
-    transport.state.output.written(frame_bytes - 1);
+    let _peer = attach_socket(transport);
+    let frame_bytes = front_frame_bytes(transport);
+    write_bytes(transport, frame_bytes - 1);
     assert_eq!(transport.content_accounting(), transferred);
     assert!(
         !transport
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    transport.state.output.written(1);
+    write_bytes(transport, 1);
     assert_eq!(transport.content_accounting().response_records, 6);
     assert_eq!(
         transport.content_accounting().response_bytes,
-        transferred.response_bytes - CONTROL_FRAME_BYTES
+        transferred.response_bytes - CONTROL_RECORD_BYTES
     );
     assert!(
         transport
@@ -273,11 +336,21 @@ fn byte_budget_can_exhaust_before_record_budget_and_bulk_cannot_spend_it() {
             .state
             .bulk_capacity_available(&transport.content_epochs, 1025)
     );
-    transport.state.output.push(vec![0; 1024], false);
+    // Real typed bulk records of 680 + 320 body bytes leave exactly 24.
+    let first = output_facts(transport, 16);
+    let second = output_facts(transport, 7);
+    assert_eq!(first.charge + second.charge, 1000);
+    transport.state.transfer_record(first);
+    transport.state.transfer_record(second);
+    assert!(
+        transport
+            .state
+            .bulk_capacity_available(&transport.content_epochs, 24)
+    );
     assert!(
         !transport
             .state
-            .bulk_capacity_available(&transport.content_epochs, 1)
+            .bulk_capacity_available(&transport.content_epochs, 25)
     );
     assert!(
         transport
@@ -315,12 +388,14 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
         .unwrap();
     assert_eq!(transport.state.output.records(), 1);
     assert_eq!(transport.state.action_cancellations.len(), 1);
+    let _peer = attach_socket(transport);
+    let facts = output_facts(transport, 0);
     assert!(
         transport
             .state
-            .bulk_capacity_available(&transport.content_epochs, 8)
+            .bulk_capacity_available(&transport.content_epochs, facts.charge)
     );
-    transport.state.output.push(vec![0; 8], false);
+    transport.state.transfer_record(facts);
     assert!(
         !transport
             .state
@@ -359,14 +434,14 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    let remaining = transport.state.output.front().len();
-    transport.state.output.written(remaining - 1);
+    let remaining = front_frame_bytes(transport);
+    write_bytes(transport, remaining - 1);
     assert!(
         !transport
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    transport.state.output.written(1);
+    write_bytes(transport, 1);
     assert!(
         transport
             .state
@@ -375,8 +450,8 @@ fn cancellation_reserve_survives_bulk_and_partial_write_until_exact_transfer() {
     // Peer loss settles delivery as lost, never as sent, and leaves no charge
     // available to be freed a second time by the next grant.
     transport.disconnect().unwrap();
-    assert_eq!(transport.state.output.records(), 0);
-    assert_eq!(transport.state.output.len(), 0);
+    assert_eq!(transport.state.fifo_records(), 0);
+    assert_eq!(transport.state.fifo_bytes(), 0);
     assert_eq!(
         transport
             .content_epochs
@@ -436,7 +511,8 @@ fn a_reserved_allocation_rejection_progresses_at_the_aggregate_record_limit() {
             0,
         )
         .unwrap();
-    transport.state.output.push(vec![0; 8], false);
+    let facts = output_facts(transport, 0);
+    transport.state.transfer_record(facts);
     assert!(
         !transport
             .state
@@ -457,8 +533,13 @@ fn a_reserved_allocation_rejection_progresses_at_the_aggregate_record_limit() {
             .state
             .control_capacity_available(&transport.content_epochs, 1)
     );
-    transport.state.output.written(8);
-    let (_, record) = decode_shell_content_frame(transport.state.output.front()).unwrap();
+    // A wire takes whole custody of the bulk front; the rejection follows it.
+    transport.state.output.pop_front();
+    let Some(OutboundRecord::Content(_, record)) =
+        transport.state.output.front().map(|queued| &queued.record)
+    else {
+        panic!("the rejection is queued as a typed content record");
+    };
     assert!(matches!(record, ShellContentRecord::AllocationResult(value)
         if value.allocation_request_id == 1 && value.status == 2));
 }
@@ -578,11 +659,12 @@ fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() 
             .is_err()
     );
     let mut records = Vec::new();
-    while !transport.state.output.is_empty() {
-        let frame = transport.state.output.front();
-        records.push(decode_shell_content_frame(frame).unwrap());
-        let bytes = frame.len();
-        transport.state.output.written(bytes);
+    while let Some(queued) = transport.state.output.front() {
+        let OutboundRecord::Content(transaction, record) = &queued.record else {
+            panic!("only content records were queued");
+        };
+        records.push((*transaction, record.clone()));
+        transport.state.output.pop_front();
     }
     assert_eq!(records.len(), 4);
     assert!(
@@ -596,14 +678,18 @@ fn refused_native_outcome_retains_candidate_then_publishes_once_before_action() 
 #[test]
 fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
     use std::io::Write;
-    use std::os::unix::net::UnixStream;
     use std::time::{Duration, Instant};
     let mut fixture = Fixture::new(64);
     let transport = &mut fixture.transport;
     let grant = transport.state.content_grant.unwrap();
     let (local, mut peer) = UnixStream::pair().unwrap();
     local.set_nonblocking(true).unwrap();
-    transport.state.stream = Some(local);
+    let limits = transport.state.content_limits.clone();
+    transport.state.wire = Some(Wire::Socket(Box::new(SocketWire::new(
+        local,
+        limits.as_ref(),
+    ))));
+    let frame_bytes = SOPHIA_IPC_HEADER_LEN + 48 + 65488;
     let writer = std::thread::spawn(move || {
         for transaction in 1..=8 {
             let frame = encode_shell_content_frame(
@@ -632,11 +718,10 @@ fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         transport.poll_io().unwrap();
-        let retained =
-            transport.state.input.len() + transport.state.inbox.iter().map(Vec::len).sum::<usize>();
+        let (frames, retained) = transport.state.socket().unwrap().input_accounting();
         let accounting = transport.content_accounting();
         assert_eq!(accounting.input_bytes, retained);
-        assert_eq!(accounting.input_records, transport.state.inbox.len());
+        assert_eq!(accounting.input_records, frames);
         assert!(retained <= limit);
         if retained == limit {
             break;
@@ -647,20 +732,23 @@ fn complete_inbox_frames_and_partial_input_share_the_advertised_byte_budget() {
         );
         std::thread::yield_now();
     }
+    let (frames, retained) = transport.state.socket().unwrap().input_accounting();
     assert!(
-        !transport.state.input.is_empty(),
+        retained > frames * frame_bytes,
         "the second whole frame cannot yet fit"
     );
     let mut received = 0;
     while received < 8 {
         transport.poll_io().unwrap();
-        assert!(
-            transport.state.input.len() + transport.state.inbox.iter().map(Vec::len).sum::<usize>()
-                <= limit
-        );
-        if let Some(frame) = transport.state.inbox.pop_front() {
+        assert!(transport.state.socket().unwrap().input_accounting().1 <= limit);
+        if let Some((transaction, _)) = transport
+            .state
+            .socket_mut()
+            .unwrap()
+            .take_content(ContentWant::Resource)
+            .unwrap()
+        {
             received += 1;
-            let (transaction, _) = decode_shell_content_frame(&frame).unwrap();
             assert_eq!(transaction.raw(), received);
         }
         assert!(

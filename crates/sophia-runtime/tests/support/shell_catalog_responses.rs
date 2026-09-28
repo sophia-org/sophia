@@ -1,6 +1,14 @@
-//! Actual response credit/FIFO owners with supplied negotiated state and
-//! simulated drain. This is neither socket negotiation nor kernel backpressure.
+//! Actual response credit/FIFO owners with supplied negotiated state over a
+//! real socket pair whose peer does not read: requests arrive through the
+//! production read path, drain is the production write path. This is neither
+//! socket negotiation nor kernel backpressure.
+use super::super::control_budget::CONTROL_RECORD_BYTES;
+use super::super::outbound::{Admitted, OutboundRecord};
+use super::super::socket::SocketWire;
+use super::super::wire::Wire;
 use super::*;
+use std::io::Write as _;
+use std::os::unix::net::UnixStream;
 #[path = "catalog_candidate_transport.rs"]
 mod candidates;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,6 +20,7 @@ const GRANT: ContentGrant = ContentGrant {
 struct Fixture {
     transport: ShellComponentTransport,
     epochs: crate::ContentEpochRegistry,
+    peer: UnixStream,
     directory: std::path::PathBuf,
 }
 impl Fixture {
@@ -47,11 +56,59 @@ impl Fixture {
             | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
             | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
+        let (local, peer) = UnixStream::pair().unwrap();
+        local.set_nonblocking(true).unwrap();
+        let limits = transport.content_limits.clone();
+        transport.wire = Some(Wire::Socket(Box::new(SocketWire::new(
+            local,
+            limits.as_ref(),
+        ))));
         Self {
             transport,
             epochs,
+            peer,
             directory,
         }
+    }
+    /// Delivers one client frame through the socket's production read path.
+    fn deliver(&mut self, frame: Vec<u8>) {
+        self.peer.write_all(&frame).unwrap();
+        let socket = self.transport.socket_mut().unwrap();
+        let before = socket.input_accounting().0;
+        while socket.input_accounting().0 == before {
+            socket.receive(4096).unwrap();
+        }
+    }
+    fn inbox(&self) -> usize {
+        self.transport.socket().unwrap().input_accounting().0
+    }
+    fn front_frame_bytes(&self) -> usize {
+        SocketWire::encode(&self.transport.output.front().unwrap().record)
+            .unwrap()
+            .len()
+    }
+    /// Writes at most `bytes` of the output order through the socket.
+    fn send(&mut self, bytes: usize) {
+        let Some(Wire::Socket(socket)) = self.transport.wire.as_mut() else {
+            unreachable!("the fixture attaches a socket");
+        };
+        socket.send(&mut self.transport.output, bytes).unwrap();
+    }
+    /// One owned typed bulk record: output facts with no rows.
+    fn bulk(&self) -> Admitted {
+        self.transport
+            .admit_record(
+                OutboundRecord::Content(
+                    TransactionId::from_raw(90),
+                    ShellContentRecord::OutputFacts(ContentOutputFacts {
+                        grant: GRANT,
+                        facts_generation: 1,
+                        outputs: Vec::new(),
+                    }),
+                ),
+                super::super::control_budget::Class::Bulk,
+            )
+            .unwrap()
     }
     fn request(&mut self, event_id: u64) -> (TransactionId, CatalogActivation) {
         let request = CatalogActivation {
@@ -78,7 +135,7 @@ impl Fixture {
             catalog_generation: 6,
         };
         let tx = TransactionId::from_raw(event_id);
-        self.transport.inbox.push_back(
+        self.deliver(
             encode_shell_catalog_action_frame(
                 tx,
                 &ShellCatalogActionRecord::Activate(request.clone()),
@@ -98,15 +155,17 @@ impl Drop for Fixture {
 fn persistent_response_credit_transfers_once_and_survives_partial_write() {
     let mut f = Fixture::new();
     let (tx, request) = f.request(1);
-    f.transport.output.push(vec![0; 32], false);
+    let bulk = f.bulk();
+    f.transport.transfer_record(bulk);
     assert!(
         f.transport
             .take_catalog_request(&f.epochs)
             .unwrap()
             .is_none()
     );
-    assert_eq!(f.transport.inbox.len(), 1);
-    f.transport.output.written(32);
+    assert_eq!(f.inbox(), 1);
+    let bytes = f.front_frame_bytes();
+    f.send(bytes);
     assert_eq!(
         f.transport.take_catalog_request(&f.epochs).unwrap(),
         Some((tx, request.clone()))
@@ -117,7 +176,7 @@ fn persistent_response_credit_transfers_once_and_survives_partial_write() {
     );
     assert_eq!(
         f.transport.content_accounting(&f.epochs).response_bytes,
-        CONTROL_FRAME_BYTES
+        CONTROL_RECORD_BYTES
     );
     assert!(!f.transport.bulk_capacity_available(&f.epochs, 1));
     assert!(!f.transport.control_capacity_available(&f.epochs, 1));
@@ -140,8 +199,11 @@ fn persistent_response_credit_transfers_once_and_survives_partial_write() {
         .finish_catalog_activation(&f.epochs, tx, &request, 1)
         .unwrap();
     assert!(f.transport.catalog_response.is_none());
-    let (actual_tx, record) =
-        decode_shell_catalog_action_frame(f.transport.output.front()).unwrap();
+    let OutboundRecord::CatalogAction(actual_tx, record) =
+        f.transport.output.front().unwrap().record.clone()
+    else {
+        panic!("the outcome is queued as a typed catalog record");
+    };
     assert_eq!(actual_tx, tx);
     assert_eq!(
         record,
@@ -157,17 +219,17 @@ fn persistent_response_credit_transfers_once_and_survives_partial_write() {
             .finish_catalog_activation(&f.epochs, tx, &request, 1)
             .is_err()
     );
-    f.transport.output.written(1);
+    let remaining = f.front_frame_bytes() - 1;
+    f.send(1);
     assert_eq!(
         f.transport.content_accounting(&f.epochs).response_records,
         1
     );
     assert_eq!(
         f.transport.content_accounting(&f.epochs).response_bytes,
-        CONTROL_FRAME_BYTES
+        CONTROL_RECORD_BYTES
     );
-    let remaining = f.transport.output.front().len();
-    f.transport.output.written(remaining);
+    f.send(remaining);
     assert_eq!(
         f.transport.content_accounting(&f.epochs).response_records,
         0
@@ -193,7 +255,7 @@ fn refused_transfer_keeps_original_outcome_and_blocks_another_intake() {
     f.transport
         .finish_catalog_activation(&f.epochs, tx, &request, 1)
         .unwrap();
-    assert!(f.transport.output.is_empty());
+    assert!(f.transport.output.front().is_none());
     assert_eq!(
         f.transport.catalog_response.as_ref().unwrap().status,
         Some(1)
@@ -204,7 +266,7 @@ fn refused_transfer_keeps_original_outcome_and_blocks_another_intake() {
             .unwrap()
             .is_none()
     );
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     assert!(
         f.transport
             .finish_catalog_activation(&f.epochs, tx, &request, 2)
@@ -241,7 +303,7 @@ fn wrong_role_or_grant_cannot_consume_request_credit() {
         Err(ShellTransportError::MissingCapability)
     );
     assert!(f.transport.catalog_response.is_none());
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     f.transport.capabilities = capabilities;
     f.transport.content_grant = Some(ContentGrant {
         connection_epoch: 8,
@@ -252,22 +314,26 @@ fn wrong_role_or_grant_cannot_consume_request_credit() {
         Err(ShellTransportError::MissingCapability)
     );
     assert!(f.transport.catalog_response.is_none());
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     f.transport.content_grant = Some(GRANT);
     request.action.grant.connection_epoch += 1;
-    f.transport.inbox[0] =
+    f.transport.socket_mut().unwrap().take_catalog_activate();
+    f.deliver(
         encode_shell_catalog_action_frame(tx, &ShellCatalogActionRecord::Activate(request.clone()))
-            .unwrap();
+            .unwrap(),
+    );
     assert_eq!(
         f.transport.take_catalog_request(&f.epochs),
         Err(ShellTransportError::WrongContentGrant)
     );
     assert!(f.transport.catalog_response.is_none());
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     request.action.grant = GRANT;
-    f.transport.inbox[0] =
+    f.transport.socket_mut().unwrap().take_catalog_activate();
+    f.deliver(
         encode_shell_catalog_action_frame(tx, &ShellCatalogActionRecord::Activate(request))
-            .unwrap();
+            .unwrap(),
+    );
     f.transport
         .take_catalog_request(&f.epochs)
         .unwrap()

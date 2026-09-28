@@ -6,6 +6,7 @@ use sophia_protocol::*;
 mod closed_content;
 mod closed_input;
 mod content;
+pub(super) use content::{NativeContentRecord, peek_native_file_record, take_native_file_record};
 pub(crate) mod control;
 mod reopening;
 mod settlement;
@@ -106,22 +107,20 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::WrongActivation);
         }
-        let record = ShellNativeLauncherRecord::Opening(opening);
-        let frame = encode_shell_native_launcher_frame(transaction, &record)?;
-        if frame.len() > super::control_budget::CONTROL_FRAME_BYTES
-            || !self.control_capacity_available(epochs, 2)
-        {
+        let admitted = self.admit_record(
+            super::outbound::OutboundRecord::NativeLauncher(
+                transaction,
+                ShellNativeLauncherRecord::Opening(opening),
+            ),
+            super::control_budget::Class::Control {
+                limit: super::control_budget::CONTROL_RECORD_BYTES,
+                oversize: ShellTransportError::ContentQueueSaturated,
+            },
+        )?;
+        if !self.control_capacity_available(epochs, 2) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
-        self.push_family_frame(true, frame, || {
-            sophia_protocol::shell_files::encode_shell_file_native_launcher_transaction_body(
-                &sophia_protocol::shell_files::ShellFileNativeLauncherRecord {
-                    transaction,
-                    record,
-                },
-            )
-            .map_err(|_| ShellTransportError::WrongContentRecord)
-        })?;
+        self.transfer_record(admitted);
         self.native_control.opening = Some(opening);
         self.native_control.last_opening = opening.opening;
         self.native_control.revision = opening.state_revision;

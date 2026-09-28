@@ -113,3 +113,158 @@ fn acknowledgement_releases_retention_and_records_progress() {
         Err(Errno::ESTALE)
     );
 }
+
+mod terminal_reserve {
+    use super::super::super::{
+        ALLOCATION_RESULT_RECORD_BYTES, NATIVE_INPUT_RECORD_BYTES, role_bounds,
+    };
+    use super::*;
+    use crate::ContentStoreProfile;
+    use crate::shell_transport::outbound::OutboundRecord;
+    use sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES;
+    use sophia_protocol::*;
+
+    const GRANT: ContentGrant = ContentGrant {
+        connection_epoch: 1,
+        content_grant_epoch: 1,
+    };
+
+    /// The bar's and dock's largest credited response, a rejected
+    /// `AllocationResult`, in its surviving native encoding.
+    fn allocation_result() -> (ShellFileKind, Vec<u8>) {
+        OutboundRecord::Content(
+            TransactionId::from_raw(1),
+            ShellContentRecord::AllocationResult(ContentAllocationResult {
+                grant: GRANT,
+                allocation_request_id: 1,
+                status: 2,
+                reason: ContentReason::Budget as u16,
+                output: ContentOutputId {
+                    id: 1,
+                    generation: 1,
+                },
+                allocation: ContentAllocationId::default(),
+                parent: ContentAllocationId::default(),
+                scale_generation: 0,
+                logical: ContentLogicalRect::default(),
+                pixel: ContentPixelRect::default(),
+                scale_numerator: 0,
+                scale_denominator: 0,
+                allowed_reservation_extent: 0,
+                margins: ContentMargins::default(),
+                acknowledged_anchor: ContentPixelRect::default(),
+            }),
+        )
+        .native()
+        .unwrap()
+    }
+
+    /// The launcher's largest credited record, a `NativeInput` with the
+    /// longest admitted text, in its surviving native encoding.
+    fn native_input() -> (ShellFileKind, Vec<u8>) {
+        let binding = NativeLauncherBinding {
+            grant: GRANT,
+            output: ContentOutputId {
+                id: 1,
+                generation: 1,
+            },
+            opening: 1,
+            allocation: ContentAllocationId {
+                id: 1,
+                generation: 1,
+            },
+            catalog_generation: 1,
+            candidate_generation: 1,
+            presentation_epoch: 1,
+            interaction_generation: 1,
+            state_revision: 1,
+            focus_lease: 1,
+        };
+        OutboundRecord::NativeLauncher(
+            TransactionId::from_raw(1),
+            ShellNativeLauncherRecord::Input(NativeLauncherInput {
+                event: NativeLauncherEvent {
+                    binding,
+                    event_id: 1,
+                    state_revision: 2,
+                },
+                issued_mono_usec: 1,
+                kind: NativeLauncherInputKind::Text,
+                text: "a".repeat(SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES),
+            }),
+        )
+        .native()
+        .unwrap()
+    }
+
+    /// Fills the unsolicited share of the journal as tightly as whole records
+    /// allow, largest first, so the credited share is only the reserve.
+    fn fill_unsolicited(journal: &mut Journal) {
+        for size in [2000, 400, 80, 16, 10] {
+            while journal
+                .append(ShellFileKind::Submitted, &body(size), false)
+                .is_ok()
+            {}
+        }
+    }
+
+    fn assert_reserve_holds(
+        profile: ContentStoreProfile,
+        (kind, record): (ShellFileKind, Vec<u8>),
+    ) {
+        let (_, bounds) = role_bounds(Some(profile));
+        let whole = SHELL_FILE_HEADER_BYTES + record.len();
+        assert_eq!(
+            bounds.reserve_bytes,
+            whole * usize::from(SHELL_FILE_TERMINAL_RESERVE_RECORDS)
+        );
+        assert!(whole * usize::from(SHELL_FILE_MAX_JOURNAL_RECORDS) <= bounds.bytes);
+        let mut journal = Journal::new(1, bounds, Instant::now());
+        fill_unsolicited(&mut journal);
+        // Every promised response has space: all 64 credited maximal records.
+        for _ in 0..SHELL_FILE_TERMINAL_RESERVE_RECORDS {
+            journal.append(kind, &record, true).unwrap();
+        }
+    }
+
+    #[test]
+    fn the_bar_and_dock_reserve_holds_64_encoded_allocation_results() {
+        let record = allocation_result();
+        assert_eq!(
+            SHELL_FILE_HEADER_BYTES + record.1.len(),
+            ALLOCATION_RESULT_RECORD_BYTES
+        );
+        assert_eq!(ALLOCATION_RESULT_RECORD_BYTES, 200);
+        for profile in [
+            ContentStoreProfile::Legacy,
+            ContentStoreProfile::PersistentCatalog,
+        ] {
+            assert_reserve_holds(profile, record.clone());
+        }
+        assert_eq!(
+            role_bounds(Some(ContentStoreProfile::Legacy)).1,
+            JournalBounds {
+                bytes: 65_536,
+                reserve_bytes: 12_800,
+            }
+        );
+    }
+
+    #[test]
+    fn the_launcher_reserve_holds_64_encoded_native_inputs() {
+        let record = native_input();
+        assert_eq!(
+            SHELL_FILE_HEADER_BYTES + record.1.len(),
+            NATIVE_INPUT_RECORD_BYTES
+        );
+        assert_eq!(NATIVE_INPUT_RECORD_BYTES, 430);
+        assert_reserve_holds(ContentStoreProfile::NativeLauncher, record);
+        assert_eq!(
+            role_bounds(Some(ContentStoreProfile::NativeLauncher)).1,
+            JournalBounds {
+                bytes: 131_072,
+                reserve_bytes: 27_520,
+            }
+        );
+    }
+}

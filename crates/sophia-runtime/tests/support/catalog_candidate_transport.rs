@@ -1,5 +1,6 @@
 //! Supplied negotiation/allocation and renderer completion; actual assembly,
 //! byte lease and response FIFO. No native presentation or dock launch.
+use super::super::super::outbound::OutboundRecord;
 use super::{Fixture, GRANT};
 use crate::{ContentAllocationSnapshot, ContentCandidateContext};
 use sophia_protocol::*;
@@ -50,7 +51,7 @@ fn fixture() -> Fixture {
     f
 }
 fn enqueue_begin(f: &mut Fixture, value: CatalogCandidateBegin) {
-    f.transport.inbox.push_back(
+    f.deliver(
         encode_shell_catalog_action_frame(tx(2), &ShellCatalogActionRecord::CandidateBegin(value))
             .unwrap(),
     );
@@ -140,7 +141,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
         .unwrap();
     while resources.take_event().is_some() {}
     enqueue_begin(&mut f, begin());
-    f.transport.inbox.push_back(
+    f.deliver(
         encode_shell_catalog_action_frame(
             tx(3),
             &ShellCatalogActionRecord::CandidateChunk(ContentCandidateChunk {
@@ -168,7 +169,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
         )
         .unwrap(),
     );
-    f.transport.inbox.push_back(
+    f.deliver(
         encode_shell_content_frame(
             tx(4),
             &ShellContentRecord::CandidateEnd(ContentCandidateEnd {
@@ -193,7 +194,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
             .unwrap(),
         1
     );
-    assert_eq!(f.transport.inbox.len(), 2);
+    assert_eq!(f.inbox(), 2);
     f.transport
         .content_limits
         .as_mut()
@@ -205,7 +206,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
             .service_catalog_candidates(&mut f.epochs, &[], &catalog(), 0)
             .is_err()
     );
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     assert_eq!(
         f.epochs
             .active_candidates(GRANT)
@@ -218,7 +219,7 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
             .service_catalog_candidates(&mut f.epochs, &[context(&allocations); 2], &catalog(), 0)
             .is_err()
     );
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     assert_eq!(
         f.transport
             .service_catalog_candidates(&mut f.epochs, &[context(&allocations)], &catalog(), 0)
@@ -254,16 +255,22 @@ fn catalog_wire_assembly_reaches_real_submission_and_exact_response_fifo() {
         .content_presented(&mut f.epochs, GRANT, OUTPUT, 1, 8, 1, 1)
         .unwrap();
     for kind in [1, 2] {
-        let frame = f.transport.output.front();
-        let (transaction, record) = decode_shell_content_frame(frame).unwrap();
+        let Some(OutboundRecord::Content(transaction, record)) = f
+            .transport
+            .output
+            .front()
+            .map(|queued| queued.record.clone())
+        else {
+            panic!("the outcome is queued as a typed content record");
+        };
         assert_eq!(transaction, tx(2));
         assert!(
             matches!(record, ShellContentRecord::CandidateOutcome(v) if v.kind == kind && v.candidate_generation == 1)
         );
-        let bytes = frame.len();
-        f.transport.output.written(bytes);
+        let bytes = f.front_frame_bytes();
+        f.send(bytes);
     }
-    assert!(f.transport.output.is_empty());
+    assert!(f.transport.output.front().is_none());
     f.transport.disconnect(&mut f.epochs).unwrap();
     f.epochs.collect();
     assert_eq!(f.epochs.accounting().memory.resident, 4);
@@ -283,7 +290,7 @@ fn candidate_intake_refuses_wrong_family_role_and_grant_before_dequeue() {
             .service_catalog_candidates(&mut f.epochs, &[], &catalog(), 0),
         Err(super::ShellTransportError::WrongContentGrant)
     ));
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     assert_eq!(
         f.epochs
             .active_candidates(GRANT)
@@ -291,8 +298,8 @@ fn candidate_intake_refuses_wrong_family_role_and_grant_before_dequeue() {
             .assembling_output(1),
         None
     );
-    f.transport.inbox.clear();
-    f.transport.inbox.push_back(
+    f.transport.socket_mut().unwrap().take_catalog_candidate();
+    f.deliver(
         encode_shell_content_frame(tx(2), &ShellContentRecord::CandidateBegin(begin().content))
             .unwrap(),
     );
@@ -301,14 +308,14 @@ fn candidate_intake_refuses_wrong_family_role_and_grant_before_dequeue() {
             .service_catalog_candidates(&mut f.epochs, &[], &catalog(), 0),
         Err(super::ShellTransportError::WrongContentRecord)
     ));
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     f.transport.capabilities = 0;
     assert!(matches!(
         f.transport
             .service_catalog_candidates(&mut f.epochs, &[], &catalog(), 0),
         Err(super::ShellTransportError::MissingCapability)
     ));
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
 }
 
 #[test]
@@ -326,7 +333,7 @@ fn candidate_budget_defers_intake_and_stale_begin_emits_one_terminal() {
             .unwrap(),
         0
     );
-    assert_eq!(f.transport.inbox.len(), 1);
+    assert_eq!(f.inbox(), 1);
     f.transport
         .content_limits
         .as_mut()
@@ -340,9 +347,16 @@ fn candidate_budget_defers_intake_and_stale_begin_emits_one_terminal() {
             .unwrap(),
         1
     );
-    assert!(f.transport.inbox.is_empty());
+    assert_eq!(f.inbox(), 0);
     assert_eq!(f.transport.output.records(), 1);
-    let (transaction, record) = decode_shell_content_frame(f.transport.output.front()).unwrap();
+    let Some(OutboundRecord::Content(transaction, record)) = f
+        .transport
+        .output
+        .front()
+        .map(|queued| queued.record.clone())
+    else {
+        panic!("the outcome is queued as a typed content record");
+    };
     assert_eq!(transaction, tx(2));
     assert!(matches!(record, ShellContentRecord::CandidateOutcome(v) if v.kind == 3));
     assert_eq!(

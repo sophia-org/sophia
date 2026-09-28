@@ -25,26 +25,8 @@ impl ShellComponentTransport {
             .min(32) as usize;
         let mut processed = 0;
         while processed < maximum {
-            let ack_pending = if self.files.is_some() {
-                self.files
-                    .as_ref()
-                    .and_then(|files| files.export().peek_native_input_ack())
-                    .is_some()
-            } else {
-                self.inbox
-                    .iter()
-                    .any(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 194)
-            };
-            let activate_pending = if self.files.is_some() {
-                self.files
-                    .as_ref()
-                    .and_then(|files| files.export().peek_native_activate())
-                    .is_some()
-            } else {
-                self.inbox
-                    .iter()
-                    .any(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 195)
-            };
+            let ack_pending = self.peek_native_input_ack()?.is_some();
+            let activate_pending = self.peek_native_activate()?.is_some();
             if !ack_pending && !activate_pending {
                 break;
             }

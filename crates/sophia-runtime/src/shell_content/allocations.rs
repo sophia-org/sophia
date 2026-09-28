@@ -91,13 +91,13 @@ impl ContentAllocationStore {
         self.events
             .iter()
             .filter_map(|event| match &event.record {
-                ShellContentRecord::OutputFacts(facts) => {
-                    Some(sophia_protocol::SOPHIA_IPC_HEADER_LEN + 32 + 40 * facts.outputs.len())
-                }
+                ShellContentRecord::OutputFacts(facts) => Some(
+                    crate::shell_transport::outbound::output_facts_charge(facts.outputs.len()),
+                ),
                 _ => None,
             })
-            .fold((0, 0), |(records, bytes), frame| {
-                (records + 1, bytes + frame)
+            .fold((0, 0), |(records, bytes), charge| {
+                (records + 1, bytes + charge)
             })
     }
 

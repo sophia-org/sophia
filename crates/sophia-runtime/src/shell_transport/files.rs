@@ -6,7 +6,10 @@ use std::time::{Duration, Instant};
 
 use sophia_9p::records::Limits;
 use sophia_9p::unix::Server;
-use sophia_protocol::shell_files::{SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS, ShellFileKind};
+use sophia_protocol::shell_files::{
+    SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS, SHELL_FILE_MAX_JOURNAL_RECORDS,
+    SHELL_FILE_TERMINAL_RESERVE_RECORDS, ShellFileKind,
+};
 
 use super::ShellTransportError;
 use crate::ContentStoreProfile;
@@ -14,9 +17,7 @@ use crate::ContentStoreProfile;
 mod export;
 mod journal;
 
-pub(super) use export::{
-    CandidateFamily, CatalogCandidatePart, Inbound, NativeCandidatePart, ShellFiles,
-};
+pub(super) use export::{CandidateFamily, Inbound, NativeCandidatePart, ShellFiles};
 pub(super) use journal::JournalBounds;
 
 /// Nonblocking turns spent flushing a revocation; bounded so a peer that
@@ -26,34 +27,39 @@ const REVOKE_TURNS: usize = 4;
 const ACK_PROGRESS_TIMEOUT: Duration =
     Duration::from_millis(SHELL_FILE_ACK_PROGRESS_TIMEOUT_MILLIS as u64);
 
-/// The role name `api` reports and the journal byte bounds of its profile:
-/// 256 times the largest Session-to-client record in file framing, rounded
-/// up to a power of two, and 64 times it as the terminal reserve.
+/// The largest Session-to-client record of each role in its whole file
+/// framing: the 32-byte header plus the native body of an `AllocationResult`
+/// (168 bytes, bar and dock) or a `NativeInput` (398 bytes, launcher).
+pub(super) const ALLOCATION_RESULT_RECORD_BYTES: usize =
+    sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES + 168;
+pub(super) const NATIVE_INPUT_RECORD_BYTES: usize =
+    sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES + 398;
+
+/// The journal byte bounds for a role whose largest record is `record`:
+/// 256 of them rounded up to a power of two (at most 1 MiB), with 64 of them,
+/// one per terminal-reserve record, kept for credited responses.
+pub(super) const fn journal_bounds(record: usize) -> JournalBounds {
+    let bytes = (record * SHELL_FILE_MAX_JOURNAL_RECORDS as usize).next_power_of_two();
+    JournalBounds {
+        bytes: if bytes > 1024 * 1024 {
+            1024 * 1024
+        } else {
+            bytes
+        },
+        reserve_bytes: record * SHELL_FILE_TERMINAL_RESERVE_RECORDS as usize,
+    }
+}
+
+/// The role name `api` reports and the journal byte bounds of its profile.
 pub(super) fn role_bounds(profile: Option<ContentStoreProfile>) -> (&'static str, JournalBounds) {
     match profile {
-        // Native launcher Input, up to 420 bytes in file framing.
-        Some(ContentStoreProfile::NativeLauncher) => (
-            "launcher",
-            JournalBounds {
-                bytes: 131_072,
-                reserve_bytes: 26_880,
-            },
-        ),
-        // AllocationResult, 192 bytes in file framing, for bar and dock.
-        Some(ContentStoreProfile::PersistentCatalog) => (
-            "dock",
-            JournalBounds {
-                bytes: 65_536,
-                reserve_bytes: 12_288,
-            },
-        ),
-        _ => (
-            "bar",
-            JournalBounds {
-                bytes: 65_536,
-                reserve_bytes: 12_288,
-            },
-        ),
+        Some(ContentStoreProfile::NativeLauncher) => {
+            ("launcher", journal_bounds(NATIVE_INPUT_RECORD_BYTES))
+        }
+        Some(ContentStoreProfile::PersistentCatalog) => {
+            ("dock", journal_bounds(ALLOCATION_RESULT_RECORD_BYTES))
+        }
+        _ => ("bar", journal_bounds(ALLOCATION_RESULT_RECORD_BYTES)),
     }
 }
 
@@ -202,61 +208,6 @@ pub(super) fn encode_refused(
 ) -> Result<Vec<u8>, ShellTransportError> {
     sophia_protocol::shell_files::encode_shell_file_refused_body(refusal)
         .map_err(|_| ShellTransportError::ContentAdmissionRefused(refusal.clone()))
-}
-
-/// Encodes one server content record as a file event body. Only records the
-/// file contract carries so far are accepted; anything else fails closed
-/// rather than crossing as an old IPC frame.
-pub(super) fn encode_content_event(
-    transaction: sophia_protocol::TransactionId,
-    record: &sophia_protocol::ShellContentRecord,
-) -> Result<(ShellFileKind, Vec<u8>), ShellTransportError> {
-    use sophia_protocol::ShellContentRecord;
-    use sophia_protocol::shell_files::{
-        ShellFileTransactionRecord, encode_shell_file_allocation_result_body,
-        encode_shell_file_outputs_body, encode_shell_file_resource_released_body,
-        encode_shell_file_resource_status_body, encode_shell_file_transaction_body,
-        shell_file_transaction_kind,
-    };
-    let value = ShellFileTransactionRecord {
-        transaction,
-        record: record.clone(),
-    };
-    match record {
-        ShellContentRecord::ResourceStatus(_) => Ok((
-            ShellFileKind::ResourceStatus,
-            encode_shell_file_resource_status_body(&value)
-                .map_err(|_| ShellTransportError::WrongContentRecord)?,
-        )),
-        ShellContentRecord::ResourceReleased(_) => Ok((
-            ShellFileKind::ResourceReleased,
-            encode_shell_file_resource_released_body(&value)
-                .map_err(|_| ShellTransportError::WrongContentRecord)?,
-        )),
-        ShellContentRecord::OutputFacts(_) => {
-            let body = encode_shell_file_outputs_body(&ShellFileTransactionRecord {
-                transaction,
-                record: record.clone(),
-            })
-            .map_err(|_| ShellTransportError::WrongContentRecord)?;
-            Ok((ShellFileKind::Outputs, body))
-        }
-        ShellContentRecord::AllocationResult(_) => {
-            let body = encode_shell_file_allocation_result_body(&ShellFileTransactionRecord {
-                transaction,
-                record: record.clone(),
-            })
-            .map_err(|_| ShellTransportError::WrongContentRecord)?;
-            Ok((ShellFileKind::AllocationResult, body))
-        }
-        // Candidate outcomes, frame permits and actions: the caller admits
-        // only server records.
-        _ if shell_file_transaction_kind(record).is_some() => {
-            encode_shell_file_transaction_body(&value)
-                .map_err(|_| ShellTransportError::WrongContentRecord)
-        }
-        _ => Err(ShellTransportError::WrongContentRecord),
-    }
 }
 
 fn io_error(error: std::io::Error) -> ShellTransportError {

@@ -1,41 +1,9 @@
 //! Revision-8 assembly borrows the existing candidate and response owners.
 //! The published catalog comes from Session; no peer-supplied catalog is trusted.
+use super::wire::CatalogCandidatePart;
 use super::{ShellComponentTransport, ShellTransportConnection, ShellTransportError};
 use crate::{ContentCandidateContext, ContentEpochRegistry, ContentRenderBundle};
 use sophia_protocol::*;
-
-enum CandidateRecord {
-    Begin(CatalogCandidateBegin),
-    Chunk(ContentCandidateChunk),
-    End(ContentCandidateEnd),
-}
-impl CandidateRecord {
-    fn decode(frame: &[u8]) -> Result<(TransactionId, Self), ShellTransportError> {
-        if u16::from_le_bytes([frame[6], frame[7]]) == 174 {
-            let (tx, ShellContentRecord::CandidateEnd(end)) = decode_shell_content_frame(frame)?
-            else {
-                return Err(ShellTransportError::WrongContentRecord);
-            };
-            return Ok((tx, Self::End(end)));
-        }
-        let (tx, record) = decode_shell_catalog_action_frame(frame)?;
-        Ok((
-            tx,
-            match record {
-                ShellCatalogActionRecord::CandidateBegin(value) => Self::Begin(value),
-                ShellCatalogActionRecord::CandidateChunk(value) => Self::Chunk(value),
-                _ => return Err(ShellTransportError::WrongContentRecord),
-            },
-        ))
-    }
-    fn grant(&self) -> ContentGrant {
-        match self {
-            Self::Begin(value) => value.content.grant,
-            Self::Chunk(value) => value.grant,
-            Self::End(value) => value.grant,
-        }
-    }
-}
 
 impl ShellComponentTransport {
     pub(super) fn select_catalog_negotiation(
@@ -116,139 +84,28 @@ impl ShellComponentTransport {
             .as_ref()
             .ok_or(ShellTransportError::MissingCapability)?;
         let max_records = limits.max_frames_per_service_tick.min(32) as usize;
-        let max_payload = limits.max_frame_payload as usize;
         epochs
             .active_candidates_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
             .expire(now)?;
         self.flush_content_candidate_events(epochs)?;
         let mut processed = 0;
-        if self.files.is_some() {
-            while processed < max_records {
-                if !self.control_capacity_available(epochs, 0) {
-                    break;
-                }
-                // Continue draining a candidate already exploding first, so a
-                // later-queued foreign-family record cannot interrupt it. Only
-                // once nothing catalog-shaped is left does a different
-                // candidate family become a hard protocol violation, exactly
-                // as the socket wire's raw-kind scan treats it.
-                let part = self
-                    .files
-                    .as_mut()
-                    .and_then(|files| files.export_mut().peek_catalog_candidate_part());
-                let Some((transaction, part)) = part else {
-                    match self
-                        .files
-                        .as_ref()
-                        .and_then(|files| files.export().peek_candidate_family())
-                    {
-                        None => break,
-                        Some(super::files::CandidateFamily::Catalog) => {
-                            unreachable!("peek_catalog_candidate_part already covers this")
-                        }
-                        Some(_) => return Err(ShellTransportError::WrongContentRecord),
-                    }
-                };
-                let grant = match &part {
-                    super::files::CatalogCandidatePart::Begin(value) => value.content.grant,
-                    super::files::CatalogCandidatePart::Chunk(value) => value.grant,
-                    super::files::CatalogCandidatePart::End(value) => value.grant,
-                };
-                if grant != self.store_grant {
-                    return Err(ShellTransportError::WrongContentGrant);
-                }
-                let context = if let super::files::CatalogCandidatePart::End(end) = &part {
-                    let output = epochs
-                        .active_candidates(self.store_grant)
-                        .and_then(|store| store.assembling_output(end.candidate_generation))
-                        .ok_or(ShellTransportError::WrongCandidate)?;
-                    let mut matches = contexts.iter().filter(|context| context.output == output);
-                    let context = matches
-                        .next()
-                        .copied()
-                        .ok_or(ShellTransportError::WrongCandidate)?;
-                    if matches.next().is_some() {
-                        return Err(ShellTransportError::WrongCandidate);
-                    }
-                    Some(context)
-                } else {
-                    None
-                };
-                // All identity and current-context checks precede dequeue. The
-                // store already owns the permit's terminal response credit.
-                self.files
-                    .as_mut()
-                    .and_then(|files| files.export_mut().take_catalog_candidate_part());
-                let (resources, candidates) = epochs
-                    .active_parts_mut(self.store_grant)
-                    .ok_or(ShellTransportError::MissingCapability)?;
-                let result = match part {
-                    super::files::CatalogCandidatePart::Begin(value) => {
-                        candidates.begin_persistent_catalog(transaction, value, catalog, now)
-                    }
-                    super::files::CatalogCandidatePart::Chunk(value) => {
-                        candidates.chunk_persistent_catalog(transaction, value, now)
-                    }
-                    super::files::CatalogCandidatePart::End(value) => candidates
-                        .end_persistent_catalog(
-                            transaction,
-                            value,
-                            context.expect("validated End context"),
-                            catalog,
-                            resources,
-                            now,
-                        ),
-                };
-                let reported = candidates.pending_event().is_some();
-                if result.is_err()
-                    && reported
-                    && let Some(files) = self.files.as_mut()
-                {
-                    files.export_mut().discard_catalog_candidate_parts();
-                }
-                self.flush_content_candidate_events(epochs)?;
-                if let Err(error) = result
-                    && !reported
-                {
-                    return Err(error.into());
-                }
-                processed += 1;
-            }
-            if processed == 0 && self.peer_closed {
-                return Err(ShellTransportError::NotConnected);
-            }
-            return Ok(processed);
-        }
-        let mut remaining = 64 * 1024;
+        self.begin_inbound_visit();
         while processed < max_records {
-            let Some(index) = self.inbox.iter().position(|frame| {
-                matches!(
-                    u16::from_le_bytes([frame[6], frame[7]]),
-                    172..=174 | 189 | 190 | 198 | 199
-                )
-            }) else {
+            if !self.control_capacity_available(epochs, 0) {
+                break;
+            }
+            // Continue draining a candidate already begun, so a later-queued
+            // foreign-family record cannot interrupt it; once nothing
+            // catalog-shaped is left, a different candidate family is a hard
+            // protocol violation on either wire.
+            let Some((transaction, part)) = self.peek_catalog_candidate()? else {
                 break;
             };
-            let frame = &self.inbox[index];
-            let kind = u16::from_le_bytes([frame[6], frame[7]]);
-            // A different candidate family cannot silently bypass the catalog
-            // binding or sit forever as an unserviceable inbox record.
-            if !matches!(kind, 174 | 198 | 199) {
-                return Err(ShellTransportError::WrongContentRecord);
-            }
-            let bytes = frame.len() - SOPHIA_IPC_HEADER_LEN;
-            if bytes > max_payload {
-                return Err(ShellTransportError::WrongContentRecord);
-            }
-            if bytes > remaining || !self.control_capacity_available(epochs, 0) {
-                break;
-            }
-            let (transaction, record) = CandidateRecord::decode(frame)?;
-            if record.grant() != self.store_grant {
+            if part.grant() != self.store_grant {
                 return Err(ShellTransportError::WrongContentGrant);
             }
-            let context = if let CandidateRecord::End(end) = &record {
+            let context = if let CatalogCandidatePart::End(end) = &part {
                 let output = epochs
                     .active_candidates(self.store_grant)
                     .and_then(|store| store.assembling_output(end.candidate_generation))
@@ -267,19 +124,18 @@ impl ShellComponentTransport {
             };
             // All decoding, identity and current-context checks precede dequeue.
             // The store already owns the permit's terminal response credit.
-            self.inbox.remove(index);
-            remaining -= bytes;
+            self.take_catalog_candidate();
             let (resources, candidates) = epochs
                 .active_parts_mut(self.store_grant)
                 .ok_or(ShellTransportError::MissingCapability)?;
-            let result = match record {
-                CandidateRecord::Begin(value) => {
+            let result = match part {
+                CatalogCandidatePart::Begin(value) => {
                     candidates.begin_persistent_catalog(transaction, value, catalog, now)
                 }
-                CandidateRecord::Chunk(value) => {
+                CatalogCandidatePart::Chunk(value) => {
                     candidates.chunk_persistent_catalog(transaction, value, now)
                 }
-                CandidateRecord::End(value) => candidates.end_persistent_catalog(
+                CatalogCandidatePart::End(value) => candidates.end_persistent_catalog(
                     transaction,
                     value,
                     context.expect("validated End context"),
@@ -289,6 +145,9 @@ impl ShellComponentTransport {
                 ),
             };
             let reported = candidates.pending_event().is_some();
+            if result.is_err() && reported {
+                self.discard_candidate_rest(super::files::CandidateFamily::Catalog);
+            }
             self.flush_content_candidate_events(epochs)?;
             if let Err(error) = result
                 && !reported

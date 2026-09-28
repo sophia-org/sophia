@@ -1,23 +1,11 @@
-use std::collections::VecDeque;
-use std::io::{Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
 use sophia_protocol::{
-    ContentAdmissionRefused, ContentGrant, ContentLimits, IpcCodecError, SOPHIA_IPC_HEADER_LEN,
-    SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER,
-    SOPHIA_SHELL_INTERFACE_REVISION, SOPHIA_SHELL_MAX_DESCRIPTORS,
-    SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS, ShellV1Activation, ShellV1ActivationAck,
-    ShellV1Candidate, ShellV1CandidateOutcome, ShellV1ClientHello, ShellV1DescriptorSnapshot,
-    ShellV1ServerWelcome, TransactionId, decode_shell_v1_activation_ack_frame,
-    decode_shell_v1_activation_frame, decode_shell_v1_candidate_frame,
-    decode_shell_v1_candidate_outcome_frame, decode_shell_v1_client_hello_frame,
-    decode_shell_v1_descriptor_snapshot_frame, decode_shell_v1_server_welcome_frame,
-    encode_shell_v1_activation_ack_frame, encode_shell_v1_activation_frame,
-    encode_shell_v1_candidate_frame, encode_shell_v1_candidate_outcome_frame,
-    encode_shell_v1_client_hello_frame, encode_shell_v1_descriptor_snapshot_frame,
-    encode_shell_v1_server_welcome_frame,
+    ContentAdmissionRefused, ContentGrant, ContentLimits, IpcCodecError,
+    SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER, SOPHIA_SHELL_MAX_DESCRIPTORS,
+    SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS, ShellV1ClientHello, ShellV1ServerWelcome, TransactionId,
 };
 
 use crate::{
@@ -47,12 +35,14 @@ mod content_resources;
 mod control_budget;
 mod files;
 mod indicator_responses;
+pub(crate) mod outbound;
 mod outbox;
 mod publication;
+mod socket;
+mod wire;
 pub use accounting::{ShellContentAccounting, ShellContentShutdown};
 pub use content_admission::ShellContentAdmissionPolicy;
-
-const SHELL_IO_TIMEOUT: Duration = Duration::from_secs(5);
+pub use socket::ShellClientTransport;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellTransportError {
@@ -116,42 +106,24 @@ impl From<ContentAllocationError> for ShellTransportError {
 
 pub struct ShellComponentTransport {
     endpoint: PolicyRoleEndpoint,
-    stream: Option<UnixStream>,
-    /// The file wire of the current epoch; never set together with `stream`.
-    files: Option<files::ShellFileWire>,
+    /// The one wire of the current epoch, socket or files.
+    wire: Option<wire::Wire>,
     /// The component's next logical qid, continued across file epochs.
     file_qids: u64,
     negotiation: Option<negotiation_service::PendingNegotiation>,
     capabilities: u64,
     peer_closed: bool,
-    input: Vec<u8>,
+    /// Typed Session-to-client records not yet in a wire's custody.
     output: outbox::ShellOutbox,
     action_cancellations: Vec<sophia_protocol::ContentAction>,
     indicator_response: Option<indicator_responses::PendingIndicatorResponse>,
     catalog_response: Option<catalog_responses::PendingCatalogResponse>,
-    /// Socket frames of one indicator or catalog publication not yet queued;
-    /// drained within the bulk budget on each I/O turn.
-    publication: VecDeque<Vec<u8>>,
     native_control: native_launcher::control::NativeControl,
-    inbox: VecDeque<Vec<u8>>,
     connection_epoch: u64,
     reserved_limits: Option<ContentLimits>,
     content_grant: Option<ContentGrant>,
     content_limits: Option<ContentLimits>,
     store_grant: ContentGrant,
-    last_candidate_generation: u64,
-    requested_candidate: Option<(TransactionId, ShellV1DescriptorSnapshot)>,
-    pending_candidate: Option<PendingShellCandidate>,
-    presented_candidate: Option<(u64, u64)>,
-    pending_activations: VecDeque<(TransactionId, u64)>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct PendingShellCandidate {
-    transaction: TransactionId,
-    generation: u64,
-    visible: bool,
-    prepared: bool,
 }
 
 impl ShellComponentTransport {
@@ -165,30 +137,21 @@ impl ShellComponentTransport {
                 PolicyRole::Shell,
                 expected_uid,
             )?,
-            stream: None,
-            files: None,
+            wire: None,
             file_qids: 1,
             negotiation: None,
             capabilities: 0,
             peer_closed: false,
-            input: Vec::new(),
             output: outbox::ShellOutbox::default(),
             action_cancellations: Vec::with_capacity(16),
             indicator_response: None,
             catalog_response: None,
-            publication: VecDeque::new(),
             native_control: native_launcher::control::NativeControl::default(),
-            inbox: VecDeque::new(),
             connection_epoch: 0,
             reserved_limits: None,
             content_grant: None,
             content_limits: None,
             store_grant: ContentGrant::default(),
-            last_candidate_generation: 0,
-            requested_candidate: None,
-            pending_candidate: None,
-            presented_candidate: None,
-            pending_activations: VecDeque::with_capacity(SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS),
         })
     }
 
@@ -212,205 +175,11 @@ impl ShellComponentTransport {
         self.content_limits.as_ref()
     }
 
-    pub fn request_candidate(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        transaction: TransactionId,
-        snapshot: &ShellV1DescriptorSnapshot,
-    ) -> Result<ShellV1Candidate, ShellTransportError> {
-        self.begin_candidate_request(epochs, transaction, snapshot)?;
-        let deadline = std::time::Instant::now() + SHELL_IO_TIMEOUT;
-        loop {
-            if let Some(candidate) = self.poll_candidate(epochs)? {
-                return Ok(candidate);
-            }
-            if std::time::Instant::now() >= deadline {
-                return Err(ShellTransportError::Io("shell candidate timed out".into()));
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-    }
-
-    pub fn begin_candidate_request(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        transaction: TransactionId,
-        snapshot: &ShellV1DescriptorSnapshot,
-    ) -> Result<(), ShellTransportError> {
-        self.require_epoch(snapshot.connection_epoch)?;
-        if self.pending_candidate.is_some() || self.requested_candidate.is_some() {
-            return Err(ShellTransportError::WrongCandidate);
-        }
-        let frame = encode_shell_v1_descriptor_snapshot_frame(transaction, snapshot)?;
-        self.requested_candidate = Some((transaction, snapshot.clone()));
-        self.send_async(epochs, frame)
-    }
-
-    pub fn poll_candidate(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-    ) -> Result<Option<ShellV1Candidate>, ShellTransportError> {
-        let Some((transaction, snapshot)) = self.requested_candidate.clone() else {
-            return Ok(None);
-        };
-        let Some(frame) =
-            self.poll_kind(epochs, sophia_protocol::IpcMessageKind::ShellV1Candidate)?
-        else {
-            return Ok(None);
-        };
-        self.requested_candidate = None;
-        let (response_transaction, candidate) = decode_shell_v1_candidate_frame(&frame)?;
-        if response_transaction != transaction {
-            return Err(ShellTransportError::WrongTransaction);
-        }
-        self.require_epoch(candidate.connection_epoch)?;
-        if candidate.snapshot_generation != snapshot.snapshot_generation
-            || candidate.output != snapshot.output
-            || candidate.candidate_generation <= self.last_candidate_generation
-            || candidate.entries.iter().any(|entry| {
-                !snapshot.descriptors.iter().any(|descriptor| {
-                    descriptor.slot == entry.slot && descriptor.generation == entry.generation
-                })
-            })
-        {
-            return Err(ShellTransportError::WrongCandidate);
-        }
-        self.last_candidate_generation = candidate.candidate_generation;
-        self.pending_candidate = Some(PendingShellCandidate {
-            transaction,
-            generation: candidate.candidate_generation,
-            visible: candidate.visible,
-            prepared: false,
-        });
-        self.requested_candidate = None;
-        Ok(Some(candidate))
-    }
-
-    pub fn send_candidate_outcome(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        transaction: TransactionId,
-        outcome: ShellV1CandidateOutcome,
-    ) -> Result<(), ShellTransportError> {
-        self.require_epoch(outcome.connection_epoch)?;
-        let mut pending = self
-            .pending_candidate
-            .ok_or(ShellTransportError::WrongCandidate)?;
-        if pending.transaction != transaction || pending.generation != outcome.candidate_generation
-        {
-            return Err(ShellTransportError::WrongCandidate);
-        }
-        match outcome.kind {
-            sophia_protocol::ShellV1CandidateOutcomeKind::Prepared if !pending.prepared => {
-                pending.prepared = true;
-            }
-            sophia_protocol::ShellV1CandidateOutcomeKind::Presented if pending.prepared => {}
-            sophia_protocol::ShellV1CandidateOutcomeKind::Rejected
-            | sophia_protocol::ShellV1CandidateOutcomeKind::Superseded => {}
-            _ => return Err(ShellTransportError::WrongCandidate),
-        }
-        let frame = encode_shell_v1_candidate_outcome_frame(transaction, outcome)?;
-        self.send_async(epochs, frame)?;
-        match outcome.kind {
-            sophia_protocol::ShellV1CandidateOutcomeKind::Prepared => {
-                self.pending_candidate = Some(pending);
-            }
-            sophia_protocol::ShellV1CandidateOutcomeKind::Presented => {
-                self.presented_candidate = Some((
-                    pending.generation,
-                    if pending.visible {
-                        outcome.presentation_epoch
-                    } else {
-                        0
-                    },
-                ));
-                self.pending_candidate = None;
-            }
-            sophia_protocol::ShellV1CandidateOutcomeKind::Rejected
-            | sophia_protocol::ShellV1CandidateOutcomeKind::Superseded => {
-                self.pending_candidate = None;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn queue_activation(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        transaction: TransactionId,
-        activation: ShellV1Activation,
-    ) -> Result<(), ShellTransportError> {
-        self.require_epoch(activation.connection_epoch)?;
-        if self.presented_candidate
-            != Some((
-                activation.candidate_generation,
-                activation.presentation_epoch,
-            ))
-            || activation.action.recipient_epoch != self.connection_epoch
-        {
-            return Err(ShellTransportError::WrongActivation);
-        }
-        if self.pending_activations.len() >= SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS {
-            self.disconnect(epochs)?;
-            return Err(ShellTransportError::ActivationQueueSaturated);
-        }
-        let frame = encode_shell_v1_activation_frame(transaction, activation)?;
-        self.send_async(epochs, frame)?;
-        self.pending_activations
-            .push_back((transaction, activation.activation));
-        Ok(())
-    }
-
-    pub fn receive_activation_ack(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-    ) -> Result<ShellV1ActivationAck, ShellTransportError> {
-        let deadline = std::time::Instant::now() + SHELL_IO_TIMEOUT;
-        loop {
-            if let Some(ack) = self.poll_activation_ack(epochs)? {
-                return Ok(ack);
-            }
-            if std::time::Instant::now() >= deadline {
-                return Err(ShellTransportError::Io(
-                    "shell acknowledgement timed out".into(),
-                ));
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-    }
-
-    pub fn poll_activation_ack(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-    ) -> Result<Option<ShellV1ActivationAck>, ShellTransportError> {
-        let Some((expected_transaction, expected_activation)) =
-            self.pending_activations.front().copied()
-        else {
-            return Ok(None);
-        };
-        let Some(frame) = self.poll_transaction(
-            epochs,
-            sophia_protocol::IpcMessageKind::ShellV1ActivationAck,
-            expected_transaction,
-        )?
-        else {
-            return Ok(None);
-        };
-        let (_, ack) = decode_shell_v1_activation_ack_frame(&frame)?;
-        self.require_epoch(ack.connection_epoch)?;
-        if ack.activation != expected_activation {
-            return Err(ShellTransportError::WrongActivation);
-        }
-        self.pending_activations.pop_front();
-        Ok(Some(ack))
-    }
-
     pub fn disconnect(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
-        self.stream = None;
-        if let Some(mut files) = self.files.take() {
+        if let Some(wire::Wire::Files(mut files)) = self.wire.take() {
             self.file_qids = files.export().next_qid();
             files.revoke();
         }
@@ -418,18 +187,11 @@ impl ShellComponentTransport {
             self.file_qids = next;
         }
         self.negotiation = None;
-        self.input.clear();
         self.output.clear();
         self.action_cancellations.clear();
         self.indicator_response = None;
         self.catalog_response = None;
-        self.publication.clear();
         self.native_control = native_launcher::control::NativeControl::default();
-        self.inbox.clear();
-        self.requested_candidate = None;
-        self.pending_candidate = None;
-        self.presented_candidate = None;
-        self.pending_activations.clear();
         self.content_grant = None;
         self.content_limits = None;
         self.reserved_limits = None;
@@ -535,7 +297,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         byte_budget: usize,
     ) -> Result<(), ShellTransportError> {
-        if self.stream.is_none() && self.files.is_none() {
+        if self.wire.is_none() {
             return Err(ShellTransportError::NotConnected);
         }
         self.flush_indicator_response(epochs)?;
@@ -544,346 +306,71 @@ impl ShellComponentTransport {
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
         self.flush_publication(epochs);
-        if self.files.is_some() {
-            return self.poll_files();
-        }
-        let stream = self
-            .stream
-            .as_mut()
-            .ok_or(ShellTransportError::NotConnected)?;
-        let mut remaining = byte_budget.min(256 * 1024);
-        for _ in 0..64 {
-            if remaining == 0 || self.output.is_empty() {
-                break;
-            }
-            let bytes = self.output.front();
-            match stream.write(&bytes[..bytes.len().min(remaining)]) {
-                Ok(0) => return Err(ShellTransportError::NotConnected),
-                Ok(n) => {
-                    self.output.written(n);
-                    remaining -= n;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(e) => return Err(ShellTransportError::Io(e.to_string())),
-            }
-        }
-        let mut incoming = byte_budget.min(256 * 1024);
-        for _ in 0..64 {
-            Self::decode_buffered_input(&mut self.input, &mut self.inbox)?;
-            let limit = self
-                .content_limits
-                .as_ref()
-                .map_or(2 * 1024 * 1024, |limits| {
-                    limits.max_input_queue_bytes as usize
-                });
-            let retained = self.input.len() + self.inbox.iter().map(Vec::len).sum::<usize>();
-            let available = limit.saturating_sub(retained);
-            if available == 0 || incoming == 0 || self.inbox.len() == 64 {
-                break;
-            }
-            let mut bytes = [0u8; 4096];
-            let available = available.min(bytes.len()).min(incoming);
-            match stream.read(&mut bytes[..available]) {
-                Ok(0) => {
-                    self.peer_closed = true;
-                    break;
-                }
-                Ok(n) => {
-                    self.input.extend_from_slice(&bytes[..n]);
-                    incoming -= n;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                Err(e) => return Err(ShellTransportError::Io(e.to_string())),
-            }
-        }
-        Self::decode_buffered_input(&mut self.input, &mut self.inbox)?;
-        Ok(())
-    }
-
-    fn decode_buffered_input(
-        input: &mut Vec<u8>,
-        inbox: &mut VecDeque<Vec<u8>>,
-    ) -> Result<(), ShellTransportError> {
-        while input.len() >= SOPHIA_IPC_HEADER_LEN && inbox.len() < 64 {
-            let payload = u32::from_le_bytes(input[16..20].try_into().unwrap()) as usize;
-            if payload > SOPHIA_IPC_MAX_PAYLOAD_LEN {
-                return Err(ShellTransportError::Codec(IpcCodecError::PayloadTooLarge(
-                    payload,
-                )));
-            }
-            let length = SOPHIA_IPC_HEADER_LEN + payload;
-            if input.len() < length {
-                break;
-            }
-            let frame = input.drain(..length).collect::<Vec<_>>();
-            sophia_protocol::decode_frame(&frame)?;
-            inbox.push_back(frame);
-        }
-        Ok(())
-    }
-
-    pub fn send_async(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        frame: Vec<u8>,
-    ) -> Result<(), ShellTransportError> {
-        self.enqueue_async(epochs, frame)?;
-        self.poll_io(epochs)
-    }
-
-    /// Transfer one bulk record into the shared bounded FIFO, with no I/O after
-    /// transfer. Returned refusal always precedes ownership transfer. Producers
-    /// may then remove their prevalidated exact front without an I/O ambiguity.
-    pub fn enqueue_async(
-        &mut self,
-        epochs: &crate::ContentEpochRegistry,
-        frame: Vec<u8>,
-    ) -> Result<(), ShellTransportError> {
-        if self.stream.is_none() {
-            return Err(ShellTransportError::NotConnected);
-        }
-        if !self.bulk_capacity_available(epochs, frame.len()) {
-            return Err(ShellTransportError::ActivationQueueSaturated);
-        }
-        self.output.push(frame, false);
-        Ok(())
-    }
-
-    pub fn poll_kind(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        kind: sophia_protocol::IpcMessageKind,
-    ) -> Result<Option<Vec<u8>>, ShellTransportError> {
-        self.poll_io(epochs)?;
-        let at = self
-            .inbox
-            .iter()
-            .position(|f| u16::from_le_bytes([f[6], f[7]]) == kind as u16);
-        let result = at.and_then(|i| self.inbox.remove(i));
-        if result.is_none() && self.peer_closed {
-            return Err(ShellTransportError::NotConnected);
-        }
-        Ok(result)
-    }
-
-    pub fn poll_transaction(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        kind: sophia_protocol::IpcMessageKind,
-        tx: TransactionId,
-    ) -> Result<Option<Vec<u8>>, ShellTransportError> {
-        self.poll_io(epochs)?;
-        let at = self.inbox.iter().position(|f| {
-            u16::from_le_bytes([f[6], f[7]]) == kind as u16
-                && u64::from_le_bytes(f[8..16].try_into().unwrap()) == tx.raw()
-        });
-        let frame = at.and_then(|i| self.inbox.remove(i));
-        if frame.is_none() && self.peer_closed {
-            return Err(ShellTransportError::NotConnected);
-        }
-        Ok(frame)
-    }
-}
-
-pub struct ShellClientTransport {
-    stream: UnixStream,
-    connection_epoch: u64,
-}
-
-impl ShellClientTransport {
-    pub fn connect(path: impl AsRef<Path>) -> Result<Self, ShellTransportError> {
-        let mut stream = UnixStream::connect(path)
-            .map_err(|error| ShellTransportError::Io(error.to_string()))?;
-        configure_stream(&stream)?;
-        let hello = ShellV1ClientHello {
-            minimum_revision: SOPHIA_SHELL_INTERFACE_REVISION,
-            maximum_revision: SOPHIA_SHELL_INTERFACE_REVISION,
-            required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER,
+        let closed = match self.wire.as_mut() {
+            None => return Err(ShellTransportError::NotConnected),
+            Some(wire::Wire::Socket(socket)) => socket.turn(&mut self.output, byte_budget)?,
+            Some(wire::Wire::Files(files)) => Self::turn_files(files, &mut self.output)?,
         };
-        write_frame(&mut stream, &encode_shell_v1_client_hello_frame(hello)?)?;
-        let welcome = decode_shell_v1_server_welcome_frame(&read_frame(&mut stream)?)?;
-        if welcome.selected_revision != SOPHIA_SHELL_INTERFACE_REVISION
-            || welcome.capabilities & SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER == 0
-        {
-            return Err(ShellTransportError::UnsupportedRevision);
+        if closed {
+            self.peer_closed = true;
         }
-        stream
-            .set_read_timeout(None)
-            .map_err(|error| ShellTransportError::Io(error.to_string()))?;
-        Ok(Self {
-            stream,
-            connection_epoch: welcome.connection_epoch,
-        })
+        Ok(())
     }
 
-    pub const fn connection_epoch(&self) -> u64 {
-        self.connection_epoch
-    }
-
-    pub fn receive_snapshot(
-        &mut self,
-    ) -> Result<(TransactionId, ShellV1DescriptorSnapshot), ShellTransportError> {
-        let (transaction, snapshot) =
-            decode_shell_v1_descriptor_snapshot_frame(&read_frame(&mut self.stream)?)?;
-        self.require_epoch(snapshot.connection_epoch)?;
-        Ok((transaction, snapshot))
-    }
-
-    pub fn send_candidate(
-        &mut self,
-        transaction: TransactionId,
-        candidate: &ShellV1Candidate,
-    ) -> Result<(), ShellTransportError> {
-        self.require_epoch(candidate.connection_epoch)?;
-        write_frame(
-            &mut self.stream,
-            &encode_shell_v1_candidate_frame(transaction, candidate)?,
-        )
-    }
-
-    pub fn receive_candidate_outcome(
-        &mut self,
-    ) -> Result<(TransactionId, ShellV1CandidateOutcome), ShellTransportError> {
-        let (transaction, outcome) =
-            decode_shell_v1_candidate_outcome_frame(&read_frame(&mut self.stream)?)?;
-        self.require_epoch(outcome.connection_epoch)?;
-        Ok((transaction, outcome))
-    }
-
-    pub fn receive_activation(
-        &mut self,
-    ) -> Result<(TransactionId, ShellV1Activation), ShellTransportError> {
-        let (transaction, activation) =
-            decode_shell_v1_activation_frame(&read_frame(&mut self.stream)?)?;
-        self.require_epoch(activation.connection_epoch)?;
-        Ok((transaction, activation))
-    }
-
-    pub fn acknowledge_activation(
-        &mut self,
-        transaction: TransactionId,
-        ack: ShellV1ActivationAck,
-    ) -> Result<(), ShellTransportError> {
-        self.require_epoch(ack.connection_epoch)?;
-        write_frame(
-            &mut self.stream,
-            &encode_shell_v1_activation_ack_frame(transaction, ack)?,
-        )
-    }
-
-    fn require_epoch(&self, epoch: u64) -> Result<(), ShellTransportError> {
-        if epoch == self.connection_epoch && epoch != 0 {
-            Ok(())
-        } else {
-            Err(ShellTransportError::InvalidConnectionEpoch)
-        }
-    }
-}
-
-fn configure_stream(stream: &UnixStream) -> Result<(), ShellTransportError> {
-    stream
-        .set_read_timeout(Some(SHELL_IO_TIMEOUT))
-        .and_then(|()| stream.set_write_timeout(Some(SHELL_IO_TIMEOUT)))
-        .map_err(|error| ShellTransportError::Io(error.to_string()))
-}
-
-fn write_frame(stream: &mut UnixStream, frame: &[u8]) -> Result<(), ShellTransportError> {
-    stream
-        .write_all(frame)
-        .map_err(|error| ShellTransportError::Io(error.to_string()))
-}
-
-fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, ShellTransportError> {
-    let mut header = [0; SOPHIA_IPC_HEADER_LEN];
-    stream
-        .read_exact(&mut header)
-        .map_err(|error| ShellTransportError::Io(error.to_string()))?;
-    let payload_len = u32::from_le_bytes(
-        header[16..20]
-            .try_into()
-            .expect("fixed frame payload range is present"),
-    ) as usize;
-    if payload_len > SOPHIA_IPC_MAX_PAYLOAD_LEN {
-        return Err(ShellTransportError::Codec(IpcCodecError::PayloadTooLarge(
-            payload_len,
-        )));
-    }
-    let mut frame = Vec::with_capacity(SOPHIA_IPC_HEADER_LEN + payload_len);
-    frame.extend_from_slice(&header);
-    frame.resize(SOPHIA_IPC_HEADER_LEN + payload_len, 0);
-    stream
-        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
-        .map_err(|error| ShellTransportError::Io(error.to_string()))?;
-    Ok(frame)
-}
-
-impl ShellComponentTransport {
-    /// File wire service: serve ready 9P requests, move queued events into
-    /// the journal in FIFO order, then serve again so waiting reads see them.
-    /// A socket frame in this FIFO is a family the file contract does not
-    /// carry yet; it closes the component rather than crossing as old IPC.
-    /// Moves queued file events into the journal in FIFO order; `Ok(false)`
-    /// when the journal is full and events remain queued.
+    /// Moves queued records into the journal, or publishes queued objects, in
+    /// FIFO order. `Ok(false)` when the journal is full and records remain
+    /// queued, still owned and charged.
     fn drain_file_output(
         files: &mut files::ShellFileWire,
         output: &mut outbox::ShellOutbox,
     ) -> Result<bool, ShellTransportError> {
-        while !output.is_empty() {
-            let Some((kind, body, credited)) = output.front_file() else {
-                return Err(ShellTransportError::WrongContentRecord);
-            };
+        while let Some(queued) = output.front() {
+            let (kind, body) = queued.record.native()?;
             let taken = if sophia_protocol::shell_files::shell_file_class(kind)
                 == sophia_protocol::shell_files::ShellFileClass::Object
             {
-                files.publish(kind, body, credited)?
+                files.publish(kind, &body, queued.control)?
             } else {
-                files.append(kind, body, credited)?
+                files.append(kind, &body, queued.control)?
             };
             if !taken {
                 return Ok(false);
             }
-            output.pop_file();
+            output.pop_front();
         }
         Ok(true)
     }
 
-    fn poll_files(&mut self) -> Result<(), ShellTransportError> {
-        let files = self
-            .files
-            .as_mut()
-            .ok_or(ShellTransportError::NotConnected)?;
-        if let Err(error) = files.turn() {
-            if error == ShellTransportError::NotConnected {
-                self.peer_closed = true;
-                return Ok(());
-            }
-            return Err(error);
+    /// File wire service: serve ready 9P requests, move queued records into
+    /// the journal in FIFO order, then serve again so waiting reads see them.
+    /// Returns whether the peer ended its connection.
+    fn turn_files(
+        files: &mut files::ShellFileWire,
+        output: &mut outbox::ShellOutbox,
+    ) -> Result<bool, ShellTransportError> {
+        match files.turn() {
+            Err(ShellTransportError::NotConnected) => return Ok(true),
+            Err(error) => return Err(error),
+            Ok(()) => {}
         }
-        let blocked = !Self::drain_file_output(files, &mut self.output)?;
+        let blocked = !Self::drain_file_output(files, output)?;
         files.check_ack_progress(blocked, std::time::Instant::now())?;
-        if let Err(error) = files.turn() {
-            if error == ShellTransportError::NotConnected {
-                self.peer_closed = true;
-                return Ok(());
-            }
-            return Err(error);
+        match files.turn() {
+            Err(ShellTransportError::NotConnected) => Ok(true),
+            Err(error) => Err(error),
+            Ok(()) => Ok(false),
         }
-        Ok(())
     }
 
-    /// A record taken from the file wire's typed queue, with the socket path's
-    /// direction and grant checks. None ends the peer's stream once it closed.
-    pub(super) fn admit_file_record(
+    /// A taken client content record with its direction and grant checks.
+    /// None ends the peer's stream once it closed.
+    pub(super) fn admit_client_record(
         &self,
         taken: Option<(TransactionId, sophia_protocol::ShellContentRecord)>,
     ) -> Result<Option<(TransactionId, sophia_protocol::ShellContentRecord)>, ShellTransportError>
     {
         let Some((transaction, record)) = taken else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
-            };
+            return self.nothing_inbound();
         };
         if !content_admission::client_record(&record) {
             return Err(ShellTransportError::WrongContentRecord);
@@ -892,16 +379,5 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::WrongContentGrant);
         }
         Ok(Some((transaction, record)))
-    }
-
-    /// The next submitted content record the selector accepts, from the file
-    /// wire's typed queue. The socket wire decodes frames instead.
-    pub(super) fn take_file_content(
-        &mut self,
-        select: impl Fn(&sophia_protocol::ShellContentRecord) -> bool,
-    ) -> Option<(TransactionId, sophia_protocol::ShellContentRecord)> {
-        self.files
-            .as_mut()
-            .and_then(|files| files.export_mut().take_content(select))
     }
 }

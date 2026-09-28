@@ -235,6 +235,15 @@ re-exports are recorded individually in the layout exceptions. All fixture
 bodies remain under `tests/support`; their scope does not imply hardware or
 full owner-loop acceptance.
 
+The typed shell outbox fixture, `tests/support/shell_outbox.rs` with its
+`shell_typed_outbox_transport.rs` submodule, joins the same private owners
+through the existing `outbox.rs` mount. It places exact neutral charges,
+bulk saturation, per-wire record bounds, a partial socket write and a
+neighbouring owner that no public call can select. The transport-budget,
+indicator, catalog and native-activation fixtures deliver requests through the
+real socket read path and drain through its write path on a socket pair whose
+peer does not read; they no longer write the private inbox or byte FIFO.
+
 The persistent catalog response fixture, `tests/support/shell_catalog_responses.rs`,
 uses the same narrow exception: supplied negotiated state, exact private credit
 accounting, forced returned refusal and partial FIFO drain. It does not enable

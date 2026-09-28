@@ -1,13 +1,21 @@
-//! Actual aggregate/FIFO ownership with supplied connection/request facts and
-//! simulated write completion. Limit reduction is a defensive refusal control,
-//! not normal negotiation or observed kernel backpressure.
+//! Actual aggregate/FIFO ownership with supplied connection/request facts over
+//! a real socket pair whose peer does not read: the request arrives through
+//! the production read path and write completion is the production write
+//! path. Limit reduction is a defensive refusal control, not normal
+//! negotiation or observed kernel backpressure.
 use super::*;
+use crate::shell_transport::outbound::{Admitted, OutboundRecord};
+use crate::shell_transport::socket::SocketWire;
+use crate::shell_transport::wire::Wire;
+use std::io::Write as _;
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture {
     transport: ShellComponentTransport,
     epochs: crate::ContentEpochRegistry,
+    _peer: UnixStream,
     directory: std::path::PathBuf,
     opening: NativeLauncherOpening,
     activation: NativeLauncherActivation,
@@ -77,22 +85,84 @@ impl Fixture {
         transport.native_control.opening = Some(opening);
         transport.native_control.focus = Some(binding);
         transport.native_control.last_opening = 1;
-        transport.inbox.push_back(
-            encode_shell_native_launcher_frame(
+        let (local, mut peer) = UnixStream::pair().unwrap();
+        local.set_nonblocking(true).unwrap();
+        let limits = transport.content_limits.clone();
+        transport.wire = Some(Wire::Socket(Box::new(SocketWire::new(
+            local,
+            limits.as_ref(),
+        ))));
+        peer.write_all(
+            &encode_shell_native_launcher_frame(
                 TransactionId::from_raw(1),
                 &ShellNativeLauncherRecord::Activate(activation),
             )
             .unwrap(),
-        );
+        )
+        .unwrap();
+        let socket = transport.socket_mut().unwrap();
+        while socket.input_accounting().0 == 0 {
+            socket.receive(4096).unwrap();
+        }
         Self {
             transport,
             epochs,
+            _peer: peer,
             directory,
             opening,
             activation,
         }
     }
 }
+impl Fixture {
+    fn inbox(&self) -> usize {
+        self.transport.socket().unwrap().input_accounting().0
+    }
+    fn front_frame_bytes(&self) -> usize {
+        SocketWire::encode(&self.transport.output.front().unwrap().record)
+            .unwrap()
+            .len()
+    }
+    /// Writes at most `bytes` of the output order through the socket.
+    fn send(&mut self, bytes: usize) {
+        let Some(Wire::Socket(socket)) = self.transport.wire.as_mut() else {
+            unreachable!("the fixture attaches a socket");
+        };
+        socket.send(&mut self.transport.output, bytes).unwrap();
+    }
+    fn send_front(&mut self) {
+        let bytes = self.front_frame_bytes();
+        self.send(bytes);
+    }
+    /// One owned typed bulk record: output facts with no rows.
+    fn bulk(&self) -> Admitted {
+        self.transport
+            .admit_record(
+                OutboundRecord::Content(
+                    TransactionId::from_raw(90),
+                    ShellContentRecord::OutputFacts(ContentOutputFacts {
+                        grant: self.opening.grant,
+                        facts_generation: 1,
+                        outputs: Vec::new(),
+                    }),
+                ),
+                crate::shell_transport::control_budget::Class::Bulk,
+            )
+            .unwrap()
+    }
+    fn front_native(&self) -> ShellNativeLauncherRecord {
+        let Some(OutboundRecord::NativeLauncher(_, record)) = self
+            .transport
+            .output
+            .front()
+            .map(|queued| queued.record.clone())
+        else {
+            panic!("a typed native launcher record is queued");
+        };
+        record
+    }
+}
+
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.directory);
@@ -103,13 +173,14 @@ impl Drop for Fixture {
 fn exact_native_response_credit_survives_final_byte_and_cannot_hand_out_twice() {
     let mut f = Fixture::new();
     let tx = TransactionId::from_raw(1);
-    f.transport.output.push(vec![0; 32], false);
+    let bulk = f.bulk();
+    f.transport.transfer_record(bulk);
     assert_eq!(
         f.transport.take_native_launcher_request(&f.epochs).unwrap(),
         None
     );
-    assert_eq!(f.transport.inbox.len(), 1);
-    f.transport.output.written(32);
+    assert_eq!(f.inbox(), 1);
+    f.send_front();
     assert_eq!(
         f.transport.take_native_launcher_request(&f.epochs).unwrap(),
         Some((tx, f.activation))
@@ -151,14 +222,13 @@ fn exact_native_response_credit_survives_final_byte_and_cannot_hand_out_twice() 
         .unwrap();
     assert!(f.transport.native_control.activation_response.is_none());
     assert!(f.transport.native_control.launch_admitted);
-    assert!(
-        matches!(decode_shell_native_launcher_frame(f.transport.output.front()).unwrap().1,
-        ShellNativeLauncherRecord::ActivationOutcome(v) if v.status == 1 && v.activation == f.activation)
-    );
+    assert!(matches!(f.front_native(),
+        ShellNativeLauncherRecord::ActivationOutcome(v) if v.status == 1 && v.activation == f.activation));
     let before = f.transport.content_accounting(&f.epochs);
-    f.transport.output.written(1);
+    let bytes = f.front_frame_bytes();
+    f.send(1);
     assert_eq!(f.transport.content_accounting(&f.epochs), before);
-    f.transport.output.written(f.transport.output.front().len());
+    f.send(bytes - 1);
     assert_eq!(
         f.transport.content_accounting(&f.epochs).response_records,
         2
@@ -197,7 +267,7 @@ fn refused_outcome_survives_close_without_disarming_a_new_opening() {
             .status,
         1
     );
-    assert!(f.transport.output.is_empty());
+    assert!(f.transport.output.front().is_none());
     assert!(
         f.transport
             .finish_native_launcher_activation(
@@ -235,7 +305,7 @@ fn refused_outcome_survives_close_without_disarming_a_new_opening() {
         1
     );
     for _ in 0..2 {
-        f.transport.output.written(f.transport.output.front().len());
+        f.send_front();
     }
     let mut newer = f.opening;
     newer.opening += 1;
@@ -253,9 +323,7 @@ fn refused_outcome_survives_close_without_disarming_a_new_opening() {
     assert_eq!(f.transport.native_control.opening, Some(newer));
     assert!(!f.transport.native_control.launch_admitted);
     assert!(f.transport.native_control.activation_response.is_none());
-    f.transport.output.written(f.transport.output.front().len()); // Opening
-    assert!(
-        matches!(decode_shell_native_launcher_frame(f.transport.output.front()).unwrap().1,
-        ShellNativeLauncherRecord::ActivationOutcome(v) if v.status == 1 && v.activation == f.activation)
-    );
+    f.send_front(); // Opening
+    assert!(matches!(f.front_native(),
+        ShellNativeLauncherRecord::ActivationOutcome(v) if v.status == 1 && v.activation == f.activation));
 }
