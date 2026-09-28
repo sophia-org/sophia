@@ -1,13 +1,13 @@
-tree 5a008f2e8c369384cf452fd1af12f009ee4c453a
-parent 2b00a7766c856b36e3604d68087b90f747bc1296
-author Mason Green <mason@greenm01.net> 1790596765 -0400
-committer Mason Green <mason@greenm01.net> 1790596765 -0400
+tree ef0b63234fee4efaa44fe448a975dc8b9566af38
+parent 88347eb7b37816450863e4de582f1c01e80d446a
+author Mason Green <mason@greenm01.net> 1790597944 -0400
+committer Mason Green <mason@greenm01.net> 1790597944 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHQEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarpWnQAKCRBXGEu2KoAA
- YuJlAPiH7m277KGqQLUR2JrE/0ifW3QYuzXIQkeMQJxz0w0yAP9jpcNp4QtVP3Uw
- ahaehCA+2I1LHWLUjg85bwmKkqHvBw==
- =kQzn
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarpbOAAKCRBXGEu2KoAA
+ YuDEAP98Z/WLVaOy6DTG1tPnhc+r7lWDiLMptvJ/Q7/6CRiEHgEAu4jqLyau0CMV
+ DLkqPtxCEdSxnF2CHKp6vo6M8poyHQw=
+ =msFO
  -----END PGP SIGNATURE-----
 
-Pin accepted descriptor layouts and lifecycle rules
+Refresh accepted shell contract bounds and migration notes

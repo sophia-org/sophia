@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "repository": "https://github.com/sophia-org/sophia-desktop-sdk-rs",
-  "revision": "f6b177c7dbf457fddee50ca98bb50020d64a5262",
+  "revision": "6e6c852d4169d35cd1df1e25d3d1c0d37e15ad32",
   "files": {
     ".gitignore": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
     "Cargo.lock": "6c84ae2106329c2bb4217bdf6b40166a1dedb252dff6ff6bde30188b9db3c7e5",
     "Cargo.toml": "4534c4628e1d88db59be9ea91a117df875d85500a75c2c80e63e683f67632934",
     "LICENSE": "228b91bbd88e49222e09ac364642da29cd39ca2ce1acdc3c91f950948aaee2c5",
     "PLATFORMS.md": "8d7e6d91e8074c41dd331918b707ecdd0bbe034815dfae663365f7b0fb65d6df",
-    "PROVENANCE.md": "a7f0750511d07891617b76ea5f3de4870d79c93ff6962c436cad9d746632b911",
+    "PROVENANCE.md": "2e757f3e95ab35d50bfced3af34fa951c55b286e7e3e77bb18f9ee141268ed6e",
     "README.md": "dc99e98d8aa3c38213cc652f738b8db69ce2674de05e6534efb3ec144c7f67f4",
     "crates/sophia-9p-client/Cargo.toml": "a6565cbeadc863b769c808119e590a6d946f309fb02d25c4e100f38fd3a382cc",
     "crates/sophia-9p-client/src/client.rs": "3d8c532cd950d9deaac3e55c47417f18803e4a179ad31b2cc941ab332331ef96",
@@ -136,7 +136,7 @@
     "crates/sophia-shell-protocol/tests/support/shell_files_kdl/mod.rs": "248ee86561bad7d1e572b563ac53493c50573db870e85487f5d9d2fb9bc2d96f",
     "crates/sophia-shell-protocol/tests/upload_chunk_layout.rs": "cc38fb0ee1f81145fa3cf252cd22d1c497aacaa685034b91b3d62b8b204e030e",
     "rust-toolchain.toml": "4d0674575b116a100c7d0ad754308dc6dea178b4808c760afc43136db967c7a6",
-    "spec/SHA256SUMS": "03de1bd4b1801907023a3894226d93fbb7408b7a87234dca5469f288b925224e",
+    "spec/SHA256SUMS": "19c92ba8fac0ed5326be2e195c7e64b4dfdcd0d949247af66716154620c82106",
     "spec/golden/sophia-shell-catalog-actions.frames": "4753e32cb143d50a7a7cae04a61e6757a6ed29325ad904c4ad945b7fddb8160e",
     "spec/golden/sophia-shell-content-malformed.frames": "b0a32d98ec8e666fc6d29ce657423290dc487d280c9c7e763462abf8bb4e3186",
     "spec/golden/sophia-shell-content.frames": "eb925c42a16b5e2479bb52e7cc5d601554bded4a1f8dfe1f3d109e04c1675f34",
@@ -148,7 +148,7 @@
     "spec/sophia-9p-profile.md": "29d12ee3d95df35087aaeb52ad6e202b16e5e6255ae3c1495379cc0d6a75c8d3",
     "spec/sophia-shell-descriptors.md": "d3f54de5678cd3fddc168c6ebbf7572c152a0506a484dcf5ccc63d35fff52000",
     "spec/sophia-shell-files-v1.kdl": "fe56ea5fd77b7ef79e1a101cae2d3fdc38ca7055f9e654628ce31a44ac6dbe87",
-    "spec/sophia-shell-files.md": "b135a0a6258c6800c7910caa3c818d0732e14bf752159362a19dc3a90d655653",
+    "spec/sophia-shell-files.md": "3375f97a7e8253ba65e43da76d0be4bc1483315fafd822599e38118dfb0f8206",
     "spec/sophia-shell-v1.kdl": "1d4346b30f1ce40b7ad7a0ff04a3e9cd0f0b9c8489a463d070d52974648617e3",
     "spec/sophia-wm-files.md": "b1ff1286f7e7c7282e626302584f852b87c6770d1f9859fd03b0f94373ea7202"
   }

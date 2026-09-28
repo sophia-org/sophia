@@ -1,13 +1,13 @@
-tree 9df2ec04564d0e7e721302efdd0471e5d999a9f7
-parent 33e01b3d4102350dbc6c7918de22922e07ab8402
-author Mason Green <mason@greenm01.net> 1790596750 -0400
-committer Mason Green <mason@greenm01.net> 1790596750 -0400
+tree 98e0fc567196eaf0448b168b632575f8495f523a
+parent f6b177c7dbf457fddee50ca98bb50020d64a5262
+author Mason Green <mason@greenm01.net> 1790597944 -0400
+committer Mason Green <mason@greenm01.net> 1790597944 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarpWjgAKCRBXGEu2KoAA
- YisaAP4sx1b52rojRvnEKymQaUNg5O2Pow2AADCuAH/cv7zz0QEA2TSNpI+SR718
- nWxXXDSGbEOIHHUbjCkFh+/xT26E7gk=
- =v8qB
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarpbOQAKCRBXGEu2KoAA
+ YjySAQD2+mCifD+Lf0CEdpPUybq1Jdg3/O+R59leVk6mx4o7hgEAxxLv7EKucKAp
+ 3F91s/KOZvi0kYLocvkVZ6zyIbvkKgA=
+ =hUqD
  -----END PGP SIGNATURE-----
 
-Pin the accepted native descriptor file contract
+Refresh accepted shell contract bounds and migration notes

@@ -142,3 +142,10 @@ launcher hosts (`85158df80`) use the C SDK peer. Session startup is fixed to
 assertions retained. Narthex's thin C bindings at `c49dd92` pass local and
 protected host tests. These are deterministic and isolated development gates;
 no installed-desktop or physical GPU claim is added by this contract update.
+
+## Descriptor contract documentation correction
+
+`spec/sophia-shell-files.md` is refreshed from signed Sophia `086cd6e75ba4d12e30735de5b9aad7df9c687e18`.
+The role table now uses the accepted native descriptor sizes and feed bounds,
+and removes superseded client-migration observations. Wire layouts, library
+sources and tests are unchanged from the accepted-contract revision above.
