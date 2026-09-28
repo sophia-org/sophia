@@ -36,6 +36,7 @@ use crate::{ShellClientError, client_record};
 
 mod budget;
 mod connect;
+mod descriptor;
 mod drive;
 mod events;
 mod submission;
@@ -203,10 +204,13 @@ struct ObjectFetch {
 
 /// Snapshot feeds the file wire fetches, and each one's encoded cap
 /// (docs/sophia-shell-files.md, snapshot objects).
-const FEEDS: [(ShellFileKind, usize); 3] = [
+const FEEDS: [(ShellFileKind, usize); 6] = [
     (ShellFileKind::Outputs, SHELL_FILE_OUTPUTS_MAX_BYTES),
     (ShellFileKind::Catalog, SHELL_FILE_MAX_OBJECT_BYTES),
     (ShellFileKind::Indicators, SHELL_FILE_INDICATORS_MAX_BYTES),
+    (ShellFileKind::Descriptors, SHELL_FILE_DESCRIPTORS_MAX_BYTES),
+    (ShellFileKind::Tabs, SHELL_FILE_TABS_MAX_BYTES),
+    (ShellFileKind::Shortcuts, SHELL_FILE_SHORTCUTS_MAX_BYTES),
 ];
 
 fn feed_index(kind: ShellFileKind) -> Option<usize> {
@@ -222,6 +226,8 @@ pub(crate) struct FileWire {
     epoch: u64,
     /// The negotiated capabilities: which snapshot feeds may be announced.
     capabilities: u64,
+    /// Session's pre-admitted API role; bit 0 on a content bar is not enough.
+    descriptor: bool,
     root: Fid,
     events_fid: Fid,
     submit_fid: Fid,
@@ -241,7 +247,7 @@ pub(crate) struct FileWire {
     /// Per feed (`FEEDS` order): the ack bound an announcement not yet
     /// fetched imposes (its sequence minus one), kept at the earliest such
     /// announcement until the newest one is fetched and verified.
-    holds: [Option<u64>; 3],
+    holds: [Option<u64>; FEEDS.len()],
     /// Events handled so far; an `EAGAIN` retry waits for this to move.
     progress: u64,
     /// `poll_io` calls so far.
@@ -410,7 +416,30 @@ impl FileWire {
         }
         self.staged.clear();
         self.staged_begin = None;
+        if self.descriptor
+            && (matches!(
+                &outbound,
+                Outbound::CatalogCandidateGroup { .. } | Outbound::CatalogActionResponse { .. }
+            ) || (!matches!(
+                &outbound,
+                Outbound::Descriptor(_) | Outbound::IndicatorActivation(..)
+            ) && self.capabilities
+                & sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+                == 0))
+        {
+            return Err(ShellClientError::MissingCapability);
+        }
         match outbound {
+            Outbound::Descriptor(value) => {
+                let kind = shell_file_descriptor_kind(&value.record);
+                self.require_descriptor_kind(kind)?;
+                if shell_file_class(kind) != ShellFileClass::Candidate {
+                    return Err(ShellClientError::WrongDirection);
+                }
+                let header = self.next_header(kind);
+                let bytes = encode_shell_file_descriptor(header, &value)?;
+                Ok(self.stage_records(vec![bytes]))
+            }
             Outbound::Content(transaction, record) => self.encode_content(transaction, record),
             Outbound::ContentGroup(transaction, records) => {
                 let candidate = assemble_candidate(&records)?;
@@ -510,6 +539,13 @@ impl FileWire {
         transaction: TransactionId,
         activation: ShellIndicatorActivation,
     ) -> Result<Vec<u8>, ShellClientError> {
+        if self.descriptor
+            && self.capabilities
+                & sophia_shell_protocol::SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION
+                == 0
+        {
+            return Err(ShellClientError::MissingCapability);
+        }
         let header = self.next_header(ShellFileKind::IndicatorActivate);
         Ok(encode_shell_file_indicator_activate(
             header,

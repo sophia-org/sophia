@@ -1,8 +1,6 @@
 //! Whole typed units carried between a shell and its session, independent of
-//! any one transport. Exactly one implementation exists today (the
-//! Unix-socket wire in `socket`, the only module that may know a frame
-//! exists); a later native 9P file wire adds a second `Wire` variant that
-//! encodes and assembles the same units differently.
+//! any one transport. The native file wire owns 9P custody and whole-object
+//! reads. The retiring socket adapter alone knows its fragment framing.
 
 use std::collections::VecDeque;
 
@@ -21,6 +19,7 @@ use crate::{ShellClientError, outbox::ClientOutbox};
 /// One whole client-to-session unit. Named for what it means, never for how
 /// many frames a wire needs to carry it.
 pub(crate) enum Outbound {
+    Descriptor(sophia_shell_protocol::shell_files::ShellFileDescriptorRecord),
     /// One content record.
     Content(TransactionId, ShellContentRecord),
     /// A complete bounded group of content records owned atomically (for
@@ -57,6 +56,9 @@ impl Outbound {
     /// than bulk capacity, matching the r5 outbox split enforced today.
     pub(crate) fn is_control(&self) -> bool {
         match self {
+            Outbound::Descriptor(value) => matches!(value.record,
+                sophia_shell_protocol::shell_files::ShellDescriptorRecord::DescriptorActivationAck(_)
+                | sophia_shell_protocol::shell_files::ShellDescriptorRecord::LauncherActivationAck(_)),
             Outbound::Content(_, record) => matches!(record, ShellContentRecord::ActionAck(_)),
             Outbound::ContentGroup(..)
             | Outbound::IndicatorActivation(..)
@@ -70,6 +72,11 @@ impl Outbound {
 /// Begin/.../End, catalog Begin/Entry/Identity/End) is assembled inside the
 /// owning wire and only ever surfaces here as one complete value.
 pub(crate) enum Inbound {
+    Descriptor(sophia_shell_protocol::shell_files::ShellFileDescriptorRecord),
+    ApplicationCatalog(
+        TransactionId,
+        sophia_shell_protocol::ShellApplicationCatalog,
+    ),
     Content(TransactionId, ShellContentRecord),
     Indicators(TransactionId, ShellIndicatorSnapshot),
     IndicatorOutcome(TransactionId, ShellIndicatorActivationOutcome),

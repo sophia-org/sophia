@@ -1,13 +1,13 @@
-tree 6dce29de308980b462840ad6e98dd44a141396df
-parent c1323401b7e336606408499b13097d1270a2319d
-author Mason Green <mason@greenm01.net> 1790574491 -0400
-committer Mason Green <mason@greenm01.net> 1790574491 -0400
+tree 0f0a236a2997f13a48685e3bc1c85a2f956e1cc4
+parent 2a793dcdb5bd865a83212d0e4333dc44e3a97b05
+author Mason Green <mason@greenm01.net> 1790577540 -0400
+committer Mason Green <mason@greenm01.net> 1790577540 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarn/mwAKCRBXGEu2KoAA
- YnlpAQDdIeUQWM2/zkxsbKHYDsyKc90LSBcKBpadL++wdllhwgEAt96ZELSAImI+
- zF09uNOTP5v6L7FXOm1JKi8WIyCC9gk=
- =hxWP
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaroLhAAKCRBXGEu2KoAA
+ YlNGAP0bsVE9FtuS1/Wcrr1FpkR75vqnmblNGXCWRhqAK7pv0gD9FzD3anOp9eHn
+ LWnAX+Uz7iM9ifJ0zkSaEB715tI0IQg=
+ =1pnr
  -----END PGP SIGNATURE-----
 
-Share passive descriptor family records and structural validation
+Add capability-bound descriptor file client and custody controls

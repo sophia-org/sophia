@@ -1,0 +1,271 @@
+// DRAFT: descriptor-family amendment; not yet an implemented export.
+// Offsets are body-relative; max-bytes includes the 32-byte file header.
+    object "Descriptors" kind=5 max-bytes=4096
+    object "Tabs" kind=6 max-bytes=1048576
+    object "Shortcuts" kind=7 max-bytes=131072
+    event "DescriptorOutcome" kind=46 max-bytes=68
+    event "DescriptorActivation" kind=47 max-bytes=116
+    event "ReferenceRequest" kind=48 max-bytes=92
+    event "ReferenceOutcome" kind=49 max-bytes=88
+    event "LauncherRequest" kind=50 max-bytes=352
+    event "LauncherOutcome" kind=51 max-bytes=76
+    event "LauncherActivation" kind=52 max-bytes=92
+    event "LaunchOutcome" kind=53 max-bytes=92
+    candidate "DescriptorCandidate" kind=273 max-bytes=276
+    candidate "DescriptorActivationAck" kind=274 max-bytes=60
+    candidate "TabsCandidate" kind=275 max-bytes=8260
+    candidate "ReferenceCandidate" kind=276 max-bytes=52488
+    candidate "LauncherCandidate" kind=277 max-bytes=168
+    candidate "LauncherActivationAck" kind=278 max-bytes=92
+    body-prefix "Descriptors" size=64 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "snapshot_generation" type="u64" offset=16 nonzero=#true
+        field "output_id" type="u64" offset=24 nonzero=#true
+        field "output_generation" type="u64" offset=32 nonzero=#true
+        field "broker_epoch" type="u64" offset=40 nonzero=#true
+        field "broker_revocation_epoch" type="u64" offset=48 nonzero=#true
+        field "descriptor_count" type="u16" offset=56 max=16
+        field "reserved" type="u16" offset=58 value=0
+        field "reserved_tail" type="u32" offset=60 value=0
+    }
+    row "DescriptorEntry" size=196 {
+        field "slot" type="u16" offset=0 min=1
+        field "trust_level" type="u16" offset=2 max=3
+        field "attention" type="u16" offset=4 max=2
+        field "label_present" type="u16" offset=6 min=0 max=1
+        field "label_redacted" type="u16" offset=8 min=0 max=1
+        field "reserved" type="u16" offset=10 value=0
+        field "generation" type="u64" offset=12 nonzero=#true
+        field "action_token" type="u64" offset=20 nonzero=#true
+        field "action_issuer_epoch" type="u64" offset=28 nonzero=#true
+        field "action_issuer_revocation_epoch" type="u64" offset=36 nonzero=#true
+        field "action_recipient_epoch" type="u64" offset=44 nonzero=#true
+        field "action_target_slot" type="u16" offset=52 min=1
+        field "action_reserved" type="u16" offset=54 value=0
+        field "action_target_generation" type="u64" offset=56 nonzero=#true
+        field "label" type="text" offset=64 size=128
+    }
+    body-prefix "Tabs" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "generation" type="u64" offset=16 nonzero=#true
+        field "group_count" type="u16" offset=24 max=1024
+        field "entry_count" type="u16" offset=26 max=2048
+        field "reserved" type="u32" offset=28 value=0
+    }
+    row "TabGroup" size=24 {
+        field "group_slot" type="u64" offset=0 nonzero=#true
+        field "output_id" type="u64" offset=8 nonzero=#true
+        field "selected_slot" type="u16" offset=16
+        field "focused" type="u16" offset=18 min=0 max=1
+        field "entry_count" type="u16" offset=20 max=2048
+        field "reserved" type="u16" offset=22 value=0
+    }
+    body-prefix "Shortcuts" size=32 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "generation" type="u64" offset=16 nonzero=#true
+        field "entry_count" type="u16" offset=24 max=256
+        field "reserved" type="u16" offset=26 value=0
+        field "reserved_tail" type="u32" offset=28 value=0
+    }
+    row "ShortcutEntry" size=408 {
+        field "slot" type="u16" offset=0 min=1
+        field "label_present" type="u16" offset=2 min=0 max=1
+        field "group_present" type="u16" offset=4 min=0 max=1
+        field "reserved" type="u16" offset=6 value=0
+        field "chord" type="text" offset=8 size=64
+        field "action" type="text" offset=76 size=128
+        field "label" type="text" offset=208 size=128
+        field "group" type="text" offset=340 size=64
+    }
+    body "DescriptorOutcome" size=36 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "candidate_generation" type="u64" offset=16 nonzero=#true
+        field "presentation_epoch" type="u64" offset=24
+        field "kind" type="u16" offset=32 min=1 max=4
+        field "reserved" type="u16" offset=34 value=0
+    }
+    body "DescriptorActivation" size=84 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "candidate_generation" type="u64" offset=16 nonzero=#true
+        field "presentation_epoch" type="u64" offset=24 nonzero=#true
+        field "activation" type="u64" offset=32 nonzero=#true
+        field "action_token" type="u64" offset=40 nonzero=#true
+        field "action_issuer_epoch" type="u64" offset=48 nonzero=#true
+        field "action_issuer_revocation_epoch" type="u64" offset=56 nonzero=#true
+        field "action_recipient_epoch" type="u64" offset=64 nonzero=#true
+        field "action_target_slot" type="u16" offset=72 min=1
+        field "action_reserved" type="u16" offset=74 value=0
+        field "action_target_generation" type="u64" offset=76 nonzero=#true
+    }
+    body "ReferenceRequest" size=60 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48
+        field "operation" type="u16" offset=56 max=4
+        field "reserved" type="u16" offset=58 value=0
+    }
+    body "ReferenceOutcome" size=56 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "candidate_generation" type="u64" offset=32 nonzero=#true
+        field "presentation_epoch" type="u64" offset=40
+        field "page" type="u16" offset=48
+        field "pages" type="u16" offset=50 min=1
+        field "kind" type="u16" offset=52 min=1 max=4
+        field "reserved" type="u16" offset=54 value=0
+    }
+    body "LauncherRequest" size=320 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "output_generation" type="u64" offset=40 nonzero=#true
+        field "presentation_epoch" type="u64" offset=48
+        field "operation" type="u16" offset=56 max=4
+        field "reserved" type="u16" offset=58 value=0
+        field "query" type="text" offset=60 size=256
+    }
+    body "LauncherOutcome" size=44 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "request_generation" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "presentation_epoch" type="u64" offset=32
+        field "kind" type="u16" offset=40 min=1 max=4
+        field "reserved" type="u16" offset=42 value=0
+    }
+    body "LauncherActivation" size=60 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "candidate_generation" type="u64" offset=32 nonzero=#true
+        field "presentation_epoch" type="u64" offset=40 nonzero=#true
+        field "activation" type="u64" offset=48 nonzero=#true
+        field "slot" type="u16" offset=56 min=1 max=4096
+        field "reserved" type="u16" offset=58 value=0
+    }
+    body "LaunchOutcome" size=60 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "candidate_generation" type="u64" offset=32 nonzero=#true
+        field "presentation_epoch" type="u64" offset=40 nonzero=#true
+        field "activation" type="u64" offset=48 nonzero=#true
+        field "slot" type="u16" offset=56 min=1 max=4096
+        field "status" type="u16" offset=58 min=1 max=3
+    }
+    body-prefix "DescriptorCandidate" size=52 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "snapshot_generation" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "output_id" type="u64" offset=32 nonzero=#true
+        field "visible" type="u16" offset=40 min=0 max=1
+        field "reservation_edge" type="u16" offset=42 max=4
+        field "reservation_thickness" type="u16" offset=44 max=512
+        field "selected_slot" type="u16" offset=46
+        field "entry_count" type="u16" offset=48 max=16
+        field "reserved" type="u16" offset=50 value=0
+    }
+    row "DescriptorCandidateEntry" size=12 {
+        field "slot" type="u16" offset=0 min=1
+        field "reserved" type="u16" offset=2 value=0
+        field "generation" type="u64" offset=4 nonzero=#true
+    }
+    body "DescriptorActivationAck" size=28 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "activation" type="u64" offset=16 nonzero=#true
+        field "disposition" type="u16" offset=24 min=1 max=2
+        field "reserved" type="u16" offset=26 value=0
+    }
+    body-prefix "TabsCandidate" size=36 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "snapshot_generation" type="u64" offset=16 nonzero=#true
+        field "candidate_generation" type="u64" offset=24 nonzero=#true
+        field "group_count" type="u16" offset=32 max=1024
+        field "reserved" type="u16" offset=34 value=0
+    }
+    row "TabGroupOrder" size=8 {
+        field "group_slot" type="u64" offset=0 nonzero=#true
+    }
+    body-prefix "ReferenceCandidate" size=232 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "candidate_generation" type="u64" offset=32 nonzero=#true
+        field "output_id" type="u64" offset=40 nonzero=#true
+        field "visible" type="u16" offset=48 min=0 max=1
+        field "page" type="u16" offset=50
+        field "entry_count" type="u16" offset=52 max=256
+        field "reserved" type="u16" offset=54 value=0
+        field "body_size" type="u16" offset=56 min=8 max=32
+        field "title_size" type="u16" offset=58 min=8 max=48
+        field "padding" type="u16" offset=60 max=64
+        field "row_gap" type="u16" offset=62 max=32
+        field "key_gap" type="u16" offset=64 max=64
+        field "column_gap" type="u16" offset=66 max=64
+        field "border" type="u16" offset=68 max=16
+        field "margin" type="u16" offset=70 max=128
+        field "columns" type="u16" offset=72 min=1 max=4
+        field "reserved_style" type="u16" offset=74 value=0
+        field "background_argb" type="u32" offset=76
+        field "border_argb" type="u32" offset=80
+        field "key_text_argb" type="u32" offset=84
+        field "label_text_argb" type="u32" offset=88
+        field "key_background_argb" type="u32" offset=92
+        field "title_text_argb" type="u32" offset=96
+        field "title" type="text" offset=100 size=128
+    }
+    row "ReferenceEntry" size=204 {
+        field "slot" type="u16" offset=0 min=1
+        field "reserved" type="u16" offset=2 value=0
+        field "key" type="text" offset=4 size=64
+        field "label" type="text" offset=72 size=128
+    }
+    body-prefix "LauncherCandidate" size=72 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "candidate_generation" type="u64" offset=32 nonzero=#true
+        field "output_id" type="u64" offset=40 nonzero=#true
+        field "visible" type="u16" offset=48 min=0 max=1
+        field "selected" type="u16" offset=50 max=4096
+        field "entry_count" type="u16" offset=52 max=32
+        field "font_size" type="u16" offset=54 min=10 max=32
+        field "background_argb" type="u32" offset=56
+        field "foreground_argb" type="u32" offset=60
+        field "selection_background_argb" type="u32" offset=64
+        field "selection_foreground_argb" type="u32" offset=68
+    }
+    row "LauncherCandidateRow" size=2 {
+        field "slot" type="u16" offset=0 min=1 max=4096
+    }
+    body "LauncherActivationAck" size=60 {
+        field "transaction" type="u64" offset=0 nonzero=#true
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "catalog_generation" type="u64" offset=16 nonzero=#true
+        field "request_generation" type="u64" offset=24 nonzero=#true
+        field "candidate_generation" type="u64" offset=32 nonzero=#true
+        field "presentation_epoch" type="u64" offset=40 nonzero=#true
+        field "activation" type="u64" offset=48 nonzero=#true
+        field "slot" type="u16" offset=56 min=1 max=4096
+        field "consumed" type="u16" offset=58 min=0 max=1
+    }

@@ -104,3 +104,67 @@ pub(super) fn indicators_bytes(snapshot: &ShellIndicatorSnapshot) -> usize {
 // unexpectedly fails the build here.
 const _: () = assert!(CATALOG_BUDGET < 4 * 1024 * 1024);
 const _: () = assert!(INDICATORS_BUDGET < 64 * 1024);
+
+/// Descriptor object allocations are count-bounded before decoding. These
+/// charges include reported vector/string capacities, but not allocator
+/// bookkeeping. One undelivered object per feed is retained by the caller.
+pub(super) fn check_descriptor(
+    value: &sophia_shell_protocol::shell_files::ShellDescriptorRecord,
+) -> Result<(), crate::ShellClientError> {
+    use sophia_shell_protocol::shell_files::ShellDescriptorRecord;
+    use sophia_shell_protocol::{
+        MAX_CHROME_LABEL_LEN, SOPHIA_SHELL_MAX_DESCRIPTORS, SOPHIA_SHELL_MAX_SHORTCUTS,
+        SOPHIA_SHELL_MAX_TAB_ENTRIES, SOPHIA_SHELL_MAX_TAB_GROUPS, ShellShortcut,
+        ShellShortcutCatalog, ShellTabGroup, ShellTabSnapshot, ShellV1Descriptor,
+        ShellV1DescriptorSnapshot,
+    };
+    fn entries_bytes(entries: &Vec<ShellV1Descriptor>) -> usize {
+        entries.capacity() * size_of::<ShellV1Descriptor>()
+            + entries
+                .iter()
+                .map(|v| v.label.as_ref().map_or(0, |label| label.text.capacity()))
+                .sum::<usize>()
+    }
+    let (used, max) = match value {
+        ShellDescriptorRecord::Descriptors(v) => (
+            size_of::<ShellV1DescriptorSnapshot>() + entries_bytes(&v.descriptors),
+            size_of::<ShellV1DescriptorSnapshot>()
+                + SOPHIA_SHELL_MAX_DESCRIPTORS
+                    * (size_of::<ShellV1Descriptor>() + MAX_CHROME_LABEL_LEN),
+        ),
+        ShellDescriptorRecord::Tabs(v) => (
+            size_of::<ShellTabSnapshot>()
+                + v.groups.capacity() * size_of::<ShellTabGroup>()
+                + v.groups
+                    .iter()
+                    .map(|g| entries_bytes(&g.entries))
+                    .sum::<usize>(),
+            size_of::<ShellTabSnapshot>()
+                + SOPHIA_SHELL_MAX_TAB_GROUPS * size_of::<ShellTabGroup>()
+                + SOPHIA_SHELL_MAX_TAB_ENTRIES
+                    * (size_of::<ShellV1Descriptor>() + MAX_CHROME_LABEL_LEN),
+        ),
+        ShellDescriptorRecord::Shortcuts(v) => (
+            size_of::<ShellShortcutCatalog>()
+                + v.entries.capacity() * size_of::<ShellShortcut>()
+                + v.entries
+                    .iter()
+                    .map(|e| {
+                        e.chord.capacity()
+                            + e.action.capacity()
+                            + e.label.as_ref().map_or(0, String::capacity)
+                            + e.group.as_ref().map_or(0, String::capacity)
+                    })
+                    .sum::<usize>(),
+            size_of::<ShellShortcutCatalog>()
+                + SOPHIA_SHELL_MAX_SHORTCUTS * (size_of::<ShellShortcut>() + 64 + 128 + 128 + 64),
+        ),
+        _ => return Err(crate::ShellClientError::Protocol("descriptor object shape")),
+    };
+    if used > max {
+        return Err(crate::ShellClientError::Protocol(
+            "decoded descriptor object over its budget",
+        ));
+    }
+    Ok(())
+}

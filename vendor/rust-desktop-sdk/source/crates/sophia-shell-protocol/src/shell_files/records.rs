@@ -20,6 +20,10 @@ pub const SHELL_FILE_MAX_UPLOAD_SLOTS: u16 = 4;
 /// One complete `Candidate` record, header included: the content limits'
 /// `max_candidate_bytes` prototype cap (docs/sophia-shell-files.md).
 pub const SHELL_FILE_MAX_CANDIDATE_BYTES: usize = 8192;
+/// Descriptor-role objects have separate retained-snapshot bounds.
+pub const SHELL_FILE_DESCRIPTORS_MAX_BYTES: usize = 4096;
+pub const SHELL_FILE_TABS_MAX_BYTES: usize = 1_048_576;
+pub const SHELL_FILE_SHORTCUTS_MAX_BYTES: usize = 131_072;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]
@@ -28,6 +32,9 @@ pub enum ShellFileKind {
     Outputs = 2,
     Catalog = 3,
     Indicators = 4,
+    Descriptors = 5,
+    Tabs = 6,
+    Shortcuts = 7,
     Negotiated = 16,
     Refused = 17,
     Submitted = 18,
@@ -46,6 +53,14 @@ pub enum ShellFileKind {
     NativeClosed = 43,
     CatalogActivationOutcome = 44,
     IndicatorActivationOutcome = 45,
+    DescriptorOutcome = 46,
+    DescriptorActivation = 47,
+    ReferenceRequest = 48,
+    ReferenceOutcome = 49,
+    LauncherRequest = 50,
+    LauncherOutcome = 51,
+    LauncherActivation = 52,
+    LaunchOutcome = 53,
     Negotiate = 256,
     AllocationRequest = 257,
     ResourceBegin = 258,
@@ -63,6 +78,12 @@ pub enum ShellFileKind {
     CatalogCandidate = 270,
     CatalogActivate = 271,
     IndicatorActivate = 272,
+    DescriptorCandidate = 273,
+    DescriptorActivationAck = 274,
+    TabsCandidate = 275,
+    ReferenceCandidate = 276,
+    LauncherCandidate = 277,
+    LauncherActivationAck = 278,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

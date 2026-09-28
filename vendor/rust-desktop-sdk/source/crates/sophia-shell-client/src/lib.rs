@@ -11,7 +11,9 @@ mod custody;
 pub use custody::{Admission, Custody, Ticket};
 mod catalog;
 pub use catalog::{CatalogInbox, CatalogObservation};
+mod descriptor;
 mod files;
+pub use descriptor::DescriptorObservation;
 mod lifecycle;
 mod outbox;
 pub use lifecycle::*;
@@ -562,9 +564,12 @@ pub const SHELL_FILES_API_LINE_MAX_BYTES: u32 = 256;
 /// `sophia-shell-files version=<SHELL_FILE_API_VERSION> role=<role>
 /// epoch=<connection epoch> fd_transfer=none`, terminated by exactly one
 /// trailing newline and nothing else. Returns the connection epoch every
-/// record header of this attach must carry -- the only field the file wire
-/// needs from this line.
+/// record header of this attach must carry.
 pub fn parse_shell_files_api_line(bytes: &[u8]) -> Result<u64, ShellClientError> {
+    parse_files_api(bytes).map(|(epoch, _)| epoch)
+}
+
+fn parse_files_api(bytes: &[u8]) -> Result<(u64, &str), ShellClientError> {
     if bytes.len() >= SHELL_FILES_API_LINE_MAX_BYTES as usize {
         return Err(ShellClientError::Protocol("api line oversize"));
     }
@@ -585,9 +590,12 @@ pub fn parse_shell_files_api_line(bytes: &[u8]) -> Result<u64, ShellClientError>
     if version != sophia_shell_protocol::shell_files::SHELL_FILE_API_VERSION {
         return Err(ShellClientError::Protocol("api line version mismatch"));
     }
-    fields
+    let role = fields
         .next()
         .and_then(|field| field.strip_prefix("role="))
+        .filter(|role| {
+            !role.is_empty() && role.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        })
         .ok_or(ShellClientError::Protocol("api line missing role"))?;
     let epoch: u64 = fields
         .next()
@@ -603,5 +611,5 @@ pub fn parse_shell_files_api_line(bytes: &[u8]) -> Result<u64, ShellClientError>
     if fields.next().is_some() {
         return Err(ShellClientError::Protocol("api line has extra fields"));
     }
-    Ok(epoch)
+    Ok((epoch, role))
 }

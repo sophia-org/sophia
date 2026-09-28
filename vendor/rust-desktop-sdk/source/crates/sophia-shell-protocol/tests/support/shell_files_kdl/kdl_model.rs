@@ -142,6 +142,13 @@ fn block_size(node: &KdlNode, keyword: &str, name: &str) -> usize {
 pub fn parse_kdl() -> Kdl {
     let doc = parse_document();
     let children = protocol_children(&doc);
+    // This branch implements the proposed descriptor codecs before enabling
+    // their client role. Keep the unchanged published contract and the exact
+    // proposal separate until the production/independent-peer gates pass.
+    let descriptor_proposal: KdlDocument =
+        include_str!("../../../../../spec/descriptor-files-proposal.kdl")
+            .parse()
+            .expect("descriptor proposal KDL");
     let mut bodies = Vec::new();
     let mut prefixes = Vec::new();
     let mut rows = Vec::new();
@@ -149,7 +156,7 @@ pub fn parse_kdl() -> Kdl {
     let mut header = None;
     let mut submit = None;
     let mut ack = None;
-    for node in children.nodes() {
+    for node in children.nodes().iter().chain(descriptor_proposal.nodes()) {
         let keyword = node.name().value();
         match keyword {
             "body" | "body-prefix" | "row" => {
@@ -223,7 +230,7 @@ pub fn find_block<'a>(blocks: &'a [Block], name: &str) -> &'a Block {
         .unwrap_or_else(|| panic!("no `{}` block named `{name}`", blocks[0].keyword))
 }
 
-pub fn all_shell_file_kinds() -> [ShellFileKind; 39] {
+pub fn all_shell_file_kinds() -> [ShellFileKind; 56] {
     [
         ShellFileKind::Limits,
         ShellFileKind::Outputs,
@@ -264,6 +271,23 @@ pub fn all_shell_file_kinds() -> [ShellFileKind; 39] {
         ShellFileKind::CatalogCandidate,
         ShellFileKind::CatalogActivate,
         ShellFileKind::IndicatorActivate,
+        ShellFileKind::Descriptors,
+        ShellFileKind::Tabs,
+        ShellFileKind::Shortcuts,
+        ShellFileKind::DescriptorOutcome,
+        ShellFileKind::DescriptorActivation,
+        ShellFileKind::ReferenceRequest,
+        ShellFileKind::ReferenceOutcome,
+        ShellFileKind::LauncherRequest,
+        ShellFileKind::LauncherOutcome,
+        ShellFileKind::LauncherActivation,
+        ShellFileKind::LaunchOutcome,
+        ShellFileKind::DescriptorCandidate,
+        ShellFileKind::DescriptorActivationAck,
+        ShellFileKind::TabsCandidate,
+        ShellFileKind::ReferenceCandidate,
+        ShellFileKind::LauncherCandidate,
+        ShellFileKind::LauncherActivationAck,
     ]
 }
 
@@ -311,6 +335,23 @@ pub fn kind_name(kind: ShellFileKind) -> &'static str {
         ShellFileKind::CatalogCandidate => "CatalogCandidate",
         ShellFileKind::CatalogActivate => "CatalogActivate",
         ShellFileKind::IndicatorActivate => "IndicatorActivate",
+        ShellFileKind::Descriptors => "Descriptors",
+        ShellFileKind::Tabs => "Tabs",
+        ShellFileKind::Shortcuts => "Shortcuts",
+        ShellFileKind::DescriptorOutcome => "DescriptorOutcome",
+        ShellFileKind::DescriptorActivation => "DescriptorActivation",
+        ShellFileKind::ReferenceRequest => "ReferenceRequest",
+        ShellFileKind::ReferenceOutcome => "ReferenceOutcome",
+        ShellFileKind::LauncherRequest => "LauncherRequest",
+        ShellFileKind::LauncherOutcome => "LauncherOutcome",
+        ShellFileKind::LauncherActivation => "LauncherActivation",
+        ShellFileKind::LaunchOutcome => "LaunchOutcome",
+        ShellFileKind::DescriptorCandidate => "DescriptorCandidate",
+        ShellFileKind::DescriptorActivationAck => "DescriptorActivationAck",
+        ShellFileKind::TabsCandidate => "TabsCandidate",
+        ShellFileKind::ReferenceCandidate => "ReferenceCandidate",
+        ShellFileKind::LauncherCandidate => "LauncherCandidate",
+        ShellFileKind::LauncherActivationAck => "LauncherActivationAck",
     }
 }
 

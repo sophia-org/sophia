@@ -150,7 +150,8 @@ impl FileWire {
         // draining the pipeline, well after `connect` returns; the built
         // `FileWire` must already know to treat them as forgettable.
         let mut pending_forgettable = vec![pipeline.clunk(api_fid)?];
-        let connection_epoch = crate::parse_shell_files_api_line(&api_line)?;
+        let (connection_epoch, role) = crate::parse_files_api(&api_line)?;
+        let descriptor = role == "descriptor";
 
         let events_fid = open_fixed(&mut pipeline, root, b"events", O_RDONLY, deadline)?;
         let submit_fid = open_fixed(&mut pipeline, root, b"submit", O_WRONLY, deadline)?;
@@ -190,6 +191,8 @@ impl FileWire {
 
         let mut read_offset = 0u64;
         let mut buffer: Vec<u8> = Vec::new();
+        let mut handshake_sequence = 0;
+        let mut submitted_seen = false;
         let (outcome, last_acked) = 'outer: loop {
             let tag = pipeline.read(events_fid, read_offset, u32::MAX)?;
             let data = match wait_ok(&mut pipeline, tag, deadline)? {
@@ -203,25 +206,41 @@ impl FileWire {
                     break;
                 }
                 let size = u32::from_le_bytes(buffer[..4].try_into().unwrap()) as usize;
-                if size < 4 || buffer.len() < size {
+                if !(SHELL_FILE_HEADER_BYTES..=SHELL_FILE_MAX_TRANSACTION_BYTES).contains(&size) {
+                    return Err(ShellClientError::Protocol("handshake record length"));
+                }
+                if buffer.len() < size {
                     break;
                 }
                 let record: Vec<u8> = buffer.drain(..size).collect();
                 let parsed = decode_shell_file_record(&record, ShellFileClass::Event)?;
                 let sequence = parsed.header.sequence;
+                if parsed.header.connection_epoch != connection_epoch
+                    || sequence <= handshake_sequence
+                {
+                    return Err(ShellClientError::Protocol("handshake event identity"));
+                }
+                handshake_sequence = sequence;
                 match parsed.header.kind {
                     ShellFileKind::Submitted => {
                         let submitted = decode_shell_file_submitted(&record)?;
-                        if submitted.submission_id != submission_id
+                        if submitted_seen
+                            || submitted.submission_id != submission_id
                             || submitted.candidate_kind != ShellFileKind::Negotiate
                         {
                             return Err(ShellClientError::Protocol(
                                 "unexpected Submitted before negotiation",
                             ));
                         }
+                        submitted_seen = true;
                         ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)?;
                     }
                     ShellFileKind::Negotiated => {
+                        if !submitted_seen {
+                            return Err(ShellClientError::Protocol(
+                                "Negotiated before bootstrap custody",
+                            ));
+                        }
                         let negotiated = decode_shell_file_negotiated(&record)?;
                         if let Err(error) =
                             ack_now(&mut pipeline, ack_fid, connection_epoch, sequence, deadline)
@@ -263,6 +282,9 @@ impl FileWire {
         if welcome.capabilities & options.required_capabilities != options.required_capabilities {
             return Err(ShellClientError::MissingCapability);
         }
+        if descriptor {
+            super::descriptor::validate_negotiated(options, &negotiated)?;
+        }
 
         let mut inbox = VecDeque::new();
         let mut upload_slots = 0u8;
@@ -285,7 +307,21 @@ impl FileWire {
                 deadline,
             )?;
             pending_forgettable.push(pipeline.clunk(fid)?);
+            if decode_shell_file_record(&data, ShellFileClass::Object)?
+                .header
+                .connection_epoch
+                != connection_epoch
+            {
+                return Err(ShellClientError::Protocol(
+                    "Limits from another connection epoch",
+                ));
+            }
             let limits: ContentLimits = decode_shell_file_limits(&data)?;
+            if limits.grant.connection_epoch != connection_epoch {
+                return Err(ShellClientError::Protocol(
+                    "Limits grant from another connection epoch",
+                ));
+            }
             upload_slots = limits
                 .max_open_transfers
                 .min(u32::from(SHELL_FILE_MAX_UPLOAD_SLOTS)) as u8;
@@ -299,6 +335,7 @@ impl FileWire {
             pipeline,
             epoch: connection_epoch,
             capabilities: welcome.capabilities,
+            descriptor,
             root,
             events_fid,
             submit_fid,
@@ -312,7 +349,7 @@ impl FileWire {
             acked: last_acked,
             ack_tag: None,
             object_fetch: None,
-            holds: [None; 3],
+            holds: [None; super::FEEDS.len()],
             progress: 0,
             pass: 0,
             service_pending: true,

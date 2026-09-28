@@ -16,7 +16,8 @@ use sophia_9p_client::pipeline::Reply;
 use sophia_9p_records::{Errno, Tag};
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::{
-    SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE, SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG,
+    SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG, SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
+    SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION, SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG,
     SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS, ShellCatalogActionRecord, ShellContentRecord,
     TransactionId,
 };
@@ -120,9 +121,18 @@ impl FileWire {
 
     /// Whether the negotiated capabilities disclose `feed` at all.
     fn feed_disclosed(&self, feed: ShellFileKind) -> bool {
+        if matches!(
+            feed,
+            ShellFileKind::Descriptors | ShellFileKind::Tabs | ShellFileKind::Shortcuts
+        ) {
+            return self.require_descriptor_kind(feed).is_ok();
+        }
         let needed = match feed {
             ShellFileKind::Outputs => SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
             // The file wire's catalog object is the r8 persistent catalog.
+            ShellFileKind::Catalog if self.descriptor => {
+                SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+            }
             ShellFileKind::Catalog => SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG,
             ShellFileKind::Indicators => SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS,
             _ => return false,
@@ -157,6 +167,26 @@ impl FileWire {
             return Err(ShellClientError::Protocol(
                 "event from another connection epoch",
             ));
+        }
+        if self.descriptor {
+            if matches!(
+                header.kind,
+                ShellFileKind::AllocationResult
+                    | ShellFileKind::ResourceStatus
+                    | ShellFileKind::ResourceReleased
+                    | ShellFileKind::CandidateOutcome
+                    | ShellFileKind::FramePermit
+                    | ShellFileKind::Action
+            ) && self.capabilities & SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE == 0
+            {
+                return Err(ShellClientError::MissingCapability);
+            }
+            if header.kind == ShellFileKind::CatalogActivationOutcome
+                || (header.kind == ShellFileKind::IndicatorActivationOutcome
+                    && self.capabilities & SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION == 0)
+            {
+                return Err(ShellClientError::MissingCapability);
+            }
         }
         let event = match header.kind {
             ShellFileKind::Submitted => {
@@ -209,6 +239,12 @@ impl FileWire {
             ShellFileKind::IndicatorActivationOutcome => {
                 let value = decode_shell_file_indicator_activation_outcome(record)?;
                 Event::Inbound(Inbound::IndicatorOutcome(value.transaction, value.outcome))
+            }
+            kind if shell_file_descriptor_max_bytes(kind).is_some() => {
+                self.require_descriptor_kind(kind)?;
+                Event::Inbound(Inbound::Descriptor(decode_shell_file_descriptor(
+                    record, kind,
+                )?))
             }
             _ => return Err(ShellClientError::Protocol("unexpected event kind")),
         };
@@ -291,6 +327,9 @@ impl FileWire {
             ShellFileKind::Outputs => b"outputs",
             ShellFileKind::Catalog => b"catalog",
             ShellFileKind::Indicators => b"indicators",
+            ShellFileKind::Descriptors => b"descriptors",
+            ShellFileKind::Tabs => b"tabs",
+            ShellFileKind::Shortcuts => b"shortcuts",
             _ => return Err(ShellClientError::Protocol("announced object kind")),
         };
         fetch.buf.clear();
@@ -425,17 +464,18 @@ impl FileWire {
         // the peak is one decoded object, not two.
         match fetch.feed {
             ShellFileKind::Catalog => {
-                inbox.retain(|queued| !matches!(queued, Inbound::Catalog(..)))
+                inbox.retain(|queued| !matches!(queued, Inbound::Catalog(..) | Inbound::ApplicationCatalog(..)))
             }
             ShellFileKind::Indicators => {
                 inbox.retain(|queued| !matches!(queued, Inbound::Indicators(..)))
             }
-            _ => inbox.retain(|queued| {
+            ShellFileKind::Outputs => inbox.retain(|queued| {
                 !matches!(
                     queued,
                     Inbound::Content(_, ShellContentRecord::OutputFacts(_))
                 )
             }),
+            kind => inbox.retain(|queued| !matches!(queued, Inbound::Descriptor(value) if shell_file_descriptor_kind(&value.record) == kind)),
         }
         let header = decode_shell_file_record(&fetch.buf, ShellFileClass::Object)?.header;
         if header.kind != fetch.feed || header.connection_epoch != self.epoch {
@@ -456,15 +496,23 @@ impl FileWire {
             }
             ShellFileKind::Catalog => {
                 let value = decode_shell_file_catalog(&fetch.buf)?;
+                if value.catalog.catalog.connection_epoch != self.epoch
+                    || (self.descriptor && !value.catalog.identities.is_empty())
+                {
+                    return Err(ShellClientError::Protocol("catalog identity or profile"));
+                }
                 if super::budget::catalog_bytes(&value.catalog) > super::budget::CATALOG_BUDGET {
                     return Err(ShellClientError::Protocol(
                         "decoded catalog over its budget",
                     ));
                 }
-                (
-                    value.catalog.catalog.generation,
-                    Inbound::Catalog(value.transaction, value.catalog),
-                )
+                let generation = value.catalog.catalog.generation;
+                let item = if self.descriptor {
+                    Inbound::ApplicationCatalog(value.transaction, value.catalog.catalog)
+                } else {
+                    Inbound::Catalog(value.transaction, value.catalog)
+                };
+                (generation, item)
             }
             ShellFileKind::Indicators => {
                 let value = decode_shell_file_indicators(&fetch.buf)?;
@@ -479,6 +527,17 @@ impl FileWire {
                     value.snapshot.generation,
                     Inbound::Indicators(value.transaction, value.snapshot),
                 )
+            }
+            ShellFileKind::Descriptors | ShellFileKind::Tabs | ShellFileKind::Shortcuts => {
+                let value = decode_shell_file_descriptor(&fetch.buf, fetch.feed)?;
+                super::budget::check_descriptor(&value.record)?;
+                let generation = match &value.record {
+                    ShellDescriptorRecord::Descriptors(v) => v.snapshot_generation,
+                    ShellDescriptorRecord::Tabs(v) => v.generation,
+                    ShellDescriptorRecord::Shortcuts(v) => v.generation,
+                    _ => return Err(ShellClientError::Protocol("descriptor object shape")),
+                };
+                (generation, Inbound::Descriptor(value))
             }
             _ => return Err(ShellClientError::Protocol("announced object kind")),
         };

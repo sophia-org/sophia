@@ -66,3 +66,60 @@ This model prepares the descriptor file role; it does not add that role to
 the served contract or enable it in the client. The spec copies and wire kinds
 are unchanged. The new model tests cover cardinalities, exact action identity,
 family-specific text and selection rules, style bounds and outcome epochs.
+
+The native `encoding::descriptor` whole-object values implement the layout
+proposal in Sophia ADR `4oapm903` at `262eb82bc`: Descriptors, Tabs and
+Shortcuts after the domain transaction. They are newly written against those
+offsets, not copies of socket frames. Literal-byte tests cover every prefix
+and row, maximum object sizes, padding, optional-value flags and truncation.
+The published shell file kind list and client role remain unchanged until
+the complete descriptor amendment is implemented and accepted.
+
+The same proposal now has native event and candidate values for descriptor,
+tab, reference and revision-4 launcher records. Literal-byte controls cover
+all fourteen values, enum tags, the shared launcher activation identity,
+reserved words, complete tables, text padding and individual size caps.
+Every truncation and trailing data are refused. Two compiled mutations
+(accepting a non-boolean acknowledgement and changing a reservation edge tag)
+fail these controls. The default and all-feature workspace gates pass 624
+tests in total, with strict clippy in both configurations. That slice supplies
+value codecs only.
+
+The following file-envelope slice assigns the proposal's seventeen kinds,
+checks header class and domain identity, and preserves per-kind size bounds.
+The byte-identical layout proposal from Sophia `262eb82bc` is copied to
+`spec/descriptor-files-proposal.kdl`; it stays separate from the unchanged
+published contract. KDL completeness checks include that proposal, with no
+old record or assertion removed. The default and all-feature suites pass
+632 tests in total, with strict clippy in both configurations. An epoch-check
+removal compiles and fails the cross-epoch refusal control.
+
+The descriptor client role, production export and independent C peer are not
+implemented by these codec commits. This branch remains unpublished until
+those pieces and the contract amendment agree.
+
+## Descriptor file client
+
+The client now reads the pre-admitted API role separately from capability bit
+0, validates the descriptor capability families and selects the plain catalog
+when that role requests it. Metadata-only admission does not fetch Limits;
+content admission requires Limits bound to the attach in both the envelope
+and grant. Bootstrap events require ordered, current-epoch custody before
+Negotiated. No socket compatibility encoding was added.
+
+The three new snapshot feeds use the existing immutable-object fetch and ack
+holds, with individual encoded caps and decoded allocation budgets. Descriptor
+candidates use the existing typed outbox and Submitted custody lane;
+activation acknowledgements use its reserved control capacity. The client
+does not present geometry, commit work areas or decide action admission.
+
+Scripted 9P tests cover all seventeen kinds, maximum cardinalities and text
+sizes, fragmented object reads, supersession, role and family refusals,
+metadata-only and combined admission, plain catalogs, indicators and queued
+custody. Bootstrap controls cover stale epochs, repeated sequences, missing
+or duplicate custody, invalid record lengths and both Limits identities.
+The default and all-feature workspace gates pass 664 tests in total, with
+strict clippy in both configurations and formatting clean. Compiled mutations
+removing the role gate, snapshot ack hold and Limits grant-epoch check each
+fail their specific assertions. Production export and independent C peer
+gates remain outstanding; the branch stays unpublished.

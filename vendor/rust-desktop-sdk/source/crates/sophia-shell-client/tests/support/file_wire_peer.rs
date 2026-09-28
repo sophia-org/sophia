@@ -178,6 +178,7 @@ pub struct Peer {
     /// Bytes written to each `upload/N` slot, at the offsets written.
     pub uploads: HashMap<String, Vec<u8>>,
     limits: Vec<u8>,
+    edit_bootstrap: fn(&mut Vec<u8>),
     /// Replies collected for one write, between [`Peer::begin_batch`] and
     /// [`Peer::end_batch`].
     batch: Option<Vec<u8>>,
@@ -221,6 +222,18 @@ impl Peer {
         profile: Profile,
         limits: ContentLimits,
     ) -> Self {
+        Self::handshake_with_edits(listener, profile, limits, |_| {}, |_| {})
+    }
+
+    /// Corrupts encoded bootstrap inputs for connection refusal tests. The
+    /// normal peer still encodes valid records before either edit runs.
+    pub fn handshake_with_edits(
+        listener: UnixListener,
+        profile: Profile,
+        limits: ContentLimits,
+        edit_bootstrap: fn(&mut Vec<u8>),
+        edit_limits: fn(&mut Vec<u8>),
+    ) -> Self {
         let deadline = Instant::now() + WAIT;
         listener.set_nonblocking(true).unwrap();
         let stream = loop {
@@ -233,7 +246,7 @@ impl Peer {
                 Err(error) => panic!("accept: {error}"),
             }
         };
-        let limits = encode_shell_file_limits(
+        let mut limits = encode_shell_file_limits(
             ShellFileHeader {
                 kind: ShellFileKind::Limits,
                 connection_epoch: EPOCH,
@@ -243,6 +256,7 @@ impl Peer {
             limits,
         )
         .unwrap();
+        edit_limits(&mut limits);
         let mut peer = Self {
             stream,
             inbuf: Vec::new(),
@@ -277,6 +291,7 @@ impl Peer {
             negotiate: None,
             uploads: HashMap::new(),
             limits,
+            edit_bootstrap,
             batch: None,
         };
         let (kind, tag, body) = peer.frame(WAIT).expect("Tversion");
@@ -287,7 +302,12 @@ impl Peer {
         version.extend_from_slice(b"9P2000.L");
         peer.send(RVERSION, tag, &version);
         while !peer.handshake_done {
-            let (kind, tag, body) = peer.frame(WAIT).expect("a handshake request");
+            let Some((kind, tag, body)) = peer.frame(WAIT) else {
+                // Negative negotiation tests may reject the welcome and
+                // disconnect before fetching Limits. A timeout still fails.
+                assert!(peer.closed, "a handshake request timed out");
+                break;
+            };
             peer.handle(kind, tag, body);
         }
         peer.handshaking = false;
@@ -607,8 +627,10 @@ impl Peer {
             },
         )
         .unwrap();
-        self.push(submitted);
-        self.push(negotiated);
+        let mut bootstrap = submitted;
+        bootstrap.extend(negotiated);
+        (self.edit_bootstrap)(&mut bootstrap);
+        self.push(bootstrap);
         self.flush_events();
     }
 

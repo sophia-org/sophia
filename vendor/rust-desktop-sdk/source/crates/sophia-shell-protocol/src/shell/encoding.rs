@@ -11,6 +11,7 @@ use crate::byte_cursor::{Cursor, CursorError};
 pub mod applications;
 pub mod catalog_actions;
 pub mod content;
+pub mod descriptor;
 pub mod indicators;
 pub mod native_launcher;
 

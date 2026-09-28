@@ -18,9 +18,10 @@ file contracts are implemented; nothing here claims a contract Sophia does not
 serve.
 
 The protocol crate also carries the descriptor, tabs, shortcut/reference and
-revision-4 launcher record model and pure validation. Their native file codecs
-and client role are still being implemented; these types do not enable a
-descriptor file connection yet.
+revision-4 launcher records, native file codecs and pure validation. This
+development branch adds the descriptor client role against the separate
+`spec/descriptor-files-proposal.kdl` proposal. Its scripted-peer tests do not
+establish production server support; the published contract is unchanged.
 
 ## Contracts
 

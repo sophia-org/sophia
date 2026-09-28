@@ -344,6 +344,7 @@ fn read_handshake_frame(stream: &mut UnixStream) -> Result<Vec<u8>, ShellClientE
 /// epoch stay with the `ShellConnection` methods that own that state.
 pub(crate) fn encode(outbound: Outbound) -> Result<Vec<Vec<u8>>, ShellClientError> {
     match outbound {
+        Outbound::Descriptor(_) => Err(ShellClientError::UnsupportedOnWire),
         Outbound::Content(transaction, record) => {
             if !client_record(&record) {
                 return Err(ShellClientError::WrongDirection);

@@ -90,7 +90,10 @@ impl ShellConnection {
                 assembly.generation = catalog.catalog.generation;
                 Ok(Some(CatalogObservation::Catalog(tx, catalog)))
             }
-            Inbound::Indicators(_, _) | Inbound::IndicatorOutcome(_, _) => {
+            Inbound::Indicators(_, _)
+            | Inbound::IndicatorOutcome(_, _)
+            | Inbound::Descriptor(_)
+            | Inbound::ApplicationCatalog(..) => {
                 unreachable!("position() only matches Content, Catalog and CatalogOutcome variants")
             }
         }

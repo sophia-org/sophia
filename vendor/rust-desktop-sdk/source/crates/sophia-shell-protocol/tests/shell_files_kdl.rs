@@ -12,6 +12,10 @@
 //! have a KDL body. A wrong offset or type in the KDL fails a test because
 //! the bytes read at that declared location will not equal the fixture's
 //! real field value.
+//!
+//! The unpublished descriptor implementation additionally parses the exact
+//! `descriptor-files-proposal.kdl` fragment. Its declaration and structural
+//! checks run here; literal values and file identities have separate suites.
 
 #[path = "support/shell_files_kdl/mod.rs"]
 mod support;

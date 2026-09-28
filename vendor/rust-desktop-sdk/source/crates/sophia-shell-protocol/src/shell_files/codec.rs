@@ -25,7 +25,10 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         ShellFileKind::Limits
         | ShellFileKind::Outputs
         | ShellFileKind::Catalog
-        | ShellFileKind::Indicators => ShellFileClass::Object,
+        | ShellFileKind::Indicators
+        | ShellFileKind::Descriptors
+        | ShellFileKind::Tabs
+        | ShellFileKind::Shortcuts => ShellFileClass::Object,
         ShellFileKind::Negotiate
         | ShellFileKind::AllocationRequest
         | ShellFileKind::ResourceBegin
@@ -42,7 +45,13 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::NativeActivate
         | ShellFileKind::CatalogCandidate
         | ShellFileKind::CatalogActivate
-        | ShellFileKind::IndicatorActivate => ShellFileClass::Candidate,
+        | ShellFileKind::IndicatorActivate
+        | ShellFileKind::DescriptorCandidate
+        | ShellFileKind::DescriptorActivationAck
+        | ShellFileKind::TabsCandidate
+        | ShellFileKind::ReferenceCandidate
+        | ShellFileKind::LauncherCandidate
+        | ShellFileKind::LauncherActivationAck => ShellFileClass::Candidate,
         ShellFileKind::Negotiated
         | ShellFileKind::Refused
         | ShellFileKind::Submitted
@@ -60,7 +69,15 @@ pub fn shell_file_class(kind: ShellFileKind) -> ShellFileClass {
         | ShellFileKind::NativeActivationOutcome
         | ShellFileKind::NativeClosed
         | ShellFileKind::CatalogActivationOutcome
-        | ShellFileKind::IndicatorActivationOutcome => ShellFileClass::Event,
+        | ShellFileKind::IndicatorActivationOutcome
+        | ShellFileKind::DescriptorOutcome
+        | ShellFileKind::DescriptorActivation
+        | ShellFileKind::ReferenceRequest
+        | ShellFileKind::ReferenceOutcome
+        | ShellFileKind::LauncherRequest
+        | ShellFileKind::LauncherOutcome
+        | ShellFileKind::LauncherActivation
+        | ShellFileKind::LaunchOutcome => ShellFileClass::Event,
     }
 }
 
@@ -70,6 +87,9 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
         2 => ShellFileKind::Outputs,
         3 => ShellFileKind::Catalog,
         4 => ShellFileKind::Indicators,
+        5 => ShellFileKind::Descriptors,
+        6 => ShellFileKind::Tabs,
+        7 => ShellFileKind::Shortcuts,
         16 => ShellFileKind::Negotiated,
         17 => ShellFileKind::Refused,
         18 => ShellFileKind::Submitted,
@@ -88,6 +108,14 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
         43 => ShellFileKind::NativeClosed,
         44 => ShellFileKind::CatalogActivationOutcome,
         45 => ShellFileKind::IndicatorActivationOutcome,
+        46 => ShellFileKind::DescriptorOutcome,
+        47 => ShellFileKind::DescriptorActivation,
+        48 => ShellFileKind::ReferenceRequest,
+        49 => ShellFileKind::ReferenceOutcome,
+        50 => ShellFileKind::LauncherRequest,
+        51 => ShellFileKind::LauncherOutcome,
+        52 => ShellFileKind::LauncherActivation,
+        53 => ShellFileKind::LaunchOutcome,
         256 => ShellFileKind::Negotiate,
         257 => ShellFileKind::AllocationRequest,
         258 => ShellFileKind::ResourceBegin,
@@ -105,6 +133,12 @@ pub(super) fn kind(value: u16) -> Result<ShellFileKind, ShellFileCodecError> {
         270 => ShellFileKind::CatalogCandidate,
         271 => ShellFileKind::CatalogActivate,
         272 => ShellFileKind::IndicatorActivate,
+        273 => ShellFileKind::DescriptorCandidate,
+        274 => ShellFileKind::DescriptorActivationAck,
+        275 => ShellFileKind::TabsCandidate,
+        276 => ShellFileKind::ReferenceCandidate,
+        277 => ShellFileKind::LauncherCandidate,
+        278 => ShellFileKind::LauncherActivationAck,
         _ => return Err(ShellFileCodecError::Kind),
     })
 }
