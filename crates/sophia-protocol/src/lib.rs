@@ -18,6 +18,7 @@ pub mod policy_scalars;
 pub mod presentation;
 pub mod table;
 pub mod wm_files;
+pub mod wm_rows;
 
 pub use capacity::*;
 pub use codec_error::BinaryCodecError;

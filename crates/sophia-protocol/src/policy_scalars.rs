@@ -11,16 +11,19 @@
 //! a session-operation target the legacy encoder never checked.
 use std::collections::BTreeSet;
 
+use crate::wm_rows::{
+    SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS,
+    SOPHIA_WM_CAPABILITY_POINTER_FOCUS, SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS,
+    SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS, SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES,
+    SOPHIA_WM_OUTCOME_COMMITTED, SOPHIA_WM_OUTCOME_DISCONNECTED,
+    SOPHIA_WM_OUTCOME_REJECTED_INVALID, SOPHIA_WM_OUTCOME_REJECTED_STALE,
+    SOPHIA_WM_OUTCOME_TIMED_OUT,
+};
 use crate::{
     BinaryCodecError, OutputId, PolicyDirtyRequest, PolicyInteractionAxis, PolicyInteractionKind,
     PolicyInteractionPhase, PolicyPresentationOutcome, PolicyPresentationReceipt,
     PolicyProjectionOutcome, PolicyProjectionRequest, PolicyRequestCause,
-    PolicySessionOperationOutcome, PolicySessionOperationRequest, SOPHIA_WM_CAPABILITY_ACTIONS,
-    SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS, SOPHIA_WM_CAPABILITY_POINTER_FOCUS,
-    SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS, SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS,
-    SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES, SOPHIA_WM_OUTCOME_COMMITTED,
-    SOPHIA_WM_OUTCOME_DISCONNECTED, SOPHIA_WM_OUTCOME_REJECTED_INVALID,
-    SOPHIA_WM_OUTCOME_REJECTED_STALE, SOPHIA_WM_OUTCOME_TIMED_OUT,
+    PolicySessionOperationOutcome, PolicySessionOperationRequest,
 };
 
 fn invalid(field: &'static str, value: u32) -> BinaryCodecError {
