@@ -44,6 +44,51 @@ const LAUNCHER: &str =
     r#"shell-component "menu" "application-launcher" { executable "/opt/bemenu-sophia"; };"#;
 
 #[test]
+fn descriptor_component_is_an_explicit_exclusive_file_role() {
+    let fixture = Profile::new();
+    let descriptor = r#"shell-component "metadata" "descriptor" { executable "/opt/descriptor-peer"; config "/private/descriptor.kdl"; };"#;
+    let path = fixture.write(descriptor, true);
+    let prepared = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
+    let [component] = prepared
+        .candidates
+        .session
+        .components
+        .shell_components
+        .as_slice()
+    else {
+        panic!("one descriptor component")
+    };
+    assert_eq!(component.role, ShellComponentRole::Descriptor);
+    assert_eq!(component.transport, ShellTransportSelection::NineP2000L);
+    assert_eq!(component.gpu, ShellGpuMode::Denied);
+    assert_eq!(
+        component.config.as_deref(),
+        Some(Path::new("/private/descriptor.kdl"))
+    );
+    for extra in [r#"transport "current-ipc";"#, r#"reservation "top" 24;"#] {
+        let path = fixture.write(
+            &descriptor.replace("config", &format!("{extra} config")),
+            true,
+        );
+        assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+    }
+    for other in [BAR, LAUNCHER, descriptor, r#"shell-client "/opt/legacy";"#] {
+        for source in [
+            format!("{descriptor} {other}"),
+            format!("{other} {descriptor}"),
+        ] {
+            let path = fixture.write(&source, true);
+            assert!(
+                load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err(),
+                "{source}"
+            );
+        }
+    }
+    let path = fixture.write(descriptor, false);
+    assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
+}
+
+#[test]
 fn two_components_keep_independent_configuration_and_default_denied_gpu() {
     let fixture = Profile::new();
     let path = fixture.write(&format!("{BAR} {LAUNCHER}"), true);

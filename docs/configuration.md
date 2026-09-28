@@ -702,6 +702,30 @@ validates the resulting protocol proposals without selecting that policy.
 
 ### Independent shell components
 
+An Engine-rendered descriptor client is selected explicitly:
+
+```kdl
+shell { enabled #true; panel 32; }
+session {
+    shell-component "metadata" "descriptor" {
+        executable "/absolute/path/to/descriptor-client"
+        config "/absolute/path/to/client.kdl"
+    }
+    startup
+}
+```
+
+The descriptor role always uses 9P2000.L; `current-ipc` is refused. Its private
+configuration comes only from this component. It uses the descriptor
+presentation owner, which retains work-area claims until the matching visual
+commit. The `panel` setting bounds the client's reservation; a component
+`reservation` node is refused. Content and discrete input remain separate
+explicit grants (`content #true` and `content-input #true`); any GPU permission
+must be declared on the component. Descriptor authority is exclusive with the
+bar, dock and native-launcher component inventory, as it was with the old
+single-shell selection. It requires a normal session with a Sophia WM.
+Legacy shell command-line selections cannot override this component.
+
 A desktop may select a bar and an application launcher independently:
 
 ```kdl

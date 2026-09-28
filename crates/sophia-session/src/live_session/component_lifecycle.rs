@@ -5,6 +5,7 @@ use metadata_shell::component_session::ShellComponentSession;
 /// The retained token for a component's role, as reduction admits it.
 fn role_token(role: sophia_config::ShellComponentRole) -> &'static str {
     match role {
+        sophia_config::ShellComponentRole::Descriptor => "descriptor",
         sophia_config::ShellComponentRole::Bar => "bar",
         sophia_config::ShellComponentRole::Dock => "dock",
         sophia_config::ShellComponentRole::ApplicationLauncher => "application_launcher",
@@ -61,7 +62,13 @@ pub(super) fn prepare(
             .candidate()
             .components
             .shell_components;
-        if selected.is_empty() {
+        if selected.is_empty()
+            || selected
+                .iter()
+                .any(|entry| entry.role == sophia_config::ShellComponentRole::Descriptor)
+        {
+            // Descriptor components use the descriptor presentation owner;
+            // they never enter the content-only process/credit registry.
             None
         } else {
             if config.shell_process.is_some() {

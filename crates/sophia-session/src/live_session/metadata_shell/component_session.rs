@@ -296,6 +296,9 @@ impl ShellComponentSession {
             let service = self
                 .processes
                 .with_connection(key, |transport| match role {
+                    ShellComponentRole::Descriptor => {
+                        Err(sophia_runtime::ShellTransportError::MissingCapability)
+                    }
                     ShellComponentRole::Dock => {
                         CatalogComponentService::new(transport, limit, reservation)
                             .map(|service| ShellComponentService::Dock(Box::new(service)))

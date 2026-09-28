@@ -10,6 +10,8 @@ pub const MAX_SHELL_COMPONENTS: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShellComponentRole {
+    /// Engine-rendered descriptors, tabs, shortcuts and launcher candidates.
+    Descriptor,
     Bar,
     ApplicationLauncher,
     Dock,
@@ -138,6 +140,7 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
         Some("bar") => ShellComponentRole::Bar,
         Some("application-launcher") => ShellComponentRole::ApplicationLauncher,
         Some("dock") => ShellComponentRole::Dock,
+        Some("descriptor") => ShellComponentRole::Descriptor,
         _ => return Err(invalid("unsupported role")),
     };
     let children = node
@@ -212,7 +215,13 @@ pub(crate) fn parse(node: &KdlNode) -> Result<ShellComponentConfig, DesktopProfi
         config,
         gpu: gpu.unwrap_or_default(),
         reservation,
-        transport: transport.unwrap_or_default(),
+        transport: transport.unwrap_or_else(|| {
+            if role == ShellComponentRole::Descriptor {
+                ShellTransportSelection::NineP2000L
+            } else {
+                ShellTransportSelection::default()
+            }
+        }),
     })
 }
 
@@ -250,6 +259,24 @@ fn parse_reservation(node: &KdlNode) -> Result<ShellComponentReservation, Deskto
 pub fn validate_shell_component_reservations(
     components: &[ShellComponentConfig],
 ) -> Result<(), DesktopProfileError> {
+    if let Some(descriptor) = components
+        .iter()
+        .find(|c| c.role == ShellComponentRole::Descriptor)
+    {
+        if components.len() != 1 {
+            return Err(invalid(
+                "descriptor authority cannot be combined with content components",
+            ));
+        }
+        if descriptor.transport != ShellTransportSelection::NineP2000L {
+            return Err(invalid("descriptor components require 9p2000.L"));
+        }
+        if descriptor.reservation.is_some() {
+            return Err(invalid(
+                "descriptor reservations use the shell panel allowance",
+            ));
+        }
+    }
     let dock = components
         .iter()
         .any(|c| c.role == ShellComponentRole::Dock);

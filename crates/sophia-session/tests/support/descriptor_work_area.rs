@@ -100,16 +100,43 @@ fn protected_c_descriptor_work_area_changes_only_after_matching_presentation() {
     );
     let surface = SurfaceId::new(1, 1);
     let broker = broker_fixture(&scratch.0.join("broker"), surface);
+    // Select the independent peer through the public desktop profile, rather
+    // than reconstructing the retired single-shell command-line defaults.
+    use std::os::unix::fs::PermissionsExt;
+    let profile = scratch.0.join("desktop.kdl");
+    let core = scratch.0.join("core.kdl");
+    std::fs::write(&core, "schema 2\n").unwrap();
+    std::fs::write(&profile, format!(
+        "schema 1\nshell {{ enabled #true; panel 32; }}\nsession {{ shell-component \"metadata\" \"descriptor\" {{ executable \"{}\"; }}; startup; }}\n",
+        executable.display(),
+    )).unwrap();
+    for path in [&core, &profile] {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let config = PersistentXtermSessionConfig::from_args(&[
+        format!("--config={}", core.display()),
+        format!("--desktop-profile={}", profile.display()),
+        "--session-mode=normal".into(),
+        "--wm-process=/bin/false".into(),
+        "--no-input".into(),
+    ])
+    .unwrap();
+    assert_eq!(config.shell_transport, ShellTransportSelection::NineP2000L);
+    assert_eq!(config.shell_file_profile, ShellFileProfile::Descriptor);
+    assert_eq!(config.shell_gpu_mode, ShellGpuMode::Denied);
+    let (content_owner, directory) =
+        crate::live_session::component_lifecycle::prepare(&config, None).unwrap();
+    assert!(content_owner.is_none() && directory.is_none());
     let mut shell = LiveMetadataShell::start(
-        executable.to_str().unwrap(),
-        ShellTransportSelection::NineP2000L,
-        ShellFileProfile::Descriptor,
-        Some(32),
-        false,
-        false,
-        ShellGpuMode::Denied,
+        config.shell_process.as_deref().unwrap(),
+        config.shell_transport,
+        config.shell_file_profile,
+        config.shell_panel_thickness,
+        config.shell_content_enabled,
+        config.shell_content_input_enabled,
+        config.shell_gpu_mode,
         None,
-        None,
+        config.shell_config.as_deref(),
     )
     .unwrap();
     let output = HeadlessOutput::deterministic();

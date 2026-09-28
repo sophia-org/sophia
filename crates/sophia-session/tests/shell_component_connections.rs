@@ -10,6 +10,28 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+#[test]
+fn content_connection_owner_cannot_admit_descriptor_authority() {
+    let mut harness = Harness::new();
+    let endpoint = harness.directory.join("descriptor");
+    for wire in [
+        sophia_config::ShellTransportSelection::CurrentIpc,
+        sophia_config::ShellTransportSelection::NineP2000L,
+    ] {
+        assert_eq!(
+            harness.owner.add_with_transport(
+                "metadata",
+                ShellComponentRole::Descriptor,
+                &endpoint,
+                rustix::process::geteuid().as_raw(),
+                wire,
+            ),
+            Err(ComponentConnectionError::InvalidSelection)
+        );
+        assert!(!endpoint.exists());
+    }
+}
 #[path = "support/component_budget_records.rs"]
 mod budget_records;
 #[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]

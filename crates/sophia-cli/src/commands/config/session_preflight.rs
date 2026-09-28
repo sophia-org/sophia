@@ -51,6 +51,7 @@ pub(super) fn run(arguments: &[String]) -> Result<()> {
     }
     for component in &components.shell_components {
         let role = match component.role {
+            sophia_config::ShellComponentRole::Descriptor => "descriptor",
             sophia_config::ShellComponentRole::Bar => "bar",
             sophia_config::ShellComponentRole::ApplicationLauncher => "application-launcher",
             sophia_config::ShellComponentRole::Dock => "dock",

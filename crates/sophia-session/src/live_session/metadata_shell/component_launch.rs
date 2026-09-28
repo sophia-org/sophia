@@ -39,6 +39,9 @@ impl ShellComponentLaunch {
             .transpose()?;
         let gpu = ShellGpuLaunchPolicy::new(selection.gpu, device)?;
         let panel_thickness = match selection.role {
+            ShellComponentRole::Descriptor => {
+                return Err("descriptor components use the descriptor presentation owner".into());
+            }
             ShellComponentRole::Bar => Some(selection.reservation.map_or(
                 panel_thickness.ok_or("bar allowance absent")?,
                 |reservation| reservation.max_thickness,

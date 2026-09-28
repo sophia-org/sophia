@@ -121,7 +121,8 @@ impl ShellComponentConnections {
         uid: u32,
         wire: ShellTransportSelection,
     ) -> Result<usize, ComponentConnectionError> {
-        if self.next_connection != 1
+        if role == ShellComponentRole::Descriptor
+            || self.next_connection != 1
             || self.connections.len() == MAX_SHELL_COMPONENTS
             || id.is_empty()
             || id.len() > 64
@@ -200,6 +201,9 @@ impl ShellComponentConnections {
         self.next_connection = next_connection;
         self.next_content = next_content;
         let profile = match connection.role {
+            ShellComponentRole::Descriptor => {
+                return Err(ComponentConnectionError::InvalidSelection);
+            }
             ShellComponentRole::Bar => ContentStoreProfile::Legacy,
             ShellComponentRole::Dock => ContentStoreProfile::PersistentCatalog,
             ShellComponentRole::ApplicationLauncher => ContentStoreProfile::NativeLauncher,
@@ -446,6 +450,7 @@ fn record_reconnect_budget(
         "admission_refused"
     };
     let role = match role {
+        ShellComponentRole::Descriptor => "descriptor",
         ShellComponentRole::Bar => "bar",
         ShellComponentRole::ApplicationLauncher => "application_launcher",
         ShellComponentRole::Dock => "dock",

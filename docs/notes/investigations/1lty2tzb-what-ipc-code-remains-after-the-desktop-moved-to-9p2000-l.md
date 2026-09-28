@@ -1249,6 +1249,27 @@ WM and action assertions. The first clippy run caught a collapsible conditional;
 both failed logs remain in `development-evidence/ipc-retirement/`. This change
 does not update any installed launcher, prepared release or running session.
 
+### Explicit descriptor component selection (t271, 2026-09-28)
+
+The desktop profile can select a sole `shell-component` with role `descriptor`.
+It uses 9P exclusively, takes its executable and private config from that
+component, and preserves explicit combined content/input grants. Descriptor
+reservations still use the global panel allowance. Mixing descriptor authority
+with independent content owners is refused, as are legacy CLI overrides and
+global GPU grants. The content aggregate cannot admit or launch this role.
+
+The protected independent C work-area test now selects the peer through this
+profile path. Its presentation, replacement and withdrawal assertions remain
+unchanged. The Session library passes 704 tests (22 ignored); the content
+connection suite passes 13, including refusal before creating an endpoint.
+Configuration tests and workspace all-target/all-feature compilation pass.
+CLI preflight checks the descriptor executable without executing it. Logs are
+`descriptor-component-*` in `development-evidence/ipc-retirement/`.
+
+This supplies the replacement selection path. Legacy shell arguments and profile
+fields still await removal; the descriptor contract remains proposed. No running
+session or installed profile changed.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

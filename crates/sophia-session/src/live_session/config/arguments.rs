@@ -518,12 +518,24 @@ impl PersistentXtermSessionConfig {
         {
             return Err("--wm-transport requires --wm-process and the public policy interface".into());
         }
-        let independent_shell = !components.shell_components.is_empty();
+        let descriptor_component = components.shell_components.iter()
+            .find(|entry| entry.role == sophia_config::ShellComponentRole::Descriptor);
+        if descriptor_component.is_some() && wm_process.is_none() {
+            return Err("descriptor components require a Sophia WM".into());
+        }
+        let independent_shell = !components.shell_components.is_empty() && descriptor_component.is_none();
         let component_bar = components.shell_components.iter()
             .any(|entry| entry.role == sophia_config::ShellComponentRole::Bar);
         let component_catalog = components.shell_components.iter()
             .any(|entry| matches!(entry.role, sophia_config::ShellComponentRole::ApplicationLauncher | sophia_config::ShellComponentRole::Dock));
         let explicit_shell_process = arg_value(args, "--shell-process");
+        if descriptor_component.is_some() && ["--shell-process", "--shell-transport", "--shell-file-profile"]
+            .iter().any(|flag| args.iter().any(|arg| {
+                arg == flag || arg.strip_prefix(flag).is_some_and(|suffix| suffix.starts_with('='))
+            }))
+        {
+            return Err("descriptor components select their executable and 9P profile in the desktop profile".into());
+        }
         if independent_shell && explicit_shell_process.is_some() {
             return Err("independent shell components conflict with --shell-process".into());
         }
@@ -538,6 +550,7 @@ impl PersistentXtermSessionConfig {
         let profile_is_compiled_default = desktop_profile_source.is_none();
         let resolved_shell_process = || -> Option<String> {
             explicit_shell_process.clone()
+                .or_else(|| descriptor_component.map(|entry| entry.executable.to_string_lossy().into_owned()))
                 .or_else(|| components.shell_client.as_ref().map(|p| p.to_string_lossy().into_owned()))
         };
         // The compiled default profile enables a shell, because it describes a
@@ -566,7 +579,7 @@ impl PersistentXtermSessionConfig {
                 .ok_or("an enabled shell requires an explicit shell executable in the profile or launcher")?;
             Some(process)
         } else {
-            if explicit_shell_process.is_some() || components.shell_client.is_some() {
+            if explicit_shell_process.is_some() || components.shell_client.is_some() || descriptor_component.is_some() {
                 return Err(if shell_enabled {
                     "--shell-process requires --session-mode=normal"
                 } else {
@@ -583,7 +596,11 @@ impl PersistentXtermSessionConfig {
                 }
                 sophia_config::ShellTransportSelection::parse(&value)?
             }
-            None => sophia_config::ShellTransportSelection::default(),
+            None => if descriptor_component.is_some() {
+                sophia_config::ShellTransportSelection::NineP2000L
+            } else {
+                sophia_config::ShellTransportSelection::default()
+            },
         };
         let shell_file_profile = match arg_value(args, "--shell-file-profile") {
             Some(value) => {
@@ -594,11 +611,15 @@ impl PersistentXtermSessionConfig {
                 }
                 sophia_config::ShellFileProfile::parse(&value)?
             }
-            None => sophia_config::ShellFileProfile::default(),
+            None => if descriptor_component.is_some() {
+                sophia_config::ShellFileProfile::Descriptor
+            } else {
+                sophia_config::ShellFileProfile::default()
+            },
         };
         // Component configs are explicit per-role grants, never the legacy
         // ambient config or the installed fallback shell's private settings.
-        let shell_config = if independent_shell { None } else { std::env::var_os("SOPHIA_SHELL_CONFIG")
+        let shell_config = if let Some(component) = descriptor_component { component.config.clone() } else if independent_shell { None } else { std::env::var_os("SOPHIA_SHELL_CONFIG")
             .map(std::path::PathBuf::from)
             .or_else(|| components.shell_config.clone())
         };
@@ -627,7 +648,11 @@ impl PersistentXtermSessionConfig {
             sophia_config::desktop_profile_shell_content_enabled(&desktop_profile);
         let shell_content_input_enabled =
             sophia_config::desktop_profile_shell_content_input_enabled(&desktop_profile);
-        let shell_gpu_mode = sophia_config::desktop_profile_shell_gpu_mode(&desktop_profile);
+        let global_gpu_mode = sophia_config::desktop_profile_shell_gpu_mode(&desktop_profile);
+        if descriptor_component.is_some() && global_gpu_mode != sophia_config::ShellGpuMode::Denied {
+            return Err("descriptor GPU grants must be declared per component".into());
+        }
+        let shell_gpu_mode = descriptor_component.map_or(global_gpu_mode, |entry| entry.gpu);
         if shell_transport == sophia_config::ShellTransportSelection::NineP2000L
             && shell_file_profile == sophia_config::ShellFileProfile::Content
             && !shell_content_enabled

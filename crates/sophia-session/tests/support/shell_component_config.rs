@@ -2,6 +2,74 @@ use super::PersistentXtermSessionConfig;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]
+fn descriptor_profile_selects_only_its_file_role_and_explicit_grants() {
+    use sophia_config::{ShellFileProfile, ShellGpuMode, ShellTransportSelection};
+    let root = std::env::temp_dir().join(format!(
+        "descriptor-component-config-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let core = root.join("core.kdl");
+    let profile = root.join("desktop.kdl");
+    let private = root.join("private.kdl");
+    std::fs::write(&core, "schema 2\n").unwrap();
+    std::fs::write(&private, "client-owned configuration\n").unwrap();
+    std::fs::set_permissions(&core, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let args = vec![
+        format!("--config={}", core.display()),
+        format!("--desktop-profile={}", profile.display()),
+        "--session-mode=normal".into(),
+        "--wm-process=/bin/false".into(),
+        "--no-input".into(),
+    ];
+    for combined in [false, true] {
+        let source = format!(
+            "schema 1\nshell {{ enabled #true; content #{combined}; content-input #{combined}; panel 32; }}\nsession {{ shell-component \"metadata\" \"descriptor\" {{ executable \"/bin/false\"; config \"{}\"; }}; startup; }}\n",
+            private.display(),
+        );
+        std::fs::write(&profile, &source).unwrap();
+        std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let config = PersistentXtermSessionConfig::from_args(&args).unwrap();
+        assert_eq!(config.shell_process.as_deref(), Some("/bin/false"));
+        assert_eq!(config.shell_config.as_ref(), Some(&private));
+        assert_eq!(config.shell_transport, ShellTransportSelection::NineP2000L);
+        assert_eq!(config.shell_file_profile, ShellFileProfile::Descriptor);
+        assert_eq!(config.shell_gpu_mode, ShellGpuMode::Denied);
+        assert_eq!(config.shell_content_enabled, combined);
+        assert_eq!(config.shell_content_input_enabled, combined);
+        for option in [
+            "--shell-process",
+            "--shell-process=/bin/true",
+            "--shell-transport=9p2000.L",
+            "--shell-transport=current-ipc",
+            "--shell-file-profile=content",
+        ] {
+            let mut bad = args.clone();
+            bad.push(option.into());
+            assert!(
+                PersistentXtermSessionConfig::from_args(&bad)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("descriptor components select")
+            );
+        }
+        std::fs::write(
+            &profile,
+            source.replace("panel 32;", "panel 32; gpu \"direct\";"),
+        )
+        .unwrap();
+        assert!(
+            PersistentXtermSessionConfig::from_args(&args)
+                .unwrap_err()
+                .to_string()
+                .contains("declared per component")
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn component_selection_validates_roles_without_legacy_fallback_or_execution() {
     let root = std::env::temp_dir().join(format!("shell-component-startup-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();

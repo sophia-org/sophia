@@ -183,6 +183,26 @@ fn missing_selected_shell_or_window_manager_is_refused_before_the_checker() {
 }
 
 #[test]
+fn descriptor_preflight_checks_the_executable_without_running_it() {
+    let fixture = Fixture::new();
+    let marker = fixture.0.join("descriptor-ran");
+    let executable = fixture.executable(
+        "descriptor",
+        &format!("#!/bin/sh\ntouch '{}'\nexit 99\n", marker.display()),
+    );
+    fixture.profile(&format!(
+        "schema 1\nshell {{ enabled #true; }}\nsession {{ shell-component \"metadata\" \"descriptor\" {{ executable {executable:?}; }}; }}\n"
+    ));
+    let output = fixture.command().output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(!marker.exists());
+    fs::remove_file(executable).unwrap();
+    let output = fixture.command().output().unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("metadata (descriptor)"));
+}
+
+#[test]
 fn missing_two_component_artifacts_must_not_pass_package_preflight() {
     let mut incorrectly_accepted = vec![];
     for deferred in [false, true] {
