@@ -91,6 +91,9 @@ cargo run --offline -q -p sophia-runtime --example shell_content_conformance_hos
 # Red mutations, retired-selection refusals and the hand-encoded boundary
 # controls against the production file export.
 cargo test --offline -q -p sophia-conformance --test shell_content_files
+# The same composition, action-receipt and retirement assertions also run
+# over files, with the independent SDK peer and no IPC library.
+cargo test --offline -q -p sophia-backend-live --all-features --lib protected_popout_file_client
 # The protected popout lifecycle test still uses the socket wire (t252 item);
 # it keeps the vendored IPC client in its content-lifecycle mode.
 ${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \

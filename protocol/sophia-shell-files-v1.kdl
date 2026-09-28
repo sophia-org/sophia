@@ -86,6 +86,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // max_frame_payload, max_input_queue_bytes and the +24/+48 terms describe
     // the socket wire's frames; they are carried unchanged for now and are
     // listed for removal from this object when the socket wire is purged.
+    // File upload chunks use max_chunk_bytes directly. This equals the old
+    // min(max_frame_payload - 48, max_chunk_bytes) for every valid object;
+    // the relationships above remain mandatory until a contract revision.
     body "Limits" size=264 {
         field "grant_connection_epoch" type="u64" offset=0 nonzero=#true
         field "grant_content_epoch" type="u64" offset=8 nonzero=#true
