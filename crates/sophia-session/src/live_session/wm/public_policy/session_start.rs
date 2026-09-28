@@ -137,7 +137,10 @@ impl LiveWmSession {
             next_connection_epoch: 2,
             next_transaction: if profile_key.is_some() { 3 } else { 1 },
             configured: false,
-            negotiated: false,
+            // activate_public_launch consumed Negotiated before constructing
+            // StartedPublicPolicyLaunch. Configuration/cycle readiness remain
+            // separate; that startup event will not arrive a second time.
+            negotiated: true,
             selected_capabilities: 0,
             cycle_submitted: false,
             transport_ready: false,

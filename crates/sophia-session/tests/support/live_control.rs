@@ -1,39 +1,9 @@
 use super::*;
+use crate::live_session::c_sdk_fixture_process as process;
 use sophia_protocol::{ControlCommand, ControlOutcome, ControlOwner};
 use sophia_runtime::{ControlClient, ControlService};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
-
-// The supervisor executes this test binary inside its ordinary policy domain.
-#[test]
-fn policy_fixture_process() {
-    let Ok(socket) = std::env::var(sophia_runtime::SOPHIA_WM_SOCKET_ENV) else {
-        return;
-    };
-    assert!(std::env::var_os(sophia_runtime::SOPHIA_CONTROL_SOCKET_ENV).is_none());
-    let mut client =
-        sophia_wm_demo::PolicyV1Client::connect(socket, Duration::from_secs(3)).unwrap();
-    client
-        .activate_profile_and_configure_with(
-            vec![sophia_protocol::PolicyActionRegistration {
-                action: WmActionId::from_raw(1),
-                name: "focus-next".into(),
-                session_operation_slot: None,
-            }],
-            sophia_protocol::WmChromePolicy::default(),
-        )
-        .unwrap();
-    loop {
-        let scene = match client.receive_snapshot() {
-            Ok(scene) => scene,
-            Err(_) => return,
-        };
-        let request = client.receive_projection_request().unwrap();
-        let proposal = client.tile_once(&scene.scene, &request).unwrap();
-        client.send_projection(&proposal).unwrap();
-        client.receive_projection_outcome(&proposal).unwrap();
-    }
-}
 
 #[test]
 #[ignore = "runs a supervised policy process in bubblewrap; tools/check_control_protocol.sh --live-owner"]
@@ -42,20 +12,21 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         |line| eprintln!("{line}"),
         |line| eprintln!("{line}"),
     ));
-    let root = std::env::temp_dir().join(format!("sc-owner-{}", std::process::id()));
-    std::fs::create_dir(&root).unwrap();
-    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let scratch = process::Scratch::new();
+    let root = &scratch.0;
+    let executable = process::compile(
+        root,
+        &["nine_p", "wm_files", "wm_session"],
+        "live_control_peer.c",
+    );
     let profile = root.join("desktop.kdl");
     std::fs::write(&profile, "schema 1\nsession { control \"host-admin\"; }\n").unwrap();
     std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
-    let executable = std::env::current_exe().unwrap();
     let mut config = PersistentXtermSessionConfig::from_args(&[
         format!("--desktop-profile={}", profile.display()),
         format!("--wm-process={}", executable.display()),
         "--wm-interface=sophia_wm_v1".into(),
-        "--wm-process-arg=--exact".into(),
-        "--wm-process-arg=live_session::live_control_tests::policy_fixture_process".into(),
-        "--wm-process-arg=--nocapture".into(),
+        "--wm-transport=9p2000.L".into(),
     ])
     .unwrap();
     config.wm_socket_path = root.join("wm.sock");
@@ -67,7 +38,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         .unwrap();
     let mut layout = PersistentLiveLayout::default();
     let mut scripting = LiveControlState {
-        service: Some(ControlService::bind(&root).unwrap()),
+        service: Some(ControlService::bind(root).unwrap()),
         catalog: Arc::new(sophia_protocol::ControlCatalog {
             generation: 1,
             commands: Vec::new(),
@@ -81,9 +52,23 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     };
     let deadline = Instant::now() + Duration::from_secs(5);
     while wm.committed == 0 {
-        pump(&mut wm, &mut layout, output);
-        assert!(Instant::now() < deadline, "initial policy commit");
+        pump(&mut wm, &mut config, &mut layout, output);
+        let public = wm.public.as_ref().unwrap();
+        assert!(
+            Instant::now() < deadline,
+            "initial policy commit: negotiated={} configured={} ready={} queued={} in_flight={:?} degraded={}",
+            public.negotiated,
+            public.configured,
+            public.transport_ready,
+            public.queue.len(),
+            public.in_flight_request,
+            wm.degraded,
+        );
     }
+    assert!(
+        wm.pointer_focus_enabled(),
+        "startup must retain the negotiated pointer-focus capability"
+    );
     scripting.service(Some(&mut wm), &layout, output, false);
     let socket = scripting
         .service
@@ -109,6 +94,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         (client.revision(), client.commands().unwrap())
     });
     while !revision_one.is_finished() {
+        assert!(Instant::now() < deadline, "revision-one catalog reply");
         scripting.service(Some(&mut wm), &layout, output, false);
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -157,6 +143,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
             scripting.service(Some(&mut wm), &layout, output, false);
             wm.poll_restart(&mut layout, output).unwrap();
             held_proposal = wm.poll_request(&mut layout, output, true).unwrap();
+            wm.settle_desktop_reload(&mut config, true).unwrap();
             if client.is_finished() {
                 panic!("premature result: {:?}", client.join().unwrap());
             }
@@ -179,6 +166,7 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
         }
         assert_eq!(client.join().unwrap(), expected);
         assert_eq!(wm.committed, committed_before + 1);
+        assert!(wm.pointer_focus_enabled());
         if expected == ControlOutcome::Completed {
             assert_eq!(
                 wm.public.as_ref().unwrap().connection_epoch,
@@ -275,11 +263,11 @@ fn real_owner_commits_actions_and_confirms_replacement_commit() {
     assert_eq!(logout.join().unwrap(), ControlOutcome::Completed);
     drop(scripting);
     drop(wm);
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 fn pump(
     wm: &mut LiveWmSession,
+    config: &mut PersistentXtermSessionConfig,
     layout: &mut PersistentLiveLayout,
     output: sophia_engine::HeadlessOutput,
 ) {
@@ -288,5 +276,8 @@ fn pump(
         let result = layout.commit_proposal(proposal);
         wm.apply_commit_result(result, None, output.id).unwrap();
     }
+    // The real loop commits the staged action configuration at input-idle.
+    // A configuration receipt alone does not make its catalog available.
+    wm.settle_desktop_reload(config, true).unwrap();
     std::thread::sleep(Duration::from_millis(1));
 }

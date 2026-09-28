@@ -32,9 +32,8 @@ fn endpoint_factory_preserves_default_ipc_and_requires_explicit_files() {
 fn selected_transport_child() {
     let path = std::env::var_os("SOPHIA_WM_9P_SOCKET").expect("explicit file socket");
     assert!(std::env::var_os("SOPHIA_WM_SOCKET").is_none());
-    let (limits, epoch, qid, _stream) = policy_transport_worker::ninep::selection_peer::startup(
-        UnixStream::connect(path).unwrap(),
-    );
+    let (limits, epoch, qid, _stream) =
+        policy_transport_worker::ninep::selection_peer::startup(UnixStream::connect(path).unwrap());
     assert!(limits.profile_required);
     assert_eq!(
         limits.capability_ceiling
@@ -42,7 +41,8 @@ fn selected_transport_child() {
                 | sophia_protocol::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS),
         0
     );
-    let checkpoint = Path::new(&std::env::var_os("SOPHIA_WM_POLICY_CHECKPOINT").unwrap()).to_owned();
+    let checkpoint =
+        Path::new(&std::env::var_os("SOPHIA_WM_POLICY_CHECKPOINT").unwrap()).to_owned();
     let marker = checkpoint
         .parent()
         .unwrap()
@@ -122,6 +122,11 @@ fn initial_automatic_and_control_starts_keep_file_selection_and_logical_qids() {
     let mut wm =
         LiveWmSession::from_started_public_config(&source.config, &[output], started, None)
             .unwrap();
+    assert!(wm.public.as_ref().unwrap().negotiated);
+    assert!(
+        !wm.pointer_focus_enabled(),
+        "configuration is still pending"
+    );
     let first = wait_marker(&wm, 1);
     let mut layout = PersistentLiveLayout::default();
     wm.force_transport_restart = true;

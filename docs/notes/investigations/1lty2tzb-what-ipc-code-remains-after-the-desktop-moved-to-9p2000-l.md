@@ -1695,6 +1695,22 @@ pixel/scanout evidence is not proved in this sandbox; no live session was used.
 The contracts list the real-export, SDK, protected admission, replay, pressure,
 two-row atomicity and execution-race evidence required before replacement.
 
+### Protected control-owner fixture uses WM files (t269 preparation)
+
+The generic `real_owner_commits_actions_and_confirms_replacement_commit` test
+now launches an independent C SDK peer over the protected WM 9P endpoint.
+It retains action and replacement commit ordering, two replacement epochs,
+stale-action refusal, reload settlement and logout assertions. The peer rejects
+the retired WM socket environment. Administrative requests still use control-v1;
+this change does not claim t254 migration or remove the remaining demo users.
+
+The new fixture exposed an initial-startup state bug: profile activation had
+already consumed `Negotiated`, but the running owner reset its flag to false.
+The [startup investigation](qqdj8dfu-initial-policy-activation-consumes-negotiation-before-session-records-it.md)
+records the failing-before/passing-after pointer-focus assertion and the repair.
+Ordinary transport-selection coverage checks that negotiation is preserved
+without prematurely enabling configuration-dependent capability use.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
