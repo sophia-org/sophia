@@ -152,6 +152,30 @@ The application tests use scripted peers. Live runs of each product against a
 real Session export belong to the external integration repository. They also
 carry native rendering and attended acceptance, which stay with t252.
 
+## First release and closure, 2026-09-27
+
+Both SDKs have published their first releases:
+- `sophia-desktop-sdk-rs` v0.1.0 is signed tag `v0.1.0` at `ea9cf651`. That is
+  the revision Lom, Provlita and Sophia's vendored snapshot pin.
+- `sophia-desktop-sdk-c` v0.1.0 is `4cfee26`. It declares `release=true` and
+  `wm_files=true` (WM file API 1). The WM condition in `src/README-wm.md` is
+  met: the production WM export gate passed at `c4e17899e`, and Hagia uses the
+  SDK through thin bindings (`b3d8496`, 449 tests).
+- The C source is identical to `8decca1d`, which Sophia, Bemenu and Hagia vendor.
+  Only the documentation, the manifest and the version string differ.
+- `make check` passes with and without IPC compatibility. The log is
+  `development-evidence/sdk-release-0.1.0/c-check.log`.
+
+The first-release exit is met. Both SDKs build independently. Their declared
+shell coverage passes against the production export, including the Rust live
+suite at `ea9cf651`. The vendored sources are provisioned offline. Bemenu, Lom,
+Provlita and Hagia pin released code.
+
+At the operator's direction, Provlita's production-export and live check moved
+to Provlita t007. Output and admin file clients remain explicit gaps under t253,
+t254 and t270. BSD qualification remains under t256. Native rendering,
+measurements and attended acceptance remain under t252.
+
 ## Dependencies and connections
 
 ### Repository boundary cleanup before the installed session

@@ -4,8 +4,6 @@
 
 (A) 2026-09-26 Qualify a pinned 9P WM daily-driver configuration with classified validation gates, drag-latency budgets, attended recovery and explicit current-IPC relaunch rollback. +critical +9p @physical id:t250 order:000.000004 depends:t249 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t250--qualify-the-wm-daily-configuration)
 
-(A) 2026-09-26 Extract and release native C and Rust desktop SDKs in sophia-org/sophia-desktop-sdk-c and sophia-org/sophia-desktop-sdk-rs; complete shell lifecycle and role support, provision pinned offline dependencies, and adopt initial releases in Bemenu, Lom and Provlita. +critical +9p @development id:t263 order:000.0000055 depends:t251 [details](docs/notes/plans/9cd1ie0x-publish-independent-sophia-client-libraries.md)
-
 (A) 2026-09-26 Join and accept the shell 9P adapter with independent Lom, Bemenu and Provlita clients, per-component grants, native lifetime/input evidence, measured bounds and Narthex rollback. +critical +9p @development id:t252 order:000.000006 depends:t251,t263 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t252--join-and-accept-the-shell-path)
 
 (A) 2026-09-26 Specify, implement and accept the separate 9P output role through existing topology and supervision owners, with an independent peer, epoch fencing, candidate rollback and applicable native evidence. +critical +9p @development id:t253 order:000.000007 depends:t252 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t253--migrate-the-separate-output-role)
