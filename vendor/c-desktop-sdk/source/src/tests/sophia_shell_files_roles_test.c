@@ -190,6 +190,23 @@ static void maximum_catalog(void)
     bytes[64 + 656] = 1;
     bytes[65 + 656] = 0;
     assert(sophia_sf_decode(bytes, n, &record));
+    bytes[64 + 656] = 2;
+    bytes[58] = 1;
+    for (i = 0; i < 4096; i++) {
+        uint8_t *row = bytes + 64 + 656 * i;
+        char suffix[5];
+        assert(snprintf(suffix, sizeof(suffix), "%04u", (unsigned)(4095 - i)) == 4);
+        row[396] = 0;
+        row[397] = 1;
+        memcpy(row + 400, "registered:", 11);
+        memset(row + 411, 'a', 241);
+        memcpy(row + 652, suffix, 4);
+    }
+    assert(!sophia_sf_decode(bytes, n, &record));
+    assert(!sophia_sf_encode(copy, n, &record, &written));
+    assert(written == n && !memcmp(bytes, copy, n));
+    memcpy(bytes + 64 + 4095 * 656 + 396, bytes + 64 + 396, 260);
+    assert(sophia_sf_decode(bytes, n, &record));
     free(copy);
     free(bytes);
 }
@@ -360,8 +377,41 @@ static void semantic_controls(void)
         assert(sophia_sf_decode(bytes, n, &record));
     }
 }
+static void catalog_identity_bijection(void)
+{
+    uint8_t bytes[64 + 3 * 656], encoded[sizeof(bytes)];
+    struct sophia_sf_record r, decoded;
+    size_t i, written;
+    literal(bytes, find_vector(3));
+    put32(bytes, sizeof(bytes));
+    bytes[56] = 3;
+    for (i = 1; i < 3; i++) {
+        memcpy(bytes + 64 + i * 656, bytes + 64, 656);
+        bytes[64 + i * 656] = (uint8_t)(i + 1);
+        bytes[64 + i * 656 + 411] = (uint8_t)('x' + i);
+    }
+    assert(!sophia_sf_decode(bytes, sizeof(bytes), &r));
+    assert(!sophia_sf_encode(encoded, sizeof(encoded), &r, &written));
+    assert(written == sizeof(bytes) && !memcmp(bytes, encoded, sizeof(bytes)));
+    /* Nonadjacent distinct slots must not name the same persistent identity.
+     * r borrows these rows, so both encoding and decoding see this mutation. */
+    bytes[64 + 2 * 656 + 411] = 'x';
+    assert(sophia_sf_decode(bytes, sizeof(bytes), &decoded));
+    assert(sophia_sf_encode(encoded, sizeof(encoded), &r, &written));
+    /* Prefixes with different lengths are distinct names. */
+    bytes[64 + 2 * 656 + 396] = 13;
+    bytes[64 + 2 * 656 + 412] = 'y';
+    assert(!sophia_sf_decode(bytes, sizeof(bytes), &r));
+    /* A launcher catalog has no identities; repeated display labels are valid. */
+    bytes[58] = 0;
+    for (i = 0; i < 3; i++)
+        memset(bytes + 64 + i * 656 + 396, 0, 260);
+    assert(!sophia_sf_decode(bytes, sizeof(bytes), &r));
+    assert(!sophia_sf_encode(encoded, sizeof(encoded), &r, &written));
+}
 int main(void)
 {
+    catalog_identity_bijection();
     vectors_and_truncations();
     refusal_controls();
     maximum_catalog();

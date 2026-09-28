@@ -80,3 +80,18 @@ previous output except for the first comment line naming the source. The
 socket schema stays pinned while the compatibility library remains; the
 generator refuses any drift between its rows and the file rows, but it no
 longer defines the file codec. The golden row corpus still tests the row codecs.
+
+## Native shell queue and welcome bounds
+
+`spec/sophia-shell-files-v1.kdl` and `spec/sophia-shell-files.md` are copied
+unmodified from signed Sophia
+`d040013bbdd9e84716faa1e06aeb7b7e020ba44a`. They specify native record queue
+charges and exact journal reserves, and name `max_chunk_bytes` as the file
+upload budget. The existing Limits layout and its mandatory relationships
+remain unchanged. On every valid Limits value this budget equals the previous
+`min(max_frame_payload - 48, max_chunk_bytes)` calculation.
+
+The same contract makes the existing role welcome bounds explicit on the file
+wire: 1–16 descriptors, 1–128 label bytes and 1–16 pending activations. Invalid
+welcomes are refused during encoding and decoding. This replaces the two shell
+file references above; every other contract copy retains its earlier pin.

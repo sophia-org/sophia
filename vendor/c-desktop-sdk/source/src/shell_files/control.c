@@ -23,7 +23,10 @@ int sf_take_negotiate(const uint8_t *b, struct sophia_sf_negotiate *v)
 }
 int sf_check_negotiated(const struct sophia_sf_negotiated *v)
 {
-    if (!v->connection_epoch || v->limits_published > 1)
+    if (!v->connection_epoch || v->limits_published > 1 ||
+        !v->max_descriptors || v->max_descriptors > 16 ||
+        !v->max_label_bytes || v->max_label_bytes > 128 ||
+        !v->max_pending_activations || v->max_pending_activations > 16)
         return -1;
     return 0;
 }

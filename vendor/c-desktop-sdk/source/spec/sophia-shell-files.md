@@ -59,7 +59,7 @@ refused, never silently downgraded (`docs/sophia-shell-v1-direction.md`).
 
 ### Content limits
 
-`ContentLimits::prototype` (`crates/sophia-protocol/src/ipc/shell_content/limits.rs:283-340`)
+`ContentLimits::prototype` (`vendor/rust-desktop-sdk/source/crates/sophia-shell-protocol/src/shell/content/limits.rs`)
 is the starting grant. `role_limits` (`shell_component_connections.rs:378-394`)
 lowers it per role: with a dock present, staging is 4 MiB, resident 12 MiB for
 the bar and 8 MiB otherwise, and retiring 8 MiB. A launcher without a dock gets
@@ -78,6 +78,14 @@ depends on:
 | transfer / transfer idle / candidate / prepare / present timeout | 2000 / 500 / 1000 / 1000 / 2000 ms |
 | permit timeout / action-ack timeout / peer write | 250 / 1000 / 2000 ms |
 | candidate rate | 120 Hz |
+
+The file wire uses `max_chunk_bytes` directly for upload chunks. The
+`max_frame_payload` and `max_input_queue_bytes` fields remain in the Limits
+layout only for socket compatibility; their existing scalar bounds and
+`+24`/`+48` validation relationships remain mandatory. Production grants keep
+their prototype values, 65,536 and 131,072. Removing those fields requires a
+coordinated contract and SDK change; it does not follow from ignoring them in
+file owners.
 
 ### Resource custody
 
@@ -219,6 +227,14 @@ limits generation, or a `Refused` event with the current reason (1 permission
 denied, 2 unsupported, 3 invalid dependencies, 4 unavailable) followed by
 revocation.
 
+The `Negotiated` body preserves the shell role's welcome limits:
+`max_descriptors` is 1–16, `max_label_bytes` is 1–128 UTF-8 bytes, and
+`max_pending_activations` is 1–16. These bounds apply to every selected profile,
+including a content profile that does not consume descriptors. Both encoders
+and decoders refuse values outside these ranges; a zero value is not an
+unused-field marker. This makes the existing role maxima explicit on the file
+wire without changing the body layout.
+
 There is exactly one selection per epoch. Replaying the same submission ID
 replays its Submitted custody and cannot negotiate again. A separate node
 would have to repeat the WM's custody, replay and epoch rules for a single
@@ -235,11 +251,11 @@ below the watermark is `EALREADY`. A submit refused with `EAGAIN` has
 transferred nothing.
 
 Candidate Begin/Chunk/End collapse into one complete record, which stays
-within `max_candidate_bytes` (8192 bytes, `crates/sophia-protocol/src/ipc/shell_content/limits.rs:309`). As in the WM contract, each attach has one
+within `max_candidate_bytes` (8192 bytes in the Limits contract). As in the WM contract, each attach has one
 candidate buffer, and `submit` refers to that attach's staged candidate. The
 buffer therefore needs no more than the largest control record, not the WM's
-1 MiB. The shell transaction cap is 64 KiB per attach transaction buffer, equal to
-`max_frame_payload` (65,536 bytes, `crates/sophia-protocol/src/ipc/shell_content/limits.rs:294`).
+1 MiB. The shell transaction cap is independently fixed at 64 KiB per attach
+transaction buffer; it is not derived from the socket's frame limit.
 
 ### Resource staging without client-created files
 
@@ -293,8 +309,10 @@ One slot carries at most `max_resource_bytes` (4 MiB), which exceeds the WM's
 **Chunking.** The store accepts only canonical chunks: each chunk must be
 exactly `rows_per_chunk * row_bytes` bytes, the last one the remainder, at the
 next ordinal and offset (`crates/sophia-runtime/src/shell_content/resources.rs:286-298`).
-`rows_per_chunk` is `min(max_frame_payload - 48, max_chunk_bytes) / row_bytes`
-(`crates/sophia-protocol/src/ipc/shell_content/validation.rs:393-399`). A 9P
+`rows_per_chunk` is `max_chunk_bytes / row_bytes`. The earlier expression
+`min(max_frame_payload - 48, max_chunk_bytes) / row_bytes` is equal for every
+valid Limits object because `max_chunk_bytes + 48 <= max_frame_payload`
+remains required. Thus the change preserves every admitted upload layout. A 9P
 write can split anywhere. After validating the binding, offset and entire
 declared request range, the adapter accepts at most the prefix completing the
 current canonical chunk. A positive short `Rwrite` reports that prefix; the
@@ -318,7 +336,7 @@ partial bytes buffered; those writes cannot keep a transfer alive indefinitely.
 
 Scratch is a separate transport charge, not part of the resource store's
 staging allowance. The file export reserves
-`max_open_transfers * min(max_frame_payload - 48, max_chunk_bytes)` bytes at
+`max_open_transfers * max_chunk_bytes` bytes at
 admission: 261,952 bytes for the prototype, under 768 KiB across three active
 component exports. Before accepting Begin custody or calling the store,
 acquire the slot buffer and response capacity; an early capacity refusal
@@ -346,8 +364,7 @@ below the retention floor. Acknowledgement releases transport retention only.
 Shell traffic is denser than WM traffic: frame permits, candidate outcomes and
 resource statuses. A component journal holds at most 256 records. 64 of them
 are the terminal reserve, equal to `max_control_records`
-(`crates/sophia-protocol/src/ipc/shell_content/limits.rs:317`, enforced in aggregate
-by `crates/sophia-runtime/src/shell_transport/control_budget.rs:18-41`). Only
+(enforced in aggregate by `crates/sophia-runtime/src/shell_transport/control_budget.rs`). Only
 records that already hold a counted credit may use the reserve, so every
 promised response always has space. The other 192 hold unsolicited Session
 events (snapshot announcements, allocation invalidation, focus revocation,
@@ -355,7 +372,9 @@ opening, content actions, closed) and unacknowledged history.
 
 Byte bounds are derived from the largest Session-to-client record of each role
 profile. The file envelope's 32-byte header (as in [WM files](sophia-wm-files.md))
-replaces the 24-byte frame header, adding 8 bytes per record. The journal byte
+replaces the 24-byte frame header. These file bodies also include an 8-byte
+transaction, making the whole record 16 bytes larger than the old frame.
+Use the native layouts when sizing the journal. The journal byte
 bound is 256 times that record, rounded up to the next power of two and capped at
 1 MiB. The terminal reserve is 64 times the largest terminal record. Snapshot
 objects are not journal records; their events only name the object.
@@ -378,14 +397,14 @@ shared 4 MiB build scratch.
 
 | Role profile | Root names | Snapshot feeds and caps | Largest S-to-C record (file framing) | Journal bytes | Terminal reserve | Snapshot bound |
 | --- | --- | --- | --- | --- | --- | --- |
-| Bar (Lom, r6) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `upload/N`; `indicators` with bit 9 | outputs 1 KiB; indicators 32 KiB | AllocationResult, 192 B (`crates/sophia-protocol/src/ipc/shell_content/fields.rs:332-351`) | 65,536 (256 x 192 = 49,152, rounded) | 12,288 | 4,261,888 |
-| Launcher (Bemenu, r7) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB | native Input, up to 420 B (`crates/sophia-protocol/src/ipc/shell_native_launcher/records.rs:100`) | 131,072 (256 x 420 = 107,520, rounded) | 26,880 | 12,584,960 |
-| Dock (Provlita, r8) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB with r8 identities | AllocationResult, 192 B | 65,536 | 12,288 | 12,584,960 |
+| Bar (r6) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `upload/N`; `indicators` with bit 9 | outputs 1 KiB; indicators 32 KiB | AllocationResult, 200 B (32-byte header + 168-byte body) | 65,536 (256 x 200 = 51,200, rounded) | 12,800 | 4,261,888 |
+| Launcher (r7) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB | NativeInput, 430 B (32-byte header + 398-byte body) | 131,072 (256 x 430 = 110,080, rounded) | 27,520 | 12,584,960 |
+| Dock (r8) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB with r8 identities | AllocationResult, 200 B | 65,536 | 12,800 | 12,584,960 |
 | Legacy descriptor (Narthex, r1-r8) | `api`, `events`, `transaction`, `submit`, `ack`, `descriptors`, `tabs`, `shortcuts`; `catalog` when r4 and bit 5 are selected | descriptors 4 KiB; tabs 1 MiB; shortcuts 128 KiB; catalog 4 MiB when selected | LauncherRequest, 342 B (`crates/sophia-protocol/src/ipc/shell_launcher.rs:130-146`; query at most 256 B, `crates/sophia-protocol/src/packets/shell_launcher.rs:8`) | 131,072 (256 x 342 = 87,552, rounded) | 21,888 | 6,561,792; 14,950,400 with catalog |
 
-The bar and dock record sizes come from the terminal-debt inventory (184-byte
-AllocationResult and up to 412-byte native Input in today's framing, plus 8).
-For the legacy descriptor profile, the records that become snapshot objects
+The three content profiles use the exact native record sizes above. The legacy
+descriptor row remains a provisional socket-derived estimate until t271 defines
+its file layouts; it is not an implemented file profile. For that profile, the records that become snapshot objects
 (descriptor snapshots of at most 3,084 bytes framed, tabs, shortcut and application
 entries, catalog identities) are excluded; the largest record that stays a journal
 event is the launcher request. Its reserve is sized on that record rather than on a
@@ -987,7 +1006,10 @@ alive as the file format, so it is replaced before more families build on it:
   counted row tables; limits, outputs, catalog and indicators are objects
   with their own layouts. Slice-1 kinds are re-encoded; nothing shipped.
 - **Budgets are wire-neutral.** Owners charge response credit per record,
-  not in socket-frame bytes; each wire enforces its own byte bounds.
+  and bulk records in native record-body bytes. The content registry and typed
+  FIFO use the same charge; each wire enforces its own byte bounds. A record
+  stays queued and charged until a journal append accepts it or the socket
+  writes its last byte. A refused or partial transfer never releases custody.
 - **Clients seam at typed values.** `sophia-shell-client` queues typed
   records and objects; each wire encodes natively. No frame translation.
 - **The independent oracle is written from this contract alone**, never
@@ -1004,9 +1026,9 @@ is the accepted default:
 | --- | --- |
 | Shell | socket transport (`shell_transport` socket branch, inbox/outbox frames), `ipc::shell_*` codecs (`fields.rs`, `codec.rs`), `packets/shell_*` |
 | Shell clients | Rust desktop SDK `sophia-shell-client` socket wire; C desktop SDK `src/shell_wire` socket half (Sophia pins the latter under `vendor/c-desktop-sdk/source`) |
-| Shell file contract | the socket-shaped `Limits` fields (`max_frame_payload`, `max_input_queue_bytes`) and the relations that use the socket header sizes (+24, +48); with them, the response budget's byte charges (`control_budget.rs`: bulk records charged in socket-frame bytes, `max_output_queue_bytes` and the control reserve) become per-record credits with each wire enforcing its own byte bounds. Until then the budget holds its bounds on both wires; control credits are already per record |
+| Shell file contract | the socket-shaped `Limits` fields (`max_frame_payload`, `max_input_queue_bytes`) and their +24/+48 validation relations remain until coordinated SDK retirement. Owners already charge native record-body bytes and per-record control credits; `max_output_queue_bytes` and the control reserve remain Session retention bounds. Only the socket adapter uses the two socket fields to bound I/O |
 | WM | `policy_transport_worker/current_ipc.rs`, `ipc::wm_v1*` and `ipc::policy_*` codecs, Hagia's legacy policy wire |
-| WM file wire (relocate, not delete) | the neutral row-section codec now under `ipc::wm_v1_records` and `ipc::policy_records`, and the row layouts `sophia-wm-files-v1.kdl` cites from `sophia-wm-v1.kdl`, move to wire-neutral homes before the WM IPC codecs go |
+| WM file wire (retained) | `wm_records`, `wm_rows`, `policy_scalars` and `BinaryCodecError` are neutral owners; `sophia-wm-files-v1.kdl` owns the fixed row layouts. The old IPC adapter imports these; deleting that adapter does not delete the file codecs |
 | Output | output socket role (`ipc::output_v1`), migrated by t253 |
 | Control | control socket (`ipc::control_v1`), per the control-bus plan |
 | Broker/portal | `ipc::broker*`, `ipc::portal` (t254 inventory) |

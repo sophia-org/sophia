@@ -242,6 +242,9 @@ static inline void peer_submit(struct peer *p, uint16_t tag, const uint8_t *b)
             r.value.negotiated.selected_revision = 6;
             r.value.negotiated.connection_epoch = PEER_EPOCH;
             r.value.negotiated.capabilities = 0x41;
+            r.value.negotiated.max_descriptors = 16;
+            r.value.negotiated.max_label_bytes = 128;
+            r.value.negotiated.max_pending_activations = 16;
             r.value.negotiated.limits_published = 1;
         }
         peer_record(p, &r);

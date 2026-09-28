@@ -141,8 +141,46 @@ static void maximum_candidate_rows(void)
     bytes[32 + 76] = 65;
     assert(sophia_sf_decode(bytes, n, &decoded));
 }
+static void negotiated_bounds(void)
+{
+    const uint16_t maxima[] = {16, 128, 16};
+    uint8_t bytes[64], saved[64];
+    struct sophia_sf_record r, decoded;
+    size_t field, side, i, written;
+    for (side = 0; side < 2; side++) {
+        memcpy(saved, vector_Negotiated, sizeof(saved));
+        for (field = 0; field < 3; field++) {
+            saved[52 + 2 * field] = (uint8_t)(side ? maxima[field] : 1);
+            saved[53 + 2 * field] = 0;
+        }
+        assert(!sophia_sf_decode(saved, sizeof(saved), &r));
+        assert(!sophia_sf_encode(bytes, sizeof(bytes), &r, &written));
+        assert(written == sizeof(saved) && !memcmp(bytes, saved, sizeof(saved)));
+    }
+    for (field = 0; field < 3; field++) {
+        const uint16_t invalid[] = {0, (uint16_t)(maxima[field] + 1), UINT16_MAX};
+        for (i = 0; i < 3; i++) {
+            memcpy(bytes, saved, sizeof(bytes));
+            bytes[52 + 2 * field] = (uint8_t)invalid[i];
+            bytes[53 + 2 * field] = (uint8_t)(invalid[i] >> 8);
+            assert(sophia_sf_decode(bytes, sizeof(bytes), &decoded));
+            assert(!sophia_sf_decode(saved, sizeof(saved), &r));
+            if (field == 0)
+                r.value.negotiated.max_descriptors = invalid[i];
+            else if (field == 1)
+                r.value.negotiated.max_label_bytes = invalid[i];
+            else
+                r.value.negotiated.max_pending_activations = invalid[i];
+            written = 999;
+            memset(bytes, 0xa5, sizeof(bytes));
+            assert(sophia_sf_encode(bytes, sizeof(bytes), &r, &written));
+            assert(written == 999 && bytes[0] == 0xa5);
+        }
+    }
+}
 int main(void)
 {
+    negotiated_bounds();
     api_discovery();
     vectors_and_truncations();
     conditional_rules();

@@ -47,6 +47,52 @@ int sophia_sf_catalog_entry_at(const struct sophia_sf_catalog *v, size_t i,
         return -4;
     return sophia_sf_catalog_entry_decode(v->rows + i * 656, out);
 }
+static int identity_compare(const struct sophia_sf_catalog *v, uint16_t a, uint16_t b)
+{
+    const uint8_t *left = v->rows + (size_t)a * 656 + 396;
+    const uint8_t *right = v->rows + (size_t)b * 656 + 396;
+    size_t ln = (size_t)sf_get(left, 2), rn = (size_t)sf_get(right, 2);
+    int order = memcmp(left + 4, right + 4, ln < rn ? ln : rn);
+    return order ? order : (ln > rn) - (ln < rn);
+}
+static void identity_sift(const struct sophia_sf_catalog *v, uint16_t *order,
+                          size_t root, size_t count)
+{
+    while (root * 2 + 1 < count) {
+        size_t child = root * 2 + 1;
+        uint16_t saved;
+        if (child + 1 < count && identity_compare(v, order[child], order[child + 1]) < 0)
+            child++;
+        if (identity_compare(v, order[root], order[child]) >= 0)
+            return;
+        saved = order[root];
+        order[root] = order[child];
+        order[child] = saved;
+        root = child;
+    }
+}
+static int unique_identities(const struct sophia_sf_catalog *v)
+{
+    uint16_t order[4096];
+    size_t i;
+    /* Rows are validated first. Sort indices with a fixed scratch bound and
+     * O(n log n) comparisons; untrusted names cannot trigger quadratic work
+     * or an allocator hidden inside the library's qsort implementation. */
+    for (i = 0; i < v->entry_count; i++)
+        order[i] = (uint16_t)i;
+    for (i = v->entry_count / 2; i > 0; i--)
+        identity_sift(v, order, i - 1, v->entry_count);
+    for (i = v->entry_count; i > 1; i--) {
+        uint16_t saved = order[0];
+        order[0] = order[i - 1];
+        order[i - 1] = saved;
+        identity_sift(v, order, 0, i - 1);
+    }
+    for (i = 1; i < v->entry_count; i++)
+        if (!identity_compare(v, order[i - 1], order[i]))
+            return -1;
+    return 0;
+}
 int sf_catalog_check(const struct sophia_sf_catalog *v)
 {
     uint8_t seen[4097] = {0};
@@ -62,7 +108,7 @@ int sf_catalog_check(const struct sophia_sf_catalog *v)
             return -1;
         seen[e.slot] = 1;
     }
-    return 0;
+    return v->identities_present ? unique_identities(v) : 0;
 }
 void sf_catalog_put(uint8_t *b, const struct sophia_sf_catalog *v)
 {
