@@ -1900,6 +1900,36 @@ must retain its tests outside that crate, and niltempus packaging/physical
 runner callers. Output is still a separate role. Those dependencies are not
 permission to drop output evidence while retiring the WM IPC codec.
 
+## WM demo retirement and retained output peer (t269, 2026-09-28)
+
+The runtime removal leaves no Sophia user of the demo's `PolicyV1Client`.
+The `sophia-wm-demo` package, workspace membership and lock entry are removed.
+Its two IPC CLI modes and policy client retire together. The eight output
+tests move to `sophia-conformance/tests/output_ipc.rs` with their original
+assertions, and the output peer moves into that target's test support. The
+native-family output-client phase names the new target. The peer still uses
+Sophia's output codec, so this does not close t253's independent-peer gap.
+Its unused CLI outcome variant and epoch accessor are removed; error payloads
+remain available through Display, and the scratch-directory label is neutral.
+
+The demo's five policy-choice tests (column tiling, unassigned-surface choice,
+partition choice, committed-surface start barrier and stateless retry choice)
+retire with that implementation, not as server-contract assertions. Its two
+IPC wire tests for profile/configuration and a session-operation request are
+covered by `c_sdk_drives_profile_configuration_snapshot_and_policy_exchange`
+against the file export. The protected C recovery and replacement controls
+and unchanged Engine projection tests retain owner semantics. No replacement
+for the demo's old physical mixed-output CLI is claimed here.
+
+niltempus's package assembler stops building/sealing the demo and its installed
+session stops exporting `SOPHIA_NATIVE_WM_BIN`. Its exact-layout test uses a
+fixture with no demo binary; installed-launcher checks forbid that export.
+Historical identity/archive readers keep their old schema, including the
+already-supported `unavailable` identity value. The old mixed-output runner
+is still tied to niltempus's older Sophia pin and is documented as requiring
+that legacy demo; its move to a real 9P output consumer belongs to t253. It
+cannot serve as acceptance evidence for the demo-free head.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

@@ -186,9 +186,9 @@ fn stages() -> Vec<Stage> {
                 "--offline",
                 "-q",
                 "-p",
-                "sophia-wm-demo",
+                "sophia-conformance",
                 "--test",
-                "output_v1",
+                "output_ipc",
             ],
         ),
         // Control shares the envelope, but is not a supervised desktop role.

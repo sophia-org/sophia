@@ -137,9 +137,9 @@ active compositor-chrome preference. It cannot change input admission,
 outputs, namespaces, executable registry entries, renderer or scanout policy,
 or Engine hard limits.
 
-No in-tree WM reads it. `sophia-wm-demo` lost its serving mode with the
-experimental WM API v7, and its remaining subcommands are protocol proof
-clients. A production WM is selected explicitly and speaks `sophia_wm_v1`.
+No in-tree WM reads it. The obsolete IPC demo client is retired. A production
+WM is selected explicitly and speaks the [WM file contract](sophia-wm-files.md)
+over 9P2000.L.
 The `native` and `standalone` tool profiles run no window manager at all, and
 a session without one registers no shortcuts, because shortcuts are resolved
 against a policy client's configuration. Those sessions end when their

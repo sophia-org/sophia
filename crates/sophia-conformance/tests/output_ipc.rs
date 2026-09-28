@@ -13,7 +13,10 @@ use sophia_protocol::{
     encode_output_v1_outcome_frame, encode_output_v1_server_welcome_frame,
     encode_output_v1_snapshot_frame,
 };
-use sophia_wm_demo::{
+#[path = "support/output_ipc_peer.rs"]
+mod peer;
+
+use peer::{
     MirrorSizingPolicy, OutputV1Client, mixed_mirror_extended_candidate,
     mixed_mirror_extended_topology_is_applied,
 };
@@ -318,7 +321,7 @@ fn mixed_candidate_refuses_to_disable_an_unmentioned_connected_head() {
 #[test]
 fn output_client_negotiates_snapshot_and_committed_candidate() {
     let socket = std::env::temp_dir().join(format!(
-        "sophia-wm-demo-output-v1-{}-{}",
+        "sophia-conformance-output-ipc-{}-{}",
         std::process::id(),
         NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
     ));

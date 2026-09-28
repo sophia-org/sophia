@@ -1,3 +1,6 @@
+//! Retained output-role peer from the retired sophia-wm-demo at 7c9134eff.
+//! It uses Sophia's codec, so it is not an independent implementation. Output
+//! IPC remains until t253/t272; this fixture adds no WM transport or policy.
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -7,13 +10,12 @@ use sophia_protocol::{
     IpcCodecError, OutputAuthoritySnapshot, OutputGroupMember, OutputHeadDescriptor,
     OutputHeadMapping, OutputHeadTargetProposal, OutputLogicalGroupProposal,
     OutputLogicalGroupState, OutputTopologyCandidate, OutputTopologyCandidateError,
-    OutputTopologyIntent, OutputTransform, OutputV1ClientHello, OutputV1Outcome,
-    OutputV1OutcomeKind, OutputV1Proposal, OutputVrrPolicy, Rect, SOPHIA_IPC_HEADER_LEN,
-    SOPHIA_IPC_MAX_PAYLOAD_LEN, SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
-    SOPHIA_OUTPUT_CAPABILITY_OBSERVE, SOPHIA_OUTPUT_INTERFACE_REVISION, TransactionId,
-    decode_output_v1_outcome_frame, decode_output_v1_server_welcome_frame,
-    decode_output_v1_snapshot_frame, encode_output_v1_client_hello_frame,
-    encode_output_v1_proposal_frame,
+    OutputTopologyIntent, OutputTransform, OutputV1ClientHello, OutputV1Outcome, OutputV1Proposal,
+    OutputVrrPolicy, Rect, SOPHIA_IPC_HEADER_LEN, SOPHIA_IPC_MAX_PAYLOAD_LEN,
+    SOPHIA_OUTPUT_CAPABILITY_CONFIGURE, SOPHIA_OUTPUT_CAPABILITY_OBSERVE,
+    SOPHIA_OUTPUT_INTERFACE_REVISION, TransactionId, decode_output_v1_outcome_frame,
+    decode_output_v1_server_welcome_frame, decode_output_v1_snapshot_frame,
+    encode_output_v1_client_hello_frame, encode_output_v1_proposal_frame,
 };
 
 #[derive(Debug)]
@@ -26,14 +28,24 @@ pub enum OutputV1ClientError {
     InvalidWelcome,
     ConnectionEpochMismatch,
     TransactionMismatch,
-    NonCommittedOutcome(OutputV1OutcomeKind),
     InvalidProofTopology(&'static str),
     TransactionExhausted,
 }
 
 impl core::fmt::Display for OutputV1ClientError {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(formatter, "{self:?}")
+        match self {
+            Self::Io(error) => write!(formatter, "output I/O: {error}"),
+            Self::Codec(error) => write!(formatter, "output codec: {error:?}"),
+            Self::Candidate(error) => write!(formatter, "output candidate: {error}"),
+            Self::UnsupportedRevision(revision) => {
+                write!(formatter, "unsupported output revision: {revision}")
+            }
+            Self::InvalidProofTopology(reason) => {
+                write!(formatter, "invalid proof topology: {reason}")
+            }
+            _ => write!(formatter, "{self:?}"),
+        }
     }
 }
 
@@ -177,10 +189,6 @@ impl OutputV1Client {
             return Err(OutputV1ClientError::ConnectionEpochMismatch);
         }
         Ok(outcome)
-    }
-
-    pub const fn connection_epoch(&self) -> u64 {
-        self.connection_epoch
     }
 }
 
