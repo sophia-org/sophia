@@ -4,9 +4,8 @@
 //! bubblewrap domain and supplies renderer failure instead of presentation. No
 //! display, DRM node or TTY is opened, so nothing here claims GPU execution or
 //! native presentation.
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -20,6 +19,8 @@ use sophia_runtime::{
     ShellContentAdmissionPolicy, ShellTransportError,
 };
 
+#[path = "support/bounded_peer.rs"]
+mod bounded_peer;
 #[path = "support/c_content_peer.rs"]
 mod c_content_peer;
 
@@ -50,42 +51,7 @@ impl Drop for Scratch {
 
 /// Run to completion within a bounded wait; the host's own deadline is 5 s.
 fn bounded(command: &mut Command) -> Output {
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let status = loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            break status;
-        }
-        if Instant::now() > deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("content host exceeded the bounded wait");
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    };
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    child
-        .stdout
-        .take()
-        .unwrap()
-        .read_to_end(&mut stdout)
-        .unwrap();
-    child
-        .stderr
-        .take()
-        .unwrap()
-        .read_to_end(&mut stderr)
-        .unwrap();
-    Output {
-        status,
-        stdout,
-        stderr,
-    }
+    bounded_peer::run(command, Duration::from_secs(30)).unwrap()
 }
 
 fn host(args: &[&std::ffi::OsStr]) -> Command {
@@ -192,14 +158,13 @@ fn malformed_file_records_are_refused_before_any_owner() {
     )
     .unwrap();
     let mut epochs = ContentEpochRegistry::new(64 * 1024 * 1024).unwrap();
-    let mut child = Command::new(&peer)
-        .arg("content-malformed")
-        .arg("--socket")
-        .arg(owner.socket_path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child = bounded_peer::Peer::spawn(
+        Command::new(&peer)
+            .arg("content-malformed")
+            .arg("--socket")
+            .arg(owner.socket_path()),
+        Duration::from_secs(30),
+    );
     // Admission is by peer identity; this test's subject is the record
     // boundary, and the protected launch is covered by the host test above.
     owner
@@ -234,7 +199,7 @@ fn malformed_file_records_are_refused_before_any_owner() {
     let mut requests = Vec::new();
     let mut demands = 0;
     let started = Instant::now();
-    let status = {
+    let result = {
         let mut transport = owner.connection(&mut epochs);
         transport
             .publish_content_output_facts(
@@ -251,8 +216,8 @@ fn malformed_file_records_are_refused_before_any_owner() {
             )
             .unwrap();
         loop {
-            if let Some(status) = child.try_wait().unwrap() {
-                break status;
+            if let Some(result) = child.poll().unwrap() {
+                break result;
             }
             assert!(
                 started.elapsed() < Duration::from_secs(20),
@@ -320,21 +285,9 @@ fn malformed_file_records_are_refused_before_any_owner() {
             std::thread::sleep(Duration::from_micros(200));
         }
     };
-    let mut stdout = String::new();
-    let mut stderr = String::new();
-    child
-        .stdout
-        .take()
-        .unwrap()
-        .read_to_string(&mut stdout)
-        .unwrap();
-    child
-        .stderr
-        .take()
-        .unwrap()
-        .read_to_string(&mut stderr)
-        .unwrap();
-    assert!(status.success(), "{stdout}{stderr}");
+    let stdout = text(&result.stdout);
+    let stderr = text(&result.stderr);
+    assert!(result.status.success(), "{stdout}{stderr}");
     for control in [
         "declared_length_below_written refused errno=22",
         "declared_length_above_transaction_cap refused errno=22",
