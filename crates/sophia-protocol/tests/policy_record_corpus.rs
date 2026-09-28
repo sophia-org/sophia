@@ -1,7 +1,8 @@
 //! The golden WM record corpus (`protocol/golden/sophia-wm-v1.records`)
 //! through the shared record codecs, without the socket codecs. The C SDK's
 //! file tests read the same corpus, so it outlives the socket frames. The
-//! legacy chunk wrappers' pass over it stays in `policy_wire.rs`.
+//! legacy chunk wrappers' pass over it retired under t269 (`policy_wire.rs`
+//! at 2eeb074e8).
 use sophia_protocol::*;
 
 const RECORD_CORPUS: &str = include_str!("../../../protocol/golden/sophia-wm-v1.records");

@@ -1,7 +1,7 @@
 //! The shared WM snapshot, projection and configuration records without the
 //! socket codecs: complete round trips, section preflight, aggregate bounds,
-//! cross-array identities and ordering. The legacy socket parity of these
-//! records is in `policy_complete_records_ipc_compat.rs`.
+//! cross-array identities and ordering. Legacy socket parity retired under
+//! t269 (`policy_complete_records_ipc_compat.rs` at 2eeb074e8).
 use sophia_protocol::*;
 #[path = "support/policy_record_fixture.rs"]
 mod fixture;

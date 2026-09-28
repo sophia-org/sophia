@@ -1948,6 +1948,41 @@ Evidence is `t269-niltempus-xtask-3.log`, `t269-niltempus-clippy.log` and
 `t269-niltempus-install.log`; failed runs are retained. No package was built or
 installed, and no running component or release selection was changed.
 
+## WM semantic socket adapter retirement (t269, 2026-09-28)
+
+The handwritten WM socket adapters (`ipc/wm_v1_records*`, `wm_v1_profile`,
+`wm_record_sections`, `wm_output_actions` and `wm_presentation_actions`) are
+removed. Two Session output-bookmark validators now call
+`encode_policy_output_launch_contexts_records` directly. The former wrapper
+only called that function and wrapped its successful sections in chunks; the
+validation and refusal behavior are unchanged. Profile startup and the runtime
+handoff tests use the existing neutral `PolicyProfile*` names instead of aliases.
+
+The neutral snapshot/projection decoders lose the private bypass entry points
+that the socket adapters used for declared Begin counts. The file path still
+checks complete section lengths, kinds, counts, aggregate bounds and semantic
+relationships before exposing values. Its public entry points and assertions
+are unchanged.
+
+Coverage retained from the t267 split (last adapter source: `2eeb074e8`):
+
+| Retired adapter tests | Retained contract coverage |
+| --- | --- |
+| `policy_semantics`, `pointer_focus` | `policy_semantics_neutral`, `policy_complete_records`, `wm_file_arrays`, `wm_file_controls` |
+| `policy_scalars` and its IPC fixture | `policy_scalars_neutral`, strict file cycle/control tests; the permissive legacy target exception retires |
+| `policy_profile_wire`, `policy_profile_ipc_compat` | `policy_profile_neutral`, `wm_file_admission`, unchanged runtime `policy_profile_handoff` assertions |
+| `wm_presentation` | `wm_presentation_neutral`, file action/receipt controls |
+| `wm_translation`, `tab_group_selection_ipc_compat` | `wm_translation_neutral`, `tab_group_selection`, complete projection records |
+| `output_actions`, `output_launch_context` | Their existing `_neutral` targets, plus Session `launch_origin` and `persistent_catalog_queue` |
+| `policy_complete_records_ipc_compat`, legacy golden fixture binaries | `policy_complete_records`, `policy_record_corpus`, `wm_file_arrays`; byte equality to retired socket envelopes is retired |
+| `policy_record_compatibility` | The old direct decoder's split 17-output acceptance retires; neutral aggregate bounds continue to refuse it |
+| `policy_wire` tab chunk-ordinal test and chunk-wrapped record corpus | Ordinals retire; `policy_record_corpus` still checks every shared golden row |
+
+The generated WM frame codec and its frame/malformed/transaction-bound tests
+remain with the frozen generator and SDK contract copies for the coordinated
+t269/t270 cut. The shared row golden corpus is retained. Neither output-role
+IPC nor shell socket adapters are removed by this slice.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

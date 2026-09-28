@@ -4,11 +4,10 @@
 //! projection proposals, configuration and their capability-gated extensions.
 //! This owner encodes, bounds and validates those rows as complete sections.
 //! It has no socket frames, chunk ordinals, Begin/End assembly, file
-//! envelopes, queues or publication state; the legacy socket adapters under
-//! `crate::ipc` and the file codec in `crate::wm_files` both call it.
+//! envelopes, queues or publication state. The file codec in `crate::wm_files`
+//! calls it.
 //!
-//! Raw generated rows and constants are still reached through their
-//! root-exported names until `crate::wm_rows` owns them.
+//! Raw generated rows and constants belong to `crate::wm_rows`.
 mod configuration;
 mod launch_origins;
 mod output_launch_contexts;
@@ -66,10 +65,3 @@ pub use translation::{
     PROJECTION_TRANSLATION_MEMBER_RECORD_KIND, PROJECTION_TRANSLATION_MEMBER_RECORD_LEN,
     decode_policy_translation_groups_records, encode_policy_translation_groups_records,
 };
-
-// The legacy socket adapters decode the same rows but add their envelope's
-// declared counts and scalar messages. They reach these pieces, not copies.
-pub(crate) use configuration::{decode_policy_action_rows, validate_policy_configuration};
-pub(crate) use projection::decode_projection_sections;
-pub(crate) use snapshot::decode_snapshot_sections;
-pub(crate) use values::{decode_optional_surface, require_count};

@@ -1,8 +1,7 @@
-//! The WM policy semantics of `policy_semantics.rs` without the socket
-//! codecs: the same values through the shared record sections, the scalar
-//! validators and the WM file cycle. The legacy chunk counts, fixed arrays and
-//! declared-count checks stay in `policy_semantics.rs` and retire with the
-//! socket wire (t269). Each test names the legacy test it carries.
+//! WM policy semantics through shared record sections, scalar validators and
+//! the WM file cycle. These preserve the policy assertions from
+//! `policy_semantics.rs` at 2eeb074e8; legacy chunk/count assertions retired
+//! with the socket adapters under t269. Each test names its original test.
 use sophia_protocol::wm_files::*;
 use sophia_protocol::*;
 

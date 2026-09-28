@@ -1,8 +1,8 @@
 //! Presentation records, shape and action semantics of `wm_presentation.rs`
 //! without the socket codecs: the shared record sections, the WM file cycle
-//! and the neutral validators. The legacy chunk ordinals, 65520-byte chunk
-//! split and v1 frames stay in `wm_presentation.rs` and retire with the
-//! socket wire (t269). Receipts are covered by `wm_file_controls.rs`.
+//! and the neutral validators. Legacy chunk ordinals, the 65520-byte chunk
+//! split and v1 frames retired under t269 (`wm_presentation.rs` at 2eeb074e8).
+//! Receipts are covered by `wm_file_controls.rs`.
 use sophia_protocol::wm_files::*;
 use sophia_protocol::*;
 

@@ -1,6 +1,6 @@
 //! The WM output launch-context records of `output_launch_context.rs` without
-//! the socket codecs. The legacy chunk ordinal and chunk epoch stay in
-//! `output_launch_context.rs` and retire with the socket wire (t269). This is
+//! the socket codecs. Legacy chunk ordinal and chunk epoch checks retired
+//! under t269 (`output_launch_context.rs` at 2eeb074e8). This is
 //! the WM projection's output bookmark, not the output role.
 use sophia_protocol::*;
 

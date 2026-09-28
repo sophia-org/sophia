@@ -148,7 +148,7 @@ fn file_pointer_and_interaction_codes_are_not_legacy_cause_codes() {
 }
 
 #[test]
-fn new_file_targets_are_strict_despite_the_preserved_legacy_exception() {
+fn file_targets_refuse_the_retired_socket_target_exception() {
     let h = header(WmFileKind::Cycle);
     let value = cycle(fixture::request(PolicyRequestCause::Focus {
         target: SurfaceId::new(4, 1),

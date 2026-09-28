@@ -1,6 +1,6 @@
 //! The neutral scalar WM semantics, directly: the validators, the cause
 //! capability map and the scalar code tables, without the socket codecs. The
-//! legacy wrappers that reach them are tested in `policy_scalars.rs`.
+//! legacy wrappers tested in `policy_scalars.rs` at 2eeb074e8 retired under t269.
 #[path = "support/policy_scalar_fixture.rs"]
 mod fixture;
 

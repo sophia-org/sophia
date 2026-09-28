@@ -1,6 +1,7 @@
 //! The neutral profile values without the socket codecs: exact identities,
 //! outcome codes, and the established validation errors in their precedence.
-//! The socket frames and legacy aliases are in `policy_profile_ipc_compat.rs`.
+//! Socket frames and legacy aliases retired under t269; their last tests are
+//! in `policy_profile_ipc_compat.rs` at 2eeb074e8.
 use sophia_protocol::wm_rows::{
     SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED, SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY,
     SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE,

@@ -118,7 +118,8 @@ impl LaunchOriginRegistry {
         contexts: &[sophia_protocol::PolicyOutputLaunchContext],
     ) {
         if epoch == self.epoch
-            && sophia_protocol::encode_wm_output_launch_contexts(contexts, epoch, 0).is_ok()
+            && sophia_protocol::encode_policy_output_launch_contexts_records(contexts, epoch)
+                .is_ok()
         {
             self.output_contexts = contexts.to_vec();
         }

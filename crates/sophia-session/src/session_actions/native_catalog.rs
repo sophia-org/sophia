@@ -58,10 +58,9 @@ impl SessionLaunchQueue {
         contexts: &[sophia_protocol::PolicyOutputLaunchContext],
     ) {
         self.output_contexts.clear();
-        if sophia_protocol::encode_wm_output_launch_contexts(
+        if sophia_protocol::encode_policy_output_launch_contexts_records(
             contexts,
             contexts.first().map_or(0, |c| c.epoch),
-            0,
         )
         .is_ok()
         {

@@ -19,7 +19,7 @@ use crate::{
 
 use super::values::{
     decode_optional_size, decode_optional_surface, decode_presentation, encode_optional_size,
-    encode_presentation, invalid, push_policy_section, require_count,
+    encode_presentation, invalid, push_policy_section,
 };
 use super::{
     PROJECTION_LAUNCH_CONTEXT_RECORD_KIND, PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND,
@@ -156,17 +156,6 @@ pub fn decode_policy_projection_records(
         return Err(invalid("projection_transfer", 0));
     }
     validate_policy_record_sections(PolicyRecordContext::Projection, sections)?;
-    decode_projection_sections(metadata, sections, None)
-}
-
-/// Decode complete sections. `declared` holds the output, placement,
-/// indicator and status counts when an envelope announces them apart from its
-/// rows; they are checked after the rows decode, before any value is built.
-pub(crate) fn decode_projection_sections(
-    metadata: PolicyProjectionMetadata,
-    sections: &[PolicyRecordSectionRef<'_>],
-    declared: Option<[usize; 4]>,
-) -> Result<PolicyProjectionProposal, BinaryCodecError> {
     let mut outputs = Vec::new();
     let mut placements = Vec::new();
     let mut indicators = Vec::new();
@@ -198,12 +187,6 @@ pub(crate) fn decode_projection_sections(
             | PROJECTION_PRESENTATION_BINDING_RECORD_KIND => {}
             other => return Err(invalid("projection_record_kind", u32::from(other))),
         }
-    }
-    if let Some(counts) = declared {
-        require_count(outputs.len(), counts[0])?;
-        require_count(placements.len(), counts[1])?;
-        require_count(indicators.len(), counts[2])?;
-        require_count(statuses.len(), counts[3])?;
     }
     let mut placement_cursor = placements.into_iter();
     let mut projected_outputs = Vec::with_capacity(outputs.len());

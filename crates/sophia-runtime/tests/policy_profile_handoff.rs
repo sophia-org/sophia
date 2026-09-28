@@ -1,6 +1,6 @@
 use sophia_protocol::{
-    TransactionId, WM_V1_PROFILE_DIGEST_BYTES, WmV1ProfileCompletion, WmV1ProfileIdentity,
-    WmV1ProfileOutcome,
+    POLICY_PROFILE_DIGEST_BYTES, PolicyProfileCompletion, PolicyProfileIdentity,
+    PolicyProfileOutcome, TransactionId,
 };
 use sophia_runtime::{
     PolicyProfileCompletionDisposition, PolicyProfileHandoffError, PolicyProfileHandoffKind,
@@ -8,8 +8,8 @@ use sophia_runtime::{
     reduce_policy_profile_handoff,
 };
 
-fn profile_identity(epoch: u64, generation: u64, digest: u8) -> WmV1ProfileIdentity {
-    WmV1ProfileIdentity::new(epoch, generation, [digest; WM_V1_PROFILE_DIGEST_BYTES]).unwrap()
+fn profile_identity(epoch: u64, generation: u64, digest: u8) -> PolicyProfileIdentity {
+    PolicyProfileIdentity::new(epoch, generation, [digest; POLICY_PROFILE_DIGEST_BYTES]).unwrap()
 }
 
 fn transaction(raw: u64) -> TransactionId {
@@ -18,10 +18,10 @@ fn transaction(raw: u64) -> TransactionId {
 
 fn completion(
     transaction: u64,
-    identity: WmV1ProfileIdentity,
-    outcome: WmV1ProfileOutcome,
-) -> WmV1ProfileCompletion {
-    WmV1ProfileCompletion {
+    identity: PolicyProfileIdentity,
+    outcome: PolicyProfileOutcome,
+) -> PolicyProfileCompletion {
+    PolicyProfileCompletion {
         transaction: TransactionId::from_raw(transaction),
         identity,
         outcome,
@@ -47,7 +47,7 @@ fn begin(
 fn settle(
     model: &PolicyProfileHandoffModel,
     kind: PolicyProfileHandoffKind,
-    completion: WmV1ProfileCompletion,
+    completion: PolicyProfileCompletion,
 ) -> (
     PolicyProfileHandoffModel,
     PolicyProfileCompletionDisposition,
@@ -82,7 +82,7 @@ fn exact_prepare_and_activate_completions_advance_the_candidate() {
     let (prepared, disposition) = settle(
         &prepare.model,
         PolicyProfileHandoffKind::Prepare,
-        completion(1, identity, WmV1ProfileOutcome::Accepted),
+        completion(1, identity, PolicyProfileOutcome::Accepted),
     );
     assert_eq!(disposition, PolicyProfileCompletionDisposition::Accepted);
     assert_eq!(prepared.phase(), PolicyProfileHandoffPhase::Prepared);
@@ -91,7 +91,7 @@ fn exact_prepare_and_activate_completions_advance_the_candidate() {
     let (active, disposition) = settle(
         &activating,
         PolicyProfileHandoffKind::Activate,
-        completion(2, identity, WmV1ProfileOutcome::Accepted),
+        completion(2, identity, PolicyProfileOutcome::Accepted),
     );
     assert_eq!(disposition, PolicyProfileCompletionDisposition::Accepted);
     assert_eq!(active.phase(), PolicyProfileHandoffPhase::Active);
@@ -109,13 +109,13 @@ fn stale_completion_is_inert_across_epoch_transaction_identity_and_phase() {
         completion(
             1,
             profile_identity(8, 7, 0x5a),
-            WmV1ProfileOutcome::Accepted,
+            PolicyProfileOutcome::Accepted,
         ),
-        completion(2, identity, WmV1ProfileOutcome::Accepted),
+        completion(2, identity, PolicyProfileOutcome::Accepted),
         completion(
             1,
             profile_identity(9, 8, 0x5a),
-            WmV1ProfileOutcome::Accepted,
+            PolicyProfileOutcome::Accepted,
         ),
     ] {
         let (unchanged, disposition) = settle(&awaiting, PolicyProfileHandoffKind::Prepare, stale);
@@ -125,7 +125,7 @@ fn stale_completion_is_inert_across_epoch_transaction_identity_and_phase() {
     let (unchanged, disposition) = settle(
         &awaiting,
         PolicyProfileHandoffKind::Activate,
-        completion(1, identity, WmV1ProfileOutcome::Accepted),
+        completion(1, identity, PolicyProfileOutcome::Accepted),
     );
     assert_eq!(disposition, PolicyProfileCompletionDisposition::Stale);
     assert_eq!(unchanged, awaiting);
@@ -142,11 +142,11 @@ fn rejection_requires_explicit_rollback_and_never_promotes() {
     let (rejected, disposition) = settle(
         &awaiting,
         PolicyProfileHandoffKind::Prepare,
-        completion(4, identity, WmV1ProfileOutcome::RejectedIdentity),
+        completion(4, identity, PolicyProfileOutcome::RejectedIdentity),
     );
     assert_eq!(
         disposition,
-        PolicyProfileCompletionDisposition::Rejected(WmV1ProfileOutcome::RejectedIdentity)
+        PolicyProfileCompletionDisposition::Rejected(PolicyProfileOutcome::RejectedIdentity)
     );
     assert_eq!(rejected.phase(), PolicyProfileHandoffPhase::Rejected);
 
@@ -154,7 +154,7 @@ fn rejection_requires_explicit_rollback_and_never_promotes() {
     let (rolled_back, disposition) = settle(
         &rolling_back,
         PolicyProfileHandoffKind::Rollback,
-        completion(5, identity, WmV1ProfileOutcome::Accepted),
+        completion(5, identity, PolicyProfileOutcome::Accepted),
     );
     assert_eq!(disposition, PolicyProfileCompletionDisposition::Accepted);
     assert_eq!(rolled_back.phase(), PolicyProfileHandoffPhase::RolledBack);
@@ -217,7 +217,7 @@ fn disconnect_discards_the_outstanding_operation_and_old_ack_is_stale() {
     let (unchanged, disposition) = settle(
         &disconnected,
         PolicyProfileHandoffKind::Prepare,
-        completion(6, identity, WmV1ProfileOutcome::Accepted),
+        completion(6, identity, PolicyProfileOutcome::Accepted),
     );
     assert_eq!(disposition, PolicyProfileCompletionDisposition::Stale);
     assert_eq!(unchanged, disconnected);

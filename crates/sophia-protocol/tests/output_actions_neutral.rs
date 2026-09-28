@@ -1,7 +1,7 @@
 //! The WM output-action cause and output policy keys of `output_actions.rs`
 //! without the socket codecs: the WM file cycle, the scalar validator and the
-//! shared snapshot records. The legacy wire fields and v1 frames stay in
-//! `output_actions.rs` and retire with the socket wire (t269). This is the WM
+//! shared snapshot records. Legacy wire fields and v1 frames retired under
+//! t269 (`output_actions.rs` at 2eeb074e8). This is the WM
 //! role's output action, not the output role.
 use sophia_protocol::wm_files::*;
 use sophia_protocol::*;

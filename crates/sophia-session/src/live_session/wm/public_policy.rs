@@ -439,8 +439,8 @@ fn enqueue_public_policy_security_cancel(
 fn policy_profile_identity(
     connection_epoch: u64,
     key: sophia_config::DesktopProfileActivationKey,
-) -> Result<sophia_protocol::WmV1ProfileIdentity, Box<dyn std::error::Error>> {
-    sophia_protocol::WmV1ProfileIdentity::new(
+) -> Result<sophia_protocol::PolicyProfileIdentity, Box<dyn std::error::Error>> {
+    sophia_protocol::PolicyProfileIdentity::new(
         connection_epoch,
         key.generation().raw(),
         key.digest().bytes(),

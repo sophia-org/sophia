@@ -1,7 +1,7 @@
 //! The translation group records of `wm_translation.rs` without the socket
 //! codecs: the shared sections round trip and malformed rows fail closed.
-//! The legacy chunk ordinal stays in `wm_translation.rs` and retires with the
-//! socket wire (t269).
+//! The legacy chunk ordinal retired under t269 (`wm_translation.rs` at
+//! 2eeb074e8).
 use sophia_protocol::*;
 
 fn groups() -> Vec<PolicyTranslationGroup> {

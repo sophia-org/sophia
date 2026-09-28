@@ -84,14 +84,6 @@ pub(crate) fn decode_optional_surface(
     }
 }
 
-pub(crate) fn require_count(actual: usize, expected: usize) -> Result<(), BinaryCodecError> {
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(invalid("record_count", actual as u32))
-    }
-}
-
 pub(super) fn invalid(field: &'static str, value: u32) -> BinaryCodecError {
     BinaryCodecError::InvalidEnum { field, value }
 }

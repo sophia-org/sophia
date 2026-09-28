@@ -24,7 +24,7 @@ use crate::{
 use super::configuration::{decode_policy_action_rows, encode_action_name};
 use super::values::{
     decode_optional_size, decode_optional_surface, decode_presentation, encode_optional_size,
-    encode_presentation, invalid, push_policy_section, require_count,
+    encode_presentation, invalid, push_policy_section,
 };
 use super::{
     PolicyDecodedSnapshot, PolicyRecordContext, PolicyRecordSection, PolicyRecordSectionRef,
@@ -274,17 +274,6 @@ pub fn decode_policy_snapshot_records(
         return Err(invalid("snapshot_transfer", 0));
     }
     validate_policy_record_sections(PolicyRecordContext::Snapshot, sections)?;
-    decode_snapshot_sections(metadata, sections, None)
-}
-
-/// Decode complete sections. `declared` holds the output, surface, action and
-/// session-operation counts when an envelope announces them apart from its
-/// rows; they are checked after the rows decode, before any value is built.
-pub(crate) fn decode_snapshot_sections(
-    metadata: PolicySnapshotMetadata,
-    sections: &[PolicyRecordSectionRef<'_>],
-    declared: Option<[usize; 4]>,
-) -> Result<PolicyDecodedSnapshot, BinaryCodecError> {
     let mut outputs = Vec::new();
     let mut surfaces = Vec::new();
     let mut actions = Vec::new();
@@ -313,12 +302,6 @@ pub(crate) fn decode_snapshot_sections(
             SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND | SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND => {}
             other => return Err(invalid("snapshot_record_kind", u32::from(other))),
         }
-    }
-    if let Some(counts) = declared {
-        require_count(outputs.len(), counts[0])?;
-        require_count(surfaces.len(), counts[1])?;
-        require_count(actions.len(), counts[2])?;
-        require_count(session_operations.len(), counts[3])?;
     }
     let mut scene = PolicySceneSnapshot {
         generation: metadata.scene_generation,
