@@ -12,7 +12,7 @@ mod error;
 mod host_domain;
 #[cfg(target_os = "linux")]
 pub mod inspection;
-mod output_ipc;
+mod output_connection;
 #[cfg(target_os = "linux")]
 mod output_service;
 #[cfg(target_os = "linux")]
@@ -55,7 +55,7 @@ pub use control::*;
 pub use error::*;
 #[cfg(target_os = "linux")]
 pub use inspection::SOPHIA_WM_INSPECT_SOCKET_ENV;
-pub use output_ipc::*;
+pub use output_connection::*;
 #[cfg(target_os = "linux")]
 pub use output_service::*;
 #[cfg(target_os = "linux")]

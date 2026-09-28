@@ -1,3 +1,4 @@
+//! Output admission, replacement, settlement and epoch rules without wire codecs.
 use sophia_protocol::*;
 use sophia_runtime::*;
 

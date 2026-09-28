@@ -1493,6 +1493,29 @@ The output export, independent SDK peer, bounded retained identities/channels,
 remaining failure and restart observations, and applicable topology acceptance
 are still required. It does not close t272 or claim output IPC retirement.
 
+### Neutral output-role foundation (t272, 2026-09-28)
+
+The output negotiation values, proposal, snapshot envelope and outcome now
+live in `sophia-protocol/src/output_role.rs`. The old socket module re-exports
+them to preserve its API. The owner and its five unchanged tests move from
+`output_ipc.rs` to `output_connection.rs`; none of their admission or settlement
+logic changes. A verbatim comparison verifies both relocations.
+
+A disposable private probe compiles the actual owner source and runs those five
+tests with the protocol's IPC module and re-exports removed by a read-only
+overlay. The only test-body change in that probe is the crate import. All five
+pass (`ipc-retirement/t272-neutral-probe-final.log`), proving the owner/model
+can support the future file export without compiling the socket codecs.
+This is not a file-wire implementation or peer interoperability result.
+
+The ordinary gate passes 18 runtime owner/service/transport tests and eleven
+protocol schema/configuration/topology tests. Strict clippy for protocol and
+runtime, all targets/features, formatting and layout pass. Logs:
+`t272-neutral-output-{focused,protocol,clippy,fmt,layout}.log`. The first normal
+compile warned about a redundant root glob re-export; an explicit public export
+list removes the warning while preserving both facades. The final no-IPC probe
+was regenerated from that corrected source and passes again.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

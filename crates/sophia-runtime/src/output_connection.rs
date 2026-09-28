@@ -1,3 +1,4 @@
+//! Output-role admission and proposal custody, independent of either wire.
 use std::collections::BTreeSet;
 
 use sophia_protocol::{

@@ -11,6 +11,7 @@ pub mod geometry;
 pub mod ids;
 pub mod inspection;
 pub mod ipc;
+pub mod output_role;
 pub mod packets;
 pub mod policy_behavior;
 pub mod policy_profile;
@@ -32,6 +33,16 @@ pub use ipc::*;
 pub use ipc::{
     validate_shell_launcher_candidate, validate_shell_reference_candidate,
     validate_shell_shortcut_catalog, validate_shell_tab_snapshot,
+};
+pub use output_role::{
+    OutputV1ClientHello, OutputV1Outcome, OutputV1OutcomeKind, OutputV1Proposal,
+    OutputV1ServerWelcome, OutputV1Snapshot, SOPHIA_OUTPUT_CAPABILITY_CONFIGURE,
+    SOPHIA_OUTPUT_CAPABILITY_OBSERVE, SOPHIA_OUTPUT_INTERFACE_MAJOR,
+    SOPHIA_OUTPUT_INTERFACE_REVISION, SOPHIA_OUTPUT_OUTCOME_REASON_APPLY,
+    SOPHIA_OUTPUT_OUTCOME_REASON_FIRST_PRESENTATION, SOPHIA_OUTPUT_OUTCOME_REASON_HEAD_LOST,
+    SOPHIA_OUTPUT_OUTCOME_REASON_INVARIANT, SOPHIA_OUTPUT_OUTCOME_REASON_NONE,
+    SOPHIA_OUTPUT_OUTCOME_REASON_PREPARATION, SOPHIA_OUTPUT_OUTCOME_REASON_ROLLBACK,
+    SOPHIA_OUTPUT_OUTCOME_REASON_STALE,
 };
 pub use packets::*;
 pub use policy_behavior::*;
