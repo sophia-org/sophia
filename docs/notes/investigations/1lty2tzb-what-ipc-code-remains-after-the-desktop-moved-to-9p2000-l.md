@@ -182,11 +182,72 @@ IPC removal inventory for Sophia master 2d69924a9 (read-only; nothing built or r
 - Whether Provlita is 9P-only.
 - How much of `output_service.rs` is wire-neutral.
 
+### Follow-up: the three survey questions (t274, 2026-09-27)
+
+Source audit at Sophia `32aa3c0d7`, Hagia
+`69f427abb0565d10c04dab302915396048252dcf`, and Provlita
+`e52a7e051587c8f396328dc8843516ebdd83b287` resolves the uncertainties above.
+The original survey remains a record of what was known at `2d69924a9`.
+
+**Hagia does not consume the output socket or link the SDK IPC library.**
+`src/hagia.nim:158-162` rejects the retired WM socket variable and selects
+`SOPHIA_WM_9P_SOCKET`. There is no `SOPHIA_OUTPUT_SOCKET` reader in `src/`.
+The sole C SDK build boundary, `src/sophia/desktop_sdk.nim:4-20`, explicitly
+compiles the `nine_p`, `wm_files`, and `wm_session` C sources. It neither
+compiles the legacy wire sources nor links `libsophia-desktop-ipc`.
+The tracked `hagia.nimble` supplies no alternate IPC link, and
+`tools/check_sophia_policy.sh` builds the SDK with `WITH_IPC=0`.
+The pairing fixture's assertion that Sophia exports `SOPHIA_OUTPUT_SOCKET`
+does not establish a consumer. Likewise, the SDK's check of the WM `api`
+string `output_transport=current_ipc` validates an advertisement; it does not
+open that endpoint. This is an audit of the pinned source/build inputs, not
+a claim about every historical installed binary.
+
+**Provlita is 9P-only.** `Cargo.toml:15-17` pins the standalone Rust SDK at
+`ea9cf651` without `ipc-compat`; neither the manifest nor its lock contains
+`sophia-shell-ipc`. `src/serve.rs:26-31` rejects the retired variable even
+when empty, requires a nonempty `SOPHIA_SHELL_9P_SOCKET`, and calls
+`ShellConnection::connect_files` at line 51. `tests/cli.rs` covers the
+endpoint refusals, and the service tests use a scripted 9P peer. The
+contributor gate at `e52a7e0` passed 25 Rust and 12 tooling tests with strict
+clippy, including the signal/no-replay controls. Evidence is retained under
+`~/.local/state/sophia/development-evidence/component-sigterm/`.
+This does not close Provlita's separate production-export/live acceptance.
+
+**The output service mixes reusable role behavior with a concrete socket
+adapter.** Preserve these behaviors when implementing t253/t272:
+
+- `output_service.rs` owns the optional-client worker, typed command/event
+  channels, bounded accept/intake turns, latest snapshot, reply/settlement
+  dispatch, reconnect epochs, and supervised-assignee replacement.
+- `pause_acceptance` is a synchronous barrier across the replacement
+  process's spawn-to-PID handoff. Removing it would reopen an authorization
+  race; it is not an IPC framing detail.
+- `output_ipc.rs::OutputConnectionState` owns revision/capability admission,
+  unique transaction identities, one active proposal plus one replaceable
+  queued proposal, promotion only after settlement, and disconnect custody.
+  Its algorithm is reusable, but its public types and constants still name
+  `OutputV1*`. Move those to role-owned types with the new contract.
+- The concrete `OutputSessionTransport`/`OutputTransportError`, socket
+  negotiation, frame send/receive calls, and write-error translation are the
+  service's wire-specific adapter. Replace them with the accepted file
+  export; do not delete the whole service or retain the socket underneath it.
+
+The retained regression map is
+`crates/sophia-runtime/tests/output_service.rs`: candidate/settlement exchange,
+replacement hardware snapshot, departed readers, no-client stop, supervised
+PID replacement, and acceptance pause during handoff. The state reducer has
+separate tests in `tests/output_ipc.rs`. Port these assertions to the new
+role, including negative controls, before deleting their socket fixtures.
+This classification required source inspection only; no output-role or live
+session test was run. The output role still needs its 9P contract and peer.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
 `same_contract` digests, the native protocol-family gates) and, for default
-flips, by a published rollback recipe. Open work is tracked in `todo.md`:
+flips, by a published rollback recipe. The inventory maps to these task IDs;
+`todo.md` and the monthly completion files own their current state:
 
 - t264: drop the unused `sophia-wm-demo` dependency (A).
 - t265: retarget Sophia tests off `ipc-compat`, `sophia-shell-ipc` and
