@@ -1,18 +1,18 @@
 //! Endpoint custody before the existing file/profile driver admission. The
 //! supervisor supplies launch evidence; this is not a namespace inventory.
 use super::*;
-use sophia_runtime::{PolicyRole, PolicyRoleEndpoint, ProcessSupervisor, ProtectionDomainRole};
+use sophia_runtime::{PolicyRole, ProcessSupervisor, ProtectionDomainRole, RoleEndpoint};
 
 #[path = "../../../../tests/support/policy_file_pending.rs"]
 mod tests;
 
 pub(super) struct PendingEndpoint {
-    endpoint: PolicyRoleEndpoint,
+    endpoint: RoleEndpoint,
     qids: Option<WmQids>,
 }
 impl PendingEndpoint {
     pub(super) fn authorize(
-        mut endpoint: PolicyRoleEndpoint,
+        mut endpoint: RoleEndpoint,
         supervisor: &ProcessSupervisor,
         qids: WmQids,
     ) -> Result<Self, String> {

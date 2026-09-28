@@ -111,6 +111,20 @@ impl From<PolicyProfileHandoffError> for PolicyTransportError {
     }
 }
 
+impl From<crate::PolicyProfileIoError> for PolicyTransportError {
+    fn from(error: crate::PolicyProfileIoError) -> Self {
+        use crate::PolicyProfileIoError as E;
+        match error {
+            E::Io(message) => Self::Io(message),
+            E::TimedOut => Self::TimedOut,
+            E::ProfileHandoff(error) => Self::ProfileHandoff(error),
+            E::ProfileCompletionOutOfPhase => Self::ProfileCompletionOutOfPhase,
+            E::ProfileCompletionStale => Self::ProfileCompletionStale,
+            E::ProfileRejected { kind, outcome } => Self::ProfileRejected { kind, outcome },
+        }
+    }
+}
+
 /// Draft session-owned WM transport. It is not connected to the installed v7
 /// path until the public-protocol milestone reaches its migration gate.
 pub struct PolicyWmSessionTransport {
@@ -778,6 +792,7 @@ fn read_policy_frame(stream: &mut UnixStream) -> Result<Vec<u8>, PolicyTransport
 
 // Codec and socket timeout behavior stay inside the current IPC adapter.
 impl PolicyProfileHandoffIo for PolicyWmSessionTransport {
+    type Error = PolicyTransportError;
     fn send_profile_effect(
         &mut self,
         effect: PolicyProfileHandoffEffect,

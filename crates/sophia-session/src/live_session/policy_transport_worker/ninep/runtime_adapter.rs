@@ -19,7 +19,7 @@ pub(super) struct NinePPolicyAdapter {
 }
 impl NinePPolicyAdapter {
     pub(super) fn pending(
-        endpoint: sophia_runtime::PolicyRoleEndpoint,
+        endpoint: sophia_runtime::RoleEndpoint,
         supervisor: &sophia_runtime::ProcessSupervisor,
         epoch: u64,
         limits: WmFileLimits,

@@ -7,7 +7,7 @@ use super::*;
 use sophia_protocol::PolicyProfileIdentity;
 use sophia_runtime::{
     PolicyProfileHandoffEffect, PolicyProfileHandoffIo, PolicyProfileHandoffKind,
-    PolicyTransportError, activate_policy_profile_handoff, select_policy_capabilities,
+    PolicyProfileIoError, activate_policy_profile_handoff, select_policy_capabilities,
 };
 
 // Unlike legacy per-read socket timeouts these are absolute receive budgets.
@@ -76,7 +76,7 @@ impl FileStartup {
         self.cancellation.command_handle()
     }
     pub(super) fn pending(
-        endpoint: sophia_runtime::PolicyRoleEndpoint,
+        endpoint: sophia_runtime::RoleEndpoint,
         supervisor: &sophia_runtime::ProcessSupervisor,
         epoch: u64,
         limits: WmFileLimits,
@@ -190,18 +190,19 @@ struct FileProfileIo<'a> {
     pending: Option<PolicyReceivePermit>,
 }
 impl PolicyProfileHandoffIo for FileProfileIo<'_> {
+    type Error = PolicyProfileIoError;
     fn send_profile_effect(
         &mut self,
         effect: PolicyProfileHandoffEffect,
-    ) -> Result<(), PolicyTransportError> {
+    ) -> Result<(), PolicyProfileIoError> {
         if self.pending.is_some() {
-            return Err(PolicyTransportError::ProfileCompletionOutOfPhase);
+            return Err(PolicyProfileIoError::ProfileCompletionOutOfPhase);
         }
         let selected = self
             .reactor
             .owner_mut()
             .selected_capabilities()
-            .ok_or(PolicyTransportError::ProfileCompletionOutOfPhase)?;
+            .ok_or(PolicyProfileIoError::ProfileCompletionOutOfPhase)?;
         let kind = match effect.kind {
             PolicyProfileHandoffKind::Prepare => WmFileKind::ProfilePrepare,
             PolicyProfileHandoffKind::Activate => WmFileKind::ProfileActivate,
@@ -212,7 +213,7 @@ impl PolicyProfileHandoffIo for FileProfileIo<'_> {
                 encode_wm_file_profile_command(header, effect.command, selected)
                     .map_err(codec_error)
             })
-            .map_err(PolicyTransportError::Io)?;
+            .map_err(PolicyProfileIoError::Io)?;
         self.pending = Some(self.permission.completion(effect));
         Ok(())
     }
@@ -223,21 +224,21 @@ impl PolicyProfileHandoffIo for FileProfileIo<'_> {
             PolicyProfileHandoffKind,
             sophia_protocol::PolicyProfileCompletion,
         )>,
-        PolicyTransportError,
+        PolicyProfileIoError,
     > {
         let permit = self
             .pending
             .take()
-            .ok_or(PolicyTransportError::ProfileCompletionOutOfPhase)?;
+            .ok_or(PolicyProfileIoError::ProfileCompletionOutOfPhase)?;
         match self
             .reactor
             .receive(permit, PROFILE_RESPONSE_BUDGET)
-            .map_err(PolicyTransportError::Io)?
+            .map_err(PolicyProfileIoError::Io)?
         {
             Some(PolicyAdapterEvent::ProfileCompletion { kind, completion }) => {
                 Ok(Some((kind, completion)))
             }
-            _ => Err(PolicyTransportError::ProfileCompletionOutOfPhase),
+            _ => Err(PolicyProfileIoError::ProfileCompletionOutOfPhase),
         }
     }
 }

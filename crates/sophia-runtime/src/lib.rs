@@ -26,6 +26,7 @@ mod policy_profile_io;
 mod policy_socket;
 #[cfg(target_os = "linux")]
 mod policy_transport;
+mod role_endpoint;
 mod session;
 #[cfg(target_os = "linux")]
 mod shell_transport;
@@ -68,6 +69,7 @@ pub use policy_profile_io::*;
 pub use policy_socket::*;
 #[cfg(target_os = "linux")]
 pub use policy_transport::*;
+pub use role_endpoint::*;
 pub use session::*;
 #[cfg(target_os = "linux")]
 pub use shell_transport::*;

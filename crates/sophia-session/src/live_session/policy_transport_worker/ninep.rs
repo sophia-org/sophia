@@ -28,7 +28,7 @@ pub(in crate::live_session) mod selection_peer;
 
 impl super::PolicyTransportWorker {
     pub(in crate::live_session) fn new_files(
-        endpoint: sophia_runtime::PolicyRoleEndpoint,
+        endpoint: sophia_runtime::RoleEndpoint,
         supervisor: &sophia_runtime::ProcessSupervisor,
         epoch: u64,
         limits: WmFileLimits,

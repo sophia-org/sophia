@@ -1,9 +1,10 @@
 //! Passive exact-profile identities shared by transport adapters. Validation
 //! keeps the established errors; neither records nor aliases own handoff phase.
-use crate::{
-    IpcCodecError, SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED, SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY,
-    SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE, TransactionId,
+use crate::wm_rows::{
+    SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED, SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY,
+    SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE,
 };
+use crate::{BinaryCodecError, TransactionId};
 
 pub const POLICY_PROFILE_DIGEST_BYTES: usize = 32;
 
@@ -19,15 +20,17 @@ impl PolicyProfileIdentity {
         connection_epoch: u64,
         profile_generation: u64,
         profile_digest: [u8; POLICY_PROFILE_DIGEST_BYTES],
-    ) -> Result<Self, IpcCodecError> {
+    ) -> Result<Self, BinaryCodecError> {
         if connection_epoch == 0 {
-            return Err(IpcCodecError::InvalidProfileIdentity("connection_epoch"));
+            return Err(BinaryCodecError::InvalidProfileIdentity("connection_epoch"));
         }
         if profile_generation == 0 {
-            return Err(IpcCodecError::InvalidProfileIdentity("profile_generation"));
+            return Err(BinaryCodecError::InvalidProfileIdentity(
+                "profile_generation",
+            ));
         }
         if profile_digest == [0; POLICY_PROFILE_DIGEST_BYTES] {
-            return Err(IpcCodecError::InvalidProfileIdentity("profile_digest"));
+            return Err(BinaryCodecError::InvalidProfileIdentity("profile_digest"));
         }
         Ok(Self {
             connection_epoch,
@@ -46,13 +49,13 @@ pub enum PolicyProfileOutcome {
 }
 
 impl TryFrom<u16> for PolicyProfileOutcome {
-    type Error = IpcCodecError;
+    type Error = BinaryCodecError;
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         match value {
             SOPHIA_WM_OUTCOME_PROFILE_ACCEPTED => Ok(Self::Accepted),
             SOPHIA_WM_OUTCOME_PROFILE_REJECTED_IDENTITY => Ok(Self::RejectedIdentity),
             SOPHIA_WM_OUTCOME_PROFILE_REJECTED_STATE => Ok(Self::RejectedState),
-            _ => Err(IpcCodecError::InvalidEnum {
+            _ => Err(BinaryCodecError::InvalidEnum {
                 field: "profile_outcome",
                 value: u32::from(value),
             }),

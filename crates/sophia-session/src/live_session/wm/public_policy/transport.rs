@@ -2,7 +2,7 @@
 // starts. Neither negotiation nor attach can change the selected transport.
 enum PublicPolicyTransport {
     CurrentIpc(Box<sophia_runtime::PolicyWmSessionTransport>),
-    Files(sophia_runtime::PolicyRoleEndpoint),
+    Files(sophia_runtime::RoleEndpoint),
 }
 impl LiveWmSession {
     fn policy_wire_name(&self) -> &'static str {
@@ -64,7 +64,7 @@ fn bind_public_policy_endpoint(
             },
         ))),
         WmTransportSelection::NineP2000L => Ok(PublicPolicyTransport::Files(
-            sophia_runtime::PolicyRoleEndpoint::bind_for_supervised_uid(endpoint, uid)?,
+            sophia_runtime::RoleEndpoint::bind_for_supervised_uid(endpoint, uid)?,
         )),
     }
 }

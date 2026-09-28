@@ -26,8 +26,8 @@ impl Directory {
         std::fs::create_dir(&path).unwrap();
         Self(path)
     }
-    fn endpoint(&self, role: PolicyRole) -> PolicyRoleEndpoint {
-        PolicyRoleEndpoint::bind_role_for_supervised_uid(
+    fn endpoint(&self, role: PolicyRole) -> RoleEndpoint {
+        RoleEndpoint::bind_role_for_supervised_uid(
             self.0.join("endpoint"),
             role,
             rustix::process::geteuid().as_raw(),
@@ -337,7 +337,7 @@ fn protected_reconnect_keeps_the_supplied_logical_qid_allocator() {
 fn actual_child_wrong_uid_is_refused_despite_matching_supervisor_pid() {
     let directory = Directory::new();
     let wrong_uid = rustix::process::geteuid().as_raw().checked_add(1).unwrap();
-    let endpoint = PolicyRoleEndpoint::bind_role_for_supervised_uid(
+    let endpoint = RoleEndpoint::bind_role_for_supervised_uid(
         directory.0.join("endpoint"),
         PolicyRole::Wm,
         wrong_uid,

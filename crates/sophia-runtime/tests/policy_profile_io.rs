@@ -8,7 +8,7 @@ use sophia_runtime::*;
 use std::collections::VecDeque;
 
 type Reply =
-    Result<Option<(PolicyProfileHandoffKind, PolicyProfileCompletion)>, PolicyTransportError>;
+    Result<Option<(PolicyProfileHandoffKind, PolicyProfileCompletion)>, PolicyProfileIoError>;
 #[derive(Debug, PartialEq)]
 enum Trace {
     Send(PolicyProfileHandoffKind, u64),
@@ -17,13 +17,14 @@ enum Trace {
 struct Script {
     replies: VecDeque<Reply>,
     trace: Vec<Trace>,
-    send_error: Option<PolicyTransportError>,
+    send_error: Option<PolicyProfileIoError>,
 }
 impl PolicyProfileHandoffIo for Script {
+    type Error = PolicyProfileIoError;
     fn send_profile_effect(
         &mut self,
         effect: PolicyProfileHandoffEffect,
-    ) -> Result<(), PolicyTransportError> {
+    ) -> Result<(), PolicyProfileIoError> {
         assert_eq!(effect.command.identity, identity());
         self.trace
             .push(Trace::Send(effect.kind, effect.command.transaction.raw()));
@@ -102,21 +103,21 @@ fn shared_executor_preserves_failure_order_without_retry_or_automatic_rollback()
     use PolicyProfileHandoffKind::{Activate, Prepare};
     for (response, expected) in [
         (
-            Err(PolicyTransportError::TimedOut),
-            PolicyTransportError::TimedOut,
+            Err(PolicyProfileIoError::TimedOut),
+            PolicyProfileIoError::TimedOut,
         ),
-        (Ok(None), PolicyTransportError::ProfileCompletionOutOfPhase),
+        (Ok(None), PolicyProfileIoError::ProfileCompletionOutOfPhase),
         (
             reply(Activate, 1, PolicyProfileOutcome::Accepted),
-            PolicyTransportError::ProfileCompletionOutOfPhase,
+            PolicyProfileIoError::ProfileCompletionOutOfPhase,
         ),
         (
             reply(Prepare, 99, PolicyProfileOutcome::Accepted),
-            PolicyTransportError::ProfileCompletionStale,
+            PolicyProfileIoError::ProfileCompletionStale,
         ),
         (
             reply(Prepare, 1, PolicyProfileOutcome::RejectedIdentity),
-            PolicyTransportError::ProfileRejected {
+            PolicyProfileIoError::ProfileRejected {
                 kind: Prepare,
                 outcome: PolicyProfileOutcome::RejectedIdentity,
             },
@@ -135,7 +136,7 @@ fn shared_executor_preserves_failure_order_without_retry_or_automatic_rollback()
         assert_eq!(io.trace, vec![Trace::Send(Prepare, 1), Trace::Receive]);
     }
     let mut io = script([]);
-    io.send_error = Some(PolicyTransportError::Io("fixture send failure".into()));
+    io.send_error = Some(PolicyProfileIoError::Io("fixture send failure".into()));
     assert_eq!(
         activate_policy_profile_handoff(
             &mut io,
@@ -143,7 +144,7 @@ fn shared_executor_preserves_failure_order_without_retry_or_automatic_rollback()
             TransactionId::from_raw(1),
             TransactionId::from_raw(2)
         ),
-        Err(PolicyTransportError::Io("fixture send failure".into()))
+        Err(PolicyProfileIoError::Io("fixture send failure".into()))
     );
     assert_eq!(io.trace, vec![Trace::Send(Prepare, 1)]);
     let mut io = script([]);
@@ -154,7 +155,7 @@ fn shared_executor_preserves_failure_order_without_retry_or_automatic_rollback()
             TransactionId::INVALID,
             TransactionId::from_raw(2)
         ),
-        Err(PolicyTransportError::ProfileHandoff(
+        Err(PolicyProfileIoError::ProfileHandoff(
             PolicyProfileHandoffError::InvalidTransaction
         ))
     );
@@ -186,7 +187,7 @@ fn rejected_step_returns_candidate_for_explicit_rollback_and_reused_ids_never_se
             Rollback,
             TransactionId::from_raw(1)
         ),
-        Err(PolicyTransportError::ProfileHandoff(
+        Err(PolicyProfileIoError::ProfileHandoff(
             PolicyProfileHandoffError::ReusedTransaction
         ))
     );
