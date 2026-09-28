@@ -111,7 +111,6 @@ impl LivePublicPolicyState {
         &mut self,
         candidate: sophia_protocol::OutputTopologyCandidate,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let connection_epoch = self.connection_epoch;
         let capabilities = self.output_capabilities.clone();
         let Some(authority) = self.output_authority.as_mut() else {
             crate::session_eprintln!(
@@ -129,6 +128,11 @@ impl LivePublicPolicyState {
         let transaction = TransactionId::from_raw(self.next_output_snapshot_transaction);
         self.next_output_snapshot_transaction =
             self.next_output_snapshot_transaction.saturating_add(1);
+        // The proposal wrapper carries a connection epoch because client
+        // proposals arrive on one. Session's own candidate is admitted against
+        // the output owner's current epoch; the WM policy's epoch advances on
+        // policy restarts and has nothing to do with the output connection.
+        let connection_epoch = authority.connection_epoch();
         let admission = match authority.admit(
             transaction,
             &sophia_protocol::OutputV1Proposal {
@@ -160,6 +164,7 @@ impl LivePublicPolicyState {
         // The latch is what the startup effect left set. Clearing it is what
         // makes this candidate reachable by the same drain.
         self.output_effect_dispatched = false;
+        self.reload_output_transaction = Some(transaction);
         crate::session_println!(
             "sophia_live_output_authority schema=3 status=reload_effect_pending transaction={}",
             transaction.raw(),

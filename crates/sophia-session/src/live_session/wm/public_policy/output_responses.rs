@@ -219,6 +219,7 @@ impl LivePublicPolicyState {
         settlement: crate::live_output_authority::LiveOutputAuthoritySettlement,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let startup = self.startup_output_transaction == Some(settlement.transaction);
+        let reload = self.reload_output_transaction == Some(settlement.transaction);
         let cancelled = self
             .output_cancel_requested
             .as_ref()
@@ -231,7 +232,8 @@ impl LivePublicPolicyState {
                     .1
                     .clone()
             })
-            .or_else(|| startup.then(|| "desktop profile startup".to_owned()));
+            .or_else(|| startup.then(|| "desktop profile startup".to_owned()))
+            .or_else(|| reload.then(|| "desktop profile reload".to_owned()));
         let publish_committed = (settlement.outcome.kind
             == sophia_protocol::OutputV1OutcomeKind::Committed)
             .then(|| settlement.published_snapshot.clone())
@@ -251,6 +253,9 @@ impl LivePublicPolicyState {
             }
             if startup {
                 self.startup_output_transaction = None;
+            }
+            if reload {
+                self.reload_output_transaction = None;
             }
             self.output_pending_connection_epoch = None;
             crate::session_println!(

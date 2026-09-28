@@ -34,6 +34,9 @@ mod policy_inspection;
 #[path = "inspection_profile_reload.rs"]
 mod inspection_profile_reload;
 
+#[path = "output_reload_settlement.rs"]
+mod output_reload_settlement;
+
 struct ReloadFixture {
     // Fragments and their directory must be released before the fixture root.
     wm: LiveWmSession,
@@ -116,6 +119,7 @@ impl ReloadFixture {
             output_effect_dispatched: false,
             output_topology_reload_pending: false,
             startup_output_transaction: None,
+            reload_output_transaction: None,
             output_cancel_requested: None,
             output_pending_connection_epoch: None,
             next_output_snapshot_transaction: 2,

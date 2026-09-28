@@ -201,6 +201,10 @@ struct LivePublicPolicyState {
     /// Private desktop-profile transaction. It shares the physical authority
     /// reducer with client proposals but has no protocol peer awaiting an outcome.
     startup_output_transaction: Option<TransactionId>,
+    /// Private transaction for a reloaded profile's topology. Like the startup
+    /// one it is Session's own: no output client asked for it, so its outcome
+    /// is settled locally and never written to a client connection.
+    reload_output_transaction: Option<TransactionId>,
     output_cancel_requested: Option<(TransactionId, String)>,
     output_pending_connection_epoch: Option<u64>,
     next_output_snapshot_transaction: u64,

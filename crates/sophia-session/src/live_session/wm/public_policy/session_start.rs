@@ -127,6 +127,7 @@ impl LiveWmSession {
             output_effect_dispatched: false,
             output_topology_reload_pending: false,
             startup_output_transaction,
+            reload_output_transaction: None,
             output_cancel_requested: None,
             output_pending_connection_epoch: None,
             next_output_snapshot_transaction: 2,
