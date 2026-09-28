@@ -21,8 +21,6 @@
 
 (A) 2026-09-27 Release the C and Rust desktop SDKs without sophia-shell-ipc, ipc-compat and WITH_IPC, re-vendor them, and prune the same_contract digest lists of the retired IPC files. +9p @development id:t270 order:000.0000097 depends:t269,t263 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
 
-(A) 2026-09-27 Retire the Narthex descriptor profile's socket and the single-process metadata shell (--shell-process): specify and accept a descriptor, tabs and shortcuts file contract with an independent C SDK peer, or decide to drop Narthex; then stop the launcher passing --shell-process-default. +critical +9p @development id:t271 order:000.0000098 depends:t252 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
-
 (A) 2026-09-27 After the 9P output role is accepted, delete the output IPC (sophia_output_v1, output transport and service socket) and change the WM files api output_transport=current_ipc string in lockstep with the C SDK and Hagia. +critical +9p @development id:t272 order:000.0000099 depends:t253 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
 
 (B) 2026-09-27 Design a 9P replacement for the metadata broker and portal sockets (SOPHIA_BROKER_SOCKET, broker_v1, portal), or record an explicit decision to keep them as a Sophia-internal channel, so the IPC inventory can close. +9p @planning id:t273 order:000.00001 depends:t255 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)

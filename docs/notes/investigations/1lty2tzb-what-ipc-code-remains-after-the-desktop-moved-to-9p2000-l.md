@@ -1365,6 +1365,37 @@ protected 9P host modes pass again, with the same development-build limits.
 Evidence: `narthex-descriptor-9p/accepted-contract-{local,build,conformance}.log`.
 The full Sophia gate is rerunning after the adapter correction.
 
+### Descriptor replacement acceptance (t271, 2026-09-28)
+
+Candidate `77888779b` passes the complete isolated `cargo xtask check`, exit 0:
+494 test-result groups report 6,689 passed, zero failed and 63 ignored. Strict
+clippy, SDK snapshot checks, layout and tool verifiers pass. The log is
+`ipc-retirement/descriptor-contract-full-check-2.log`. No device, display or
+installed session was available; hardware proofs and the absent archive corpus
+were reported separately rather than claimed.
+
+Documentation correction `086cd6e75` removes the obsolete provisional descriptor
+row, gives its accepted 352-byte event and 22,528-byte terminal reserve, and
+replaces stale product migration observations with the current role contract.
+The resulting SDK pins are C `74498734` and Rust `6e6c852d`, published by
+fast-forward and independently read back from their remotes. These follow-ups
+change only prose, provenance and digest lists; library code, tests and layouts
+are identical to the full-gate pins. Sophia `310fcda46` imports those snapshots,
+whose checks pass again. Release tags are unchanged.
+
+This satisfies the descriptor replacement scope: an accepted native contract,
+independent C coverage of all kinds and all four host modes, protected matching
+presentation before work-area commit, a 9P-only client migration, explicit
+descriptor component admission, and retirement of the old single-shell selectors.
+Niltempus `b21eb20` no longer emits the fallback selector. Narthex `1cd0f9a`
+contains the tested adapter and the final documentation-only SDK pin; its
+`overview` branch is untouched. No component is installed or reloaded here.
+
+The generic runtime socket compatibility adapter and remaining socket fixtures
+are still present for t265/t269. They are not selectable by descriptor production
+startup. Their final deletion, SDK compatibility retirement, independent content
+default flips and the output/broker/portal work remain separate exits.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
@@ -1393,8 +1424,8 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
 - t268: per-record budgets and a typed outbox in the shell owners (B).
 - t269: flip the WM and shell transport defaults to 9p2000.L, then delete the
   WM and shell IPC paths, codecs, generator, bindings, archive, scripts and
-  gates (B, after t250, t252, t267, t268 and t271). The descriptor shell still
-  uses the socket adapter, so its file replacement must precede deletion.
+  gates (B, after t250, t252, t267, t268 and t271). Descriptor production startup
+  now uses files; the remaining generic socket adapter still needs deletion.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.
 - t271: the Narthex descriptor profile and single-process metadata shell (C).
