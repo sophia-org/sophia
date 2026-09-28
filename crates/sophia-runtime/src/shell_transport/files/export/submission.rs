@@ -30,7 +30,8 @@ impl ShellFiles {
                 | Inbound::NativeActivate(..)
                 | Inbound::CatalogCandidate(_)
                 | Inbound::CatalogActivate(..)
-                | Inbound::IndicatorActivate(..) => None,
+                | Inbound::IndicatorActivate(..)
+                | Inbound::Descriptor(_) => None,
             };
             (
                 inbound,
@@ -38,6 +39,13 @@ impl ShellFiles {
             )
         };
         let inbound = match kind {
+            kind if shell_file_descriptor_max_bytes(kind).is_some() => {
+                if !self.supports_descriptor_kind(kind) {
+                    return Err(Errno::EACCES);
+                }
+                let value = decode_shell_file_descriptor(bytes, kind).map_err(|_| Errno::EINVAL)?;
+                Inbound::Descriptor(Box::new(value))
+            }
             ShellFileKind::Negotiate => {
                 if self.negotiate_accepted {
                     return Err(EALREADY);

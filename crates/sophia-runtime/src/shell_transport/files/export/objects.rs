@@ -1,10 +1,36 @@
-//! The negotiated capability gates and the three snapshot-object slots
-//! (Outputs, Catalog, Indicators): which root names this attach discloses,
+//! The negotiated capability gates and snapshot-object slots:
+//! which root names this attach discloses,
 //! which kind maps to which slot, and the shared fits-then-qid-then-announce
 //! publication sequence every one of them uses.
 use super::*;
 
 impl ShellFiles {
+    pub(super) fn supports_descriptor_kind(&self, kind: ShellFileKind) -> bool {
+        use sophia_protocol::*;
+        let needed = match kind {
+            ShellFileKind::Descriptors
+            | ShellFileKind::DescriptorCandidate
+            | ShellFileKind::DescriptorActivationAck
+            | ShellFileKind::DescriptorOutcome
+            | ShellFileKind::DescriptorActivation => SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER,
+            ShellFileKind::Tabs | ShellFileKind::TabsCandidate => {
+                SOPHIA_SHELL_CAPABILITY_TAB_GROUPS
+            }
+            ShellFileKind::Shortcuts => SOPHIA_SHELL_CAPABILITY_SHORTCUT_CATALOG,
+            ShellFileKind::ReferenceRequest
+            | ShellFileKind::ReferenceOutcome
+            | ShellFileKind::ReferenceCandidate => SOPHIA_SHELL_CAPABILITY_REFERENCE_SHEET,
+            ShellFileKind::LauncherRequest
+            | ShellFileKind::LauncherOutcome
+            | ShellFileKind::LauncherActivation
+            | ShellFileKind::LaunchOutcome
+            | ShellFileKind::LauncherCandidate
+            | ShellFileKind::LauncherActivationAck => SOPHIA_SHELL_CAPABILITY_APPLICATION_LAUNCHER,
+            _ => return false,
+        };
+        self.descriptor && self.negotiated && self.capabilities & needed != 0
+    }
+
     pub(super) fn supports_native_launcher(&self) -> bool {
         self.capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER != 0
     }
@@ -36,11 +62,29 @@ impl ShellFiles {
             (b"ack", Node::Ack),
             (b"upload", Node::Uploads),
         ];
-        if self.catalog_allowed {
+        if self.descriptor && !self.content {
+            entries
+                .retain(|(_, node)| !matches!(node, Node::Limits | Node::Outputs | Node::Uploads));
+        }
+        if (self.descriptor
+            && self.negotiated
+            && self.capabilities & sophia_protocol::SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+                != 0)
+            || (!self.descriptor && self.catalog_allowed)
+        {
             entries.push((b"catalog", Node::Catalog));
         }
         if self.supports_indicators() {
             entries.push((b"indicators", Node::Indicators));
+        }
+        for (name, node) in [
+            (b"descriptors".as_slice(), Node::Descriptors),
+            (b"tabs", Node::Tabs),
+            (b"shortcuts", Node::Shortcuts),
+        ] {
+            if self.supports_descriptor_kind(node.object_kind().expect("descriptor feed")) {
+                entries.push((name, node));
+            }
         }
         entries
     }
@@ -50,6 +94,9 @@ impl ShellFiles {
             ShellFileKind::Outputs => Some(&self.outputs),
             ShellFileKind::Catalog => Some(&self.catalog),
             ShellFileKind::Indicators => Some(&self.indicators),
+            ShellFileKind::Descriptors => Some(&self.descriptors),
+            ShellFileKind::Tabs => Some(&self.tabs),
+            ShellFileKind::Shortcuts => Some(&self.shortcuts),
             _ => None,
         }
     }
@@ -59,6 +106,9 @@ impl ShellFiles {
             ShellFileKind::Outputs => Some(&mut self.outputs),
             ShellFileKind::Catalog => Some(&mut self.catalog),
             ShellFileKind::Indicators => Some(&mut self.indicators),
+            ShellFileKind::Descriptors => Some(&mut self.descriptors),
+            ShellFileKind::Tabs => Some(&mut self.tabs),
+            ShellFileKind::Shortcuts => Some(&mut self.shortcuts),
             _ => None,
         }
     }
@@ -77,6 +127,19 @@ impl ShellFiles {
         }
         if self.object_slot(kind).is_none() {
             return Err(Errno::EINVAL);
+        }
+        // Admission is checked before decoding or allocating a new qid.
+        // A content bar's inert bit 0 never discloses descriptor objects.
+        if shell_file_descriptor_max_bytes(kind).is_some() && !self.supports_descriptor_kind(kind) {
+            return Err(Errno::EACCES);
+        }
+        if self.descriptor
+            && !self
+                .root_entries()
+                .iter()
+                .any(|(_, node)| node.object_kind() == Some(kind))
+        {
+            return Err(Errno::EACCES);
         }
         let bytes = encode_shell_file_record(
             ShellFileHeader {
@@ -97,17 +160,30 @@ impl ShellFiles {
                 facts.facts_generation
             }
             ShellFileKind::Catalog => {
-                decode_shell_file_catalog(&bytes)
-                    .map_err(|_| Errno::EINVAL)?
-                    .catalog
-                    .catalog
-                    .generation
+                let value = decode_shell_file_catalog(&bytes).map_err(|_| Errno::EINVAL)?;
+                if self.descriptor
+                    && (!value.catalog.identities.is_empty()
+                        || value.catalog.catalog.connection_epoch != self.epoch)
+                {
+                    return Err(Errno::EINVAL);
+                }
+                value.catalog.catalog.generation
             }
             ShellFileKind::Indicators => {
                 decode_shell_file_indicators(&bytes)
                     .map_err(|_| Errno::EINVAL)?
                     .snapshot
                     .generation
+            }
+            ShellFileKind::Descriptors | ShellFileKind::Tabs | ShellFileKind::Shortcuts => {
+                let value =
+                    decode_shell_file_descriptor(&bytes, kind).map_err(|_| Errno::EINVAL)?;
+                match value.record {
+                    ShellDescriptorRecord::Descriptors(v) => v.snapshot_generation,
+                    ShellDescriptorRecord::Tabs(v) => v.generation,
+                    ShellDescriptorRecord::Shortcuts(v) => v.generation,
+                    _ => return Err(Errno::EINVAL),
+                }
             }
             _ => return Err(Errno::EINVAL),
         };

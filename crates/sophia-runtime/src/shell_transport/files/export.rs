@@ -60,6 +60,9 @@ pub(in crate::shell_transport) enum Node {
     Catalog,
     /// The bar's indicator snapshot, disclosed only with bit 9 negotiated.
     Indicators,
+    Descriptors,
+    Tabs,
+    Shortcuts,
 }
 
 impl Node {
@@ -78,22 +81,28 @@ impl Node {
             Self::Upload(slot) => 9 + u64::from(slot),
             Self::Catalog => 13,
             Self::Indicators => 14,
+            Self::Descriptors => 15,
+            Self::Tabs => 16,
+            Self::Shortcuts => 17,
         }
     }
 
-    /// The object kind this node names, for the three pinned snapshot feeds.
+    /// The object kind this node names, for the pinned snapshot feeds.
     fn object_kind(self) -> Option<ShellFileKind> {
         match self {
             Self::Outputs => Some(ShellFileKind::Outputs),
             Self::Catalog => Some(ShellFileKind::Catalog),
             Self::Indicators => Some(ShellFileKind::Indicators),
+            Self::Descriptors => Some(ShellFileKind::Descriptors),
+            Self::Tabs => Some(ShellFileKind::Tabs),
+            Self::Shortcuts => Some(ShellFileKind::Shortcuts),
             _ => None,
         }
     }
 }
 
-/// Logical qids reserved per epoch for the fixed nodes (root .. indicators).
-const NODE_QIDS: u64 = 16;
+/// Logical qids reserved per epoch for the fixed nodes (root .. shortcuts).
+const NODE_QIDS: u64 = 32;
 
 pub(in crate::shell_transport) enum Handle {
     Plain,
@@ -185,6 +194,9 @@ pub(in crate::shell_transport) enum Inbound {
     CatalogCandidate(Box<ShellFileCatalogCandidate>),
     CatalogActivate(TransactionId, Box<CatalogActivation>),
     IndicatorActivate(TransactionId, Box<ShellIndicatorActivation>),
+    /// Native whole descriptor-family candidate or acknowledgement. File
+    /// custody does not decide presentation, work area or activation.
+    Descriptor(Box<ShellFileDescriptorRecord>),
 }
 
 struct Accepted {
@@ -206,6 +218,8 @@ pub(in crate::shell_transport) struct ShellFiles {
     /// The role profile discloses `catalog`, decided before the peer
     /// connects (launcher and dock; never the bar's Legacy profile).
     catalog_allowed: bool,
+    /// Selected by the server before accepting the peer, not by bit 0.
+    descriptor: bool,
     /// The negotiated welcome's capability set, once negotiation completed.
     capabilities: u64,
     qid_base: u64,
@@ -217,6 +231,9 @@ pub(in crate::shell_transport) struct ShellFiles {
     outputs: ObjectSlot,
     catalog: ObjectSlot,
     indicators: ObjectSlot,
+    descriptors: ObjectSlot,
+    tabs: ObjectSlot,
+    shortcuts: ObjectSlot,
     staging: Option<Staging>,
     accepted: Option<Accepted>,
     submission_watermark: u64,
@@ -266,6 +283,7 @@ impl ShellFiles {
             negotiated: false,
             content: false,
             catalog_allowed,
+            descriptor: role == "descriptor",
             capabilities: 0,
             qid_base,
             next_qid: qid_base + NODE_QIDS,
@@ -276,6 +294,9 @@ impl ShellFiles {
             outputs: ObjectSlot::default(),
             catalog: ObjectSlot::default(),
             indicators: ObjectSlot::default(),
+            descriptors: ObjectSlot::default(),
+            tabs: ObjectSlot::default(),
+            shortcuts: ObjectSlot::default(),
             staging: None,
             accepted: None,
             submission_watermark: 0,
@@ -340,6 +361,24 @@ impl ShellFiles {
         body: &[u8],
         credited: bool,
     ) -> Result<u64, Errno> {
+        if shell_file_descriptor_max_bytes(kind).is_some() {
+            if !self.supports_descriptor_kind(kind)
+                || shell_file_class(kind) != ShellFileClass::Event
+            {
+                return Err(Errno::EACCES);
+            }
+            let record = encode_shell_file_record(
+                ShellFileHeader {
+                    kind,
+                    connection_epoch: self.epoch,
+                    submission_id: 0,
+                    sequence: 1,
+                },
+                body,
+            )
+            .map_err(|_| Errno::EINVAL)?;
+            decode_shell_file_descriptor(&record, kind).map_err(|_| Errno::EINVAL)?;
+        }
         let status = if kind == ShellFileKind::ResourceStatus {
             let record = encode_shell_file_record(
                 ShellFileHeader {
@@ -479,6 +518,10 @@ impl ShellFiles {
     }
 }
 
+#[cfg(test)]
+#[path = "../../../tests/support/shell_file_descriptor_export.rs"]
+mod tests;
+
 impl Export for ShellFiles {
     type Node = Node;
     type Handle = Handle;
@@ -552,10 +595,10 @@ impl Export for ShellFiles {
         let size = match (node, handle) {
             (Node::Api, _) => self.api.len() as u64,
             (Node::Limits, _) => self.limits.as_ref().map_or(0, |l| l.len() as u64),
-            (Node::Outputs | Node::Catalog | Node::Indicators, Some(Handle::Object(object))) => {
+            (node, Some(Handle::Object(object))) if node.object_kind().is_some() => {
                 object.bytes.len() as u64
             }
-            (Node::Outputs | Node::Catalog | Node::Indicators, _) => node
+            (node, _) if node.object_kind().is_some() => node
                 .object_kind()
                 .and_then(|kind| self.object_slot(kind))
                 .and_then(|slot| slot.current.as_ref())
@@ -627,7 +670,7 @@ impl Export for ShellFiles {
                 self.allocate_qid()?;
                 Ok(handle)
             }
-            Node::Outputs | Node::Catalog | Node::Indicators => {
+            node if node.object_kind().is_some() => {
                 let kind = node.object_kind().expect("object node");
                 let slot = self.object_slot_mut(kind).expect("valid object kind");
                 // One pin per feed per attach; publication continues meanwhile.
@@ -665,7 +708,7 @@ impl Export for ShellFiles {
                 .as_ref()
                 .map(|limits| slice(limits, offset, count))
                 .ok_or(Errno::EAGAIN),
-            (Node::Outputs | Node::Catalog | Node::Indicators, Handle::Object(object)) => {
+            (node, Handle::Object(object)) if node.object_kind().is_some() => {
                 Ok(slice(&object.bytes, offset, count))
             }
             (Node::Events, _) => self.journal.read(offset, count),

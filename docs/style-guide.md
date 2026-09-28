@@ -250,6 +250,15 @@ accounting, forced returned refusal and partial FIFO drain. It does not enable
 dock negotiation or claim kernel backpressure. Its bodies remain outside `src`;
 only its individual module mount is listed, with no checker or legacy-debt change.
 
+The file export's `tests/support/shell_file_descriptor_export.rs` mount controls
+the exact typed-inbound and journal capacity before a submit or publication.
+It checks that a refusal consumes no qid, submission watermark or custody,
+and that old object pins retain their bytes through replacement. Public owner
+service also drains those queues and cannot hold those exact transfer points.
+This fixture supplies negotiated state and calls the production export methods;
+it does not establish role negotiation, owner semantics or independent-client
+interoperability. Those require separate connection and conformance tests.
+
 The shell file journal fixture, `tests/support/shell_file_journal.rs`, is
 mounted inside the private journal owner for the same reason. Through the public
 socket path the export's 64-record inbound bound is reached long before the

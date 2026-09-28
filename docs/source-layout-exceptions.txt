@@ -17,6 +17,8 @@ inline-tests crates/sophia-backend-live/src/production_visual_runtime.rs
 inline-tests crates/sophia-runtime/src/shell_transport/control_budget.rs
 inline-tests crates/sophia-runtime/src/shell_transport/outbox.rs
 inline-tests crates/sophia-runtime/src/shell_transport/files/journal.rs
+# External file-export custody and immutable-pin controls; rationale in the style guide.
+inline-tests crates/sophia-runtime/src/shell_transport/files/export.rs
 inline-tests crates/sophia-session/src/live_session/metadata_shell/content/actions.rs
 inline-tests crates/sophia-runtime/src/shell_transport/indicator_responses.rs
 inline-tests crates/sophia-runtime/src/shell_transport/catalog_responses.rs
