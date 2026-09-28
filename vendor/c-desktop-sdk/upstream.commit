@@ -1,13 +1,13 @@
-tree f4ebf844267e7f13d5dc071b1384ac3548874f00
-parent 4a90120a268b1b4846338adeb3b55790f289cd94
-author Mason Green <mason@greenm01.net> 1790569666 -0400
-committer Mason Green <mason@greenm01.net> 1790569666 -0400
+tree 3f2634b41360fd502caf8270608dc84372764418
+parent 4690786c929e3a221ee5d2793708fe4b43870c5b
+author Mason Green <mason@greenm01.net> 1790570221 -0400
+committer Mason Green <mason@greenm01.net> 1790570221 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarnswgAKCRBXGEu2KoAA
- Yri0AQC/pfQjgCHNvsJTVHbh9by8MN9uWHGHgfTqi07xm3LJ+AEAvtxPhmaZZLRA
- z4jqD6gQx7o7GaRtmFiOS9hcShTO9ww=
- =BaJO
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarnu7QAKCRBXGEu2KoAA
+ YuadAP4oA1/cESnJn1AOrMV148SXSHNozAjSc1D/GPPIPLRZPAD9Eqf433ZmJbXv
+ IeFkpOiczQEIUaPK9mRFzZZdlJhR9Ag=
+ =JSzz
  -----END PGP SIGNATURE-----
 
-Enforce file catalog identities and welcome bounds with native upload limits
+Pin the explicit persistent identity contract

@@ -30,7 +30,9 @@ Catalog and Indicators rows borrow immutable encoded storage. A decoded
 returns a typed row with borrowed text. Row encoders let the caller construct
 the storage without allocating a 4096-entry C struct array. Native input text
 also borrows its record buffer. Keep that storage alive until finished with
-the decoded value. Encode into separate storage: destinations must not overlap
+the decoded value. Persistent catalog validation uses about 12 KiB of bounded
+stack scratch for slot and identity uniqueness; it does not allocate a catalog
+or change the borrowed rows. Encode into separate storage: destinations must not overlap
 the input value or its borrowed data. Failed encoding leaves destinations
 unchanged; failed decoding leaves output values unchanged.
 

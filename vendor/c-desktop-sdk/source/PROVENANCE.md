@@ -95,3 +95,12 @@ The same contract makes the existing role welcome bounds explicit on the file
 wire: 1–16 descriptors, 1–128 label bytes and 1–16 pending activations. Invalid
 welcomes are refused during encoding and decoding. This replaces the two shell
 file references above; every other contract copy retains its earlier pin.
+
+## Persistent catalog identity rule
+
+The shell file KDL and lifecycle document above are refreshed from signed
+Sophia `1ae31f132105b5e178c62d3689f1f3d73bf95412`. They explicitly require
+byte-exact distinct identity names when a catalog discloses identities. This
+documents the existing persistent identity bijection; labels may still repeat
+and plain launcher catalogs have no identities. No layout or code changes
+accompany this reference update. Other contract copies keep their earlier pins.
