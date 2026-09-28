@@ -757,6 +757,51 @@ Launcher ownership, production descriptor selection, independent C SDK peers
 and Narthex migration remain unfinished. The contracts remain proposed, the
 candidate is unpublished and no live session changed.
 
+### Typed descriptor launcher custody (t271, 2026-09-28)
+
+Candidate `07d3e2070` routes the descriptor launcher's catalog, requests,
+candidates, presentation outcomes, activation acknowledgements and launch
+outcomes through typed transport methods. The application worker, launch
+queue, filesystem verification and process admission remain Session-owned.
+The launcher catalog uses the existing bounded publication owner; Session
+waits for a socket publication to enter the output order before issuing a
+request. File catalog publication remains one atomic snapshot announcement.
+
+The file owner reserves the request plus Prepared and terminal responses
+before transfer. Candidate identity, output, increasing generation, visibility
+and membership in the catalog are checked before handing a candidate to
+Session. Stale or revoked replies receive Superseded without consuming an
+unrelated request. Session retains query/output-generation and projection
+checks; projection refusal produces Rejected without presentation.
+
+Only an exact Presented candidate permits activation. Activation reserves its
+own event and a LaunchOutcome credit; the credit survives acknowledgement and
+Session verification. Acknowledgements must echo the complete grant and
+transaction, and duplicate or stale acknowledgements are counted without
+releasing the pending grant. Unconsumed or revoked grants cannot report Started
+or Failed; Rejected settles them. Cancellation revokes interaction but retains
+terminal obligations until settlement or disconnect.
+
+The isolated gate passed 112 runtime tests and 94 native Session metadata
+tests, strict clippy for runtime/Session across all targets/features, layout,
+formatting and whitespace checks (`ipc-retirement/t271-launcher-gate.log`).
+The existing C role and socket publication parity suites added five passes
+(`t271-launcher-publication-parity.log`). Seven new tests drive the real Rust
+SDK and production export, without launching applications. Compiled mutations
+accepting a partial acknowledgement or allowing Presented before Prepared
+failed their named controls (`t271-launcher-mutant-{ack,prepared}.log`).
+
+Initial failures are retained: `t271-launcher-check2.log` found a Vec where
+catalog identities require a BTreeMap; `t271-launcher-focused.log` found a test
+helper assuming two total credits in a case correctly retaining three. The
+helper was replaced by explicit combined-accounting checks, including refusal
+when activation and descriptor credits would exceed capacity. The first check
+log preceded module wiring and is not counted as launcher compilation evidence.
+
+Production descriptor selection, protected presentation/action acceptance,
+independent C SDK peers and Narthex migration remain incomplete. No task is
+closed by this slice, nothing is published and no live session changed.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
