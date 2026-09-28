@@ -997,6 +997,52 @@ match the snapshot gates above. These tests do not establish descriptor role
 authorization or real-export interoperability. Negotiation, feed holds, queued
 large records and the independent C peer remain unfinished.
 
+### C descriptor negotiation and snapshot custody (t271)
+
+C SDK `4816e5e9c275a30efca2a218a427c5ab6c2e2a8e` adds the development
+descriptor profile. The api must explicitly name that role; an ordinary bar's
+bit 0 remains inert. Offers obey the proposed revision/dependency table, and
+the welcome must select exactly the required bits plus reservation bit 1.
+Metadata readiness waits for consumed bootstrap Submitted and Negotiated
+without reading Limits. Combined content also requires valid Limits; a failed
+bootstrap fetch fails the session. Validated welcome accessors expose the
+selected revision and capabilities without changing role authority.
+
+The client refuses unselected objects, events and submissions before
+consumption or local admission. Metadata catalog reads reject persistent
+identity disclosure. Descriptor, tab and shortcut feeds join the existing
+per-kind fetch holds. Partial reads, matching qid/generation, complete decode
+and a separate EOF probe precede release. Superseding publications preserve
+the earliest outstanding acknowledgement bound. Queued candidates stay local
+while those holds prevent acknowledging earlier Submitted custody.
+
+The disconnect scan now uses the same disclosure check as ordinary intake.
+A buffered Submitted after an undisclosed event cannot establish custody;
+the paired positive control still recognizes Submitted behind a valid event.
+This preserves UnknownDisconnected rather than inventing custody from bytes
+the negotiated role could not consume.
+
+Evidence in `development-evidence/ipc-retirement/`:
+
+- `t271-c-profile-final4.log` and `t271-c-profile-final5.log`: full strict
+  checks with and without IPC pass. The latter follows formatting only.
+- `t271-c-profile-ubsan-trap2.log`: full file suite passes.
+- `t271-c-profile2-mutant-{readiness,holds,disclosure,buffered}.log`: fresh
+  compiled overlays each exit 134 at the intended assertion when bootstrap
+  custody is skipped, descriptor holds are omitted, unrequested feeds are
+  disclosed, or the disconnect scan crosses an undisclosed event.
+- Earlier failed `t271-c-profile-check{1,2,3}.log` files are retained: a test
+  initializer lacked braces; the malformed-welcome fixture tried to encode an
+  invalid value instead of injecting malformed bytes; and the hidden-candidate
+  fixture incorrectly set a reservation edge. No assertion was weakened.
+
+All gates used private outputs, hidden devices/network/display and nice 19/j2.
+The SDK branch remains signed and unpublished. Its queued session still needs
+large record support; only the low-level client currently stages maximum tab
+and reference candidates. Independent C production-export interoperability,
+protected Engine commit/work-area proof, Narthex migration and proposal
+acceptance remain required. No IPC path was removed by this slice.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
