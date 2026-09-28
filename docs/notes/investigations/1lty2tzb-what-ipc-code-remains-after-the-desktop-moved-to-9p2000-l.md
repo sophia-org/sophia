@@ -1043,6 +1043,49 @@ and reference candidates. Independent C production-export interoperability,
 protected Engine commit/work-area proof, Narthex migration and proposal
 acceptance remain required. No IPC path was removed by this slice.
 
+### Queued C descriptor candidates (t271)
+
+Signed C SDK `2b00a7766c856b36e3604d68087b90f747bc1296` removes the
+queued session's descriptor staging gap. `sophia_ss_open_fd_staging` accepts
+caller-owned transaction storage separately from the queue and object scratch.
+It checks all buffer regions before starting I/O; existing initializers retain
+their 8 KiB inline storage. The total queue remains bounded to 512 KiB/64 slots,
+and per-kind record limits are unchanged. No large inline array or allocation
+was added to the session.
+
+Candidate sizing now validates without an encoded scratch buffer and uses a
+descriptor's body connection epoch when assigning temporary header context.
+Actual admission still validates against the live epoch. Maximum tab/reference
+candidates (8,260/52,488 bytes) can be admitted atomically as a group, copied
+before caller mutation, and copied again before queue compaction at hand-off.
+Undersized staging never issues tickets or submission IDs. Reservations survive
+invalid groups, and queued versus issued records retain their distinct custody
+outcomes on disconnect.
+
+Evidence in `development-evidence/ipc-retirement/`:
+
+- `t271-c-queue-check3.log` and `t271-c-queue-final2.log`: complete strict
+  checks without and with IPC pass, including the new session staging test.
+- `t271-c-queue-ubsan.log`: complete file suite passes with undefined-behavior
+  traps enabled.
+- `t271-c-queue-mutant-{cap,overlap}.log`: fresh compiled overlays exit 134
+  when the old 8 KiB cap is restored or the session/transaction overlap guard
+  is removed. The latter catches state mutation on rejected buffer arguments.
+- The new tests exercise 127-byte fragmented writes, three queued maximum
+  candidates, acknowledgement ordering, source mutation, exact and insufficient
+  reservations, unchanged transaction bytes/ID across paced EAGAIN retry, and
+  custody versus dropped-unsent outcomes.
+- Earlier failures are kept: `check1` did not execute because the evidence
+  launcher lacked an executable bit (subsequent calls use Bash); `check2`
+  rejected a malformed test color with nonzero channels and zero alpha. The
+  fixture now uses valid colors; no validation or assertion was relaxed.
+
+These are scripted-peer gates in device/network/display-hidden isolation,
+with private build outputs and nice 19/j2. The SDK branch is unpublished.
+Independent C production-export conformance, protected Engine presentation
+and work-area checks, Narthex migration and contract acceptance remain pending.
+The desktop and published repository heads were unchanged.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
