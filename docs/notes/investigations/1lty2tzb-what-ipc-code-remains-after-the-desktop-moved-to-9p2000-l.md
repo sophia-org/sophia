@@ -281,6 +281,40 @@ The contract text changes require coordinated SDK snapshot updates before the
 full combined gate or main merge; no SDK snapshot was patched in place. The
 semantic codec and runtime endpoint/error relocations remain in progress.
 
+### Semantic codecs and admission separation (t267, 2026-09-27)
+
+The semantic snapshot, projection, configuration, presentation, tab,
+translation, output-key and launch-context codecs now live in `wm_records`.
+They import generated values from `wm_rows` and report `BinaryCodecError`.
+Only the old Begin/Chunk/End adapters and their historical error ordering
+remain in `ipc`. The combined protocol suite passes all 269 tests.
+
+Peer admission is now `role_endpoint::RoleEndpoint`; the old discovery
+environment names and compatibility aliases stay in `policy_socket` for
+remaining adapters. The 9P Session worker uses the neutral endpoint directly.
+The shared profile executor now accepts an adapter-owned error type through
+`PolicyProfileHandoffIo::Error`, converting only neutral `PolicyProfileIoError`
+failures. Its 9P adapter no longer imports `PolicyTransportError`. The socket
+adapter retains its existing error variants and maps the shared failures back
+to them. No admission, timeout, retry or profile-state rule changed.
+
+The isolated runtime endpoint/profile/socket tests passed 22/22. Session's
+9P worker tests passed 51/51 (three separately gated tests stayed ignored),
+including protected peer admission and profile exchange. Runtime and Session
+all-target/all-feature clippy passed. An initial Session filename filter ran
+zero tests; that log is retained and is not test evidence.
+
+A read-only mount overlay excluded the entire protocol `ipc` module and its
+re-export. The production library compiled, proving the file codecs do not
+need the legacy module. The probe reported unused compatibility helpers;
+ordinary strict clippy remains clean. The file test binaries still pulled
+socket constructors through a shared fixture, so this probe did not prove
+independent test execution. Those fixture dependencies are being separated
+without deleting their legacy assertions. Probe builds used the private
+target; it was cleaned before the ordinary combined test run to avoid any
+overlay fingerprint reuse. SDK contract alignment and the full combined
+gate remain prerequisites to the main merge.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
