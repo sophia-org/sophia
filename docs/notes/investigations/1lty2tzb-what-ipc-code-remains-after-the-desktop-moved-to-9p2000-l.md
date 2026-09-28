@@ -930,6 +930,47 @@ negotiation/storage integration remain before the independent C export peer.
 Protected presentation/work-area proof and Narthex migration remain open. All
 tests were isolated from devices, display, network and the running desktop.
 
+### Independent C descriptor snapshot codecs (t271)
+
+C SDK candidate `0f3f4e40dca8dd2b757040dfd0869e8e4d0db88d` adds the three
+whole snapshot objects, completing passive codecs for all seventeen proposed
+descriptor envelopes. The proposal remains unaccepted. Sophia
+`731c5295bb2bf5bc875a1704a27f76a9e44e5086` states shortcut uniqueness and
+mandatory chord/action text explicitly; the copied layout is unchanged.
+
+Snapshots borrow immutable row storage. Validation covers action/connection
+bindings, selected entries, distinct slots across tab groups, group partition
+totals, optional shortcut fields and text rules. Descriptor labels forbid
+Unicode controls but retain bidi characters; shortcut text has the stricter
+rule. Complete maximum and one-past objects exercise the global row bounds,
+including 1024 tab groups and 2048 entries together. No heap allocation or
+quadratic uniqueness scan was introduced.
+
+Evidence in `development-evidence/ipc-retirement/`:
+
+- `t271-c-objects-check1.log` and `t271-c-objects-final.log`: strict checks pass
+  without and with IPC respectively. Three independent literal snapshots and
+  1379 malformed-wire refusals pass, alongside the existing suites. The control
+  suite now has 1289 refusals because newly supported object kinds moved out
+  of the unknown-kind list; its ten literal vectors are unchanged.
+- `t271-c-objects-ubsan-trap.log`: the full file suite passes with undefined
+  behavior traps enabled.
+- `t271-c-objects-mutant-bidi.log`: incorrectly rejecting bidi in descriptor
+  labels fails the positive row assertion.
+- `t271-c-objects-mutant-cross-group.log`: clearing slot history between tab
+  groups fails the duplicate-slot refusal.
+- `t271-c-objects-mutant-ack.log`: accepting descriptor announcements in the
+  existing content client fails its unsupported-publication refusal. That
+  client has no descriptor fetch holds yet, so it must refuse before advancing
+  consumption or acknowledgements.
+
+Each mutant compiled in a fresh private target with a read-only source overlay
+and exited 134 at the intended assertion. All gates hid devices, network and
+display access. The signed SDK branch is unpublished. Descriptor negotiation,
+large candidate staging and feed acknowledgement holds remain client work;
+the independent C production-export peer, protected Engine work-area commit
+proof and Narthex migration are still required before retiring IPC.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
