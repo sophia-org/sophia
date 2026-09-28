@@ -587,7 +587,7 @@ fn panel_gate_gate_admits_only_available_actions_from_the_wm_catalog() {
         "--session-app=browser=/usr/bin/true",
         "--session-action-app=browser=browser",
         "--wm-process-default=/usr/bin/true",
-        "--shell-process-default=/usr/bin/true",
+        "--shell-process=/usr/bin/true",
     ];
     let wm = ConfigFixture::from_documents(core, r#"schema 1
         policy { layout "scroller"; }

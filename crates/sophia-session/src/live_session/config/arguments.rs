@@ -1,5 +1,10 @@
 impl PersistentXtermSessionConfig {
     fn from_args(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
+        if args.iter().any(|arg| {
+            arg == "--shell-process-default" || arg.starts_with("--shell-process-default=")
+        }) {
+            return Err("--shell-process-default is retired; select shell components in the desktop profile".into());
+        }
         let no_config = args.iter().any(|argument| argument == "--no-config");
         let explicit_config = arg_value(args, "--config")
             .map(std::path::PathBuf::from);
@@ -525,17 +530,15 @@ impl PersistentXtermSessionConfig {
         if independent_shell && (!normal_session || !shell_enabled) {
             return Err("independent shell components require an enabled normal-session shell".into());
         }
-        let default_shell_process = arg_value(args, "--shell-process-default");
-        for process in [&explicit_shell_process, &default_shell_process].into_iter().flatten() {
-            if !std::path::Path::new(process).is_absolute() {
-                return Err("shell process selections require an absolute path".into());
-            }
+        if let Some(process) = &explicit_shell_process
+            && !std::path::Path::new(process).is_absolute()
+        {
+            return Err("shell process selections require an absolute path".into());
         }
         let profile_is_compiled_default = desktop_profile_source.is_none();
         let resolved_shell_process = || -> Option<String> {
             explicit_shell_process.clone()
                 .or_else(|| components.shell_client.as_ref().map(|p| p.to_string_lossy().into_owned()))
-                .or_else(|| default_shell_process.clone())
         };
         // The compiled default profile enables a shell, because it describes a
         // full desktop. A session running one application has no shell process

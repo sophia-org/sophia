@@ -27,7 +27,6 @@ fn component_selection_validates_roles_without_legacy_fallback_or_execution() {
         "--session-mode=normal".into(),
         "--wm-process=/absent/hagia".into(),
         "--wm-interface=sophia_wm_v1".into(),
-        "--shell-process-default=/absent/narthex".into(),
     ];
     let parse = |text: &str, args: &[String]| {
         std::fs::write(&path, text).unwrap();
@@ -67,12 +66,7 @@ fn component_selection_validates_roles_without_legacy_fallback_or_execution() {
         let error = parse(&text, &args).unwrap_err().to_string();
         assert!(error.contains(expected), "{error}");
     }
-    let no_default: Vec<_> = args
-        .iter()
-        .filter(|a| !a.starts_with("--shell-process-default="))
-        .cloned()
-        .collect();
-    let independent = parse(&valid, &no_default).unwrap();
+    let independent = parse(&valid, &args).unwrap();
     assert!(independent.shell_process.is_none());
     let entries = &independent
         .session_profile
@@ -190,7 +184,6 @@ fn generated_probe(dock: bool) {
         "--session-mode=normal".into(),
         "--wm-process=/absent/hagia".into(),
         "--wm-interface=sophia_wm_v1".into(),
-        "--shell-process-default=/absent/narthex".into(),
     ])
     .unwrap();
     assert!(config.shell_process.is_none());

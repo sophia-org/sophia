@@ -38,17 +38,12 @@ session { terminal "terminal"; browser "browser"; }
     ];
     assert!(PersistentXtermSessionConfig::from_args(&base).unwrap_err().to_string().contains("explicit shell executable"));
 
-    let mut fallback = base.to_vec();
-    fallback.push("--shell-process-default=/opt/shell".to_owned());
-    let config = PersistentXtermSessionConfig::from_args(&fallback).unwrap();
-    assert_eq!(config.shell_process.as_deref(), Some("/opt/shell"));
-    assert_eq!(config.shell_config, None);
-
-    let mut explicit = fallback;
+    let mut explicit = base.to_vec();
     explicit.push("--shell-process=/srv/shell".to_owned());
     explicit.push("--shell-proof-restart-after-visible=2".to_owned());
     let config = PersistentXtermSessionConfig::from_args(&explicit).unwrap();
     assert_eq!(config.shell_process.as_deref(), Some("/srv/shell"));
+    assert_eq!(config.shell_config, None);
     assert_eq!(config.shell_proof_restart_after_visible, Some(2));
 
     let mut unsupported = explicit.clone();

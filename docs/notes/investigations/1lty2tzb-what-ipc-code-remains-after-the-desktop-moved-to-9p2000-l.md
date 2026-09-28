@@ -1232,6 +1232,23 @@ and clippy passes for the affected Session/backend test targets
 Contract acceptance and retirement of the legacy single-shell configuration
 remain outstanding; this slice does not complete t271.
 
+### Retired fallback shell selection (t271, 2026-09-28)
+
+Niltempus `b21eb20` stops emitting `--shell-process-default`; its five recipe
+tests and focused clippy pass. Sophia now refuses that argument before loading
+configuration, including its bare, empty, relative and absolute forms and when
+an explicit shell is also supplied. Shell resolution no longer contains a
+launcher fallback. Explicit component profiles remain unchanged. The separate
+legacy `--shell-process` selection is still present pending its replacement.
+
+The full Session library gate passes 703 tests, with 22 ignored
+(`retire-shell-default-session-2.log`); focused clippy and workspace format pass.
+The first test run caught one action-catalog fixture relying on the removed
+fallback. It now selects its inert test executable explicitly, preserving its
+WM and action assertions. The first clippy run caught a collapsible conditional;
+both failed logs remain in `development-evidence/ipc-retirement/`. This change
+does not update any installed launcher, prepared release or running session.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

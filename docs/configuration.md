@@ -303,8 +303,10 @@ normal `sophia_wm_v1` session with the shell enabled.
 string arguments. `session.shell-client` and `session.shell-config` each accept
 one absolute path. These are Session-owned settings, never WM policy. Explicit
 `--wm-process` and `--shell-process` selections win over the profile; the profile
-wins over core `external-wm` and the launcher's `--wm-process-default` and
-`--shell-process-default`. Explicit WM replacement discards arguments from the
+wins over core `external-wm` and the launcher's `--wm-process-default`.
+The old `--shell-process-default` argument is refused, including when an explicit
+component or shell is selected. Update launchers to select components in the
+desktop profile. Explicit WM replacement discards arguments from the
 replaced selection. Shell executables are never inferred from the WM's name or
 directory. An explicitly enabled shell requires a selection in the profile or
 launcher; an external desktop integration owns any defaults.
@@ -726,8 +728,8 @@ launch policy. Key bindings remain in the WM profile; for example,
 A bar requires positive panel allowance; a launcher requires content input and a
 known catalog. Launcher-only selection has no panel reservation. GPU permission
 is per component; the global `gpu "direct"` mode is refused here. Explicit legacy
-`--shell-process` conflicts, while `--shell-process-default` and ambient
-`SOPHIA_SHELL_CONFIG` are not inherited by explicitly selected components.
+`--shell-process` conflicts. The retired `--shell-process-default` is refused;
+ambient `SOPHIA_SHELL_CONFIG` is not inherited by explicitly selected components.
 
 The executable paths and private configuration belong to the selected clients.
 Sophia validates the declared roles, capabilities and authority grants; it does

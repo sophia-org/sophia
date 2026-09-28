@@ -52,7 +52,6 @@ session {{
             format!("--desktop-profile={}", self.0.join("desktop.kdl").display()),
             "--session-mode=normal".into(),
             "--wm-process=/absent/hagia".into(),
-            "--shell-process-default=/absent/narthex".into(),
         ])
         .unwrap()
     }
