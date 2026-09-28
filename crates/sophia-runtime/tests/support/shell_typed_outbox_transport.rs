@@ -567,10 +567,23 @@ fn a_permit_and_an_allocation_answer_need_their_credits_before_the_owner_changes
 
 #[test]
 fn the_socket_writes_typed_records_and_its_lane_frames_in_admission_order() {
+    socket_admission_order(0);
+}
+
+#[test]
+fn socket_admission_order_survives_counter_wrap_before_either_queue() {
+    // MAX-1 stamps typed, MAX stamps lane, then 0 stamps typed. Starting at
+    // MAX instead wraps before the lane. Both comparisons must keep FIFO order.
+    socket_admission_order(u64::MAX - 1);
+    socket_admission_order(u64::MAX);
+}
+
+fn socket_admission_order(first_sequence: u64) {
     use std::io::Read as _;
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);
     let mut peer = owner.attach_socket();
+    owner.transport.output.next_sequence = first_sequence;
     let first = owner
         .transport
         .admit_record(owner.facts(1), Class::Bulk)

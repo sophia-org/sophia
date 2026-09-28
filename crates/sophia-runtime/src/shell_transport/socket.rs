@@ -258,7 +258,11 @@ impl SocketWire {
                 let lane = self.lane.front().map(|frame| frame.sequence);
                 self.writing = match (typed, lane) {
                     (None, None) => break,
-                    (Some(typed), lane) if lane.is_none_or(|lane| typed < lane) => {
+                    // Internal stamps may wrap; queued positions are less than
+                    // half the u64 range apart under the shared record bound.
+                    (Some(typed), lane)
+                        if lane.is_none_or(|lane| typed.wrapping_sub(lane) > u64::MAX / 2) =>
+                    {
                         let queued = outbox.front().expect("typed front");
                         Some(Writing::Outbox {
                             frame: Self::encode(&queued.record)?.into_boxed_slice(),

@@ -51,10 +51,13 @@ impl ShellOutbox {
         self.controls = 0;
     }
 
-    /// Reserves the next position in the component's single output order.
+    /// Reserves an internal position in the component's single output order.
+    /// This is not a protocol identity. The two queues retain at most a u32
+    /// record limit (64 without content), so their span is below half the u64
+    /// range and the socket can compare these stamps across wraparound.
     pub(super) fn next_sequence(&mut self) -> u64 {
         let sequence = self.next_sequence;
-        self.next_sequence += 1;
+        self.next_sequence = self.next_sequence.wrapping_add(1);
         sequence
     }
 
