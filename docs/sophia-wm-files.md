@@ -82,8 +82,11 @@ are the `row-layouts` in [the WM file schema](../protocol/sophia-wm-files-v1.kdl
 by the neutral `policy_record_layout` owner and `POLICY_MAX_*` constants. Limits
 does not renegotiate those maxima or change active connection bounds.
 
-The file schema owns these complete row layouts, their capability gates and
-their scalar constants. The generated `wm_rows` codec has no socket framing
+The file schema owns these complete row layouts, their extension capability
+gates and their scalar constants. Ordinary row disclosure and additional
+capability dependencies remain enforced by the typed file validators described
+below; the row declarations do not replace those checks.
+The generated `wm_rows` codec has no socket framing
 dependency. While the frozen socket adapter remains, generation checks that
 its historical rows agree with this contract; the socket schema does not
 define the file codec's rows.
