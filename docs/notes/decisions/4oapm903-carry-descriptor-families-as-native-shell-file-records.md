@@ -143,6 +143,12 @@ label/group have explicit presence flags; absent means empty padded storage,
 present means nonempty valid text. None is preserved rather than manufactured
 as an empty Some. The old shortcut validator already refuses Some("").
 
+Shortcuts contains at most 256 entries with distinct nonzero slots. Each chord
+and action is nonempty, with the KDL's 64- and 128-byte capacities respectively.
+The optional label and group use 128- and 64-byte capacities. These snapshot
+rules preserve the existing shortcut catalog's validation; no duplicate slot
+may replace another entry during decoding.
+
 DescriptorEntry's label_present=false requires label_redacted=false and empty
 text. Present labels retain redacted state. Trust values are 0 unknown,
 1 trusted, 2 untrusted, 3 isolated; attention is 0 none, 1 notice, 2 critical.
