@@ -547,6 +547,15 @@ Evidence: `ipc-retirement/t271-sdk-model-{focused,full}.log`,
 shared types and validation only. Native descriptor file codecs and the
 production export remain to be implemented; no descriptor client is switched.
 
+The combined Sophia candidate `7c807603e58272791bbf4af2747363fcb60284ed`
+then passed the full offline `cargo xtask check`: 480 test-result groups,
+6,566 passed, zero failed and 62 ignored, followed by strict clippy, SDK
+snapshot, layout and verifier checks. The terminal exit was zero; the log is
+`ipc-retirement/t271-sdk-model-combined-7c807603e.log`. The source remained
+clean during the gate. Its sandbox hid devices, networking, displays and live
+session sockets. No installed component changed, and no hardware or operator
+archive acceptance is claimed.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
