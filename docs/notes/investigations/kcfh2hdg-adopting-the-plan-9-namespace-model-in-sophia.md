@@ -52,6 +52,87 @@ namespace state. No particular implementation mechanism is selected yet.
    readable inspection interface. Keep named desktop policies in their own
    repositories; Sophia should provide generic composition and admission.
 
+## Evaluated design: two-layer hybrid namespace architecture
+
+To provide per-process namespace trees across Linux and BSDs without introducing
+bloated userspace VFS layers or requiring unprivileged kernel mount permissions,
+the evaluated model splits namespace resolution into two distinct layers:
+
+```text
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │                      DECLARATIVE NAMESPACE RECIPE                      │
+ │    (KDL: mounts, service grants, union orderings, portal exports)      │
+ └───────────────────────────────────┬────────────────────────────────────┘
+                                     │
+          ┌──────────────────────────┴──────────────────────────┐
+          ▼                                                     ▼
+ ┌─────────────────────────────────┐   ┌─────────────────────────────────┐
+ │ LAYER 1: VIRTUAL 9P NAMESPACES  │   │ LAYER 2: PHYSICAL OS SANDBOXING │
+ │ (Native 9P apps, WM, Shell)     │   │ (Legacy POSIX, X11 apps)        │
+ │ • Pure userspace inside session │   │ • Pluggable sandbox drivers     │
+ │ • Zero FUSE / kernel dependency │   │ • Socket-directories on tmpfs   │
+ │ • Portable across Linux & BSDs  │   │ • bwrap / Jails / unveil        │
+ └─────────────────────────────────┘   └─────────────────────────────────┘
+```
+
+### Layer 1: In-protocol virtual namespaces (native 9P and desktop roles)
+
+For native 9P applications, window managers, shells, and administrative tools,
+namespace composition is virtualized entirely inside `sophia-session`'s userspace
+9P server core:
+
+- **Virtual attach roots (`Tattach`):** Each connection's root is synthesized
+  from its admission context. The WM receives only the `/wm` hierarchy; an
+  admitted 9P application receives `/dev/{draw,events}` and authorized service
+  stems under `/srv`.
+- **Zero-overhead path routing:** Path traversal (`Twalk`) evaluates against
+  an immutable array of granted string slices. There are no virtual inodes,
+  dentries, or page caches; lookup overhead is single-digit microsecond slice
+  matching.
+- **Static union and bind rules:** Replaces runtime kernel `bind(2)` with
+  declarative union tables. File lookups probe declared layers in order; creation
+  lands in the designated writable tier.
+- **Portability:** Because interaction occurs over standard `AF_UNIX` streams via
+  9P messages, this layer is 100% portable across Linux, FreeBSD, OpenBSD, and
+  NetBSD with zero root privileges and no kernel VFS interaction.
+
+### Layer 2: Physical socket directories (POSIX and X11 containment)
+
+Standard POSIX and X11 applications do not speak 9P and require physical filesystem
+paths. Sophia extends the standardized socket-directory model (`ooy00zjd`):
+
+- **Isolated runtime roots:** The supervisor provisions per-namespace directories
+  on `tmpfs` under `$XDG_RUNTIME_DIR/sophia/<namespace-id>/` (e.g. holding `X0`
+  and authorized portal FIFOs).
+- **Pluggable host containment drivers:**
+  - **Linux:** Invokes `bwrap` or direct `unshare(CLONE_NEWNS)` to bind-mount the
+    allocated socket directory onto `/tmp/.X11-unix/`. The confined process is
+    physically excluded from host and other-namespace sockets.
+  - **FreeBSD:** Maps the socket directory into a lightweight unprivileged Jail
+    or `nullfs` mount, paired with `cap_enter(2)` (Capsicum) capability mode.
+  - **OpenBSD:** Invokes the client under `unveil(2)` restricted to the allocated
+    socket directory, locked with `pledge(2)`.
+  - **Unsandboxed fallback:** Direct environment pointer (`$NAMESPACE` or
+    `$XDG_RUNTIME_DIR`), preventing accidental path collision.
+
+### Anti-bloat guardrails
+
+To prevent architectural bloat and preserve low-latency execution:
+
+1. **No FUSE for core desktop roles:** Desktop roles must connect directly to
+   9P endpoints over userspace sockets. FUSE adds four kernel context switches
+   per operation and must not be used on the compositor control path.
+2. **Static launch recipes over dynamic client mutation:** Namespaces are
+   declaratively defined at launch in configuration (`desktop.kdl`) and sealed at
+   attach. Clients cannot issue arbitrary dynamic `bind(2)` modifications to
+   their running environment.
+3. **Retained synchronous event loop:** Multiple namespace socket listeners
+   are multiplexed within the existing non-blocking accept loop in `sophia-session`.
+   No asynchronous runtime (Tokio) is introduced.
+4. **Immediate handle revocation:** Because `sophia-9p` validates all operations
+   at the export boundary, revoking a portal or service immediately returns
+   `EBADF` or `ESTALE` on existing open fids without tearing down physical mounts.
+
 ## Evidence to collect
 
 Read the original Plan 9 namespace documentation and cite the specific semantics
