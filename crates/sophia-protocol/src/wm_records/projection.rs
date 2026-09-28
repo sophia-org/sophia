@@ -210,7 +210,7 @@ pub fn decode_policy_projection_records(
     if placement_cursor.next().is_some() {
         return Err(invalid(
             "placement_count",
-            declared.map_or(0, |c| c[1] as u32),
+            0,
         ));
     }
     Ok(PolicyProjectionProposal {
