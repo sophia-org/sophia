@@ -505,6 +505,18 @@ These results do not implement the output file role or complete t268/t272.
 The descriptor replacement, other output-owner findings and output acceptance
 remain. No installed component, live process or display configuration changed.
 
+### Descriptor replacement proposal (t271, 2026-09-28)
+
+The [descriptor file proposal](../decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md)
+records the full retained feature set, native byte layouts, family-specific
+validation, capability dependencies and proposed owner outcomes. Its KDL
+fragment passes an independent parse/offset/size check and three malformed
+layout controls. Review corrected the descriptor prefix arithmetic, preserved
+the distinct text rules, retained indicator access without content admission
+and included those feeds in snapshot accounting. These are design checks;
+the production export, both SDK roles and independent commit-boundary peer
+remain required. The current descriptor socket and its tests stay in place.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

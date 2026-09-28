@@ -15,6 +15,7 @@ Current contracts are identified in the [documentation map](../../README.md).
 | [Confine the Lom GPU domain with cgroup dmem](../decisions/odjw4jav-confine-the-lom-gpu-domain-with-cgroup-dmem.md) | Superseded 2026-09-13 | Historical hard-quota/kernel prerequisite, replaced by the explicit execution trust choice above |
 
 | [Independent native launcher admission and presented input](../decisions/f64wqfh2-independent-native-launcher-admission-and-presented-input-contract.md) | Proposed 2026-09-16 | Bemenu beside Lom; independent admission, presented text lease and catalog activation; wire/runtime work pending |
+| [Carry descriptor families as native shell file records](../decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md) | Proposed 2026-09-28 | Preserve descriptor, tab, shortcut, reference and launcher functionality through native file records; codecs, export and independent peer acceptance pending |
 
 Use `zk adr --title "The proposed choice"` to start a record. It begins as
 `proposed`. Add it here with its status and keep this table consistent when a
