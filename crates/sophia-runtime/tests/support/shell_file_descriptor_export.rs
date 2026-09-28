@@ -113,24 +113,140 @@ fn descriptor_names_require_the_server_role_and_their_own_capability() {
 fn descriptor_object_pins_survive_republication_without_qid_aliases() {
     for (old, new) in objects(1).into_iter().zip(objects(2)) {
         let mut export = export("descriptor", BASE | 4 | 8);
-        let (kind, _) = publish(&mut export, old);
+        let (kind, body) = publish(&mut export, old);
+        let encoded_len = SHELL_FILE_HEADER_BYTES + body.len();
+        assert_eq!(export.snapshot_accounting(), (6_561_792, encoded_len));
         let node = node(kind);
         let mut pin = export.open(&node, OpenFlags(0)).unwrap();
+        assert_eq!(
+            export.snapshot_accounting().1,
+            encoded_len,
+            "one shared object"
+        );
         let old_qid = export.describe(&node, Some(&pin)).qid_path;
         assert!(old_qid >= 132);
         let old_bytes = export.read(&node, &mut pin, 0, 65536).unwrap();
         publish(&mut export, new);
+        assert_eq!(
+            export.snapshot_accounting().1,
+            2 * encoded_len,
+            "current plus old pin"
+        );
+        publish(
+            &mut export,
+            objects(3)
+                .into_iter()
+                .find(|r| shell_file_descriptor_kind(r) == kind)
+                .unwrap(),
+        );
+        assert_eq!(
+            export.snapshot_accounting().1,
+            2 * encoded_len,
+            "an unpinned predecessor was released"
+        );
         assert_eq!(export.read(&node, &mut pin, 0, 65536).unwrap(), old_bytes);
         assert_eq!(export.describe(&node, Some(&pin)).qid_path, old_qid);
         assert!(export.describe(&node, None).qid_path > old_qid);
         assert!(matches!(export.open(&node, OpenFlags(0)), Err(EBUSY)));
         export.release(node, Some(pin));
+        assert_eq!(
+            export.snapshot_accounting().1,
+            encoded_len,
+            "old fid released"
+        );
         let mut latest = export.open(&node, OpenFlags(0)).unwrap();
         assert_ne!(
             export.read(&node, &mut latest, 0, 65536).unwrap(),
             old_bytes
         );
         export.release(node, Some(latest));
+    }
+}
+
+#[test]
+fn content_role_snapshot_bounds_keep_their_own_feeds() {
+    for (role, catalog, caps, expected) in [
+        ("bar", false, BASE, 4_196_352),
+        ("bar", false, BASE | (1 << 9), 4_261_888),
+        ("launcher", true, BASE, 12_584_960),
+        ("dock", true, BASE, 12_584_960),
+    ] {
+        let mut files = ShellFiles::awaiting_negotiation(
+            EPOCH,
+            role,
+            catalog,
+            JournalBounds {
+                bytes: 131072,
+                reserve_bytes: 22528,
+            },
+            100,
+            Instant::now(),
+        );
+        files.complete_negotiation(None, caps).unwrap();
+        assert_eq!(files.snapshot_accounting(), (expected, 0), "{role}");
+        assert!(
+            !files
+                .root_entries()
+                .iter()
+                .any(|(_, n)| matches!(n, Node::Descriptors))
+        );
+    }
+}
+
+#[test]
+fn oversized_replacement_leaves_the_current_object_pin_and_journal_unchanged() {
+    let mut files = export("descriptor", BASE);
+    let (kind, _) = publish(&mut files, objects(1).remove(0));
+    let node = node(kind);
+    let mut pin = files.open(&node, OpenFlags(0)).unwrap();
+    let before = (
+        files.next_qid(),
+        files.journal.size(),
+        files.snapshot_accounting(),
+    );
+    let old = files.read(&node, &mut pin, 0, 65536).unwrap();
+    let oversized = vec![0; SHELL_FILE_DESCRIPTORS_MAX_BYTES - SHELL_FILE_HEADER_BYTES + 1];
+    assert_eq!(
+        files.publish_object(kind, &oversized, false),
+        Err(Errno::EINVAL)
+    );
+    assert_eq!(
+        (
+            files.next_qid(),
+            files.journal.size(),
+            files.snapshot_accounting()
+        ),
+        before
+    );
+    assert_eq!(files.read(&node, &mut pin, 0, 65536).unwrap(), old);
+    files.release(node, Some(pin));
+}
+
+#[test]
+fn undisclosed_feeds_cannot_consume_unreserved_snapshot_storage() {
+    for (role, caps, kind) in [
+        ("bar", BASE, ShellFileKind::Catalog),
+        ("bar", BASE, ShellFileKind::Indicators),
+        ("descriptor", BASE, ShellFileKind::Tabs),
+        ("descriptor", BASE, ShellFileKind::Shortcuts),
+        ("descriptor", BASE, ShellFileKind::Outputs),
+    ] {
+        let mut files = export(role, caps);
+        let before = (
+            files.next_qid(),
+            files.journal.size(),
+            files.snapshot_accounting(),
+        );
+        // Access is refused before body validation/allocation for every role.
+        assert_eq!(files.publish_object(kind, &[], false), Err(Errno::EACCES));
+        assert_eq!(
+            (
+                files.next_qid(),
+                files.journal.size(),
+                files.snapshot_accounting()
+            ),
+            before
+        );
     }
 }
 

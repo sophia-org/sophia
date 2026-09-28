@@ -179,6 +179,46 @@ fn combined_descriptor_content_reuses_the_exact_reserved_grant() {
     });
     let _client = f.connect(8, METADATA | (1 << 7) | (1 << 8));
     assert_eq!(f.transport.content_limits(), Some(&limits));
+    let accounting = f.transport.content_accounting(&f.epochs);
+    assert_eq!(accounting.snapshot_reserved_bytes, 15_015_936 + 2048);
+    assert_eq!(accounting.snapshot_retained_bytes, 0);
+    assert_eq!(
+        accounting.epochs.reserved_bytes,
+        limits.max_staging_bytes + limits.max_resident_bytes + limits.max_retiring_bytes
+    );
+}
+
+#[test]
+fn descriptor_snapshot_bound_follows_only_the_disclosed_feeds() {
+    for (caps, bytes) in [
+        (BASE, 4_202_496),
+        (BASE | 4, 6_299_648),
+        (BASE | 8, 4_464_640),
+        (BASE | 4 | 8, 6_561_792),
+        (BASE | 4 | 8 | (1 << 5), 14_950_400),
+        (BASE | 4 | 8 | (1 << 9), 6_627_328),
+        (METADATA, 15_015_936),
+    ] {
+        let mut f = Fixture::new();
+        f.start(ShellContentAdmissionPolicy::Unavailable);
+        assert_eq!(
+            f.transport
+                .content_accounting(&f.epochs)
+                .snapshot_reserved_bytes,
+            0
+        );
+        let _client = f.connect(8, caps);
+        let accounting = f.transport.content_accounting(&f.epochs);
+        assert_eq!(accounting.snapshot_reserved_bytes, bytes, "caps={caps}");
+        assert_eq!(accounting.snapshot_retained_bytes, 0);
+        assert!(accounting.epochs.quiescent());
+        assert!(
+            !accounting.quiescent(),
+            "the file export still owns snapshot capacity"
+        );
+        f.transport.disconnect(&mut f.epochs).unwrap();
+        assert!(f.transport.content_accounting(&f.epochs).quiescent());
+    }
 }
 
 #[test]

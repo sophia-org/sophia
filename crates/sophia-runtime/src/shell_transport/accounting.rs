@@ -22,6 +22,12 @@ pub struct ShellContentAccounting {
     pub response_bytes: usize,
     pub input_records: usize,
     pub input_bytes: usize,
+    /// Per-connection encoded snapshot ceiling, including build scratch.
+    /// Additional to the common registry's content storage reservation.
+    pub snapshot_reserved_bytes: usize,
+    /// Current objects and open-fid pins, counting shared objects once.
+    /// Excludes allocator metadata, typed values and transient build scratch.
+    pub snapshot_retained_bytes: usize,
 }
 
 impl ShellContentAccounting {
@@ -31,6 +37,8 @@ impl ShellContentAccounting {
             && self.response_bytes == 0
             && self.input_records == 0
             && self.input_bytes == 0
+            && self.snapshot_reserved_bytes == 0
+            && self.snapshot_retained_bytes == 0
     }
 }
 
@@ -90,6 +98,18 @@ impl ShellComponentTransport {
             .socket()
             .map_or((0, 0), super::socket::SocketWire::input_accounting);
         let (pending_records, pending_bytes) = self.pending_publication();
+        let (snapshot_reserved_bytes, snapshot_retained_bytes) = match &self.wire {
+            Some(super::wire::Wire::Files(files)) => files.export().snapshot_accounting(),
+            _ => self
+                .negotiation
+                .as_ref()
+                .map_or((0, 0), |pending| match &pending.stage {
+                    super::negotiation_service::Stage::Files(files) => {
+                        files.export().snapshot_accounting()
+                    }
+                    _ => (0, 0),
+                }),
+        };
         ShellContentAccounting {
             epochs: epoch_accounting,
             response_records: reserved
@@ -107,6 +127,8 @@ impl ShellComponentTransport {
                     0,
                     super::negotiation_service::PendingNegotiation::input_bytes,
                 ),
+            snapshot_reserved_bytes,
+            snapshot_retained_bytes,
         }
     }
 

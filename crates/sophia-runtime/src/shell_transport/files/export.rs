@@ -3,7 +3,7 @@
 //! Admission, negotiation and every content decision stay with the existing
 //! shell owners, which the transport feeds from `take_inbound`.
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use sophia_9p::connection::ConnectionId;
@@ -25,6 +25,7 @@ use sophia_9p::journal::{Staging, StagingBounds};
 
 mod inbound;
 mod objects;
+mod snapshots;
 mod submission;
 
 /// Not in `sophia-9p`'s set; the WM file owner defines the same values.
@@ -161,7 +162,8 @@ pub(in crate::shell_transport) struct Object {
 #[derive(Default)]
 struct ObjectSlot {
     current: Option<Arc<Object>>,
-    pinned: bool,
+    // Observation only: the open fid, not this weak reference, owns the pin.
+    pinned: Option<Weak<Object>>,
 }
 
 /// The family of a queued whole candidate, before it is exploded into parts.
@@ -234,6 +236,9 @@ pub(in crate::shell_transport) struct ShellFiles {
     descriptors: ObjectSlot,
     tabs: ObjectSlot,
     shortcuts: ObjectSlot,
+    /// Two encoded copies per disclosed feed and the shared build scratch.
+    /// Fixed at negotiation, independently of the content resource grant.
+    snapshot_reserved_bytes: usize,
     staging: Option<Staging>,
     accepted: Option<Accepted>,
     submission_watermark: u64,
@@ -300,6 +305,7 @@ impl ShellFiles {
             descriptors: ObjectSlot::default(),
             tabs: ObjectSlot::default(),
             shortcuts: ObjectSlot::default(),
+            snapshot_reserved_bytes: 0,
             staging: None,
             accepted: None,
             submission_watermark: 0,
@@ -352,6 +358,7 @@ impl ShellFiles {
         }
         self.capabilities = capabilities;
         self.negotiated = true;
+        self.snapshot_reserved_bytes = self.selected_snapshot_bound();
         Ok(())
     }
 
@@ -677,11 +684,11 @@ impl Export for ShellFiles {
                 let kind = node.object_kind().expect("object node");
                 let slot = self.object_slot_mut(kind).expect("valid object kind");
                 // One pin per feed per attach; publication continues meanwhile.
-                if slot.pinned {
+                if slot.pinned.is_some() {
                     return Err(EBUSY);
                 }
                 let object = slot.current.clone().ok_or(Errno::EAGAIN)?;
-                slot.pinned = true;
+                slot.pinned = Some(Arc::downgrade(&object));
                 Ok(Handle::Object(object))
             }
             Node::Transaction => {
@@ -822,7 +829,7 @@ impl Export for ShellFiles {
             }
             Some(Handle::Object(object)) => {
                 if let Some(slot) = self.object_slot_mut(object.kind) {
-                    slot.pinned = false;
+                    slot.pinned = None;
                 }
             }
             Some(Handle::Upload { binding, writer }) => self.release_writer(binding, writer),

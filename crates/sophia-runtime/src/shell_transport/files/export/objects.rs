@@ -133,13 +133,22 @@ impl ShellFiles {
         if shell_file_descriptor_max_bytes(kind).is_some() && !self.supports_descriptor_kind(kind) {
             return Err(Errno::EACCES);
         }
-        if self.descriptor
-            && !self
+        if !self.negotiated
+            || !self
                 .root_entries()
                 .iter()
                 .any(|(_, node)| node.object_kind() == Some(kind))
         {
             return Err(Errno::EACCES);
+        }
+        // Refuse before allocating the replacement's encoded buffer. The
+        // current object and an older fid pin may both still be retained.
+        if body
+            .len()
+            .checked_add(SHELL_FILE_HEADER_BYTES)
+            .is_none_or(|bytes| bytes > super::snapshots::object_cap(kind).expect("object slot"))
+        {
+            return Err(Errno::EINVAL);
         }
         let bytes = encode_shell_file_record(
             ShellFileHeader {
