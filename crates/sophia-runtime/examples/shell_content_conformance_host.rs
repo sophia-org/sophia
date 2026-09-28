@@ -6,11 +6,16 @@ use sophia_protocol::{
     ContentOutputId, ContentPixelRect, ContentReason, ContentResourceId, TransactionId,
 };
 use sophia_runtime::{
-    ContentAllocationSnapshot, ContentCandidateContext, ContentRenderBundle, ProcessLaunchSpec,
-    ProcessSupervisor, ProtectionDomainRole, ProtectionDomainSpec, ProtectionPath,
-    ShellContentAdmissionPolicy, ShellSessionTransport, SupervisedProcessKind, SupervisorCommand,
-    SupervisorEvent,
+    ContentAllocationSnapshot, ContentCandidateContext, ContentEpochRegistry, ContentRenderBundle,
+    ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole, ProtectionDomainSpec,
+    ProtectionPath, ShellComponentTransport, ShellContentAdmissionPolicy, SupervisedProcessKind,
+    SupervisorCommand, SupervisorEvent,
 };
+
+/// The client's only endpoint is a `sophia_shell_fs_v1` export. The socket
+/// wire is retired here: its selection and variable are refused, never mapped.
+const USAGE: &str = "usage: shell_content_conformance_host CLIENT [--transport=9p2000.L]";
+const RETIRED_SOCKET_ENV: &str = "SOPHIA_SHELL_SOCKET";
 
 fn main() {
     if let Err(error) = run() {
@@ -21,18 +26,24 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
-    let client = args
-        .next()
-        .map(PathBuf::from)
-        .ok_or("usage: shell_content_conformance_host CLIENT [--transport=current-ipc|9p2000.L]")?;
-    let file_wire = match args.next().as_deref() {
-        None => false,
-        Some(value) if value == "--transport=current-ipc" => false,
-        Some(value) if value == "--transport=9p2000.L" => true,
-        _ => return Err("transport must be current-ipc or 9p2000.L".into()),
-    };
+    let client = args.next().map(PathBuf::from).ok_or(USAGE)?;
+    match args.next().as_deref() {
+        None => {}
+        Some(value) if value == "--transport=9p2000.L" => {}
+        Some(value) if value == "--transport=current-ipc" => {
+            return Err(
+                "the current-ipc content host is retired; the client speaks 9p2000.L".into(),
+            );
+        }
+        Some(_) => return Err(USAGE.into()),
+    }
     if args.next().is_some() {
         return Err("unexpected content host argument".into());
+    }
+    if std::env::var_os(RETIRED_SOCKET_ENV).is_some() {
+        return Err(
+            format!("{RETIRED_SOCKET_ENV} selects the retired socket wire; unset it").into(),
+        );
     }
     if !client.is_absolute() || !client.is_file() {
         return Err("shell client must be an absolute executable path".into());
@@ -42,11 +53,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::process::id(),
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
     ));
-    let mut transport = ShellSessionTransport::bind_for_supervised_uid(
+    let mut owner = ShellComponentTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
     )?;
-    let socket = transport.socket_path().to_path_buf();
+    let mut epochs = ContentEpochRegistry::new(64 * 1024 * 1024)
+        .map_err(sophia_runtime::ShellTransportError::from)?;
+    let socket = owner.socket_path().to_path_buf();
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])?.path(
         ProtectionPath::read_only(socket.parent().ok_or("shell socket lacks a parent")?),
     )?;
@@ -65,20 +78,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .protection_evidence()
         .ok_or("shell process has no protection evidence")?
         .clone();
-    transport.authorize_protected_peer(&evidence)?;
-    let negotiate = if file_wire {
-        ShellSessionTransport::accept_files_with_content_policy
-    } else {
-        ShellSessionTransport::accept_and_negotiate_with_content_policy
-    };
-    negotiate(
-        &mut transport,
+    owner.authorize_protected_peer(&evidence)?;
+    owner.begin_file_negotiation(
+        &epochs,
         1,
         Duration::from_secs(5),
         ShellContentAdmissionPolicy::Granted {
             discrete_input: false,
         },
     )?;
+    // The owner's negotiation deadline bounds this; each visit is 64 KiB.
+    while owner.poll_negotiation(&mut epochs, 64 * 1024)?.is_none() {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let mut transport = owner.connection(&mut epochs);
     let grant = transport.content_grant().ok_or("content was not granted")?;
     let resource = ContentResourceId {
         id: 1,
@@ -249,9 +262,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         std::thread::yield_now();
     }
-    transport.disconnect()?;
+    owner.disconnect(&mut epochs)?;
+    epochs.collect();
     println!(
-        "sophia_shell_content_transport schema=1 status=complete protected=true allocation=granted bytes=8 accepted=true candidate=accepted renderer_outcome={} lease_retained=true released=true native_presentation=false transaction={}",
+        "sophia_shell_content_transport schema=1 status=complete protected=true wire=9p2000.L allocation=granted bytes=8 accepted=true candidate=accepted renderer_outcome={} lease_retained=true released=true native_presentation=false transaction={}",
         ContentReason::RendererFailed as u16,
         TransactionId::from_raw(1).raw()
     );

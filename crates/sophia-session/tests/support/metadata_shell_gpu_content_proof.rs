@@ -6,7 +6,6 @@ use std::cell::Cell;
 
 fn proof() -> ShellGpuContentProof {
     ShellGpuContentProof {
-        transport: sophia_config::ShellTransportSelection::CurrentIpc,
         client: "/absent/shell-client".into(),
         client_args: Vec::new(),
         config: None,
@@ -196,4 +195,162 @@ fn full_surface_raster_requires_exact_size_and_varied_bytes() {
             bytes.len()
         );
     }
+}
+
+#[path = "../../../sophia-conformance/tests/support/c_content_peer.rs"]
+mod c_content_peer;
+
+/// Proof records, as the session host would receive them.
+static RECORDS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn capture(line: &str) {
+    RECORDS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(line.to_owned());
+}
+
+#[test]
+fn the_retired_socket_variable_is_refused_not_ignored() {
+    refuse_retired_socket(false).unwrap();
+    let error = refuse_retired_socket(true).unwrap_err().to_string();
+    assert!(error.contains("SOPHIA_SHELL_SOCKET"), "{error}");
+}
+
+/// Launch the independent C peer in the proof's protected domain with the
+/// proof's endpoint variables, then run the proof's own service loop. No render
+/// node exists here: the grant evidence is a stand-in and nothing is opened,
+/// so this proves the file-wire content lifecycle, not GPU execution.
+fn serve_with_c_peer(
+    name: &str,
+    thickness: u32,
+    mutation: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let scratch =
+        std::env::temp_dir().join(format!("gpu-proof-serve-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&scratch)?;
+    let peer = c_content_peer::build(&scratch, mutation);
+    let mut parameters = proof();
+    parameters.client = peer.clone();
+    parameters.output = ShellGpuProofExtent {
+        width: 64,
+        height: 64,
+    };
+    parameters.surface = ShellGpuProofSurface {
+        edge: ShellComponentEdge::Top,
+        width: 64,
+        height: 32,
+    };
+    parameters.outcomes = vec![
+        ShellGpuProofOutcome::PresentedSynthetic,
+        ShellGpuProofOutcome::RendererFailed,
+    ];
+    parameters.end = ShellGpuProofEnd::ClientExits;
+    parameters.timeout = Duration::from_secs(10);
+    parameters.validate()?;
+    // Another test may have installed it first; both capture the same way.
+    let _ = crate::output::install(crate::output::SessionOutput::new(capture, capture));
+    let mut owner = ShellComponentTransport::bind_for_supervised_uid(
+        scratch.join("socket"),
+        rustix::process::geteuid().as_raw(),
+    )?;
+    let mut epochs =
+        ContentEpochRegistry::new(64 * 1024 * 1024).map_err(ShellTransportError::from)?;
+    let socket = owner.socket_path().to_path_buf();
+    let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])?.path(
+        ProtectionPath::read_only(socket.parent().ok_or("socket parent")?),
+    )?;
+    let spec = ProcessLaunchSpec::new(&peer)
+        .arg("content-serve")
+        .env(FILE_SOCKET_ENV, &socket)
+        .env("SOPHIA_SHELL_BAR_THICKNESS", thickness.to_string())
+        .process_group()
+        .protection_domain(domain);
+    let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
+    supervisor.apply(SupervisorCommand::StartProcess {
+        process: SupervisedProcessKind::Shell,
+        delay: Duration::ZERO,
+    })?;
+    let protection = supervisor
+        .protection_evidence()
+        .ok_or("no protection evidence")?
+        .clone();
+    owner.authorize_protected_peer(&protection)?;
+    let stand_in = super::super::gpu::ShellGpuLaunchEvidence {
+        epoch: 1,
+        major: 0,
+        minor: 0,
+        render_node: "/absent/renderD128".into(),
+        pci_bus_id: None,
+        pci_vendor_id: None,
+        pci_device_id: None,
+    };
+    let result = serve(
+        &parameters,
+        &mut owner,
+        &mut epochs,
+        &mut supervisor,
+        &protection,
+        &stand_in,
+        "0123456789abcdef0123456789abcdef",
+    );
+    let _ = supervisor.terminate();
+    let _ = std::fs::remove_dir_all(&scratch);
+    result
+}
+
+/// Prepared then Presented for the first render, RendererFailed for the last;
+/// the client retires and exits, and the renderer-held lease must survive the
+/// disconnect before settling to zero reserved and backing bytes.
+#[test]
+fn the_proof_loop_serves_a_protected_independent_file_peer() {
+    serve_with_c_peer("valid", 32, 0).unwrap();
+    let records = RECORDS.lock().unwrap().clone();
+    let completion = records
+        .iter()
+        .find(|line| line.starts_with("sophia_shell_gpu_content_proof "))
+        .expect("completion record");
+    for field in [
+        "status=complete",
+        "protected=true",
+        "wire=9p2000.L",
+        "revision=6",
+        "renders=2",
+        "pixels=full_surface_raster",
+        "end=client_exits",
+        "backing_bytes=0",
+        "native_presentation=false",
+    ] {
+        assert!(completion.contains(field), "{field}: {completion}");
+    }
+    for outcome in ["outcome=presented_synthetic", "outcome=renderer_failed"] {
+        assert!(
+            records.iter().any(|line| line
+                .starts_with("sophia_shell_gpu_content_render schema=1 ")
+                && line.contains("bytes=8192")
+                && line.contains(outcome)),
+            "{outcome}: {records:?}"
+        );
+    }
+}
+
+/// Red control: the peer asks for a thinner surface than the parameters name.
+#[test]
+fn the_proof_loop_refuses_a_peer_that_changes_the_surface() {
+    let error = serve_with_c_peer("thin", 16, 0).unwrap_err().to_string();
+    assert!(
+        error.contains("client allocation request differs"),
+        "{error}"
+    );
+}
+
+/// Red control for the disconnect tolerance after the final render: a peer
+/// that leaves after its first outcome still fails the proof.
+#[test]
+fn the_proof_loop_refuses_a_peer_that_leaves_before_its_last_render() {
+    let error = serve_with_c_peer("early", 32, 3).unwrap_err().to_string();
+    assert!(
+        error.contains("NotConnected") || error.contains("client exited after 1 of 2"),
+        "{error}"
+    );
 }

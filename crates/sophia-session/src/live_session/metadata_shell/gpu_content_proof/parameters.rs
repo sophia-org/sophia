@@ -165,9 +165,8 @@ impl ShellGpuProofPixels {
 /// the content seam, without DRM master or native presentation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShellGpuContentProof {
-    /// Explicit endpoint wire; changing it does not grant capabilities.
-    pub transport: sophia_config::ShellTransportSelection,
-    /// Absolute path of the client executable.
+    /// Absolute path of the client executable. It is served only
+    /// `sophia_shell_fs_v1` over 9P2000.L at `SOPHIA_SHELL_9P_SOCKET`.
     pub client: PathBuf,
     /// Arguments the client is executed with, passed through unchanged.
     pub client_args: Vec<OsString>,

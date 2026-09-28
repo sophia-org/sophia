@@ -36,6 +36,9 @@ fn protected_proof_exec_checks_exclusions_before_releasing_the_client() {
         "display",
         "wrong_identity",
         "overflow",
+        "retired_socket",
+        "no_file_endpoint",
+        "relative_file_endpoint",
     ] {
         let _ = fs::remove_file(&marker);
         let mut domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])
@@ -107,6 +110,15 @@ fn protected_proof_exec_checks_exclusions_before_releasing_the_client() {
             .protection_domain(domain);
         if case == "display" {
             spec = spec.env("DISPLAY", ":77");
+        }
+        // The client's one endpoint is the 9P export; the path is never opened.
+        match case {
+            "no_file_endpoint" => {}
+            "relative_file_endpoint" => spec = spec.env("SOPHIA_SHELL_9P_SOCKET", "shell.sock"),
+            _ => spec = spec.env("SOPHIA_SHELL_9P_SOCKET", "/run/shell/files.sock"),
+        }
+        if case == "retired_socket" {
+            spec = spec.env("SOPHIA_SHELL_SOCKET", "/run/shell/socket.sock");
         }
         let mut supervisor = ProcessSupervisor::new(SupervisedProcessKind::Shell, spec);
         supervisor

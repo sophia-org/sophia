@@ -43,6 +43,15 @@ pub fn exec_client(client: &Path, args: &[OsString]) -> Result<(), Box<dyn std::
             return Err("GPU proof child inherited display credentials".into());
         }
     }
+    // The client's one endpoint is the 9P export; the retired socket variable
+    // is refused rather than ignored, so no client can select that wire here.
+    if std::env::var_os(super::RETIRED_SOCKET_ENV).is_some() {
+        return Err("GPU proof child was given the retired shell socket".into());
+    }
+    if !std::env::var_os(super::FILE_SOCKET_ENV).is_some_and(|path| Path::new(&path).is_absolute())
+    {
+        return Err("GPU proof child lacks its absolute 9P shell endpoint".into());
+    }
     inspect_fds(Path::new("/proc/self/fd"))?;
     crate::session_println!(
         "sophia_shell_gpu_domain schema=1 status=observed observation_id={} grant_epoch={} device_major={} device_minor={} dri_entries=1 device_inventory=bounded input_absent=true x11_socket_dir_absent=true user_runtime_dir_absent=true display_environment_absent=true inherited_devices=none inherited_sockets=none",

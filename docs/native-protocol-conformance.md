@@ -85,9 +85,14 @@ experimental. Corpus readers prove byte agreement; protected socket clients
 prove admitted lifecycles. Hosts supply presentation completions, topology and
 activation facts where documented by their scenarios, so neither proves native
 scanout, physical input, GPU execution permission or installed-session acceptance.
-An optional externally supplied content client is selected by the absolute
-`SOPHIA_CONTENT_LIFECYCLE_CLIENT` path and reported separately by the shell phase;
-its absence does not erase the required C/Nim evidence.
+The shell phase's content host serves only 9P2000.L. It runs an independent C
+peer linked against the pinned C SDK built without its IPC library, together
+with red mutations and hand-encoded malformed-record controls against the
+production file export. The protected popout lifecycle test still uses the
+socket wire and its vendored client until that path moves. An optional
+externally supplied 9P content client is selected by the absolute
+`SOPHIA_CONTENT_LIFECYCLE_CLIENT` path, run against the host and reported
+separately; its absence does not erase the required C/Nim evidence.
 
 The [native family contract](sophia-policy-ipc.md), role contracts and checked-in
 schemas remain the specification. The runner is an evidence collector and

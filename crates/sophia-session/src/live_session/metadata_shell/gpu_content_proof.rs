@@ -21,9 +21,10 @@ use sophia_protocol::{
     ContentOutputId, ContentPixelRect, TransactionId,
 };
 use sophia_runtime::{
-    ContentAllocationSnapshot, ContentCandidateContext, ContentRenderBundle, ProcessLaunchSpec,
-    ProcessSupervisor, ProtectionDomainRole, ProtectionDomainSpec, ProtectionPath,
-    ShellContentAdmissionPolicy, ShellSessionTransport, SupervisedProcessKind, SupervisorCommand,
+    ContentAllocationSnapshot, ContentCandidateContext, ContentEpochRegistry, ContentRenderBundle,
+    ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainEvidence, ProtectionDomainRole,
+    ProtectionDomainSpec, ProtectionPath, ShellComponentTransport, ShellContentAdmissionPolicy,
+    ShellTransportConnection, ShellTransportError, SupervisedProcessKind, SupervisorCommand,
     SupervisorEvent,
 };
 use std::ffi::OsString;
@@ -72,6 +73,14 @@ impl CandidateIntake {
 
 type Inventory = Vec<LiveRenderDeviceIdentitySnapshot>;
 
+/// The client's only endpoint: a `sophia_shell_fs_v1` export over 9P2000.L.
+pub(super) const FILE_SOCKET_ENV: &str = "SOPHIA_SHELL_9P_SOCKET";
+/// The retired socket wire's variable. The proof refuses it rather than
+/// ignoring it, so an operator cannot believe that wire was exercised.
+pub(super) const RETIRED_SOCKET_ENV: &str = "SOPHIA_SHELL_SOCKET";
+/// The wire named in the completion record, which verifiers check.
+const WIRE: &str = "9p2000.L";
+
 /// Run the proof its parameters describe. Parameters are validated before the
 /// render inventory is read or any device is touched.
 ///
@@ -89,6 +98,7 @@ fn run_with_inventory(
     inventory: impl FnOnce(&str) -> Result<Inventory, Box<dyn std::error::Error>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     proof.validate()?;
+    refuse_retired_socket(std::env::var_os(RETIRED_SOCKET_ENV).is_some())?;
     validate_input(&proof.client, "shell client")?;
     if let Some(config) = &proof.config {
         validate_input(config, "shell config")?;
@@ -103,11 +113,13 @@ fn run_with_inventory(
     };
 
     let directory = proof_directory()?;
-    let mut transport = ShellSessionTransport::bind_for_supervised_uid(
+    let mut owner = ShellComponentTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
     )?;
-    let socket = transport.socket_path().to_path_buf();
+    let mut epochs =
+        ContentEpochRegistry::new(64 * 1024 * 1024).map_err(ShellTransportError::from)?;
+    let socket = owner.socket_path().to_path_buf();
     let mut observation = [0_u8; 16];
     if rustix::rand::getrandom(&mut observation, rustix::rand::GetRandomFlags::empty())?
         != observation.len()
@@ -134,7 +146,7 @@ fn run_with_inventory(
     }
     base = base
         .env(domain::OBSERVATION_ENV, &observation)
-        .env(proof.transport.socket_env(), &socket)
+        .env(FILE_SOCKET_ENV, &socket)
         .env(
             "SOPHIA_SHELL_BAR_THICKNESS",
             proof.surface.thickness().to_string(),
@@ -156,21 +168,44 @@ fn run_with_inventory(
         .protection_evidence()
         .ok_or("shell process has no protection evidence")?
         .clone();
-    transport.authorize_protected_peer(&protection)?;
-    let negotiate = match proof.transport {
-        sophia_config::ShellTransportSelection::CurrentIpc => {
-            ShellSessionTransport::accept_and_negotiate_with_content_policy
-        }
-        sophia_config::ShellTransportSelection::NineP2000L => {
-            ShellSessionTransport::accept_files_with_content_policy
-        }
-    };
-    let welcome = negotiate(
-        &mut transport,
+    owner.authorize_protected_peer(&protection)?;
+    serve(
+        proof,
+        &mut owner,
+        &mut epochs,
+        &mut supervisor,
+        &protection,
+        &gpu,
+        &observation,
+    )
+}
+
+/// Negotiate the protected, already launched client over the file export and
+/// answer the renders the parameters name. The device grant was established
+/// by the caller; nothing here reads or opens a device.
+fn serve(
+    proof: &ShellGpuContentProof,
+    owner: &mut ShellComponentTransport,
+    epochs: &mut ContentEpochRegistry,
+    supervisor: &mut ProcessSupervisor,
+    protection: &ProtectionDomainEvidence,
+    gpu: &super::gpu::ShellGpuLaunchEvidence,
+    observation: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    owner.begin_file_negotiation(
+        epochs,
         1,
         Duration::from_secs(5),
         proof_content_admission_policy(proof.discrete_input),
     )?;
+    // The owner's negotiation deadline bounds this; each visit is 64 KiB.
+    let welcome = loop {
+        if let Some(welcome) = owner.poll_negotiation(epochs, 64 * 1024)? {
+            break welcome;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    let mut transport = owner.connection(epochs);
     let grant = transport.content_grant().ok_or("content was not granted")?;
     // validate() checked the geometry against this profile; refuse if the
     // transport ever negotiates another one.
@@ -219,6 +254,7 @@ fn run_with_inventory(
     let mut verified = 0_usize;
     let mut retained: Option<ContentRenderBundle> = None;
     let mut stopped = false;
+    let mut ended = false;
     while Instant::now() < deadline {
         let now = elapsed_msec(started);
         let done = verified == renders;
@@ -298,7 +334,10 @@ fn run_with_inventory(
         let serviced_before = intake.serviced;
         intake
             .visit(permits_sent, || {
-                transport.service_content_candidates(
+                // As the other intakes: once every render is verified, the
+                // client may already have gone; completion still requires its
+                // exit, the verified count and the lease checks below.
+                match transport.service_content_candidates(
                     &[ContentCandidateContext {
                         output,
                         facts_generation: 1,
@@ -306,7 +345,10 @@ fn run_with_inventory(
                         allocations: &allocations,
                     }],
                     now,
-                )
+                ) {
+                    Err(ShellTransportError::NotConnected) if done => Ok(0),
+                    serviced => serviced,
+                }
             })
             .map_err(|error| {
                 format!(
@@ -380,54 +422,69 @@ fn run_with_inventory(
                 )
                 .into());
             }
-            transport.disconnect()?;
-            if let Some(bundle) = retained.take() {
-                if transport.content_reserved_bytes() == 0 {
-                    return Err(
-                        "disconnect failed to retain the renderer-owned content lease".into(),
-                    );
-                }
-                drop(bundle);
-                transport.disconnect()?;
-            }
-            if transport.content_reserved_bytes() != 0
-                || transport.content_backing_reserved_bytes() != 0
-            {
-                return Err("content lease or backing survived the proof's end".into());
-            }
-            // Completion: the protected grant, the geometry and the pixel
-            // pattern checked. native_presentation stays false because every
-            // outcome here is synthetic; GPU origin of the pixels is not
-            // claimed and belongs to the client's external verifier.
-            crate::session_println!(
-                "sophia_shell_gpu_content_proof schema=1 status=complete protected=true wire={} revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} output_width={} output_height={} edge={} width={} height={} renders={} pixels={} discrete_input={} end={} backing_bytes=0 native_presentation=false",
-                proof.transport.wire_name(),
-                welcome.selected_revision,
-                welcome.capabilities,
-                gpu.epoch,
-                gpu.render_node.display(),
-                gpu.major,
-                gpu.minor,
-                gpu.pci_bus_id.as_deref().unwrap_or("none"),
-                proof.output.width,
-                proof.output.height,
-                edge_name(proof.surface.edge),
-                proof.surface.width,
-                proof.surface.height,
-                renders,
-                proof.pixels.record_name(),
-                proof.discrete_input,
-                proof.end.record_name(),
-            );
-            return Ok(());
+            ended = true;
+            break;
         }
         std::thread::yield_now();
     }
-    Err(format!(
-        "shell GPU/content proof exceeded its {:?} deadline after {verified} of {renders} renders",
-        proof.timeout
-    )
-    .into())
+    if !ended {
+        return Err(format!(
+            "shell GPU/content proof exceeded its {:?} deadline after {verified} of {renders} renders",
+            proof.timeout
+        )
+        .into());
+    }
+    // Disconnect removes authority; collection settles owners whose last
+    // consumer is gone. A renderer-held lease must survive both.
+    owner.disconnect(epochs)?;
+    epochs.collect();
+    if let Some(bundle) = retained.take() {
+        if owner.connection(epochs).content_reserved_bytes() == 0 {
+            return Err("disconnect failed to retain the renderer-owned content lease".into());
+        }
+        drop(bundle);
+        epochs.collect();
+    }
+    let settled = owner.connection(epochs);
+    if settled.content_reserved_bytes() != 0 || settled.content_backing_reserved_bytes() != 0 {
+        return Err("content lease or backing survived the proof's end".into());
+    }
+    // Completion: the protected grant, the geometry and the pixel
+    // pattern checked. native_presentation stays false because every
+    // outcome here is synthetic; GPU origin of the pixels is not
+    // claimed and belongs to the client's external verifier.
+    crate::session_println!(
+        "sophia_shell_gpu_content_proof schema=1 status=complete protected=true wire={} revision={} capabilities=0x{:x} grant_epoch={} render_node={} device_major={} device_minor={} pci_bus_id={} output_width={} output_height={} edge={} width={} height={} renders={} pixels={} discrete_input={} end={} backing_bytes=0 native_presentation=false",
+        WIRE,
+        welcome.selected_revision,
+        welcome.capabilities,
+        gpu.epoch,
+        gpu.render_node.display(),
+        gpu.major,
+        gpu.minor,
+        gpu.pci_bus_id.as_deref().unwrap_or("none"),
+        proof.output.width,
+        proof.output.height,
+        edge_name(proof.surface.edge),
+        proof.surface.width,
+        proof.surface.height,
+        renders,
+        proof.pixels.record_name(),
+        proof.discrete_input,
+        proof.end.record_name(),
+    );
+    Ok(())
+}
+
+/// A present retired-socket variable is an explicit selection of that wire.
+fn refuse_retired_socket(present: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if present {
+        return Err(format!(
+            "{RETIRED_SOCKET_ENV} selects the retired shell socket wire; the proof serves only 9p2000.L"
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn prefixed(prefix: &str, value: &std::ffi::OsStr) -> OsString {
@@ -487,38 +544,38 @@ fn elapsed_msec(started: Instant) -> u64 {
 }
 
 fn service_resources(
-    transport: &mut ShellSessionTransport,
+    transport: &mut ShellTransportConnection<'_>,
     now: u64,
     allow_disconnect: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match transport.service_content_resources(now) {
         Ok(_) => Ok(()),
-        Err(sophia_runtime::ShellTransportError::NotConnected) if allow_disconnect => Ok(()),
+        Err(ShellTransportError::NotConnected) if allow_disconnect => Ok(()),
         Err(error) => Err(error.into()),
     }
 }
 
 fn service_allocations(
-    transport: &mut ShellSessionTransport,
+    transport: &mut ShellTransportConnection<'_>,
     now: u64,
     allow_disconnect: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match transport.service_content_allocation_requests(&[], now) {
         Ok(_) => Ok(()),
-        Err(sophia_runtime::ShellTransportError::NotConnected) if allow_disconnect => Ok(()),
+        Err(ShellTransportError::NotConnected) if allow_disconnect => Ok(()),
         Err(error) => Err(error.into()),
     }
 }
 
 fn service_demands(
-    transport: &mut ShellSessionTransport,
+    transport: &mut ShellTransportConnection<'_>,
     output: ContentOutputId,
     allocations: &[ContentAllocationSnapshot],
     allow_disconnect: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match transport.service_content_demands(&[output], allocations) {
         Ok(_) => Ok(()),
-        Err(sophia_runtime::ShellTransportError::NotConnected) if allow_disconnect => Ok(()),
+        Err(ShellTransportError::NotConnected) if allow_disconnect => Ok(()),
         Err(error) => Err(error.into()),
     }
 }
