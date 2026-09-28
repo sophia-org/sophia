@@ -4,6 +4,11 @@
  * built without its IPC library, and no Rust encoder. Modes:
  *
  *   content-proof --socket PATH   the content conformance host scenario
+ *   content-lifecycle --socket PATH
+ *                                 the panel/popout lifecycle scenario: stale
+ *                                 parent refusal, popout grant, activation and
+ *                                 dismissal actions with receipts, allocation
+ *                                 invalidations, retire and release
  *   content-serve                 the GPU content proof scenario; endpoint from
  *                                 SOPHIA_SHELL_9P_SOCKET only
  *   content-malformed --socket PATH
@@ -11,8 +16,11 @@
  *                                 below is encoded by hand from the offsets in
  *                                 protocol/sophia-shell-files-v1.kdl
  *
- * The first two use the public session API. PEER_MUTATION builds red
- * controls of content-proof that the host must refuse. */
+ * All but content-malformed use the public session API. PEER_MUTATION builds
+ * red controls that the host must refuse. content-lifecycle encodes, from the
+ * file contract, the scenario Sophia's socket test client ran in its
+ * content-lifecycle mode (vendor/c-desktop-sdk/.../tests/
+ * sophia_shell_content_live_client.c); no code is shared with that client. */
 #define _POSIX_C_SOURCE 200809L
 #include "sophia_desktop_connection.h"
 #include "sophia_shell_session.h"
@@ -27,12 +35,18 @@
 #ifndef PEER_MUTATION
 #define PEER_MUTATION 0
 #endif
-/* 1: upload different (valid) pixels; 2: request another geometry;
+/* content-lifecycle: 4: acknowledge the first action with another event id;
+ * 5: acknowledge the dismissal twice; 6: exit without acknowledging the
+ * dismissal; 7: exit after the parent loss without retiring the resource.
+ * content-proof/content-serve:
+ * 1: upload different (valid) pixels; 2: request another geometry;
  * 3: exit after the first candidate outcome, without retiring or awaiting
  *    release, and (content-serve) before the remaining renders. */
 
 #define CAP_DESCRIPTOR_SWITCHER 1u
 #define CAP_CONTENT_SURFACE 128u
+#define CAP_CONTENT_DISCRETE_INPUT 256u
+#define EVENT_QUEUE 16u
 #define DEADLINE_MS 10000u
 
 static const char *mode_name = "peer";
@@ -88,6 +102,11 @@ struct scenario {
     size_t pixel_bytes;
     uint32_t pixel_width, pixel_height;
     int32_t destination_x, destination_y;
+    /* content-lifecycle: queued ordered events, popout identity, rows. */
+    uint64_t required, popup_id, popup_generation, popup_scale;
+    int queue_events, interaction_follows_generation, surfaces;
+    unsigned queue_head, queue_count;
+    struct sophia_sf_record queue[EVENT_QUEUE];
 };
 
 static void service(struct scenario *c)
@@ -217,7 +236,14 @@ static void pump(struct scenario *c)
         require(c->content_epoch, "content grant epoch");
     }
     while (!sophia_ss_event(&c->s, &e)) {
-        handle_event(c, e);
+        if (c->queue_events && (e->header.kind == SOPHIA_SF_ALLOCATION_RESULT ||
+                                e->header.kind == SOPHIA_SF_CANDIDATE_OUTCOME ||
+                                e->header.kind == SOPHIA_SF_ACTION)) {
+            require(c->queue_count < EVENT_QUEUE, "event queue");
+            c->queue[(c->queue_head + c->queue_count++) % EVENT_QUEUE] = *e;
+        } else {
+            handle_event(c, e);
+        }
         require(!sophia_ss_consume(&c->s), "consume");
     }
     if (c->epoch && c->outputs_owed && !c->outputs_fetching &&
@@ -257,6 +283,8 @@ static void open_scenario(struct scenario *c, const char *path, void **storage)
 {
     struct sophia_ss_config config = {{5, 6, CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE},
                                       SOPHIA_SF_BAR, 16384, 8, 65536, NULL, 0};
+    if (c->required)
+        config.offer.required_capabilities = c->required;
     size_t bytes = sophia_ss_storage_bytes(config.msize, config.queue_bytes);
     int fd;
     c->deadline = now_ms() + DEADLINE_MS;
@@ -337,8 +365,8 @@ static void candidate(struct scenario *c)
     v->output_generation = c->output_generation;
     v->facts_generation = c->facts_generation;
     v->pacing_permit = c->permit;
-    v->interaction_generation = 1;
-    v->surface_count = v->placement_count = v->target_count = 1;
+    v->interaction_generation = c->interaction_follows_generation ? c->generation : 1;
+    v->surface_count = v->placement_count = v->target_count = c->surfaces == 2 ? 2 : 1;
     v->surfaces[0].allocation_id = c->allocation_id;
     v->surfaces[0].allocation_generation = c->allocation_generation;
     v->surfaces[0].scale_generation = c->scale_generation;
@@ -357,6 +385,28 @@ static void candidate(struct scenario *c)
     v->targets[0].bounds_y = c->destination_y;
     v->targets[0].bounds_width = c->pixel_width;
     v->targets[0].bounds_height = c->pixel_height;
+    if (c->surfaces == 2) {
+        /* The popout surface, anchored to the panel's 2x1 target. */
+        v->surfaces[1].allocation_id = c->popup_id;
+        v->surfaces[1].allocation_generation = c->popup_generation;
+        v->surfaces[1].scale_generation = c->popup_scale;
+        v->surfaces[1].role = 2;
+        v->surfaces[1].edge = 1;
+        v->surfaces[1].parent_surface_index = 0;
+        v->surfaces[1].anchor_x = 3;
+        v->surfaces[1].anchor_y = 4;
+        v->surfaces[1].anchor_width = 2;
+        v->surfaces[1].anchor_height = 1;
+        v->placements[1].resource_id = v->placements[1].resource_generation = 1;
+        v->placements[1].surface_index = 1;
+        v->targets[1].surface_index = 1;
+        v->targets[1].action_kind = 1;
+        v->targets[1].target_id = 2;
+        v->targets[1].target_generation = c->generation;
+        v->targets[1].action_id = 2;
+        v->targets[1].bounds_width = 2;
+        v->targets[1].bounds_height = 1;
+    }
     c->have_outcome = 0;
     submit(c, &record);
 }
@@ -374,11 +424,8 @@ static void retire(struct scenario *c)
 }
 
 /* Stages shared by both scenarios, through the accepted resource. */
-static void publish_resource(struct scenario *c)
+static void upload_resource(struct scenario *c)
 {
-    request_panel(c);
-    while (!c->granted)
-        pump(c);
     while (!upload(c))
         pump(c);
     while (!(c->admitted && custodied(c, c->ticket) && sophia_ss_upload_ready(&c->s)))
@@ -395,6 +442,14 @@ static void publish_resource(struct scenario *c)
     }
     while (!(c->accepted && custodied(c, c->ticket) && !sophia_ss_upload_pending(&c->s)))
         pump(c);
+}
+
+static void publish_resource(struct scenario *c)
+{
+    request_panel(c);
+    while (!c->granted)
+        pump(c);
+    upload_resource(c);
 }
 
 static void render(struct scenario *c)
@@ -514,6 +569,229 @@ static int content_serve(void)
     printf("c_content_serve schema=1 status=complete wire=9p2000.L presented=%u "
            "renderer_failed=1\n",
            presented);
+    return 0;
+}
+
+/* ---- Panel/popout lifecycle --------------------------------------------- */
+
+/* The next queued allocation result, candidate outcome or action, in order. */
+static struct sophia_sf_record *next_event(struct scenario *c, uint16_t kind)
+{
+    static struct sophia_sf_record event;
+    while (!c->queue_count)
+        pump(c);
+    event = c->queue[c->queue_head];
+    c->queue_head = (c->queue_head + 1u) % EVENT_QUEUE;
+    c->queue_count--;
+    if (event.header.kind != kind)
+        fprintf(stderr, "expected event %u, read %u\n", kind, event.header.kind);
+    require(event.header.kind == kind, "lifecycle event order");
+    /* Every content event names the live connection and content grant. */
+    require(event.value.allocation_result.grant_connection_epoch == c->epoch &&
+                event.value.allocation_result.grant_content_epoch == c->content_epoch,
+            "content grant changed");
+    return &event;
+}
+
+static void request_allocation(struct scenario *c, uint64_t id, uint16_t role,
+                               uint64_t parent_epoch, uint32_t width, uint32_t height)
+{
+    struct sophia_sf_record record;
+    struct sophia_sf_allocation_request *a = &record.value.allocation_request;
+    memset(&record, 0, sizeof(record));
+    record.header.kind = SOPHIA_SF_ALLOCATION_REQUEST;
+    a->transaction = 20 + id;
+    grant_fields(c, &a->grant_connection_epoch, &a->grant_content_epoch);
+    a->output_id = c->output_id;
+    a->output_generation = c->output_generation;
+    a->allocation_request_id = id;
+    a->operation = 1;
+    a->role = role;
+    a->edge = 1;
+    if (role == 2) {
+        a->parent_id = c->allocation_id;
+        a->parent_generation = c->allocation_generation;
+        a->parent_presentation_epoch = parent_epoch;
+        a->anchor_x = 3;
+        a->anchor_y = 4;
+        a->anchor_width = 2;
+        a->anchor_height = 1;
+    }
+    a->desired_width = width;
+    a->desired_height = height;
+    submit(c, &record);
+}
+
+static void lifecycle_candidate(struct scenario *c, uint64_t generation, int surfaces)
+{
+    c->generation = generation;
+    c->surfaces = surfaces;
+    demand(c);
+    while (!c->have_permit)
+        pump(c);
+    candidate(c);
+}
+
+/* Prepared carries no epoch; Presented carries the owner's nonzero epoch. */
+static uint64_t presented(struct scenario *c)
+{
+    uint64_t epoch = 0;
+    uint16_t kind;
+    for (kind = 1; kind <= 2; kind++) {
+        const struct sophia_sf_candidate_outcome *o =
+            &next_event(c, SOPHIA_SF_CANDIDATE_OUTCOME)->value.candidate_outcome;
+        require(o->candidate_generation == c->generation && o->output_id == c->output_id &&
+                    o->output_generation == c->output_generation && o->kind == kind &&
+                    !o->reason,
+                "candidate outcome identity changed");
+        epoch = o->presentation_epoch;
+        require((kind == 2) == (epoch != 0), "presentation epoch on wrong outcome");
+    }
+    return epoch;
+}
+
+static void acknowledge(struct scenario *c, const struct sophia_sf_action *a, uint64_t event_id)
+{
+    struct sophia_sf_record record;
+    struct sophia_sf_action_ack *k = &record.value.action_ack;
+    memset(&record, 0, sizeof(record));
+    record.header.kind = SOPHIA_SF_ACTION_ACK;
+    k->transaction = 40 + a->event_id;
+    k->grant_connection_epoch = a->grant_connection_epoch;
+    k->grant_content_epoch = a->grant_content_epoch;
+    k->output_id = a->output_id;
+    k->output_generation = a->output_generation;
+    k->candidate_generation = a->candidate_generation;
+    k->presentation_epoch = a->presentation_epoch;
+    k->interaction_generation = a->interaction_generation;
+    k->allocation_id = a->allocation_id;
+    k->allocation_generation = a->allocation_generation;
+    k->target_id = a->target_id;
+    k->target_generation = a->target_generation;
+    k->action_id = a->action_id;
+    k->event_id = event_id;
+    k->disposition = 1;
+    submit(c, &record);
+    while (!custodied(c, c->ticket))
+        pump(c);
+}
+
+/* An action is receipt only: the owner, not this peer, withdraws a popout. */
+static void action(struct scenario *c, uint64_t epoch, uint16_t kind)
+{
+    struct sophia_sf_action a = next_event(c, SOPHIA_SF_ACTION)->value.action;
+    require(a.output_id == c->output_id && a.output_generation == c->output_generation &&
+                a.candidate_generation == c->generation && a.presentation_epoch == epoch &&
+                a.interaction_generation == c->generation && a.allocation_id == c->popup_id &&
+                a.allocation_generation == c->popup_generation && a.kind == kind && !a.reason &&
+                a.event_id == c->generation - 1,
+            "action identity changed");
+    require(a.target_id == (kind == 2 ? 0u : 2u) &&
+                a.target_generation == (kind == 2 ? 0u : c->generation) &&
+                a.action_id == (kind == 2 ? 0u : 2u),
+            "action target changed");
+#if PEER_MUTATION == 6
+    if (kind == 2) {
+        sophia_ss_close(&c->s);
+        exit(0);
+    }
+#endif
+#if PEER_MUTATION == 4
+    acknowledge(c, &a, kind == 1 ? a.event_id + 1 : a.event_id);
+#else
+    acknowledge(c, &a, a.event_id);
+#endif
+#if PEER_MUTATION == 5
+    if (kind == 2)
+        acknowledge(c, &a, a.event_id);
+#endif
+}
+
+static void invalidated(struct scenario *c, uint64_t id, uint64_t generation)
+{
+    const struct sophia_sf_allocation_result *r =
+        &next_event(c, SOPHIA_SF_ALLOCATION_RESULT)->value.allocation_result;
+    require(r->status == 4 && r->reason == 8 && !r->allocation_request_id &&
+                r->allocation_id == id && r->allocation_generation == generation,
+            "expected exact allocation loss");
+}
+
+static int content_lifecycle(const char *path)
+{
+    static const uint8_t pixels[8] = {0, 0, 255, 255, 0, 128, 0, 128};
+    static struct scenario c;
+    const struct sophia_sf_allocation_result *r;
+    uint64_t epoch;
+    void *storage;
+    c.required = CAP_DESCRIPTOR_SWITCHER | CAP_CONTENT_SURFACE | CAP_CONTENT_DISCRETE_INPUT;
+    c.queue_events = c.interaction_follows_generation = 1;
+    c.surface_width = 64;
+    c.surface_height = 16;
+    c.thickness = 24;
+    c.pixels = pixels;
+    c.pixel_bytes = sizeof(pixels);
+    c.pixel_width = 2;
+    c.pixel_height = 1;
+    c.destination_x = 3;
+    c.destination_y = 4;
+    open_scenario(&c, path, &storage);
+    require(c.output_width == 64 && c.output_height == 64, "unexpected output facts");
+
+    request_allocation(&c, 1, 1, 0, 64, 16);
+    r = &next_event(&c, SOPHIA_SF_ALLOCATION_RESULT)->value.allocation_result;
+    require(r->allocation_request_id == 1 && r->status == 1 && !r->reason &&
+                r->output_id == c.output_id && r->output_generation == c.output_generation &&
+                r->allocation_id && r->allocation_generation && !r->parent_id &&
+                r->pixel_width == 64 && r->pixel_height == 16 && r->scale_numerator == 1 &&
+                r->scale_denominator == 1,
+            "panel grant changed");
+    c.allocation_id = r->allocation_id;
+    c.allocation_generation = r->allocation_generation;
+    c.scale_generation = r->scale_generation;
+    c.reservation = r->allowed_reservation_extent;
+    upload_resource(&c);
+
+    lifecycle_candidate(&c, 1, 1);
+    epoch = presented(&c);
+    /* A popout naming a presentation the owner never made is refused. */
+    request_allocation(&c, 2, 2, epoch + 1, 16, 8);
+    r = &next_event(&c, SOPHIA_SF_ALLOCATION_RESULT)->value.allocation_result;
+    require(r->allocation_request_id == 2 && r->status == 2 && r->reason == 1,
+            "stale parent receipt was not rejected");
+    request_allocation(&c, 3, 2, epoch, 16, 8);
+    r = &next_event(&c, SOPHIA_SF_ALLOCATION_RESULT)->value.allocation_result;
+    require(r->allocation_request_id == 3 && r->status == 1 && !r->reason &&
+                r->output_id == c.output_id && r->parent_id == c.allocation_id &&
+                r->parent_generation == c.allocation_generation && r->pixel_x == 3 &&
+                r->pixel_y == 5 && r->pixel_width == 16 && r->pixel_height == 8,
+            "popout grant changed physical anchor or parent");
+    c.popup_id = r->allocation_id;
+    c.popup_generation = r->allocation_generation;
+    c.popup_scale = r->scale_generation;
+    require(c.popup_id && c.popup_generation && c.popup_scale, "popout identity");
+
+    lifecycle_candidate(&c, 2, 2);
+    epoch = presented(&c);
+    action(&c, epoch, 1);
+    lifecycle_candidate(&c, 3, 2);
+    epoch = presented(&c);
+    action(&c, epoch, 2);
+    invalidated(&c, c.popup_id, c.popup_generation);
+    lifecycle_candidate(&c, 4, 1);
+    (void)presented(&c);
+    invalidated(&c, c.allocation_id, c.allocation_generation);
+#if PEER_MUTATION == 7
+    sophia_ss_close(&c.s);
+    return 0;
+#endif
+    retire(&c);
+    while (!c.released)
+        pump(&c);
+    require(!c.queue_count, "unconsumed lifecycle events");
+    sophia_ss_close(&c.s);
+    free(storage);
+    puts("c_content_lifecycle schema=1 status=complete wire=9p2000.L candidates=4 action=1 "
+         "dismissal=1 parent_loss=1 released=true native_presentation=false");
     return 0;
 }
 
@@ -909,10 +1187,12 @@ int main(int argc, char **argv)
         return content_serve();
     }
     require(argc == 4 && !strcmp(argv[2], "--socket"),
-            "usage: content-proof|content-malformed --socket PATH, or content-serve");
+            "usage: content-proof|content-lifecycle|content-malformed --socket PATH, or content-serve");
     mode_name = argv[1];
     if (!strcmp(argv[1], "content-proof"))
         return content_proof(argv[3]);
+    if (!strcmp(argv[1], "content-lifecycle"))
+        return content_lifecycle(argv[3]);
     if (!strcmp(argv[1], "content-malformed"))
         return content_malformed(argv[3]);
     require(0, "unknown mode");
