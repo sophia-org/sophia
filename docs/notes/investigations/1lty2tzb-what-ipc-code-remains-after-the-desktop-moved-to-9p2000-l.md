@@ -1930,6 +1930,24 @@ is still tied to niltempus's older Sophia pin and is documented as requiring
 that legacy demo; its move to a real 9P output consumer belongs to t253. It
 cannot serve as acceptance evidence for the demo-free head.
 
+At signed `b9d44a2c6`, the full isolated `cargo xtask check` passed: 489
+reported result groups, 6,685 reported passes, zero failures and 63 ignored
+entries (these include nested fixture reports, not unique tests). The eight
+retained output tests and focused conformance/xtask clippy passed. Hardware
+buffer-age and GLX/EGL pixel proofs remain explicitly unproved without a device.
+Logs are `ipc-retirement/t269-demo-full.log`, `t269-output-peer.log` and
+`t269-demo-clippy-2.log` under development evidence. The first focused clippy
+failure, an error-formatting mismatch in the moved private peer, is preserved.
+
+The corresponding niltempus xtask tests passed 170/170, with nine ignored;
+focused clippy and the explicitly requested private install/activation/rollback
+fixture also passed. That fixture reads an archive of niltempus's unchanged
+Sophia pin, `2d69924a9`. Its earlier failures exposed two stale exact-line
+profile-mode guards, now corrected without broadening the retired-name scan.
+Evidence is `t269-niltempus-xtask-3.log`, `t269-niltempus-clippy.log` and
+`t269-niltempus-install.log`; failed runs are retained. No package was built or
+installed, and no running component or release selection was changed.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
