@@ -34,7 +34,7 @@ cmp "$build_dir/sophia-shell-content-malformed.frames" protocol/golden/sophia-sh
 cargo test --offline -q -p sophia-protocol --test shell_content_wire
 cargo test --offline -q -p sophia-runtime --test shell_content_resources
 cargo test --offline -q -p sophia-runtime --test shell_content_admission
-cargo test --offline -q -p sophia-runtime --test shell_content_transport
+cargo test --offline -q -p sophia-runtime --test shell_content_session_files
 cc -std=c11 -Wall -Wextra -Werror -pedantic \
     vendor/c-desktop-sdk/source/src/tests/sophia_shell_content_client.c -o "$build_dir/content-client"
 "$build_dir/content-client" --valid protocol/golden/sophia-shell-content.frames

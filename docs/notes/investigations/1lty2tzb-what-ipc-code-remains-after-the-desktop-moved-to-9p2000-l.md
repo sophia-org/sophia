@@ -1870,6 +1870,20 @@ The first launcher attempt was refused because the evidence isolation script
 is not executable; invoking that same script with Bash runs the unchanged
 isolation contract. That failed launch log is retained and ran no build.
 
+At signed `a9e17ed4b`, the full repository gate passes in
+`t269-runtime-wm-full.log`: 494 reported result groups, 6,693 reported passes,
+zero failures and 63 ignored tests (including child-fixture results). Strict
+affected-target clippy also passes in `t269-runtime-wm-clippy.log`. Hardware
+buffer-age and GLX/EGL checks report no device and make no pixel claim.
+
+The first native-family run at that head passes the WM phase, then catches a
+stale shell invocation: `check_shell_protocol.sh` still names
+`shell_content_transport`, removed in t265 (`680f0516e`). Its retained file
+replacement is `shell_content_session_files`, introduced by `eafa78bfc` with
+the original owner assertions. The invocation is corrected without changing
+those tests. The failed family report and phase logs remain under
+`~/.cache/sophia-ipc-retirement/family-a9e17ed4b/`.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
