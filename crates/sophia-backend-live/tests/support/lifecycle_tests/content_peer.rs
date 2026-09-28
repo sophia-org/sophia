@@ -9,8 +9,8 @@ use super::*;
 use sophia_runtime::*;
 use std::path::{Path, PathBuf};
 
-#[path = "../../../../sophia-conformance/tests/support/c_content_peer.rs"]
-mod c_content_peer;
+#[path = "../../../../sophia-conformance/tests/support/c_file_peer.rs"]
+mod c_file_peer;
 
 // Exercise the very same allocation-to-frame mapping used by the session,
 // without creating a production API solely for an integration fixture.
@@ -108,7 +108,7 @@ impl PeerScratch {
     }
 
     fn peer(&self, mutation: u32) -> PathBuf {
-        c_content_peer::build(&self.0, mutation)
+        c_file_peer::build(&self.0, "shell_content_file_peer", mutation)
     }
 }
 

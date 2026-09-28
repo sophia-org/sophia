@@ -1191,6 +1191,47 @@ CPU presentation boundary, not KMS/page-flip timing, broker disclosure policy
 or a product UI. The descriptor contract remains proposed. Narthex's thin C
 SDK migration, contract acceptance and IPC retirement remain required.
 
+### Independent descriptor hosts over files (t271, 2026-09-28)
+
+Both the descriptor and launcher conformance hosts now use the production 9P
+owner. `shell_descriptor_modes` builds an independent C peer against the pinned
+C SDK with `WITH_IPC=0`; it replaces the Rust IPC fixture. The peer covers all
+three descriptor modes and the launcher host. The ordinary test gate now proves
+the previously missing independent tab/reference lifecycle and bar reservation
+commit/withdrawal cases. No product checkout is needed.
+
+The five descriptor/launcher tests and the four existing content-file tests
+pass (`descriptor-file-modes-1.log`). Wrong tab activation IDs and transactions
+cannot satisfy the owner's pending response; a refused disposition is rejected.
+Stale presentation grants are refused by the file owner before disclosure, so
+the old IPC fixture's stale-event injection is deliberately replaced by that
+host refusal assertion. The launcher checks a 4096-row catalog, presentation,
+activation, replay rejection and a new query. Persistent peers handle SIGTERM
+and exit successfully before disconnection. This does not prove production
+Session restart behavior.
+
+Narthex's separate signed `c49dd92` migrates its executable and reducers to the
+public C SDK at `2b00a776`, removing its four handwritten IPC wire modules.
+Its 20 local checks pass, as do protected descriptor proof, bar proof, persistent
+serve and launcher runs against these hosts. Development Nim-generated C emits
+const-qualifier warnings; the SDK binding header passes strict C compilation.
+This is development interoperability evidence, not a reviewed release build.
+Product logs are under `development-evidence/narthex-descriptor-9p/`.
+
+`check_shell_protocol.sh` now invokes the independent C file tests in place of
+its descriptor/launcher socket clients and sibling Narthex build. Its unrelated
+legacy codec and popout checks remain until their owning migrations. Focused
+clippy and layout pass (`descriptor-file-clippy-1.log` and
+`descriptor-file-layout-1.log`, under `development-evidence/ipc-retirement/`).
+The complete shell script passes (`descriptor-shell-gate-2.log`), including
+the retained codec, file-export, protected popout and indicator checks. The
+first run caught two callers of the renamed C compiler helper; both were
+updated. Session GPU-proof tests pass 14/14 (`descriptor-peer-session-tests.log`),
+and clippy passes for the affected Session/backend test targets
+(`descriptor-peer-callers-clippy.log`). The failed first gate log is retained.
+Contract acceptance and retirement of the legacy single-shell configuration
+remain outstanding; this slice does not complete t271.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

@@ -2,7 +2,6 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-narthex_root=${SOPHIA_NARTHEX_ROOT:-"$(dirname -- "$root")/narthex"}
 content_client=${SOPHIA_CONTENT_LIFECYCLE_CLIENT:-}
 build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
@@ -72,12 +71,9 @@ cargo test --offline -q -p sophia-protocol --test shell_indicators
 cargo test --offline -q -p sophia-protocol --test shell_reference
 cargo test --offline -q -p sophia-runtime --test shell_transport
 
-${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic \
-    vendor/c-desktop-sdk/source/src/tests/sophia_shell_v1_client.c \
-    -o "$build_dir/sophia-shell-v1-c-client"
-cargo run --offline -q -p sophia-runtime \
-    --example shell_descriptor_conformance_host -- \
-    "$build_dir/sophia-shell-v1-c-client"
+# The descriptor, tabs, shortcuts and launcher hosts use an independent C
+# SDK peer over 9P, including reservation commit/withdrawal and refusal cases.
+cargo test --offline -q -p sophia-conformance --test shell_descriptor_modes
 
 # The content host serves only 9P2000.L. Its independent peer links the pinned
 # C SDK, built by the SDK's own makefile without the IPC library, and no Rust.
@@ -103,10 +99,6 @@ SOPHIA_CONTENT_LIFECYCLE_CLIENT="$build_dir/sophia-shell-content-live-c-client" 
     cargo test --offline -q -p sophia-backend-live --all-features --lib \
     protected_popout_client -- --ignored
 
-${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
-    vendor/c-desktop-sdk/source/src/tests/sophia_shell_launcher_client.c -o "$build_dir/sophia-shell-launcher-c-client"
-cargo run --offline -q -p sophia-runtime --example shell_launcher_conformance_host -- "$build_dir/sophia-shell-launcher-c-client"
-
 # An independent decoder written from the schema, not from the Rust. It must
 # also refuse malformed frames itself: a second implementation that accepts
 # everything proves nothing about the format being described well enough.
@@ -121,32 +113,6 @@ for mutation in stale-active label-padding bad-count; do
         exit 1
     fi
 done
-
-if [ ! -f "$narthex_root/src/narthex.nim" ]; then
-    echo "Narthex checkout not found at $narthex_root" >&2
-    exit 2
-fi
-cd "$narthex_root"
-SOPHIA_ROOT="$root" nim c -r --hints:off --path:src \
-    --nimcache:"$build_dir/nimcache-test" \
-    -o:"$build_dir/tshell-v1" tests/tshell_v1.nim
-SOPHIA_ROOT="$root" nim c -r --hints:off --path:src --nimcache:"$build_dir/nimcache-tabs" -o:"$build_dir/tshell-tabs" tests/tshell_tabs.nim
-SOPHIA_ROOT="$root" nim c -r --hints:off --path:src --nimcache:"$build_dir/nimcache-launcher" -o:"$build_dir/tshell-launcher" tests/tshell_launcher.nim
-nim c --hints:off --path:src --nimcache:"$build_dir/nimcache-client" \
-    -o:"$build_dir/narthex" src/narthex.nim
-cd "$root"
-cargo run --offline -q -p sophia-runtime \
-    --example shell_descriptor_conformance_host -- "$build_dir/narthex"
-cargo run --offline -q -p sophia-runtime \
-    --example shell_descriptor_conformance_host -- "$build_dir/narthex" --serve
-# The reservation half: the real Nim shell claims a bottom strip, Engine's
-# coordinator admits it, and the work area shrinks only once the bundle
-# commits. Driving it here keeps the claim honest offline, where a wrong band
-# costs seconds instead of a rig session.
-cargo run --offline -q -p sophia-runtime \
-    --example shell_descriptor_conformance_host -- "$build_dir/narthex" --bar-proof
-
-cargo run --offline -q -p sophia-runtime --example shell_launcher_conformance_host -- "$build_dir/narthex"
 
 content_lifecycle=unavailable
 if [ -n "$content_client" ]; then
@@ -169,4 +135,4 @@ else
 fi
 
 printf '%s\n' \
-    "sophia_shell_behavior_corpus schema=2 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1 content_host_wire=9p2000.L content_lifecycle=$content_lifecycle"
+    "sophia_shell_behavior_corpus schema=2 status=complete clients=rust,c protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1 descriptor_host_wire=9p2000.L launcher_host_wire=9p2000.L content_host_wire=9p2000.L content_lifecycle=$content_lifecycle"

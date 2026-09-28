@@ -21,8 +21,8 @@ use sophia_runtime::{
 
 #[path = "support/bounded_peer.rs"]
 mod bounded_peer;
-#[path = "support/c_content_peer.rs"]
-mod c_content_peer;
+#[path = "support/c_file_peer.rs"]
+mod c_file_peer;
 
 const HOST: &str = env!("CARGO_BIN_EXE_shell_content_conformance_host");
 const HOST_RECORD: &str = "sophia_shell_content_transport schema=1 status=complete protected=true wire=9p2000.L allocation=granted bytes=8 accepted=true candidate=accepted renderer_outcome=9 lease_retained=true released=true native_presentation=false transaction=1";
@@ -67,7 +67,7 @@ fn text(bytes: &[u8]) -> String {
 #[test]
 fn the_host_completes_with_the_independent_c_peer_over_9p() {
     let scratch = Scratch::new();
-    let peer = c_content_peer::build(&scratch.0, 0);
+    let peer = c_file_peer::build(&scratch.0, "shell_content_file_peer", 0);
     for transport in [None, Some("--transport=9p2000.L")] {
         let mut args = vec![peer.as_os_str()];
         args.extend(transport.map(std::ffi::OsStr::new));
@@ -97,7 +97,7 @@ fn the_host_refuses_each_red_mutation_of_the_peer() {
         // Leaving before the retire surfaces from the owner as a lost peer.
         (3, "NotConnected"),
     ] {
-        let peer = c_content_peer::build(&scratch.0, mutation);
+        let peer = c_file_peer::build(&scratch.0, "shell_content_file_peer", mutation);
         let output = bounded(&mut host(&[peer.as_os_str()]));
         let stderr = text(&output.stderr);
         assert!(!output.status.success(), "mutation {mutation} accepted");
@@ -112,7 +112,7 @@ fn the_host_refuses_each_red_mutation_of_the_peer() {
 #[test]
 fn the_host_refuses_the_retired_socket_selection_and_variable() {
     let scratch = Scratch::new();
-    let peer = c_content_peer::build(&scratch.0, 0);
+    let peer = c_file_peer::build(&scratch.0, "shell_content_file_peer", 0);
     for (args, expected) in [
         (
             vec![peer.as_os_str(), "--transport=current-ipc".as_ref()],
@@ -151,7 +151,7 @@ fn the_host_refuses_the_retired_socket_selection_and_variable() {
 #[test]
 fn malformed_file_records_are_refused_before_any_owner() {
     let scratch = Scratch::new();
-    let peer = c_content_peer::build(&scratch.0, 0);
+    let peer = c_file_peer::build(&scratch.0, "shell_content_file_peer", 0);
     let mut owner = ShellComponentTransport::bind_for_supervised_uid(
         scratch.0.join("socket"),
         rustix::process::geteuid().as_raw(),

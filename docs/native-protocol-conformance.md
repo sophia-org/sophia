@@ -3,15 +3,15 @@
 ## Generic descriptor host coverage
 
 Sophia's ordinary conformance tests exercise all three descriptor host modes
-with `shell_descriptor_contract_peer`, a scripted peer using the public Rust
-codecs:
+with `shell_descriptor_file_peer.c`, an independent C SDK peer over 9P2000.L.
+It links the pinned SDK with `WITH_IPC=0`, without any Rust codec:
 
 ```sh
 cargo test --offline --locked -p sophia-conformance --test shell_descriptor_modes
 ```
 
 The `--proof` path covers descriptor presentation, exact activation and
-withdrawal. The `--serve` path also covers tab supersession, rejection of a stale
+withdrawal. The `--serve` path also covers tab supersession, host rejection of a stale
 presentation epoch, the maximum 256-row shortcut catalog, committed-page
 navigation and reference dismissal. The `--bar-proof` path checks that a
 reservation changes the work area only at commit and that withdrawal restores
@@ -20,19 +20,24 @@ Bubblewrap or unavailable isolation fails the test. Each invocation has a
 deadline and capped logs.
 
 The host accepts optional client arguments after the mode and forwards them as
-an argument vector. Negative fixture runs use this to send validly encoded tab
-acks with a wrong epoch, activation ID or transaction, and to accept a stale
-activation. Both the current and stale event must be correlated exactly. The
-test requires the host's specific refusal; a peer crash or timeout cannot pass
-as the intended rejection.
+an argument vector. Negative fixture runs send validly encoded tab acks with a
+wrong activation ID or transaction, or a refused disposition. Wrong identities
+never reach the waiting owner and hit its response deadline; a refused
+disposition reaches the owner and is rejected explicitly. Each test requires
+that specific failure. The file owner refuses a stale presentation before
+disclosing an activation, replacing the old socket fixture's stale-event
+injection. This does not claim client-side stale-event rejection.
 
-These are Rust owner/codec checks. The independent C corpus and socket checks
-remain separate, and product-client checks retain their own evidence. None of
-these scripted presentation outcomes proves physical rendering or input.
+The same C peer exercises the launcher host: a 4096-row catalog, presentation,
+activation, replay rejection and a new query. Unpresented and pending-query
+grants are refused by the host; replay is refused by the peer. Persistent peers
+exit cleanly on SIGTERM. Product-client checks retain their own evidence. None
+of these scripted presentation outcomes proves physical rendering or input.
 
 ## Combined client gate during relocation
 
-From a Sophia checkout, with independent Hagia and Narthex checkouts beside it:
+From a Sophia checkout, with the independent WM checkout required by the
+remaining WM phase:
 
 ```sh
 mkdir -p .artifacts
@@ -72,14 +77,16 @@ target is refused. Output's owner phase explicitly enables `native-session`.
 | --- | --- |
 | WM independent clients | Schema regeneration check; valid/malformed frames and records; Rust, C99 and independent Nim Hagia lifecycle, denial, stale/invalid proposals, timeout, restart and last-layout preservation |
 | Immutable WM r3 client | Archived SHA256SUMS verified before compilation; archived client runs all lifecycle and reconnect scenarios without regeneration |
-| Shell independent clients | Every retained shell revision/capability corpus; independent C decoders and descriptor/launcher socket clients; Nim Narthex descriptor, live serve, reservation and launcher proofs; malformed negative controls |
+| Shell independent clients | Every retained shell revision/capability corpus; independent C decoders and 9P descriptor, tabs, shortcuts, reservation, launcher and content peers; malformed negative controls |
 | Protocol and runtime | All integration targets, including output schema equivalence, negotiated denial, foreign/stale grants, revocation, partial I/O, queue pressure, multi-component ownership, output replacement and exact backing release |
 | Engine owners | All Engine integration targets, including coherent work areas, content capture/stack and topology transactions |
 | Output owner/client | Live output authority reducer and output client's retained scenarios; experimental output has no independent full-lifecycle client yet |
 | Control service | Separate host-administration envelope/codec, access, real service and independent Python client; control is not a supervised desktop role |
 
-The C and Nim proofs remain independently implemented and do not acquire a
-Sophia Rust or generated-binding dependency. WM revision 3 is the stable role;
+The C peers remain independently implemented and do not acquire a Sophia Rust
+codec dependency. Product shell checks run in their own repositories; the
+shell script no longer reads or builds a sibling Narthex checkout. The combined
+runner still has legacy product identity options pending relocation. WM revision 3 is the stable role;
 its immutable client is mandatory on every run. Shell and output remain
 experimental. Corpus readers prove byte agreement; protected socket clients
 prove admitted lifecycles. Hosts supply presentation completions, topology and
@@ -92,7 +99,7 @@ production file export. The protected popout lifecycle test still uses the
 socket wire and its vendored client until that path moves. An optional
 externally supplied 9P content client is selected by the absolute
 `SOPHIA_CONTENT_LIFECYCLE_CLIENT` path, run against the host and reported
-separately; its absence does not erase the required C/Nim evidence.
+separately; its absence does not erase the required independent C evidence.
 
 The [native family contract](sophia-policy-ipc.md), role contracts and checked-in
 schemas remain the specification. The runner is an evidence collector and

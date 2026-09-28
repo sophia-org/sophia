@@ -197,8 +197,8 @@ fn full_surface_raster_requires_exact_size_and_varied_bytes() {
     }
 }
 
-#[path = "../../../sophia-conformance/tests/support/c_content_peer.rs"]
-mod c_content_peer;
+#[path = "../../../sophia-conformance/tests/support/c_file_peer.rs"]
+mod c_file_peer;
 
 /// Proof records, as the session host would receive them.
 static RECORDS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -259,7 +259,7 @@ fn serve_with_c_peer(
     let scratch =
         std::env::temp_dir().join(format!("gpu-proof-serve-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&scratch)?;
-    let peer = c_content_peer::build(&scratch, mutation);
+    let peer = c_file_peer::build(&scratch, "shell_content_file_peer", mutation);
     let mut parameters = proof();
     parameters.client = peer.clone();
     parameters.output = ShellGpuProofExtent {

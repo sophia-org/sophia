@@ -21,8 +21,7 @@ publish = false
 # one package share a source file.
 #
 # THIS WORKS ONLY FROM AN EXACT GIT CHECKOUT, which Cargo builds in place with
-# the whole repository present. The `../` paths and the launcher host's
-# `#[path]` include of sophia-protocol's test fixture do not survive
+# the whole repository present. The `../` paths do not survive
 # `cargo package` or the versioned directory layout of `cargo vendor`. This
 # package is neither publishable nor vendorable.
 [[bin]]
@@ -52,12 +51,6 @@ doc = false
 [[bin]]
 name = "desktop_profile_probe"
 path = "../sophia-config/examples/desktop_profile_probe.rs"
-test = false
-doc = false
-
-[[bin]]
-name = "shell_descriptor_contract_peer"
-path = "tests/support/shell_descriptor_contract_peer/main.rs"
 test = false
 doc = false
 

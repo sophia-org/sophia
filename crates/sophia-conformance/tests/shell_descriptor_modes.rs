@@ -1,5 +1,5 @@
 //! Exercise every descriptor host mode without a desktop implementation.
-//! The host launches the public-codec fixture under the production MetadataShell
+//! The host launches the independent C SDK peer under the production MetadataShell
 //! domain. Engine decisions are headless; no rendering or hardware claim follows.
 
 use std::fs::{self, DirBuilder, File};
@@ -10,8 +10,11 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const HOST: &str = env!("CARGO_BIN_EXE_shell_descriptor_conformance_host");
-const PEER: &str = env!("CARGO_BIN_EXE_shell_descriptor_contract_peer");
+const LAUNCHER_HOST: &str = env!("CARGO_BIN_EXE_shell_launcher_conformance_host");
 const LOG_CAP: u64 = 64 * 1024;
+
+#[path = "support/c_file_peer.rs"]
+mod c_file_peer;
 
 struct Scratch(PathBuf);
 
@@ -46,7 +49,11 @@ fn log(path: &Path) -> String {
     String::from_utf8(bytes).unwrap()
 }
 
-fn run(mode: &str, fault: Option<&str>) -> (std::process::ExitStatus, String, String) {
+fn run(
+    executable: &str,
+    mode: &str,
+    fault: Option<&str>,
+) -> (std::process::ExitStatus, String, String) {
     let scratch = Scratch(std::env::temp_dir().join(format!(
         "sophia-descriptor-modes-{}-{}-{}",
         std::process::id(),
@@ -54,11 +61,13 @@ fn run(mode: &str, fault: Option<&str>) -> (std::process::ExitStatus, String, St
         SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
     )));
     DirBuilder::new().mode(0o700).create(&scratch.0).unwrap();
+    let peer = c_file_peer::build(&scratch.0, "shell_descriptor_file_peer", 0);
     let stdout = scratch.0.join("stdout");
     let stderr = scratch.0.join("stderr");
     let mut host = Host(
-        Command::new(HOST)
-            .args([PEER, mode])
+        Command::new(executable)
+            .arg(peer)
+            .args((executable == HOST).then_some(mode))
             .args(fault.map(|fault| format!("--fault={fault}")))
             .stdin(Stdio::null())
             .stdout(File::create(&stdout).unwrap())
@@ -92,7 +101,7 @@ fn run(mode: &str, fault: Option<&str>) -> (std::process::ExitStatus, String, St
 }
 
 fn passing(mode: &str) -> String {
-    let (status, output, errors) = run(mode, None);
+    let (status, output, errors) = run(HOST, mode, None);
     assert!(
         status.success(),
         "host {mode}: {status}\n{output}\n{errors}"
@@ -112,8 +121,8 @@ fn descriptor_presentation_activation_and_withdrawal() {
 #[test]
 fn persistent_tabs_reference_and_descriptor_lifecycles() {
     let output = passing("--serve");
-    assert!(output.lines().any(|line| line == "sophia_tab_protocol_proof status=complete supersession=true activation=true stale_epoch_rejected=true"), "{output}");
-    assert!(output.lines().any(|line| line == "sophia_reference_corpus status=complete entries=256 paging=true dismissal=true actions_disclosed=0"), "{output}");
+    assert!(output.lines().any(|line| line == "sophia_tab_protocol_proof status=complete supersession=true activation=true stale_epoch_rejected_by_host=true wire=9p"), "{output}");
+    assert!(output.lines().any(|line| line == "sophia_reference_corpus status=complete entries=256 paging=true dismissal=true actions_disclosed=0 wire=9p"), "{output}");
     descriptor_verdict(&output);
 }
 
@@ -125,25 +134,20 @@ fn reservation_changes_work_area_only_at_commit_and_withdraws() {
 
 #[test]
 fn tab_acknowledgements_must_name_the_exact_event_and_transaction() {
-    for fault in [
-        "ack-epoch",
-        "ack-activation",
-        "ack-transaction",
-        "stale-ack-epoch",
-        "stale-ack-activation",
-        "stale-ack-transaction",
-        "stale-accepted",
-    ] {
-        let (status, output, errors) = run("--serve", Some(fault));
+    // File custody rejects stale epochs before the peer can acknowledge them;
+    // the passing serve case checks that host-side refusal. These controls
+    // exercise wrong identities and a refusal on a current activation.
+    for fault in ["ack-activation", "ack-transaction", "ack-disposition"] {
+        let (status, output, errors) = run(HOST, "--serve", Some(fault));
         assert_eq!(
             status.code(),
             Some(1),
             "{fault}: {status}\n{output}\n{errors}"
         );
-        let expected = if fault.starts_with("stale-") {
-            "shell-descriptor-conformance-host: stale tab activation not acknowledged with its exact identity"
-        } else {
+        let expected = if fault == "ack-disposition" {
             "shell-descriptor-conformance-host: tab activation rejected"
+        } else {
+            "shell-descriptor-conformance-host: descriptor response timed out"
         };
         assert!(
             errors.lines().any(|line| line == expected),
@@ -151,4 +155,11 @@ fn tab_acknowledgements_must_name_the_exact_event_and_transaction() {
         );
         assert!(!output.contains("status=complete"), "{fault}: {output}");
     }
+}
+
+#[test]
+fn launcher_catalog_presentation_activation_and_replay_over_files() {
+    let (status, output, errors) = run(LAUNCHER_HOST, "--serve", None);
+    assert!(status.success(), "{status}\n{output}\n{errors}");
+    assert!(output.lines().any(|line| line == "sophia_launcher_conformance status=passed wire=9p catalog=4096 unpresented=denied_by_host replay=denied_by_client pending_query=denied_by_host protected=true clean_exit=true"), "{output}");
 }

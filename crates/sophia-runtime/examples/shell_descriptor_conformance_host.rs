@@ -14,8 +14,9 @@ use sophia_protocol::{
     ShellV1DescriptorSnapshot, SurfaceId, ToplevelActionCapabilityRef, TransactionId, TrustLevel,
 };
 use sophia_runtime::{
-    ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole, ProtectionDomainSpec,
-    ProtectionPath, ShellSessionTransport, SupervisedProcessKind, SupervisorCommand,
+    ContentEpochRegistry, ProcessLaunchSpec, ProcessSupervisor, ProtectionDomainRole,
+    ProtectionDomainSpec, ProtectionPath, ShellComponentTransport, SupervisedProcessKind,
+    SupervisorCommand,
 };
 
 const OUTPUT: OutputId = OutputId::from_raw(1);
@@ -48,10 +49,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::process::id(),
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
     ));
-    let mut transport = ShellSessionTransport::bind_for_supervised_uid(
+    let mut transport = ShellComponentTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
     )?;
+    let mut epochs = ContentEpochRegistry::new(64 * 1024 * 1024).map_err(|e| format!("{e:?}"))?;
     let socket = transport.socket_path().to_path_buf();
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])?.path(
         ProtectionPath::read_only(socket.parent().ok_or("shell socket lacks a parent")?),
@@ -59,7 +61,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let bar_proof = client_mode == "--bar-proof";
     let mut spec = ProcessLaunchSpec::new(client)
         .arg(&client_mode)
-        .env(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV, &socket)
+        .env("SOPHIA_SHELL_9P_SOCKET", &socket)
         .process_group()
         .protection_domain(domain);
     // Pass fixture/client options as argv, without interpreting or evaluating them.
@@ -79,18 +81,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("shell process has no protection evidence")?
         .clone();
     transport.authorize_protected_peer(&evidence)?;
-    transport.accept_and_negotiate(1, Duration::from_secs(5))?;
+    transport.begin_descriptor_file_negotiation(
+        &epochs,
+        1,
+        Duration::from_secs(5),
+        sophia_runtime::ShellContentAdmissionPolicy::Unavailable,
+    )?;
+    wait_for(&mut transport, &mut epochs, |transport, epochs| {
+        transport.poll_negotiation(epochs, 65536)
+    })?;
 
     let (table, snapshot, surfaces) = fixture();
     if bar_proof {
-        return run_bar_proof(&mut transport, &mut supervisor, &snapshot);
+        return run_bar_proof(&mut transport, &mut epochs, &mut supervisor, &snapshot);
     }
     if client_mode == "--serve" {
-        tab_protocol_proof(&mut transport, &snapshot)?;
-        reference_protocol_proof(&mut transport)?;
+        tab_protocol_proof(&mut transport, &mut epochs, &snapshot)?;
+        reference_protocol_proof(&mut transport, &mut epochs)?;
     }
     let candidate_transaction = TransactionId::from_raw(1);
-    let candidate = transport.request_candidate(candidate_transaction, &snapshot)?;
+    let candidate = transport.request_candidate(&mut epochs, candidate_transaction, &snapshot)?;
     let projection_candidate = resolve_candidate(&candidate, &snapshot, &surfaces)?;
     let projection = descriptor_overlay_projection(
         &projection_candidate,
@@ -103,6 +113,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
     transport.send_candidate_outcome(
+        &mut epochs,
         candidate_transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -113,6 +124,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let presentation_epoch = 12;
     transport.send_candidate_outcome(
+        &mut epochs,
         candidate_transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -171,6 +183,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Engine did not activate the exact presented shell target".into());
     };
     transport.queue_activation(
+        &mut epochs,
         TransactionId::from_raw(2),
         ShellV1Activation {
             connection_epoch: 1,
@@ -180,7 +193,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             action,
         },
     )?;
-    let ack = transport.receive_activation_ack()?;
+    let ack = transport.receive_activation_ack(&mut epochs)?;
     if ack.disposition != ShellV1ActivationDisposition::Consumed {
         return Err("shell rejected an exact activation".into());
     }
@@ -188,11 +201,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut withdrawal_snapshot = snapshot;
     withdrawal_snapshot.snapshot_generation += 1;
     let withdrawal_transaction = TransactionId::from_raw(3);
-    let withdrawal = transport.request_candidate(withdrawal_transaction, &withdrawal_snapshot)?;
+    let withdrawal =
+        transport.request_candidate(&mut epochs, withdrawal_transaction, &withdrawal_snapshot)?;
     if withdrawal.visible || !withdrawal.entries.is_empty() || withdrawal.selected_slot.is_some() {
         return Err("shell withdrawal retained visible targets".into());
     }
     transport.send_candidate_outcome(
+        &mut epochs,
         withdrawal_transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -202,6 +217,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
     transport.send_candidate_outcome(
+        &mut epochs,
         withdrawal_transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -210,8 +226,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             kind: ShellV1CandidateOutcomeKind::Presented,
         },
     )?;
-    transport.disconnect()?;
-    supervisor.terminate()?;
+    if client_mode == "--serve" {
+        let mut receipt = withdrawal_snapshot.clone();
+        receipt.snapshot_generation += 1;
+        receipt.descriptors.clear();
+        let response =
+            transport.request_candidate(&mut epochs, TransactionId::from_raw(900), &receipt)?;
+        if response.visible || !response.entries.is_empty() {
+            return Err("final empty snapshot was not withdrawn".into());
+        }
+        // Exercise the admitted client's handler, not bwrap's launcher process.
+        // Group termination remains the supervisor's error/unwind cleanup.
+        let peer = rustix::process::Pid::from_raw(
+            supervisor.peer_id().ok_or("missing admitted peer")? as i32,
+        )
+        .ok_or("invalid admitted peer pid")?;
+        rustix::process::kill_process(peer, rustix::process::Signal::TERM)?;
+    }
+    finish_client(&mut transport, &mut epochs, &mut supervisor)?;
+    transport.disconnect(&mut epochs)?;
     println!(
         "sophia_shell_descriptor_corpus schema=1 status=complete protected=true descriptors=2 activations=1 withdrawn=true surface_ids_disclosed=0 coordinates_disclosed=0 icons_disclosed=0"
     );
@@ -225,7 +258,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// the work area shrinks only after the bundle commits, and that a withdrawal
 /// carrying no reservation restores the full area through the same path.
 fn run_bar_proof(
-    transport: &mut ShellSessionTransport,
+    transport: &mut ShellComponentTransport,
+    epochs: &mut ContentEpochRegistry,
     supervisor: &mut ProcessSupervisor,
     snapshot: &ShellV1DescriptorSnapshot,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -243,7 +277,7 @@ fn run_bar_proof(
     let mut coordinator = ShellWorkAreaCoordinator::new();
 
     let transaction = TransactionId::from_raw(1);
-    let candidate = transport.request_candidate(transaction, snapshot)?;
+    let candidate = transport.request_candidate(epochs, transaction, snapshot)?;
     let reservation = candidate
         .reservation
         .ok_or("shell bar candidate carried no reservation")?;
@@ -266,6 +300,7 @@ fn run_bar_proof(
         return Err("a prepared bar claim reduced the work area before it presented".into());
     }
     transport.send_candidate_outcome(
+        epochs,
         transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -275,6 +310,7 @@ fn run_bar_proof(
         },
     )?;
     transport.send_candidate_outcome(
+        epochs,
         transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -306,7 +342,8 @@ fn run_bar_proof(
     let mut withdrawal_snapshot = snapshot.clone();
     withdrawal_snapshot.snapshot_generation += 1;
     let withdrawal_transaction = TransactionId::from_raw(2);
-    let withdrawal = transport.request_candidate(withdrawal_transaction, &withdrawal_snapshot)?;
+    let withdrawal =
+        transport.request_candidate(epochs, withdrawal_transaction, &withdrawal_snapshot)?;
     if withdrawal.reservation.is_some() {
         return Err("shell withdrawal retained its reservation".into());
     }
@@ -322,6 +359,7 @@ fn run_bar_proof(
         )
         .map_err(|refusal| format!("Engine refused the withdrawal: {}", refusal.reason()))?;
     transport.send_candidate_outcome(
+        epochs,
         withdrawal_transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -331,6 +369,7 @@ fn run_bar_proof(
         },
     )?;
     transport.send_candidate_outcome(
+        epochs,
         withdrawal_transaction,
         ShellV1CandidateOutcome {
             connection_epoch: 1,
@@ -345,8 +384,8 @@ fn run_bar_proof(
     if !coordinator.active_bands().is_empty() || coordinator.presented().is_some() {
         return Err("the withdrawal left a presented claim behind".into());
     }
-    transport.disconnect()?;
-    supervisor.terminate()?;
+    finish_client(transport, epochs, supervisor)?;
+    transport.disconnect(epochs)?;
     println!(
         "sophia_shell_reservation_corpus schema=1 status=complete protected=true edge=bottom thickness={} reserved_height={} withdrawn=true",
         reservation.thickness_px, reserved.height,
@@ -482,10 +521,62 @@ fn fixture() -> (
     )
 }
 
-// Two persistent generations, including a superseded transfer, precede the
-// revision-1 switcher lifecycle. The peer may be any conforming implementation.
+fn wait_for<T>(
+    transport: &mut ShellComponentTransport,
+    epochs: &mut ContentEpochRegistry,
+    mut poll: impl FnMut(
+        &mut ShellComponentTransport,
+        &mut ContentEpochRegistry,
+    ) -> Result<Option<T>, sophia_runtime::ShellTransportError>,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(value) = poll(transport, epochs)? {
+            return Ok(value);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("descriptor response timed out".into());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+fn finish_client(
+    transport: &mut ShellComponentTransport,
+    epochs: &mut ContentEpochRegistry,
+    supervisor: &mut ProcessSupervisor,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let pid = rustix::process::Pid::from_raw(supervisor.child_id().ok_or("missing child")? as i32)
+        .ok_or("invalid child pid")?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        // Leave the leader waitable until the supervisor releases its custody.
+        if let Some(status) = rustix::process::waitid(
+            rustix::process::WaitId::Pid(pid),
+            rustix::process::WaitIdOptions::EXITED
+                | rustix::process::WaitIdOptions::NOHANG
+                | rustix::process::WaitIdOptions::NOWAIT,
+        )? {
+            if status.exit_status() != Some(0) {
+                return Err(format!("descriptor client failed: {status:?}").into());
+            }
+            supervisor.poll()?;
+            return Ok(());
+        }
+        match transport.poll_io(epochs) {
+            Ok(()) | Err(sophia_runtime::ShellTransportError::NotConnected) => {}
+            Err(error) => return Err(error.into()),
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("descriptor client did not exit cleanly".into());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
 fn tab_protocol_proof(
-    transport: &mut ShellSessionTransport,
+    transport: &mut ShellComponentTransport,
+    epochs: &mut ContentEpochRegistry,
     snapshot: &ShellV1DescriptorSnapshot,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use sophia_protocol::*;
@@ -508,53 +599,41 @@ fn tab_protocol_proof(
             entries: descriptors,
         }],
     };
-    let wait = |transport: &mut ShellSessionTransport,
-                kind: IpcMessageKind|
-     -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            if let Some(frame) = transport.poll_kind(kind)? {
-                return Ok(frame);
-            }
-            if std::time::Instant::now() > deadline {
-                return Err("tab response timed out".into());
-            }
-            std::thread::sleep(Duration::from_millis(1));
-        }
-    };
     for generation in 1..=2 {
         tabs.generation = generation;
         let tx = TransactionId::from_raw(100 + generation);
-        for frame in encode_shell_tab_snapshot(tx, &tabs).map_err(|e| format!("{e:?}"))? {
-            transport.send_async(frame)?;
-        }
-        let (actual, candidate) =
-            decode_shell_tab_candidate(&wait(transport, IpcMessageKind::ShellTabsCandidate)?)
-                .map_err(|e| format!("{e:?}"))?;
+        transport.publish_tabs(epochs, tx, &tabs)?;
+        let (actual, candidate) = wait_for(transport, epochs, |t, e| t.poll_tabs_candidate(e))?;
         if actual != tx
             || candidate.snapshot_generation != generation
             || candidate.groups != vec![1]
         {
             return Err("tab candidate escaped snapshot".into());
         }
-        let outcome = |kind, presentation_epoch| {
-            encode_shell_v1_candidate_outcome_frame(
-                tx,
-                ShellV1CandidateOutcome {
-                    connection_epoch: 1,
-                    candidate_generation: candidate.candidate_generation,
-                    presentation_epoch,
-                    kind,
-                },
-            )
-            .map_err(|e| format!("{e:?}"))
+        let outcome = |kind, presentation_epoch| ShellV1CandidateOutcome {
+            connection_epoch: 1,
+            candidate_generation: candidate.candidate_generation,
+            presentation_epoch,
+            kind,
         };
         if generation == 1 {
-            transport.send_async(outcome(ShellV1CandidateOutcomeKind::Superseded, 0)?)?;
+            transport.send_tabs_outcome(
+                epochs,
+                tx,
+                outcome(ShellV1CandidateOutcomeKind::Superseded, 0),
+            )?;
             continue;
         }
-        transport.send_async(outcome(ShellV1CandidateOutcomeKind::Prepared, 0)?)?;
-        transport.send_async(outcome(ShellV1CandidateOutcomeKind::Presented, 50)?)?;
+        transport.send_tabs_outcome(
+            epochs,
+            tx,
+            outcome(ShellV1CandidateOutcomeKind::Prepared, 0),
+        )?;
+        transport.send_tabs_outcome(
+            epochs,
+            tx,
+            outcome(ShellV1CandidateOutcomeKind::Presented, 50),
+        )?;
         let event = ShellV1Activation {
             connection_epoch: 1,
             candidate_generation: candidate.candidate_generation,
@@ -563,52 +642,37 @@ fn tab_protocol_proof(
             action: tabs.groups[0].entries[1].action,
         };
         let tx = TransactionId::from_raw(110);
-        transport.send_async(
-            encode_shell_v1_activation_frame(tx, event).map_err(|e| format!("{e:?}"))?,
-        )?;
-        let (actual, ack) = decode_shell_v1_activation_ack_frame(&wait(
-            transport,
-            IpcMessageKind::ShellV1ActivationAck,
-        )?)
-        .map_err(|e| format!("{e:?}"))?;
-        if actual != tx
-            || ack.connection_epoch != event.connection_epoch
+        transport.queue_tab_activation(epochs, tx, event)?;
+        let ack = wait_for(transport, epochs, |t, e| t.poll_tab_activation_ack(e, tx))?;
+        if ack.connection_epoch != event.connection_epoch
             || ack.activation != event.activation
             || ack.disposition != ShellV1ActivationDisposition::Consumed
         {
             return Err("tab activation rejected".into());
         }
-        // A different presentation epoch cannot activate the same descriptor.
-        let stale_tx = TransactionId::from_raw(111);
+        // The production file owner refuses stale presentation identities before
+        // disclosure. Client-side stale rejection belongs to the client reducer tests.
         let stale = ShellV1Activation {
             activation: 601,
             presentation_epoch: 49,
             ..event
         };
-        transport.send_async(
-            encode_shell_v1_activation_frame(stale_tx, stale).map_err(|e| format!("{e:?}"))?,
-        )?;
-        let (actual, ack) = decode_shell_v1_activation_ack_frame(&wait(
-            transport,
-            IpcMessageKind::ShellV1ActivationAck,
-        )?)
-        .map_err(|e| format!("{e:?}"))?;
-        if actual != stale_tx
-            || ack.connection_epoch != stale.connection_epoch
-            || ack.activation != stale.activation
-            || ack.disposition != ShellV1ActivationDisposition::RejectedStale
-        {
-            return Err("stale tab activation not acknowledged with its exact identity".into());
+        if !matches!(
+            transport.queue_tab_activation(epochs, TransactionId::from_raw(111), stale),
+            Err(sophia_runtime::ShellTransportError::WrongActivation)
+        ) {
+            return Err("host admitted stale tab presentation".into());
         }
     }
     println!(
-        "sophia_tab_protocol_proof status=complete supersession=true activation=true stale_epoch_rejected=true"
+        "sophia_tab_protocol_proof status=complete supersession=true activation=true stale_epoch_rejected_by_host=true wire=9p"
     );
     Ok(())
 }
 
 fn reference_protocol_proof(
-    transport: &mut ShellSessionTransport,
+    transport: &mut ShellComponentTransport,
+    epochs: &mut ContentEpochRegistry,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use sophia_protocol::*;
     if !transport.supports_reference() {
@@ -627,11 +691,7 @@ fn reference_protocol_proof(
             })
             .collect(),
     };
-    for frame in encode_shell_shortcut_catalog(TransactionId::from_raw(400), &catalog)
-        .map_err(|e| format!("{e:?}"))?
-    {
-        transport.send_async(frame)?;
-    }
+    transport.publish_shortcuts(epochs, TransactionId::from_raw(400), &catalog)?;
     let mut presentation_epoch = 0;
     let mut seen = std::collections::BTreeSet::new();
     for (i, operation) in [
@@ -654,20 +714,12 @@ fn reference_protocol_proof(
             presentation_epoch,
             operation,
         };
-        transport.send_async(
-            encode_shell_reference_request(tx, request).map_err(|e| format!("{e:?}"))?,
-        )?;
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        let bytes = loop {
-            if let Some(frame) = transport.poll_kind(IpcMessageKind::ShellReferenceCandidate)? {
-                break frame;
-            }
-            if std::time::Instant::now() > deadline {
-                return Err("reference response timed out".into());
-            }
-            std::thread::sleep(Duration::from_millis(1));
+        transport.begin_reference_request(epochs, tx, request)?;
+        let sophia_runtime::ShellReferenceCandidateEvent::Candidate(actual, c) =
+            wait_for(transport, epochs, |t, e| t.poll_reference_candidate(e))?
+        else {
+            return Err("reference candidate refused".into());
         };
-        let (actual, c) = decode_shell_reference_candidate(&bytes).map_err(|e| format!("{e:?}"))?;
         if actual != tx
             || c.request_generation != tx.raw()
             || c.entries.len() != 256
@@ -691,27 +743,23 @@ fn reference_protocol_proof(
             pages: 5,
             kind: ShellV1CandidateOutcomeKind::Prepared,
         };
-        transport.send_async(
-            encode_shell_reference_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
-        )?;
+        transport.send_reference_outcome(epochs, tx, outcome)?;
         presentation_epoch = 100 + i as u64;
-        transport.send_async(
-            encode_shell_reference_outcome(
-                tx,
-                ShellReferenceOutcome {
-                    presentation_epoch,
-                    kind: ShellV1CandidateOutcomeKind::Presented,
-                    ..outcome
-                },
-            )
-            .map_err(|e| format!("{e:?}"))?,
+        transport.send_reference_outcome(
+            epochs,
+            tx,
+            ShellReferenceOutcome {
+                presentation_epoch,
+                kind: ShellV1CandidateOutcomeKind::Presented,
+                ..outcome
+            },
         )?;
     }
     if seen.len() != 256 {
         return Err("reference omitted a configured shortcut".into());
     }
     println!(
-        "sophia_reference_corpus status=complete entries=256 paging=true dismissal=true actions_disclosed=0"
+        "sophia_reference_corpus status=complete entries=256 paging=true dismissal=true actions_disclosed=0 wire=9p"
     );
     Ok(())
 }

@@ -301,8 +301,14 @@ reducing the reference candidate cap to 8192 or duplicating a kind each failed
 the checker. Evidence is in `ipc-retirement/t271-kdl-layout-check.log` and
 `t271-kdl-layout-mutants.log` under the development-evidence directory.
 
-This validates syntax and arithmetic only. No descriptor file codec, SDK
-session, production export or independent peer has passed this proposal yet.
+That initial check validated syntax and arithmetic only. Subsequent evidence
+now includes the native C and Rust SDK codecs, the production file export, a
+protected C peer through Session's CPU presentation boundary, all three
+descriptor conformance modes with an independent C SDK peer, and Narthex's thin
+C SDK migration. The [investigation](../investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
+records the exact candidates, negative controls and limits. The proposal is
+still pending acceptance and retirement of the legacy launch path.
+
 The capability table was read against `shell_transport/negotiation_policy.rs`;
 the bounds and text rules were compared with the existing packet types and
 socket validators. Acceptance must also resolve the chosen semantic refusals

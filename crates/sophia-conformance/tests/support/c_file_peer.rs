@@ -1,4 +1,4 @@
-//! Builds the independent C content peer against the pinned C desktop SDK.
+//! Builds independent C file peers against the pinned C desktop SDK.
 //!
 //! The SDK is built by its own vendored makefile with `WITH_IPC=0`, so the
 //! peer can link only `libsophia-desktop` and `libsophia-9p`: no IPC library
@@ -23,7 +23,11 @@ fn run(command: &mut Command, what: &str) {
 
 /// Build the SDK into `directory/sdk` and the peer into `directory`. A nonzero
 /// `mutation` selects one of the peer's red-control builds.
-pub fn build(directory: &Path, mutation: u32) -> PathBuf {
+pub fn build(directory: &Path, source: &str, mutation: u32) -> PathBuf {
+    assert!(matches!(
+        source,
+        "shell_content_file_peer" | "shell_descriptor_file_peer"
+    ));
     let sdk = repository().join("vendor/c-desktop-sdk/source");
     let libraries = directory.join("sdk");
     let _serial = SDK_BUILD
@@ -46,7 +50,7 @@ pub fn build(directory: &Path, mutation: u32) -> PathBuf {
         !libraries.join("libsophia-desktop-ipc.a").exists(),
         "the peer must not see the SDK's IPC library"
     );
-    let peer = directory.join(format!("shell-content-file-peer-{mutation}"));
+    let peer = directory.join(format!("{source}-{mutation}"));
     run(
         Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
             .args([
@@ -60,15 +64,14 @@ pub fn build(directory: &Path, mutation: u32) -> PathBuf {
             .arg(format!("-DPEER_MUTATION={mutation}"))
             .arg("-I")
             .arg(sdk.join("src"))
-            .arg(
-                repository()
-                    .join("crates/sophia-conformance/tests/support/shell_content_file_peer.c"),
-            )
+            .arg(repository().join(format!(
+                "crates/sophia-conformance/tests/support/{source}.c"
+            )))
             .arg("-L")
             .arg(&libraries)
             .args(["-lsophia-desktop", "-lsophia-9p", "-o"])
             .arg(&peer),
-        "independent C content peer build",
+        "independent C file peer build",
     );
     peer
 }
