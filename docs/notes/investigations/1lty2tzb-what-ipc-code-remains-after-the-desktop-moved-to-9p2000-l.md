@@ -721,6 +721,42 @@ Reference and launcher owners, production descriptor role selection, the
 independent C SDK peer and Narthex migration remain unfinished. This candidate
 is unpublished; no live session was changed and t271 remains open.
 
+### Typed reference-sheet custody (t271, 2026-09-28)
+
+Candidate `c0ed7ab3b` adds typed shortcut publication, reference requests,
+candidate intake and presentation outcomes. Admission reserves the request
+record and both response credits before transfer. A request requires the
+published catalog generation; replacement cannot discard an outstanding
+request or candidate. Disconnect and negotiation reset the reference owner,
+and all shared queue checks include its credits.
+
+The file owner validates transaction, catalog, request, output identity and
+increasing candidate generation. A cancelled request receives Superseded even
+when its reply is stale; other stale replies receive Rejected. A refusal for
+another transaction cannot consume the current request's response capacity.
+Session receives an explicit refusal event so it ends only the corresponding
+wait. Prepared and terminal outcomes must echo the exact candidate identity;
+Presented requires Prepared and a second terminal outcome is refused.
+
+Session's reference path now uses typed methods, retaining its output-generation
+and projection checks. Invalid current output or failed projection returns
+Rejected before presentation. The existing pending-configuration invalidation
+and disconnect paths still need review with the production descriptor selector;
+this slice does not claim a protected Session reference presentation proof.
+
+The isolated gate passed 105 runtime tests and 94 native Session metadata tests,
+strict runtime/Session clippy with all targets/features, layout, formatting and
+whitespace checks (`ipc-retirement/t271-reference-gate.log`). Six new tests use
+the actual Rust SDK and production file export. Compiled mutations reserving
+only two records instead of three and suppressing cancellation each failed
+their named control (`t271-reference-mutant-{capacity,cancel}.log`). Each
+mutation used a read-only overlay after cleaning the runtime package only in
+the private mutant target. The source tree was not modified by those controls.
+
+Launcher ownership, production descriptor selection, independent C SDK peers
+and Narthex migration remain unfinished. The contracts remain proposed, the
+candidate is unpublished and no live session changed.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
