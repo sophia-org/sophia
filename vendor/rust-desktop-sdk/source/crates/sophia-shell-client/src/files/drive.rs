@@ -94,11 +94,19 @@ impl FileWire {
         self.retry_deadline()
     }
 
+    pub(crate) fn wait_for_io(&self, maximum: std::time::Duration) -> Result<(), ShellClientError> {
+        if self.service_pending || self.peer_closed {
+            return Ok(());
+        }
+        self.pipeline.wait_for_io(maximum).map_err(Into::into)
+    }
+
     fn drive(
         &mut self,
         output: &mut ClientOutbox,
         inbox: &mut VecDeque<Inbound>,
     ) -> Result<(), ShellClientError> {
+        self.service_pending = true;
         for _ in 0..MAX_ROUNDS {
             let mut eof = false;
             match self.pipeline.poll() {
@@ -138,6 +146,7 @@ impl FileWire {
             progressed |= self.maybe_read_events(inbox)?;
             progressed |= self.maybe_send_ack()?;
             if !progressed {
+                self.service_pending = false;
                 break;
             }
         }

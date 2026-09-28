@@ -1,23 +1,13 @@
-tree b0654fa58462aa820c62cdd63c424ceb868f297c
-parent 87ab93fed12f738add5d4e3e8d917b41dfa078ba
-author Mason Green <mason@greenm01.net> 1790513128 -0400
-committer Mason Green <mason@greenm01.net> 1790513128 -0400
+tree 192e6c40efe8c2156000223779953605e52feddb
+parent 0da10428ad2ef85ff9f1c35c11238fbfebe81d04
+author Mason Green <mason@greenm01.net> 1790557147 -0400
+committer Mason Green <mason@greenm01.net> 1790557147 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarkP6AAKCRBXGEu2KoAA
- YlSeAP4msvq0itTHUE1MLlas0GIVjJw60HDl+55wtPid3voBZAEA0Ei/PN/2mSk/
- qN8gzzo7Yi0iF/0e5K10wwGTnMN7iAQ=
- =a7aw
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarm72wAKCRBXGEu2KoAA
+ YlciAP4/BCCHbXPnyGlV9mIXtHSYuWPwBwvEQ2tkujv+oKTwQwD9E10ccvzlTT9z
+ t833AaogQcbKqc0sc6c1Zh8081vn7AU=
+ =fBZX
  -----END PGP SIGNATURE-----
 
-Open the next transaction only after acknowledging the previous Submitted
-
-The export keeps an accepted candidate, and refuses a new transaction open
-with EBUSY, until its Submitted event is acknowledged; it serves a
-connection's requests in order. A record unit now starts only once intake
-has handled the previous Submitted and an ack through its sequence is
-queued, so the ack always precedes the next walk and open. Before, an
-outstanding earlier ack, an early-settled Submitted not yet reached by
-intake, or an ack held behind an unfetched announcement let the next open
-go first. Scripted regressions log the ack before the next walk in both
-the shared-drain and held-ack cases, and fail without the gate.
+Wake shell clients on socket readiness instead of fixed polling sleeps

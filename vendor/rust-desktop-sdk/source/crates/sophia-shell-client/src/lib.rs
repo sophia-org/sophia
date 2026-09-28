@@ -109,7 +109,8 @@ impl From<sophia_9p_client::pipeline::PipelineError> for ShellClientError {
     }
 }
 
-/// One admitted shell connection. Calls are nonblocking after negotiation.
+/// One admitted shell connection. Calls other than `wait_for_io` are
+/// nonblocking after negotiation.
 pub struct ShellConnection {
     wire: Wire,
     welcome: ShellV1ServerWelcome,
@@ -257,6 +258,22 @@ impl ShellConnection {
     /// then (or sooner, once an event is consumed). `None` when nothing waits.
     pub fn wake_deadline(&self) -> Option<std::time::Instant> {
         self.wire.wake_deadline()
+    }
+
+    /// Makes one bounded I/O pass, then waits at most `maximum` for readiness.
+    /// Drain received units before waiting: a retained unit returns immediately.
+    /// Retry deadlines and unfinished bounded local work also shorten the wait.
+    /// This never waits for writability on an idle file connection. A signal
+    /// may return early; call `poll_io` (or a typed receive) after waking.
+    pub fn wait_for_io(&mut self, maximum: Duration) -> Result<(), ShellClientError> {
+        self.poll_io()?;
+        if !self.inbox.is_empty() {
+            return Ok(());
+        }
+        let maximum = self.wake_deadline().map_or(maximum, |deadline| {
+            maximum.min(deadline.saturating_duration_since(std::time::Instant::now()))
+        });
+        self.wire.wait_for_io(maximum, &self.output)
     }
 
     /// Atomically own a bounded group of bulk content records (for example a

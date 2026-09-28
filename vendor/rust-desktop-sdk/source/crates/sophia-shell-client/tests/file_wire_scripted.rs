@@ -491,7 +491,9 @@ fn an_eagain_submit_goes_again_at_its_wake_deadline() {
     if !pass_after_eagain(&mut connection, &mut peer) {
         let wake = connection.wake_deadline().expect("a retry is scheduled");
         assert!(wake <= Instant::now() + Duration::from_millis(64));
-        std::thread::sleep(wake.saturating_duration_since(Instant::now()));
+        let started = Instant::now();
+        connection.wait_for_io(Duration::from_secs(1)).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(500));
         connection.poll_io().unwrap();
         peer.pump();
     }
@@ -1691,5 +1693,74 @@ fn a_request_queued_on_a_reply_is_written_in_the_same_pass() {
     assert!(
         peer.opens.iter().any(|(node, _)| node == "transaction"),
         "the open queued on the walk reply was left unwritten"
+    );
+}
+
+#[test]
+fn readiness_wait_blocks_when_idle_and_wakes_for_a_peer_event() {
+    let (mut connection, mut peer) = connect(bar(0));
+    // Drain the handshake's final plumbing; only the held events read remains.
+    for _ in 0..8 {
+        connection.poll_io().unwrap();
+        peer.pump();
+    }
+    let started = Instant::now();
+    connection.wait_for_io(Duration::from_millis(25)).unwrap();
+    assert!(
+        started.elapsed() >= Duration::from_millis(20),
+        "idle writability spun"
+    );
+    let sender = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(30));
+        let event = permit(&mut peer);
+        peer.push(event);
+        peer.flush_events();
+        peer
+    });
+    let started = Instant::now();
+    connection.wait_for_io(Duration::from_secs(2)).unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "readiness did not interrupt wait"
+    );
+    let mut peer = sender.join().unwrap();
+    connection.poll_io().unwrap();
+    peer.pump();
+    connection.poll_io().unwrap();
+    // A retained typed event needs application service, even with a quiet socket.
+    let started = Instant::now();
+    connection.wait_for_io(Duration::from_secs(2)).unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "buffered event slept"
+    );
+    assert_eq!(
+        connection.take_content().unwrap().unwrap().1,
+        permit_record()
+    );
+}
+
+#[test]
+fn readiness_wait_flushes_queued_work_and_wakes_on_disconnect() {
+    let (mut connection, mut peer) = connect(bar(0));
+    enqueue_demand(&mut connection, 1);
+    let sender = std::thread::spawn(move || {
+        let deadline = Instant::now() + WAIT;
+        while peer.walk_count("transaction") == 0 {
+            peer.pump();
+            assert!(Instant::now() < deadline, "wait left queued work unsent");
+            std::thread::yield_now();
+        }
+        peer.close();
+    });
+    let started = Instant::now();
+    // Closure may be observed during the initial nonblocking pass too.
+    let _ = connection.wait_for_io(Duration::from_secs(2));
+    assert!(started.elapsed() < Duration::from_secs(1));
+    sender.join().unwrap();
+    // The first wake may be the walk reply; service the subsequently closed fd.
+    assert!(
+        connection.poll_io().is_err()
+            || connection.take_content() == Err(ShellClientError::PeerClosed)
     );
 }

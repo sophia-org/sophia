@@ -131,6 +131,27 @@ Bemenu and the oracle. Use isolated worktrees, nice 19/jobs 2/private targets,
 signed commits and herdr handoffs. Never reset gpg-agent. Authentication may
 block publication but does not block local implementation.
 
+## Application adoption, 2026-09-27
+
+Both SDK repositories are published under sophia-org. All three applications
+now pin them:
+- Bemenu vendors C `8decca1d`.
+- Lom `53d3a921` pins Rust `ea9cf651`.
+- Provlita `0942e07` pins Rust `ea9cf651`. It runs 9P-only on its catalog
+  profile, with custody observation and native candidate budgets. It passes its
+  full offline gate, and negative controls cover refusal and budget handling.
+  Its evidence is under `development-evidence/provlita-9p-only/`.
+
+Sophia's vendored Rust snapshot moves to `ea9cf651`. That revision is
+client-only: it adds readiness wakeups and a scripted test, and changes no
+contract file. `cargo xtask check rust-desktop-sdk` passes, as do the layout
+check and the nine production-export tests in `shell_client_b6c_live`. The logs
+are `sdk-rust-gate/{revendor,b6c-live}-ea9cf651.log`.
+
+The application tests use scripted peers. Live runs of each product against a
+real Session export belong to the external integration repository. They also
+carry native rendering and attended acceptance, which stay with t252.
+
 ## Dependencies and connections
 
 ### Repository boundary cleanup before the installed session

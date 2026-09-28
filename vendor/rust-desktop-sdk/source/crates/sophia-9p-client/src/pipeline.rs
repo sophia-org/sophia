@@ -501,6 +501,28 @@ impl Pipeline {
         Ok(())
     }
 
+    /// Waits at most `maximum` for socket readiness, without consuming replies.
+    /// Buffered replies return immediately. Write readiness is requested only
+    /// while request bytes remain queued. Signals may end the wait early.
+    pub fn wait_for_io(&self, maximum: Duration) -> Result<(), PipelineError> {
+        if self.poisoned {
+            return Err(PipelineError::Poisoned);
+        }
+        if !self.completed.is_empty() {
+            return Ok(());
+        }
+        let timeout =
+            Timespec::try_from(maximum).map_err(|_| PipelineError::Limit("deadline overflow"))?;
+        let mut flags = PollFlags::IN;
+        if !self.out_buf.is_empty() {
+            flags |= PollFlags::OUT;
+        }
+        match poll(&mut [PollFd::new(&self.stream, flags)], Some(&timeout)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
+            Err(errno) => Err(io_err(io::Error::from(errno))),
+        }
+    }
+
     /// The next completed reply, in the order its frame arrived.
     pub fn take_reply(&mut self) -> Option<(Tag, Reply)> {
         let entry = self.completed.pop_front()?;

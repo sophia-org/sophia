@@ -41,6 +41,13 @@ The dialect is plain 9P2000.L; wire error numbers are the Linux values
 feature adds the Unix-socket `sophia_shell_v1` wire as a rollback path; it is
 removed when Sophia retires that transport.
 
+Shell event loops should drain typed observations and call `wait_for_io` with
+their next application deadline when idle. It wakes on socket readiness or an
+SDK retry deadline. A fixed sleep between `poll_io` calls adds that sleep to
+each dependent file operation; an update can require many such operations.
+Both I/O servicing and the wait are bounded. Do not wait while application
+work is ready to run.
+
 ## Provenance
 
 `PROVENANCE.md` records the Sophia commit each crate was extracted from.

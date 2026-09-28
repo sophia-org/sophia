@@ -89,6 +89,18 @@ pub(crate) enum Wire {
 }
 
 impl Wire {
+    pub(crate) fn wait_for_io(
+        &self,
+        maximum: std::time::Duration,
+        _output: &ClientOutbox,
+    ) -> Result<(), ShellClientError> {
+        match self {
+            #[cfg(feature = "ipc-compat")]
+            Wire::Socket(socket) => socket.wait_for_io(maximum, _output.front().is_some()),
+            Wire::Files(files) => files.wait_for_io(maximum),
+        }
+    }
+
     /// Turn one whole outbound unit into the wire's own encoded units (wire
     /// frames for the socket; one file record or one slot write for the file
     /// wire). Outbox accounting applies to those units unchanged. The file

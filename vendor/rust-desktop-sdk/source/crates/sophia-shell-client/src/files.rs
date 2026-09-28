@@ -246,6 +246,8 @@ pub(crate) struct FileWire {
     progress: u64,
     /// `poll_io` calls so far.
     pass: u64,
+    /// The previous bounded drive exhausted its rounds with local work left.
+    service_pending: bool,
     /// A `Submitted` found among the buffered events while the submit reply
     /// was being settled, before normal intake reaches it; intake accepts
     /// that one event once.

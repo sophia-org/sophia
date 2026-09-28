@@ -65,6 +65,25 @@ pub(crate) struct SocketWire {
 }
 
 impl SocketWire {
+    pub(crate) fn wait_for_io(
+        &self,
+        maximum: std::time::Duration,
+        writing: bool,
+    ) -> Result<(), ShellClientError> {
+        use rustix::event::{PollFd, PollFlags, Timespec, poll};
+        let timeout = Timespec::try_from(maximum)
+            .map_err(|_| ShellClientError::Protocol("deadline overflow"))?;
+        let flags = if writing {
+            PollFlags::IN | PollFlags::OUT
+        } else {
+            PollFlags::IN
+        };
+        match poll(&mut [PollFd::new(&self.stream, flags)], Some(&timeout)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
+            Err(errno) => Err(io_error(std::io::Error::from(errno))),
+        }
+    }
+
     /// Wrap an already set up stream: nonblocking, past any handshake this
     /// wire needs. `connect` is production's only caller; a fixture that
     /// substitutes a bare stream pair for the handshake is the crate's own.

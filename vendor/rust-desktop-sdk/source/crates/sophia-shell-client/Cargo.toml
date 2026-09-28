@@ -9,6 +9,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+rustix = { workspace = true, features = ["event", "std"] }
 sophia-9p-client = { workspace = true }
 sophia-9p-records = { workspace = true }
 sophia-shell-ipc = { workspace = true, optional = true }

@@ -14,5 +14,5 @@ Change code in the SDK repository, test it, and sign the commit. Then run
 and verifies the new snapshot before replacing this one, and the check.
 Never edit `source/` or pin a moving branch.
 
-Publication of the SDK repository awaits GitHub authentication; the pinned
-revision is a local signed commit until then.
+The SDK is published at sophia-org/sophia-desktop-sdk-rs; pin only revisions
+reachable there, so consumers and this archive name fetchable commits.

@@ -1174,6 +1174,7 @@ dependencies = [
 name = "sophia-shell-client"
 version = "0.1.0"
 dependencies = [
+ "rustix",
  "sophia-9p-client",
  "sophia-9p-records",
  "sophia-shell-ipc",
