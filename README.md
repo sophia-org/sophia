@@ -18,53 +18,54 @@ Each component has a defined authority:
 - **Sophia Shell** supplies panels, launchers, and switchers through `sophia_shell_v1` and requests space along screen edges. Shells receive sanitized metadata through the broker. They can submit UI descriptors or, with permission, their own rendered content; the Engine controls placement, presentation, and input. [Narthex](https://github.com/sophia-org/narthex) is the descriptor shell reference.
 - **Sophia Portals** broker transfers between namespaces, such as clipboard sharing, drag-and-drop, and screen capture. Each transfer requires authorization for a specific recipient.
 
+Target architecture, including the planned 9P application authority and portal
+interfaces:
+
 ```text
-================================================================================
-                         HARDWARE AND KERNEL
-================================================================================
- [ physical input devices ]                                  [ display output ]
-            │                                                        ▲
-            │ raw input via libinput                                 │ DRM/KMS
-            ▼                                                        │
+===============================================================================================
+                                      HARDWARE AND KERNEL
+===============================================================================================
+[ Physical input devices ]                                                  [ Display output ]
+    |                                                                                     ^
+    | libinput                                                                    DRM/KMS |
+    |                                                                                     |
+    |   +----------------------+   +----------------------+   +----------------------+    |
+    |   | EXTERNAL WM          |   | EXTERNAL SHELL       |   | PORTALS              |    |
+    |   | Opaque snapshots     |   | Sanitized metadata   |   | Authorized transfers |    |
+    |   | Layout / focus       |   | Descriptors, content |   | Between namespaces   |    |
+    |   +----------------------+   +----------------------+   +----------------------+    |
+    |               ^                          ^                          ^               |
+    |               |                          |                          |               |
+    |               |      9P2000.L role filesystems (target)             |               |
+    |               |                          |                          |               |
+    |               v                          v                          v               |
+    |   +----------------------------------------------------------------------------+    |
+    |   | SOPHIA ENGINE: COMPOSITOR AUTHORITY                                        |    |
+    +-->| Scene graph | hit-testing | damage tracking | frame scheduling             |    |
+        | Atomic geometry + pixel commits | rendering | scanout                      |----+
+        +----------------------------------------------------------------------------+
+                          ^                                        ^
+                          | Admitted surface / buffer transactions |
+                          | Routed input / configure / lifecycle   |
+                          v                                        v
+        +-----------------------------------+    +-----------------------------------+
+        | X11 APPLICATION AUTHORITY         |    | 9P APP AUTHORITY (planned)        |
+        | X resources / protocol state      |    | Fids / app files / buffer intake  |
+        | Translate client state            |    | Translate client state            |
+        +-----------------------------------+    +-----------------------------------+
+                          ^                                        ^
+                          | X11                          9P2000.L  |
+                          v                                        v
+               Namespace admission routes each app to its protocol authority.
 
-================================================================================
-                    SOPHIA ENGINE: COMPOSITOR AUTHORITY
-================================================================================
- ┌────────────────────────────────────────────────────────────────────────────┐
- │ Scene graph | spatial hit-testing | damage tracking | frame scheduling     │
- │ Atomic visual commits | rendering | scanout                                │
- └───────────────┬───────────────────┬────────────────────┬───────────────────┘
-          ▲      │                   │                    │      ▲
-          │      │ opaque snapshots  │ portal events      │      │ descriptors & chrome
-          │      ▼                   ▼                    ▼      │
- ┌───────────────┐        ┌────────────────┐       ┌─────────────────────────┐
- │  SOPHIA WM    │        │ SOPHIA PORTALS │       │      SOPHIA SHELL       │
- │ blind policy  │        │ allow/deny     │       │ panels & switchers      │
- │ layout/focus  │        │ handoff/revoke │       │ work area reservations  │
- └───────┬───────┘        └────────┬───────┘       └────────────┬────────────┘
-         │                         │                            ▲
-         │ layout proposals        │ portal commands            │ sanitized metadata
-         │ [sophia_wm_v1]          │ [sophia_portal_v1]         │ & UI descriptors
-         ▼                         ▼                            │ [sophia_shell_v1]
+        +-----------------------------------+    +-----------------------------------+
+        | PRIVATE NAMESPACE A               |    | PRIVATE NAMESPACE B               |
+        | X11 and/or 9P applications        |    | X11 and/or 9P applications        |
+        | Only admitted endpoints mounted   |    | Only admitted endpoints mounted   |
+        +-----------------------------------+    +-----------------------------------+
 
-================================================================================
-                         PROTOCOL AUTHORITY LAYER
-================================================================================
- ┌────────────────────────────────────────────────────────────────────────────┐
- │ Sophia X Server Frontend: X11 resources, selections, grabs, protocol checks │
- └────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  │ namespace-checked surface transactions
-                                  │ routed input / configure / lifecycle
-                                  ▲
-
-================================================================================
-                         SANDBOXED CLIENT NAMESPACES
-================================================================================
- ┌────────────────────────────────────┐     ┌─────────────────────────────────┐
- │ Namespace A: trusted               │     │ Namespace B: untrusted          │
- │ X terminal | trusted local tools   │  X  │ X browser | untrusted X app     │
- └────────────────────────────────────┘     └─────────────────────────────────┘
+        Namespaces separate trust domains; either may contain both client types.
+        Portals authorize specific transfers without joining the namespaces.
 ```
 
 ## Design
