@@ -1,30 +1,13 @@
-tree a9af9918bd089da7eb994eb09d353b60cc2c0bfa
-parent 06c4fa6af54f1eb3bba380a7bfa6e6c8d0cdcc3b
-author Mason Green <mason@greenm01.net> 1790569644 -0400
-committer Mason Green <mason@greenm01.net> 1790569644 -0400
+tree 87200d1bef4977c8aeb495d7165570b2cd1001ea
+parent 69faf39a427934e4cbf79d685c0c3cd0ea33c9e6
+author Mason Green <mason@greenm01.net> 1790570238 -0400
+committer Mason Green <mason@greenm01.net> 1790570238 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarnsrAAKCRBXGEu2KoAA
- Yix3AQDkhpc7pVTAV+xApRhl8WaBPv2Wh+Qn8hgG9LvBmqz9rAEA77Ii9Faz0DJa
- js+EGSKaQpNkGJAcVmmAK+ifQPeoEQg=
- =a1M8
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarnu/gAKCRBXGEu2KoAA
+ YreJAP9Fi/wUSmFsfbzM0Lmjk9SB6iFwWEsaxN9oEXraA+G7DgD/crS3DH9MsGQ1
+ +oomvJA0OG3+8fTvTklJX84AtqGw+gw=
+ =Qox5
  -----END PGP SIGNATURE-----
 
-Use max_chunk_bytes as the canonical upload chunk (t268 stage 1)
-
-The shell file contract (Sophia d040013bb) defines the upload chunk as
-max_chunk_bytes directly. ContentResourceBegin::layout no longer derives
-it from the socket frame, min(max_frame_payload - 48, max_chunk_bytes).
-
-The two expressions are equal on every valid Limits object, because
-ContentLimits::validate still requires max_chunk_bytes + 48 <=
-max_frame_payload, and max_input_queue_bytes >= max_frame_payload + 24.
-Both relations, the scalar bounds and the encoded Limits bytes are
-unchanged. The IPC crate is untouched.
-
-tests/upload_chunk_layout.rs pins the rule. It checks one fixed chunk
-under frame caps at the +48 boundary, one past it and at the cap, with
-exact-row and single-row chunks. It checks the canonical chunk counts
-through the file upload record, the mandatory +24/+48 relations at their
-boundaries, and the golden Limits bytes. It passes with either expression
-by design.
+Refresh spec-relative digest entries for the identity rule

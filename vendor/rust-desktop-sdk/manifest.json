@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "repository": "https://github.com/sophia-org/sophia-desktop-sdk-rs",
-  "revision": "f4e8d1fdc777174eb27fa57bb78888e3c3c11c80",
+  "revision": "f92902e434f347d3d0dab1ce50b2c85a0cee9414",
   "files": {
     ".gitignore": "44c92e3a70ad3307b7056871c2bdb096d8bfa9373f5bf06a79bb6324a20ff2fb",
     "Cargo.lock": "6c84ae2106329c2bb4217bdf6b40166a1dedb252dff6ff6bde30188b9db3c7e5",
     "Cargo.toml": "4534c4628e1d88db59be9ea91a117df875d85500a75c2c80e63e683f67632934",
     "LICENSE": "228b91bbd88e49222e09ac364642da29cd39ca2ce1acdc3c91f950948aaee2c5",
     "PLATFORMS.md": "8d7e6d91e8074c41dd331918b707ecdd0bbe034815dfae663365f7b0fb65d6df",
-    "PROVENANCE.md": "61a18c102b13bf7585c58f1255721211424e52c10b0c2607cbbccc8b314de80e",
+    "PROVENANCE.md": "1d49a5ac0176cd01361773cf62344064bed8df51597fddbb7bac57c651acf002",
     "README.md": "e826856a5b248cd2053bf528eccfeafac7efee4ab69216aca820938805d8ff32",
     "crates/sophia-9p-client/Cargo.toml": "a6565cbeadc863b769c808119e590a6d946f309fb02d25c4e100f38fd3a382cc",
     "crates/sophia-9p-client/src/client.rs": "3d8c532cd950d9deaac3e55c47417f18803e4a179ad31b2cc941ab332331ef96",
@@ -110,7 +110,7 @@
     "crates/sophia-shell-protocol/tests/support/shell_files_kdl/mod.rs": "248ee86561bad7d1e572b563ac53493c50573db870e85487f5d9d2fb9bc2d96f",
     "crates/sophia-shell-protocol/tests/upload_chunk_layout.rs": "1cd8ba23633afc281de9f1ee2a5c5f992e6ad3166b8235b10aae642ebc8d0ed1",
     "rust-toolchain.toml": "4d0674575b116a100c7d0ad754308dc6dea178b4808c760afc43136db967c7a6",
-    "spec/SHA256SUMS": "36484435abeff8511aaf72b5c77207a52ab8186f5434ce056ec73fe56d2e35cd",
+    "spec/SHA256SUMS": "6c12275f913e5c114fbad2d0f88c2b2bc9c8ffdb96929d83f05cccb0ddd4c534",
     "spec/golden/sophia-shell-catalog-actions.frames": "4753e32cb143d50a7a7cae04a61e6757a6ed29325ad904c4ad945b7fddb8160e",
     "spec/golden/sophia-shell-content-malformed.frames": "b0a32d98ec8e666fc6d29ce657423290dc487d280c9c7e763462abf8bb4e3186",
     "spec/golden/sophia-shell-content.frames": "eb925c42a16b5e2479bb52e7cc5d601554bded4a1f8dfe1f3d109e04c1675f34",
@@ -120,8 +120,8 @@
     "spec/golden/sophia-shell-v1.frames": "9c4029f29aa107f557f6e0375ce72c9925266e3620ad0951c6f058be7e1b02f0",
     "spec/references/diod-9p2000L-protocol.md": "27e56f02f27efa2eb5c449021c9a8162a77b9fafdef0946eec5c757e8b8a3850",
     "spec/sophia-9p-profile.md": "29d12ee3d95df35087aaeb52ad6e202b16e5e6255ae3c1495379cc0d6a75c8d3",
-    "spec/sophia-shell-files-v1.kdl": "6558fe5349a295d54f814ef05bfc222551a985e7debccc881920fa138fd146d2",
-    "spec/sophia-shell-files.md": "c1e70c5f126bc9c55be9080fecb0df6f8a0cf7647facf06d8a335e08d053413a",
+    "spec/sophia-shell-files-v1.kdl": "e8a3892ab98417c88012076f8ebfd4afb36363530ad287062292bd3fbbb8638d",
+    "spec/sophia-shell-files.md": "6bd56bfc1c10946fb6ba668a8028e803b1db1042cdebd1e644fd6f137cd24d69",
     "spec/sophia-shell-v1.kdl": "1d4346b30f1ce40b7ad7a0ff04a3e9cd0f0b9c8489a463d070d52974648617e3",
     "spec/sophia-wm-files.md": "b1ff1286f7e7c7282e626302584f852b87c6770d1f9859fd03b0f94373ea7202"
   }

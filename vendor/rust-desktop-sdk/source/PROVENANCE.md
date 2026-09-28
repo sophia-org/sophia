@@ -41,3 +41,12 @@ and now states the shell role's welcome limits for every profile: descriptors
 `max_input_queue_bytes` fields and their +24/+48 relations stay mandatory in
 the Limits layout. The document also states Session's native queue charges
 and journal reserves, which this client does not implement.
+
+## Persistent catalog identity rule
+
+The shell file KDL and lifecycle document above are refreshed from signed
+Sophia `1ae31f132105b5e178c62d3689f1f3d73bf95412`. They explicitly require
+byte-exact distinct identity names when a catalog discloses identities. This
+documents the existing persistent identity bijection; labels may still repeat
+and plain launcher catalogs have no identities. No layout or code changes
+accompany this reference update. Other contract copies keep their earlier pins.
