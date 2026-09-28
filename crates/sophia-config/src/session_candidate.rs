@@ -204,9 +204,10 @@ pub fn prepare_desktop_session_candidate(
                     interface: crate::ExternalWmInterface::SophiaWmV1,
                 });
             }
-            "shell-client" => {
-                prepared.components.shell_client =
-                    Some(component_arguments(&node, 1)?.remove(0).into())
+            "shell-client" | "shell-config" => {
+                return Err(schema_error(
+                    "shell-client and shell-config are retired; use an explicit shell-component",
+                ));
             }
             "shell-component" => {
                 let component = crate::shell_components::parse(&node)?;
@@ -221,10 +222,6 @@ pub fn prepare_desktop_session_candidate(
                     ));
                 }
                 components.push(component);
-            }
-            "shell-config" => {
-                prepared.components.shell_config =
-                    Some(component_arguments(&node, 1)?.remove(0).into())
             }
             "control" => {
                 if node.entries().len() != 1 || node.children().is_some() || node.ty().is_some() {
@@ -253,14 +250,6 @@ pub fn prepare_desktop_session_candidate(
             }
             _ => return Err(schema_error("candidate contains a non-session setting")),
         }
-    }
-    if !prepared.components.shell_components.is_empty()
-        && (prepared.components.shell_client.is_some()
-            || prepared.components.shell_config.is_some())
-    {
-        return Err(schema_error(
-            "shell-component cannot be combined with legacy shell-client or shell-config",
-        ));
     }
     crate::validate_shell_component_reservations(&prepared.components.shell_components)?;
     Ok(prepared)

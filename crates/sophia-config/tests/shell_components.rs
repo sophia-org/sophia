@@ -94,8 +94,6 @@ fn two_components_keep_independent_configuration_and_default_denied_gpu() {
     let path = fixture.write(&format!("{BAR} {LAUNCHER}"), true);
     let prepared = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
     let components = &prepared.candidates.session.components;
-    assert!(components.shell_client.is_none());
-    assert!(components.shell_config.is_none());
     let [bar, launcher] = components.shell_components.as_slice() else {
         panic!("two components");
     };
@@ -184,22 +182,17 @@ fn malformed_component_never_becomes_a_selection() {
 }
 
 #[test]
-fn legacy_selection_is_preserved_without_implicit_component_permissions() {
+fn legacy_selection_is_refused_without_implicit_component_permissions() {
     let fixture = Profile::new();
     let path = fixture.write(
         r#"shell-client "/opt/legacy"; shell-config "/home/user/legacy.kdl";"#,
         true,
     );
-    let prepared = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
-    let components = &prepared.candidates.session.components;
-    assert!(components.shell_components.is_empty());
-    assert_eq!(
-        components.shell_client.as_deref(),
-        Some(Path::new("/opt/legacy"))
-    );
-    assert_eq!(
-        components.shell_config.as_deref(),
-        Some(Path::new("/home/user/legacy.kdl"))
+    let error = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("shell-client and shell-config are retired")
     );
 }
 

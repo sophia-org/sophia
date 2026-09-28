@@ -135,10 +135,19 @@ fn run_desktop_profile(
                             .map(|wm| wm.executable)
                     }
                 }
-                Some("shell-client") => prepared.candidates.session.components.shell_client,
+                Some("descriptor") => prepared
+                    .candidates
+                    .session
+                    .components
+                    .shell_components
+                    .into_iter()
+                    .find(|component| {
+                        component.role == sophia_config::ShellComponentRole::Descriptor
+                    })
+                    .map(|component| component.executable),
                 _ => {
                     return Err(
-                        "print-component requires --component=window-manager|shell-client".into(),
+                        "print-component requires --component=window-manager|descriptor".into(),
                     );
                 }
             };

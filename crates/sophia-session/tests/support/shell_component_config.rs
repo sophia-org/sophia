@@ -51,7 +51,7 @@ fn descriptor_profile_selects_only_its_file_role_and_explicit_grants() {
                 PersistentXtermSessionConfig::from_args(&bad)
                     .unwrap_err()
                     .to_string()
-                    .contains("descriptor components select")
+                    .contains("is retired; select shell components")
             );
         }
         std::fs::write(
@@ -163,7 +163,7 @@ fn component_selection_validates_roles_without_legacy_fallback_or_execution() {
         parse(&valid, &conflicting)
             .unwrap_err()
             .to_string()
-            .contains("conflict")
+            .contains("--shell-process is retired")
     );
     let non_normal: Vec<_> = args
         .iter()

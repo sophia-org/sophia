@@ -172,10 +172,15 @@ fn another_window_manager_keeps_its_own_policy_vocabulary() {
 #[test]
 fn missing_selected_shell_or_window_manager_is_refused_before_the_checker() {
     let fixture = Fixture::new();
-    for component in ["window-manager", "shell-client"] {
+    for selection in [
+        format!("window-manager {:?};", fixture.0.join("missing")),
+        format!(
+            "shell-component \"metadata\" \"descriptor\" {{ executable {:?}; }};",
+            fixture.0.join("missing")
+        ),
+    ] {
         fixture.profile(&format!(
-            "schema 1\nsession {{ {component} {:?}; }}\n",
-            fixture.0.join("missing").to_str().unwrap()
+            "schema 1\nshell {{ enabled #true; }}\nsession {{ {selection} }}\n"
         ));
         assert!(!fixture.command().output().unwrap().status.success());
         assert!(!fixture.0.join("policy-path").exists());

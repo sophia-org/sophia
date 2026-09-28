@@ -300,28 +300,29 @@ now participate in Engine's application lease arbitration, so an application
 owner takes precedence over shell capture. The action is valid only in a
 normal `sophia_wm_v1` session with the shell enabled.
 `session.window-manager` accepts an absolute executable path and up to 31
-string arguments. `session.shell-client` and `session.shell-config` each accept
-one absolute path. These are Session-owned settings, never WM policy. Explicit
-`--wm-process` and `--shell-process` selections win over the profile; the profile
+string arguments. Shells are selected with `session.shell-component`, including
+the `descriptor` role for Engine-rendered UI. These are Session-owned settings,
+never WM policy. Explicit `--wm-process` selections win over the profile; the profile
 wins over core `external-wm` and the launcher's `--wm-process-default`.
-The old `--shell-process-default` argument is refused, including when an explicit
-component or shell is selected. Update launchers to select components in the
+The old `--shell-process`, `--shell-process-default`, `--shell-transport` and
+`--shell-file-profile` arguments and `session.shell-client`/`session.shell-config`
+fields are refused. Update launchers to select components in the
 desktop profile. Explicit WM replacement discards arguments from the
 replaced selection. Shell executables are never inferred from the WM's name or
-directory. An explicitly enabled shell requires a selection in the profile or
-launcher; an external desktop integration owns any defaults.
+directory. An explicitly enabled shell requires a component selection in the
+profile; an external desktop integration owns any defaults.
 
 The session launches the native shell with `--serve` in a metadata-shell Bubblewrap
 domain. It receives sanitized descriptors and opaque actions, never
-application identities or raw input. `SOPHIA_SHELL_CONFIG` overrides the profile's
-private shell file selection. Explicit selections require an existing file;
+application identities or raw input. A component's `config` node selects its
+private file; ambient `SOPHIA_SHELL_CONFIG` cannot override it. Selections require an existing file;
 the session mounts only that file and does not parse its contents. It never
 discovers a client's private configuration by executable name. External desktop
 packaging selects defaults and records component identities.
 
 `sophia config print-effective --desktop-profile=...` shows the parsed component
 and startup choices before launcher overrides. `print-component` with
-`--component=window-manager` or `--component=shell-client` prints just the
+`--component=window-manager` or `--component=descriptor` prints just the
 profile selection (or core `external-wm` fallback), or nothing when it must
 come from the launcher. These are offline
 inspection commands; neither grants admission nor starts a process. Component
@@ -751,8 +752,8 @@ launch policy. Key bindings remain in the WM profile; for example,
 `shortcut` section. This selection requires normal session mode and a Sophia WM.
 A bar requires positive panel allowance; a launcher requires content input and a
 known catalog. Launcher-only selection has no panel reservation. GPU permission
-is per component; the global `gpu "direct"` mode is refused here. Explicit legacy
-`--shell-process` conflicts. The retired `--shell-process-default` is refused;
+is per component; the global `gpu "direct"` mode is refused here. Legacy shell
+selection arguments are refused;
 ambient `SOPHIA_SHELL_CONFIG` is not inherited by explicitly selected components.
 
 The executable paths and private configuration belong to the selected clients.
@@ -771,22 +772,13 @@ Selecting files changes the transport only, never the role's grants. It is
 development selection under t252: record families the file wire does not yet
 carry close that component rather than falling back.
 
-The single-process launcher also accepts
-`--shell-process=/absolute/client --shell-transport=9p2000.L`. Its default is
-`current-ipc`. With files, `--shell-file-profile=content` is the default and
-requires enabled shell content and a positive panel allowance. The explicit
-development selection `--shell-file-profile=descriptor` admits the descriptor
-vocabulary before negotiating the peer: metadata-only shells need no content
-grant, while combined descriptor/content shells retain normal content policy
-and limits. A client's capability bits cannot choose that profile. The
-descriptor-file contract remains proposed under t271; independent C client and
-protected presentation acceptance are still pending.
-
-`--shell-file-profile` requires a single shell using `--shell-transport=9p2000.L`.
-Independent components select the wire and role in their own profile instead
-of using these flags. Both paths pass exactly one socket variable and retain
-the same protected-peer admission and content owners. Selection applies at
-startup and does not alter a running connection's vocabulary.
+The descriptor component always uses 9P and admits its vocabulary before
+negotiating the peer. Metadata-only shells need no content grant; combined
+descriptor/content shells retain normal content policy and limits. A client's
+capability bits cannot choose its role. Independent C interoperability and
+protected CPU presentation tests pass; the contract remains proposed under
+t271 pending normative acceptance and the remaining migration gates.
+Selection applies at startup and does not alter a running connection's vocabulary.
 
 The generic `shell-gpu-content-proof` and `shell_content_conformance_host CLIENT`
 serve only `sophia_shell_fs_v1` over 9P2000.L, and their records name

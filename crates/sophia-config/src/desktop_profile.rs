@@ -474,11 +474,7 @@ pub fn prepare_desktop_profile_candidates(
             .expect("all desktop authority candidates validated")
     };
     let session = crate::prepare_desktop_session_candidate(candidate(DesktopAuthority::Session))?;
-    if !desktop_profile_shell_enabled(&profile)
-        && (session.components.shell_client.is_some()
-            || session.components.shell_config.is_some()
-            || !session.components.shell_components.is_empty())
-    {
+    if !desktop_profile_shell_enabled(&profile) && !session.components.shell_components.is_empty() {
         return Err(DesktopProfileError::Schema(
             "shell component selections require shell { enabled #true; }".to_owned(),
         ));

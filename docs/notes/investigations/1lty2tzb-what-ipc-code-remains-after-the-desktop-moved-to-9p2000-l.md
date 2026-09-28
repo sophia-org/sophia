@@ -1270,6 +1270,35 @@ This supplies the replacement selection path. Legacy shell arguments and profile
 fields still await removal; the descriptor contract remains proposed. No running
 session or installed profile changed.
 
+### Retired shell launch selectors (t271, 2026-09-28)
+
+Following the explicit descriptor path at `bb5961b47`, Session refuses
+`--shell-process`, `--shell-transport` and `--shell-file-profile` before reading
+configuration, alongside the already retired fallback argument. The profile
+parser refuses `shell-client` and `shell-config`; their passive fields are
+removed. Shell selection and private config now come only from declared
+components. CLI inspection uses `--component=descriptor` for that role.
+
+Configuration, reload, composition and preflight fixtures use the replacement
+path. The shared panel probe declares a 9P bar and per-component GPU permission;
+its action-catalog assertions are unchanged. Bare, empty and valued legacy
+arguments all refuse, and descriptor inspection does not run the executable.
+
+The Session library passes 704 tests (22 ignored), configuration passes, CLI
+preflight passes 13 and profile inspection passes 5. Workspace all-target and
+all-feature compilation and focused clippy pass. Evidence is
+`retire-shell-selection-*` in `development-evidence/ipc-retirement/`; the two
+failed Session runs retain the obsolete fixture error expectation and the
+panel fixture's global GPU selection, both corrected on the new path.
+
+The full `cargo xtask check` stops at C SDK contract drift: the descriptor ADR's
+review-evidence section has changed since its vendored snapshot. That failure
+is retained as `descriptor-selection-full-check.log`; there is no full-gate
+pass for this candidate. Normative contract acceptance and SDK pin reconciliation
+must resolve it. The descriptor owner's internal socket branch and its remaining
+socket fixtures still await retirement. No task completion or live acceptance
+is claimed by this configuration cut.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

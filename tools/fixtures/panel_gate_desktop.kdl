@@ -6,9 +6,14 @@ shell {
     content #true
     content-input #true
     panel 24
-    gpu "direct"
+    gpu "denied"
 }
 session {
+    shell-component "panel" "bar" {
+        executable "/usr/bin/true"
+        transport "9p2000.L"
+        gpu "direct"
+    }
     application-catalog "panel-conformance"
     startup
 }

@@ -11,13 +11,16 @@ desktop profile, now with a home that belongs to the whole session.
 ## Choose the parts
 
 The `session` section selects your window manager, native shell, and login
-applications. For an installed Hagia desktop, the choices can look like this:
+applications. A descriptor-based desktop can declare:
 
 ```kdl
 session {
-    window-manager "/opt/sophia/current/target/release/hagia"
-    shell-client "/opt/sophia/current/target/release/narthex"
-    shell-config "/home/alex/.config/narthex/config.kdl"
+    window-manager "/opt/desktop/bin/wm"
+    shell-component "metadata" "descriptor" {
+        executable "/opt/desktop/bin/descriptor-shell"
+        config "/home/user/.config/descriptor-shell/config.kdl"
+        transport "9p2000.L"
+    }
     terminal "terminal"
     browser "browser"
     startup "terminal" "quickshell-panel"
@@ -26,25 +29,24 @@ session {
 
 This is one section of a complete profile. Keep its `schema 1`, policy,
 shortcuts, and other authority sections. Replace the example paths with yours.
-For Hagia's replaceable development binary, use the absolute path to
-`~/.local/state/sophia/bin/hagia`.
+The selected clients must implement the role contracts.
 
 Executable and configuration paths must be absolute. Sophia does not expand
 `~`, substitute environment variables, or run a command through a shell.
 `window-manager` accepts additional string arguments. Native shell clients use
-the existing `--serve` entry point. `shell-config` selects a file the session
+the existing `--serve` entry point. The component's `config` selects a file the session
 makes readable inside the shell's protection domain; the shell interprets it.
 
 The native shell starts in a protection domain without an X11 or Wayland display
-connection; selecting a GTK panel as `shell-client` does not provide a toolkit
+connection; selecting a GTK panel as a native component does not provide a toolkit
 presentation backend.
 An explicitly selected file must exist.
 
-The inherited Narthex setup keeps its usual `~/.config/narthex/config.kdl`.
-When you explicitly select a shell, also select its private file if it needs
-one. A replacement shell does not inherit Narthex's settings.
+Select a private file if the component needs one. A replacement shell does not
+inherit another client's settings or ambient `SOPHIA_SHELL_CONFIG`.
 
-You may omit these selections to use the launcher's defaults. An explicit
+An enabled shell requires explicit component selections. The old `shell-client`
+and `shell-config` nodes and shell CLI selectors are refused. An explicit WM
 command-line selection wins over the profile. The profile's WM selection wins
 over `config.kdl`'s older `external-wm` setting; both win over a launcher default.
 
@@ -131,11 +133,11 @@ Quickshell supplies an X11 panel; Narthex supplies native features such as the
 switcher and shortcut helper. Keep `shell { enabled #true; }` for the native
 shell and list the panel in `session.startup`.
 
-Sophia supports the legacy single-shell mode and explicit independent bar,
+Sophia supports either a sole descriptor component or independent bar,
 application-launcher and dock selections, bounded to three components. There
 is no first-client-wins selection, and an X11 panel does not become a native
 component by appearing in the startup list. Additional component roles are not
-currently admitted by this configuration.
+currently admitted by this configuration. The descriptor role requires 9P.
 
 The [native component proposal](notes/concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md)
 and [candidate sequence t104–t108](notes/plans/ptil1ejw-modular-native-shell-components-and-independent-launcher-critical-path.md)

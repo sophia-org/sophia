@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn desktop_components_override_launcher_defaults_and_cli_overrides_the_desktop() {
+fn wm_cli_overrides_the_profile_while_descriptor_selection_stays_explicit() {
     use std::os::unix::fs::PermissionsExt;
     let root = std::env::temp_dir().join(format!("sophia-components-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
@@ -12,7 +12,7 @@ fn desktop_components_override_launcher_defaults_and_cli_overrides_the_desktop()
         "schema 2\nexternal-wm executable=\"/usr/bin/core-wm\" { arg \"--core\"; }\n",
     )
     .unwrap();
-    std::fs::write(&desktop, "schema 1\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/profile-wm\" \"--profile\"; shell-client \"/usr/bin/profile-shell\"; startup; }\n").unwrap();
+    std::fs::write(&desktop, "schema 1\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/profile-wm\" \"--profile\"; shell-component \"metadata\" \"descriptor\" { executable \"/usr/bin/profile-shell\"; }; startup; }\n").unwrap();
     for path in [&core, &desktop] {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
@@ -35,37 +35,33 @@ fn desktop_components_override_launcher_defaults_and_cli_overrides_the_desktop()
     );
     assert!(config.applications.startup.is_empty());
     assert!(config.startup_ready_timeout.is_none());
-    args.extend([
-        "--wm-process=/usr/bin/explicit-wm".to_owned(),
-        "--shell-process=/usr/bin/explicit-shell".to_owned(),
-    ]);
+    args.extend(["--wm-process=/usr/bin/explicit-wm".to_owned()]);
     let config = PersistentXtermSessionConfig::from_args(&args).unwrap();
     assert_eq!(config.wm_process.as_deref(), Some("/usr/bin/explicit-wm"));
     assert!(config.wm_process_args.is_empty());
     assert_eq!(
         config.shell_process.as_deref(),
-        Some("/usr/bin/explicit-shell")
+        Some("/usr/bin/profile-shell")
     );
-    args.truncate(args.len() - 2);
+    args.truncate(args.len() - 1);
     std::fs::write(&desktop, "schema 1\nshell { enabled #true; }\n").unwrap();
     assert!(
         PersistentXtermSessionConfig::from_args(&args)
             .unwrap_err()
             .to_string()
-            .contains("explicit shell executable")
+            .contains("explicit shell-component")
     );
-    args.push("--shell-process=/usr/bin/explicit-shell".to_owned());
+    std::fs::write(&desktop, "schema 1\nshell { enabled #true; }\nsession { shell-component \"metadata\" \"descriptor\" { executable \"/usr/bin/profile-shell\"; }; }\n").unwrap();
     let config = PersistentXtermSessionConfig::from_args(&args).unwrap();
     assert_eq!(config.wm_process.as_deref(), Some("/usr/bin/core-wm"));
     assert_eq!(config.wm_process_args, ["--core"]);
     assert_eq!(
         config.shell_process.as_deref(),
-        Some("/usr/bin/explicit-shell")
+        Some("/usr/bin/profile-shell")
     );
     std::fs::write(&core, "schema 2\n").unwrap();
     let config = PersistentXtermSessionConfig::from_args(&args).unwrap();
     assert_eq!(config.wm_process.as_deref(), Some("/usr/bin/default-wm"));
-    args.pop();
     std::fs::write(
         &desktop,
         "schema 1\nshell { enabled #false; }\nsession { startup; }\n",
@@ -77,8 +73,7 @@ fn desktop_components_override_launcher_defaults_and_cli_overrides_the_desktop()
             .shell_process
             .is_none()
     );
-    std::fs::write(&desktop, "schema 1\nshell { enabled #true; }\nsession { shell-config \"/missing/private-shell.kdl\"; }\n").unwrap();
-    args.push("--shell-process=/usr/bin/explicit-shell".to_owned());
+    std::fs::write(&desktop, "schema 1\nshell { enabled #true; }\nsession { shell-component \"metadata\" \"descriptor\" { executable \"/usr/bin/profile-shell\"; config \"/missing/private-shell.kdl\"; }; }\n").unwrap();
     assert!(
         PersistentXtermSessionConfig::from_args(&args)
             .unwrap_err()
@@ -89,24 +84,23 @@ fn desktop_components_override_launcher_defaults_and_cli_overrides_the_desktop()
 }
 
 #[test]
-fn retired_shell_default_is_refused_before_loading_configuration() {
-    for retired in [
+fn retired_shell_selectors_are_refused_before_loading_configuration() {
+    for flag in [
         "--shell-process-default",
-        "--shell-process-default=",
-        "--shell-process-default=/usr/bin/true",
-        "--shell-process-default=relative",
+        "--shell-process",
+        "--shell-transport",
+        "--shell-file-profile",
     ] {
-        for explicit in [None, Some("--shell-process=/usr/bin/true")] {
-            let mut args = vec![
+        for suffix in ["", "=", "=/usr/bin/true", "=relative"] {
+            let args = vec![
                 "--desktop-profile=/does/not/exist.kdl".to_owned(),
-                retired.to_owned(),
+                format!("{flag}{suffix}"),
             ];
-            args.extend(explicit.map(str::to_owned));
             assert_eq!(
                 PersistentXtermSessionConfig::from_args(&args)
                     .unwrap_err()
                     .to_string(),
-                "--shell-process-default is retired; select shell components in the desktop profile"
+                format!("{flag} is retired; select shell components in the desktop profile")
             );
         }
     }

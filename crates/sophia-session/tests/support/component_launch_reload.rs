@@ -57,7 +57,7 @@ fn component_terminal_reload_updates_real_shortcut_without_restarting_providers(
 
 #[test]
 fn narthex_terminal_reload_uses_the_same_capability() {
-    check_terminal_reload("shell-client \"/absent/narthex\"");
+    check_terminal_reload("shell-component \"metadata\" \"descriptor\" { executable \"/absent/descriptor\"; };");
 }
 
 fn check_terminal_reload(provider: &str) {

@@ -284,8 +284,6 @@ pub struct ExternalWmConfig {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DesktopComponents {
     pub window_manager: Option<ExternalWmConfig>,
-    pub shell_client: Option<PathBuf>,
-    pub shell_config: Option<PathBuf>,
     pub shell_components: Vec<crate::ShellComponentConfig>,
 }
 

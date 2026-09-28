@@ -1,12 +1,12 @@
 use super::*;
 
 #[test]
-fn shell_wire_selection_without_a_single_shell_is_refused() {
+fn retired_shell_wire_selection_is_refused() {
     assert!(
         isolated_session_config(&["--no-config".into(), "--shell-transport=9p2000.L".into(),])
             .unwrap_err()
             .to_string()
-            .contains("--shell-transport requires")
+            .contains("--shell-transport is retired")
     );
 }
 

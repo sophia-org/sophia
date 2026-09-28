@@ -138,7 +138,7 @@ fn explicit_components_replace_only_the_inherited_provider_selection() {
     "#,
     );
     for previous in [
-        r#"shell-client "/old/narthex"; shell-config "/private/narthex.kdl";"#,
+        r#"shell-component "metadata" "descriptor" { executable "/old/descriptor"; config "/private/descriptor.kdl"; };"#,
         r#"shell-component "old-bar" "bar" { executable "/old/bar"; }; shell-component "old-menu" "application-launcher" { executable "/old/menu"; };"#,
     ] {
         write(
@@ -172,7 +172,6 @@ fn explicit_components_replace_only_the_inherited_provider_selection() {
             derived.candidates.session.applications[0].command
         );
         let components = derived.candidates.session.components;
-        assert!(components.shell_client.is_none() && components.shell_config.is_none());
         assert_eq!(
             components
                 .shell_components

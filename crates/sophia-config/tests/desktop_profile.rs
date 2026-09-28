@@ -1236,7 +1236,7 @@ fn desktop_components_are_private_to_session_and_validate_paths() {
     let path = root.join("desktop.kdl");
     write_profile(
         &path,
-        "schema 1\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/example-wm\" \"--quiet\"; shell-client \"/usr/bin/example-shell\"; shell-config \"/home/user/private shell.kdl\"; }\npolicy { layout \"custom\"; }\n",
+        "schema 1\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/example-wm\" \"--quiet\"; shell-component \"metadata\" \"descriptor\" { executable \"/usr/bin/example-shell\"; config \"/home/user/private shell.kdl\"; }; }\npolicy { layout \"custom\"; }\n",
     );
     let prepared = load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).unwrap();
     let components = &prepared.candidates.session.components;
@@ -1244,8 +1244,8 @@ fn desktop_components_are_private_to_session_and_validate_paths() {
     assert_eq!(wm.executable, Path::new("/usr/bin/example-wm"));
     assert_eq!(wm.arguments, ["--quiet"]);
     assert_eq!(
-        components.shell_client.as_deref(),
-        Some(Path::new("/usr/bin/example-shell"))
+        components.shell_components[0].executable.as_path(),
+        Path::new("/usr/bin/example-shell")
     );
     fs::create_dir(root.join("staged")).unwrap();
     fs::set_permissions(root.join("staged"), fs::Permissions::from_mode(0o700)).unwrap();
@@ -1268,6 +1268,10 @@ fn desktop_components_are_private_to_session_and_validate_paths() {
         "window-manager \"/bin/wm\" command=\"oops\"",
         "window-manager (path)\"/bin/wm\"",
         "window-manager \"/bin/wm\" { arg \"oops\"; }",
+        "shell-component \"metadata\" \"descriptor\" { executable \"relative\"; }",
+        "shell-component \"metadata\" \"descriptor\" { executable \"/bin/shell\" \"extra\"; }",
+        "shell-component \"metadata\" \"descriptor\" { executable \"/bin/shell\"; config \"~/shell.kdl\"; }",
+        "shell-component \"metadata\" \"descriptor\" { executable \"/bin/a\"; executable \"/bin/b\"; }",
         "shell-client \"/bin/shell\" \"extra\"",
         "shell-config \"~/shell.kdl\"",
         "shell-client \"/bin/a\"; shell-client \"/bin/b\"",
@@ -1284,7 +1288,7 @@ fn desktop_components_are_private_to_session_and_validate_paths() {
     }
     write_profile(
         &path,
-        "schema 1\nshell { enabled #false; }\nsession { shell-client \"/bin/shell\"; }\n",
+        "schema 1\nshell { enabled #false; }\nsession { shell-component \"metadata\" \"descriptor\" { executable \"/bin/shell\"; }; }\n",
     );
     assert!(load_prepared_desktop_profile(Some(&path), ConfigGeneration::INITIAL).is_err());
     fs::remove_dir_all(root).unwrap();

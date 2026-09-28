@@ -199,7 +199,7 @@ fn desktop_inspection_and_policy_export_keep_component_identity_out_of_wm_input(
     write_profile(&included, "policy { layout \"third-party-layout\"; }\n");
     write_profile(
         &path,
-        "schema 1\ninclude \"policy.kdl\"\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/test wm\"; shell-client \"/usr/bin/test-shell\"; startup; }\n",
+        "schema 1\ninclude \"policy.kdl\"\nshell { enabled #true; }\nsession { window-manager \"/usr/bin/test wm\"; shell-component \"metadata\" \"descriptor\" { executable \"/usr/bin/test-shell\"; }; startup; }\n",
     );
     let option = format!("--desktop-profile={}", path.display());
     let exported = sophia()
@@ -234,6 +234,30 @@ fn desktop_inspection_and_policy_export_keep_component_identity_out_of_wm_input(
         .unwrap();
     assert!(selected.status.success());
     assert_eq!(selected.stdout, b"/usr/bin/test wm\n");
+    let descriptor = sophia()
+        .args([
+            "config",
+            "print-component",
+            &option,
+            "--component=descriptor",
+        ])
+        .output()
+        .unwrap();
+    assert!(descriptor.status.success());
+    assert_eq!(descriptor.stdout, b"/usr/bin/test-shell\n");
+    assert!(
+        !sophia()
+            .args([
+                "config",
+                "print-component",
+                &option,
+                "--component=shell-client"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
     for operation in ["check", "print-effective", "print-policy"] {
         assert!(
             !sophia()

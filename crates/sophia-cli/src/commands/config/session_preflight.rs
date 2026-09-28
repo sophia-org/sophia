@@ -46,9 +46,6 @@ pub(super) fn run(arguments: &[String]) -> Result<()> {
     let prepared =
         sophia_config::load_prepared_desktop_profile(Some(&profile), ConfigGeneration::INITIAL)?;
     let components = &prepared.candidates.session.components;
-    if let Some(shell) = &components.shell_client {
-        require_executable(shell, "selected native shell")?;
-    }
     for component in &components.shell_components {
         let role = match component.role {
             sophia_config::ShellComponentRole::Descriptor => "descriptor",

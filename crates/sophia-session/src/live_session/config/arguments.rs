@@ -1,9 +1,9 @@
 impl PersistentXtermSessionConfig {
     fn from_args(args: &[String]) -> Result<Self, Box<dyn std::error::Error>> {
-        if args.iter().any(|arg| {
-            arg == "--shell-process-default" || arg.starts_with("--shell-process-default=")
-        }) {
-            return Err("--shell-process-default is retired; select shell components in the desktop profile".into());
+        for flag in ["--shell-process-default", "--shell-process", "--shell-transport", "--shell-file-profile"] {
+            if args.iter().any(|arg| arg == flag || arg.strip_prefix(flag).is_some_and(|suffix| suffix.starts_with('='))) {
+                return Err(format!("{flag} is retired; select shell components in the desktop profile").into());
+            }
         }
         let no_config = args.iter().any(|argument| argument == "--no-config");
         let explicit_config = arg_value(args, "--config")
@@ -528,31 +528,12 @@ impl PersistentXtermSessionConfig {
             .any(|entry| entry.role == sophia_config::ShellComponentRole::Bar);
         let component_catalog = components.shell_components.iter()
             .any(|entry| matches!(entry.role, sophia_config::ShellComponentRole::ApplicationLauncher | sophia_config::ShellComponentRole::Dock));
-        let explicit_shell_process = arg_value(args, "--shell-process");
-        if descriptor_component.is_some() && ["--shell-process", "--shell-transport", "--shell-file-profile"]
-            .iter().any(|flag| args.iter().any(|arg| {
-                arg == flag || arg.strip_prefix(flag).is_some_and(|suffix| suffix.starts_with('='))
-            }))
-        {
-            return Err("descriptor components select their executable and 9P profile in the desktop profile".into());
-        }
-        if independent_shell && explicit_shell_process.is_some() {
-            return Err("independent shell components conflict with --shell-process".into());
-        }
         if independent_shell && (!normal_session || !shell_enabled) {
             return Err("independent shell components require an enabled normal-session shell".into());
         }
-        if let Some(process) = &explicit_shell_process
-            && !std::path::Path::new(process).is_absolute()
-        {
-            return Err("shell process selections require an absolute path".into());
-        }
         let profile_is_compiled_default = desktop_profile_source.is_none();
-        let resolved_shell_process = || -> Option<String> {
-            explicit_shell_process.clone()
-                .or_else(|| descriptor_component.map(|entry| entry.executable.to_string_lossy().into_owned()))
-                .or_else(|| components.shell_client.as_ref().map(|p| p.to_string_lossy().into_owned()))
-        };
+        let resolved_shell_process = descriptor_component
+            .map(|entry| entry.executable.to_string_lossy().into_owned());
         // The compiled default profile enables a shell, because it describes a
         // full desktop. A session running one application has no shell process
         // selected, and refusing on that made
@@ -564,7 +545,7 @@ impl PersistentXtermSessionConfig {
             && normal_session
             && profile_is_compiled_default
             && (wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1
-                || resolved_shell_process().is_none());
+                || resolved_shell_process.is_none());
         let live_shell_enabled = shell_enabled && normal_session && !shell_dropped;
         let shell_process = if independent_shell {
             if wm_process.is_none() || wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1 {
@@ -575,54 +556,24 @@ impl PersistentXtermSessionConfig {
             if wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1 {
                 return Err("an enabled shell requires --wm-interface=sophia_wm_v1".into());
             }
-            let process = resolved_shell_process()
-                .ok_or("an enabled shell requires an explicit shell executable in the profile or launcher")?;
+            let process = resolved_shell_process
+                .ok_or("an enabled shell requires an explicit shell-component in the desktop profile")?;
             Some(process)
         } else {
-            if explicit_shell_process.is_some() || components.shell_client.is_some() || descriptor_component.is_some() {
+            if descriptor_component.is_some() {
                 return Err(if shell_enabled {
-                    "--shell-process requires --session-mode=normal"
+                    "descriptor components require --session-mode=normal"
                 } else {
-                    "--shell-process requires shell { enabled #true; }"
+                    "descriptor components require shell { enabled #true; }"
                 }
                 .into());
             }
             None
         };
-        let shell_transport = match arg_value(args, "--shell-transport") {
-            Some(value) => {
-                if shell_process.is_none() {
-                    return Err("--shell-transport requires a single shell process; independent components select transport in their profile".into());
-                }
-                sophia_config::ShellTransportSelection::parse(&value)?
-            }
-            None => if descriptor_component.is_some() {
-                sophia_config::ShellTransportSelection::NineP2000L
-            } else {
-                sophia_config::ShellTransportSelection::default()
-            },
-        };
-        let shell_file_profile = match arg_value(args, "--shell-file-profile") {
-            Some(value) => {
-                if shell_process.is_none()
-                    || shell_transport != sophia_config::ShellTransportSelection::NineP2000L
-                {
-                    return Err("--shell-file-profile requires a single shell process using --shell-transport=9p2000.L".into());
-                }
-                sophia_config::ShellFileProfile::parse(&value)?
-            }
-            None => if descriptor_component.is_some() {
-                sophia_config::ShellFileProfile::Descriptor
-            } else {
-                sophia_config::ShellFileProfile::default()
-            },
-        };
-        // Component configs are explicit per-role grants, never the legacy
-        // ambient config or the installed fallback shell's private settings.
-        let shell_config = if let Some(component) = descriptor_component { component.config.clone() } else if independent_shell { None } else { std::env::var_os("SOPHIA_SHELL_CONFIG")
-            .map(std::path::PathBuf::from)
-            .or_else(|| components.shell_config.clone())
-        };
+        let shell_transport = sophia_config::ShellTransportSelection::NineP2000L;
+        let shell_file_profile = sophia_config::ShellFileProfile::Descriptor;
+        // Private configuration comes only from the selected component.
+        let shell_config = descriptor_component.and_then(|entry| entry.config.clone());
         if let Some(path) = &shell_config {
             if shell_process.is_none() {
                 return Err("a private shell config requires an enabled shell".into());
@@ -653,12 +604,6 @@ impl PersistentXtermSessionConfig {
             return Err("descriptor GPU grants must be declared per component".into());
         }
         let shell_gpu_mode = descriptor_component.map_or(global_gpu_mode, |entry| entry.gpu);
-        if shell_transport == sophia_config::ShellTransportSelection::NineP2000L
-            && shell_file_profile == sophia_config::ShellFileProfile::Content
-            && !shell_content_enabled
-        {
-            return Err("the content file profile requires shell content; use --shell-file-profile=descriptor for metadata-only shells".into());
-        }
         if independent_shell {
             if !shell_content_enabled {
                 return Err("independent shell components require shell content".into());

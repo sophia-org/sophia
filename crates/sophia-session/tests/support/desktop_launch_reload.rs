@@ -587,13 +587,12 @@ fn panel_gate_gate_admits_only_available_actions_from_the_wm_catalog() {
         "--session-app=browser=/usr/bin/true",
         "--session-action-app=browser=browser",
         "--wm-process-default=/usr/bin/true",
-        "--shell-process=/usr/bin/true",
     ];
     let wm = ConfigFixture::from_documents(core, r#"schema 1
         policy { layout "scroller"; }
-        shell { enabled #true; }
+        shell { enabled #true; gpu "denied"; }
         shortcut { profile "operator"; bind "Super+4" "policy:focus-workspace 7"; }
-        session { startup "terminal"; }
+        session { startup "terminal"; shell-component "metadata" "descriptor" { executable "/usr/bin/true"; }; }
     "#, &arguments);
     let overrides = wm.directory.join("probe.kdl");
     std::fs::write(&overrides, include_str!("../../../../tools/fixtures/panel_gate_desktop.kdl")).unwrap();

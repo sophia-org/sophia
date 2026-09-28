@@ -36,58 +36,29 @@ session { terminal "terminal"; browser "browser"; }
         "--wm-process=/opt/wm".to_owned(),
         "--wm-interface=sophia_wm_v1".to_owned(),
     ];
-    assert!(PersistentXtermSessionConfig::from_args(&base).unwrap_err().to_string().contains("explicit shell executable"));
+    assert!(PersistentXtermSessionConfig::from_args(&base).unwrap_err().to_string().contains("explicit shell-component"));
 
+    let profile = std::fs::read_to_string(&path).unwrap()
+        .replace("session {", "session { shell-component \"metadata\" \"descriptor\" { executable \"/srv/shell\"; }; ");
+    std::fs::write(&path, &profile).unwrap();
     let mut explicit = base.to_vec();
-    explicit.push("--shell-process=/srv/shell".to_owned());
     explicit.push("--shell-proof-restart-after-visible=2".to_owned());
     let config = PersistentXtermSessionConfig::from_args(&explicit).unwrap();
     assert_eq!(config.shell_process.as_deref(), Some("/srv/shell"));
     assert_eq!(config.shell_config, None);
     assert_eq!(config.shell_proof_restart_after_visible, Some(2));
-
-    let mut unsupported = explicit.clone();
-    unsupported.push("--shell-transport=9p2000.L".into());
-    assert!(PersistentXtermSessionConfig::from_args(&unsupported).unwrap_err().to_string().contains("requires shell content"));
-    let mut descriptor = unsupported.clone();
-    descriptor.push("--shell-file-profile=descriptor".into());
-    let config = PersistentXtermSessionConfig::from_args(&descriptor).unwrap();
+    assert_eq!(config.shell_transport, sophia_config::ShellTransportSelection::NineP2000L);
     assert_eq!(config.shell_file_profile, sophia_config::ShellFileProfile::Descriptor);
     assert!(!config.shell_content_enabled);
-    for value in ["", "auto", "native-launcher"] {
-        let mut bad = unsupported.clone();
-        bad.push(format!("--shell-file-profile={value}"));
-        assert!(PersistentXtermSessionConfig::from_args(&bad).unwrap_err().to_string().contains("shell file profile must be"));
-    }
-    let mut wrong_wire = explicit.clone();
-    wrong_wire.push("--shell-file-profile=descriptor".into());
-    assert!(PersistentXtermSessionConfig::from_args(&wrong_wire).unwrap_err().to_string().contains("requires a single shell process using"));
-    let content_profile = std::fs::read_to_string(&path).unwrap()
-        .replace("shell { enabled #true; }", "shell { enabled #true; content #true; panel 24; }");
+    let content_profile = profile.replace("shell { enabled #true; }", "shell { enabled #true; content #true; panel 24; }");
     std::fs::write(&path, content_profile).unwrap();
-    let combined = PersistentXtermSessionConfig::from_args(&descriptor).unwrap();
-    assert_eq!(combined.shell_file_profile, sophia_config::ShellFileProfile::Descriptor);
+    let combined = PersistentXtermSessionConfig::from_args(&explicit).unwrap();
     assert!(combined.shell_content_enabled);
-
-    for (value, expected) in [
-        ("current-ipc", sophia_config::ShellTransportSelection::CurrentIpc),
-        ("9p2000.L", sophia_config::ShellTransportSelection::NineP2000L),
-    ] {
-        let mut args = explicit.clone();
-        args.push(format!("--shell-transport={value}"));
-        assert_eq!(PersistentXtermSessionConfig::from_args(&args).unwrap().shell_transport, expected);
-    }
-    for value in ["auto", "9p", ""] {
-        let mut args = explicit.clone();
-        args.push(format!("--shell-transport={value}"));
-        assert!(PersistentXtermSessionConfig::from_args(&args).unwrap_err().to_string().contains("shell transport must be"));
-    }
-
     assert!(
         PersistentXtermSessionConfig::from_args(&[
             isolated_core_config_argument(),
             format!("--desktop-profile={}", path.display()),
-            "--shell-process=/srv/shell".to_owned(),
+            "--wm-process=/opt/wm".to_owned(),
         ])
         .unwrap_err()
         .to_string()
@@ -111,13 +82,14 @@ fn production_content_requires_the_complete_explicit_shell_authority() {
             "--session-mode=normal".to_owned(),
             "--session-app=terminal=/usr/bin/true".to_owned(),
             "--session-start=terminal".to_owned(),
-            "--wm-process=/opt/hagia".to_owned(),
+            "--wm-process=/opt/wm".to_owned(),
             "--wm-interface=sophia_wm_v1".to_owned(),
-            "--shell-process=/opt/lom".to_owned(),
         ]
     };
     let write = |source: &str| {
-        std::fs::write(&profile, source).unwrap();
+        let gpu = if source.contains("gpu \"direct\";") { "direct" } else { "denied" };
+        let source = source.replace("gpu \"direct\";", "");
+        std::fs::write(&profile, format!("{source}\nsession {{ shell-component \"metadata\" \"descriptor\" {{ executable \"/opt/descriptor\"; gpu \"{gpu}\"; }}; }}\n")).unwrap();
         std::fs::set_permissions(&profile, std::fs::Permissions::from_mode(0o600)).unwrap();
     };
 
