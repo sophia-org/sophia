@@ -1,10 +1,10 @@
+//! The socket side of the protocol packets: framing, the output role's
+//! `sophia_output_v1`, the broker and the shell v1 hello. Its neutral modules
+//! are separate binaries (`protocol_*.rs`) that build without the IPC module.
 use sophia_protocol::*;
 
-include!("protocol/data_model.rs");
-include!("protocol/region_algebra.rs");
 include!("protocol/framing.rs");
-include!("protocol/topology_and_wm.rs");
-include!("protocol/output_configuration.rs");
+include!("protocol/output_fixture.rs");
 include!("protocol/output_ipc.rs");
 include!("protocol/broker_v1.rs");
 include!("protocol/shell_v1.rs");
