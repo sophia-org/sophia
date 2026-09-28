@@ -327,3 +327,81 @@ fn refused_outcome_survives_close_without_disarming_a_new_opening() {
     assert!(matches!(f.front_native(),
         ShellNativeLauncherRecord::ActivationOutcome(v) if v.status == 1 && v.activation == f.activation));
 }
+
+#[test]
+fn a_pending_socket_publication_keeps_a_closed_opening_unsettled() {
+    let mut f = Fixture::new();
+    f.transport
+        .close_native_launcher(
+            &mut f.epochs,
+            f.opening,
+            TransactionId::from_raw(2),
+            ContentReason::Cancelled,
+        )
+        .unwrap();
+    // The Activate delivered at setup is late now; it is answered Stale.
+    f.transport
+        .service_closed_native_input(&mut f.epochs, f.opening)
+        .unwrap();
+    while f.transport.output.front().is_some() {
+        f.send_front();
+    }
+    assert!(
+        f.transport
+            .closed_native_owners_settled(&f.epochs, f.opening)
+            .unwrap()
+    );
+    // One record of room: most of the catalog waits outside the FIFO.
+    f.transport
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_control_records = 1;
+    let catalog = ShellPersistentCatalog {
+        catalog: ShellApplicationCatalog {
+            connection_epoch: 1,
+            generation: 1,
+            entries: vec![ShellApplicationDescriptor {
+                slot: 1,
+                available: true,
+                label: "application".into(),
+                keywords: String::new(),
+            }],
+        },
+        identities: Default::default(),
+    };
+    f.transport
+        .publish_catalog(&f.epochs, TransactionId::from_raw(3), &catalog)
+        .unwrap();
+    for _ in 0..4 {
+        let Some(Wire::Socket(socket)) = f.transport.wire.as_mut() else {
+            unreachable!("the fixture attaches a socket");
+        };
+        socket.send(&mut f.transport.output, 64 * 1024).unwrap();
+    }
+    assert_eq!(f.transport.fifo_records(), 0);
+    assert!(f.transport.pending_publication().0 > 0);
+    assert!(
+        !f.transport
+            .closed_native_owners_settled(&f.epochs, f.opening)
+            .unwrap()
+    );
+    f.transport
+        .content_limits
+        .as_mut()
+        .unwrap()
+        .max_control_records = 3;
+    let mut turns = 0;
+    while f.transport.pending_publication().0 + f.transport.fifo_records() > 0 {
+        f.transport
+            .poll_io_bounded(&mut f.epochs, 64 * 1024)
+            .unwrap();
+        turns += 1;
+        assert!(turns < 16, "the publication never drained");
+    }
+    assert!(
+        f.transport
+            .closed_native_owners_settled(&f.epochs, f.opening)
+            .unwrap()
+    );
+}

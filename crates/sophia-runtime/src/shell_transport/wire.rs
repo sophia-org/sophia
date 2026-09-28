@@ -122,9 +122,15 @@ impl ShellComponentTransport {
         }
     }
 
-    /// Whether the wire holds no unread or untaken client input.
+    /// Whether the wire holds no unread or untaken client input: on the
+    /// socket, no partial or complete frame; on the file wire, no accepted
+    /// record or candidate part the owners have not taken.
     pub(super) fn inbound_idle(&self) -> bool {
-        self.socket().is_none_or(socket::SocketWire::input_idle)
+        match self.wire.as_ref() {
+            None => true,
+            Some(Wire::Socket(socket)) => socket.input_idle(),
+            Some(Wire::Files(files)) => files.export().inbound_is_empty(),
+        }
     }
 
     /// The oldest queued content record of `want`, left queued.

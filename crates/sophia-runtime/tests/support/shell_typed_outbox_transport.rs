@@ -616,3 +616,92 @@ fn the_socket_writes_typed_records_and_its_lane_frames_in_admission_order() {
     }
     assert_eq!(order, [(90, 1), (7, 2), (90, 3)]);
 }
+
+fn catalog(connection_epoch: u64, entries: u16) -> ShellPersistentCatalog {
+    ShellPersistentCatalog {
+        catalog: ShellApplicationCatalog {
+            connection_epoch,
+            generation: 1,
+            entries: (1..=entries)
+                .map(|slot| ShellApplicationDescriptor {
+                    slot,
+                    available: true,
+                    label: format!("application {slot}"),
+                    keywords: String::new(),
+                })
+                .collect(),
+        },
+        identities: Default::default(),
+    }
+}
+
+/// The socket frames of a whole catalog publication: Begin, one Entry per
+/// application, End.
+fn catalog_frames(catalog: &ShellPersistentCatalog) -> Vec<usize> {
+    encode_shell_application_catalog(tx(9), &catalog.catalog)
+        .unwrap()
+        .iter()
+        .map(Vec::len)
+        .collect()
+}
+
+#[test]
+fn a_pending_socket_publication_is_accounted_once_until_it_has_left() {
+    let mut epochs = registry();
+    let mut owner = Owner::new(&mut epochs, 1, 2);
+    let _peer = owner.attach_socket();
+    let published = catalog(1, 3);
+    let frames = catalog_frames(&published);
+    assert_eq!(frames.len(), 5);
+    owner
+        .transport
+        .publish_catalog(&epochs, tx(9), &published)
+        .unwrap();
+    // Two records fit the record budget; three frames wait unadmitted.
+    let accounting = owner.transport.content_accounting(&epochs);
+    assert_eq!(owner.transport.fifo_records(), 2);
+    assert_eq!(owner.transport.pending_publication().0, 3);
+    assert_eq!(accounting.response_records, frames.len());
+    assert_eq!(accounting.response_bytes, frames.iter().sum::<usize>());
+    // Admission is unchanged: the pending frames spend no budget.
+    assert_eq!(owner.transport.fifo_bulk_bytes(), frames[0] + frames[1]);
+    let mut sent = 0;
+    while owner.transport.fifo_records() + owner.transport.pending_publication().0 > 0 {
+        // Each turn moves frames from pending into the lane before writing.
+        owner.transport.poll_io(&mut epochs).unwrap();
+        let (pending, pending_bytes) = owner.transport.pending_publication();
+        let accounting = owner.transport.content_accounting(&epochs);
+        assert_eq!(
+            accounting.response_records,
+            owner.transport.fifo_records() + pending
+        );
+        assert_eq!(
+            accounting.response_bytes,
+            owner.transport.fifo_bulk_bytes() + pending_bytes
+        );
+        sent += 1;
+        assert!(sent < 16, "the publication never drained");
+    }
+    let accounting = owner.transport.content_accounting(&epochs);
+    assert_eq!(
+        (accounting.response_records, accounting.response_bytes),
+        (0, 0)
+    );
+}
+
+#[test]
+fn disconnect_releases_a_pending_socket_publication() {
+    let mut epochs = registry();
+    let mut owner = Owner::new(&mut epochs, 1, 2);
+    let _peer = owner.attach_socket();
+    owner
+        .transport
+        .publish_catalog(&epochs, tx(9), &catalog(1, 3))
+        .unwrap();
+    assert!(owner.transport.pending_publication().0 > 0);
+    owner.transport.disconnect(&mut epochs).unwrap();
+    assert_eq!(owner.transport.pending_publication(), (0, 0));
+    let accounting = owner.transport.content_accounting(&epochs);
+    assert_eq!(accounting.response_records, 0);
+    assert_eq!(accounting.response_bytes, 0);
+}
