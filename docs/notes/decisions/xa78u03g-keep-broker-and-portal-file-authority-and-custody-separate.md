@@ -2,18 +2,20 @@
 id: xa78u03g
 date: 2026-09-28
 kind: adr
-status: proposed
+status: accepted
 tags: [adr, broker, portal, protocol]
 ---
 # Keep broker and portal file authority and custody separate
 
 ## Context
 
-Reviewed against Sophia 80df2c4ce. This is a proposed design, not an
-implemented export or a claim that the portal is running in production.
-It supersedes the conflicting rules in the earlier evidence-only drafts;
-those drafts remain unchanged as review history. Their KDL is not ready for
-SDK consumption until reconciled with this decision and independently checked.
+Reviewed against Sophia 80df2c4ce. This design specifies future exports;
+it does not claim that the portal is running in production.
+It supersedes the conflicting rules in the earlier evidence-only drafts,
+which remain unchanged as review history. The reconciled
+[broker contract](../../sophia-broker-files.md) and
+[portal contract](../../sophia-portal-files.md) carry native KDL layouts and
+explicit implementation acceptance requirements.
 
 ## Shared transport and custody rules
 
@@ -44,6 +46,8 @@ existing journal bytes remain readable until the terminal ack or the 2-second
 deadline. Only then is the export closed. Pre-attach permission failures are
 errno refusals and disclose no role data. Revocation is distinct from this
 negotiation-refusal drain and can invalidate reads immediately.
+The refusal deadline starts at Refused publication. A partial ack cannot
+extend it; the normal ack-progress reset applies outside refusal drain only.
 
 ## Metadata broker
 
@@ -66,8 +70,8 @@ a second-row failure cannot deliver the first rule. Backend enqueue capacity
 is part of that preparation, not a fallible step after the first effect.
 
 Preserve the old codec's distinction between absent text and present empty
-UTF-8 text, including its accepted control characters. Sanitizing labels belongs
-to the existing broker reducer, not a silently stricter replacement codec.
+UTF-8 text, including its accepted control characters. Label reduction and
+disclosure stay with the existing authorities, not a stricter replacement codec.
 Preserve optional-icon representation, including a present zero value where
 the old codec permits it. Raw surface IDs in requests reach the reducer's
 UnknownSurface rejection; structural parsing must not erase that response.
@@ -123,6 +127,8 @@ transfer kinds remain representable, but the other family payloads, executors,
 prompt UI, production launcher and descriptor passing are absent capabilities.
 They must not be synthesized by transport migration. An operation requiring
 an absent executor cannot report successful execution.
+Only Clipboard has a payload encoding in this version; PayloadBegin for another
+kind returns EOPNOTSUPP before custody. Allowed alone promises no executor.
 
 ### Portal retained identities
 
@@ -150,6 +156,9 @@ one allocation per grant. A slot is bound to an active transfer, source
 generation and broker generation. The first writer owns it; stale fids cannot
 write a later binding. One candidate staging buffer is at most 344 bytes.
 At most one accepted candidate awaits its custody ack.
+The owner initially admits one requester export at a time. After disconnect,
+issued executor custody and its buffer must settle before replacement admission.
+Parallel exports require a separate aggregate budget and admission decision.
 
 Use 256 journal records and 32,768 retained bytes. On TransferRequest, reserve
 Submitted (48), Decision (up to 88) and, before granting, a terminal Outcome
@@ -181,8 +190,11 @@ executor custody must be settled by its owner, never reported as unexecuted.
 
 ## Implementation evidence required
 
-Before publishing wire layouts, reconcile all fields and sizes with this
-decision and check complete byte coverage, enum values and overflow bounds.
+The wire-layout checks validate complete byte coverage, kind classes, preserved
+rejection values and custody arithmetic directly from both KDL files. Eight
+malformed-layout controls cover overlap, gaps, row overflow, duplicate kinds,
+wrong kind class, undersized body, shifted generation and reversed bounds.
+They are design checks, not independent clients or runtime state-machine proofs.
 Before replacing either socket, require independent C and Rust SDK exchanges
 with the real export, malformed/replay/capacity controls, protected admission,
 and a deliberate refusal-drain/ack-deadline test. Broker tests must kill partial
@@ -192,7 +204,7 @@ capacity, including reconnect and duplicate IDs after settlement. Executor
 tests must prove no action on an incomplete/stale/foreign transfer and exactly
 one terminal outcome across cancellation races.
 
-No old socket is removed by this draft. The correct WM-file owner reference is
+No old socket is removed by this design. The correct WM-file owner reference is
 crates/sophia-session/src/live_session/policy_transport_worker/ninep/. Existing
 metadata-chain, broker transport, portal socket and X clipboard tests remain the
 behavioral inventory for their replacements.
@@ -208,11 +220,20 @@ preserves those semantics within an advertised bound.
 
 ## Acceptance and connections
 
-Proposed. No wire layout, export implementation, default selection or socket
-removal is accepted by this note. In particular, the earlier evidence-only KDL
-still needs the corrections above; it must not be copied into an SDK as a
-finished contract. The finite portal-history ceiling and the separate requester
-admission context require explicit owner changes and regression evidence.
+Accepted as a design on 2026-09-28 under niltempus's instruction to complete
+t264–t274 and use native 9P interfaces through one SDK per language. It was
+first published as proposed in c70cfae53. Root reconciled all eight findings
+from the draft review against the existing codecs and owners, then checked the
+source KDL with four layout tests, including eight malformed-layout controls.
+The contracts linked above replace the earlier evidence-only wire drafts.
+
+Acceptance covers authority, custody, bounded resources and the target layouts.
+It does not accept an export implementation, SDK implementation, default change
+or socket removal. The finite portal-history ceiling and separate requester
+admission context still require owner changes and regression evidence. The
+implementation evidence above remains mandatory; t255 qualification is not
+waived by finishing t273's design work. Review and gate evidence are recorded
+in the linked investigation.
 
 - [IPC inventory and t273 review](../investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
   owns the migration evidence and points to the prior draft review.

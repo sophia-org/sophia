@@ -1657,6 +1657,44 @@ transfer history across reconnects without requiring ordered caller IDs. The
 earlier evidence-only KDL is not a finished contract and still needs those
 changes before SDK consumption. This is design progress, not t273 acceptance.
 
+### Broker and portal contract reconciliation (t273, 2026-09-28)
+
+The subsequent [decision](../decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md)
+is accepted as a design. The [broker](../../sophia-broker-files.md) and
+[portal](../../sophia-portal-files.md) contracts now carry the corrected native
+KDL; the earlier evidence-only drafts above remain historical. This satisfies
+t273's design scope without asserting an implemented portal, removing a socket,
+or bypassing t255 qualification.
+
+All eight root review findings are resolved in the design: rejection 5 and
+optional values retained; terminal refusal draining; full broker receipt
+accounting; explicit PortalRequester admission; every portal receipt and
+reserved terminal counted; the Session WM owner reference corrected; and a
+finite retained identity history across reconnect. Only Clipboard has a payload
+encoding. Replacement admission waits for old executor custody and its buffer
+to settle. Partial acks cannot extend refusal draining. The portal budget
+explicitly backpressures before 322 lifecycle records exceed its 256-record
+ceiling; it does not claim byte room implies record room.
+
+The source test `broker_portal_file_layouts` parses both actual KDL files and
+checks complete byte coverage, kind classes, preserved rejection values,
+candidate sizes and custody arithmetic. Four tests pass, including eight
+malformed-layout controls. The first focused run found a test-helper lookup
+error (object declaration selected instead of body); its log is retained.
+These are design checks, not independent client, executor or admission proofs.
+
+Evidence under
+`~/.local/state/sophia/development-evidence/ipc-retirement/`:
+`t273-contract-review.md`, `t273-layout-focused.log`,
+`t273-layout-focused-run2.log`, and `t273-layout-full.log`.
+The full `cargo xtask check` exits 0: 496 reported result groups, 6,717 passes,
+zero failures and 63 ignored, with SDK checks, clippy, layout and tool verifiers
+passing. It ran offline in the device-hidden sandbox. The count includes
+reported fixture-child results and is not a count of unique tests. Native
+pixel/scanout evidence is not proved in this sandbox; no live session was used.
+The contracts list the real-export, SDK, protected admission, replay, pressure,
+two-row atomicity and execution-race evidence required before replacement.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK

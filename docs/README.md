@@ -49,6 +49,9 @@ wins when prose disagrees.
 - [Namespaces and Portals](namespaces-and-portals.md) defines session identity,
   admission, isolation profiles, capabilities, portal lifecycle, and
   cross-namespace failure behavior.
+- [Broker files](sophia-broker-files.md) and [portal files](sophia-portal-files.md)
+  specify the target 9P replacements, separate admission, bounded custody and
+  native record layouts. Their exports and SDK support are not implemented.
 - [Data-Oriented Design](dod.md) defines the packet, snapshot, typed-ID, and
   private-state rules used across those boundaries.
 - [Style Guide](style-guide.md) defines source-layout and implementation

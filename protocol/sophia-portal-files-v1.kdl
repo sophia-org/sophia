@@ -1,0 +1,159 @@
+// Portal file design for t273; no production owner or file export exists yet.
+// Admission, retained history and custody: docs/sophia-portal-files.md.
+// The portal transfer file contract over 9P2000.L. The portal decision owner
+// serves the export; an admitted requester/executor connection is its client.
+// All bodies are little-endian.
+// Semantics transcribed from crates/sophia-portal/src/{lifecycle,broker,socket}.rs
+// and crates/sophia-protocol/src/{ipc/portal.rs,packets/portal.rs}.
+protocol "sophia_portal_fs_v1" api-version=1 byte-order="little" max-object-bytes=80 {
+    header size=32 {
+        field "total_bytes" type="u32" offset=0
+        field "api_version" type="u16" offset=4 value=1
+        field "kind" type="u16" offset=6
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "submission_id" type="u64" offset=16
+        field "sequence" type="u64" offset=24
+    }
+
+    object "Limits" kind=1
+    event "Negotiated" kind=16
+    event "Refused" kind=17
+    event "Submitted" kind=18
+    event "Decision" kind=32
+    event "TransferOutcome" kind=33
+    candidate "Negotiate" kind=256
+    candidate "TransferRequest" kind=257
+    candidate "PayloadBegin" kind=258
+    candidate "PayloadEnd" kind=259
+    candidate "TransferCancel" kind=260
+
+    // Record 32 + 48 = 80. Defaults/ceilings: max_transfers 64
+    // (PORTAL_ACTIVE_TRANSFER_CAPACITY), max_payload_bytes 65536
+    // (SOPHIA_IPC_MAX_PAYLOAD_LEN and MAX_CLIPBOARD_TEXT_HANDOFF_BYTES),
+    // max_mime_bytes 255, upload_slots 1, journal 256 records/32768 bytes,
+    // staging 344 bytes, assembly 12000ms, ack 2000ms, identity history 4096.
+    // Broker generation/history are shared across this owner's connections.
+    body "Limits" size=48 {
+        field "interface_revision" type="u16" offset=0 value=1
+        field "upload_slots" type="u16" offset=2 value=1
+        field "max_transfers" type="u32" offset=4 min=1 max=64
+        field "max_payload_bytes" type="u32" offset=8 min=1 max=65536
+        field "max_mime_bytes" type="u16" offset=12 value=255
+        field "reserved" type="u16" offset=14 value=0
+        field "journal_records" type="u32" offset=16 min=4 max=256
+        field "journal_bytes" type="u32" offset=20 min=280 max=32768
+        field "assembly_timeout_ms" type="u32" offset=24 min=1 max=12000
+        field "ack_progress_timeout_ms" type="u32" offset=28 min=1 max=2000
+        field "staging_bytes" type="u32" offset=32 value=344
+        field "max_retained_transfers" type="u32" offset=36 min=1 max=4096
+        field "broker_generation" type="u64" offset=40 nonzero=#true
+    }
+
+    body "Negotiate" size=8 {
+        field "minimum_revision" type="u16" offset=0
+        field "maximum_revision" type="u16" offset=2
+        field "reserved" type="u32" offset=4 value=0
+    }
+    body "Negotiated" size=16 {
+        field "selected_revision" type="u16" offset=0 value=1
+        field "reserved" type="u16" offset=2 value=0
+        field "reserved_mid" type="u32" offset=4 value=0
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+    }
+    body "Refused" size=8 {
+        field "reason" type="u16" offset=0 value=1
+        field "reserved" type="u16" offset=2 value=0
+        field "reserved_tail" type="u32" offset=4 value=0
+    }
+    body "Submitted" size=16 {
+        field "submission_id" type="u64" offset=0 nonzero=#true
+        field "candidate_kind" type="u16" offset=8 min=256 max=260
+        field "reserved" type="bytes" offset=10 size=6 value=0
+    }
+
+    // Record 32 + 312 = 344. The requester's decision field is omitted: the
+    // lifecycle requires Pending (lifecycle.rs valid_request).
+    // source_may_publish and target_may_request are omitted: the owner
+    // derives both from the namespaces Session admitted for this connection
+    // and from their NamespaceCapabilities, never from this record.
+    // Normative:
+    //   - admitted transfers are nonzero and never reused in a broker generation;
+    //     zero IDs, zero generation/deadline reach the lifecycle Denied response;
+    //   - both namespaces are nonzero and distinct, and both are within the
+    //     connection's admitted namespace set (else EACCES at submit);
+    //   - kind is 1-7 (clipboard, drag_and_drop, file_handoff, screen_capture,
+    //     screen_recording, uri_open, notification);
+    //   - deadline_msec is on the owner's monotonic clock;
+    //   - mime_present is 0 or 1; when 0, mime_len and the mime bytes are 0;
+    //     when 1, 0 <= mime_len <= 255, UTF-8 (empty allowed), zero padded.
+    body "TransferRequest" size=312 {
+        field "transfer" type="u64" offset=0
+        field "source_namespace" type="u64" offset=8 nonzero=#true
+        field "target_namespace" type="u64" offset=16 nonzero=#true
+        field "kind" type="u16" offset=24 min=1 max=7
+        field "mime_present" type="u8" offset=26 min=0 max=1
+        field "reserved" type="u8" offset=27 value=0
+        field "mime_len" type="u16" offset=28 max=255
+        field "reserved_mid" type="u16" offset=30 value=0
+        field "byte_size" type="u64" offset=32
+        field "generation" type="u64" offset=40
+        field "deadline_msec" type="u64" offset=48
+        field "mime" type="bytes" offset=56 size=255
+        field "reserved_tail" type="u8" offset=311 value=0
+    }
+
+    // Record 32 + 56 = 88.
+    //   decision 1 = denied: every other field except transfer is zero; no
+    //     reason is disclosed. Transfer may be zero only for Denied.
+    //   decision 2 = allowed: the grant (state 1 active).
+    body "Decision" size=56 {
+        field "transfer" type="u64" offset=0
+        field "decision" type="u8" offset=8 min=1 max=2
+        field "grant_state" type="u8" offset=9 max=1
+        field "kind" type="u16" offset=10 max=7
+        field "reserved" type="u32" offset=12 value=0
+        field "source_namespace" type="u64" offset=16
+        field "target_namespace" type="u64" offset=24
+        field "source_generation" type="u64" offset=32
+        field "broker_generation" type="u64" offset=40
+        field "deadline_msec" type="u64" offset=48
+    }
+
+    // Record 32 + 24 = 56. It binds one upload slot to one active grant; this
+    // attach becomes the slot's only writer.
+    body "PayloadBegin" size=24 {
+        field "transfer" type="u64" offset=0 nonzero=#true
+        field "slot" type="u16" offset=8 value=0
+        field "reserved" type="u16" offset=10 value=0
+        field "reserved_mid" type="u32" offset=12 value=0
+        field "total_bytes" type="u64" offset=16 max=65536
+    }
+    // Record 32 + 16 = 48. total_bytes equals the begin value and the bytes
+    // written.
+    body "PayloadEnd" size=16 {
+        field "transfer" type="u64" offset=0 nonzero=#true
+        field "total_bytes" type="u64" offset=8 max=65536
+    }
+    // Record 32 + 8 = 40.
+    body "TransferCancel" size=8 {
+        field "transfer" type="u64" offset=0 nonzero=#true
+    }
+    // Record 32 + 16 = 48. state 2 completed, 3 revoked (including executor
+    // failure, cancel and namespace disconnect), 4 expired.
+    body "TransferOutcome" size=16 {
+        field "transfer" type="u64" offset=0 nonzero=#true
+        field "state" type="u8" offset=8 min=2 max=4
+        field "reserved" type="bytes" offset=9 size=7 value=0
+    }
+
+    submit size=24 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "submission_id" type="u64" offset=8 nonzero=#true
+        field "candidate_bytes" type="u32" offset=16 min=40 max=344
+        field "reserved" type="u32" offset=20 value=0
+    }
+    ack size=16 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "sequence" type="u64" offset=8 nonzero=#true
+    }
+}

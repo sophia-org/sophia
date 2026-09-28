@@ -16,6 +16,7 @@ Current contracts are identified in the [documentation map](../../README.md).
 
 | [Independent native launcher admission and presented input](../decisions/f64wqfh2-independent-native-launcher-admission-and-presented-input-contract.md) | Proposed 2026-09-16 | Bemenu beside Lom; independent admission, presented text lease and catalog activation; wire/runtime work pending |
 | [Carry descriptor families as native shell file records](../decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md) | Proposed 2026-09-28 | Preserve descriptor, tab, shortcut, reference and launcher functionality through native file records; codecs, export and independent peer acceptance pending |
+| [Keep broker and portal file authority and custody separate](../decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md) | Design accepted 2026-09-28 | Separate native role contracts, atomic broker responses, explicit portal admission and bounded history; exports, SDKs and socket retirement remain unimplemented |
 
 Use `zk adr --title "The proposed choice"` to start a record. It begins as
 `proposed`. Add it here with its status and keep this table consistent when a

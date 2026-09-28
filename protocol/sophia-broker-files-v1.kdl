@@ -1,0 +1,187 @@
+// Metadata broker file design for t273; export implementation is pending.
+// Semantics and lifecycle: docs/sophia-broker-files.md.
+// Session serves the export; the protected broker process is its single
+// client. Bodies are this contract's own native layouts, all little-endian.
+// Based on the implemented protocol/sophia-broker-v1.kdl,
+// crates/sophia-protocol/src/ipc/broker_v1.rs and crates/sophia-broker/src/metadata.rs.
+// No IPC envelope is carried. Offsets are bytes within the body, after the header.
+protocol "sophia_broker_fs_v1" api-version=1 byte-order="little" max-object-bytes=72 {
+    header size=32 {
+        field "total_bytes" type="u32" offset=0
+        field "api_version" type="u16" offset=4 value=1
+        field "kind" type="u16" offset=6
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "submission_id" type="u64" offset=16
+        field "sequence" type="u64" offset=24
+    }
+
+    // Kind classes as in the WM and shell file contracts:
+    //   objects: submission_id = sequence = 0
+    //   events: submission_id = 0, sequence > 0
+    //   candidates: submission_id > 0, sequence = 0
+    object "Limits" kind=1
+    event "Negotiated" kind=16
+    event "Refused" kind=17
+    event "Submitted" kind=18
+    event "BrokerRequest" kind=32
+    candidate "Negotiate" kind=256
+    candidate "ResponseSet" kind=257
+
+    rejection "unknown_surface" value=1
+    rejection "stale_generation" value=2
+    rejection "capacity_exhausted" value=3
+    rejection "disclosure_exceeded" value=4
+    rejection "invalid_connection_epoch" value=5
+
+    // Total record = 32 + 40 = 72 bytes; immutable per connection epoch.
+    // Default values: interface_revision 2, max_surfaces 1024,
+    // max_label_bytes 128, max_response_rows 2, journal_records 16,
+    // journal_bytes 4096, staging_bytes 512, response_timeout_ms 5000,
+    // ack_progress_timeout_ms 2000, assembly_timeout_ms 12000.
+    body "Limits" size=40 {
+        field "interface_revision" type="u16" offset=0 value=2
+        field "reserved" type="u16" offset=2 value=0
+        field "max_surfaces" type="u32" offset=4 min=1 max=1024
+        field "max_label_bytes" type="u16" offset=8 min=1 max=128
+        field "max_response_rows" type="u16" offset=10 value=2
+        field "journal_records" type="u32" offset=12 min=4 max=16
+        field "journal_bytes" type="u32" offset=16 min=352 max=4096
+        field "staging_bytes" type="u32" offset=20 min=448 max=512
+        field "response_timeout_ms" type="u32" offset=24 min=1 max=5000
+        field "ack_progress_timeout_ms" type="u32" offset=28 min=1 max=2000
+        field "assembly_timeout_ms" type="u32" offset=32 min=1 max=12000
+        field "reserved_tail" type="u32" offset=36 value=0
+    }
+
+    // Record 32 + 8 = 40. An invalid/unsupported revision range gets Refused.
+    // The only semantic revision is 2 (broker_v1 revision 2, with the action grant).
+    body "Negotiate" size=8 {
+        field "minimum_revision" type="u16" offset=0
+        field "maximum_revision" type="u16" offset=2
+        field "reserved" type="u32" offset=4 value=0
+    }
+
+    // Record 32 + 24 = 56. It carries the ServerWelcome values.
+    // connection_epoch equals the header epoch.
+    body "Negotiated" size=24 {
+        field "selected_revision" type="u16" offset=0 value=2
+        field "reserved" type="u16" offset=2 value=0
+        field "max_surfaces" type="u32" offset=4 min=1 max=1024
+        field "connection_epoch" type="u64" offset=8 nonzero=#true
+        field "max_label_bytes" type="u16" offset=16 min=1 max=128
+        field "max_response_rows" type="u16" offset=18 value=2
+        field "reserved_tail" type="u32" offset=20 value=0
+    }
+
+    // Record 32 + 8 = 40. reason 1 = invalid/unsupported revision range.
+    // Keep the refused journal readable until terminal ack or drain deadline.
+    body "Refused" size=8 {
+        field "reason" type="u16" offset=0 value=1
+        field "reserved" type="u16" offset=2 value=0
+        field "reserved_tail" type="u32" offset=4 value=0
+    }
+
+    // Record 32 + 16 = 48. It records custody only.
+    body "Submitted" size=16 {
+        field "submission_id" type="u64" offset=0 nonzero=#true
+        field "candidate_kind" type="u16" offset=8 min=256 max=257
+        field "reserved" type="bytes" offset=10 size=6 value=0
+    }
+
+    // Record 32 + 168 = 200. One Session request. request_kind values:
+    //   1 surface_admitted, 2 candidate_reduced, 3 attention_changed,
+    //   4 surface_removed, 5 set_disclosure.
+    // Field use by kind; every field a kind does not use is zero:
+    //   1: surface, value = namespace_profile (1 classic_shared, 2 confined)
+    //   2: surface, value = disclosure (1 none, 2 class_only, 3 full),
+    //      redacted, label_present, label_len, label, candidate_generation
+    //   3: surface, value = attention (1 none, 2 notice, 3 critical)
+    //   4: surface; value = 0
+    //   5: surface, value = disclosure
+    // Label rules: label_present is 0 or 1. When it is 0, label_len and every
+    // label byte are 0. When it is 1: 0 <= label_len <= 128; the declared
+    // bytes are UTF-8, including empty/control text; trailing padding is zero.
+    // redacted = 1 requires label_present = 1.
+    // Raw surface and candidate generation reach the reducer, preserving
+    // UnknownSurface and StaleGeneration instead of a structural refusal.
+    // request is nonzero and strictly increasing for the Session owner's
+    // lifetime. It is never reused, even across connection epochs.
+    body "BrokerRequest" size=168 {
+        field "request" type="u64" offset=0 nonzero=#true
+        field "request_kind" type="u16" offset=8 min=1 max=5
+        field "reserved" type="u16" offset=10 value=0
+        field "reserved_tail" type="u32" offset=12 value=0
+        field "surface_index" type="u32" offset=16
+        field "surface_generation" type="u32" offset=20
+        field "value" type="u16" offset=24
+        field "redacted" type="u8" offset=26 min=0 max=1
+        field "label_present" type="u8" offset=27 min=0 max=1
+        field "label_len" type="u16" offset=28 max=128
+        field "label_reserved" type="u16" offset=30 value=0
+        field "candidate_generation" type="u64" offset=32
+        field "label" type="bytes" offset=40 size=128
+    }
+
+    // Record 32 + 416 = 448, the largest record, so staging_bytes >= 448.
+    // One atomic, bounded answer to exactly one BrokerRequest. It names the
+    // request and echoes its kind. row_count is 1 or 2, and rows[row_count..]
+    // are all zero. The whole record is validated before custody; see the
+    // markdown's "Requests and atomic responses". No row takes effect unless every row and the
+    // set shape are valid for the pending request.
+    body "ResponseSet" size=416 {
+        field "request" type="u64" offset=0 nonzero=#true
+        field "request_kind" type="u16" offset=8 min=1 max=5
+        field "row_count" type="u16" offset=10 min=1 max=2
+        field "reserved" type="u32" offset=12 value=0
+        field "rows" type="row:ResponseRow" offset=16 count=2
+    }
+
+    // 200 bytes. Row kinds: 1 publish_rule, 2 emit_descriptor, 3 retire_surface,
+    // 4 rejected, 5 no_change. Field use by kind; every unused field is zero:
+    //   1: surface, disclosure (1-3), trust (1-4), icon_present and icon
+    //      (present zero is representable), generation = rule generation
+    //   2: surface, trust, attention (1-3), icon_present and icon,
+    //      label_redacted, label_present, label_len, label,
+    //      generation = descriptor generation (nonzero), grant_token != 0,
+    //      grant_revocation_epoch != 0, grant_target_generation = generation
+    //   3: surface
+    //   4: rejection in value (1 unknown_surface, 2 stale_generation,
+    //      3 capacity_exhausted, 4 disclosure_exceeded, 5 invalid_connection_epoch).
+    //      Value 5 remains distinct from wrong-outer-epoch ESTALE.
+    //   5: none
+    // For kinds 4 and 5, surface is (0, 0). Label rules as BrokerRequest;
+    // label_redacted = 1 requires label_present = 1.
+    row "ResponseRow" size=200 {
+        field "row_kind" type="u16" offset=0 min=1 max=5
+        field "value" type="u16" offset=2
+        field "reserved" type="u32" offset=4 value=0
+        field "surface_index" type="u32" offset=8
+        field "surface_generation" type="u32" offset=12
+        field "disclosure" type="u16" offset=16
+        field "trust" type="u16" offset=18
+        field "attention" type="u16" offset=20
+        field "icon_present" type="u8" offset=22 min=0 max=1
+        field "label_redacted" type="u8" offset=23 min=0 max=1
+        field "icon" type="u64" offset=24
+        field "generation" type="u64" offset=32
+        field "grant_token" type="u64" offset=40
+        field "grant_revocation_epoch" type="u64" offset=48
+        field "grant_target_generation" type="u64" offset=56
+        field "label_present" type="u8" offset=64 min=0 max=1
+        field "label_reserved" type="u8" offset=65 value=0
+        field "label_len" type="u16" offset=66 max=128
+        field "reserved_tail" type="u32" offset=68 value=0
+        field "label" type="bytes" offset=72 size=128
+    }
+
+    submit size=24 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "submission_id" type="u64" offset=8 nonzero=#true
+        field "candidate_bytes" type="u32" offset=16 min=40 max=448
+        field "reserved" type="u32" offset=20 value=0
+    }
+    ack size=16 {
+        field "connection_epoch" type="u64" offset=0 nonzero=#true
+        field "sequence" type="u64" offset=8 nonzero=#true
+    }
+}
