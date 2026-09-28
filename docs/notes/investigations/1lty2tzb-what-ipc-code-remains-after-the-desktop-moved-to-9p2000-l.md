@@ -262,6 +262,25 @@ generated capability/outcome constants, row-layout contract, and runtime
 endpoint/error ownership still need relocation; t267 remains open. The full
 workspace gate belongs to the completed relocation before its main merge.
 
+### File-owned row layouts (t267, 2026-09-27)
+
+The generated fixed-row codec now lives in `sophia-protocol::wm_rows` and
+imports only neutral byte-cursor helpers and `BinaryCodecError`. The legacy
+envelope module imports those rows. The file schema now owns the complete
+ordinary and capability-gated row layouts, constants and aggregate maxima;
+the generator reads them directly, with a separate compatibility comparison
+against the frozen socket schema. KDL boolean literals use the standard
+`#true` spelling so the whole file contract can be parsed by the generator.
+
+The byte layouts are unchanged: generated C bindings, golden frame and row
+corpora, and the legacy generated documentation have no diff. All 269 protocol
+tests and five generator tests pass, including refusals for row width, gate,
+capability, outcome, limit and revision drift. Strict clippy, formatting and
+generator freshness checks pass. Evidence remains in `ipc-retirement/`.
+The contract text changes require coordinated SDK snapshot updates before the
+full combined gate or main merge; no SDK snapshot was patched in place. The
+semantic codec and runtime endpoint/error relocations remain in progress.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
