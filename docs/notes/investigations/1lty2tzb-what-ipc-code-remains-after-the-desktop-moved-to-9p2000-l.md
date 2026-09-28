@@ -1625,6 +1625,13 @@ Evidence under `development-evidence/ipc-retirement`:
   fails three owner checks; independently removing terminal byte reservations
   fails the byte-budget test. Four failures are expected. The source tree was
   not changed by either mutant.
+- `t272-custody-full.log`: the complete offline `cargo xtask check` passes on
+  the code signed as `80df2c4ce`: 496 test groups, 6,714 passed, zero failed,
+  63 ignored, followed by SDK snapshot checks, workspace clippy, formatting,
+  layout and tool verifiers. The sandbox hides devices and live-session paths;
+  buffer-age and GLX/EGL physical proofs are explicitly unproved there, and the
+  direct-scanout archive corpus is absent. This is deterministic acceptance
+  of the code change, not physical output acceptance.
 
 The [implementation draft](../../sophia-output-files.md) records limits and
 custody rules. File-node lifetime, immutable snapshot retention, exact
@@ -1641,6 +1648,14 @@ separate admission and no new authority inferred from a path or attach.
 They are not implemented exports. Existing wire values and implemented
 operations must be retained; absent portal executors must not be described
 as live capabilities.
+
+The [corrected broker/portal decision proposal](../decisions/xa78u03g-keep-broker-and-portal-file-authority-and-custody-separate.md)
+preserves rejection 5 and optional-text representation, specifies refusal
+draining, accounts for every receipt and reserved terminal record, and separates
+portal requester admission from the decision-owner role. It proposes finite
+transfer history across reconnects without requiring ordered caller IDs. The
+earlier evidence-only KDL is not a finished contract and still needs those
+changes before SDK consumption. This is design progress, not t273 acceptance.
 
 ## Validation and remaining work
 
