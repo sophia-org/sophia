@@ -129,6 +129,7 @@ impl ShellComponentTransport {
             + self.native_control.credits()
             + self.descriptor_state.response_credits
             + self.tab_state.response_credits
+            + self.reference_state.response_credits
     }
 
     /// Checks the post-transfer inventory of one admitted record without
@@ -187,11 +188,13 @@ impl ShellComponentTransport {
                 + usize::from(self.indicator_response.is_some())
                 + self.descriptor_state.response_credits
                 + self.tab_state.response_credits
+                + self.reference_state.response_credits
                 < UNLIMITED_RECORDS
                 && self.fifo_bytes().saturating_add(bytes).saturating_add(
                     (usize::from(self.indicator_response.is_some())
                         + self.descriptor_state.response_credits)
                         .saturating_add(self.tab_state.response_credits)
+                        .saturating_add(self.reference_state.response_credits)
                         * self.control_record_bytes(),
                 ) <= UNLIMITED_BYTES
         }
@@ -203,9 +206,12 @@ impl ShellComponentTransport {
         self.fifo_records()
             + self.descriptor_state.response_credits
             + self.tab_state.response_credits
+            + self.reference_state.response_credits
             < UNLIMITED_RECORDS
             && self.fifo_bytes().saturating_add(bytes).saturating_add(
-                (self.descriptor_state.response_credits + self.tab_state.response_credits)
+                (self.descriptor_state.response_credits
+                    + self.tab_state.response_credits
+                    + self.reference_state.response_credits)
                     * self.control_record_bytes(),
             ) <= UNLIMITED_BYTES
     }

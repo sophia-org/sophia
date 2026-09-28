@@ -64,12 +64,11 @@ impl LiveMetadataShell {
         self.reference.presentation_deadline = None;
         if let Some((tx, _, mut outcome)) = self.reference.pending.take() {
             outcome.kind = ShellV1CandidateOutcomeKind::Superseded;
-            self.transport.send_async(
-                encode_shell_reference_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
-            )?;
+            self.transport.send_reference_outcome(tx, outcome)?;
         }
         if self.reference.request.is_some() {
             self.reference.cancelled_request = true;
+            self.transport.cancel_reference_request();
         } else {
             self.reference.catalog = None;
         }
@@ -149,11 +148,7 @@ impl LiveMetadataShell {
                 entries: shortcut_rows(shortcuts),
             };
             let tx = self.take_transaction()?;
-            for frame in
-                encode_shell_shortcut_catalog(tx, &catalog).map_err(|e| format!("{e:?}"))?
-            {
-                self.transport.send_async(frame)?;
-            }
+            self.transport.publish_shortcuts(tx, &catalog)?;
             self.reference.catalog = Some(catalog);
             self.reference.catalog_source = Some(source);
         }
@@ -169,9 +164,7 @@ impl LiveMetadataShell {
                 self.reference.presentation_deadline = None;
                 outcome.presentation_epoch = presentation_epoch;
                 outcome.kind = ShellV1CandidateOutcomeKind::Presented;
-                self.transport.send_async(
-                    encode_shell_reference_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
-                )?;
+                self.transport.send_reference_outcome(tx, outcome)?;
                 self.reference.presented = if candidate.visible {
                     Some((
                         candidate.clone(),
@@ -192,12 +185,23 @@ impl LiveMetadataShell {
                 self.reference.pending = Some((tx, candidate, outcome));
             }
         }
-        if let Some(frame) = self
-            .transport
-            .poll_kind(IpcMessageKind::ShellReferenceCandidate)?
+        let event = self.transport.poll_reference_candidate()?;
+        if let Some(sophia_runtime::ShellReferenceCandidateEvent::Refused(tx)) = &event
+            && self
+                .reference
+                .request
+                .as_ref()
+                .is_some_and(|(expected, _, _)| expected == tx)
         {
-            let (tx, candidate) =
-                decode_shell_reference_candidate(&frame).map_err(|e| format!("{e:?}"))?;
+            self.reference.request = None;
+            if self.reference.cancelled_request {
+                self.reference.cancelled_request = false;
+                self.reference.catalog = None;
+            }
+            return Ok(());
+        }
+        if let Some(sophia_runtime::ShellReferenceCandidateEvent::Candidate(tx, candidate)) = event
+        {
             let (expected, request, _) = self
                 .reference
                 .request
@@ -213,7 +217,20 @@ impl LiveMetadataShell {
                     o.generation != request.output_generation || o.descriptor.is_none()
                 })
             {
-                return Err("stale reference candidate".into());
+                self.transport.send_reference_outcome(
+                    tx,
+                    ShellReferenceOutcome {
+                        connection_epoch: epoch,
+                        catalog_generation: candidate.catalog_generation,
+                        request_generation: candidate.request_generation,
+                        candidate_generation: candidate.candidate_generation,
+                        presentation_epoch: 0,
+                        page: 0,
+                        pages: 1,
+                        kind: ShellV1CandidateOutcomeKind::Rejected,
+                    },
+                )?;
+                return Ok(());
             }
             self.reference.last_candidate = candidate.candidate_generation;
             if self.reference.cancelled_request {
@@ -229,9 +246,7 @@ impl LiveMetadataShell {
                     pages: 1,
                     kind: ShellV1CandidateOutcomeKind::Superseded,
                 };
-                self.transport.send_async(
-                    encode_shell_reference_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
-                )?;
+                self.transport.send_reference_outcome(tx, outcome)?;
                 return Ok(());
             }
             let bounds = self.outputs[&candidate.output]
@@ -253,13 +268,32 @@ impl LiveMetadataShell {
                 .catalog
                 .as_ref()
                 .ok_or("reference catalog missing")?;
-            let (projection, page, pages) = sophia_engine::reference_sheet_projection(
+            let projection = sophia_engine::reference_sheet_projection(
                 &candidate,
                 catalog,
                 projection_id,
                 bounds,
                 |text, size| self.reference.measure.measure(text, size),
-            )?;
+            );
+            let (projection, page, pages) = match projection {
+                Ok(value) => value,
+                Err(_) => {
+                    self.transport.send_reference_outcome(
+                        tx,
+                        ShellReferenceOutcome {
+                            connection_epoch: epoch,
+                            catalog_generation: candidate.catalog_generation,
+                            request_generation: candidate.request_generation,
+                            candidate_generation: candidate.candidate_generation,
+                            presentation_epoch: 0,
+                            page: 0,
+                            pages: 1,
+                            kind: ShellV1CandidateOutcomeKind::Rejected,
+                        },
+                    )?;
+                    return Ok(());
+                }
+            };
             runtime.set_descriptor_overlay(
                 candidate.visible.then_some(projection),
                 scene,
@@ -275,9 +309,7 @@ impl LiveMetadataShell {
                 pages,
                 kind: ShellV1CandidateOutcomeKind::Prepared,
             };
-            self.transport.send_async(
-                encode_shell_reference_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
-            )?;
+            self.transport.send_reference_outcome(tx, outcome)?;
             self.reference.pending = Some((tx, candidate, outcome));
             self.reference.presentation_deadline = Some(Instant::now() + Duration::from_secs(5));
         }
@@ -339,9 +371,7 @@ impl LiveMetadataShell {
                 .map_or(0, |(_, o, _)| o.presentation_epoch),
             operation,
         };
-        self.transport.send_async(
-            encode_shell_reference_request(tx, request).map_err(|e| format!("{e:?}"))?,
-        )?;
+        self.transport.begin_reference_request(tx, request)?;
         self.reference.request = Some((tx, request, Instant::now() + Duration::from_secs(5)));
         Ok(())
     }

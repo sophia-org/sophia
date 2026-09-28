@@ -23,6 +23,9 @@ mod owner;
 #[path = "support/shell_file_tabs_owner.rs"]
 mod tabs;
 
+#[path = "support/shell_file_reference_owner.rs"]
+mod reference;
+
 struct Fixture {
     transport: ShellComponentTransport,
     epochs: ContentEpochRegistry,
