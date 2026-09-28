@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Literal native envelopes and rows from spec/proposed/, independent of the
+/* Literal native envelopes and rows from spec/, independent of the
  * old framed codec and of the Rust SDK. Header offsets are included here. */
 #define HEADER(n, k)                                                                               \
     [0] = (n) & 255, [1] = (n) >> 8, [4] = 1, [6] = (k) & 255, [7] = (k) >> 8, [8] = 9, [16] = 5,  \

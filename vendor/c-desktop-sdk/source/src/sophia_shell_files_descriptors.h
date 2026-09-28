@@ -2,7 +2,7 @@
 #define SOPHIA_SHELL_FILES_DESCRIPTORS_H
 #include "sophia_shell_files_roles.h"
 
-/* Development descriptor values, pinned to spec/proposed/.
+/* Descriptor values, pinned to spec/.
  * These passive records do not grant the descriptor role or implement a
  * session. Transactions are body identities, distinct from submission IDs.
  * Decoded text and row views borrow the immutable source record. */

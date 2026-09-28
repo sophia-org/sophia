@@ -32,13 +32,13 @@ continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
 
-Development descriptor work covers all seventeen proposed native envelopes:
+Descriptor support covers all seventeen native envelopes:
 three whole objects, eight events, two activation acknowledgements and four
-presentation candidates in `spec/proposed/`. It validates envelopes, identities,
+presentation candidates in `spec/sophia-shell-files-v1.kdl`. It validates envelopes, identities,
 bounded text, row counts and uniqueness, action/connection bindings, style and
 outcome relationships using literal vectors. Snapshots and larger candidate
 rows borrow caller-owned encoded storage; fixed candidate arrays remain bounded.
-The development descriptor profile validates its explicit api role and exact
+The descriptor profile validates its explicit api role and exact
 selected capabilities, supports metadata-only and combined content readiness,
 and tracks fetch/ack holds for every disclosed feed. Scripted tests exercise
 partial reads, EOF, supersession, qid/generation matching and capability
@@ -51,7 +51,11 @@ The queued session accepts separate caller-owned transaction storage through
 fragmented writes, immutable hand-off, atomic refusal, reservations, paced
 same-id retry and disconnect custody. Existing initializers retain 8 KiB inline
 staging; per-kind codec limits and the total queue bound remain unchanged.
-No descriptor conformance peer or production-export result is claimed yet.
+Sophia's independent C peer exercises all seventeen families against the
+production export, all three descriptor host modes and the launcher host.
+Its protected CPU presentation test checks reservation changes only after
+matching presentation. These are deterministic gates, not physical GPU or
+installed-desktop acceptance.
 The proposal remains separate from the published API-1 contract and does not
 change `compatibility.json`.
 

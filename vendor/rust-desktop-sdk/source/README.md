@@ -19,9 +19,9 @@ serve.
 
 The protocol crate also carries the descriptor, tabs, shortcut/reference and
 revision-4 launcher records, native file codecs and pure validation. This
-development branch adds the descriptor client role against the separate
-`spec/descriptor-files-proposal.kdl` proposal. Its scripted-peer tests do not
-establish production server support; the published contract is unchanged.
+descriptor client role follows `spec/sophia-shell-files-v1.kdl` and
+`spec/sophia-shell-descriptors.md`. Scripted-peer tests cover custody and
+disclosure; Sophia separately tests these clients against its production export.
 
 ## Contracts
 

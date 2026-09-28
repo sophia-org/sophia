@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Independent literal file vectors from the proposed KDL, not IPC frames or
+/* Independent literal file vectors from the native file KDL, not IPC frames or
  * output from another SDK. Designated byte offsets include the 32-byte header. */
 #define TX UINT64_C(0x8877665544332211)
 #define EVENT(n, k)                                                                                \

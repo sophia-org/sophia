@@ -1,4 +1,4 @@
-/* Native variable-length candidates from spec/proposed/descriptor-layout.kdl. */
+/* Native variable-length candidates from spec/sophia-shell-files-v1.kdl. */
 #include "descriptors_internal.h"
 
 size_t sf_descriptor_candidate_size(const struct sophia_sf_record *r)

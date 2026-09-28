@@ -50,7 +50,7 @@ its pin without overflowing the buffer or terminating the session. Storage must
 remain alive and separate from client/wire state until disposal; returned views
 remain borrowed until the next fetch.
 
-The development `SOPHIA_SF_DESCRIPTOR` profile uses `spec/proposed/`. Its api
+The `SOPHIA_SF_DESCRIPTOR` profile uses `spec/sophia-shell-descriptors.md`. Its api
 must name `descriptor`, and its offer must obey that proposal's revision and
 capability dependencies. `sophia_ss_welcome` exposes the validated selection.
 Metadata-only sessions become ready after bootstrap Submitted and Negotiated
@@ -60,7 +60,7 @@ shortcut announcements participate in the same fetch/ack holds as other feeds:
 full decode, matching qid/generation and an EOF probe precede release.
 `sophia_sf_client_init_buffers` and `sophia_ss_open_fd_staging` support caller-owned
 large transaction scratch. A 52,488-byte transaction buffer accommodates all
-proposed candidates (including 8,260-byte maximum tab candidates); provide
+native candidates (including 8,260-byte maximum tab candidates); provide
 separate queue capacity for the desired admission group. The queue retains its
 512 KiB total bound and 64-slot bound. The transaction buffer must be separate
 from queue storage, object scratch and the session; the initializer checks all

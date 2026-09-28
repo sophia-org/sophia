@@ -123,3 +123,22 @@ strict clippy in both configurations and formatting clean. Compiled mutations
 removing the role gate, snapshot ack hold and Limits grant-epoch check each
 fail their specific assertions. Production export and independent C peer
 gates remain outstanding; the branch stays unpublished.
+
+## Accepted descriptor file contract
+
+`spec/sophia-shell-files-v1.kdl`, `spec/sophia-shell-files.md` and
+`spec/sophia-shell-descriptors.md` are copied unmodified from signed Sophia
+`3330ecf7701356ffc42eb986c294ab6ffe422229`. The seventeen descriptor kinds and
+twenty-four body/prefix/row layouts are now part of the normative file KDL;
+their bytes and validation rules match the earlier proposal. The separate
+proposal copies are removed. This supersedes the development-only contract
+status above, without changing the library's wire behavior.
+
+Sophia's independent C production-export test covers all seventeen kinds
+(`8fa095da3`); its protected C CPU work-area test (`6e7ddf8ea`) checks matching
+presentation before reservation changes. Descriptor proof/serve/bar-proof and
+launcher hosts (`85158df80`) use the C SDK peer. Session startup is fixed to
+9P at `6fdee6049`, with 704 passing tests and the protected C presentation
+assertions retained. Narthex's thin C bindings at `c49dd92` pass local and
+protected host tests. These are deterministic and isolated development gates;
+no installed-desktop or physical GPU claim is added by this contract update.

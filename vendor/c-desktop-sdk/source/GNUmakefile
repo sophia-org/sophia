@@ -70,7 +70,6 @@ check-ipc: $(addprefix $(BUILD)/ipc-,$(IPC_TESTS))
 
 check-spec:
 	sha256sum --check spec/SHA256SUMS
-	sha256sum --check spec/proposed/SHA256SUMS
 # Needs python3; not part of check because Python is not a build dependency.
 check-generator:
 	python3 -B tools/generate_wm_rows.py --check

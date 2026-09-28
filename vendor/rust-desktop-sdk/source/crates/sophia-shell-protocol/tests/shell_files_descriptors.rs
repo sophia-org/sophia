@@ -420,14 +420,21 @@ fn large_tab_candidate_uses_its_own_bound_not_the_content_candidate_cap() {
 }
 
 #[test]
-fn proposal_kind_caps_and_fixed_prefixes_match_the_native_encoders() {
-    let proposal: kdl::KdlDocument = include_str!("../../../spec/descriptor-files-proposal.kdl")
+fn contract_kind_caps_and_fixed_prefixes_match_the_native_encoders() {
+    let contract: kdl::KdlDocument = include_str!("../../../spec/sophia-shell-files-v1.kdl")
         .parse()
         .unwrap();
-    let declarations: Vec<_> = proposal
+    let children = contract.nodes()[0].children().unwrap();
+    let declarations: Vec<_> = children
         .nodes()
         .iter()
         .filter(|n| matches!(n.name().value(), "object" | "event" | "candidate"))
+        .filter(|n| {
+            matches!(
+                n.get("kind").and_then(kdl::KdlValue::as_integer),
+                Some(5..=7 | 46..=53 | 273..=278)
+            )
+        })
         .collect();
     assert_eq!(declarations.len(), 17);
     for case in cases() {
@@ -450,7 +457,7 @@ fn proposal_kind_caps_and_fixed_prefixes_match_the_native_encoders() {
             }
         );
         let name = decl.get(0).and_then(kdl::KdlValue::as_string).unwrap();
-        let block = proposal
+        let block = children
             .nodes()
             .iter()
             .find(|n| {

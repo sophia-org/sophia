@@ -5,7 +5,7 @@
 
 /* The caller explicitly chooses this native file backend and supplies the
  * admitted fd through wire. No discovery, protocol sniffing or fallback.
- * The descriptor profile is development-only (spec/proposed). */
+ * The descriptor profile follows spec/sophia-shell-descriptors.md. */
 enum sophia_sf_profile { SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK,
                          SOPHIA_SF_DESCRIPTOR };
 /* Progress of the most recent submission. STAGED: its Tsubmit is not queued or
@@ -80,7 +80,7 @@ int sophia_sf_client_init(struct sophia_sf_client *, struct sophia_9p_client *,
  * NULL with capacity 0 selects the inline 1 KiB buffer. The base initializer
  * selects BAR with that buffer. Launcher/dock offers require their exact masks
  * and a revision range containing 7/8. No implicit role/protocol fallback.
- * Descriptor offers require bit 0 and the proposed revision/dependency rules.
+ * Descriptor offers require bit 0 and the descriptor revision/dependency rules.
  * The api must explicitly name descriptor. Metadata-only readiness requires
  * consumption of bootstrap Submitted and Negotiated, without a Limits fetch;
  * combined content additionally waits for valid Limits. */

@@ -1,5 +1,5 @@
-/* Native controls from spec/proposed/descriptor-layout.kdl, with the value
- * relationships in descriptor-records.md. No socket framing or IPC codecs. */
+/* Native controls from spec/sophia-shell-files-v1.kdl, with the value
+ * relationships in sophia-shell-descriptors.md. No socket framing or IPC codecs. */
 #include "descriptors_internal.h"
 
 size_t sf_descriptor_size(const struct sophia_sf_record *r)

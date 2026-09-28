@@ -142,13 +142,6 @@ fn block_size(node: &KdlNode, keyword: &str, name: &str) -> usize {
 pub fn parse_kdl() -> Kdl {
     let doc = parse_document();
     let children = protocol_children(&doc);
-    // This branch implements the proposed descriptor codecs before enabling
-    // their client role. Keep the unchanged published contract and the exact
-    // proposal separate until the production/independent-peer gates pass.
-    let descriptor_proposal: KdlDocument =
-        include_str!("../../../../../spec/descriptor-files-proposal.kdl")
-            .parse()
-            .expect("descriptor proposal KDL");
     let mut bodies = Vec::new();
     let mut prefixes = Vec::new();
     let mut rows = Vec::new();
@@ -156,7 +149,7 @@ pub fn parse_kdl() -> Kdl {
     let mut header = None;
     let mut submit = None;
     let mut ack = None;
-    for node in children.nodes().iter().chain(descriptor_proposal.nodes()) {
+    for node in children.nodes() {
         let keyword = node.name().value();
         match keyword {
             "body" | "body-prefix" | "row" => {

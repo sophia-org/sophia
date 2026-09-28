@@ -83,6 +83,9 @@ candidates that role may exchange.
 - [Sophia Indicator Descriptor](sophia-indicator-descriptor.md) defines the
   policy-authored desktop status carried on the layout commit, the bounds that
   cannot change later, and the rendering tiers that consume it.
+- [Descriptor shell files](sophia-shell-descriptors.md) defines the admitted
+  9P descriptor, tabs, shortcut/reference and launcher profile, including
+  candidate custody and presentation-dependent work-area changes.
 - [WM v1 Freeze Surface](wm-v1-freeze-surface.md) enumerates which retained port
   rows can force a `sophia_wm_v1` layout change, what each expansion move costs,
   and the decisions that must be settled before the freeze forecloses them.

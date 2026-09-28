@@ -1,10 +1,9 @@
 # Shell files over 9P2000.L
 
 Status: **accepted contract (t251, accepted by the operator on 2026-09-26).**
-Nothing here is implemented yet; t252 implements it. `sophia_shell_v1` over its
-existing socket remains the only shell transport and the installed default
-until t252's gates pass. The items under "Open decisions" stay open and do not
-block t252. Source references
+The content and descriptor exports are implemented. Descriptor contract
+acceptance is recorded under t271; remaining IPC compatibility retirement is
+tracked separately. The items under "Open decisions" stay open. Source references
 are to the tree this draft was written against (signed `2f9c2220`, based on
 `11d6deef9`).
 
@@ -54,7 +53,7 @@ refused, never silently downgraded (`docs/sophia-shell-v1-direction.md`).
 | One private 0700 endpoint per component, one active peer, protected launch under Bubblewrap | `crates/sophia-runtime/src/policy_socket.rs`, `crates/sophia-session/src/live_session/metadata_shell/component_session.rs` |
 | Peer admission by supervisor evidence; the evidence "is a declaration the supervisor makes, not a proof" | `policy_socket.rs:270-274` (`authorize_protected_peer`) |
 | One content epoch registry for all components: 64 MiB, three active epochs, sixteen retained | `shell_component_connections.rs:86`; `crates/sophia-runtime/src/shell_content/epoch_registry.rs:59-61, 93-95` |
-| Legacy descriptor shell (Narthex): one endpoint, mutually exclusive with components | `crates/sophia-session/src/live_session/metadata_shell.rs` |
+| Descriptor component: one 9P endpoint, mutually exclusive with independent content components | `crates/sophia-session/src/live_session/metadata_shell.rs` |
 | Direct GPU: a separate per-component grant; content and GPU permissions do not imply each other | ADR `mn4mzcnf`, `live_session/metadata_shell/gpu.rs` |
 
 ### Content limits
@@ -535,12 +534,12 @@ B5 moves the seam up to typed values on both sides of the transport:
   each wire enforces its own byte bounds. This removes the socket-shaped
   charge the file wire inherited in B4.
 
-Legacy descriptor paths (`reference.rs`, `tabs.rs` and the descriptor launcher
-flow) keep sending frames until that profile moves to files.
-
-The legacy descriptor profile's feeds (`descriptors`, `tabs`, `shortcuts`)
-and records get kinds when that profile moves to files; until then it stays
-on its socket, and the purge inventory lists it.
+The descriptor profile carries its feeds and owner records as native objects,
+events and candidates. Its admission, exact values, semantic refusals and
+presentation rules are specified in [descriptor shell files](sophia-shell-descriptors.md).
+Its seventeen kinds and twenty-four body/prefix/row layouts are included in
+`sophia-shell-files-v1.kdl`. Session selects this role before negotiation;
+capability bit 0 on an ordinary content component grants no descriptor authority.
 
 Objects are published as `outputs` is: fits-then-qid-then-announce, pinned on
 open, `EBUSY` for a second pin, a fresh qid whenever the bytes change. Each

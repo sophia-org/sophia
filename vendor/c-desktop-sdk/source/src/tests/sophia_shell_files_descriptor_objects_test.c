@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Native file vectors authored from the proposed KDL. No IPC or Rust codec. */
+/* Native file vectors authored from the native file KDL. No IPC or Rust codec. */
 #define GENERATION UINT64_C(0x0102030405060708)
 #define HEADER(n, k)                                                                               \
     [0] = (n) & 255, [1] = (n) >> 8, [4] = 1, [6] = (k), [8] = 9, [32] = 11, [40] = 9, [48] = 17

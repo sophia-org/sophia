@@ -1,13 +1,13 @@
-tree 0f0a236a2997f13a48685e3bc1c85a2f956e1cc4
-parent 2a793dcdb5bd865a83212d0e4333dc44e3a97b05
-author Mason Green <mason@greenm01.net> 1790577540 -0400
-committer Mason Green <mason@greenm01.net> 1790577540 -0400
+tree 9df2ec04564d0e7e721302efdd0471e5d999a9f7
+parent 33e01b3d4102350dbc6c7918de22922e07ab8402
+author Mason Green <mason@greenm01.net> 1790596750 -0400
+committer Mason Green <mason@greenm01.net> 1790596750 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaroLhAAKCRBXGEu2KoAA
- YlNGAP0bsVE9FtuS1/Wcrr1FpkR75vqnmblNGXCWRhqAK7pv0gD9FzD3anOp9eHn
- LWnAX+Uz7iM9ifJ0zkSaEB715tI0IQg=
- =1pnr
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarpWjgAKCRBXGEu2KoAA
+ YisaAP4sx1b52rojRvnEKymQaUNg5O2Pow2AADCuAH/cv7zz0QEA2TSNpI+SR718
+ nWxXXDSGbEOIHHUbjCkFh+/xT26E7gk=
+ =v8qB
  -----END PGP SIGNATURE-----
 
-Add capability-bound descriptor file client and custody controls
+Pin the accepted native descriptor file contract

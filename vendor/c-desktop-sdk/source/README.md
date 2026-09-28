@@ -26,9 +26,11 @@ WM file record codecs and a bounded WM session pass scripted-peer tests and
 Sophia's production WM export gate, and Hagia uses them through thin Nim
 bindings. Output authority and admin file clients are not implemented yet.
 
-Development descriptor codecs and profile selection use separately pinned
-proposed layouts in `spec/proposed/`. Scripted session tests cover readiness
-and snapshot custody; the independent production-export gate remains pending.
+Descriptor codecs and profile selection use the native layouts in
+`spec/sophia-shell-files-v1.kdl` and the rules in `spec/sophia-shell-descriptors.md`.
+Scripted tests cover readiness and snapshot custody. Sophia's independent C
+production-export, descriptor host and protected presentation gates cover this
+SDK's descriptor role; see provenance for the candidates and limits.
 See [coverage](COVERAGE.md#parity-gate) for the remaining migration work.
 
 The WM file codec (`sophia_wm_files.h`) covers API-1 envelopes, typed scalar

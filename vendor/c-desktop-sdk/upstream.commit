@@ -1,13 +1,13 @@
-tree 72116c3cade2ee57e3bd5b96addae35b5d2b4a56
-parent 4816e5e9c275a30efca2a218a427c5ab6c2e2a8e
-author Mason Green <mason@greenm01.net> 1790587990 -0400
-committer Mason Green <mason@greenm01.net> 1790587990 -0400
+tree 5a008f2e8c369384cf452fd1af12f009ee4c453a
+parent 2b00a7766c856b36e3604d68087b90f747bc1296
+author Mason Green <mason@greenm01.net> 1790596765 -0400
+committer Mason Green <mason@greenm01.net> 1790596765 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaro0VgAKCRBXGEu2KoAA
- Yl1MAQCqvlfzoa907e19hGvmAE4r5APGz+Ixpy6+EiUB03O9MwEAqK+U/Q3YKYoI
- U0do7knKj4+nFBJ5HRig4OTTwOsEfAE=
- =yYG1
+ iHQEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarpWnQAKCRBXGEu2KoAA
+ YuJlAPiH7m277KGqQLUR2JrE/0ifW3QYuzXIQkeMQJxz0w0yAP9jpcNp4QtVP3Uw
+ ahaehCA+2I1LHWLUjg85bwmKkqHvBw==
+ =kQzn
  -----END PGP SIGNATURE-----
 
-Support large queued descriptor records with caller-owned staging
+Pin accepted descriptor layouts and lifecycle rules

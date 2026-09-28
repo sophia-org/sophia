@@ -1324,6 +1324,29 @@ Neither is selectable by production descriptor startup. Their removal belongs
 with the remaining owner/fixture migration; this does not close t271 or repair
 the SDK contract-drift failure recorded above.
 
+### Normative descriptor contract and SDK pins (t271, 2026-09-28)
+
+Signed `3330ecf77` accepts ADR `4oapm903` on the implemented native wire and
+recorded independent C evidence. All seventeen kind declarations and twenty-four
+body/prefix/row layouts now live in `protocol/sophia-shell-files-v1.kdl`;
+`docs/sophia-shell-descriptors.md` owns the role, scalar, semantic-refusal,
+custody and presentation rules. The original layout fragment remains historical.
+SDK builds no longer read a proposed-layout fragment or an evolving ADR.
+
+C SDK `88347eb7b37816450863e4de582f1c01e80d446a` and Rust SDK
+`f6b177c` copy the three normative shell file inputs from that signed Sophia
+commit, with provenance and digest manifests. The C strict gate passes with
+and without IPC compatibility. Rust passes 326 default-feature tests and 338
+all-feature tests, plus strict clippy and formatting. The native KDL completeness
+tests now read the normative file alone, retaining all descriptor cap and
+literal-layout assertions. Evidence is `descriptor-contract-{c,rust}-*.log`
+in `development-evidence/ipc-retirement/`.
+
+Both SDKs are re-vendored from their signed commit objects. Sophia's same-contract
+checks now bind the descriptor rules document and full KDL, removing the ADR
+drift identified above. The full repository gate is being rerun against those
+snapshots; no full-gate, publication or task-completion claim is made here.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

@@ -1,4 +1,4 @@
-/* Role selection and disclosure from spec/proposed/descriptor-records.md. */
+/* Role selection and disclosure from spec/sophia-shell-descriptors.md. */
 #include "session_internal.h"
 
 int sf_descriptor_offer(const struct sophia_sf_negotiate *offer)
