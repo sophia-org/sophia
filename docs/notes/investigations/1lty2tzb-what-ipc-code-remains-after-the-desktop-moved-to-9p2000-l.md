@@ -802,6 +802,46 @@ Production descriptor selection, protected presentation/action acceptance,
 independent C SDK peers and Narthex migration remain incomplete. No task is
 closed by this slice, nothing is published and no live session changed.
 
+### Protected descriptor profile selection (t271, 2026-09-28)
+
+Candidate `9a4d0f184` adds the explicit single-shell development selection
+`--shell-transport=9p2000.L --shell-file-profile=descriptor`. The default file
+profile remains content. Configuration refuses a file profile without a single
+9P shell and refuses unknown profile names. Descriptor selection admits
+metadata-only negotiation without Limits and permits combined content only
+through the existing content policy. Independent components retain their own
+role selection. The CLI help and configuration guide describe the proposed
+contract's current acceptance limits.
+
+Session selects the descriptor admission method before negotiation and retains
+the normal protected launch plan, endpoint environment, supervisor and deadline.
+The new fixture executes a real SDK peer under that plan, with only its test
+harness arguments replacing `--serve`. It checks that the child has the 9P
+endpoint, no retired endpoint, no display variables and no DRM devices. The
+parent negotiates revision 8 without content, receives a native descriptor
+candidate, ends that epoch and launches a new child at the next epoch. A
+content-profile control refuses the same descriptor peer. This is protected
+startup and transport evidence, not an Engine presentation/work-area commit or
+application launch proof; the parent drives transport directly after startup.
+
+The final isolated gate passed 53 configuration, 96 native Session metadata and
+50 runtime tests (199 parent tests; nested child summaries are not counted).
+Strict clippy across config/runtime/Session/CLI with all targets/features,
+layout, formatting and whitespace checks passed. Evidence is
+`ipc-retirement/t271-selector-gate2.log`. The separate `component_reconnect`
+filter selected zero tests, but those eight tests ran under their actual
+`metadata_shell::component_session::reconnect_tests` names in the metadata run.
+The compiled selector mutation admitting a descriptor under the content profile
+failed the explicit refusal assertion (`t271-selector-mutant-role.log`).
+
+Earlier fixture failures are retained: the focused run unwrapped PeerClosed
+during cleanup, then its cleanup edit accidentally removed SDK I/O polling
+and caused a candidate timeout in `t271-selector-gate.log`. The final fixture
+polls I/O, handles only PeerClosed as a normal end and panics on other errors.
+Nothing was retried against a live session. Independent C descriptor peers,
+protected presentation/action acceptance, pending reference invalidation review
+and Narthex migration still precede t271 completion and IPC deletion.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
