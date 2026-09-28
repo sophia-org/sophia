@@ -105,6 +105,27 @@ impl ShellSessionTransport {
             timeout,
             content_policy,
         )?;
+        self.finish_file_negotiation()
+    }
+
+    /// Explicit descriptor admission for a metadata-only or combined shell.
+    /// This selection comes from the host, never from the client's bit mask.
+    pub fn accept_descriptor_files_with_content_policy(
+        &mut self,
+        connection_epoch: u64,
+        timeout: Duration,
+        content_policy: ShellContentAdmissionPolicy,
+    ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
+        self.state.begin_descriptor_file_negotiation(
+            &self.content_epochs,
+            connection_epoch,
+            timeout,
+            content_policy,
+        )?;
+        self.finish_file_negotiation()
+    }
+
+    fn finish_file_negotiation(&mut self) -> Result<ShellV1ServerWelcome, ShellTransportError> {
         loop {
             if let Some(welcome) = self
                 .state

@@ -463,6 +463,7 @@ fn native_shell_preparation_does_not_execute_or_negotiate() {
     let mut shell = crate::live_session::metadata_shell::LiveMetadataShell::prepare(
         "/bin/false",
         sophia_config::ShellTransportSelection::CurrentIpc,
+        sophia_config::ShellFileProfile::Content,
         Some(32),
         true,
         true,

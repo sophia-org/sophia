@@ -108,6 +108,7 @@ pub(super) struct LiveMetadataShell {
     gpu: gpu::ShellGpuLaunchPolicy,
     transport: sophia_runtime::ShellSessionTransport,
     wire: sophia_config::ShellTransportSelection,
+    file_profile: sophia_config::ShellFileProfile,
     slots: BTreeMap<SurfaceId, u16>,
     next_slot: u16,
     outputs: BTreeMap<sophia_protocol::OutputId, ShellOutputIdentity>,
@@ -704,7 +705,10 @@ impl LiveMetadataShell {
                 sophia_runtime::ShellSessionTransport::accept_and_negotiate_with_content_policy
             }
             sophia_config::ShellTransportSelection::NineP2000L => {
-                sophia_runtime::ShellSessionTransport::accept_files_with_content_policy
+                match self.file_profile {
+                    sophia_config::ShellFileProfile::Content => sophia_runtime::ShellSessionTransport::accept_files_with_content_policy,
+                    sophia_config::ShellFileProfile::Descriptor => sophia_runtime::ShellSessionTransport::accept_descriptor_files_with_content_policy,
+                }
             }
         };
         let welcome = match negotiate(

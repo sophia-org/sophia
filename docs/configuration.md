@@ -747,11 +747,20 @@ carry close that component rather than falling back.
 
 The single-process launcher also accepts
 `--shell-process=/absolute/client --shell-transport=9p2000.L`. Its default is
-`current-ipc`. A file selection requires enabled shell content and a positive
-panel allowance; descriptor-only switchers still lack a file contract and are
-refused at configuration time. Independent components must select the wire in
-their own profile instead of using this flag. Both paths pass exactly one
-socket variable and retain the same protected-peer admission and content owners.
+`current-ipc`. With files, `--shell-file-profile=content` is the default and
+requires enabled shell content and a positive panel allowance. The explicit
+development selection `--shell-file-profile=descriptor` admits the descriptor
+vocabulary before negotiating the peer: metadata-only shells need no content
+grant, while combined descriptor/content shells retain normal content policy
+and limits. A client's capability bits cannot choose that profile. The
+descriptor-file contract remains proposed under t271; independent C client and
+protected presentation acceptance are still pending.
+
+`--shell-file-profile` requires a single shell using `--shell-transport=9p2000.L`.
+Independent components select the wire and role in their own profile instead
+of using these flags. Both paths pass exactly one socket variable and retain
+the same protected-peer admission and content owners. Selection applies at
+startup and does not alter a running connection's vocabulary.
 
 The generic `shell-gpu-content-proof` and `shell_content_conformance_host CLIENT`
 serve only `sophia_shell_fs_v1` over 9P2000.L, and their records name

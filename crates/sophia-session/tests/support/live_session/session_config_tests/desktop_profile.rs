@@ -54,9 +54,25 @@ session { terminal "terminal"; browser "browser"; }
     let mut unsupported = explicit.clone();
     unsupported.push("--shell-transport=9p2000.L".into());
     assert!(PersistentXtermSessionConfig::from_args(&unsupported).unwrap_err().to_string().contains("requires shell content"));
+    let mut descriptor = unsupported.clone();
+    descriptor.push("--shell-file-profile=descriptor".into());
+    let config = PersistentXtermSessionConfig::from_args(&descriptor).unwrap();
+    assert_eq!(config.shell_file_profile, sophia_config::ShellFileProfile::Descriptor);
+    assert!(!config.shell_content_enabled);
+    for value in ["", "auto", "native-launcher"] {
+        let mut bad = unsupported.clone();
+        bad.push(format!("--shell-file-profile={value}"));
+        assert!(PersistentXtermSessionConfig::from_args(&bad).unwrap_err().to_string().contains("shell file profile must be"));
+    }
+    let mut wrong_wire = explicit.clone();
+    wrong_wire.push("--shell-file-profile=descriptor".into());
+    assert!(PersistentXtermSessionConfig::from_args(&wrong_wire).unwrap_err().to_string().contains("requires a single shell process using"));
     let content_profile = std::fs::read_to_string(&path).unwrap()
         .replace("shell { enabled #true; }", "shell { enabled #true; content #true; panel 24; }");
     std::fs::write(&path, content_profile).unwrap();
+    let combined = PersistentXtermSessionConfig::from_args(&descriptor).unwrap();
+    assert_eq!(combined.shell_file_profile, sophia_config::ShellFileProfile::Descriptor);
+    assert!(combined.shell_content_enabled);
 
     for (value, expected) in [
         ("current-ipc", sophia_config::ShellTransportSelection::CurrentIpc),

@@ -582,6 +582,17 @@ impl PersistentXtermSessionConfig {
             }
             None => sophia_config::ShellTransportSelection::default(),
         };
+        let shell_file_profile = match arg_value(args, "--shell-file-profile") {
+            Some(value) => {
+                if shell_process.is_none()
+                    || shell_transport != sophia_config::ShellTransportSelection::NineP2000L
+                {
+                    return Err("--shell-file-profile requires a single shell process using --shell-transport=9p2000.L".into());
+                }
+                sophia_config::ShellFileProfile::parse(&value)?
+            }
+            None => sophia_config::ShellFileProfile::default(),
+        };
         // Component configs are explicit per-role grants, never the legacy
         // ambient config or the installed fallback shell's private settings.
         let shell_config = if independent_shell { None } else { std::env::var_os("SOPHIA_SHELL_CONFIG")
@@ -615,9 +626,10 @@ impl PersistentXtermSessionConfig {
             sophia_config::desktop_profile_shell_content_input_enabled(&desktop_profile);
         let shell_gpu_mode = sophia_config::desktop_profile_shell_gpu_mode(&desktop_profile);
         if shell_transport == sophia_config::ShellTransportSelection::NineP2000L
+            && shell_file_profile == sophia_config::ShellFileProfile::Content
             && !shell_content_enabled
         {
-            return Err("--shell-transport=9p2000.L requires shell content; the descriptor profile has no file contract yet".into());
+            return Err("the content file profile requires shell content; use --shell-file-profile=descriptor for metadata-only shells".into());
         }
         if independent_shell {
             if !shell_content_enabled {
@@ -879,6 +891,7 @@ impl PersistentXtermSessionConfig {
             wm_process_executable_grants,
             shell_process,
             shell_transport,
+            shell_file_profile,
             shell_shortcuts_enabled: live_shell_enabled,
             shell_config,
             shell_panel_thickness,

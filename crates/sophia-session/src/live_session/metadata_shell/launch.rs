@@ -5,6 +5,7 @@ impl LiveMetadataShell {
     pub(in crate::live_session) fn start(
         executable: &str,
         wire: sophia_config::ShellTransportSelection,
+        file_profile: sophia_config::ShellFileProfile,
         panel_thickness: Option<u16>,
         content_requested: bool,
         content_input_requested: bool,
@@ -15,6 +16,7 @@ impl LiveMetadataShell {
         let mut shell = Self::prepare(
             executable,
             wire,
+            file_profile,
             panel_thickness,
             content_requested,
             content_input_requested,
@@ -31,6 +33,7 @@ impl LiveMetadataShell {
     pub(in crate::live_session) fn prepare(
         executable: &str,
         wire: sophia_config::ShellTransportSelection,
+        file_profile: sophia_config::ShellFileProfile,
         panel_thickness: Option<u16>,
         content_requested: bool,
         content_input_requested: bool,
@@ -73,6 +76,7 @@ impl LiveMetadataShell {
             transport,
             wire,
             slots: BTreeMap::new(),
+            file_profile,
             next_slot: 1,
             outputs: BTreeMap::new(),
             next_connection_epoch: 1,
