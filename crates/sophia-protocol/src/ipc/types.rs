@@ -126,41 +126,6 @@ pub struct IpcFrameHeader {
     pub payload_len: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IpcCodecError {
-    Truncated,
-    BadMagic,
-    UnsupportedVersion(u16),
-    UnknownMessageKind(u16),
-    PayloadTooLarge(usize),
-    ReservedNonZero(u32),
-    TrailingBytes(usize),
-    CountTooLarge {
-        count: usize,
-        max: usize,
-    },
-    TextTooLarge {
-        field: &'static str,
-        len: usize,
-        max: usize,
-    },
-    FieldTooLarge {
-        field: &'static str,
-        len: usize,
-        max: usize,
-    },
-    InvalidTransaction(u64),
-    InvalidProfileIdentity(&'static str),
-    InvalidUtf8 {
-        field: &'static str,
-    },
-    InvalidEnum {
-        field: &'static str,
-        value: u32,
-    },
-    InvalidBool {
-        field: &'static str,
-        value: u8,
-    },
-    InvalidRecord(&'static str),
-}
+// Kept only as a source-compatible name for legacy socket callers. The
+// shared record codecs and their errors are owned outside the IPC module.
+pub use crate::BinaryCodecError as IpcCodecError;

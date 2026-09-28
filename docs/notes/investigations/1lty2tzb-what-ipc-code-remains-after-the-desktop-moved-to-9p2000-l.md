@@ -242,6 +242,26 @@ role, including negative controls, before deleting their socket fixtures.
 This classification required source inspection only; no output-role or live
 session test was run. The output role still needs its 9P contract and peer.
 
+### Shared-code relocation, first slice (t267, 2026-09-27)
+
+The first change moves scalar policy validation from `ipc/policy_scalars.rs`
+to `policy_scalars.rs` and the common error definition/conversions to
+`codec_error.rs::BinaryCodecError`. WM file payload errors now name that
+neutral type directly. Legacy socket callers retain `IpcCodecError` as an
+alias to the same definition; the neutral owner does not import that alias.
+This preserves variant payloads, Debug output, golden bytes, and both strict
+file validation and the socket adapters' two historical exceptions.
+
+Validation on the change based on `d29f7ed84`: all 269 protocol tests passed,
+including scalar, WM file, malformed/golden and SDK IPC parity tests. Strict
+all-target protocol clippy, workspace formatting and the layout gate passed.
+Evidence: `~/.local/state/sophia/development-evidence/ipc-retirement/`.
+The first clippy run caught a duplicate re-export; the corrected run passed.
+No wire contract or SDK snapshot changed in this slice. The row encoders,
+generated capability/outcome constants, row-layout contract, and runtime
+endpoint/error ownership still need relocation; t267 remains open. The full
+workspace gate belongs to the completed relocation before its main merge.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK

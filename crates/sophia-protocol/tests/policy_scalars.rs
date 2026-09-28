@@ -9,10 +9,10 @@ use sophia_protocol::*;
 
 const INVALID_TARGET: SurfaceId = SurfaceId::new(u32::MAX, 1);
 
-fn field(result: Result<(), IpcCodecError>) -> &'static str {
+fn field(result: Result<(), BinaryCodecError>) -> &'static str {
     match result {
-        Err(IpcCodecError::InvalidEnum { field, .. }) => field,
-        Err(IpcCodecError::CountTooLarge { .. }) => "count",
+        Err(BinaryCodecError::InvalidEnum { field, .. }) => field,
+        Err(BinaryCodecError::CountTooLarge { .. }) => "count",
         other => panic!("expected a refusal, got {other:?}"),
     }
 }
@@ -421,7 +421,7 @@ fn legacy_encoders_reach_the_strict_checks() {
     });
     assert_eq!(
         encode_wm_v1_policy_projection_request(&invalid_focus).err(),
-        Some(IpcCodecError::InvalidEnum {
+        Some(BinaryCodecError::InvalidEnum {
             field: "focus_cause",
             value: 0
         })

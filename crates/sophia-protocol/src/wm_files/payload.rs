@@ -2,7 +2,7 @@
 use super::codec::validate_header;
 use super::codec::{u32_at, u64_at};
 use super::*;
-use crate::IpcCodecError;
+use crate::BinaryCodecError;
 use crate::{OutputId, SurfaceId};
 
 impl From<WmFileCodecError> for WmFilePayloadError {
@@ -11,8 +11,8 @@ impl From<WmFileCodecError> for WmFilePayloadError {
     }
 }
 
-impl From<IpcCodecError> for WmFilePayloadError {
-    fn from(error: IpcCodecError) -> Self {
+impl From<BinaryCodecError> for WmFilePayloadError {
+    fn from(error: BinaryCodecError) -> Self {
         Self::Records(error)
     }
 }

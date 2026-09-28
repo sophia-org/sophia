@@ -5,6 +5,7 @@
 
 mod byte_cursor;
 pub mod capacity;
+mod codec_error;
 pub mod cursor;
 pub mod geometry;
 pub mod ids;
@@ -13,11 +14,13 @@ pub mod ipc;
 pub mod packets;
 pub mod policy_behavior;
 pub mod policy_profile;
+pub mod policy_scalars;
 pub mod presentation;
 pub mod table;
 pub mod wm_files;
 
 pub use capacity::*;
+pub use codec_error::BinaryCodecError;
 pub use cursor::*;
 pub use geometry::*;
 pub use ids::*;
@@ -25,6 +28,7 @@ pub use ipc::*;
 pub use packets::*;
 pub use policy_behavior::*;
 pub use policy_profile::*;
+pub use policy_scalars::*;
 pub use presentation::*;
 pub use shell::*;
 // The shell record model and its file contract are the Rust desktop SDK's

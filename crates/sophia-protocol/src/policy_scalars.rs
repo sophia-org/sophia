@@ -5,28 +5,32 @@
 //! numbering lives here.
 //!
 //! The public validators are strict and are what a new transport calls. The
-//! legacy wrappers reach the same checks through the finer `pub(super)`
+//! legacy wrappers reach the same checks through the finer `pub(crate)`
 //! pieces, and keep privately the two historical acceptances this module does
 //! not grant: a Focus or Interaction target decoded with an invalid index, and
 //! a session-operation target the legacy encoder never checked.
 use std::collections::BTreeSet;
 
-use super::*;
 use crate::{
-    OutputId, PolicyDirtyRequest, PolicyInteractionAxis, PolicyInteractionKind,
+    BinaryCodecError, OutputId, PolicyDirtyRequest, PolicyInteractionAxis, PolicyInteractionKind,
     PolicyInteractionPhase, PolicyPresentationOutcome, PolicyPresentationReceipt,
     PolicyProjectionOutcome, PolicyProjectionRequest, PolicyRequestCause,
-    PolicySessionOperationOutcome, PolicySessionOperationRequest,
+    PolicySessionOperationOutcome, PolicySessionOperationRequest, SOPHIA_WM_CAPABILITY_ACTIONS,
+    SOPHIA_WM_CAPABILITY_OUTPUT_ACTIONS, SOPHIA_WM_CAPABILITY_POINTER_FOCUS,
+    SOPHIA_WM_CAPABILITY_POINTER_INTERACTIONS, SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS,
+    SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES, SOPHIA_WM_OUTCOME_COMMITTED,
+    SOPHIA_WM_OUTCOME_DISCONNECTED, SOPHIA_WM_OUTCOME_REJECTED_INVALID,
+    SOPHIA_WM_OUTCOME_REJECTED_STALE, SOPHIA_WM_OUTCOME_TIMED_OUT,
 };
 
-fn invalid(field: &'static str, value: u32) -> IpcCodecError {
-    IpcCodecError::InvalidEnum { field, value }
+fn invalid(field: &'static str, value: u32) -> BinaryCodecError {
+    BinaryCodecError::InvalidEnum { field, value }
 }
 
 /// A complete, strictly valid projection request, whatever its cause.
 pub fn validate_policy_projection_request(
     request: &PolicyProjectionRequest,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     validate_projection_request_identity(
         request.connection_epoch,
         request.request_id,
@@ -58,9 +62,9 @@ pub const fn policy_request_cause_capabilities(cause: &PolicyRequestCause) -> u6
 }
 
 /// One to sixteen valid, distinct outputs.
-pub fn validate_policy_affected_outputs(outputs: &[OutputId]) -> Result<(), IpcCodecError> {
+pub fn validate_policy_affected_outputs(outputs: &[OutputId]) -> Result<(), BinaryCodecError> {
     if outputs.is_empty() || outputs.len() > crate::POLICY_MAX_OUTPUTS {
-        return Err(IpcCodecError::CountTooLarge {
+        return Err(BinaryCodecError::CountTooLarge {
             count: outputs.len(),
             max: crate::POLICY_MAX_OUTPUTS,
         });
@@ -74,7 +78,7 @@ pub fn validate_policy_affected_outputs(outputs: &[OutputId]) -> Result<(), IpcC
     Ok(())
 }
 
-pub fn validate_policy_dirty_request(request: &PolicyDirtyRequest) -> Result<(), IpcCodecError> {
+pub fn validate_policy_dirty_request(request: &PolicyDirtyRequest) -> Result<(), BinaryCodecError> {
     validate_dirty_identity(request.connection_epoch, request.policy_generation)?;
     validate_policy_affected_outputs(&request.affected_outputs)
 }
@@ -82,7 +86,7 @@ pub fn validate_policy_dirty_request(request: &PolicyDirtyRequest) -> Result<(),
 /// A strict session-operation request: its target, when present, is valid.
 pub fn validate_policy_session_operation_request(
     request: &PolicySessionOperationRequest,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     validate_session_operation_identity(
         request.connection_epoch,
         request.request_id,
@@ -96,7 +100,7 @@ pub fn validate_policy_session_operation_request(
 
 pub fn validate_policy_session_operation_outcome(
     outcome: &PolicySessionOperationOutcome,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     if outcome.connection_epoch == 0 || outcome.request_id == 0 {
         return Err(invalid("session_operation_outcome_identity", 0));
     }
@@ -107,7 +111,7 @@ pub fn validate_policy_session_operation_outcome(
 /// publication and output epoch.
 pub fn validate_policy_presentation_receipt(
     receipt: &PolicyPresentationReceipt,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     if receipt.connection_epoch == 0
         || receipt.publication_generation == 0
         || !receipt.output.is_valid()
@@ -199,33 +203,33 @@ pub const fn policy_interaction_axis_from_code(code: u16) -> Option<PolicyIntera
 // The pieces below are shared with the legacy wrappers, which call them in
 // their historical order. They are not a permissive public mode.
 
-pub(super) fn validate_projection_request_identity(
+pub(crate) fn validate_projection_request_identity(
     connection_epoch: u64,
     request_id: u64,
     scene_generation: u64,
     policy_generation: u64,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     if connection_epoch == 0 || request_id == 0 || scene_generation == 0 || policy_generation == 0 {
         return Err(invalid("projection_request_identity", 0));
     }
     Ok(())
 }
 
-pub(super) fn validate_dirty_identity(
+pub(crate) fn validate_dirty_identity(
     connection_epoch: u64,
     policy_generation: u64,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     if connection_epoch == 0 || policy_generation == 0 {
         return Err(invalid("policy_dirty_identity", 0));
     }
     Ok(())
 }
 
-pub(super) fn validate_session_operation_identity(
+pub(crate) fn validate_session_operation_identity(
     connection_epoch: u64,
     request_id: u64,
     operation: u64,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     if connection_epoch == 0 || request_id == 0 || operation == 0 {
         return Err(invalid("session_operation_identity", 0));
     }
@@ -233,10 +237,10 @@ pub(super) fn validate_session_operation_identity(
 }
 
 /// Every cause check except the validity of a Focus or Interaction target.
-pub(super) fn validate_request_cause_scalars(
+pub(crate) fn validate_request_cause_scalars(
     cause: &PolicyRequestCause,
     affected_outputs: &[OutputId],
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     let action = |activation_serial: u64, action: crate::WmActionId| {
         if activation_serial == 0 || !action.is_valid() {
             return Err(invalid("action_cause", 0));
@@ -297,9 +301,9 @@ pub(super) fn validate_request_cause_scalars(
 }
 
 /// The target validity the legacy decoder does not require.
-pub(super) fn validate_request_cause_targets(
+pub(crate) fn validate_request_cause_targets(
     cause: &PolicyRequestCause,
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     match *cause {
         PolicyRequestCause::Focus { target } if !target.is_valid() => {
             Err(invalid("focus_cause", 0))

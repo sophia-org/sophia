@@ -120,7 +120,7 @@ pub struct WmFileConfiguration {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WmFilePayloadError {
     Envelope(WmFileCodecError),
-    Records(crate::IpcCodecError),
+    Records(crate::BinaryCodecError),
     Identity,
     Capabilities { missing: u64 },
     Value,
