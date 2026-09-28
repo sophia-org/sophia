@@ -885,6 +885,51 @@ candidates, descriptor negotiation and independent C production-export peer
 remain next. Protected Engine presentation/work-area acceptance and Narthex
 thin bindings are also outstanding. No socket path is removed by this slice.
 
+### Independent C presentation candidates (t271, 2026-09-28)
+
+C SDK candidate `aa57dcd803cb380d26aadaf4d8a5e15bf5abd956` adds native
+DescriptorCandidate, TabsCandidate, ReferenceCandidate and LauncherCandidate
+records and their Submitted kind values. The proposal wording is clarified
+at Sophia `348dee082`: a hidden descriptor candidate has no entries, while
+distinct slots may have equal generations. The SDK pins that revised prose;
+the layout fragment is unchanged and the contract remains proposed.
+
+Descriptor and launcher candidates use bounded inline arrays. Tab order and
+reference rows borrow immutable encoded storage, with public row helpers.
+Tab uniqueness uses fixed scratch and heapsort without changing the requested
+order; reference uniqueness uses a bounded slot bitmap. Neither codec decides
+whether a generation is fresh, a page is an owner's projection, an activation
+is authorized or a candidate has been presented. The tab high-bit generation
+remains a semantic owner refusal, not a malformed record. Hidden/empty
+launcher and reference candidates keep their less restrictive value rules.
+
+Evidence in `development-evidence/ipc-retirement/`:
+
+- `t271-c-candidates-check1.log`: full strict C SDK checks pass without IPC.
+- `t271-c-candidates-final.log`: full strict checks, including compatibility,
+  pass after the additional complete one-past-bound controls. Four independent
+  literal vectors, 867 malformed-wire refusals and invalid-value tests cover
+  exact maxima (16 descriptor entries, 1,024 tab groups, 256 reference entries,
+  32 launcher rows), full extra rows, duplicates, selection, reservations,
+  style/text bounds, borrowed lifetimes and unchanged output on errors.
+- `t271-c-candidates-ubsan-trap.log`: candidate and control tests pass with
+  undefined-behavior instrumentation in trap mode. Address-sanitizer support
+  remains unavailable as recorded above.
+- `t271-c-candidates-mutant-hidden.log` and
+  `t271-c-candidates-mutant-duplicate.log`: fresh compiled overlays admitting
+  hidden descriptor entries or duplicate tab groups each fail assertions.
+
+The earlier control suite now reports 1,291 rather than 1,295 malformed-wire
+refusals: four candidate kinds moved out of its unknown-kind list into this
+suite's typed coverage. Its ten literal vectors and remaining controls pass.
+
+The C SDK branch is signed, clean and unpublished. Its existing 8 KiB client
+staging area still cannot submit maximum tab/reference candidates; this slice
+does not claim client support. The three whole snapshot objects and descriptor
+negotiation/storage integration remain before the independent C export peer.
+Protected presentation/work-area proof and Narthex migration remain open. All
+tests were isolated from devices, display, network and the running desktop.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
