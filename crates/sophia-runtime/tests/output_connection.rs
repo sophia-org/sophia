@@ -1,4 +1,5 @@
-//! Output admission, replacement, settlement and epoch rules without wire codecs.
+//! Output admission, replacement, settlement and epoch rules without socket codecs.
+use sophia_protocol::output_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
 
@@ -239,4 +240,72 @@ fn output_disconnect_returns_every_unsettled_identity_and_keeps_last_good_extern
         vec![8, 9]
     );
     assert!(state.active().is_none());
+}
+
+#[test]
+fn native_file_negotiation_keeps_the_existing_capability_and_revision_rules() {
+    for (minimum_revision, maximum_revision, capabilities, expected) in [
+        (1, 1, 3 | (1 << 63), Ok(3)),
+        (1, 1, 2, Err(OutputTransferError::UnsupportedCapability)),
+        (2, 3, 3, Err(OutputTransferError::UnsupportedRevision)),
+        (2, 1, 3, Err(OutputTransferError::UnsupportedRevision)),
+    ] {
+        let body = encode_output_file_negotiate(OutputV1ClientHello {
+            minimum_revision,
+            maximum_revision,
+            capabilities,
+        });
+        let hello = decode_output_file_negotiate(&body).unwrap();
+        let mut state = OutputConnectionState::default();
+        state.connect(7).unwrap();
+        assert_eq!(
+            state.negotiate(hello).map(|welcome| welcome.capabilities),
+            expected
+        );
+    }
+}
+
+#[test]
+fn native_file_proposals_keep_semantic_refusals_and_consume_the_domain_identity() {
+    let snapshot = snapshot();
+    let mut state = negotiated(7);
+    let base = proposal(7, OutputId::from_raw(1));
+    for (index, expected) in [
+        OutputTopologyCandidateError::StaleTopology,
+        OutputTopologyCandidateError::InvalidPrimaryGroup,
+        OutputTopologyCandidateError::InvalidGroup(0),
+        OutputTopologyCandidateError::InvalidHead(DisplayHeadId::INVALID),
+        OutputTopologyCandidateError::UnknownMode(DisplayHeadId::from_raw(1)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut invalid = base.clone();
+        match index {
+            0 => invalid.candidate.base_topology_epoch -= 1,
+            1 => invalid.candidate.primary_group_index = u16::MAX,
+            2 => invalid.candidate.groups[0].logical.x = -1,
+            3 => invalid.candidate.heads[0].head = DisplayHeadId::INVALID,
+            _ => invalid.candidate.heads[0].mode = DisplayModeId::from_raw(999),
+        }
+        let tx = TransactionId::from_raw(index as u64 + 1);
+        let body = encode_output_file_proposal(tx, &invalid).unwrap();
+        let (decoded_tx, decoded) = decode_output_file_proposal(&body, 7).unwrap();
+        assert_eq!(
+            state.admit_proposal(decoded_tx, decoded, &snapshot),
+            Err(OutputTransferError::InvalidCandidate(expected))
+        );
+        assert!(state.active().is_none());
+        assert_eq!(
+            state.admit_proposal(tx, base.clone(), &snapshot),
+            Err(OutputTransferError::ReusedTransaction)
+        );
+    }
+    let tx = TransactionId::from_raw(8);
+    let body = encode_output_file_proposal(tx, &base).unwrap();
+    let (decoded_tx, decoded) = decode_output_file_proposal(&body, 7).unwrap();
+    assert_eq!(
+        state.admit_proposal(decoded_tx, decoded, &snapshot),
+        Ok(OutputProposalAdmission::Active)
+    );
 }

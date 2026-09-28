@@ -1516,6 +1516,40 @@ compile warned about a redundant root glob re-export; an explicit public export
 list removes the warning while preserving both facades. The final no-IPC probe
 was regenerated from that corrected source and passes again.
 
+### Native output record foundation (t253/t272, 2026-09-28)
+
+`sophia_protocol::output_files` now implements the native 32-byte envelope,
+submit/ack controls, Negotiate, Submitted, Proposal and Outcome codecs. The
+proposal uses bounded fixed rows, including zeroed unused member slots. It
+preserves separate file-submission, domain-transaction and journal identities.
+The [implementation draft](../../sophia-output-files.md) and
+[proposed decision](../decisions/vkkjmufd-use-native-records-for-the-separate-output-file-role.md)
+describe this slice and the remaining custody decisions. No live export is
+advertised, no existing transport is selected differently, and no socket codec
+is called by the new module.
+
+Eight codec tests check literal bytes, each truncated prefix, reserved fields,
+identity classes, enum/count bounds and the 1,784-byte candidate maximum. Two
+new owner tests prove that decoded unknown requested capability bits still
+intersect at negotiation and that semantic topology refusals still consume the
+domain transaction identity. All seven owner tests and eight codec tests also
+pass with the protocol IPC module removed in a read-only build overlay.
+
+Evidence under `development-evidence/ipc-retirement`:
+`t272-file-codec-final.log` (19 protocol checks, including the existing output
+schema/topology checks), `t272-file-admission-final.log` (7 owner checks),
+`t272-file-codec-noipc.log` (15 checks), and
+`t272-file-codec-{clippy,fmt,layout}.log` (pass). A read-only overlay mutant
+which accepts nonzero reserved bytes fails three named refusal tests in
+`t272-file-codec-reserved-mutant.log`. The private protocol build artifacts were
+cleared afterward and the final normal tests rebuilt the original source.
+
+The remaining object/event bodies, bounded export, independent SDK peer,
+protected recovery and applicable native acceptance are still required. This
+slice does not close t253 or t272. In particular, acknowledged journal records
+do not bound the owner's domain-transaction replay history; the export design
+must address that separately.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
