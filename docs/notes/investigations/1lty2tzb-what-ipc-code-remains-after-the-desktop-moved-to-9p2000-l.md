@@ -1086,6 +1086,62 @@ Independent C production-export conformance, protected Engine presentation
 and work-area checks, Narthex migration and contract acceptance remain pending.
 The desktop and published repository heads were unchanged.
 
+### Independent C descriptor production-export exchange (t271)
+
+Sophia `40b88fc5e` vendors signed C SDK
+`2b00a7766c856b36e3604d68087b90f747bc1296`. The snapshot verifier now also
+compares both proposed descriptor references to this worktree's proposal;
+its contract-drift tests include them. These remain proposed inputs, not an
+accepted or published contract.
+
+`shell_file_descriptor_c` compiles a C-only peer against that snapshot and
+drives `ShellComponentTransport` and its production 9P export. The peer uses
+the C session and native codecs; it does not use Rust encoders or socket-frame
+helpers. Both metadata-only and combined-content negotiations pass with exact
+selected capabilities. Metadata never receives Limits; combined negotiation
+uses the reserved content grant. The harness supplies process authorization
+evidence and semantic presentation calls, so this is not a protected Session
+launch or Engine work-area proof.
+
+All seventeen proposed record families cross the independent boundary. The
+test fetches the maximum 16 descriptors, 1,024 tab groups/2,048 entries, and
+256 shortcuts, plus a 32-entry plain launcher catalog. The C client checks
+decoded rows, epochs, generations and action identities, and keeps each
+publication unacknowledged until its complete object fetch. It submits maximum
+descriptor/tab/reference/launcher candidates (276/8,260/52,488/168 bytes).
+The Rust owners compare the complete resulting values, then send exact
+Prepared/Presented outcomes. Descriptor activation is refused before both
+preparation and presentation; a stale activation acknowledgement cannot settle
+the correct one. Both descriptor and launcher activation acknowledgements
+complete, and disconnect leaves accounting quiescent. No application launch
+or display access occurs.
+
+Evidence in `development-evidence/ipc-retirement/`:
+
+- `t271-c-export-final.log`: the independent C test passes both modes.
+- `t271-c-export-related.log`: 38 tests pass across the new C test, descriptor
+  negotiation/owners, existing C file tests and C r7/r8 role interoperability.
+- `t271-c-export-vendor-tests.log`: snapshot/contract refusal tests pass;
+  `t271-c-queue-vendor-check.log` proves the imported tree and revision.
+- Focused clippy, workspace formatting and layout pass in
+  `t271-c-export-{clippy,fmt,layout}.log`.
+- `t271-c-export-mutant-cap.log`: a freshly compiled C overlay restoring the
+  8 KiB cap fails at maximum tab admission (phase 5).
+- `t271-c-export-mutant-wire.log`: changing a descriptor body's connection
+  epoch immediately before its 9P write, after C-side value validation, gets
+  Refused with remote `EINVAL` (22), not Submitted custody. The positive test
+  fails at phase 1 as required. An earlier encoder-level mutation in
+  `t271-c-export-mutant-epoch.log` was caught by C validation itself; that log
+  is not server-refusal evidence.
+- Failed `check1` and `check2` logs are kept: the new fixture initially used
+  incorrect Rust field types/names, then treated the C event API's `AGAIN` as
+  `BUSY`. Only the fixture changed; no production assertion was relaxed.
+
+All runs are bounded, offline and device/network/display-hidden, with private
+outputs and nice 19/j2. The live desktop and published main branches remain
+unchanged. Protected Engine presentation/work-area evidence, Narthex's thin
+C SDK migration, contract acceptance and IPC removal remain required.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
