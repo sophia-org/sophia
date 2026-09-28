@@ -16,7 +16,9 @@ use crate::{
 mod accounting;
 mod connection;
 pub use connection::ShellTransportConnection;
+mod launcher;
 mod legacy;
+pub use launcher::ShellLauncherCandidateEvent;
 pub(crate) mod native_launcher;
 pub use native_launcher::control::{
     NativeLauncherActivationDecision, NativeLauncherActivationEligibility,
@@ -128,6 +130,7 @@ pub struct ShellComponentTransport {
     descriptor_state: descriptor_state::DescriptorState,
     tab_state: descriptor_state::DescriptorState<sophia_protocol::ShellTabSnapshot>,
     reference_state: reference::ReferenceState,
+    launcher_state: launcher::LauncherState,
     connection_epoch: u64,
     reserved_limits: Option<ContentLimits>,
     content_grant: Option<ContentGrant>,
@@ -159,6 +162,7 @@ impl ShellComponentTransport {
             descriptor_state: descriptor_state::DescriptorState::default(),
             tab_state: descriptor_state::DescriptorState::default(),
             reference_state: reference::ReferenceState::default(),
+            launcher_state: launcher::LauncherState::default(),
             connection_epoch: 0,
             reserved_limits: None,
             content_grant: None,
@@ -207,6 +211,7 @@ impl ShellComponentTransport {
         self.descriptor_state = descriptor_state::DescriptorState::default();
         self.tab_state = descriptor_state::DescriptorState::default();
         self.reference_state = reference::ReferenceState::default();
+        self.launcher_state = launcher::LauncherState::default();
         self.content_grant = None;
         self.content_limits = None;
         self.reserved_limits = None;

@@ -93,7 +93,8 @@ impl ShellComponentTransport {
             + self.native_control.credits()
             + self.descriptor_state.response_credits
             + self.tab_state.response_credits
-            + self.reference_state.response_credits;
+            + self.reference_state.response_credits
+            + self.launcher_state.response_credits;
         let controls = reserved - bulk_records + self.fifo_controls();
         let negotiating = usize::from(self.negotiation.is_some());
         let (wire_records, wire_bytes) = self

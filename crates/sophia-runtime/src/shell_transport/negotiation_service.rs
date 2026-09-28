@@ -190,6 +190,7 @@ impl ShellComponentTransport {
         self.descriptor_state = super::descriptor_state::DescriptorState::default();
         self.tab_state = super::descriptor_state::DescriptorState::default();
         self.reference_state = super::reference::ReferenceState::default();
+        self.launcher_state = super::launcher::LauncherState::default();
         self.capabilities = welcome.capabilities;
     }
 

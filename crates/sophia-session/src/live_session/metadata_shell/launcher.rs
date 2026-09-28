@@ -15,7 +15,6 @@ pub(super) struct LiveLauncherSession {
     worker: Option<ApplicationCatalogWorker>,
     catalog: Option<ApplicationCatalog>,
     descriptors: Option<ShellApplicationCatalog>,
-    outgoing: VecDeque<Vec<u8>>,
     refresh: Option<u64>,
     worker_deadline: Option<Instant>,
     open: Option<OutputId>,
@@ -88,12 +87,11 @@ impl LiveMetadataShell {
         l.queued = None;
         l.presented = None;
         l.refresh = None;
+        self.transport.revoke_launcher();
         if let Some(mut p) = l.pending.take() {
             p.outcome.kind = ShellV1CandidateOutcomeKind::Superseded;
-            self.transport.send_async(
-                encode_shell_launcher_outcome(p.transaction, p.outcome)
-                    .map_err(|e| format!("{e:?}"))?,
-            )?;
+            self.transport
+                .send_launcher_outcome(p.transaction, p.outcome)?;
         }
         Ok(())
     }
@@ -165,9 +163,7 @@ impl LiveMetadataShell {
                 };
                 let tx = self.take_transaction()?;
                 grant.activation = tx.raw();
-                self.transport.send_async(
-                    encode_shell_launcher_activation(tx, grant).map_err(|e| format!("{e:?}"))?,
-                )?;
+                self.transport.queue_launcher_activation(tx, grant)?;
                 self.launcher.grant = Some((tx, grant, Instant::now() + Duration::from_secs(5)));
                 return Ok(());
             }
@@ -184,10 +180,8 @@ impl LiveMetadataShell {
         status: ShellLaunchStatus,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.connected && activation.connection_epoch == self.transport.connection_epoch() {
-            self.transport.send_async(
-                encode_shell_launch_outcome(tx, ShellLaunchOutcome { activation, status })
-                    .map_err(|e| format!("{e:?}"))?,
-            )?;
+            self.transport
+                .send_launch_outcome(tx, ShellLaunchOutcome { activation, status })?;
         }
         crate::session_println!("sophia_launcher status=launch_outcome result={status:?}");
         Ok(())
@@ -269,10 +263,7 @@ impl LiveMetadataShell {
                                         .collect(),
                                 };
                                 let tx = self.take_transaction()?;
-                                self.launcher.outgoing =
-                                    encode_shell_application_catalog(tx, &descriptors)
-                                        .map_err(|e| format!("{e:?}"))?
-                                        .into();
+                                self.transport.publish_launcher_catalog(tx, &descriptors)?;
                                 self.launcher.catalog = Some(catalog);
                                 self.launcher.descriptors = Some(descriptors);
                                 self.launcher.open = Some(output);
@@ -403,12 +394,7 @@ impl LiveMetadataShell {
                 launches.cancel_catalog(tx);
             }
         }
-        if let Some(frame) = self
-            .transport
-            .poll_kind(IpcMessageKind::ShellLauncherActivationAck)?
-        {
-            let (tx, ack) =
-                decode_shell_launcher_activation_ack(&frame).map_err(|e| format!("{e:?}"))?;
+        if let Some((tx, ack)) = self.transport.poll_launcher_activation_ack()? {
             let (expected, grant, _) = self
                 .launcher
                 .grant
@@ -449,21 +435,24 @@ impl LiveMetadataShell {
             ) {
                 p.outcome.presentation_epoch = epoch;
                 p.outcome.kind = ShellV1CandidateOutcomeKind::Presented;
-                self.transport.send_async(
-                    encode_shell_launcher_outcome(p.transaction, p.outcome)
-                        .map_err(|e| format!("{e:?}"))?,
-                )?;
+                self.transport
+                    .send_launcher_outcome(p.transaction, p.outcome)?;
                 self.launcher.presented = if p.candidate.visible { Some(p) } else { None };
             } else {
                 self.launcher.pending = Some(p);
             }
         }
-        if let Some(frame) = self
-            .transport
-            .poll_kind(IpcMessageKind::ShellLauncherCandidate)?
+        let event = self.transport.poll_launcher_candidate()?;
+        if let Some(sophia_runtime::ShellLauncherCandidateEvent::Refused(tx)) = &event
+            && self
+                .launcher
+                .request
+                .as_ref()
+                .is_some_and(|(expected, _, _)| tx == expected)
         {
-            let (tx, candidate) =
-                decode_shell_launcher_candidate(&frame).map_err(|e| format!("{e:?}"))?;
+            self.launcher.request = None;
+        }
+        if let Some(sophia_runtime::ShellLauncherCandidateEvent::Candidate(tx, candidate)) = event {
             let (expected, request, _) = self
                 .launcher
                 .request
@@ -494,9 +483,7 @@ impl LiveMetadataShell {
                 })
             {
                 outcome.kind = ShellV1CandidateOutcomeKind::Superseded;
-                self.transport.send_async(
-                    encode_shell_launcher_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
-                )?;
+                self.transport.send_launcher_outcome(tx, outcome)?;
             } else {
                 if candidate.visible != (request.operation != ShellLauncherOperation::Dismiss) {
                     return Err("launcher visibility disagrees with request".into());
@@ -524,15 +511,21 @@ impl LiveMetadataShell {
                     projection,
                     bounds,
                     |text, size| self.launcher.measure.measure(text, size),
-                )?;
+                );
+                let visual = match visual {
+                    Ok(value) => value,
+                    Err(_) => {
+                        outcome.kind = ShellV1CandidateOutcomeKind::Rejected;
+                        self.transport.send_launcher_outcome(tx, outcome)?;
+                        return Ok(());
+                    }
+                };
                 runtime.set_descriptor_overlay(
                     candidate.visible.then_some(visual.overlay),
                     scene,
                     native,
                 )?;
-                self.transport.send_async(
-                    encode_shell_launcher_outcome(tx, outcome).map_err(|e| format!("{e:?}"))?,
-                )?;
+                self.transport.send_launcher_outcome(tx, outcome)?;
                 self.launcher.pending = Some(PreparedLauncher {
                     transaction: tx,
                     candidate,
@@ -556,15 +549,9 @@ impl LiveMetadataShell {
         {
             return Err("launcher peer timed out".into());
         }
-        // Large catalogs have a per-pass transfer budget, independent of the
-        // rendering cadence and the worker's filesystem bounds.
-        for _ in 0..32 {
-            let Some(frame) = self.launcher.outgoing.pop_front() else {
-                break;
-            };
-            self.transport.send_async(frame)?;
-        }
-        if !self.launcher.outgoing.is_empty()
+        // The transport owns the bounded catalog transfer. A request cannot
+        // overtake its final frame or its atomic file announcement.
+        if self.transport.launcher_catalog_pending()
             || self.launcher.request.is_some()
             || self.launcher.pending.is_some()
             || self.launcher.revoked
@@ -623,9 +610,7 @@ impl LiveMetadataShell {
             operation,
             query: self.launcher.query.clone(),
         };
-        self.transport.send_async(
-            encode_shell_launcher_request(tx, &request).map_err(|e| format!("{e:?}"))?,
-        )?;
+        self.transport.begin_launcher_request(tx, &request)?;
         self.launcher.request = Some((tx, request, Instant::now() + Duration::from_secs(5)));
         Ok(())
     }

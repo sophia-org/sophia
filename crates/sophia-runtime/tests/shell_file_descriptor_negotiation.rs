@@ -26,6 +26,9 @@ mod tabs;
 #[path = "support/shell_file_reference_owner.rs"]
 mod reference;
 
+#[path = "support/shell_file_launcher_owner.rs"]
+mod launcher;
+
 struct Fixture {
     transport: ShellComponentTransport,
     epochs: ContentEpochRegistry,

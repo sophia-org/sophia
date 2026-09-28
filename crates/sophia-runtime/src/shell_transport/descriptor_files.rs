@@ -109,6 +109,7 @@ impl ShellComponentTransport {
             let credits = self.descriptor_state.response_credits
                 + self.tab_state.response_credits
                 + self.reference_state.response_credits
+                + self.launcher_state.response_credits
                 + additional;
             let other = usize::from(self.indicator_response.is_some());
             self.fifo_records() + credits + other <= 64
