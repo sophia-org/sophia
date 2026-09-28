@@ -615,6 +615,41 @@ The production Session still does not select this role. Descriptor footprint
 reservation, neutral owner routing, presentation-commit evidence and the
 independent C peer remain required before the socket can be retired.
 
+### Descriptor file presentation owner candidate (t271, 2026-09-28)
+
+Sophia candidate `3f762e8cc` moves descriptor exchange state out of the socket
+adapter and routes descriptor file candidates, outcomes, activations and
+acknowledgements through the shared owner. A snapshot request reserves two
+response credits before publication. Prepared transfers one credit; Presented,
+Rejected or Superseded ends the exact request and releases the remaining
+obligation. A stale transaction receives a rejection without stealing another
+request's credits. Stale activation acknowledgements are consumed and counted
+without discharging the current activation.
+
+The production 9P export and Rust SDK pass six new owner tests: preparation
+does not authorize activation; presentation does; a prepared replacement keeps
+the previous presentation eligible until the terminal outcome; a presented
+withdrawal makes both generations ineligible; stale generations, wrong outputs
+and descriptor generations reject without an action; exact response credits
+survive shared content-budget pressure and are released on rejection or
+disconnect. Indicator admission uses the selected wire's control-credit size.
+
+The focused final gate passes 83 tests, strict runtime clippy across all targets
+and features, layout, formatting and diff checks. The existing socket,
+negotiation, content-credit and B6c controls remain green. Two compiled mutations
+fail their named assertions: allowing activation on Prepared, and omitting
+descriptor credits from the shared content budget. Logs are
+`ipc-retirement/t271-descriptor-owner-final.log` and
+`t271-descriptor-owner-mutant-{prepared,credits}.log`. Mutants use read-only
+source overlays and a separate target; they do not change the working tree.
+
+This proves transport-owner behavior with supplied process protection identity,
+not an Engine work-area commit or a protected Session launch. The production
+Session selector, selected snapshot footprint reservation, tabs/reference and
+launcher owner routing, independent C SDK peer and descriptor client migration
+remain required. The proposal and SDK candidate remain unpublished; descriptor
+IPC has not been removed.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
