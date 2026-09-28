@@ -306,9 +306,7 @@ struct StartedPublicPolicyRuntime {
 /// Whether rejecting a response with this outcome leaves the owner owing the
 /// client a replacement cycle.
 ///
-/// This is the owner half of the reference client's
-/// `stateless_reference_projection_decision`. The two must agree: a client that
-/// retries by waiting for a fresh snapshot dies behind its socket deadline if
+/// A stateless client that retries by waiting for a fresh snapshot times out if
 /// the owner considers itself idle, and the owner is the party that observed
 /// the scene move.
 ///

@@ -1161,7 +1161,6 @@ dependencies = [
  "sophia-renderer-native-egl",
  "sophia-runtime",
  "sophia-shell-client",
- "sophia-wm-demo",
  "sophia-x-authority",
  "sophia-xshmfence",
  "tracing",

@@ -172,25 +172,21 @@ fn snapshot_focus_requires_a_live_focusable_surface_on_the_same_output() {
 }
 
 #[test]
-fn the_owner_rearms_for_exactly_the_outcomes_a_stateless_client_retries() {
-    // The two halves of one contract. A client that recovers by awaiting a
-    // fresh snapshot depends on the owner deciding to send one, so these tables
-    // must not drift apart.
-    for outcome in [
-        sophia_protocol::PolicyProjectionOutcome::Committed,
-        sophia_protocol::PolicyProjectionOutcome::RejectedStale,
-        sophia_protocol::PolicyProjectionOutcome::RejectedInvalid,
-        sophia_protocol::PolicyProjectionOutcome::TimedOut,
-        sophia_protocol::PolicyProjectionOutcome::Disconnected,
+fn the_owner_rearms_only_for_recoverable_projection_outcomes() {
+    // Contract values, independent of any policy client's retry implementation.
+    // The protected C SDK recovery test proves fresh cycles reach the client.
+    use sophia_protocol::PolicyProjectionOutcome::*;
+    for (outcome, rearm) in [
+        (Committed, false),
+        (RejectedStale, true),
+        (RejectedInvalid, false),
+        (TimedOut, true),
+        (Disconnected, false),
     ] {
-        let client_retries = matches!(
-            sophia_wm_demo::stateless_reference_projection_decision(outcome),
-            sophia_wm_demo::StatelessReferenceProjectionDecision::RetryFreshSnapshot
-        );
         assert_eq!(
             public_policy_rearm_after_outcome(outcome),
-            client_retries,
-            "owner and client disagree about recovering from {outcome:?}"
+            rearm,
+            "owner must preserve the recovery contract for {outcome:?}"
         );
     }
 }

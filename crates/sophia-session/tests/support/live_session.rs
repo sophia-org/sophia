@@ -17,6 +17,9 @@ mod mirror_gate_session_config;
 #[path = "live_control.rs"]
 mod live_control_tests;
 
+#[path = "policy_file_recovery.rs"]
+mod policy_file_recovery;
+
 #[path = "panel_session_config.rs"]
 mod panel_session_config;
 

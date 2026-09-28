@@ -30,7 +30,6 @@ sophia-conformance = { path = "../sophia-conformance" }
 sophia-9p-client = { workspace = true }
 sophia-shell-client = { workspace = true }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
-sophia-wm-demo = { path = "../sophia-wm-demo" }
 
 [features]
 default = []

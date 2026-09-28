@@ -1711,6 +1711,45 @@ records the failing-before/passing-after pointer-focus assertion and the repair.
 Ordinary transport-selection coverage checks that negotiation is preserved
 without prematurely enabling configuration-dependent capability use.
 
+### Session no longer depends on the IPC WM demo (t269 preparation)
+
+The remaining Session reference to `sophia-wm-demo` was a comparison between
+the owner's rearm table and the demo's stateless retry table. Session now checks
+all five contract outcomes explicitly and exercises recovery with the independent
+C SDK peer on a real protected 9P connection. Its dev-dependency and corresponding
+lockfile edge are removed; the runtime IPC tests and other demo users remain.
+
+The new ordinary test
+`protected_c_sdk_recovers_after_stale_and_timed_out_projections` supplies two
+layout failures to the production settlement owner. The first has an advanced
+canonical generation, producing RejectedStale; the second produces TimedOut.
+The peer requires those exact outcomes, then waits for new owner cycles with
+fresh snapshot, request and submission identities. Its third projection commits.
+Zero child exit proves it decoded the final Committed outcome. No WM restart
+or new epoch is allowed, and neither failed projection increments commit state.
+This tests recovery over the real export, not elapsed resize expiry or native
+scanout. The old demo's own policy tests stay with that compatibility crate.
+
+Evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-file-recovery-focused.log`: first focused run passes.
+- `t269-recovery-mutant-stale.log`: a read-only overlay disabling stale rearm
+  fails at fresh cycle 1. `t269-recovery-mutant-timeout-fresh.log` freshly
+  compiles the timeout-only mutant and fails at cycle 2. The earlier
+  `t269-recovery-mutant-timeout.log` reused the stale mutant artifact and is
+  excluded. Package artifacts were cleared before the fresh timeout run and
+  again before normal validation; no source mutation was applied to the tree.
+- `t269-recovery-session-final.log`: the complete all-feature Session suite
+  passes (1,062 reported passes, zero failures, 39 ignored, including child
+  fixture reports). The new recovery test is non-ignored.
+- `t269-recovery-control-final.log`: the existing ignored protected control
+  test also passes with the shared C peer's unchanged committed-outcome checks.
+- `t269-recovery-{clippy,fmt,layout}.log`: all pass. Locked metadata in
+  `t269-recovery-metadata.json` confirms the removed dependency edge.
+
+These checks extend the full repository gate at `6df3602d8`; they do not
+claim a second full repository run. No installed or running session changed.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK

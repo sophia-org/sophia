@@ -17,6 +17,7 @@
 
 static struct sophia_ws *session;
 static uint64_t deadline;
+static int recovery;
 
 static uint64_t now_ms(void) {
   struct timespec t;
@@ -35,8 +36,10 @@ static void step(void) {
   status = sophia_ws_dispatch(session, p.revents, 65536, now_ms());
   /* A controlled restart fences the old connection before its child stops. */
   if (sophia_ws_state(session) == SOPHIA_WS_CLOSED ||
-      sophia_ws_state(session) == SOPHIA_WS_STALE)
+      sophia_ws_state(session) == SOPHIA_WS_STALE) {
+    assert(!recovery); /* A recovery proof must finish on its original epoch. */
     exit(0);
+  }
   if (status)
     fprintf(stderr, "control WM SDK dispatch=%d remote=%u state=%d\n", status,
             sophia_ws_remote_error(session), (int)sophia_ws_state(session));
@@ -110,7 +113,8 @@ static void startup(void) {
   assert(!sophia_ws_consume(session));
 }
 
-static void cycle(void) {
+static void cycle(uint16_t expected_outcome) {
+  static uint64_t previous_request, previous_snapshot;
   const struct sophia_wf_record *r = event(SOPHIA_WF_CYCLE);
   struct sophia_wf_cycle request = r->value.cycle;
   struct sophia_wf_record reply = {0};
@@ -121,6 +125,10 @@ static void cycle(void) {
   size_t i;
   int status;
   assert(request.output_count == 1 && request.policy_generation == 1);
+  assert(request.request_id > previous_request &&
+         request.snapshot_transaction > previous_snapshot);
+  previous_request = request.request_id;
+  previous_snapshot = request.snapshot_transaction;
   if (request.cause == SOPHIA_WF_ACTION)
     assert(request.value.action.serial && request.value.action.action == 1);
   assert(!sophia_ws_snapshot(session, deadline));
@@ -149,13 +157,15 @@ static void cycle(void) {
   r = event(SOPHIA_WF_PROJECTION_OUTCOME);
   assert(r->value.projection_outcome.transaction == transaction &&
          r->value.projection_outcome.request_id == request.request_id &&
-         r->value.projection_outcome.scene_generation == request.scene_generation &&
-         r->value.projection_outcome.outcome == 1 &&
+         (expected_outcome == 2
+              ? r->value.projection_outcome.scene_generation > request.scene_generation
+              : r->value.projection_outcome.scene_generation == request.scene_generation) &&
+         r->value.projection_outcome.outcome == expected_outcome &&
          !r->value.projection_outcome.expect_session_operation);
   assert(!sophia_ws_consume(session));
 }
 
-int main(void) {
+int main(int argc, char **argv) {
   const char *socket_path = getenv("SOPHIA_WM_9P_SOCKET");
   struct sockaddr_un address = {0};
   uint64_t caps = SOPHIA_WF_CAP_CONFIGURATION | SOPHIA_WF_CAP_ACTIONS |
@@ -164,6 +174,8 @@ int main(void) {
   size_t bytes = sophia_ws_storage_bytes(config.msize);
   void *storage = malloc(bytes);
   int fd;
+  assert(argc == 1 || (argc == 2 && !strcmp(argv[1], "--recovery")));
+  recovery = argc == 2;
   assert(socket_path && !getenv("SOPHIA_WM_SOCKET") && !getenv("SOPHIA_CONTROL_SOCKET"));
   assert(strlen(socket_path) < sizeof(address.sun_path));
   address.sun_family = AF_UNIX;
@@ -176,6 +188,14 @@ int main(void) {
   assert(session && storage &&
          !sophia_ws_open_fd(session, fd, &config, storage, bytes, now_ms()));
   startup();
+  if (recovery) {
+    /* Native outcome values: stale, timed out, then committed. The peer waits
+     * for a fresh owner cycle instead of replaying either rejected proposal. */
+    cycle(2);
+    cycle(4);
+    cycle(1);
+    return 0;
+  }
   for (;;)
-    cycle();
+    cycle(1);
 }
