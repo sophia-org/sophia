@@ -316,12 +316,10 @@ fn run_output_transport_service(
                     transaction,
                     outcome,
                 } => {
-                    // The owner commands from its own turn and learns about a
-                    // departure on the next one, so an answer for a client that
-                    // has already gone is ordinary and is dropped. It was fatal,
-                    // which meant a client leaving mid-question ended the
-                    // service and removed the socket its successor needed.
-                    if !connected {
+                    // Owner commands may arrive after departure and even after
+                    // reconnection. An old epoch cannot write to or settle the
+                    // new client's proposal, including a reused transaction ID.
+                    if !connected || retired_epoch(outcome.connection_epoch, connection_epoch) {
                         continue;
                     }
                     let written = transport.send_outcome(transaction, outcome);
@@ -348,7 +346,7 @@ fn run_output_transport_service(
                     transaction,
                     outcome,
                 } => {
-                    if !connected {
+                    if !connected || retired_epoch(outcome.connection_epoch, connection_epoch) {
                         continue;
                     }
                     let written = transport.send_outcome(transaction, outcome);
@@ -455,4 +453,10 @@ fn run_output_transport_service(
             Err(error) => return Err(error.to_string()),
         }
     }
+}
+
+/// Only a valid older epoch names a departed client. Zero and future epochs
+/// remain owner errors and must reach the transport's invariant check.
+fn retired_epoch(outcome_epoch: u64, current_epoch: u64) -> bool {
+    outcome_epoch != 0 && outcome_epoch < current_epoch
 }

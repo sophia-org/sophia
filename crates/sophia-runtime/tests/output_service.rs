@@ -497,6 +497,205 @@ fn a_malformed_client_frame_disconnects_only_that_client() {
     }
 }
 
+#[test]
+fn late_reply_from_a_previous_epoch_cannot_end_the_replacement_connection() {
+    late_response_after_reconnect(false);
+}
+
+#[test]
+fn late_settlement_cannot_settle_the_replacements_reused_transaction() {
+    late_response_after_reconnect(true);
+}
+
+fn late_response_after_reconnect(settle: bool) {
+    let directory = temporary_directory("late-response");
+    let transport = OutputSessionTransport::bind(
+        &directory,
+        PolicyPeerIdentity {
+            uid: rustix::process::geteuid().as_raw(),
+            pid: std::process::id(),
+        },
+    )
+    .unwrap();
+    let socket = transport.socket_path().to_owned();
+    let service =
+        OutputTransportService::spawn(transport, 7, TransactionId::from_raw(1), snapshot())
+            .unwrap();
+    let mut first = connected_client(&service, &socket, 7);
+    submit_and_observe(&service, &mut first, 7, 2, OutputProposalAdmission::Active);
+    drop(first);
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(2)).unwrap(),
+        OutputTransportServiceEvent::Disconnected {
+            connection_epoch: 7
+        }
+    );
+
+    let mut second = connected_client(&service, &socket, 8);
+    // Transaction IDs may be reused in a fresh epoch. A stale settlement must
+    // neither release this active proposal nor promote its queued successor.
+    submit_and_observe(&service, &mut second, 8, 2, OutputProposalAdmission::Active);
+    submit_and_observe(
+        &service,
+        &mut second,
+        8,
+        3,
+        OutputProposalAdmission::Queued { replaced: None },
+    );
+    let outcome = validated_outcome(7);
+    let transaction = TransactionId::from_raw(2);
+    service
+        .command(if settle {
+            OutputTransportServiceCommand::Settle {
+                transaction,
+                outcome,
+            }
+        } else {
+            OutputTransportServiceCommand::Reply {
+                transaction,
+                outcome,
+            }
+        })
+        .unwrap();
+    // A publication behind the stale command is a progress barrier. Its
+    // arrival proves the service continued and emitted no stale outcome.
+    publish_barrier(&service, &mut second, 9);
+    assert_eq!(service.try_event(), Ok(None));
+
+    for id in [2, 3] {
+        service
+            .command(OutputTransportServiceCommand::Settle {
+                transaction: TransactionId::from_raw(id),
+                outcome: validated_outcome(8),
+            })
+            .unwrap();
+        assert_eq!(
+            decode_output_v1_outcome_frame(&read_frame(&mut second)).unwrap(),
+            (TransactionId::from_raw(id), validated_outcome(8))
+        );
+        if id == 2 {
+            assert_eq!(
+                service.event_timeout(Duration::from_secs(2)).unwrap(),
+                OutputTransportServiceEvent::Promoted(AdmittedOutputProposal {
+                    transaction: TransactionId::from_raw(3),
+                    message: proposal(8),
+                })
+            );
+        }
+    }
+    publish_barrier(&service, &mut second, 10);
+    assert_eq!(service.try_event(), Ok(None));
+}
+
+#[test]
+fn zero_and_future_response_epochs_remain_owner_errors() {
+    for (settle, epoch) in [(false, 0), (false, 8), (true, 0), (true, 8)] {
+        let directory = temporary_directory("invalid-response-epoch");
+        let transport = OutputSessionTransport::bind(
+            &directory,
+            PolicyPeerIdentity {
+                uid: rustix::process::geteuid().as_raw(),
+                pid: std::process::id(),
+            },
+        )
+        .unwrap();
+        let socket = transport.socket_path().to_owned();
+        let service =
+            OutputTransportService::spawn(transport, 7, TransactionId::from_raw(1), snapshot())
+                .unwrap();
+        let mut client = connected_client(&service, &socket, 7);
+        let transaction = TransactionId::from_raw(2);
+        let outcome = validated_outcome(epoch);
+        service
+            .command(if settle {
+                OutputTransportServiceCommand::Settle {
+                    transaction,
+                    outcome,
+                }
+            } else {
+                OutputTransportServiceCommand::Reply {
+                    transaction,
+                    outcome,
+                }
+            })
+            .unwrap();
+        assert_eq!(
+            service.event_timeout(Duration::from_secs(2)).unwrap(),
+            OutputTransportServiceEvent::Failed {
+                message: "Transfer(InvalidConnectionEpoch)".into(),
+            }
+        );
+        let mut bytes = Vec::new();
+        assert_eq!(client.read_to_end(&mut bytes).unwrap(), 0);
+    }
+}
+
+fn connected_client(
+    service: &OutputTransportService,
+    socket: &std::path::Path,
+    epoch: u64,
+) -> UnixStream {
+    let mut client = connect_output_client(socket);
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let welcome = decode_output_v1_server_welcome_frame(&read_frame(&mut client)).unwrap();
+    assert_eq!(welcome.connection_epoch, epoch);
+    decode_output_v1_snapshot_frame(&read_frame(&mut client)).unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(2)).unwrap(),
+        OutputTransportServiceEvent::Connected {
+            connection_epoch: epoch
+        }
+    );
+    client
+}
+
+fn submit_and_observe(
+    service: &OutputTransportService,
+    client: &mut UnixStream,
+    epoch: u64,
+    id: u64,
+    admission: OutputProposalAdmission,
+) {
+    let transaction = TransactionId::from_raw(id);
+    let message = proposal(epoch);
+    client
+        .write_all(&encode_output_v1_proposal_frame(transaction, &message).unwrap())
+        .unwrap();
+    assert_eq!(
+        service.event_timeout(Duration::from_secs(2)).unwrap(),
+        OutputTransportServiceEvent::Proposal {
+            proposal: AdmittedOutputProposal {
+                transaction,
+                message
+            },
+            admission,
+        }
+    );
+}
+
+fn validated_outcome(connection_epoch: u64) -> OutputV1Outcome {
+    OutputV1Outcome {
+        connection_epoch,
+        topology_epoch: 1,
+        kind: OutputV1OutcomeKind::Validated,
+        reason: 0,
+    }
+}
+
+fn publish_barrier(service: &OutputTransportService, client: &mut UnixStream, id: u64) {
+    let transaction = TransactionId::from_raw(id);
+    service
+        .command(OutputTransportServiceCommand::PublishSnapshot {
+            transaction,
+            snapshot: snapshot(),
+        })
+        .unwrap();
+    let (observed, _) = decode_output_v1_snapshot_frame(&read_frame(client)).unwrap();
+    assert_eq!(observed, transaction);
+}
+
 fn temporary_directory(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "sophia-output-service-{label}-{}-{}",

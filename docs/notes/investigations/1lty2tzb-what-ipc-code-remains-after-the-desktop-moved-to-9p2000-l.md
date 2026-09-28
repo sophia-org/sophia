@@ -1471,6 +1471,28 @@ it is not needed for this separation and the adapter remains slated for t269.
 No production transport default, SDK release, installed component or live
 session changed.
 
+### Output reconnection fencing (t272, 2026-09-28)
+
+The remaining output survey's late-response defect is reproduced: after an
+admitted process reconnects, a delayed Reply or Settle for its previous epoch
+ends the service with `InvalidConnectionEpoch`, closing the new connection.
+The new tests admit transactions 2 and 3 in the replacement epoch while the
+old response names transaction 2. Both tests fail before the repair with EOF
+at the subsequent publication (`t272-late-epoch-before.log`).
+
+The service now drops responses naming a valid older epoch before writing or
+settling anything. A publication queued behind the old response proves forward
+progress and no stale bytes; the replacement's active and queued proposals
+then settle in order. Zero and future epochs still fail as owner errors, with
+no bytes delivered. All eleven output-service tests pass, along with strict
+runtime clippy (`t272-late-epoch-{after,clippy}.log`). These tests use bounded
+private sockets with supplied peer identity and no devices or live session.
+
+This fixes a wire-independent reconnect rule needed by the output file role.
+The output export, independent SDK peer, bounded retained identities/channels,
+remaining failure and restart observations, and applicable topology acceptance
+are still required. It does not close t272 or claim output IPC retirement.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
