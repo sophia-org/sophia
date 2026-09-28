@@ -203,6 +203,36 @@ mod c_content_peer;
 /// Proof records, as the session host would receive them.
 static RECORDS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
+#[path = "../../../sophia-conformance/tests/support/bounded_peer.rs"]
+mod bounded_peer;
+
+/// Session output is intentionally installed once per process. Run capture
+/// tests in distinct processes so neither they nor the startup tests can steal
+/// another test's callback; a mutex cannot reset the production OnceLock.
+fn isolated_capture_test(name: &str) -> bool {
+    let exact = format!("{}::{name}", module_path!());
+    // module_path includes the crate name; the test harness does not.
+    let exact = exact.split_once("::").unwrap().1;
+    if std::env::var("SOPHIA_TEST_GPU_PROOF_CHILD").as_deref() == Ok(exact) {
+        return false;
+    }
+    let output = bounded_peer::run(
+        std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", exact, "--nocapture"])
+            .env("SOPHIA_TEST_GPU_PROOF_CHILD", exact),
+        Duration::from_secs(60),
+    )
+    .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stdout}{stderr}");
+    assert!(
+        stdout.contains("1 passed; 0 failed"),
+        "child did not run {exact}: {stdout}{stderr}"
+    );
+    true
+}
+
 fn capture(line: &str) {
     RECORDS
         .lock()
@@ -248,8 +278,7 @@ fn serve_with_c_peer(
     parameters.end = ShellGpuProofEnd::ClientExits;
     parameters.timeout = Duration::from_secs(10);
     parameters.validate()?;
-    // Another test may have installed it first; both capture the same way.
-    let _ = crate::output::install(crate::output::SessionOutput::new(capture, capture));
+    crate::output::install(crate::output::SessionOutput::new(capture, capture))?;
     let mut owner = ShellComponentTransport::bind_for_supervised_uid(
         scratch.join("socket"),
         rustix::process::geteuid().as_raw(),
@@ -304,6 +333,9 @@ fn serve_with_c_peer(
 /// disconnect before settling to zero reserved and backing bytes.
 #[test]
 fn the_proof_loop_serves_a_protected_independent_file_peer() {
+    if isolated_capture_test("the_proof_loop_serves_a_protected_independent_file_peer") {
+        return;
+    }
     serve_with_c_peer("valid", 32, 0).unwrap();
     let records = RECORDS.lock().unwrap().clone();
     let completion = records
@@ -337,6 +369,9 @@ fn the_proof_loop_serves_a_protected_independent_file_peer() {
 /// Red control: the peer asks for a thinner surface than the parameters name.
 #[test]
 fn the_proof_loop_refuses_a_peer_that_changes_the_surface() {
+    if isolated_capture_test("the_proof_loop_refuses_a_peer_that_changes_the_surface") {
+        return;
+    }
     let error = serve_with_c_peer("thin", 16, 0).unwrap_err().to_string();
     assert!(
         error.contains("client allocation request differs"),
@@ -348,6 +383,9 @@ fn the_proof_loop_refuses_a_peer_that_changes_the_surface() {
 /// that leaves after its first outcome still fails the proof.
 #[test]
 fn the_proof_loop_refuses_a_peer_that_leaves_before_its_last_render() {
+    if isolated_capture_test("the_proof_loop_refuses_a_peer_that_leaves_before_its_last_render") {
+        return;
+    }
     let error = serve_with_c_peer("early", 32, 3).unwrap_err().to_string();
     assert!(
         error.contains("NotConnected") || error.contains("client exited after 1 of 2"),
