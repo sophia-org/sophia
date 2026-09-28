@@ -1550,6 +1550,37 @@ slice does not close t253 or t272. In particular, acknowledged journal records
 do not bound the owner's domain-transaction replay history; the export design
 must address that separately.
 
+### Native topology and output events (t253/t272, 2026-09-28)
+
+The native codec now covers Topology, Negotiated, Refused and ObjectPublished.
+Topology encodes the existing authoritative snapshot as bounded fixed rows,
+with a mode table tiled exactly once in head order. Decoding and encoding apply
+the existing snapshot validator; labels require valid UTF-8 and zero padding,
+and every unused member slot is zero. A maximum topology record is 52,216 bytes,
+including its 32-byte envelope. Disabled heads with no current mode remain
+representable. `Some(INVALID)` is refused on encode to avoid silently changing
+it to `None` on decode.
+
+The event codecs preserve revision/capability negotiation, distinguish a
+terminal negotiation refusal from a topology outcome, and identify a published
+topology by both its domain epoch and immutable Qid path. The
+[implementation draft](../../sophia-output-files.md) documents every row and
+requires a readable refusal-drain phase before export revocation. Limits and
+export custody are still subsequent work.
+
+Evidence under `development-evidence/ipc-retirement`: 31 focused protocol
+checks pass in `t272-topology-focused-2.log`; 27 codec/owner checks pass with
+the IPC module removed in `t272-topology-noipc.log`. Strict protocol/runtime
+clippy, formatting and layout pass in `t272-topology-{clippy,fmt,layout}.log`.
+A separate private-target, read-only mutant allowing a gap in the mode table
+fails `mode_ranges_must_tile_the_table_once_in_head_order` as intended
+(`t272-topology-mode-mutant.log`). The source tree was never mutated for that
+control. The earlier `t272-topology-focused.log` records a test-only borrow
+error in the four-member case, corrected without changing its assertions.
+
+These checks do not provide an independent-language client exchange or a live
+output export. They leave the remaining t253/t272 acceptance scope unchanged.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

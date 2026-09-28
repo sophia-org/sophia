@@ -4,11 +4,15 @@
 //! the output owner checks capabilities, epochs, replay and topology validity.
 mod controls;
 mod envelope;
+mod events;
 mod proposal;
+mod topology;
 
 pub use controls::*;
 pub use envelope::*;
+pub use events::*;
 pub use proposal::*;
+pub use topology::*;
 
 use crate::BinaryCodecError;
 use crate::byte_cursor::Cursor;

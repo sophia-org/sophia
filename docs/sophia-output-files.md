@@ -8,10 +8,10 @@ records the design and unresolved custody bounds. The existing
 
 The records use little-endian integers and native rows. They do not contain a
 socket frame. `sophia_protocol::output_files` currently implements envelopes,
-submit/ack controls, Negotiate, Submitted, Proposal and Outcome bodies.
-Limits, Topology, Negotiated, Refused and ObjectPublished have assigned kinds;
-their bodies and the export are subsequent work. Envelope decoding alone never
-validates a typed body or grants authority.
+submit/ack controls, Topology, Negotiate, Negotiated, Refused, Submitted,
+ObjectPublished, Proposal and Outcome bodies. The Limits body and the export
+are subsequent work. Envelope decoding alone never validates a typed body or
+grants authority.
 
 ## Identity and bounds
 
@@ -53,9 +53,76 @@ unsupported revision ranges reach the owner. Negotiation intersects requested
 capabilities with observe (bit 0) and configure (bit 1), and requires observe;
 the codec does not turn these owner refusals into malformed bytes.
 
+Negotiated has a 24-byte body: selected revision u16=1, six zero reserved
+bytes, granted capabilities u64, then four u16 bounds: heads=16, groups=16,
+modes per head=128, members per group=4. Observe is required; granted bits
+outside observe/configure are refused. The client must additionally check the
+grant against its actual request. The connection epoch is in the event header.
+
+Refused has an 8-byte body: reason u16 (1 unsupported revision, 2 observation
+required), six zero reserved bytes. It is a negotiation refusal, separate from
+a topology Outcome. The export must keep the terminal record readable until
+acknowledgement or its bounded refusal-drain deadline; appending it and
+immediately revoking reads would lose the refusal. That lifecycle is not yet
+implemented by this codec.
+
 Submitted has a 16-byte body: nonzero submission ID u64, candidate kind u16
 (256 or 257), six zero reserved bytes. This receipt identifies file custody.
 It does not mean a topology transaction was validated or committed.
+
+## Topology publication
+
+ObjectPublished has a 24-byte body: object kind u16=2 (Topology), six zero
+reserved bytes, nonzero topology epoch u64, nonzero Qid path u64. The topology
+epoch identifies the domain generation; the Qid path identifies the exact
+immutable bytes retained by the export. Publication retention and read/ack
+dependencies remain part of the export work.
+
+The Topology body contains a 24-byte prefix, head rows (104 bytes each), mode
+rows (24 bytes each), then group rows (84 bytes each):
+
+| Prefix offset | Type | Field |
+| --- | --- | --- |
+| 0 | u64 | Nonzero topology epoch |
+| 8 | u64 | Primary logical output |
+| 16 | u16 | Head count, 1..16 |
+| 18 | u16 | Group count, 1..16 |
+| 20 | u16 | Total mode count, 1..2,048 |
+| 22 | u16 | Reserved, zero |
+
+| Head offset | Type | Field |
+| --- | --- | --- |
+| 0 | u64 | Head identity |
+| 8 | u64 | Generation |
+| 16 | u16 | Flags: connected=1, enabled=2, VRR capable=4; no other bits |
+| 18 | u16 | Nonzero transform mask; bits 0..7 correspond to proposal values 1..8 |
+| 20 | u16 | UTF-8 label byte count, 1..64 |
+| 22 | u16 | Head mode count, 1..128 |
+| 24 | u64 | Current mode, or zero for absent |
+| 32 | u16 | First mode index in the flattened table |
+| 34 | 6 bytes | Reserved, zero |
+| 40 | 64 bytes | Label followed by zero padding |
+
+The first mode index must equal the sum of preceding heads' mode counts.
+The ranges must cover the entire mode table exactly. A mode row contains mode
+identity u64, width/height i32, refresh in millihertz u32, preferred u16 (0 or
+1), reserved u16=0. IDs, dimensions and refresh must be positive.
+
+A group row contains output identity u64, generation u64, x/y/width/height i32,
+member count u16 (1..4), reserved u16=0, then four 12-byte member slots with
+the same layout as Proposal. Unused slots are zero.
+
+Both encoding and decoding apply `OutputAuthoritySnapshot::validate`: unique
+heads, per-head unique modes, valid current modes for enabled heads, valid
+groups and membership, an existing primary output, and every enabled head
+grouped. Disabled heads may have no current mode. The encoder refuses
+`Some(INVALID)` rather than silently converting it to `None`.
+
+The largest body is 24 + 16×104 + 2,048×24 + 16×84 = 52,184 bytes; its complete
+record is 52,216 bytes. Counts and exact total length are checked before row
+allocation. A published snapshot is authoritative, so it must satisfy snapshot
+invariants during decoding; proposals still receive semantic validation by the
+owner.
 
 ## Proposal rows
 
@@ -98,7 +165,8 @@ unknown reason codes are preserved and never imply success.
 
 Literal byte fixtures check layout independently of the encoders. Negative
 tests cover each truncated prefix, reserved and unused member bytes, identity
-classes, enum/count bounds and maximum candidate size. Owner tests feed native
+classes, enum/count bounds, maximum candidate and topology sizes, exact mode
+table coverage and authoritative snapshot invariants. Owner tests feed native
 decoded negotiation and proposals into `OutputConnectionState`, including
 semantic refusal and domain replay. These are deterministic codec/admission
 checks, not an independent-language client exchange, export custody proof or
