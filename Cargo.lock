@@ -1004,7 +1004,6 @@ dependencies = [
  "sophia-runtime",
  "sophia-session",
  "sophia-sysv-shm",
- "sophia-wm-demo",
  "sophia-x-authority",
  "sophia-xshmfence",
  "tracing",

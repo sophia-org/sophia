@@ -1,6 +1,6 @@
 pub(crate) fn print(verbose: bool) {
     println!("sophia {}", env!("CARGO_PKG_VERSION"));
-    println!("components: engine, x-authority, protocol, wm-demo");
+    println!("components: engine, x-authority, protocol");
     println!("commands: inspect wm [--socket PATH] [--json] ls|stat PATH|status|snapshot|watch");
     println!(
         "commands: client-launch --adapter=chromium --argv-style=direct|wrapper [--check-only] -- PROGRAM ARGS..."
@@ -25,7 +25,6 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: runtime-brokers-smoke [--portal=/usr/bin/true] [--metadata=/usr/bin/true]");
     println!("commands: portal-broker-health-smoke");
     println!("commands: metadata-broker-health-smoke");
-    println!("commands: wm-supervisor-smoke [--wm=target/debug/sophia-wm-demo]");
     println!("commands: x-authority-runtime-smoke");
     println!("commands: x-authority-x11-smoke");
     println!("commands: x-authority-x11rb-smoke");

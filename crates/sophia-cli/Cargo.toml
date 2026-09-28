@@ -21,7 +21,6 @@ sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
 sophia-session = { path = "../sophia-session", default-features = false }
-sophia-wm-demo = { path = "../sophia-wm-demo" }
 sophia-x-authority = { path = "../sophia-x-authority" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 tracing.workspace = true

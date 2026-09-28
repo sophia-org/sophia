@@ -17,7 +17,6 @@ sophia-portal = { path = "../sophia-portal" }
 sophia-protocol = { path = "../sophia-protocol" }
 sophia-runtime = { path = "../sophia-runtime" }
 sophia-renderer-live = { path = "../sophia-renderer-live" }
-sophia-wm-demo = { path = "../sophia-wm-demo" }
 sophia-x-authority = { path = "../sophia-x-authority" }
 sophia-xshmfence = { path = "../sophia-xshmfence" }
 tracing.workspace = true
@@ -31,6 +30,7 @@ sophia-conformance = { path = "../sophia-conformance" }
 sophia-9p-client = { workspace = true }
 sophia-shell-client = { workspace = true, features = ["ipc-compat"] }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
+sophia-wm-demo = { path = "../sophia-wm-demo" }
 
 [features]
 default = []

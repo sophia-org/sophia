@@ -14,8 +14,6 @@
 
 (A) 2026-09-26 Reconcile per-role 9P defaults and retire old compatibility paths on an exact accepted desktop, with versioned clients, rollback and an explicit inventory of public IPC still awaiting migration. +critical +9p @development id:t255 order:000.000009 depends:t250,t252,t253,t254 [details](docs/notes/plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md#t255--finish-per-role-default-and-compatibility-retirement)
 
-(A) 2026-09-27 Drop the unused sophia-wm-demo dependency from sophia-session and sophia-cli (no source uses it; help text only), then delete the IPC-only demo crate once no gate or doc names it. +9p @development id:t264 order:000.0000091 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
-
 (A) 2026-09-27 Retarget the Sophia tests that need the Rust SDK ipc-compat feature, sophia-shell-ipc or sdk_ipc_parity.rs to the 9P path, then drop those dev-dependencies (sophia-runtime, sophia-session, sophia-protocol). +9p @development id:t265 order:000.0000092 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
 
 (A) 2026-09-27 Give shell_content_conformance_host and shell-gpu-content-proof a 9P2000.L mode with an independent 9P test client, move check_shell_protocol to it, then retire their current-ipc transport value. +9p @development id:t266 order:000.0000093 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
@@ -24,7 +22,7 @@
 
 (A) 2026-09-27 Make the shell owners wire-neutral: per-record budgets instead of SOPHIA_IPC_HEADER_LEN and max_frame_payload, and a typed outbox with no IPC frame encoding, so the socket branch can be removed without touching owners. +9p @development id:t268 order:000.0000095 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
 
-(A) 2026-09-27 Flip the WM and shell transport defaults to 9p2000.L (with the operator profile and docs updated and a published rollback recipe), then delete the CurrentIpc selections, the WM current-ipc worker and runtime policy IPC, the shell socket branch, ipc::shell_* and wm_v1*, the protocol generator, C bindings, r3 archive, and their check scripts and gates. +critical +9p @development id:t269 order:000.0000096 depends:t250,t252,t267,t268 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
+(A) 2026-09-27 Flip the WM and shell transport defaults to 9p2000.L (with the operator profile and docs updated and a published rollback recipe), then delete the CurrentIpc selections, the WM current-ipc worker and runtime policy IPC, the shell socket branch, ipc::shell_* and wm_v1*, the protocol generator, C bindings, r3 archive, the sophia-wm-demo crate, and their check scripts and gates. +critical +9p @development id:t269 order:000.0000096 depends:t250,t252,t267,t268 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
 
 (A) 2026-09-27 Release the C and Rust desktop SDKs without sophia-shell-ipc, ipc-compat and WITH_IPC, re-vendor them, and prune the same_contract digest lists of the retired IPC files. +9p @development id:t270 order:000.0000097 depends:t269,t263 [details](docs/notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
 

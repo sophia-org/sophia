@@ -83,7 +83,7 @@ IPC removal inventory for Sophia master 2d69924a9 (read-only; nothing built or r
   - the generator `tools/sophia-policy-protocol-gen`, `docs/generated/sophia-wm-v1-wire.md`, golden `sophia-wm-v1*.frames`.
   - `examples/policy_c_conformance_host.rs` (359).
   - `tools/check_policy_protocol.sh`, `check_archived_policy_client.sh`, `check_policy_client_matrix.sh`; xtask gate "wm-independent" at `native_protocol_family.rs:170`.
-- **`crates/sophia-wm-demo`** (1414 lines): an IPC-only demo client. It is listed as a regular dependency of sophia-cli and sophia-session, but no source file uses it (only help text).
+- **`crates/sophia-wm-demo`** (1414 lines): an IPC-only demo client. Correction (t264): sophia-cli never used it, but IPC policy tests do (`sophia-runtime/tests/policy_transport.rs` and sophia-session's live-control support use its `PolicyV1Client`), as do `tools/check_policy_protocol.sh`, `tools/check_policy_client_matrix.sh` and the xtask output-client stage. t264 dropped the cli dependency and made the session one dev-only; deleting the crate belongs to t269 with those IPC gates.
 - **Blocking coupling:**
   - `sophia-protocol/src/wm_files/*` call `encode/decode_policy_{configuration,projection,snapshot}_records`, `decode_rgb` and `validate_policy_*` from `ipc/wm_v1_records*`, `ipc/policy_records.rs` and `ipc/policy_scalars.rs`. They also use `IpcCodecError` (`wm_files/payload.rs:5`, `records.rs:123`).
   - `protocol/sophia-wm-files-v1.kdl:207` says the row layouts "remain those in sophia-wm-v1.kdl".
