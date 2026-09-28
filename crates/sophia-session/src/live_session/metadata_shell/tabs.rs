@@ -67,10 +67,7 @@ impl LiveMetadataShell {
             action,
         };
         let tx = self.take_transaction()?;
-        self.transport.send_async(
-            encode_shell_v1_activation_frame(tx, event)
-                .map_err(sophia_runtime::ShellTransportError::Codec)?,
-        )?;
+        self.transport.queue_tab_activation(tx, event)?;
         self.tabs.activation = Some((tx, event, surface, output));
         Ok(())
     }
@@ -191,6 +188,7 @@ impl LiveMetadataShell {
             // New scene, labels, issuer, or connection revokes captured actions
             // immediately, before asynchronous shell work can finish.
             runtime.revoke_tab_interaction();
+            let was_presented = self.tabs.presented;
             self.tabs.presented = false;
             if let Some((tx, _, _, _)) = self.tabs.activation.take() {
                 if self.tabs.cancelled_activations.len() >= SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS {
@@ -198,18 +196,19 @@ impl LiveMetadataShell {
                 }
                 self.tabs.cancelled_activations.push(tx);
             }
-            if let (Some(tx), Some(c)) = (self.tabs.transaction, self.tabs.candidate.take()) {
-                self.transport.send_async(
-                    encode_shell_v1_candidate_outcome_frame(
-                        tx,
-                        ShellV1CandidateOutcome {
-                            connection_epoch: c.connection_epoch,
-                            candidate_generation: c.candidate_generation,
-                            presentation_epoch: 0,
-                            kind: ShellV1CandidateOutcomeKind::Superseded,
-                        },
-                    )
-                    .map_err(sophia_runtime::ShellTransportError::Codec)?,
+            if let (Some(tx), Some(c)) = (self.tabs.transaction, self.tabs.candidate.take())
+                && !was_presented
+            {
+                // Presented already ended the response obligation; scene
+                // invalidation must not emit a second terminal outcome.
+                self.transport.send_tabs_outcome(
+                    tx,
+                    ShellV1CandidateOutcome {
+                        connection_epoch: c.connection_epoch,
+                        candidate_generation: c.candidate_generation,
+                        presentation_epoch: 0,
+                        kind: ShellV1CandidateOutcomeKind::Superseded,
+                    },
                 )?;
             }
             self.tabs.policy_connection = policy_connection;
@@ -219,11 +218,7 @@ impl LiveMetadataShell {
             if complete {
                 snapshot.generation = self.take_snapshot_generation()?;
                 let tx = self.take_transaction()?;
-                for frame in encode_shell_tab_snapshot(tx, &snapshot)
-                    .map_err(sophia_runtime::ShellTransportError::Codec)?
-                {
-                    self.transport.send_async(frame)?;
-                }
+                self.transport.publish_tabs(tx, &snapshot)?;
                 self.tabs.transaction = Some(tx);
                 self.tabs.snapshot = Some(snapshot);
             } else {
@@ -232,12 +227,7 @@ impl LiveMetadataShell {
                 self.tabs.transaction = None;
             }
         }
-        while let Some(frame) = self
-            .transport
-            .poll_kind(IpcMessageKind::ShellTabsCandidate)?
-        {
-            let (tx, c) = decode_shell_tab_candidate(&frame)
-                .map_err(sophia_runtime::ShellTransportError::Codec)?;
+        while let Some((tx, c)) = self.transport.poll_tabs_candidate()? {
             let valid = self.tabs.transaction == Some(tx)
                 && self.tabs.snapshot.as_ref().is_some_and(|s| {
                     s.connection_epoch == c.connection_epoch
@@ -247,17 +237,14 @@ impl LiveMetadataShell {
                 && c.candidate_generation > self.tabs.last_candidate
                 && c.candidate_generation < (1 << 63);
             if !valid {
-                self.transport.send_async(
-                    encode_shell_v1_candidate_outcome_frame(
-                        tx,
-                        ShellV1CandidateOutcome {
-                            connection_epoch: self.transport.connection_epoch(),
-                            candidate_generation: c.candidate_generation,
-                            presentation_epoch: 0,
-                            kind: ShellV1CandidateOutcomeKind::Superseded,
-                        },
-                    )
-                    .map_err(sophia_runtime::ShellTransportError::Codec)?,
+                self.transport.send_tabs_outcome(
+                    tx,
+                    ShellV1CandidateOutcome {
+                        connection_epoch: self.transport.connection_epoch(),
+                        candidate_generation: c.candidate_generation,
+                        presentation_epoch: 0,
+                        kind: ShellV1CandidateOutcomeKind::Superseded,
+                    },
                 )?;
                 continue;
             }
@@ -275,17 +262,14 @@ impl LiveMetadataShell {
                     )
                 })
                 .collect();
-            self.transport.send_async(
-                encode_shell_v1_candidate_outcome_frame(
-                    tx,
-                    ShellV1CandidateOutcome {
-                        connection_epoch: c.connection_epoch,
-                        candidate_generation: c.candidate_generation,
-                        presentation_epoch: 0,
-                        kind: ShellV1CandidateOutcomeKind::Prepared,
-                    },
-                )
-                .map_err(sophia_runtime::ShellTransportError::Codec)?,
+            self.transport.send_tabs_outcome(
+                tx,
+                ShellV1CandidateOutcome {
+                    connection_epoch: c.connection_epoch,
+                    candidate_generation: c.candidate_generation,
+                    presentation_epoch: 0,
+                    kind: ShellV1CandidateOutcomeKind::Prepared,
+                },
             )?;
             self.tabs.last_candidate = c.candidate_generation;
             self.tabs.candidate = Some(c);
@@ -295,43 +279,32 @@ impl LiveMetadataShell {
             && let Some(c) = self.tabs.candidate.as_ref()
             && runtime.tab_bars_presented(&self.tabs.bars)
         {
-            self.transport.send_async(
-                encode_shell_v1_candidate_outcome_frame(
-                    self.tabs.transaction.unwrap(),
-                    ShellV1CandidateOutcome {
-                        connection_epoch: c.connection_epoch,
-                        candidate_generation: c.candidate_generation,
-                        presentation_epoch: c.snapshot_generation,
-                        kind: ShellV1CandidateOutcomeKind::Presented,
-                    },
-                )
-                .map_err(sophia_runtime::ShellTransportError::Codec)?,
+            self.transport.send_tabs_outcome(
+                self.tabs.transaction.unwrap(),
+                ShellV1CandidateOutcome {
+                    connection_epoch: c.connection_epoch,
+                    candidate_generation: c.candidate_generation,
+                    presentation_epoch: c.snapshot_generation,
+                    kind: ShellV1CandidateOutcomeKind::Presented,
+                },
             )?;
             self.tabs.presented = true;
         }
         let mut focus = Vec::new();
         let mut cancelled = Vec::new();
         for tx in self.tabs.cancelled_activations.drain(..) {
-            if self
-                .transport
-                .poll_transaction(IpcMessageKind::ShellV1ActivationAck, tx)?
-                .is_none()
-            {
+            if self.transport.poll_tab_activation_ack(tx)?.is_none() {
                 cancelled.push(tx);
             }
         }
         self.tabs.cancelled_activations = cancelled;
         if let Some((pending_tx, _, _, _)) = self.tabs.activation
-            && let Some(frame) = self
-                .transport
-                .poll_transaction(IpcMessageKind::ShellV1ActivationAck, pending_tx)?
+            && let Some(ack) = self.transport.poll_tab_activation_ack(pending_tx)?
         {
-            let (tx, ack) = decode_shell_v1_activation_ack_frame(&frame)
-                .map_err(sophia_runtime::ShellTransportError::Codec)?;
             let Some((expected, event, surface, output)) = self.tabs.activation.take() else {
                 return Ok(focus);
             };
-            if tx != expected {
+            if pending_tx != expected {
                 self.tabs.activation = Some((expected, event, surface, output));
                 return Ok(focus);
             }

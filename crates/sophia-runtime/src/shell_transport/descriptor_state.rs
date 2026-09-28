@@ -5,9 +5,9 @@ use sophia_protocol::{
 };
 use std::collections::VecDeque;
 
-pub(super) struct DescriptorState {
+pub(super) struct DescriptorState<S = ShellV1DescriptorSnapshot> {
     pub(super) last_candidate_generation: u64,
-    pub(super) requested_candidate: Option<(TransactionId, ShellV1DescriptorSnapshot)>,
+    pub(super) requested_candidate: Option<(TransactionId, S)>,
     pub(super) pending_candidate: Option<PendingShellCandidate>,
     pub(super) presented_candidate: Option<(u64, u64)>,
     pub(super) pending_activations: VecDeque<(TransactionId, u64)>,
@@ -16,7 +16,7 @@ pub(super) struct DescriptorState {
     pub(super) unmatched_acks: u64,
 }
 
-impl Default for DescriptorState {
+impl<S> Default for DescriptorState<S> {
     fn default() -> Self {
         Self {
             last_candidate_generation: 0,

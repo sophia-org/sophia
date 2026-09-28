@@ -23,7 +23,15 @@ impl ShellFiles {
         &mut self,
         kind: ShellFileKind,
     ) -> Option<ShellFileDescriptorRecord> {
-        let at = self.inbound.iter().position(|v| matches!(v, Inbound::Descriptor(value) if shell_file_descriptor_kind(&value.record) == kind))?;
+        self.take_descriptor_matching(kind, |_| true)
+    }
+
+    pub(in crate::shell_transport) fn take_descriptor_matching(
+        &mut self,
+        kind: ShellFileKind,
+        select: impl Fn(&ShellFileDescriptorRecord) -> bool,
+    ) -> Option<ShellFileDescriptorRecord> {
+        let at = self.inbound.iter().position(|v| matches!(v, Inbound::Descriptor(value) if shell_file_descriptor_kind(&value.record) == kind && select(value)))?;
         match self.inbound.remove(at) {
             Some(Inbound::Descriptor(value)) => Some(*value),
             _ => unreachable!("selected descriptor input"),

@@ -40,38 +40,75 @@ impl ShellComponentTransport {
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<sophia_protocol::ShellV1ActivationAck>, ShellTransportError> {
+        let expected = self.descriptor_state.pending_activations.front().copied();
+        let ack = self.take_file_activation_ack(epochs, expected)?;
+        if ack.is_some() {
+            self.descriptor_state.pending_activations.pop_front();
+        }
+        Ok(ack)
+    }
+
+    /// Both presentation owners share this native record kind. Keep any known
+    /// sibling acknowledgement queued; consume only an exact requested pair
+    /// or an unknown pair, which cannot authorize an action.
+    pub(super) fn take_file_activation_ack(
+        &mut self,
+        epochs: &mut crate::ContentEpochRegistry,
+        expected: Option<(TransactionId, u64)>,
+    ) -> Result<Option<sophia_protocol::ShellV1ActivationAck>, ShellTransportError> {
         self.poll_io(epochs)?;
-        let Some(value) = self
-            .files_mut()
-            .expect("file role")
+        let Some(wire::Wire::Files(files)) = self.wire.as_mut() else {
+            return Err(ShellTransportError::NotConnected);
+        };
+        let descriptors = &self.descriptor_state.pending_activations;
+        let tabs = &self.tab_state.pending_activations;
+        let key = |value: &ShellFileDescriptorRecord| {
+            let ShellDescriptorRecord::DescriptorActivationAck(ack) = &value.record else {
+                unreachable!("selected acknowledgement");
+            };
+            (value.transaction, ack.activation)
+        };
+        while files
             .export_mut()
-            .take_descriptor(ShellFileKind::DescriptorActivationAck)
-        else {
-            return self.nothing_inbound();
-        };
-        let ShellDescriptorRecord::DescriptorActivationAck(ack) = value.record else {
-            unreachable!("selected acknowledgement");
-        };
-        if self.descriptor_state.pending_activations.front().copied()
-            != Some((value.transaction, ack.activation))
+            .take_descriptor_matching(ShellFileKind::DescriptorActivationAck, |value| {
+                let key = key(value);
+                !descriptors.contains(&key) && !tabs.contains(&key)
+            })
+            .is_some()
         {
             self.descriptor_state.unmatched_acks =
                 self.descriptor_state.unmatched_acks.saturating_add(1);
-            return Ok(None);
         }
-        self.descriptor_state.pending_activations.pop_front();
-        Ok(Some(ack))
+        let value = files
+            .export_mut()
+            .take_descriptor_matching(ShellFileKind::DescriptorActivationAck, |value| {
+                Some(key(value)) == expected
+            });
+        match value {
+            Some(ShellFileDescriptorRecord {
+                record: ShellDescriptorRecord::DescriptorActivationAck(ack),
+                ..
+            }) => Ok(Some(ack)),
+            Some(_) => unreachable!("selected acknowledgement"),
+            None => self.nothing_inbound(),
+        }
     }
 
     pub(super) fn file_descriptor(&self) -> bool {
         matches!(&self.wire, Some(wire::Wire::Files(files)) if files.export().is_descriptor())
     }
 
-    fn descriptor_capacity(&self, epochs: &crate::ContentEpochRegistry, additional: usize) -> bool {
+    pub(super) fn descriptor_capacity(
+        &self,
+        epochs: &crate::ContentEpochRegistry,
+        additional: usize,
+    ) -> bool {
         if self.content_limits.is_some() {
             self.control_capacity_available(epochs, additional)
         } else {
-            let credits = self.descriptor_state.response_credits + additional;
+            let credits = self.descriptor_state.response_credits
+                + self.tab_state.response_credits
+                + additional;
             let other = usize::from(self.indicator_response.is_some());
             self.fifo_records() + credits + other <= 64
                 && self.fifo_bytes() + (credits + other) * self.control_record_bytes()

@@ -20,6 +20,9 @@ const METADATA: u64 =
 #[path = "support/shell_file_descriptor_owner.rs"]
 mod owner;
 
+#[path = "support/shell_file_tabs_owner.rs"]
+mod tabs;
+
 struct Fixture {
     transport: ShellComponentTransport,
     epochs: ContentEpochRegistry,

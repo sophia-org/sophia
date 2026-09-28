@@ -14,7 +14,7 @@ fn action() -> ToplevelActionCapabilityRef {
     }
 }
 
-fn snapshot(generation: u64) -> ShellV1DescriptorSnapshot {
+pub(super) fn snapshot(generation: u64) -> ShellV1DescriptorSnapshot {
     ShellV1DescriptorSnapshot {
         connection_epoch: EPOCH,
         snapshot_generation: generation,
@@ -49,7 +49,7 @@ fn candidate(generation: u64) -> ShellV1Candidate {
     }
 }
 
-fn activation(generation: u64) -> ShellV1Activation {
+pub(super) fn activation(generation: u64) -> ShellV1Activation {
     ShellV1Activation {
         connection_epoch: EPOCH,
         candidate_generation: generation,
@@ -66,7 +66,7 @@ fn connected() -> (Fixture, ShellConnection) {
     (f, c)
 }
 
-fn drive<T>(
+pub(super) fn drive<T>(
     f: &mut Fixture,
     c: &mut ShellConnection,
     mut poll: impl FnMut(&mut Fixture, &mut ShellConnection) -> Option<T>,
@@ -86,14 +86,14 @@ fn drive<T>(
     }
 }
 
-fn observe(f: &mut Fixture, c: &mut ShellConnection) -> ShellFileDescriptorRecord {
+pub(super) fn observe(f: &mut Fixture, c: &mut ShellConnection) -> ShellFileDescriptorRecord {
     match drive(f, c, |_, c| c.take_descriptor_observation().unwrap()) {
         DescriptorObservation::Record(value) => value,
         other => panic!("unexpected {other:?}"),
     }
 }
 
-fn request(f: &mut Fixture, c: &mut ShellConnection, generation: u64) {
+pub(super) fn request(f: &mut Fixture, c: &mut ShellConnection, generation: u64) {
     let value = snapshot(generation);
     f.transport
         .begin_candidate_request(&mut f.epochs, TransactionId::from_raw(generation), &value)
@@ -111,7 +111,7 @@ fn request(f: &mut Fixture, c: &mut ShellConnection, generation: u64) {
     );
 }
 
-fn submit(
+pub(super) fn submit(
     f: &mut Fixture,
     c: &mut ShellConnection,
     transaction: u64,
@@ -129,7 +129,7 @@ fn submit(
     });
 }
 
-fn accept(f: &mut Fixture, c: &mut ShellConnection, generation: u64) {
+pub(super) fn accept(f: &mut Fixture, c: &mut ShellConnection, generation: u64) {
     let value = candidate(generation);
     submit(
         f,
@@ -146,7 +146,7 @@ fn accept(f: &mut Fixture, c: &mut ShellConnection, generation: u64) {
     );
 }
 
-fn outcome(
+pub(super) fn outcome(
     f: &mut Fixture,
     c: &mut ShellConnection,
     generation: u64,

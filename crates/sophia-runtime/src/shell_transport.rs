@@ -42,6 +42,7 @@ pub(crate) mod outbound;
 mod outbox;
 mod publication;
 mod socket;
+mod tabs;
 mod wire;
 pub use accounting::{ShellContentAccounting, ShellContentShutdown};
 pub use content_admission::ShellContentAdmissionPolicy;
@@ -123,6 +124,7 @@ pub struct ShellComponentTransport {
     catalog_response: Option<catalog_responses::PendingCatalogResponse>,
     native_control: native_launcher::control::NativeControl,
     descriptor_state: descriptor_state::DescriptorState,
+    tab_state: descriptor_state::DescriptorState<sophia_protocol::ShellTabSnapshot>,
     connection_epoch: u64,
     reserved_limits: Option<ContentLimits>,
     content_grant: Option<ContentGrant>,
@@ -152,6 +154,7 @@ impl ShellComponentTransport {
             catalog_response: None,
             native_control: native_launcher::control::NativeControl::default(),
             descriptor_state: descriptor_state::DescriptorState::default(),
+            tab_state: descriptor_state::DescriptorState::default(),
             connection_epoch: 0,
             reserved_limits: None,
             content_grant: None,
@@ -198,6 +201,7 @@ impl ShellComponentTransport {
         self.catalog_response = None;
         self.native_control = native_launcher::control::NativeControl::default();
         self.descriptor_state = descriptor_state::DescriptorState::default();
+        self.tab_state = descriptor_state::DescriptorState::default();
         self.content_grant = None;
         self.content_limits = None;
         self.reserved_limits = None;

@@ -188,6 +188,7 @@ impl ShellComponentTransport {
         self.catalog_response = None;
         self.native_control = super::native_launcher::control::NativeControl::default();
         self.descriptor_state = super::descriptor_state::DescriptorState::default();
+        self.tab_state = super::descriptor_state::DescriptorState::default();
         self.capabilities = welcome.capabilities;
     }
 
