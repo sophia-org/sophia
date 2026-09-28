@@ -13,10 +13,9 @@ use sophia_9p::{
 };
 use sophia_protocol::shell_files::*;
 use sophia_protocol::{
-    CatalogActivation, CatalogCandidateBegin, ContentCandidateChunk, ContentCandidateEnd,
-    ContentGrant, ContentLimits, ContentResourceCancel, ContentResourceChunk, ContentResourceId,
-    ContentResourceLayout, NativeLauncherActivation, NativeLauncherAllocationRequest,
-    NativeLauncherCandidateBegin, NativeLauncherInputAck, ShellCatalogActionRecord,
+    CatalogActivation, ContentGrant, ContentLimits, ContentResourceCancel, ContentResourceChunk,
+    ContentResourceId, ContentResourceLayout, NativeLauncherActivation,
+    NativeLauncherAllocationRequest, NativeLauncherInputAck, ShellCatalogActionRecord,
     ShellContentRecord, ShellIndicatorActivation, ShellNativeLauncherRecord, ShellV1ClientHello,
     TransactionId,
 };
@@ -164,21 +163,9 @@ pub(in crate::shell_transport) enum CandidateFamily {
     Catalog,
 }
 
-/// The exploded parts of one whole native-launcher candidate, in wire order.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::shell_transport) enum NativeCandidatePart {
-    Begin(NativeLauncherCandidateBegin),
-    Chunk(ContentCandidateChunk),
-    End(ContentCandidateEnd),
-}
-
-/// The exploded parts of one whole catalog candidate, in wire order.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::shell_transport) enum CatalogCandidatePart {
-    Begin(CatalogCandidateBegin),
-    Chunk(ContentCandidateChunk),
-    End(ContentCandidateEnd),
-}
+pub(in crate::shell_transport) use super::super::wire::{
+    CatalogCandidatePart, NativeCandidatePart,
+};
 
 /// A submission whose custody the export has taken; the owners decide it.
 #[derive(Clone, Debug, Eq, PartialEq)]

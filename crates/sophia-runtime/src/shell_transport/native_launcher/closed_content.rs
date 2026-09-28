@@ -1,5 +1,5 @@
 //! Bounded late-content drain for the exact closed opening, without admission.
-use super::content::{NativeContentRecord, decode_native_content_record};
+use super::content::NativeContentRecord;
 use super::*;
 
 impl ShellComponentTransport {
@@ -33,54 +33,12 @@ impl ShellComponentTransport {
             .as_ref()
             .ok_or(ShellTransportError::MissingCapability)?;
         let maximum = limits.max_frames_per_service_tick.min(32) as usize;
-        let max_payload = limits.max_frame_payload as usize;
         let mut processed = 0;
-        if self.files.is_some() {
-            while processed < maximum {
-                let Some((transaction, record)) = self.peek_native_file_record()? else {
-                    break;
-                };
-                if record.grant() != self.store_grant {
-                    return Err(ShellTransportError::WrongContentGrant);
-                }
-                let credit = closed_native_content_credit(epochs, self.store_grant, &record)?;
-                if !self.control_capacity_available(epochs, credit) {
-                    break;
-                }
-                self.take_native_file_record();
-                self.apply_closed_native_content_record(
-                    epochs,
-                    transaction,
-                    record,
-                    expected,
-                    now_msec,
-                )?;
-                processed += 1;
-                self.flush_content_candidate_events(epochs)?;
-                self.flush_content_allocation_events(epochs)?;
-            }
-            if processed == 0 && self.peer_closed {
-                return Err(ShellTransportError::NotConnected);
-            }
-            return Ok(processed);
-        }
-        let mut bytes = 64 * 1024usize;
+        self.begin_inbound_visit();
         while processed < maximum {
-            let Some(index) = self.inbox.iter().position(|frame| {
-                matches!(u16::from_le_bytes([frame[6], frame[7]]),
-                163 | 165 | 167..=170 | 172..=174 | 176 | 178 | 188..=190)
-            }) else {
+            let Some((transaction, record)) = self.peek_native_content()? else {
                 break;
             };
-            let frame = &self.inbox[index];
-            let size = frame.len() - SOPHIA_IPC_HEADER_LEN;
-            if size > max_payload {
-                return Err(ShellTransportError::WrongContentRecord);
-            }
-            if size > bytes {
-                break;
-            }
-            let (transaction, record) = decode_native_content_record(frame)?;
             if record.grant() != self.store_grant {
                 return Err(ShellTransportError::WrongContentGrant);
             }
@@ -91,8 +49,7 @@ impl ShellComponentTransport {
             if !self.control_capacity_available(epochs, credit) {
                 break;
             }
-            self.inbox.remove(index);
-            bytes -= size;
+            self.take_native_content();
             self.apply_closed_native_content_record(
                 epochs,
                 transaction,

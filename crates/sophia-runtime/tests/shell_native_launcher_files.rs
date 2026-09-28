@@ -496,6 +496,22 @@ fn opening_allocation_candidate_focus_input_activation_and_close_cross_the_file_
         .install_native_launcher_focus(&mut registry, tx(30))
         .unwrap();
 
+    // The text bound is the record's own on every wire: an over-long text is
+    // refused before a receipt, revision or queued record exists.
+    let revision = transport.native_launcher_state().unwrap().1;
+    assert_eq!(
+        transport.issue_native_launcher_input(
+            &mut registry,
+            focus,
+            tx(35),
+            NativeLauncherInputKind::Text,
+            &"a".repeat(SOPHIA_SHELL_NATIVE_LAUNCHER_MAX_TEXT_BYTES + 1),
+            10,
+        ),
+        Err(ShellTransportError::WrongContentRecord)
+    );
+    assert_eq!(transport.native_launcher_state().unwrap().1, revision);
+
     // Accept (Enter on the selected row) does not advance the state
     // revision, unlike every other input kind, so the keyboard activation
     // that follows still names the exact revision focus was installed

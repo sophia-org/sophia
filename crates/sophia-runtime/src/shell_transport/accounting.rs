@@ -16,7 +16,7 @@ pub struct ShellContentAccounting {
     /// fields count only this connection's exact credits, FIFO and input.
     pub epochs: crate::ContentEpochAccounting,
     /// Store credits, queued store responses, action-cancel/outcome credits,
-    /// and FIFO frames. A partial write still owns the entire frame charge.
+    /// and FIFO records. A partial write still owns the entire record charge.
     pub response_records: usize,
     pub response_bytes: usize,
     pub input_records: usize,
@@ -49,8 +49,7 @@ impl ShellComponentTransport {
         backend: B,
     ) -> Result<ShellContentShutdown, B> {
         if self.negotiation.is_some()
-            || self.stream.is_some()
-            || self.files.is_some()
+            || self.wire.is_some()
             || self.content_grant.is_some()
             || epochs.resources(self.store_grant).is_some()
         {
@@ -75,21 +74,26 @@ impl ShellComponentTransport {
             + usize::from(self.indicator_response.is_some())
             + usize::from(self.catalog_response.is_some())
             + self.native_control.credits();
-        let controls = reserved - bulk_records + self.output.controls();
+        let controls = reserved - bulk_records + self.fifo_controls();
         let negotiating = usize::from(self.negotiation.is_some());
+        let (wire_records, wire_bytes) = self
+            .socket()
+            .map_or((0, 0), super::socket::SocketWire::input_accounting);
         ShellContentAccounting {
             epochs: epoch_accounting,
             response_records: reserved
-                + self.output.records()
+                + self.fifo_records()
                 + negotiating * super::negotiation_service::REPLY_RECORDS,
             response_bytes: bulk_bytes
-                + self.output.bulk_bytes()
-                + controls * self.control_frame_bytes()
+                + self.fifo_bulk_bytes()
+                + controls * self.control_record_bytes()
                 + negotiating * super::negotiation_service::REPLY_BYTES,
-            input_records: self.inbox.len() + negotiating,
-            input_bytes: self.input.len()
-                + self.inbox.iter().map(Vec::len).sum::<usize>()
-                + negotiating * (super::SOPHIA_IPC_HEADER_LEN + 12),
+            input_records: wire_records + negotiating,
+            input_bytes: wire_bytes
+                + self.negotiation.as_ref().map_or(
+                    0,
+                    super::negotiation_service::PendingNegotiation::input_bytes,
+                ),
         }
     }
 

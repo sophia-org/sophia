@@ -38,7 +38,10 @@ fn floor(epoch: u64) -> ContentLimits {
 fn full_size(grant: ContentGrant, id: u64, value: u8) -> Vec<ShellContentRecord> {
     let resource = ContentResourceId { id, generation: 1 };
     let limits = floor(grant.connection_epoch);
-    let payload = (limits.max_frame_payload - 48).min(limits.max_chunk_bytes);
+    // The canonical chunk. Valid limits keep `max_chunk_bytes + 48` within
+    // the legacy frame payload, so this equals the SDK's layout rule.
+    let payload = limits.max_chunk_bytes;
+    assert!(payload + 48 <= limits.max_frame_payload);
     let begin = ContentResourceBegin {
         grant,
         resource,

@@ -1,12 +1,12 @@
 use super::ShellComponentTransport;
 use sophia_protocol::{ContentOutputId, ShellContentRecord, TransactionId};
 
-use super::{ShellSessionTransport, ShellTransportError, content_admission};
+use super::wire::ContentWant;
+use super::{ShellSessionTransport, ShellTransportError};
 use crate::{ContentCandidateContext, ContentRenderBundle};
 
-// Header plus the largest fixed candidate response. CandidateOutcome is 72
-// payload bytes; FramePermit is smaller. Reserve before consuming peer input.
-const MAX_CANDIDATE_RESPONSE_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN + 72;
+// Every candidate response owns a control credit, charged at least its whole
+// record on either wire; credits are reserved before peer input is consumed.
 
 impl ShellComponentTransport {
     /// Accept and coalesce frame demands and exact cancellations. Allocation
@@ -24,14 +24,6 @@ impl ShellComponentTransport {
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
             if !self.control_capacity_available(epochs, 1) {
-                break;
-            }
-            if self
-                .output
-                .len()
-                .saturating_add(MAX_CANDIDATE_RESPONSE_BYTES)
-                > limits.max_output_queue_bytes as usize
-            {
                 break;
             }
             let Some((transaction, record)) = self.poll_content_demand_record(epochs)? else {
@@ -72,17 +64,8 @@ impl ShellComponentTransport {
         permit_id: u64,
         now_msec: u64,
     ) -> Result<(), ShellTransportError> {
-        let limits = self
-            .content_limits
-            .as_ref()
-            .ok_or(ShellTransportError::MissingCapability)?;
-        if self
-            .output
-            .len()
-            .saturating_add(MAX_CANDIDATE_RESPONSE_BYTES)
-            > limits.max_output_queue_bytes as usize
-        {
-            return Err(ShellTransportError::ContentQueueSaturated);
+        if self.content_limits.is_none() {
+            return Err(ShellTransportError::MissingCapability);
         }
         if !self.control_capacity_available(epochs, 2) {
             return Err(ShellTransportError::ContentQueueSaturated);
@@ -105,17 +88,8 @@ impl ShellComponentTransport {
         permit_id: u64,
         now_msec: u64,
     ) -> Result<(), ShellTransportError> {
-        let limits = self
-            .content_limits
-            .as_ref()
-            .ok_or(ShellTransportError::MissingCapability)?;
-        if self
-            .output
-            .len()
-            .saturating_add(MAX_CANDIDATE_RESPONSE_BYTES)
-            > limits.max_output_queue_bytes as usize
-        {
-            return Err(ShellTransportError::ContentQueueSaturated);
+        if self.content_limits.is_none() {
+            return Err(ShellTransportError::MissingCapability);
         }
         if !self.control_capacity_available(epochs, 3) {
             return Err(ShellTransportError::ContentQueueSaturated);
@@ -147,14 +121,6 @@ impl ShellComponentTransport {
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
             if !self.control_capacity_available(epochs, 0) {
-                break;
-            }
-            if self
-                .output
-                .len()
-                .saturating_add(MAX_CANDIDATE_RESPONSE_BYTES)
-                > limits.max_output_queue_bytes as usize
-            {
                 break;
             }
             let Some((transaction, record)) = self.poll_content_candidate_record(epochs)? else {
@@ -252,11 +218,8 @@ impl ShellComponentTransport {
                 );
             }
             processed += 1;
-            if outcome.is_err()
-                && reported
-                && let Some(files) = self.files.as_mut()
-            {
-                files.export_mut().discard_candidate_parts();
+            if outcome.is_err() && reported {
+                self.discard_candidate_rest(super::files::CandidateFamily::Base);
             }
             self.flush_content_candidate_events(epochs)?;
             if let Err(error) = outcome
@@ -418,32 +381,8 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
-        if self.files.is_some() {
-            let part = self
-                .files
-                .as_mut()
-                .and_then(|files| files.export_mut().take_candidate_part());
-            return self.admit_file_record(part);
-        }
-        let at = self
-            .inbox
-            .iter()
-            .position(|frame| matches!(u16::from_le_bytes([frame[6], frame[7]]), 172..=174));
-        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
-            };
-        };
-        let (transaction, record) = sophia_protocol::decode_shell_content_frame(&frame)?;
-        if !content_admission::client_record(&record) {
-            return Err(ShellTransportError::WrongContentRecord);
-        }
-        if content_admission::record_grant(&record) != self.content_grant {
-            return Err(ShellTransportError::WrongContentGrant);
-        }
-        Ok(Some((transaction, record)))
+        let taken = self.take_content(ContentWant::CandidatePart)?;
+        self.admit_client_record(taken)
     }
 
     fn poll_content_demand_record(
@@ -451,34 +390,8 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
-        if self.files.is_some() {
-            let record = self.take_file_content(|record| {
-                matches!(
-                    record,
-                    ShellContentRecord::FrameDemand(_) | ShellContentRecord::FrameDemandCancel(_)
-                )
-            });
-            return self.admit_file_record(record);
-        }
-        let at = self
-            .inbox
-            .iter()
-            .position(|frame| matches!(u16::from_le_bytes([frame[6], frame[7]]), 176 | 178));
-        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
-            };
-        };
-        let (transaction, record) = sophia_protocol::decode_shell_content_frame(&frame)?;
-        if !content_admission::client_record(&record) {
-            return Err(ShellTransportError::WrongContentRecord);
-        }
-        if content_admission::record_grant(&record) != self.content_grant {
-            return Err(ShellTransportError::WrongContentGrant);
-        }
-        Ok(Some((transaction, record)))
+        let taken = self.take_content(ContentWant::Demand)?;
+        self.admit_client_record(taken)
     }
 
     pub(super) fn flush_content_candidate_events(
@@ -492,15 +405,15 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let prepared =
-                self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
+            let admitted =
+                self.prepare_content_record(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.active_candidates_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
             };
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
-            self.push_prepared(prepared);
+            self.transfer_record(admitted);
             store.take_event();
         }
     }

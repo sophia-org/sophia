@@ -23,8 +23,7 @@ impl ShellComponentTransport {
         profile: crate::ContentStoreProfile,
     ) -> Result<(), ShellTransportError> {
         if self.negotiation.is_some()
-            || self.stream.is_some()
-            || self.files.is_some()
+            || self.wire.is_some()
             || self.content_grant.is_some()
             || self.reserved_limits.is_some()
             || epochs.resources(self.store_grant).is_some()
@@ -38,37 +37,5 @@ impl ShellComponentTransport {
         self.store_grant = limits.grant;
         self.reserved_limits = Some(limits);
         Ok(())
-    }
-
-    pub fn accept_and_negotiate(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        connection_epoch: u64,
-        timeout: Duration,
-    ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
-        self.accept_and_negotiate_with_content_policy(
-            epochs,
-            connection_epoch,
-            timeout,
-            ShellContentAdmissionPolicy::Unavailable,
-        )
-    }
-
-    /// Blocking compatibility driver over the same retained negotiation. The
-    /// timeout now bounds the entire handshake, not each separate I/O stage.
-    pub fn accept_and_negotiate_with_content_policy(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        connection_epoch: u64,
-        timeout: Duration,
-        content_policy: ShellContentAdmissionPolicy,
-    ) -> Result<ShellV1ServerWelcome, ShellTransportError> {
-        self.begin_negotiation(epochs, connection_epoch, timeout, content_policy)?;
-        loop {
-            if let Some(welcome) = self.poll_negotiation(epochs, 64 * 1024)? {
-                return Ok(welcome);
-            }
-            std::thread::sleep(Duration::from_millis(2));
-        }
     }
 }

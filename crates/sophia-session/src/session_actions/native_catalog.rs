@@ -115,8 +115,8 @@ impl SessionLaunchQueue {
         application: SessionApplicationId,
         active: usize,
     ) -> Result<TransactionId, NativeCatalogLaunchRefusal> {
-        sophia_protocol::encode_shell_catalog_action_frame(
-            TransactionId::from_raw(1),
+        // The record's own validator, independent of any wire's framing.
+        sophia_protocol::shell::encoding::catalog_actions::encode_shell_catalog_action_value(
             &sophia_protocol::ShellCatalogActionRecord::Activate(activation.clone()),
         )
         .map_err(|_| NativeCatalogLaunchRefusal::Unauthorized)?;

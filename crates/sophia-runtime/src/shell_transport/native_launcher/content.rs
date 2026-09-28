@@ -1,8 +1,9 @@
+use super::super::files::ShellFiles;
 use super::*;
 use crate::{ContentCandidateContext, ContentRenderBundle, NativeLauncherCandidateContext};
 
 impl ShellComponentTransport {
-    /// One bounded native allocation/candidate visit, using the existing inbox,
+    /// One bounded native allocation/candidate visit, using the wire's inbound queue,
     /// stores and response FIFO. Session supplies current published identities.
     /// Resources, pacing, allocations and assembly share one record/payload
     /// allowance. Focus/action service and Session scheduling are separate.
@@ -39,73 +40,11 @@ impl ShellComponentTransport {
             .max_frames_per_service_tick
             .min(32) as usize;
         let mut processed = 0;
-        if self.files.is_some() {
-            while processed < limit {
-                let Some((transaction, record)) = self.peek_native_file_record()? else {
-                    break;
-                };
-                if record.grant() != self.store_grant {
-                    return Err(ShellTransportError::WrongContentGrant);
-                }
-                let credit = match &record {
-                    NativeContentRecord::Allocation(_) | NativeContentRecord::Demand(_) => 1,
-                    NativeContentRecord::Begin(v) => usize::from(
-                        self.native_control
-                            .closed
-                            .is_some_and(|closed| v.opening == closed.opening),
-                    ),
-                    NativeContentRecord::Resource(v) => epochs
-                        .resources(self.store_grant)
-                        .ok_or(ShellTransportError::MissingCapability)?
-                        .additional_response_credit(v),
-                    _ => 0,
-                };
-                if !self.control_capacity_available(epochs, credit) {
-                    break;
-                }
-                self.take_native_file_record();
-                if self.service_previous_native_record(epochs, transaction, &record, context)? {
-                    processed += 1;
-                    self.flush_content_candidate_events(epochs)?;
-                    self.flush_content_allocation_events(epochs)?;
-                    continue;
-                }
-                self.apply_native_content_record(
-                    epochs,
-                    transaction,
-                    record,
-                    context,
-                    current,
-                    now_msec,
-                )?;
-                processed += 1;
-                self.flush_content_candidate_events(epochs)?;
-                self.flush_content_allocation_events(epochs)?;
-            }
-            if processed == 0 && self.peer_closed {
-                return Err(ShellTransportError::NotConnected);
-            }
-            return Ok(processed);
-        }
-        let mut remaining = 64 * 1024usize;
+        self.begin_inbound_visit();
         while processed < limit {
-            let Some(index) = self.inbox.iter().position(|frame| matches!(u16::from_le_bytes([frame[6], frame[7]]), 163 | 165 | 167..=170 | 172..=174 | 176 | 178 | 188..=190)) else { break; };
-            let frame = &self.inbox[index];
-            let payload_bytes = frame.len() - SOPHIA_IPC_HEADER_LEN;
-            if payload_bytes
-                > self
-                    .content_limits
-                    .as_ref()
-                    .expect("checked limits")
-                    .max_frame_payload as usize
-            {
-                return Err(ShellTransportError::WrongContentRecord);
-            }
-            if payload_bytes > remaining {
+            let Some((transaction, record)) = self.peek_native_content()? else {
                 break;
-            }
-            // Decode and validate role/grant before removing the exact frame.
-            let (transaction, record) = decode_native_content_record(frame)?;
+            };
             if record.grant() != self.store_grant {
                 return Err(ShellTransportError::WrongContentGrant);
             }
@@ -125,8 +64,7 @@ impl ShellComponentTransport {
             if !self.control_capacity_available(epochs, credit) {
                 break;
             }
-            remaining -= payload_bytes;
-            self.inbox.remove(index);
+            self.take_native_content();
             if self.service_previous_native_record(epochs, transaction, &record, context)? {
                 processed += 1;
                 self.flush_content_candidate_events(epochs)?;
@@ -240,77 +178,18 @@ impl ShellComponentTransport {
                     | NativeContentRecord::Demand(_)
                     | NativeContentRecord::Cancel(_) => unreachable!(),
                 };
-                if result.is_err()
-                    && candidates.pending_event().is_some()
-                    && let Some(files) = self.files.as_mut()
-                {
-                    files.export_mut().discard_native_candidate_parts();
+                let reported = candidates.pending_event().is_some();
+                if result.is_err() && reported {
+                    self.discard_candidate_rest(super::super::files::CandidateFamily::Native);
                 }
                 if let Err(error) = result
-                    && candidates.pending_event().is_none()
+                    && !reported
                 {
                     return Err(error.into());
                 }
             }
         }
         Ok(())
-    }
-
-    /// The oldest native-launcher-content-shaped record on the file wire,
-    /// left in place. Tried in order: the rest of a candidate already
-    /// exploding, a queued resource/demand/cancel record, a queued
-    /// allocation, then the next queued whole candidate (exploding it). This
-    /// does not preserve the single socket inbox's exact cross-family
-    /// submission order; nothing admitted is ever lost or double-processed,
-    /// and a foreign candidate family is the same hard protocol violation the
-    /// socket path's raw-kind scan already treats it as.
-    pub(super) fn peek_native_file_record(
-        &mut self,
-    ) -> Result<Option<(TransactionId, NativeContentRecord)>, ShellTransportError> {
-        let Some(files) = self.files.as_mut() else {
-            return Ok(None);
-        };
-        let export = files.export_mut();
-        if let Some((transaction, part)) = export.peek_native_candidate_part() {
-            return Ok(Some((transaction, native_part_record(part))));
-        }
-        if let Some((transaction, record)) = export.peek_content(is_native_resource_shaped) {
-            let record = record.clone();
-            return Ok(Some((transaction, native_content_record(record)?)));
-        }
-        if let Some((transaction, request)) = export.peek_native_allocation() {
-            return Ok(Some((
-                transaction,
-                NativeContentRecord::Allocation(request),
-            )));
-        }
-        match export.peek_candidate_family() {
-            None => Ok(None),
-            Some(super::super::files::CandidateFamily::Native) => {
-                let (transaction, part) = export
-                    .peek_native_candidate_part()
-                    .expect("family reported a queued native candidate");
-                Ok(Some((transaction, native_part_record(part))))
-            }
-            Some(_) => Err(ShellTransportError::WrongContentRecord),
-        }
-    }
-
-    /// Removes exactly the record `peek_native_file_record` last reported,
-    /// mirroring its branch selection with nothing mutating state between
-    /// the two calls.
-    pub(super) fn take_native_file_record(&mut self) {
-        let Some(files) = self.files.as_mut() else {
-            return;
-        };
-        let export = files.export_mut();
-        if export.peek_native_candidate_part().is_some() {
-            export.take_native_candidate_part();
-        } else if export.peek_content(is_native_resource_shaped).is_some() {
-            export.take_content(is_native_resource_shaped);
-        } else if export.peek_native_allocation().is_some() {
-            export.take_native_allocation();
-        }
     }
 
     pub fn begin_native_launcher_submission(
@@ -333,7 +212,7 @@ impl ShellComponentTransport {
     }
 }
 
-pub(super) enum NativeContentRecord {
+pub(in crate::shell_transport) enum NativeContentRecord {
     Allocation(NativeLauncherAllocationRequest),
     Begin(NativeLauncherCandidateBegin),
     Chunk(ContentCandidateChunk),
@@ -343,7 +222,7 @@ pub(super) enum NativeContentRecord {
     Cancel(ContentFrameDemandCancel),
 }
 impl NativeContentRecord {
-    pub(super) fn grant(&self) -> ContentGrant {
+    pub(in crate::shell_transport) fn grant(&self) -> ContentGrant {
         match self {
             Self::Allocation(v) => v.grant,
             Self::Begin(v) => v.content.grant,
@@ -391,33 +270,51 @@ pub(super) fn native_part_record(
     }
 }
 
-pub(super) fn decode_native_content_record(
-    frame: &[u8],
-) -> Result<(TransactionId, NativeContentRecord), ShellTransportError> {
-    let kind = u16::from_le_bytes([frame[6], frame[7]]);
-    let result = if matches!(kind, 165 | 167..=170 | 174 | 176 | 178) {
-        let (tx, record) = decode_shell_content_frame(frame)?;
-        let record = match record {
-            ShellContentRecord::CandidateEnd(end) => NativeContentRecord::End(end),
-            ShellContentRecord::FrameDemand(v) => NativeContentRecord::Demand(v),
-            ShellContentRecord::FrameDemandCancel(v) => NativeContentRecord::Cancel(v),
-            v if content_admission::resource_identity(&v).is_some() => {
-                NativeContentRecord::Resource(v)
-            }
-            _ => return Err(ShellTransportError::WrongContentRecord),
-        };
-        (tx, record)
-    } else if (188..=190).contains(&kind) {
-        let (tx, record) = decode_shell_native_launcher_frame(frame)?;
-        let record = match record {
-            ShellNativeLauncherRecord::AllocationRequest(v) => NativeContentRecord::Allocation(v),
-            ShellNativeLauncherRecord::CandidateBegin(v) => NativeContentRecord::Begin(v),
-            ShellNativeLauncherRecord::CandidateChunk(v) => NativeContentRecord::Chunk(v),
-            _ => return Err(ShellTransportError::WrongContentRecord),
-        };
-        (tx, record)
-    } else {
-        return Err(ShellTransportError::WrongContentRecord);
-    };
-    Ok(result)
+/// The oldest native-launcher-content-shaped record on the file wire,
+/// left in place. Tried in order: the rest of a candidate already
+/// exploding, a queued resource/demand/cancel record, a queued
+/// allocation, then the next queued whole candidate (exploding it). This
+/// does not preserve the single socket inbox's exact cross-family
+/// submission order; nothing admitted is ever lost or double-processed,
+/// and a foreign candidate family is the same hard protocol violation the
+/// socket path's raw-kind scan already treats it as.
+pub(in crate::shell_transport) fn peek_native_file_record(
+    export: &mut ShellFiles,
+) -> Result<Option<(TransactionId, NativeContentRecord)>, ShellTransportError> {
+    if let Some((transaction, part)) = export.peek_native_candidate_part() {
+        return Ok(Some((transaction, native_part_record(part))));
+    }
+    if let Some((transaction, record)) = export.peek_content(is_native_resource_shaped) {
+        let record = record.clone();
+        return Ok(Some((transaction, native_content_record(record)?)));
+    }
+    if let Some((transaction, request)) = export.peek_native_allocation() {
+        return Ok(Some((
+            transaction,
+            NativeContentRecord::Allocation(request),
+        )));
+    }
+    match export.peek_candidate_family() {
+        None => Ok(None),
+        Some(super::super::files::CandidateFamily::Native) => {
+            let (transaction, part) = export
+                .peek_native_candidate_part()
+                .expect("family reported a queued native candidate");
+            Ok(Some((transaction, native_part_record(part))))
+        }
+        Some(_) => Err(ShellTransportError::WrongContentRecord),
+    }
+}
+
+/// Removes exactly the record `peek_native_file_record` last reported,
+/// mirroring its branch selection with nothing mutating state between
+/// the two calls.
+pub(in crate::shell_transport) fn take_native_file_record(export: &mut ShellFiles) {
+    if export.peek_native_candidate_part().is_some() {
+        export.take_native_candidate_part();
+    } else if export.peek_content(is_native_resource_shaped).is_some() {
+        export.take_content(is_native_resource_shaped);
+    } else if export.peek_native_allocation().is_some() {
+        export.take_native_allocation();
+    }
 }

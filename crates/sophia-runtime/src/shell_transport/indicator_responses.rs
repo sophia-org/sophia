@@ -2,11 +2,12 @@
 //! Polling cannot hand the same request to the WM twice. The result is recorded
 //! before fallible encoding/admission, so retry never repeats the effect.
 use super::ShellComponentTransport;
-use super::{ShellSessionTransport, ShellTransportError, control_budget::CONTROL_FRAME_BYTES};
+use super::control_budget::{CONTROL_RECORD_BYTES, Class};
+use super::outbound::OutboundRecord;
+use super::{ShellSessionTransport, ShellTransportError};
 use sophia_protocol::{
-    IpcMessageKind, ShellIndicatorActivation, ShellIndicatorActivationOutcome,
-    ShellIndicatorActivationStatus, TransactionId, decode_shell_indicator_activation,
-    encode_shell_indicator_activation_outcome,
+    ShellIndicatorActivation, ShellIndicatorActivationOutcome, ShellIndicatorActivationStatus,
+    TransactionId,
 };
 
 #[derive(Clone, Copy)]
@@ -35,39 +36,13 @@ impl ShellComponentTransport {
         if self.indicator_response.is_some() {
             return Ok(None);
         }
-        let (transaction, activation, at) = if self.files.is_some() {
-            let Some((transaction, activation)) = self
-                .files
-                .as_ref()
-                .and_then(|files| files.export().peek_indicator_activate())
-            else {
-                return if self.peer_closed {
-                    Err(ShellTransportError::NotConnected)
-                } else {
-                    Ok(None)
-                };
-            };
-            (transaction, activation, None)
-        } else {
-            let at = self.inbox.iter().position(|frame| {
-                u16::from_le_bytes([frame[6], frame[7]])
-                    == IpcMessageKind::ShellIndicatorActivate as u16
-            });
-            let Some(at) = at else {
-                return if self.peer_closed {
-                    Err(ShellTransportError::NotConnected)
-                } else {
-                    Ok(None)
-                };
-            };
-            let (transaction, activation) = decode_shell_indicator_activation(&self.inbox[at])?;
-            (transaction, activation, Some(at))
+        let Some((transaction, activation)) = self.peek_indicator_activate()? else {
+            return self.nothing_inbound();
         };
         let capacity = if self.content_limits.is_some() {
             self.control_capacity_available(epochs, 1)
         } else {
-            self.output.records() < 64
-                && self.output.len().saturating_add(CONTROL_FRAME_BYTES) <= 2 * 1024 * 1024
+            self.unlimited_capacity_available(CONTROL_RECORD_BYTES)
         };
         if !capacity {
             return Ok(None); // The input record still owns the unadmitted request.
@@ -77,13 +52,7 @@ impl ShellComponentTransport {
             activation,
             outcome: None,
         });
-        if let Some(at) = at {
-            self.inbox.remove(at);
-        } else {
-            self.files
-                .as_mut()
-                .and_then(|files| files.export_mut().take_indicator_activate());
-        }
+        self.take_indicator_activate();
         Ok(Some((transaction, activation)))
     }
 
@@ -130,33 +99,22 @@ impl ShellComponentTransport {
             return Ok(false);
         };
         let transaction = pending.transaction;
-        let frame = encode_shell_indicator_activation_outcome(transaction, &outcome)?;
-        if frame.len() > CONTROL_FRAME_BYTES {
-            return Err(ShellTransportError::ActivationQueueSaturated);
-        }
+        let admitted = self.admit_record(
+            OutboundRecord::IndicatorOutcome(transaction, outcome),
+            Class::Control {
+                limit: CONTROL_RECORD_BYTES,
+                oversize: ShellTransportError::ActivationQueueSaturated,
+            },
+        )?;
         let capacity = if self.content_limits.is_some() {
-            self.frame_capacity_available(epochs, frame.len(), true, true)
+            self.record_capacity_available(epochs, admitted.charge, true, true)
         } else {
-            self.output.records() < 64
-                && self.output.len().saturating_add(frame.len()) <= 2 * 1024 * 1024
+            self.unlimited_capacity_available(admitted.charge)
         };
         if !capacity {
             return Ok(false);
         }
-        self.push_family_frame(true, frame, || {
-            let body =
-                sophia_protocol::shell_files::encode_shell_file_indicator_activation_outcome_body(
-                    &sophia_protocol::shell_files::ShellFileIndicatorActivationOutcome {
-                        transaction,
-                        outcome,
-                    },
-                )
-                .map_err(|_| ShellTransportError::WrongContentRecord)?;
-            Ok((
-                sophia_protocol::shell_files::ShellFileKind::IndicatorActivationOutcome,
-                body,
-            ))
-        })?;
+        self.transfer_record(admitted);
         // Exact pending record was copied/validated above. This infallible clear
         // has no allocation, callback or socket I/O after FIFO ownership.
         self.indicator_response = None;

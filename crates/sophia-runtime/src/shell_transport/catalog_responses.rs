@@ -1,6 +1,7 @@
 //! One exact persistent activation outcome owns one aggregate response credit.
 //! Session decides authorization; this boundary only retains intake and output.
-use super::control_budget::CONTROL_FRAME_BYTES;
+use super::control_budget::{CONTROL_RECORD_BYTES, Class};
+use super::outbound::OutboundRecord;
 use super::{ShellComponentTransport, ShellTransportConnection, ShellTransportError};
 use sophia_protocol::*;
 
@@ -21,36 +22,8 @@ impl ShellComponentTransport {
         if self.catalog_response.is_some() {
             return Ok(None);
         }
-        let (transaction, activation, at) = if self.files.is_some() {
-            let Some((transaction, activation)) = self
-                .files
-                .as_ref()
-                .and_then(|files| files.export().peek_catalog_activate())
-            else {
-                return if self.peer_closed {
-                    Err(ShellTransportError::NotConnected)
-                } else {
-                    Ok(None)
-                };
-            };
-            (transaction, activation, None)
-        } else {
-            let Some(at) = self
-                .inbox
-                .iter()
-                .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 200)
-            else {
-                return if self.peer_closed {
-                    Err(ShellTransportError::NotConnected)
-                } else {
-                    Ok(None)
-                };
-            };
-            let (transaction, record) = decode_shell_catalog_action_frame(&self.inbox[at])?;
-            let ShellCatalogActionRecord::Activate(activation) = record else {
-                return Err(ShellTransportError::WrongContentRecord);
-            };
-            (transaction, activation, Some(at))
+        let Some((transaction, activation)) = self.peek_catalog_activate()? else {
+            return self.nothing_inbound();
         };
         if Some(activation.action.grant) != self.content_grant {
             return Err(ShellTransportError::WrongContentGrant);
@@ -63,13 +36,7 @@ impl ShellComponentTransport {
             activation: activation.clone(),
             status: None,
         });
-        if let Some(at) = at {
-            self.inbox.remove(at);
-        } else {
-            self.files
-                .as_mut()
-                .and_then(|files| files.export_mut().take_catalog_activate());
-        }
+        self.take_catalog_activate();
         Ok(Some((transaction, activation)))
     }
 
@@ -114,22 +81,17 @@ impl ShellComponentTransport {
             status,
             reason: 0,
         });
-        let frame = encode_shell_catalog_action_frame(transaction, &record)?;
-        if frame.len() > CONTROL_FRAME_BYTES {
-            return Err(ShellTransportError::ActivationQueueSaturated);
-        }
-        if !self.frame_capacity_available(epochs, frame.len(), true, true) {
+        let admitted = self.admit_record(
+            OutboundRecord::CatalogAction(transaction, record),
+            Class::Control {
+                limit: CONTROL_RECORD_BYTES,
+                oversize: ShellTransportError::ActivationQueueSaturated,
+            },
+        )?;
+        if !self.record_capacity_available(epochs, admitted.charge, true, true) {
             return Ok(false);
         }
-        self.push_family_frame(true, frame, || {
-            sophia_protocol::shell_files::encode_shell_file_catalog_action_body(
-                &sophia_protocol::shell_files::ShellFileCatalogActionRecord {
-                    transaction,
-                    record,
-                },
-            )
-            .map_err(|_| ShellTransportError::WrongContentRecord)
-        })?;
+        self.transfer_record(admitted);
         // This exact fixed-field request was validated before enqueue. Clearing
         // it cannot allocate, call user code or perform I/O after FIFO transfer.
         self.catalog_response = None;

@@ -34,11 +34,10 @@ impl ShellComponentTransport {
             && self.native_control.credits() == 0
             && self.native_control.input_occupancy() == 0
             && !self.peer_closed
-            && self.input.is_empty()
+            && self.inbound_idle()
             && self.action_cancellations.is_empty()
             && self.indicator_response.is_none()
-            && self.output.is_empty()
-            && self.inbox.is_empty())
+            && self.fifo_is_empty())
     }
 }
 

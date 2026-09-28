@@ -1,12 +1,9 @@
 use super::ShellComponentTransport;
 use sophia_protocol::*;
 
-use super::{ShellSessionTransport, ShellTransportError, content_admission};
+use super::wire::ContentWant;
+use super::{ShellSessionTransport, ShellTransportError};
 use crate::{ContentAllocationError, ContentAllocationSnapshot};
-
-const ALLOCATION_RESPONSE_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN + 160;
-const OUTPUT_FACTS_PREFIX_BYTES: usize = sophia_protocol::SOPHIA_IPC_HEADER_LEN + 32;
-const OUTPUT_FACT_BYTES: usize = 40;
 
 impl ShellComponentTransport {
     pub fn publish_content_output_facts(
@@ -16,8 +13,7 @@ impl ShellComponentTransport {
         facts_generation: u64,
         outputs: Vec<ContentOutputFactsEntry>,
     ) -> Result<(), ShellTransportError> {
-        let bytes = OUTPUT_FACTS_PREFIX_BYTES
-            .saturating_add(outputs.len().saturating_mul(OUTPUT_FACT_BYTES));
+        let bytes = super::outbound::output_facts_charge(outputs.len());
         if !self.bulk_capacity_available(epochs, bytes) {
             return Err(ShellTransportError::ContentQueueSaturated);
         }
@@ -40,10 +36,7 @@ impl ShellComponentTransport {
             .ok_or(ShellTransportError::MissingCapability)?;
         let mut processed = 0;
         while processed < limits.max_frames_per_service_tick as usize {
-            if self
-                .require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 1)
-                .is_err()
-            {
+            if self.require_allocation_output_capacity(epochs, 1).is_err() {
                 break;
             }
             let Some((transaction, record)) = self.poll_content_allocation_record(epochs)? else {
@@ -104,7 +97,7 @@ impl ShellComponentTransport {
         snapshot: ContentAllocationSnapshot,
         presented_parents: &[(ContentAllocationId, u64)],
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        self.require_allocation_output_capacity(epochs, 0)?;
         epochs
             .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -118,7 +111,7 @@ impl ShellComponentTransport {
         request_id: u64,
         error: ContentAllocationError,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        self.require_allocation_output_capacity(epochs, 0)?;
         epochs
             .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -131,7 +124,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         request_id: u64,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        self.require_allocation_output_capacity(epochs, 0)?;
         epochs
             .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -146,7 +139,7 @@ impl ShellComponentTransport {
         allocation: ContentAllocationId,
         reason: ContentReason,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 1)?;
+        self.require_allocation_output_capacity(epochs, 1)?;
         epochs
             .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -159,7 +152,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
         now_msec: u64,
     ) -> Result<(), ShellTransportError> {
-        self.require_allocation_output_capacity(epochs, ALLOCATION_RESPONSE_BYTES, 0)?;
+        self.require_allocation_output_capacity(epochs, 0)?;
         epochs
             .allocations_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -177,19 +170,18 @@ impl ShellComponentTransport {
             .unwrap_or_default()
     }
 
+    /// The allocation response's control credit, and `additional` new ones,
+    /// fit the connection's record and byte budget. The credit charges at
+    /// least the response's whole record, so this also bounds its bytes.
     fn require_allocation_output_capacity(
         &self,
         epochs: &crate::ContentEpochRegistry,
-        bytes: usize,
         additional: usize,
     ) -> Result<(), ShellTransportError> {
-        let limits = self
-            .content_limits
-            .as_ref()
-            .ok_or(ShellTransportError::MissingCapability)?;
-        if !self.control_capacity_available(epochs, additional)
-            || self.output.len().saturating_add(bytes) > limits.max_output_queue_bytes as usize
-        {
+        if self.content_limits.is_none() {
+            return Err(ShellTransportError::MissingCapability);
+        }
+        if !self.control_capacity_available(epochs, additional) {
             Err(ShellTransportError::ContentQueueSaturated)
         } else {
             Ok(())
@@ -201,33 +193,8 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellContentRecord)>, ShellTransportError> {
         self.poll_io(epochs)?;
-        let taken = if self.files.is_some() {
-            self.take_file_content(|record| {
-                matches!(record, ShellContentRecord::AllocationRequest(_))
-            })
-        } else {
-            let at = self
-                .inbox
-                .iter()
-                .position(|frame| u16::from_le_bytes([frame[6], frame[7]]) == 163);
-            at.and_then(|index| self.inbox.remove(index))
-                .map(|frame| sophia_protocol::decode_shell_content_frame(&frame))
-                .transpose()?
-        };
-        let Some((transaction, record)) = taken else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
-            };
-        };
-        if !content_admission::client_record(&record) {
-            return Err(ShellTransportError::WrongContentRecord);
-        }
-        if content_admission::record_grant(&record) != self.content_grant {
-            return Err(ShellTransportError::WrongContentGrant);
-        }
-        Ok(Some((transaction, record)))
+        let taken = self.take_content(ContentWant::AllocationRequest)?;
+        self.admit_client_record(taken)
     }
 
     pub(super) fn flush_content_allocation_events(
@@ -241,15 +208,15 @@ impl ShellComponentTransport {
             let Some(event) = event else {
                 return Ok(());
             };
-            let prepared =
-                self.prepare_content_frame(epochs, event.transaction, &event.record, true)?;
+            let admitted =
+                self.prepare_content_record(epochs, event.transaction, &event.record, true)?;
             let Some(store) = epochs.allocations_mut(self.store_grant) else {
                 return Err(ShellTransportError::MissingCapability);
             };
             if store.pending_event() != Some(&event) {
                 return Err(ShellTransportError::WrongContentRecord);
             }
-            self.push_prepared(prepared);
+            self.transfer_record(admitted);
             store.take_event();
         }
     }

@@ -1,9 +1,8 @@
 use super::ShellComponentTransport;
-use sophia_protocol::{
-    ContentAction, ContentActionAck, IpcMessageKind, ShellContentRecord, TransactionId,
-};
+use sophia_protocol::{ContentAction, ContentActionAck, ShellContentRecord, TransactionId};
 
-use super::{ShellSessionTransport, ShellTransportError, content_admission};
+use super::wire::ContentWant;
+use super::{ShellSessionTransport, ShellTransportError};
 
 impl ShellComponentTransport {
     /// Admission requires two real aggregate credits: Action and cancellation.
@@ -79,39 +78,15 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ContentActionAck)>, ShellTransportError> {
         self.poll_io(epochs)?;
-        if self.files.is_some() {
-            let record =
-                self.take_file_content(|record| matches!(record, ShellContentRecord::ActionAck(_)));
-            return Ok(self
-                .admit_file_record(record)?
-                .map(|(transaction, record)| {
-                    let ShellContentRecord::ActionAck(ack) = record else {
-                        unreachable!("an action ack was selected");
-                    };
-                    (transaction, ack)
-                }));
-        }
-        let at = self.inbox.iter().position(|frame| {
-            u16::from_le_bytes([frame[6], frame[7]]) == IpcMessageKind::ShellContentActionAck as u16
-        });
-        let Some(frame) = at.and_then(|index| self.inbox.remove(index)) else {
-            return if self.peer_closed {
-                Err(ShellTransportError::NotConnected)
-            } else {
-                Ok(None)
-            };
-        };
-        let (transaction, record) = sophia_protocol::decode_shell_content_frame(&frame)?;
-        if !content_admission::client_record(&record) {
-            return Err(ShellTransportError::WrongContentRecord);
-        }
-        if content_admission::record_grant(&record) != self.content_grant {
-            return Err(ShellTransportError::WrongContentGrant);
-        }
-        let ShellContentRecord::ActionAck(ack) = record else {
-            return Err(ShellTransportError::WrongContentRecord);
-        };
-        Ok(Some((transaction, ack)))
+        let taken = self.take_content(ContentWant::ActionAck)?;
+        Ok(self
+            .admit_client_record(taken)?
+            .map(|(transaction, record)| {
+                let ShellContentRecord::ActionAck(ack) = record else {
+                    unreachable!("an action ack was selected");
+                };
+                (transaction, ack)
+            }))
     }
 }
 
