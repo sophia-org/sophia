@@ -7,6 +7,16 @@
 use super::*;
 
 impl ShellFiles {
+    /// No accepted submission waits for the owners: neither a typed record
+    /// nor the rest of a whole candidate already being handed over in parts.
+    /// A candidate the client is still writing is not Session's input yet.
+    pub(in crate::shell_transport) fn inbound_is_empty(&self) -> bool {
+        self.inbound.is_empty()
+            && self.candidate_parts.is_empty()
+            && self.native_candidate_parts.is_empty()
+            && self.catalog_candidate_parts.is_empty()
+    }
+
     /// Which family the oldest still-whole queued candidate belongs to. A
     /// servicer expecting only its own family treats any other answer as a
     /// hard protocol violation, exactly as the socket wire's raw-kind scan

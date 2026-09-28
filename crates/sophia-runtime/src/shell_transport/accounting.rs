@@ -16,7 +16,8 @@ pub struct ShellContentAccounting {
     /// fields count only this connection's exact credits, FIFO and input.
     pub epochs: crate::ContentEpochAccounting,
     /// Store credits, queued store responses, action-cancel/outcome credits,
-    /// and FIFO records. A partial write still owns the entire record charge.
+    /// FIFO records, and socket publication frames still waiting to enter the
+    /// FIFO. A partial write still owns the entire record charge.
     pub response_records: usize,
     pub response_bytes: usize,
     pub input_records: usize,
@@ -62,6 +63,14 @@ impl ShellComponentTransport {
         })
     }
 
+    /// Socket publication frames not yet in the output order, and their
+    /// bytes. Accounting and settlement see them; admission does not, since
+    /// they are charged to the FIFO only as each frame enters it.
+    pub(super) fn pending_publication(&self) -> (usize, usize) {
+        self.socket()
+            .map_or((0, 0), super::socket::SocketWire::pending_publication)
+    }
+
     /// Observe charges rather than allocating a second resource registry.
     pub fn content_accounting(
         &self,
@@ -79,13 +88,16 @@ impl ShellComponentTransport {
         let (wire_records, wire_bytes) = self
             .socket()
             .map_or((0, 0), super::socket::SocketWire::input_accounting);
+        let (pending_records, pending_bytes) = self.pending_publication();
         ShellContentAccounting {
             epochs: epoch_accounting,
             response_records: reserved
                 + self.fifo_records()
+                + pending_records
                 + negotiating * super::negotiation_service::REPLY_RECORDS,
             response_bytes: bulk_bytes
                 + self.fifo_bulk_bytes()
+                + pending_bytes
                 + controls * self.control_record_bytes()
                 + negotiating * super::negotiation_service::REPLY_BYTES,
             input_records: wire_records + negotiating,

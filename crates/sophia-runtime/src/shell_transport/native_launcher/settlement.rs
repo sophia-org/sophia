@@ -37,7 +37,8 @@ impl ShellComponentTransport {
             && self.inbound_idle()
             && self.action_cancellations.is_empty()
             && self.indicator_response.is_none()
-            && self.fifo_is_empty())
+            && self.fifo_is_empty()
+            && self.pending_publication().0 == 0)
     }
 }
 

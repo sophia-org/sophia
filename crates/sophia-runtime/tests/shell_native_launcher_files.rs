@@ -779,3 +779,170 @@ fn a_stale_catalog_generation_native_candidate_is_rejected_once_and_the_connecti
     registry.collect();
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+// A closed opening is not settled while late file input waits for its
+// owners: neither while a whole record is queued, nor while only the rest of
+// a whole candidate remains in its part buffer.
+#[test]
+fn a_closed_opening_is_not_settled_while_late_file_input_or_candidate_parts_wait() {
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let (mut transport, directory) = transport_t252();
+    transport
+        .authorize_protected_peer(&ProtectionDomainEvidence {
+            backend: ProtectionBackendKind::Bubblewrap,
+            supervisor_pid: std::process::id(),
+            peer_pid: std::process::id(),
+            roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+        })
+        .unwrap();
+    // One record per service visit exposes each intermediate state.
+    let mut reserved = limits();
+    reserved.max_frames_per_service_tick = 1;
+    transport
+        .reserve_content_with_profile(&mut registry, reserved, ContentStoreProfile::NativeLauncher)
+        .unwrap();
+    let socket = transport.socket_path().to_owned();
+
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    let (submitted_tx, submitted_rx) = mpsc::channel::<()>();
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+        let offer = encode_shell_file_negotiate(
+            header(ShellFileKind::Negotiate, GRANT.connection_epoch, 1),
+            ShellV1ClientHello {
+                minimum_revision: 7,
+                maximum_revision: 7,
+                required_capabilities: CAPS,
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&offer, 1);
+        let negotiated = peer.next_event();
+        peer.ack(&negotiated);
+        go_rx.recv().unwrap();
+        for kind in [ShellFileKind::NativeOpening, ShellFileKind::NativeClosed] {
+            let event = peer.next_event();
+            decode_shell_file_native_launcher_transaction(&event, kind).unwrap();
+            peer.ack(&event);
+        }
+        // Late input for the closed opening: first a whole candidate, which
+        // reaches the owners as three parts ...
+        let candidate_bytes = encode_shell_file_native_candidate(
+            header(ShellFileKind::NativeCandidate, GRANT.connection_epoch, 2),
+            &ShellFileNativeCandidate {
+                transaction: tx(21),
+                candidate: native_candidate(1),
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&candidate_bytes, 2);
+        submitted_tx.send(()).unwrap();
+        // ... then, once those are settled (the Begin answered with one
+        // rejecting outcome), an allocation request.
+        go_rx.recv().unwrap();
+        let outcome = peer.next_event();
+        assert_eq!(
+            decode_shell_file_record(&outcome, ShellFileClass::Event)
+                .unwrap()
+                .header
+                .kind,
+            ShellFileKind::CandidateOutcome
+        );
+        peer.ack(&outcome);
+        let request_bytes = encode_shell_file_native_launcher_transaction(
+            header(
+                ShellFileKind::NativeAllocationRequest,
+                GRANT.connection_epoch,
+                3,
+            ),
+            &ShellFileNativeLauncherRecord {
+                transaction: tx(20),
+                record: ShellNativeLauncherRecord::AllocationRequest(request(1)),
+            },
+        )
+        .unwrap();
+        peer.submit_acknowledged(&request_bytes, 3);
+        submitted_tx.send(()).unwrap();
+        // Stay connected: a closed peer is never settled for other reasons.
+        go_rx.recv().unwrap();
+    });
+
+    negotiate(&mut transport, &mut registry, GRANT.connection_epoch, &peer);
+    transport
+        .publish_native_launcher_opening(&registry, tx(2), opening())
+        .unwrap();
+    transport
+        .close_native_launcher(&mut registry, opening(), tx(3), ContentReason::Cancelled)
+        .unwrap();
+    let start = Instant::now();
+    let drain = |transport: &mut ShellComponentTransport, registry: &mut ContentEpochRegistry| {
+        while transport.content_accounting(registry).response_records > 0 {
+            transport.poll_io(registry).unwrap();
+            assert!(start.elapsed() < Duration::from_secs(5));
+            std::thread::yield_now();
+        }
+    };
+    let submitted = |transport: &mut ShellComponentTransport,
+                     registry: &mut ContentEpochRegistry| {
+        while submitted_rx.try_recv().is_err() {
+            transport.poll_io(registry).unwrap();
+            assert!(start.elapsed() < Duration::from_secs(5));
+            std::thread::yield_now();
+        }
+    };
+    let settled = |transport: &ShellComponentTransport, registry: &ContentEpochRegistry| {
+        transport
+            .closed_native_owners_settled(registry, opening())
+            .unwrap()
+    };
+    drain(&mut transport, &mut registry);
+    assert!(settled(&transport, &registry), "nothing is queued yet");
+
+    go_tx.send(()).unwrap();
+    submitted(&mut transport, &mut registry);
+    // The whole candidate is accepted and queued for its owner.
+    assert!(!settled(&transport, &registry));
+    // Its Begin: the Chunk and End now wait in the part buffer alone, with
+    // no queued record and every store and the FIFO otherwise settled.
+    assert_eq!(
+        transport
+            .service_closed_native_content(&mut registry, opening(), 0)
+            .unwrap(),
+        1
+    );
+    drain(&mut transport, &mut registry);
+    assert!(
+        !settled(&transport, &registry),
+        "candidate parts still wait for their owner"
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            transport
+                .service_closed_native_content(&mut registry, opening(), 0)
+                .unwrap(),
+            1
+        );
+    }
+    drain(&mut transport, &mut registry);
+    assert!(settled(&transport, &registry));
+
+    go_tx.send(()).unwrap();
+    submitted(&mut transport, &mut registry);
+    // A queued typed record alone.
+    assert!(!settled(&transport, &registry));
+    assert_eq!(
+        transport
+            .service_closed_native_content(&mut registry, opening(), 0)
+            .unwrap(),
+        1
+    );
+    drain(&mut transport, &mut registry);
+    assert!(settled(&transport, &registry));
+
+    go_tx.send(()).unwrap();
+    peer.join().unwrap();
+    transport.disconnect(&mut registry).unwrap();
+    registry.collect();
+    std::fs::remove_dir_all(directory).unwrap();
+}

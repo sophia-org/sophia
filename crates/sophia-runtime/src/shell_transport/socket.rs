@@ -189,6 +189,16 @@ impl SocketWire {
         self.publication.extend(frames);
     }
 
+    /// Publication frames still waiting for bulk capacity, and their bytes.
+    /// They are owned here but not yet in the output order, so neither the
+    /// lane nor any admission budget counts them.
+    pub(super) fn pending_publication(&self) -> (usize, usize) {
+        (
+            self.publication.len(),
+            self.publication.iter().map(Vec::len).sum(),
+        )
+    }
+
     /// The next publication frame's size, if one waits for bulk capacity.
     pub(super) fn publication_front(&self) -> Option<usize> {
         self.publication.front().map(Vec::len)
