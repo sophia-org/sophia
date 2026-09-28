@@ -1,8 +1,8 @@
-//! `sophia_shell_fs_v1` twins of `tests/shell_content_transport.rs`: the
+//! Resource, candidate and action lifecycle over `sophia_shell_fs_v1`: the
 //! single-shell `ShellSessionTransport` negotiated with
 //! `accept_files_with_content_policy`, and the SDK's `connect_files` client.
-//! Every assertion of the socket cases is kept. The socket file stays until
-//! the socket wire is removed; these cases carry its coverage onto 9P.
+//! These preserve the owner assertions from the socket SDK fixtures retired
+//! in t265.
 //!
 //! One wire difference is deliberate: 9P admits a candidate only as one
 //! grouped transaction (`enqueue_content_group`), where the socket case sends

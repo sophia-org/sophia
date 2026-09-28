@@ -1,5 +1,6 @@
-//! `sophia_shell_fs_v1` twins of `tests/shell_component_reduced_limits.rs`:
-//! the t100 floor profile (staging, resident and retiring at 4/8/4 MiB with
+//! Reduced limits over `sophia_shell_fs_v1`, preserving the t100 owner
+//! assertions from the socket SDK fixtures retired in t265. The floor profile
+//! (staging, resident and retiring at 4/8/4 MiB with
 //! the per-resource bound unchanged at 4 MiB) reaches the SDK's
 //! `connect_files` client and holds two full-size resources that crossed the
 //! file wire. The welcome-record refusal uses the file codec's Limits object.
@@ -338,8 +339,7 @@ fn full_size_uploads_with_limits(limits: ContentLimits) {
     assert!(registry.accounting().quiescent());
 }
 
-/// Wire-free: kept beside the file cases so this coverage outlives the
-/// socket file that also carries it.
+/// Incoherent profiles must be refused before either wire reserves an owner.
 #[test]
 fn incoherent_reduced_profiles_are_refused_before_any_file_reservation() {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();

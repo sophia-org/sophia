@@ -28,7 +28,7 @@ x11rb = { version = "0.13.1", features = ["xtest"] }
 sophia-backend-live = { path = "../sophia-backend-live", default-features = false, features = ["test-support"] }
 sophia-conformance = { path = "../sophia-conformance" }
 sophia-9p-client = { workspace = true }
-sophia-shell-client = { workspace = true, features = ["ipc-compat"] }
+sophia-shell-client = { workspace = true }
 sophia-renderer-native-egl = { path = "../sophia-renderer-native-egl", features = ["gbm-platform"] }
 sophia-wm-demo = { path = "../sophia-wm-demo" }
 

@@ -1,6 +1,7 @@
-//! `sophia_shell_fs_v1` twins of `tests/shell_component_transport.rs`: several
+//! Several `sophia_shell_fs_v1`
 //! real component file exports share one `ContentEpochRegistry`, each with the
-//! SDK's `connect_files` client. Every assertion of the socket cases is kept.
+//! SDK's `connect_files` client. These preserve the owner assertions from the
+//! socket SDK fixtures retired in t265.
 //! The socket handshake's "no Welcome bytes" check becomes its file-wire
 //! analogue: the client's connect fails and no Limits reach it.
 #[path = "support/file_component.rs"]

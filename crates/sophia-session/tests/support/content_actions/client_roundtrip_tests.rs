@@ -1,4 +1,4 @@
-//! Real private transport + generic client lifecycle/outbox + Session ledger.
+//! Real private 9P export + SDK lifecycle/outbox + Session ledger.
 //! Presented and policy publication facts are supplied at this boundary. WM
 //! admission uses the production borrowed owner/queue. This is not native
 //! retirement, policy execution, or compositor owner-loop acceptance.
@@ -6,7 +6,7 @@ use super::*;
 use sophia_protocol::*;
 use sophia_runtime::ShellSessionTransport;
 use sophia_shell_client::*;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 struct Harness {
     transport: ShellSessionTransport,
@@ -48,7 +48,7 @@ impl Harness {
             .unwrap();
         let path = transport.socket_path().to_path_buf();
         let connect = std::thread::spawn(move || {
-            ShellConnection::connect(
+            let mut client = ShellConnection::connect_files(
                 path,
                 ShellClientOptions {
                     minimum_revision: 6,
@@ -61,10 +61,20 @@ impl Harness {
                     handshake_timeout: Duration::from_secs(2),
                 },
             )
-            .unwrap()
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Some((_, ShellContentRecord::Limits(limits))) =
+                    client.poll_content().unwrap()
+                {
+                    return (client, limits);
+                }
+                assert!(Instant::now() < deadline, "file Limits did not arrive");
+                std::thread::yield_now();
+            }
         });
         transport
-            .accept_and_negotiate_with_content_policy(
+            .accept_files_with_content_policy(
                 1,
                 Duration::from_secs(2),
                 sophia_runtime::ShellContentAdmissionPolicy::Granted {
@@ -72,12 +82,13 @@ impl Harness {
                 },
             )
             .unwrap();
-        let mut client = connect.join().unwrap();
-        transport.poll_io().unwrap();
-        let (_, ShellContentRecord::Limits(limits)) = client.poll_content().unwrap().unwrap()
-        else {
-            panic!("limits")
-        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !connect.is_finished() {
+            transport.poll_io().unwrap();
+            assert!(Instant::now() < deadline, "file negotiation stalled");
+            std::thread::yield_now();
+        }
+        let (client, limits) = connect.join().unwrap();
         let mut target = super::tests::target();
         target.grant = limits.grant;
         target.output.id = output;
@@ -128,37 +139,85 @@ impl Harness {
 
     fn outcome(&mut self, kind: u16) {
         self.transport
-            .send_async(
-                encode_shell_content_frame(
-                    TransactionId::from_raw(70),
-                    &ShellContentRecord::CandidateOutcome(ContentCandidateOutcome {
-                        grant: self.target.grant,
-                        output: self.target.output,
-                        candidate_generation: self.target.candidate_generation,
-                        kind,
-                        reason: 0,
-                        presentation_epoch: if kind == 2 {
-                            self.target.presentation_epoch
-                        } else {
-                            0
-                        },
-                        work_area_generation: 1,
-                        wm_commit_generation: 1,
-                    }),
-                )
-                .unwrap(),
+            .send_content_record(
+                TransactionId::from_raw(70),
+                &ShellContentRecord::CandidateOutcome(ContentCandidateOutcome {
+                    grant: self.target.grant,
+                    output: self.target.output,
+                    candidate_generation: self.target.candidate_generation,
+                    kind,
+                    reason: 0,
+                    presentation_epoch: if kind == 2 {
+                        self.target.presentation_epoch
+                    } else {
+                        0
+                    },
+                    work_area_generation: 1,
+                    wm_commit_generation: 1,
+                }),
             )
             .unwrap();
     }
 
     fn dispatch(&mut self) -> ContentDispatch {
-        self.transport.poll_io().unwrap();
-        let (tx, record) = self
-            .client
-            .poll_content()
-            .unwrap()
-            .expect("owned server record");
-        self.lifecycle.dispatch(tx, record).unwrap()
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            self.transport.poll_io().unwrap();
+            if let Some((tx, record)) = self.client.poll_content().unwrap() {
+                return self.lifecycle.dispatch(tx, record).unwrap();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "owned server record did not arrive"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    fn settle(&mut self, admission: Admission) {
+        assert_eq!(admission.count, 2);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            self.transport.poll_io().unwrap();
+            self.client.poll_io().unwrap();
+            let states: Vec<_> = admission
+                .tickets()
+                .map(|ticket| self.client.custody(ticket))
+                .collect();
+            if states
+                .iter()
+                .all(|state| *state == Some(Custody::Submitted))
+            {
+                break;
+            }
+            assert!(
+                states.iter().all(|state| matches!(
+                    state,
+                    Some(Custody::Queued | Custody::InFlight | Custody::Submitted)
+                )),
+                "response custody: {states:?}"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "response custody stalled: {states:?}"
+            );
+            std::thread::yield_now();
+        }
+    }
+
+    fn indicator_outcome(&mut self) -> (TransactionId, ShellIndicatorActivationOutcome) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            self.transport.poll_io().unwrap();
+            if let Some(outcome) = self.client.poll_indicator_activation_outcome().unwrap() {
+                return outcome;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "indicator outcome did not arrive"
+            );
+            std::thread::yield_now();
+        }
     }
 
     fn issue(&mut self) -> u64 {
@@ -237,7 +296,7 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
         );
         h.outcome(2);
         // Presented geometry is supplied by this fixture, as before. Drive the
-        // actual global-to-output capture before entering the socket/WM chain.
+        // actual global-to-output capture before entering the file/WM chain.
         let mut binding = sophia_engine::PresentedContentBinding {
             grant: h.target.grant,
             output: h.target.output,
@@ -340,14 +399,15 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
             action: action.action_id,
             event_id: event,
         };
-        h.client
-            .enqueue_indicator_action_response(
+        let response = h
+            .client
+            .enqueue_indicator_action_response_tracked(
                 TransactionId::from_raw(80),
                 &ack(&action),
                 Some((TransactionId::from_raw(81), &activation)),
             )
             .unwrap();
-        h.client.poll_io().unwrap();
+        h.settle(response);
         if ack_first {
             assert_eq!(
                 h.ledger
@@ -431,23 +491,14 @@ fn real_client_roundtrip_keeps_receipt_and_activation_independent() {
         );
         assert!(h.ledger.live.is_empty());
         h.transport.poll_io().unwrap();
-        let (outcome_tx, outcome) = h
-            .client
-            .poll_indicator_activation_outcome()
-            .unwrap()
-            .unwrap();
+        let (outcome_tx, outcome) = h.indicator_outcome();
         assert_eq!(outcome_tx, tx);
         assert_eq!(
             (outcome.event_id, outcome.status),
             (event, ShellIndicatorActivationStatus::Accepted)
         );
 
-        assert!(
-            h.transport
-                .poll_kind(IpcMessageKind::ShellIndicatorActivate)
-                .unwrap()
-                .is_none()
-        );
+        assert!(h.transport.poll_indicator_activation().unwrap().is_none());
         admissions[output as usize - 1] += 1;
         queue.pop_front().unwrap();
         h.lifecycle.finish_action(event);
@@ -482,12 +533,7 @@ fn real_client_rejects_action_before_presented_and_never_acknowledges_cancel() {
     );
     h.client.poll_io().unwrap();
     assert!(h.transport.poll_content_action_ack().unwrap().is_none());
-    assert!(
-        h.transport
-            .poll_kind(IpcMessageKind::ShellIndicatorActivate)
-            .unwrap()
-            .is_none()
-    );
+    assert!(h.transport.poll_indicator_activation().unwrap().is_none());
     assert_eq!(
         h.ledger
             .service_acks(&mut h.transport.connection(), now, 64)
@@ -688,14 +734,15 @@ fn owner_decision_finishes_refusals_without_replaying_wm_admission() {
             action: action.action_id,
             event_id: event,
         };
-        h.client
-            .enqueue_indicator_action_response(
+        let response = h
+            .client
+            .enqueue_indicator_action_response_tracked(
                 TransactionId::from_raw(80),
                 &ack(&action),
                 Some((TransactionId::from_raw(81), &activation)),
             )
             .unwrap();
-        h.client.poll_io().unwrap();
+        h.settle(response);
         let transaction = TransactionId::from_raw(81);
         let mut indicators = LiveIndicatorState::default();
         let mut snapshot = indicator_snapshot(
@@ -729,11 +776,7 @@ fn owner_decision_finishes_refusals_without_replaying_wm_admission() {
             .unwrap();
         assert_eq!(invoked, calls);
         h.transport.poll_io().unwrap();
-        let (tx, outcome) = h
-            .client
-            .poll_indicator_activation_outcome()
-            .unwrap()
-            .unwrap();
+        let (tx, outcome) = h.indicator_outcome();
         assert_eq!(
             (tx, outcome.event_id, outcome.status),
             (transaction, event, expected)
@@ -780,14 +823,15 @@ fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
         // is only the request encoder here; its ACK is not serviced as input.
         let action = action_from_target(&h.target, event, ACTION_ACTIVATE);
         let transaction = TransactionId::from_raw(101 + index * 2);
-        h.client
-            .enqueue_indicator_action_response(
+        let response = h
+            .client
+            .enqueue_indicator_action_response_tracked(
                 TransactionId::from_raw(100 + index * 2),
                 &ack(&action),
                 Some((transaction, &activation)),
             )
             .unwrap();
-        h.client.poll_io().unwrap();
+        h.settle(response);
         let before = calls;
         assert!(
             h.ledger
@@ -812,11 +856,7 @@ fn direct_mode_keeps_snapshot_and_event_high_water_checks() {
             usize::from(expected == ShellIndicatorActivationStatus::Accepted)
         );
         h.transport.poll_io().unwrap();
-        let (tx, outcome) = h
-            .client
-            .poll_indicator_activation_outcome()
-            .unwrap()
-            .unwrap();
+        let (tx, outcome) = h.indicator_outcome();
         assert_eq!((tx, outcome.status), (transaction, expected));
         assert!(
             !h.ledger

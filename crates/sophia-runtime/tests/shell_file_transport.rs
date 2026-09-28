@@ -612,14 +612,11 @@ fn clunking_the_writer_before_end_cancels_and_frees_the_slot() {
 }
 
 // Candidates, pacing and discrete actions over the file wire: the 262/263/
-//264/265 client transactions and the 35/36/37 journal events. The socket
-// wire's equivalents are `candidate_roundtrip` and
-// `a_discrete_action_and_its_exact_ack_cross_the_real_socket` in
-// shell_content_transport.rs; the store behaviour under refusal is
+// 264/265 client transactions and the 35/36/37 journal events. The session
+// facade's equivalents are in shell_content_session_files.rs; store refusal is
 // exercised directly in shell_content_candidates.rs.
 
-/// A small two-pixel resource, matching the one the socket wire's
-/// `candidate_roundtrip` uploads before pacing a candidate.
+/// A small two-pixel resource, matching the session facade's candidate fixture.
 fn small_upload(grant: ContentGrant, id: u64) -> ContentResourceBegin {
     ContentResourceBegin {
         grant,
@@ -636,11 +633,9 @@ fn small_upload(grant: ContentGrant, id: u64) -> ContentResourceBegin {
 
 /// Negotiates, allocates, uploads one small resource, paces a FrameDemand
 /// through its FramePermit, submits one Candidate record end to end and
-/// drives it to Presented -- the file-wire equivalent of the socket wire's
-/// `candidate_roundtrip` (shell_content_transport.rs, ~170-505). When
+/// drives it to Presented, as in shell_content_session_files.rs. When
 /// `with_action` is set, the presented candidate's target then carries one
-/// discrete Action to its exact ActionAck, mirroring
-/// `a_discrete_action_and_its_exact_ack_cross_the_real_socket`.
+/// discrete Action to its exact ActionAck.
 fn paced_candidate(with_action: bool) {
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let (mut transport, directory) = transport();

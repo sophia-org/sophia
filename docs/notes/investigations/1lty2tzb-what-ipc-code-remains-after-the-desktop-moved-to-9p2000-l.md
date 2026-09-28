@@ -1396,6 +1396,38 @@ are still present for t265/t269. They are not selectable by descriptor productio
 startup. Their final deletion, SDK compatibility retirement, independent content
 default flips and the output/broker/portal work remain separate exits.
 
+### Sophia SDK compatibility dependency retirement (t265, 2026-09-28)
+
+The Session action harness now connects the real Rust SDK to the production
+9P export. Its five tests retain receipt/activation independence, the 1,000
+alternating acknowledgement rounds, WM admission/refusal, snapshot identity
+and event high-water checks. Both response tickets must reach Submitted
+before the fixture services the semantic acknowledgement and activation;
+local enqueue success is not treated as remote custody. The focused run passes
+5/5 (`ipc-retirement/t265-client-actions-files-2.log`).
+
+The redundant socket SDK fixtures are removed with their assertions retained
+in `shell_component_files_registry` (six), `shell_content_session_files` (five)
+and `shell_component_files_reduced_limits` (six, including two additional
+negotiated-chunk controls). Those suites and `shell_file_transport` pass all
+29 tests (`t265-retained-files.log`). Protection evidence and presentation
+facts are supplied by these fixtures; no physical acceptance is claimed.
+
+`sdk_ipc_parity` compared two copies of the retiring socket codec. That
+compatibility-copy obligation is retired, rather than replaced by a tautological
+comparison of Sophia's file codec to the same SDK codec it re-exports. Sophia's
+socket golden/malformed tests remain until t269. Native record literal vectors,
+malformed inputs, independent C/Go peers and production-export SDK tests retain
+file conformance coverage.
+
+Sophia no longer enables `ipc-compat` or depends on `sophia-shell-ipc`, including
+its test graph with every workspace feature enabled. The lockfile drops the
+package; `t265-feature-tree-2.log` contains neither dependency nor feature.
+The vendored SDK still carries compatibility for its own separately gated
+all-feature suite until t270. An initial graph refresh used an incorrectly
+ordered read-only mount and changed no lockfile; the corrected refresh passes.
+The combined gate is pending for this candidate.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

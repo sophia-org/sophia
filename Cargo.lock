@@ -1095,7 +1095,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sophia-desktop-ids",
- "sophia-shell-ipc",
  "sophia-shell-protocol",
 ]
 
@@ -1176,14 +1175,6 @@ dependencies = [
  "rustix",
  "sophia-9p-client",
  "sophia-9p-records",
- "sophia-shell-ipc",
- "sophia-shell-protocol",
-]
-
-[[package]]
-name = "sophia-shell-ipc"
-version = "0.1.0"
-dependencies = [
  "sophia-shell-protocol",
 ]
 
