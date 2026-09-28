@@ -384,6 +384,119 @@ fn output_service_pauses_acceptance_across_the_spawn_to_pid_handoff() {
     );
 }
 
+/// Malformed input from the admitted client is that client's fault. It ends
+/// that connection, not the optional service and its socket: the same
+/// supervised process may connect again at the next epoch and be served.
+#[test]
+fn a_malformed_client_frame_disconnects_only_that_client() {
+    let valid = encode_output_v1_proposal_frame(TransactionId::from_raw(2), &proposal(1)).unwrap();
+    let mut zero_epoch = valid.clone();
+    // The proposal payload starts with its connection epoch; zero is invalid.
+    zero_epoch[SOPHIA_IPC_HEADER_LEN..SOPHIA_IPC_HEADER_LEN + 8].fill(0);
+    let mut oversized = valid[..SOPHIA_IPC_HEADER_LEN].to_vec();
+    oversized[16..20].copy_from_slice(
+        &u32::try_from(SOPHIA_IPC_MAX_PAYLOAD_LEN + 1)
+            .unwrap()
+            .to_le_bytes(),
+    );
+    let wrong_kind = encode_output_v1_client_hello_frame(OutputV1ClientHello {
+        minimum_revision: 1,
+        maximum_revision: 1,
+        capabilities: SOPHIA_OUTPUT_CAPABILITY_OBSERVE,
+    })
+    .unwrap();
+    for (label, malformed) in [
+        ("zero-epoch", zero_epoch),
+        ("oversized", oversized),
+        ("wrong-kind", wrong_kind),
+    ] {
+        let directory = temporary_directory(&format!("malformed-{label}"));
+        let peer = PolicyPeerIdentity {
+            uid: rustix::process::geteuid().as_raw(),
+            pid: std::process::id(),
+        };
+        let transport = OutputSessionTransport::bind(&directory, peer).unwrap();
+        let socket_path = transport.socket_path().to_owned();
+        let service =
+            OutputTransportService::spawn(transport, 1, TransactionId::from_raw(1), snapshot())
+                .unwrap();
+
+        let mut first = connect_output_client(&socket_path);
+        first
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        decode_output_v1_server_welcome_frame(&read_frame(&mut first)).unwrap();
+        decode_output_v1_snapshot_frame(&read_frame(&mut first)).unwrap();
+        assert_eq!(
+            service.event_timeout(Duration::from_secs(2)).unwrap(),
+            OutputTransportServiceEvent::Connected {
+                connection_epoch: 1
+            },
+            "{label}"
+        );
+        first.write_all(&malformed).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut disconnected = false;
+        while !disconnected {
+            assert!(Instant::now() < deadline, "{label}: no disconnect");
+            match service.event_timeout(Duration::from_millis(200)).ok() {
+                Some(OutputTransportServiceEvent::Disconnected { connection_epoch }) => {
+                    assert_eq!(connection_epoch, 1, "{label}");
+                    disconnected = true;
+                }
+                Some(OutputTransportServiceEvent::ConnectionRejected { .. }) | None => {}
+                Some(OutputTransportServiceEvent::Failed { message }) => {
+                    panic!("{label}: malformed client input ended the service: {message}")
+                }
+                Some(other) => panic!("{label}: unexpected event {other:?}"),
+            }
+        }
+        let mut rest = Vec::new();
+        assert_eq!(
+            first.read_to_end(&mut rest).unwrap(),
+            0,
+            "{label}: the offending connection must be closed without a reply"
+        );
+
+        // The same admitted process connects again and is served normally.
+        let mut second = connect_output_client(&socket_path);
+        second
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let welcome = decode_output_v1_server_welcome_frame(&read_frame(&mut second)).unwrap();
+        assert_eq!(welcome.connection_epoch, 2, "{label}");
+        decode_output_v1_snapshot_frame(&read_frame(&mut second)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "{label}: replacement not connected"
+            );
+            match service.event_timeout(Duration::from_millis(200)).ok() {
+                Some(OutputTransportServiceEvent::Connected { connection_epoch }) => {
+                    assert_eq!(connection_epoch, 2, "{label}");
+                    break;
+                }
+                Some(OutputTransportServiceEvent::ConnectionRejected { .. }) | None => {}
+                Some(other) => panic!("{label}: unexpected event {other:?}"),
+            }
+        }
+        second
+            .write_all(
+                &encode_output_v1_proposal_frame(TransactionId::from_raw(2), &proposal(2)).unwrap(),
+            )
+            .unwrap();
+        let Ok(OutputTransportServiceEvent::Proposal { admission, .. }) =
+            service.event_timeout(Duration::from_secs(2))
+        else {
+            panic!("{label}: the replacement's proposal was not admitted");
+        };
+        assert_eq!(admission, OutputProposalAdmission::Active, "{label}");
+        drop(service);
+    }
+}
+
 fn temporary_directory(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
         "sophia-output-service-{label}-{}-{}",

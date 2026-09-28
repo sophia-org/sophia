@@ -439,6 +439,19 @@ fn run_output_transport_service(
                     .ok_or_else(|| "output connection epoch exhausted".to_owned())?;
                 connected = false;
             }
+            // Bytes the admitted client sent that do not decode are that
+            // client's fault. Its stream cannot be resynchronised, so the
+            // connection ends exactly as a departure does and the owner cancels
+            // what it held; the optional service and its socket stay, and the
+            // same supervised process may connect again at the next epoch.
+            Err(OutputTransportError::Codec(error)) => {
+                retire_connection(transport, &mut connected, &mut connection_epoch, events)?;
+                events
+                    .send(OutputTransportServiceEvent::ConnectionRejected {
+                        message: format!("malformed output client frame: {error:?}"),
+                    })
+                    .map_err(|_| "output owner event channel disconnected".to_owned())?;
+            }
             Err(error) => return Err(error.to_string()),
         }
     }
