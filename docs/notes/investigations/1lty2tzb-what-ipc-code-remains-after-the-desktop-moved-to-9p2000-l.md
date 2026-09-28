@@ -1426,7 +1426,13 @@ package; `t265-feature-tree-2.log` contains neither dependency nor feature.
 The vendored SDK still carries compatibility for its own separately gated
 all-feature suite until t270. An initial graph refresh used an incorrectly
 ordered read-only mount and changed no lockfile; the corrected refresh passes.
-The combined gate is pending for this candidate.
+Signed candidate `680f0516e` passes the complete isolated `cargo xtask check`,
+exit 0: 490 test-result groups, 6,671 passed, zero failed and 63 ignored.
+Strict clippy, SDK snapshot checks, layout and tool verifiers also pass.
+Evidence: `ipc-retirement/t265-full-680f0516e.log`. This closes the Sophia
+test dependency scope of t265. It does not remove Sophia's production socket
+adapters or the SDKs' standalone compatibility targets. Devices and display
+were hidden, and the archive corpus was absent; no live acceptance is claimed.
 
 ### Broker and portal survey correction (t273, 2026-09-28)
 
