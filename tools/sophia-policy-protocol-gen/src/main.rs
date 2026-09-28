@@ -733,9 +733,6 @@ fn render_rust(protocol: &Protocol) -> String {
         "use super::types::{{IpcCodecError, IpcMessageKind}};\n"
     )
     .unwrap();
-    // The legacy envelope codec imports complete rows. The row codec has no
-    // socket header, transfer chunks or transaction-envelope dependency.
-    writeln!(out, "pub use crate::wm_rows::*;\n").unwrap();
     for message in &protocol.messages {
         render_rust_message(protocol, message, &mut out);
     }

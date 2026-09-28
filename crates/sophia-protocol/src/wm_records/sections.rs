@@ -1,8 +1,6 @@
 //! Complete passive record sections shared by transport codecs. This owner
 //! has no transfer phases, transaction assembly, queue or publication state.
-// Raw generated row kinds, widths and bounds: root-exported names until
-// `crate::wm_rows` owns them.
-use crate::{
+use crate::wm_rows::{
     PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_INDICATOR_RECORD_MAX,
     PROJECTION_INDICATOR_RECORD_SIZE, PROJECTION_OUTPUT_RECORD_KIND, PROJECTION_OUTPUT_RECORD_MAX,
     PROJECTION_OUTPUT_RECORD_SIZE, PROJECTION_OUTPUT_STATUS_RECORD_KIND,

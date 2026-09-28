@@ -3,14 +3,7 @@
 //! caller passes the capability set it selected for the peer.
 use std::collections::BTreeSet;
 
-use crate::{
-    BinaryCodecError, LayoutNodeCapabilities, OutputId, PolicyActionRegistration,
-    PolicyOutputSnapshot, PolicySceneSnapshot, PolicySessionOperation, PolicySurfaceClassification,
-    PolicySurfaceKind, PolicySurfaceSnapshot, Rect, SurfaceConstraints, SurfaceId,
-};
-// Raw generated rows and capability bits: root-exported names until
-// `crate::wm_rows` owns them.
-use crate::{
+use crate::wm_rows::{
     SNAPSHOT_ACTION_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_KIND,
     SNAPSHOT_SESSION_OPERATION_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_KIND,
     SOPHIA_WM_CAPABILITY_ACTIONS, SOPHIA_WM_CAPABILITY_LAUNCH_ORIGIN,
@@ -21,6 +14,11 @@ use crate::{
     decode_wm_v1_snapshot_surface_records, encode_wm_v1_snapshot_action_records,
     encode_wm_v1_snapshot_output_records, encode_wm_v1_snapshot_session_operation_records,
     encode_wm_v1_snapshot_surface_records,
+};
+use crate::{
+    BinaryCodecError, LayoutNodeCapabilities, OutputId, PolicyActionRegistration,
+    PolicyOutputSnapshot, PolicySceneSnapshot, PolicySessionOperation, PolicySurfaceClassification,
+    PolicySurfaceKind, PolicySurfaceSnapshot, Rect, SurfaceConstraints, SurfaceId,
 };
 
 use super::configuration::{decode_policy_action_rows, encode_action_name};

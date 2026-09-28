@@ -2,12 +2,11 @@
 //! the configuration metadata; each transport chooses how to carry it.
 use std::collections::BTreeSet;
 
-use crate::{BinaryCodecError, PolicyActionRegistration, PolicyConfiguration, WmActionId};
-// Raw generated rows: root-exported names until `crate::wm_rows` owns them.
-use crate::{
+use crate::wm_rows::{
     SNAPSHOT_ACTION_RECORD_KIND, WmV1SnapshotActionRecord, decode_wm_v1_snapshot_action_records,
     encode_wm_v1_snapshot_action_records,
 };
+use crate::{BinaryCodecError, PolicyActionRegistration, PolicyConfiguration, WmActionId};
 
 use super::values::{invalid, push_policy_section};
 use super::{

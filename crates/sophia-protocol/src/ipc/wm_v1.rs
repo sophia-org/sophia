@@ -6,8 +6,6 @@ use super::frame::{decode_frame, encode_frame};
 use super::types::{IpcCodecError, IpcMessageKind};
 use crate::TransactionId;
 
-pub use crate::wm_rows::*;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WmV1ClientHello {
     pub minimum_revision: u16,

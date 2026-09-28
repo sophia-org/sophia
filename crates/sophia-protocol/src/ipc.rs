@@ -22,6 +22,7 @@ pub use output_v1::*;
 // Socket adapters use the same strict semantics as file codecs. Their
 // historical exceptions stay in the adapter, never in these validators.
 use crate::policy_scalars::*;
+use crate::wm_rows::*;
 pub use portal::{
     decode_portal_broker_request_frame, decode_portal_broker_response_frame,
     decode_portal_clipboard_payload_frame, encode_portal_broker_request_frame,

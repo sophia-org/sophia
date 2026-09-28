@@ -2,6 +2,9 @@
 //! validated by the projection owner after this bounded decoding step.
 use super::{PolicyRecordSection, PolicyRecordSectionRef};
 use crate::byte_cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
+use crate::wm_rows::{
+    SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS, SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES,
+};
 use crate::{
     BinaryCodecError, OutputId, POLICY_MAX_PRESENTATION_BINDINGS, POLICY_MAX_PRESENTATION_OUTPUTS,
     POLICY_MAX_PRESENTATION_REGIONS, POLICY_MAX_SURFACE_INSTANCES, PolicyPresentation,
@@ -9,9 +12,6 @@ use crate::{
     PolicyPresentationRegion, PolicyPresentationRegionRole, PolicySurfaceInstance, Rect, SurfaceId,
     WmActionId, WmModifierMask,
 };
-// Raw generated capability bits: root-exported names until `crate::wm_rows`
-// owns them.
-use crate::{SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS, SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES};
 
 pub const PROJECTION_PRESENTATION_RECORD_KIND: u16 = 0xff09;
 pub const PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND: u16 = 0xff0a;

@@ -3,10 +3,8 @@
 use std::collections::BTreeSet;
 
 use super::{PolicyRecordSection, PolicyRecordSectionRef};
+use crate::wm_rows::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS;
 use crate::{BinaryCodecError, PolicyOutputSnapshot};
-// Raw generated capability bit: root-exported name until `crate::wm_rows`
-// owns it.
-use crate::SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS;
 
 pub const SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND: u16 = 0xff07;
 

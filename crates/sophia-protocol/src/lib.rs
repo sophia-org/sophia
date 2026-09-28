@@ -38,3 +38,4 @@ pub use shell::*;
 pub use sophia_shell_protocol::{shell, shell_files};
 pub use table::*;
 pub use wm_records::*;
+pub use wm_rows::*;

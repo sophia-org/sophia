@@ -1,13 +1,7 @@
 //! Projection rows: per-output placements, indicators and statuses, plus the
 //! group, bookmark and presentation extensions. Connection and scene
 //! authority belong to the projection owner, not to these rows.
-use crate::{
-    BinaryCodecError, OutputId, PolicyOutputProjection, PolicyProjectionIndicator,
-    PolicyProjectionOutputStatus, PolicyProjectionProposal, PolicySurfacePlacement,
-    PolicyTransform, Rect, SurfaceId, WmActionId,
-};
-// Raw generated rows: root-exported names until `crate::wm_rows` owns them.
-use crate::{
+use crate::wm_rows::{
     PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_OUTPUT_RECORD_KIND,
     PROJECTION_OUTPUT_STATUS_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_KIND,
     WmV1ProjectionIndicatorRecord, WmV1ProjectionOutputRecord, WmV1ProjectionOutputStatusRecord,
@@ -16,6 +10,11 @@ use crate::{
     decode_wm_v1_projection_placement_records, encode_wm_v1_projection_indicator_records,
     encode_wm_v1_projection_output_records, encode_wm_v1_projection_output_status_records,
     encode_wm_v1_projection_placement_records,
+};
+use crate::{
+    BinaryCodecError, OutputId, PolicyOutputProjection, PolicyProjectionIndicator,
+    PolicyProjectionOutputStatus, PolicyProjectionProposal, PolicySurfacePlacement,
+    PolicyTransform, Rect, SurfaceId, WmActionId,
 };
 
 use super::values::{
