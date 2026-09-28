@@ -331,3 +331,6 @@ impl Drop for LiveMetadataBroker {
         }
     }
 }
+
+#[path = "../../tests/support/descriptor_broker_fixture.rs"]
+pub(super) mod descriptor_fixture;

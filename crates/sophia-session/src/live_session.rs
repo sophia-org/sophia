@@ -1,4 +1,6 @@
 use super::prelude::*;
+#[path = "../tests/support/c_sdk_process.rs"]
+mod c_sdk_fixture_process;
 mod content_mapping_evidence;
 mod native_owner_retirement;
 use native_owner_retirement::{NativeRetirement, RetirementMode};

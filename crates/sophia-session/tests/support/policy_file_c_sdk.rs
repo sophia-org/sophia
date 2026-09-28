@@ -11,8 +11,7 @@ use std::os::unix::net::UnixListener;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-#[path = "policy_file_c_sdk/process.rs"]
-mod process;
+use crate::live_session::c_sdk_fixture_process as process;
 
 fn next(worker: &PolicyTransportWorker, peer: &process::Process) -> PolicyTransportEvent {
     peer.check_output();
@@ -31,7 +30,11 @@ fn next(worker: &PolicyTransportWorker, peer: &process::Process) -> PolicyTransp
 #[test]
 fn c_sdk_drives_profile_configuration_snapshot_and_policy_exchange() {
     let scratch = process::Scratch::new();
-    let binary = process::compile(&scratch.0);
+    let binary = process::compile(
+        &scratch.0,
+        &["nine_p", "wm_files", "wm_session"],
+        "policy_file_c_sdk/peer.c",
+    );
     let socket = scratch.0.join("wm.sock");
     let listener = UnixListener::bind(&socket).unwrap();
     listener.set_nonblocking(true).unwrap();

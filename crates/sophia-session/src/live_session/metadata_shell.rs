@@ -1,5 +1,7 @@
 use super::*;
 mod content;
+#[path = "../../tests/support/descriptor_work_area.rs"]
+mod descriptor_work_area;
 mod panel_service;
 pub use content::{NativeLauncherActionService, NativeLauncherContentService};
 pub use panel_service::PanelComponentService;

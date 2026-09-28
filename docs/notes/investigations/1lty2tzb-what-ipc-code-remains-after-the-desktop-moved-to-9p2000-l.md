@@ -1142,6 +1142,55 @@ outputs and nice 19/j2. The live desktop and published main branches remain
 unchanged. Protected Engine presentation/work-area evidence, Narthex's thin
 C SDK migration, contract acceptance and IPC removal remain required.
 
+### Protected C descriptor presentation and work area (t271)
+
+The Session test
+`protected_c_descriptor_work_area_changes_only_after_matching_presentation`
+closes the CPU presentation boundary left open by the production-export test.
+It compiles a C-only peer against the same vendored SDK, then launches it with
+`LiveMetadataShell::start`, the production supervisor and default protected
+domain. The child requires the 9P endpoint and refuses the old socket variable,
+display variables and a visible DRM directory. Broker disclosure is an
+already-sanitized one-row fixture; no broker process or application is run.
+
+The real Session request/poll path resolves the C candidate into an Engine
+descriptor overlay. The test verifies that Prepared leaves the work area
+unchanged, as do an unrelated presented generation and staging the matching
+overlay without presenting it. A CPU production cycle presents the matching
+overlay; only then does Session apply the 24-pixel reservation. A rejected
+32-pixel replacement preserves 24 pixels; a presented replacement changes it
+to 32. Withdrawal preserves 32 until its own presentation restores the full
+work area. The C peer independently decodes the ordered outcomes and checks
+strictly increasing nonzero presentation epochs. The parent flushes the final
+outcomes and requires a normal zero-status child exit before cleanup.
+
+Evidence in `development-evidence/ipc-retirement/`:
+
+- `t271-session-c-presentation-final-layout.log`: 70 selected Session tests pass,
+  including this protected C test and the existing C WM export test sharing
+  the bounded compiler helper.
+- `t271-session-c-presentation-mutant-early.log`: committing the claim at
+  Prepared fails the full-work-area assertion (24 pixels were consumed).
+- `t271-session-c-presentation-mutant-generation.log`: removing the backend's
+  candidate-generation check fails when the unrelated frame is presented.
+- `t271-session-c-presentation-clippy-final.log`, `layout-final.log` (same
+  prefix) and `fmt.log`: all-target/all-feature Session clippy, layout and
+  workspace formatting pass.
+- Failed harness iterations are retained: `check1` used the wrong SurfaceId
+  constructor; `check2` passed the reservation assertions but tore down before
+  the C child finished its final outcome. `check3` adds the checked normal exit.
+  `clippy1` found a duplicate module inclusion and a collapsible conditional;
+  the compiler helper is now included once and shared by both SDK tests.
+  `layout1` required the repository's test-file-level cfg convention; the
+  attributes moved to the support files without changing test behavior.
+
+Mutants are read-only mount overlays, rebuilt before running; production
+sources are unchanged. All runs use private outputs with devices, network and
+display access hidden. This proves protected Session admission and its real
+CPU presentation boundary, not KMS/page-flip timing, broker disclosure policy
+or a product UI. The descriptor contract remains proposed. Narthex's thin C
+SDK migration, contract acceptance and IPC retirement remain required.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

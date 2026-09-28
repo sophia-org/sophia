@@ -1,6 +1,7 @@
-//! Bounded subprocesses for the generic SDK fixture. Observe with WNOWAIT and
+//! Bounded subprocesses shared by generic WM and shell SDK fixtures. Observe with WNOWAIT and
 //! kill the private group before reaping its leader. The compiler and fixture
 //! are trusted not to leave their process group; no arbitrary client is run.
+#![cfg(test)]
 use rustix::process::{Pid, Signal, WaitId, WaitIdOptions};
 use std::fs::{self, File};
 use std::os::unix::{fs::DirBuilderExt, process::CommandExt};
@@ -117,10 +118,10 @@ impl Drop for Process {
     }
 }
 
-pub(super) fn compile(root: &Path) -> PathBuf {
+pub(super) fn compile(root: &Path, modules: &[&str], source: &str) -> PathBuf {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let sdk = repo.join("vendor/c-desktop-sdk/source/src");
-    let binary = root.join("wm-sdk-peer");
+    let binary = root.join("sdk-peer");
     let mut command = Command::new("/usr/bin/nice");
     command
         .args([
@@ -138,7 +139,7 @@ pub(super) fn compile(root: &Path) -> PathBuf {
             "-I",
         ])
         .arg(&sdk);
-    for dir in ["nine_p", "wm_files", "wm_session"] {
+    for dir in modules {
         let mut files = fs::read_dir(sdk.join(dir))
             .unwrap()
             .map(|entry| entry.unwrap().path())
@@ -149,7 +150,10 @@ pub(super) fn compile(root: &Path) -> PathBuf {
         command.args(files);
     }
     command
-        .arg(repo.join("crates/sophia-session/tests/support/policy_file_c_sdk/peer.c"))
+        .arg(
+            repo.join("crates/sophia-session/tests/support")
+                .join(source),
+        )
         .arg("-o")
         .arg(&binary);
     assert_eq!(
