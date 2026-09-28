@@ -1826,6 +1826,50 @@ selection, rollback and tamper run also passes in
 `t269-rollback-private-final.log`. This completes the Session WM worker slice;
 the remaining runtime and shell compatibility source is still tracked by t269.
 
+## Runtime WM IPC retirement (t269, 2026-09-28)
+
+After Session's worker removal, `PolicyWmSessionTransport` and
+`PolicyConnectionState` had no production caller. This slice removes those
+runtime modules, their IPC-only test targets and `policy_c_conformance_host`.
+The checkpoint-parent lifetime test now binds the same `RoleEndpoint` directly;
+its checkpoint preservation and endpoint cleanup assertions are unchanged.
+Pure capability selection, profile handoff, bounded profile I/O, generic peer
+admission and Engine policy reducers remain in their existing owners.
+
+The retained behavioral mapping is:
+
+| Retired assertion family | Retained file/neutral controls |
+| --- | --- |
+| Complete policy cycle, exact startup profile prepare/activate/rollback, wrong phase and typed identity refusal | `policy_file_c_sdk::c_sdk_drives_profile_configuration_snapshot_and_policy_exchange`; `policy_file_startup::{supplied_stream_orders_negotiated_before_exact_profile_reducer_exchange,profile_identity_mismatch_or_peer_refusal_closes_admission,wrong_completion_kind_preserves_staging_and_stop_wakes_the_profile_receive}`; unchanged `policy_profile_handoff` and `policy_profile_io` |
+| Capability offer/ceiling/dependencies, selection once, required capability refusal | Both pure `policy_capabilities` tests; `policy_file_startup::{missing_required_dependency_closes_without_successful_negotiation,canonical_selection_binds_once_within_ceiling_and_limits_remain_immutable}` |
+| Pointer-focus and other request-cause outbound capability gate | `wm_file_controls::every_cause_uses_its_own_complete_body_and_selected_capabilities` checks every selected cause on encode and decode; `policy_file_adapter::full_worker_transports_all_commands_without_owning_their_outcomes` exercises the real worker |
+| Indicator, tab, translation, launch-origin, presentation and output-launch-context section capabilities and counts | `wm_file_arrays::{every_snapshot_extension_is_gated_by_the_selected_capabilities,unnegotiated_projection_sections_refuse_before_domain_delivery,complete_prefix_and_array_truncations_cannot_be_repaired_by_the_outer_length}`; real decoder refusal in `policy_file_custody` |
+| Epoch/transaction custody, duplicate submissions, no incomplete semantic delivery | `policy_file_startup::wrong_header_epoch_is_refused_before_custody_without_closing_profile_wait`; `policy_file_custody::{complete_submit_requires_permit_and_duplicate_does_not_spend_the_next_one,no_permit_never_decodes_and_accepted_replay_never_decodes_again,reactor_receive_timeout_withdraws_permit_without_delivering_fragments}` |
+| Snapshot publication/pinning and bounded transfer | `policy_file_atomic_cycle` checks publication refusal is atomic; `policy_file_custody::snapshots_pin_metadata_and_qids_continue_across_epochs`; the C SDK test reads a 64-surface snapshot exceeding its 4096-byte msize |
+| Silent peer, stop and fresh endpoint admission | `policy_file_pending` absolute accept expiry, exact protected PID/UID and cancellation tests; `policy_file_custody::actual_reactor_send_without_ack_has_a_bounded_deadline`; protected C recovery and replacement tests |
+| IPC revision negotiation, begin/chunk/end ordering and uncounted extension tails | Retired with the wire. Files use versioned complete records, sections and immutable Limits; `wm_file_envelope` and `wm_file_arrays` enforce their bounds. This is not a claim that IPC framing survives in files |
+
+`tools/check_policy_protocol.sh` now runs those WM file/neutral suites plus
+the protected C SDK recovery and control replacement tests. Its schema-6
+result identifies the 9P wire and makes no physical presentation claim.
+`check_policy_client_matrix.sh` is a thin entry to the same generic gate; the
+old sibling Hagia build and archived r3 runner are retired. The native-family
+collector no longer requires unused Hagia/Narthex checkout arguments. Its
+schema-2 report binds Sophia (including its vendored SDKs) and distinguishes WM
+files, mixed shell retirement checks and the still-retained output IPC.
+
+The old profile model instrumentation maps and WM freeze survey retain their
+historical source references, explicitly marked as such. No formal refinement
+claim is transferred to the file reactor. The frozen IPC codec, generator and
+demo/output-client closure remain for subsequent t269 work; this slice does
+not delete output coverage or satisfy t272.
+
+Focused evidence: `development-evidence/ipc-retirement/t269-runtime-wm-file-gate-2.log`
+passes, including the C SDK exchange, protected recovery and replacement.
+The first launcher attempt was refused because the evidence isolation script
+is not executable; invoking that same script with Bash runs the unchanged
+isolation contract. That failed launch log is retained and ran no build.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

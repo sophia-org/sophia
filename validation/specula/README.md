@@ -3,6 +3,13 @@
 **Role:** optional, commit-pinned development analysis; never a runtime or
 build dependency.
 
+The profile activation and reattachment briefs and instrumentation maps below
+refer to the former WM IPC transport at their source revisions. t269 retires
+that transport; these retained design models and traces are not refinement
+evidence for the WM file reactor. The profile reducer remains shared, and
+current export/owner evidence is in Session's `policy_file_*` tests and
+`tools/check_policy_protocol.sh`.
+
 Specula complements Sophia's hand-maintained TLA+ models by deriving a bounded
 model from a deliberately narrow source slice, validating implementation
 traces, and hunting for counterexamples. Generated models are review input,

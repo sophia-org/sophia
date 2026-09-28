@@ -19,14 +19,12 @@ mod output_service;
 #[cfg(target_os = "linux")]
 mod output_transport;
 mod policy_capabilities;
-mod policy_ipc;
 mod policy_profile_handoff;
 #[cfg(target_os = "linux")]
 mod policy_profile_io;
 #[cfg(target_os = "linux")]
 mod policy_socket;
 #[cfg(target_os = "linux")]
-mod policy_transport;
 mod role_endpoint;
 mod session;
 #[cfg(target_os = "linux")]
@@ -63,14 +61,12 @@ pub use output_service::*;
 #[cfg(target_os = "linux")]
 pub use output_transport::*;
 pub use policy_capabilities::*;
-pub use policy_ipc::*;
 pub use policy_profile_handoff::*;
 #[cfg(target_os = "linux")]
 pub use policy_profile_io::*;
 #[cfg(target_os = "linux")]
 pub use policy_socket::*;
 #[cfg(target_os = "linux")]
-pub use policy_transport::*;
 pub use role_endpoint::*;
 pub use session::*;
 #[cfg(target_os = "linux")]

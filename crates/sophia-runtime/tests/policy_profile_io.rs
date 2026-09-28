@@ -1,5 +1,5 @@
 //! Scripted bounded I/O around the real reducer/executor. Socket behavior is
-//! covered independently by policy_transport's existing real IPC controls.
+//! covered independently by Session's production WM file export controls.
 #![cfg(target_os = "linux")]
 use sophia_protocol::{
     PolicyProfileCompletion, PolicyProfileIdentity, PolicyProfileOutcome, TransactionId,

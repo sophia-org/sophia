@@ -461,7 +461,7 @@ fn public_policy_checkpoint_parent_survives_peer_endpoint_replacement() {
     );
     std::fs::write(directory.checkpoint_path(), b"private checkpoint").unwrap();
     let endpoint_path = directory.endpoint_path();
-    let endpoint = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
+    let endpoint = sophia_runtime::RoleEndpoint::bind_for_supervised_uid(
         &endpoint_path,
         rustix::process::geteuid().as_raw(),
     )
@@ -470,7 +470,7 @@ fn public_policy_checkpoint_parent_survives_peer_endpoint_replacement() {
     assert!(directory.checkpoint_path().is_file());
     assert!(!endpoint_path.exists());
 
-    let replacement = sophia_runtime::PolicyWmSessionTransport::bind_for_supervised_uid(
+    let replacement = sophia_runtime::RoleEndpoint::bind_for_supervised_uid(
         &endpoint_path,
         rustix::process::geteuid().as_raw(),
     )

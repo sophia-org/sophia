@@ -1,5 +1,5 @@
 use sophia_protocol::*;
-use sophia_runtime::{PolicyConnectionState, PolicyTransferError, select_policy_capabilities};
+use sophia_runtime::select_policy_capabilities;
 
 #[test]
 fn selected_mechanisms_are_bounded_by_offer_ceiling_and_profile_admission() {
@@ -63,40 +63,4 @@ fn each_dependency_is_removed_after_either_offer_or_ceiling_excludes_its_prerequ
             }
         }
     }
-}
-
-#[test]
-fn current_ipc_keeps_revision_refusal_state_order_and_identical_welcome_selection() {
-    let hello = WmV1ClientHello {
-        minimum_revision: SOPHIA_WM_INTERFACE_REVISION,
-        maximum_revision: SOPHIA_WM_INTERFACE_REVISION,
-        capabilities: u64::MAX,
-    };
-    let invalid = WmV1ClientHello {
-        minimum_revision: 0,
-        ..hello
-    };
-    let mut connection = PolicyConnectionState::default();
-    assert_eq!(
-        connection.negotiate(&invalid),
-        Err(PolicyTransferError::NotConnected)
-    );
-    connection.connect(7).unwrap();
-    assert_eq!(
-        connection.negotiate(&invalid),
-        Err(PolicyTransferError::UnsupportedRevision)
-    );
-    assert_eq!(connection.selected_capabilities(), 0);
-    let welcome = connection.negotiate(&hello).unwrap();
-    assert_eq!(welcome.connection_epoch, 7);
-    assert_eq!(welcome.selected_revision, SOPHIA_WM_INTERFACE_REVISION);
-    assert_eq!(
-        welcome.capabilities,
-        select_policy_capabilities(hello.capabilities, u64::MAX, false)
-    );
-    assert_eq!(
-        connection.negotiate(&invalid),
-        Err(PolicyTransferError::AlreadyNegotiated)
-    );
-    assert_eq!(connection.selected_capabilities(), welcome.capabilities);
 }

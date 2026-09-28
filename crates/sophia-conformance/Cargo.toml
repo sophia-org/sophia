@@ -25,12 +25,6 @@ publish = false
 # `cargo package` or the versioned directory layout of `cargo vendor`. This
 # package is neither publishable nor vendorable.
 [[bin]]
-name = "policy_c_conformance_host"
-path = "../sophia-runtime/examples/policy_c_conformance_host.rs"
-test = false
-doc = false
-
-[[bin]]
 name = "shell_content_conformance_host"
 path = "../sophia-runtime/examples/shell_content_conformance_host.rs"
 test = false

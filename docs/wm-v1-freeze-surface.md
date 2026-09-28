@@ -2,6 +2,11 @@
 
 **Role:** decision record for wire-layout risk.
 
+Historical scope: this survey describes the retired WM IPC endpoint, including
+source paths removed by t269. Current WM roles use the
+[WM file contract](sophia-wm-files.md). The survey's old transport citations are
+not current implementation or conformance claims.
+
 This file enumerates, for every retained row in Hagia's port ledger, whether
 closing that row can require a wire change — and if so, which kind. It was
 written to bound the risk of freezing the protocol. `sophia_wm_v1` is no longer

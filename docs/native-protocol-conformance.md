@@ -36,8 +36,7 @@ of these scripted presentation outcomes proves physical rendering or input.
 
 ## Combined client gate during relocation
 
-From a Sophia checkout, with the independent WM checkout required by the
-remaining WM phase:
+From a Sophia checkout, without sibling WM or shell checkouts:
 
 ```sh
 mkdir -p .artifacts
@@ -46,19 +45,17 @@ cargo xtask check native-protocol-family \
   --target-dir=.artifacts/native-family-target
 ```
 
-The output directory must be new. Optional `--hagia-root=/path` and
-`--narthex-root=/path` select other independent checkouts. `--timeout=3600`
+The output directory must be new. `--timeout=3600`
 bounds the whole run; values 1–7200 seconds are accepted. The compatibility
 launcher `tools/check_native_protocol_family.sh` forwards the same arguments.
 Use a target directory owned by this worktree so the compiled xtask resolves
 the intended workspace. No canonical main-tree checkout is needed for this gate.
 
-Prerequisites are the offline Cargo dependencies, C compiler, Nim/Nimble and
-their installed independent-client dependencies, Bubblewrap and GNU timeout.
-Missing checkouts or isolation tools fail the gate. Source identity includes
-each checkout's commit and tracked diff digest; stage new source files before
-running. Changing a checkout during the run produces NORESULT. Immutable local
-clones can keep a collaborating agent's in-progress checkout out of the run.
+Prerequisites are the offline Cargo dependencies, C compiler, Bubblewrap and
+GNU timeout. Missing isolation tools fail the gate. Source identity includes
+Sophia's commit and tracked diff digest, including its pinned SDKs; stage new
+source files before running. Changing the checkout during the run produces
+NORESULT. Product repositories gate their own clients separately.
 
 The runner mounts a fresh device directory, hides installed session sockets,
 clears display and role-socket variables, and supplies private configuration,
@@ -67,7 +64,7 @@ scanout opt-in. Protected shell hosts still establish their own process domains;
 the outer isolation does not replace role admission. This is a deterministic
 protocol/owner check, not an installed desktop or physical input/display test.
 
-`report.json` retains the source identities and verdict for each phase, with
+`report.json` schema 2 retains the source identity and verdict for each phase, with
 separate logs. An unavailable prerequisite, failed phase or deadline stops the
 run with a failing exit status; it cannot become a partial PASS. Cargo test
 phases must report at least one executed passing test; an empty or ignored-only
@@ -75,8 +72,7 @@ target is refused. Output's owner phase explicitly enables `native-session`.
 
 | Phase | Evidence retained |
 | --- | --- |
-| WM independent clients | Schema regeneration check; valid/malformed frames and records; Rust, C99 and independent Nim Hagia lifecycle, denial, stale/invalid proposals, timeout, restart and last-layout preservation |
-| Immutable WM r3 client | Archived SHA256SUMS verified before compilation; archived client runs all lifecycle and reconnect scenarios without regeneration |
+| WM file export and independent client | Complete-record/capability controls, profile reducer, C SDK configuration/snapshot/projection/session-operation exchange, protected stale/timeout recovery and control-driven replacement |
 | Shell independent clients | Every retained shell revision/capability corpus; independent C decoders and 9P descriptor, tabs, shortcuts, reservation, launcher and content peers; malformed negative controls |
 | Protocol and runtime | All integration targets, including output schema equivalence, negotiated denial, foreign/stale grants, revocation, partial I/O, queue pressure, multi-component ownership, output replacement and exact backing release |
 | Engine owners | All Engine integration targets, including coherent work areas, content capture/stack and topology transactions |

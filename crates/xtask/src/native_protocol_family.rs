@@ -10,25 +10,12 @@ use serde_json::json;
 struct Options {
     output: PathBuf,
     target: PathBuf,
-    hagia: PathBuf,
-    narthex: PathBuf,
     timeout: Duration,
 }
 
 pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
     let options = options(repo, arguments)?;
-    for (root, marker) in [
-        (&options.hagia, "hagia.nimble"),
-        (&options.narthex, "src/narthex.nim"),
-    ] {
-        if !root.join(marker).is_file() {
-            return Err(format!(
-                "required independent checkout missing: {}",
-                root.display()
-            ));
-        }
-    }
-    let identities = identities(repo, &options)?;
+    let identities = identities(repo)?;
     fs::DirBuilder::new()
         .mode(0o700)
         .create(&options.output)
@@ -62,7 +49,7 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
         write_report(
             &options.output,
             &json!({
-                "schema": 1, "status": if result.is_ok() { "running" } else { "fail" },
+                "schema": 2, "status": if result.is_ok() { "running" } else { "fail" },
                 "identities": identities, "phases": phases, "device_hidden": true,
                 "native_acceptance": false,
             }),
@@ -70,17 +57,17 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
         result?;
     }
     // Retain mixed-source results, but never attribute them to one candidate.
-    let final_identity = crate::native_protocol_family::identities(repo, &options);
+    let final_identity = crate::native_protocol_family::identities(repo);
     let coherent = final_identity.as_ref().is_ok_and(|end| identities == *end);
     write_report(
         &options.output,
         &json!({
-            "schema": 1, "status": if coherent { "pass" } else { "noresult" },
+            "schema": 2, "status": if coherent { "pass" } else { "noresult" },
             "identities": identities, "final_identities": final_identity.as_ref().ok(),
             "identity_error": final_identity.as_ref().err(), "phases": phases,
             "device_hidden": true, "native_acceptance": false,
             "supplied_facts": ["presentation completions", "output topology", "input activations"],
-            "stable_roles": ["sophia_wm_v1_r3"], "experimental_roles": ["sophia_shell_v1_r8", "sophia_output_v1_r1"],
+            "wm_transport": "9p2000.L", "shell_transports": ["9p2000.L", "current_ipc"], "output_transport": "current_ipc",
             "output_independent_lifecycle": false,
         }),
     )?;
@@ -97,14 +84,7 @@ fn options(repo: &Path, args: &[String]) -> Result<Options, String> {
     let mut values = std::collections::BTreeMap::new();
     for arg in args {
         let (key, value) = arg.split_once('=').ok_or("expected --name=value")?;
-        if ![
-            "--output",
-            "--target-dir",
-            "--hagia-root",
-            "--narthex-root",
-            "--timeout",
-        ]
-        .contains(&key)
+        if !["--output", "--target-dir", "--timeout"].contains(&key)
             || value.is_empty()
             || values.insert(key, value).is_some()
         {
@@ -125,15 +105,6 @@ fn options(repo: &Path, args: &[String]) -> Result<Options, String> {
             .get("--target-dir")
             .ok_or("native-protocol-family requires --target-dir=/OWNED/TARGET")?,
     );
-    let sibling = repo.parent().ok_or("repository has no parent")?;
-    let hagia = values
-        .get("--hagia-root")
-        .map(|p| absolute(p))
-        .unwrap_or_else(|| sibling.join("hagia"));
-    let narthex = values
-        .get("--narthex-root")
-        .map(|p| absolute(p))
-        .unwrap_or_else(|| sibling.join("narthex"));
     let seconds = values
         .get("--timeout")
         .unwrap_or(&"3600")
@@ -145,8 +116,6 @@ fn options(repo: &Path, args: &[String]) -> Result<Options, String> {
     Ok(Options {
         output,
         target,
-        hagia,
-        narthex,
         timeout: Duration::from_secs(seconds),
     })
 }
@@ -270,8 +239,6 @@ fn stage(
         .args(args)
         .current_dir(repo)
         .env("CARGO_TARGET_DIR", &options.target)
-        .env("SOPHIA_HAGIA_ROOT", &options.hagia)
-        .env("SOPHIA_NARTHEX_ROOT", &options.narthex)
         .env("XDG_CONFIG_HOME", "/tmp/config")
         .env("XDG_RUNTIME_DIR", "/tmp/runtime")
         .env("TMPDIR", "/tmp")
@@ -316,10 +283,8 @@ pub(crate) fn require_tests_ran(log: &str) -> Result<(), String> {
     }
 }
 
-fn identities(repo: &Path, options: &Options) -> Result<serde_json::Value, String> {
-    Ok(
-        json!({"sophia": identity(repo)?, "hagia": identity(&options.hagia)?, "narthex": identity(&options.narthex)?}),
-    )
+fn identities(repo: &Path) -> Result<serde_json::Value, String> {
+    Ok(json!({"sophia": identity(repo)?}))
 }
 
 fn identity(root: &Path) -> Result<serde_json::Value, String> {

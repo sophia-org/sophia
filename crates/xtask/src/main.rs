@@ -256,7 +256,7 @@ usage: cargo xtask <command>
       new snapshot must verify before the old one is replaced.
 
   check native-protocol-family --output=/NEW/DIR --target-dir=/OWNED/TARGET
-        [--hagia-root=/HAGIA --narthex-root=/NARTHEX --timeout=3600]
+        [--timeout=3600]
       Run all retained role corpora and independent clients with devices hidden.
 
   check m3-acceptance --output=/NEW/DIR --target-dir=/OWNED/TARGET [--self-test]

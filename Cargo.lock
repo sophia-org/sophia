@@ -1136,7 +1136,6 @@ dependencies = [
  "sophia-linux-peer",
  "sophia-protocol",
  "sophia-shell-client",
- "sophia-wm-demo",
  "tracing",
  "tracing-subscriber",
 ]

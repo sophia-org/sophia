@@ -78,8 +78,8 @@ multi-output projection.
 across layout changes and shell loss. Its stale-candidate and lost-capture
 negative controls must violate `CoherentPresentation` and `ExactActivation`,
 respectively. Independent tab wire and protected client checks run through
-`tools/check_shell_protocol.sh`; `tools/check_policy_protocol.sh` also verifies
-the frozen revision-3 WM clients against the optional group extension. Hagia and
+`tools/check_shell_protocol.sh`; `tools/check_policy_protocol.sh` checks the
+WM file export and independent C SDK peer. Hagia and
 Narthex run their own `SOPHIA_ROOT=/path/to/sophia nimble test` gates.
 These offline checks are separate from the [tabbed-layout operator gate](tabbed-layouts.md#verification-and-operator-acceptance).
 
@@ -147,57 +147,37 @@ budgets are not wire constants. Spin/Promela, dependency-policy automation,
 and fuzzing remain candidates until they have retained models or corpora,
 expected outcomes, and reproducible gates.
 
-### Public Policy Wire
+### Public WM file contract
 
-The draft `sophia_wm_v1` wire has one checked-in KDL schema and retained Rust,
-C99, documentation, and golden-corpus outputs. Normal builds do not run the
-generator. The gate first checks those outputs for byte-for-byte drift, then
-runs the Rust codec and an independently compiled, allocation-free C99 codec
-against the same valid and malformed frames. It then drives a standalone C99
-client through the authenticated session transport and Engine reducer:
+The WM role uses 9P2000.L. Complete file records replace the retired WM IPC
+begin/chunk/end framing. Run the independent C SDK peer against the production
+file export and the generic owner controls with:
 
 ```sh
 tools/check_policy_protocol.sh
-cargo test --offline -q -p sophia-protocol --test policy_semantics
-cargo test --offline -q -p sophia-runtime --test policy_ipc
-cargo test --offline -q -p sophia-runtime --test policy_socket
-cargo test --offline -q -p sophia-runtime --test policy_transport
-cargo test --offline -q -p sophia-engine --test policy_projection
-cargo test --offline -q -p sophia-wm-demo --test policy_v1
 ```
 
-The first command proves generated envelope and record layouts across Rust and
-C99. The focused Rust gates prove exact supervised-peer admission, negotiation,
-bounded begin/chunk/end assembly, late-epoch discard, semantic record
-conversion, atomic multi-output validation, and last-layout preservation. The
-Rust reference client and native Hagia client then prove their policy output
-through the same reducer.
+This gate runs the WM file envelope, arrays, controls and admission tests;
+capability selection; the profile reducer and bounded I/O; peer endpoint
+admission; and the Engine projection reducer. Session's worker tests include
+an independently compiled C SDK client that exchanges a profile, configuration,
+a multi-read snapshot, a projection and a session operation through the real
+export. Additional protected C peer tests exercise stale/timeout recovery and
+control-driven replacement through Session's supervisor and settlement owner.
+The protected recovery test supplies layout failure; it does not prove a
+physical resize deadline or presentation. No graphical session is accessed.
 
-`tools/check_policy_protocol.sh` additionally runs the Rust reference,
-independent C, and immutable archived revision-3 C clients through one
-authenticated, eleven-cycle revision-3
-behavior corpus. The retained connection observes constrained single-output
-layout, two-output partitioning, output loss with surface migration, and the
-same raw output returning at a new generation, then an ordered focus action, a
-timed-out candidate, a stale candidate superseded by a newer scene, an invalid
-candidate, and a successful recovery after each rejection. Committed replies
-must pass the canonical reducer without losing an assigned surface or changing
-the declared active output; rejected work must not poison later cycles. Each
-client also runs the corpus across two supervised processes and fresh
-connection epochs; the host pins the last committed projection across the
-replacement boundary.
+The old IPC conformance host, archived revision-3 client runner and their
+framing-specific transport tests are retired. Their prior results remain
+historical evidence, not claims about this gate. The generic policy reducers
+and file tests retain epoch, capability, complete-record, profile, settlement
+and recovery checks. The assertion mapping is recorded in the
+[IPC retirement investigation](notes/investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md).
 
-The authenticated black-box host covers generic Rust and C `sophia_wm_v1` peers. The host exercises normal replacement plus timeout, stale,
-and invalid replacement/recovery boundaries. `tools/check_archived_policy_client.sh`
-separately verifies fixed
-digests before compiling the frozen C99 codec/client snapshot and running it
-against the current server. Shared restart and archived-client freeze coverage
-are therefore closed. The separately authorized physical output apply/rollback
-archive described below supplies the hardware evidence.
-
-Client-specific policy, restart and physical desktop acceptance runs live in
-niltempus and the client repositories. They bind the exact Sophia and client
-artifacts; their results do not replace the generic protocol checks above.
+`tools/check_policy_client_matrix.sh` calls the same repository gate. It no
+longer builds a sibling WM checkout. Client-specific policy, restart and
+physical desktop acceptance runs belong in niltempus and the client
+repositories, with their own exact source and artifact bindings.
 
 For Sophia X Authority compatibility changes, also run the focused wire suite
 and the real-client smoke that exercises the touched path. The

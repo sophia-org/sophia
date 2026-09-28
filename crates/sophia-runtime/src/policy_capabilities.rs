@@ -1,4 +1,4 @@
-//! Mechanism selection shared by WM transports. This does not admit a peer,
+//! Mechanism selection for WM file admission. This does not admit a peer,
 //! mutate a connection or decide whether a client's required set is satisfied.
 use sophia_protocol::*;
 
