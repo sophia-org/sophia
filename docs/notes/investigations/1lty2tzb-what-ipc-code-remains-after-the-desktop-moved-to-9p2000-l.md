@@ -1884,6 +1884,22 @@ the original owner assertions. The invocation is corrected without changing
 those tests. The failed family report and phase logs remain under
 `~/.cache/sophia-ipc-retirement/family-a9e17ed4b/`.
 
+The corrected native-family run at signed `2dcc1122a` passes all eight phases:
+isolation, WM independent client, shell independent clients, protocol/runtime,
+Engine owners, output owner, output client and control service. Its schema-2
+report records the same clean source identity before and after. Evidence is
+in `t269-runtime-wm-family-2.log` and
+`~/.cache/sophia-ipc-retirement/family-2dcc1122a/report.json`; both family runs
+are also retained under `development-evidence/ipc-retirement/`. The optional
+operator-supplied content client is absent; the required independent C SDK
+content peer passes. Output's independent full lifecycle and native acceptance
+remain explicitly unclaimed. No installed release or running session changed.
+
+The next WM deletion closure includes `sophia-wm-demo`'s output client, which
+must retain its tests outside that crate, and niltempus packaging/physical
+runner callers. Output is still a separate role. Those dependencies are not
+permission to drop output evidence while retiring the WM IPC codec.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
