@@ -32,17 +32,17 @@ pub fn encode_wm_v1_policy_projection(
         // Frozen ordinary arrays and bookmark extensions are single chunks;
         // only group/presentation extensions historically split their rows.
         let size = match kind {
-            super::PROJECTION_TAB_GROUP_RECORD_KIND => Some(super::PROJECTION_TAB_GROUP_RECORD_LEN),
-            super::PROJECTION_TAB_MEMBER_RECORD_KIND => {
-                Some(super::PROJECTION_TAB_MEMBER_RECORD_LEN)
+            PROJECTION_TAB_GROUP_RECORD_KIND => Some(PROJECTION_TAB_GROUP_RECORD_LEN),
+            PROJECTION_TAB_MEMBER_RECORD_KIND => {
+                Some(PROJECTION_TAB_MEMBER_RECORD_LEN)
             }
-            super::PROJECTION_TRANSLATION_GROUP_RECORD_KIND => {
-                Some(super::PROJECTION_TRANSLATION_GROUP_RECORD_LEN)
+            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => {
+                Some(PROJECTION_TRANSLATION_GROUP_RECORD_LEN)
             }
-            super::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => {
-                Some(super::PROJECTION_TRANSLATION_MEMBER_RECORD_LEN)
+            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => {
+                Some(PROJECTION_TRANSLATION_MEMBER_RECORD_LEN)
             }
-            other => super::wm_presentation_record_layout(other).map(|r| r.0),
+            other => wm_presentation_record_layout(other).map(|r| r.0),
         };
         if let Some(size) = size {
             chunks.extend(super::wm_record_sections::projection_chunks(
@@ -101,17 +101,17 @@ pub fn decode_wm_v1_policy_projection(
             PROJECTION_PLACEMENT_RECORD_KIND => {}
             PROJECTION_INDICATOR_RECORD_KIND => {}
             PROJECTION_OUTPUT_STATUS_RECORD_KIND => {}
-            super::PROJECTION_TAB_GROUP_RECORD_KIND
-            | super::PROJECTION_TAB_MEMBER_RECORD_KIND
-            | super::PROJECTION_TRANSLATION_GROUP_RECORD_KIND
-            | super::PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
-            | super::PROJECTION_LAUNCH_CONTEXT_RECORD_KIND
-            | super::PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND
-            | super::PROJECTION_PRESENTATION_RECORD_KIND
-            | super::PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND
-            | super::PROJECTION_SURFACE_INSTANCE_RECORD_KIND
-            | super::PROJECTION_PRESENTATION_REGION_RECORD_KIND
-            | super::PROJECTION_PRESENTATION_BINDING_RECORD_KIND
+            PROJECTION_TAB_GROUP_RECORD_KIND
+            | PROJECTION_TAB_MEMBER_RECORD_KIND
+            | PROJECTION_TRANSLATION_GROUP_RECORD_KIND
+            | PROJECTION_TRANSLATION_MEMBER_RECORD_KIND
+            | PROJECTION_LAUNCH_CONTEXT_RECORD_KIND
+            | PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND
+            | PROJECTION_PRESENTATION_RECORD_KIND
+            | PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND
+            | PROJECTION_SURFACE_INSTANCE_RECORD_KIND
+            | PROJECTION_PRESENTATION_REGION_RECORD_KIND
+            | PROJECTION_PRESENTATION_BINDING_RECORD_KIND
                 if ordinal >= usize::from(transfer.begin.chunk_count) => {}
             other => return Err(invalid("projection_record_kind", u32::from(other))),
         }
@@ -119,14 +119,14 @@ pub fn decode_wm_v1_policy_projection(
     let sections = transfer
         .chunks
         .iter()
-        .map(|c| super::PolicyRecordSectionRef {
+        .map(|c| PolicyRecordSectionRef {
             kind: c.record_kind,
             count: c.item_count,
             bytes: &c.data,
         })
         .collect::<Vec<_>>();
     decode_projection_sections(
-        super::PolicyProjectionMetadata {
+        PolicyProjectionMetadata {
             connection_epoch: transfer.begin.connection_epoch,
             active_output: OutputId::from_raw(transfer.begin.active_output),
             transaction: transfer.transaction,

@@ -1,6 +1,31 @@
 //! Complete passive record sections shared by transport codecs. This owner
 //! has no transfer phases, transaction assembly, queue or publication state.
-use super::*;
+// Raw generated row kinds, widths and bounds: root-exported names until
+// `crate::wm_rows` owns them.
+use crate::{
+    PROJECTION_INDICATOR_RECORD_KIND, PROJECTION_INDICATOR_RECORD_MAX,
+    PROJECTION_INDICATOR_RECORD_SIZE, PROJECTION_OUTPUT_RECORD_KIND, PROJECTION_OUTPUT_RECORD_MAX,
+    PROJECTION_OUTPUT_RECORD_SIZE, PROJECTION_OUTPUT_STATUS_RECORD_KIND,
+    PROJECTION_OUTPUT_STATUS_RECORD_MAX, PROJECTION_OUTPUT_STATUS_RECORD_SIZE,
+    PROJECTION_PLACEMENT_RECORD_KIND, PROJECTION_PLACEMENT_RECORD_MAX,
+    PROJECTION_PLACEMENT_RECORD_SIZE, SNAPSHOT_ACTION_RECORD_KIND, SNAPSHOT_ACTION_RECORD_MAX,
+    SNAPSHOT_ACTION_RECORD_SIZE, SNAPSHOT_OUTPUT_RECORD_KIND, SNAPSHOT_OUTPUT_RECORD_MAX,
+    SNAPSHOT_OUTPUT_RECORD_SIZE, SNAPSHOT_SESSION_OPERATION_RECORD_KIND,
+    SNAPSHOT_SESSION_OPERATION_RECORD_MAX, SNAPSHOT_SESSION_OPERATION_RECORD_SIZE,
+    SNAPSHOT_SURFACE_RECORD_KIND, SNAPSHOT_SURFACE_RECORD_MAX, SNAPSHOT_SURFACE_RECORD_SIZE,
+};
+
+use super::{
+    LAUNCH_CONTEXT_RECORD_LEN, OUTPUT_LAUNCH_CONTEXT_RECORD_LEN,
+    PROJECTION_LAUNCH_CONTEXT_RECORD_KIND, PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND,
+    PROJECTION_TAB_GROUP_RECORD_KIND, PROJECTION_TAB_GROUP_RECORD_LEN,
+    PROJECTION_TAB_MEMBER_RECORD_KIND, PROJECTION_TAB_MEMBER_RECORD_LEN,
+    PROJECTION_TRANSLATION_GROUP_RECORD_KIND, PROJECTION_TRANSLATION_GROUP_RECORD_LEN,
+    PROJECTION_TRANSLATION_MEMBER_RECORD_KIND, PROJECTION_TRANSLATION_MEMBER_RECORD_LEN,
+    SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND, SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND,
+    SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND, wm_presentation_record_layout,
+};
+use crate::BinaryCodecError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PolicyDecodedSnapshot {
@@ -134,8 +159,8 @@ pub fn policy_record_layout(context: PolicyRecordContext, kind: u16) -> Option<(
     })
 }
 
-fn invalid_section(kind: u16) -> IpcCodecError {
-    IpcCodecError::InvalidEnum {
+fn invalid_section(kind: u16) -> BinaryCodecError {
+    BinaryCodecError::InvalidEnum {
         field: "policy_record_section",
         value: u32::from(kind),
     }
@@ -146,7 +171,7 @@ fn invalid_section(kind: u16) -> IpcCodecError {
 pub fn validate_policy_record_sections(
     context: PolicyRecordContext,
     sections: &[PolicyRecordSectionRef<'_>],
-) -> Result<(), IpcCodecError> {
+) -> Result<(), BinaryCodecError> {
     for (index, section) in sections.iter().enumerate() {
         let (size, maximum) = policy_record_layout(context, section.kind)
             .ok_or_else(|| invalid_section(section.kind))?;
@@ -163,7 +188,7 @@ pub fn validate_policy_record_sections(
             }
         }
         if total > maximum {
-            return Err(IpcCodecError::CountTooLarge {
+            return Err(BinaryCodecError::CountTooLarge {
                 count: total,
                 max: maximum,
             });
@@ -177,7 +202,7 @@ pub fn validate_policy_record_sections(
 pub fn coalesce_policy_record_sections(
     context: PolicyRecordContext,
     sections: &[PolicyRecordSectionRef<'_>],
-) -> Result<Vec<PolicyRecordSection>, IpcCodecError> {
+) -> Result<Vec<PolicyRecordSection>, BinaryCodecError> {
     validate_policy_record_sections(context, sections)?;
     let mut result: Vec<PolicyRecordSection> = Vec::new();
     for section in sections {

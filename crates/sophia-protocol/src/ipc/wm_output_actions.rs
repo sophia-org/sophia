@@ -1,11 +1,11 @@
-//! Explicit action targets and opaque configured output affinity. Neither is
-//! inferred from the ordered list of outputs a projection must cover.
-use std::collections::BTreeSet;
-
+//! Explicit action targets and the legacy chunks carrying opaque configured
+//! output affinity. Neither is inferred from the ordered list of outputs a
+//! projection must cover. The affinity rows belong to `crate::wm_records`.
 use super::*;
+use crate::wm_records::{
+    PolicyRecordSectionRef, apply_policy_output_key_records, encode_policy_output_key_records,
+};
 use crate::{OutputId, PolicyOutputSnapshot, PolicyProjectionRequest, PolicyRequestCause};
-
-pub const SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND: u16 = 0xff07;
 
 fn invalid() -> IpcCodecError {
     IpcCodecError::InvalidEnum {
@@ -110,45 +110,6 @@ pub fn append_wm_output_policy_keys(
     Ok(())
 }
 
-pub fn encode_policy_output_key_records(
-    outputs: &[PolicyOutputSnapshot],
-    capabilities: u64,
-) -> Result<Vec<super::PolicyRecordSection>, IpcCodecError> {
-    if capabilities & SOPHIA_WM_CAPABILITY_OUTPUT_POLICY_KEYS == 0 {
-        return Ok(Vec::new());
-    }
-    if outputs.len() > crate::POLICY_MAX_OUTPUTS {
-        return Err(invalid());
-    }
-    let mut keys = BTreeSet::new();
-    let mut ids = BTreeSet::new();
-    let mut data = Vec::new();
-    for output in outputs {
-        if let Some(key) = output.policy_key {
-            if key == 0
-                || !output.output.is_valid()
-                || output.generation == 0
-                || !keys.insert(key)
-                || !ids.insert(output.output)
-            {
-                return Err(invalid());
-            }
-            data.extend(output.output.raw().to_le_bytes());
-            data.extend(output.generation.to_le_bytes());
-            data.extend(key.to_le_bytes());
-        }
-    }
-    Ok(if data.is_empty() {
-        Vec::new()
-    } else {
-        vec![super::PolicyRecordSection {
-            kind: SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND,
-            count: keys.len() as u32,
-            bytes: data,
-        }]
-    })
-}
-
 pub fn apply_wm_output_policy_keys(
     transfer: &WmV1SnapshotTransfer,
     outputs: &mut [PolicyOutputSnapshot],
@@ -156,44 +117,11 @@ pub fn apply_wm_output_policy_keys(
     let sections = transfer
         .chunks
         .iter()
-        .map(|c| super::PolicyRecordSectionRef {
+        .map(|c| PolicyRecordSectionRef {
             kind: c.record_kind,
             count: c.item_count,
             bytes: &c.data,
         })
         .collect::<Vec<_>>();
     apply_policy_output_key_records(&sections, outputs)
-}
-
-pub fn apply_policy_output_key_records(
-    sections: &[super::PolicyRecordSectionRef<'_>],
-    outputs: &mut [PolicyOutputSnapshot],
-) -> Result<(), IpcCodecError> {
-    let mut keys = BTreeSet::new();
-    let mut ids = BTreeSet::new();
-    for chunk in sections
-        .iter()
-        .filter(|c| c.kind == SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND)
-    {
-        if chunk.count == 0
-            || chunk.count as usize > crate::POLICY_MAX_OUTPUTS
-            || chunk.bytes.len() != chunk.count as usize * 24
-        {
-            return Err(invalid());
-        }
-        for record in chunk.bytes.chunks_exact(24) {
-            let id = u64::from_le_bytes(record[0..8].try_into().unwrap());
-            let generation = u64::from_le_bytes(record[8..16].try_into().unwrap());
-            let key = u64::from_le_bytes(record[16..24].try_into().unwrap());
-            if key == 0 || !keys.insert(key) || !ids.insert(id) {
-                return Err(invalid());
-            }
-            let output = outputs
-                .iter_mut()
-                .find(|o| o.output.raw() == id && o.generation == generation)
-                .ok_or_else(invalid)?;
-            output.policy_key = Some(key);
-        }
-    }
-    Ok(())
 }

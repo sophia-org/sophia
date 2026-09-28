@@ -1,42 +1,23 @@
 //! Complete, capability-gated output bookmarks. No workspace identity crosses
 //! this boundary; the issuing WM alone interprets the token.
-use super::{IpcCodecError, WmV1ProjectionChunk};
-use crate::{OutputId, POLICY_MAX_OUTPUTS, PolicyOutputLaunchContext};
+use super::{PolicyRecordSection, PolicyRecordSectionRef};
+use crate::{BinaryCodecError, OutputId, POLICY_MAX_OUTPUTS, PolicyOutputLaunchContext};
 use std::collections::BTreeSet;
 
 pub const PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND: u16 = 0xff08;
 pub const OUTPUT_LAUNCH_CONTEXT_RECORD_LEN: usize = 32;
 
-fn invalid() -> IpcCodecError {
-    IpcCodecError::InvalidEnum {
+fn invalid() -> BinaryCodecError {
+    BinaryCodecError::InvalidEnum {
         field: "output_launch_context",
         value: 0,
     }
 }
 
-pub fn encode_wm_output_launch_contexts(
-    records: &[PolicyOutputLaunchContext],
-    epoch: u64,
-    ordinal: u16,
-) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
-    Ok(
-        encode_policy_output_launch_contexts_records(records, epoch)?
-            .into_iter()
-            .map(|s| WmV1ProjectionChunk {
-                connection_epoch: epoch,
-                ordinal,
-                record_kind: s.kind,
-                item_count: s.count,
-                data: s.bytes,
-            })
-            .collect(),
-    )
-}
-
 pub fn encode_policy_output_launch_contexts_records(
     records: &[PolicyOutputLaunchContext],
     epoch: u64,
-) -> Result<Vec<super::PolicyRecordSection>, IpcCodecError> {
+) -> Result<Vec<PolicyRecordSection>, BinaryCodecError> {
     if records.len() > POLICY_MAX_OUTPUTS {
         return Err(invalid());
     }
@@ -59,7 +40,7 @@ pub fn encode_policy_output_launch_contexts_records(
     Ok(if records.is_empty() {
         Vec::new()
     } else {
-        vec![super::PolicyRecordSection {
+        vec![PolicyRecordSection {
             kind: PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND,
             count: records.len() as u32,
             bytes: data,
@@ -67,29 +48,10 @@ pub fn encode_policy_output_launch_contexts_records(
     })
 }
 
-pub fn decode_wm_output_launch_contexts(
-    chunks: &[WmV1ProjectionChunk],
-) -> Result<Vec<PolicyOutputLaunchContext>, IpcCodecError> {
-    let mut epoch = None;
-    for c in chunks
-        .iter()
-        .filter(|c| c.record_kind == PROJECTION_OUTPUT_LAUNCH_CONTEXT_RECORD_KIND)
-    {
-        if epoch.is_some_and(|e| e != c.connection_epoch) {
-            return Err(invalid());
-        }
-        epoch = Some(c.connection_epoch);
-    }
-    decode_policy_output_launch_contexts_records(
-        epoch.unwrap_or(0),
-        &super::wm_record_sections::projection_sections(chunks),
-    )
-}
-
 pub fn decode_policy_output_launch_contexts_records(
     epoch: u64,
-    sections: &[super::PolicyRecordSectionRef<'_>],
-) -> Result<Vec<PolicyOutputLaunchContext>, IpcCodecError> {
+    sections: &[PolicyRecordSectionRef<'_>],
+) -> Result<Vec<PolicyOutputLaunchContext>, BinaryCodecError> {
     let mut records = Vec::new();
     for c in sections
         .iter()

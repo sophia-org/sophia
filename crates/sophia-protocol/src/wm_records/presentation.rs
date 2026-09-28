@@ -1,8 +1,17 @@
 //! Fixed presentation extension records; connection and scene authority are
 //! validated by the projection owner after this bounded decoding step.
-use super::cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
-use super::{IpcCodecError, PolicyRecordSection, PolicyRecordSectionRef, WmV1ProjectionChunk};
-use crate::*;
+use super::{PolicyRecordSection, PolicyRecordSectionRef};
+use crate::byte_cursor::{Cursor, push_i32, push_u16, push_u32, push_u64};
+use crate::{
+    BinaryCodecError, OutputId, POLICY_MAX_PRESENTATION_BINDINGS, POLICY_MAX_PRESENTATION_OUTPUTS,
+    POLICY_MAX_PRESENTATION_REGIONS, POLICY_MAX_SURFACE_INSTANCES, PolicyPresentation,
+    PolicyPresentationBinding, PolicyPresentationMode, PolicyPresentationOutput,
+    PolicyPresentationRegion, PolicyPresentationRegionRole, PolicySurfaceInstance, Rect, SurfaceId,
+    WmActionId, WmModifierMask,
+};
+// Raw generated capability bits: root-exported names until `crate::wm_rows`
+// owns them.
+use crate::{SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS, SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES};
 
 pub const PROJECTION_PRESENTATION_RECORD_KIND: u16 = 0xff09;
 pub const PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND: u16 = 0xff0a;
@@ -11,7 +20,7 @@ pub const PROJECTION_PRESENTATION_REGION_RECORD_KIND: u16 = 0xff0c;
 pub const PROJECTION_PRESENTATION_BINDING_RECORD_KIND: u16 = 0xff0d;
 
 pub fn wm_presentation_record_layout(kind: u16) -> Option<(usize, usize, u64)> {
-    let visual = super::SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES;
+    let visual = SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES;
     Some(match kind {
         PROJECTION_PRESENTATION_RECORD_KIND => (32, 1, visual),
         PROJECTION_PRESENTATION_OUTPUT_RECORD_KIND => (40, POLICY_MAX_PRESENTATION_OUTPUTS, visual),
@@ -20,14 +29,14 @@ pub fn wm_presentation_record_layout(kind: u16) -> Option<(usize, usize, u64)> {
         PROJECTION_PRESENTATION_BINDING_RECORD_KIND => (
             16,
             POLICY_MAX_PRESENTATION_BINDINGS,
-            visual | super::SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS,
+            visual | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS,
         ),
         _ => return None,
     })
 }
 
-fn invalid() -> IpcCodecError {
-    IpcCodecError::InvalidEnum {
+fn invalid() -> BinaryCodecError {
+    BinaryCodecError::InvalidEnum {
         field: "wm_presentation",
         value: 0,
     }
@@ -39,7 +48,7 @@ fn rect(out: &mut Vec<u8>, r: Rect) {
     }
 }
 
-fn read_rect(c: &mut Cursor<'_>) -> Result<Rect, IpcCodecError> {
+fn read_rect(c: &mut Cursor<'_>) -> Result<Rect, BinaryCodecError> {
     Ok(Rect {
         x: c.i32()?,
         y: c.i32()?,
@@ -52,30 +61,10 @@ fn optional_action(value: u64) -> Option<WmActionId> {
     (value != 0).then(|| WmActionId::from_raw(value))
 }
 
-pub fn encode_wm_presentation(
-    presentation: Option<&PolicyPresentation>,
-    epoch: u64,
-    ordinal: u16,
-) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
-    super::wm_record_sections::projection_chunks(
-        encode_policy_presentation_records(presentation, epoch)?,
-        epoch,
-        ordinal,
-        |kind| wm_presentation_record_layout(kind).map(|r| r.0),
-    )
-    .map_err(|_| invalid())
-}
-
-pub fn decode_wm_presentation(
-    chunks: &[WmV1ProjectionChunk],
-) -> Result<Option<PolicyPresentation>, IpcCodecError> {
-    decode_policy_presentation_records(&super::wm_record_sections::projection_sections(chunks))
-}
-
 pub fn encode_policy_presentation_records(
     presentation: Option<&PolicyPresentation>,
     epoch: u64,
-) -> Result<Vec<PolicyRecordSection>, IpcCodecError> {
+) -> Result<Vec<PolicyRecordSection>, BinaryCodecError> {
     let Some(p) = presentation else {
         return Ok(Vec::new());
     };
@@ -154,7 +143,7 @@ pub fn encode_policy_presentation_records(
 
 pub fn decode_policy_presentation_records(
     sections: &[PolicyRecordSectionRef<'_>],
-) -> Result<Option<PolicyPresentation>, IpcCodecError> {
+) -> Result<Option<PolicyPresentation>, BinaryCodecError> {
     let mut p = None;
     let mut counts = (0_usize, 0_usize, 0_usize, 0_usize);
     let mut last_kind = 0;

@@ -1,6 +1,9 @@
-use super::{IpcCodecError, PolicyRecordSection, PolicyRecordSectionRef, WmV1ProjectionChunk};
+//! Tab-group headers and their member rows. Members follow their group in
+//! header order; a header's count claims exactly that many member rows.
+use super::{PolicyRecordSection, PolicyRecordSectionRef};
 use crate::{
-    OutputId, POLICY_MAX_TAB_GROUPS, POLICY_MAX_TAB_MEMBERS, PolicyTabGroup, Rect, SurfaceId,
+    BinaryCodecError, OutputId, POLICY_MAX_TAB_GROUPS, POLICY_MAX_TAB_MEMBERS, PolicyTabGroup,
+    Rect, SurfaceId,
 };
 
 pub const PROJECTION_TAB_GROUP_RECORD_KIND: u16 = 0xff01;
@@ -8,40 +11,16 @@ pub const PROJECTION_TAB_MEMBER_RECORD_KIND: u16 = 0xff02;
 pub const PROJECTION_TAB_GROUP_RECORD_LEN: usize = 48;
 pub const PROJECTION_TAB_MEMBER_RECORD_LEN: usize = 24;
 
-fn invalid() -> IpcCodecError {
-    IpcCodecError::InvalidEnum {
+fn invalid() -> BinaryCodecError {
+    BinaryCodecError::InvalidEnum {
         field: "tab_group",
         value: 0,
     }
 }
 
-pub fn encode_wm_tab_groups(
-    groups: &[PolicyTabGroup],
-    epoch: u64,
-    ordinal: u16,
-) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
-    super::wm_record_sections::projection_chunks(
-        encode_policy_tab_groups_records(groups)?,
-        epoch,
-        ordinal,
-        |kind| match kind {
-            PROJECTION_TAB_GROUP_RECORD_KIND => Some(PROJECTION_TAB_GROUP_RECORD_LEN),
-            PROJECTION_TAB_MEMBER_RECORD_KIND => Some(PROJECTION_TAB_MEMBER_RECORD_LEN),
-            _ => None,
-        },
-    )
-    .map_err(|_| invalid())
-}
-
-pub fn decode_wm_tab_groups(
-    chunks: &[WmV1ProjectionChunk],
-) -> Result<Vec<PolicyTabGroup>, IpcCodecError> {
-    decode_policy_tab_groups_records(&super::wm_record_sections::projection_sections(chunks))
-}
-
 pub fn encode_policy_tab_groups_records(
     groups: &[PolicyTabGroup],
-) -> Result<Vec<PolicyRecordSection>, IpcCodecError> {
+) -> Result<Vec<PolicyRecordSection>, BinaryCodecError> {
     if groups.len() > POLICY_MAX_TAB_GROUPS
         || groups.iter().map(|g| g.members.len()).sum::<usize>() > POLICY_MAX_TAB_MEMBERS
     {
@@ -104,7 +83,7 @@ pub fn encode_policy_tab_groups_records(
 
 pub fn decode_policy_tab_groups_records(
     sections: &[PolicyRecordSectionRef<'_>],
-) -> Result<Vec<PolicyTabGroup>, IpcCodecError> {
+) -> Result<Vec<PolicyTabGroup>, BinaryCodecError> {
     let mut groups = Vec::new();
     let mut expected = Vec::new();
     let mut member_records = Vec::new();

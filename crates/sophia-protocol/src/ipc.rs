@@ -4,15 +4,12 @@ mod control_v1;
 mod cursor;
 mod frame;
 mod output_v1;
-mod policy_records;
 mod portal;
 mod primitives;
 mod shell_tabs;
 mod shell_v1;
 mod types;
-mod wm_presentation;
 mod wm_record_sections;
-mod wm_tab_groups;
 mod wm_v1;
 mod wm_v1_profile;
 mod wm_v1_records;
@@ -22,7 +19,6 @@ pub use broker_v1::*;
 pub use control_v1::*;
 pub use frame::{decode_frame, encode_frame};
 pub use output_v1::*;
-pub use policy_records::*;
 // Socket adapters use the same strict semantics as file codecs. Their
 // historical exceptions stay in the adapter, never in these validators.
 use crate::policy_scalars::*;
@@ -34,14 +30,16 @@ pub use portal::{
 pub use shell_tabs::*;
 pub use shell_v1::*;
 pub use types::*;
-pub use wm_presentation::*;
-pub use wm_tab_groups::*;
 pub use wm_v1::*;
 pub use wm_v1_profile::*;
 pub use wm_v1_records::*;
-
-mod wm_translation;
-pub use wm_translation::*;
+// Legacy chunk adapters around the extension rows in `crate::wm_records`.
+pub use wm_record_sections::{
+    append_wm_launch_origins, decode_wm_launch_contexts, decode_wm_output_launch_contexts,
+    decode_wm_presentation, decode_wm_tab_groups, decode_wm_translation_groups,
+    encode_wm_launch_contexts, encode_wm_output_launch_contexts, encode_wm_presentation,
+    encode_wm_tab_groups, encode_wm_translation_groups,
+};
 
 mod shell_indicators;
 pub use shell_indicators::*;
@@ -54,11 +52,6 @@ pub use shell_reference::*;
 
 mod shell_launcher;
 pub use shell_launcher::*;
-
-mod wm_launch_origin;
-pub use wm_launch_origin::*;
-mod wm_output_launch_context;
-pub use wm_output_launch_context::*;
 
 mod wm_output_actions;
 pub use wm_output_actions::*;

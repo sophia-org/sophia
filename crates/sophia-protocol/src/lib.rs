@@ -18,6 +18,7 @@ pub mod policy_scalars;
 pub mod presentation;
 pub mod table;
 pub mod wm_files;
+pub mod wm_records;
 pub mod wm_rows;
 
 pub use capacity::*;
@@ -36,3 +37,4 @@ pub use shell::*;
 // `sophia-shell-protocol`, which clients build against without Sophia.
 pub use sophia_shell_protocol::{shell, shell_files};
 pub use table::*;
+pub use wm_records::*;

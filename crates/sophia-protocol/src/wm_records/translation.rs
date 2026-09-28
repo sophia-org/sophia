@@ -1,51 +1,26 @@
-use super::{IpcCodecError, PolicyRecordSection, PolicyRecordSectionRef, WmV1ProjectionChunk};
-use crate::{OutputId, POLICY_MAX_OUTPUTS, POLICY_MAX_SURFACES, PolicyTranslationGroup, SurfaceId};
+//! Translation-group headers and their member rows, one group per output at
+//! most. A header's count claims exactly that many member rows.
+use super::{PolicyRecordSection, PolicyRecordSectionRef};
+use crate::{
+    BinaryCodecError, OutputId, POLICY_MAX_OUTPUTS, POLICY_MAX_SURFACES, PolicyTranslationGroup,
+    SurfaceId,
+};
 
 pub const PROJECTION_TRANSLATION_GROUP_RECORD_KIND: u16 = 0xff03;
 pub const PROJECTION_TRANSLATION_MEMBER_RECORD_KIND: u16 = 0xff04;
 pub const PROJECTION_TRANSLATION_GROUP_RECORD_LEN: usize = 32;
 pub const PROJECTION_TRANSLATION_MEMBER_RECORD_LEN: usize = 24;
 
-fn invalid() -> IpcCodecError {
-    IpcCodecError::InvalidEnum {
+fn invalid() -> BinaryCodecError {
+    BinaryCodecError::InvalidEnum {
         field: "translation_group",
         value: 0,
     }
 }
 
-pub fn encode_wm_translation_groups(
-    groups: &[PolicyTranslationGroup],
-    epoch: u64,
-    ordinal: u16,
-) -> Result<Vec<WmV1ProjectionChunk>, IpcCodecError> {
-    super::wm_record_sections::projection_chunks(
-        encode_policy_translation_groups_records(groups)?,
-        epoch,
-        ordinal,
-        |kind| match kind {
-            PROJECTION_TRANSLATION_GROUP_RECORD_KIND => {
-                Some(PROJECTION_TRANSLATION_GROUP_RECORD_LEN)
-            }
-            PROJECTION_TRANSLATION_MEMBER_RECORD_KIND => {
-                Some(PROJECTION_TRANSLATION_MEMBER_RECORD_LEN)
-            }
-            _ => None,
-        },
-    )
-    .map_err(|_| invalid())
-}
-
-pub fn decode_wm_translation_groups(
-    chunks: &[WmV1ProjectionChunk],
-) -> Result<Vec<PolicyTranslationGroup>, IpcCodecError> {
-    decode_policy_translation_groups_records(&super::wm_record_sections::projection_sections(
-        chunks,
-    ))
-}
-
 pub fn encode_policy_translation_groups_records(
     groups: &[PolicyTranslationGroup],
-) -> Result<Vec<PolicyRecordSection>, IpcCodecError> {
+) -> Result<Vec<PolicyRecordSection>, BinaryCodecError> {
     if groups.len() > POLICY_MAX_OUTPUTS
         || groups.iter().map(|g| g.members.len()).sum::<usize>() > POLICY_MAX_SURFACES
     {
@@ -93,7 +68,7 @@ pub fn encode_policy_translation_groups_records(
 
 pub fn decode_policy_translation_groups_records(
     sections: &[PolicyRecordSectionRef<'_>],
-) -> Result<Vec<PolicyTranslationGroup>, IpcCodecError> {
+) -> Result<Vec<PolicyTranslationGroup>, BinaryCodecError> {
     let mut groups = Vec::new();
     let mut counts = Vec::new();
     let mut members = Vec::new();

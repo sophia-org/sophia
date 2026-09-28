@@ -104,8 +104,8 @@ pub fn decode_wm_v1_policy_snapshot(
             (false, SNAPSHOT_SURFACE_CLASSIFICATION_RECORD_KIND) => {}
             (
                 false,
-                super::SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND
-                | super::SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND,
+                SNAPSHOT_LAUNCH_ORIGIN_RECORD_KIND
+                | SNAPSHOT_OUTPUT_POLICY_KEY_RECORD_KIND,
             ) => {}
             (_, other) => return Err(invalid("snapshot_record_kind", u32::from(other))),
         }
@@ -113,14 +113,14 @@ pub fn decode_wm_v1_policy_snapshot(
     let sections = transfer
         .chunks
         .iter()
-        .map(|c| super::PolicyRecordSectionRef {
+        .map(|c| PolicyRecordSectionRef {
             kind: c.record_kind,
             count: c.item_count,
             bytes: &c.data,
         })
         .collect::<Vec<_>>();
     decode_snapshot_sections(
-        super::PolicySnapshotMetadata {
+        PolicySnapshotMetadata {
             connection_epoch: transfer.begin.connection_epoch,
             active_output: OutputId::from_raw(transfer.begin.active_output),
             scene_generation: transfer.begin.scene_generation,
@@ -133,21 +133,4 @@ pub fn decode_wm_v1_policy_snapshot(
             transfer.begin.session_operation_count as usize,
         ]),
     )
-}
-
-fn validate_wm_v1_snapshot_focus(scene: &PolicySceneSnapshot) -> Result<(), IpcCodecError> {
-    for output in &scene.outputs {
-        let Some(focus) = output.focus else {
-            continue;
-        };
-        if !scene.surfaces.iter().any(|surface| {
-            surface.surface == focus
-                && surface.current_output == Some(output.output)
-                && surface.capabilities.focusable
-                && !surface.current_state.minimized
-        }) {
-            return Err(invalid("snapshot_output_focus", focus.index()));
-        }
-    }
-    Ok(())
 }

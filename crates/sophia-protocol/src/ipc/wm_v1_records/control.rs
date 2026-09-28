@@ -341,35 +341,6 @@ pub fn decode_wm_v1_policy_configuration(
     Ok(configuration)
 }
 
-fn encode_action_name(name: &str) -> Result<(u16, [u8; 128]), IpcCodecError> {
-    if name.is_empty()
-        || name.len() > crate::POLICY_ACTION_NAME_MAX_BYTES
-        || name.trim() != name
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b' ' | b'.'))
-    {
-        return Err(invalid("policy_action_name", 0));
-    }
-    let mut encoded = [0; 128];
-    encoded[..name.len()].copy_from_slice(name.as_bytes());
-    Ok((name.len() as u16, encoded))
-}
-
-fn decode_action_name(length: u16, encoded: &[u8; 128]) -> Result<String, IpcCodecError> {
-    let length = usize::from(length);
-    if length == 0
-        || length > crate::POLICY_ACTION_NAME_MAX_BYTES
-        || encoded[length..].iter().any(|byte| *byte != 0)
-    {
-        return Err(invalid("policy_action_name", length as u32));
-    }
-    let name = core::str::from_utf8(&encoded[..length])
-        .map_err(|_| invalid("policy_action_name", length as u32))?;
-    encode_action_name(name)?;
-    Ok(name.to_owned())
-}
-
 pub fn encode_wm_v1_policy_dirty(
     request: &PolicyDirtyRequest,
 ) -> Result<WmV1PolicyDirty, IpcCodecError> {
