@@ -58,6 +58,30 @@ pub struct PreparedRecord<'a> {
     tail: u64,
 }
 
+/// All records in one role operation, reserved together. The role encodes
+/// consecutive sequence numbers starting at `Journal::next_sequence()`.
+/// Dropping this guard consumes no journal identity or retention.
+pub struct PreparedBatch<'a> {
+    journal: &'a mut Journal,
+    records: Vec<Retained>,
+    bytes: usize,
+    next: u64,
+    tail: u64,
+}
+
+impl PreparedBatch<'_> {
+    /// Publish every reserved record and return the final sequence. No reader
+    /// can observe a prefix of a batch through this exclusive journal borrow.
+    pub fn commit(self) -> u64 {
+        let journal = self.journal;
+        journal.records.extend(self.records);
+        journal.bytes += self.bytes;
+        journal.next = self.next;
+        journal.tail = self.tail;
+        self.next - 1
+    }
+}
+
 impl PreparedRecord<'_> {
     /// Publishes the record and returns its sequence.
     pub fn commit(self) -> u64 {
@@ -135,6 +159,55 @@ impl Journal {
             .ok_or(Errno::ENOSPC)?;
         Ok(PreparedRecord {
             journal: self,
+            bytes,
+            next,
+            tail,
+        })
+    }
+
+    /// Reserve a nonempty batch atomically. Roles use this for receipts plus
+    /// immediate consequences: any capacity/identity failure precedes every
+    /// publication, so a failed operation cannot leave a stray receipt.
+    pub fn prepare_batch(
+        &mut self,
+        records: Vec<Vec<u8>>,
+        bounds: JournalBounds,
+    ) -> Result<PreparedBatch<'_>, Errno> {
+        if records.is_empty() {
+            return Err(Errno::EINVAL);
+        }
+        let bytes = records
+            .iter()
+            .try_fold(0usize, |sum, record| sum.checked_add(record.len()))
+            .ok_or(Errno::ENOSPC)?;
+        if self.bytes > bounds.bytes
+            || records.len() > bounds.records.saturating_sub(self.records.len())
+            || bytes > bounds.bytes.saturating_sub(self.bytes)
+        {
+            return Err(Errno::EAGAIN);
+        }
+        let next = self
+            .next
+            .checked_add(records.len() as u64)
+            .ok_or(Errno::ENOSPC)?;
+        let tail = self.tail.checked_add(bytes as u64).ok_or(Errno::ENOSPC)?;
+        let mut start = self.tail;
+        let retained = records
+            .into_iter()
+            .enumerate()
+            .map(|(index, bytes)| {
+                let record = Retained {
+                    sequence: self.next + index as u64,
+                    start,
+                    bytes,
+                };
+                start += record.bytes.len() as u64;
+                record
+            })
+            .collect();
+        Ok(PreparedBatch {
+            journal: self,
+            records: retained,
             bytes,
             next,
             tail,

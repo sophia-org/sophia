@@ -309,3 +309,210 @@ fn native_file_proposals_keep_semantic_refusals_and_consume_the_domain_identity(
         Ok(OutputProposalAdmission::Active)
     );
 }
+
+#[test]
+fn bounded_domain_history_keeps_arbitrary_ids_and_survives_settlement_until_reconnect() {
+    let mut state = OutputConnectionState::with_transaction_limit(3);
+    state.connect(7).unwrap();
+    let hello = OutputV1ClientHello {
+        minimum_revision: 1,
+        maximum_revision: 1,
+        capabilities: 3,
+    };
+    state.negotiate(hello).unwrap();
+    let snapshot = snapshot();
+    for id in [99, 2] {
+        let tx = TransactionId::from_raw(id);
+        state
+            .admit_proposal(tx, proposal(7, OutputId::from_raw(1)), &snapshot)
+            .unwrap();
+        assert_eq!(state.settle_active(tx), Ok(None));
+    }
+    let mut invalid = proposal(7, OutputId::from_raw(1));
+    invalid.candidate.base_topology_epoch -= 1;
+    assert!(matches!(
+        state.admit_proposal(TransactionId::from_raw(50), invalid, &snapshot),
+        Err(OutputTransferError::InvalidCandidate(
+            OutputTopologyCandidateError::StaleTopology
+        ))
+    ));
+    assert_eq!(state.used_transaction_count(), 3);
+    for id in [99, 2, 50] {
+        assert_eq!(
+            state.admit_proposal(
+                TransactionId::from_raw(id),
+                proposal(7, OutputId::from_raw(1)),
+                &snapshot
+            ),
+            Err(OutputTransferError::ReusedTransaction)
+        );
+    }
+    assert_eq!(
+        state.admit_proposal(
+            TransactionId::from_raw(51),
+            proposal(7, OutputId::from_raw(1)),
+            &snapshot
+        ),
+        Err(OutputTransferError::TransactionCapacityExceeded)
+    );
+    assert_eq!(state.used_transaction_count(), 3);
+    assert!(state.active().is_none());
+    assert!(state.disconnect().unwrap().is_empty());
+    assert_eq!(
+        state.connect(7),
+        Err(OutputTransferError::InvalidConnectionEpoch)
+    );
+    state.connect(8).unwrap();
+    state.negotiate(hello).unwrap();
+    assert_eq!(state.used_transaction_count(), 0);
+    assert_eq!(
+        state.admit_proposal(
+            TransactionId::from_raw(99),
+            proposal(8, OutputId::from_raw(1)),
+            &snapshot
+        ),
+        Ok(OutputProposalAdmission::Active)
+    );
+}
+
+#[test]
+fn history_exhaustion_preserves_both_existing_proposals_for_settlement() {
+    let mut state = OutputConnectionState::with_transaction_limit(2);
+    state.connect(7).unwrap();
+    state
+        .negotiate(OutputV1ClientHello {
+            minimum_revision: 1,
+            maximum_revision: 1,
+            capabilities: 3,
+        })
+        .unwrap();
+    let snapshot = snapshot();
+    for id in [8, 3] {
+        state
+            .admit_proposal(
+                TransactionId::from_raw(id),
+                proposal(7, OutputId::from_raw(1)),
+                &snapshot,
+            )
+            .unwrap();
+    }
+    assert_eq!(
+        state.admit_proposal(
+            TransactionId::from_raw(4),
+            proposal(7, OutputId::from_raw(1)),
+            &snapshot
+        ),
+        Err(OutputTransferError::TransactionCapacityExceeded)
+    );
+    assert_eq!(state.active().unwrap().transaction.raw(), 8);
+    assert_eq!(
+        state
+            .settle_active(TransactionId::from_raw(8))
+            .unwrap()
+            .unwrap()
+            .transaction
+            .raw(),
+        3
+    );
+    assert_eq!(state.settle_active(TransactionId::from_raw(3)), Ok(None));
+    assert_eq!(state.used_transaction_count(), 2);
+}
+
+#[test]
+fn journal_reservation_and_domain_admission_preserve_custody_on_refusal_and_replacement() {
+    let mut state = OutputConnectionState::with_transaction_limit(3);
+    state.connect(7).unwrap();
+    state
+        .negotiate(OutputV1ClientHello {
+            minimum_revision: 1,
+            maximum_revision: 1,
+            capabilities: 3,
+        })
+        .unwrap();
+    let snapshot = snapshot();
+    let mut journal = OutputFileJournal::new(
+        7,
+        sophia_9p::journal::JournalBounds {
+            records: 4,
+            bytes: 216,
+        },
+    )
+    .unwrap();
+    for id in [1, 2] {
+        let tx = TransactionId::from_raw(id);
+        let prepared = journal.prepare_proposal(id, tx, None).unwrap();
+        state
+            .admit_proposal(tx, proposal(7, OutputId::from_raw(1)), &snapshot)
+            .unwrap();
+        prepared.commit();
+    }
+    let replacement = OutputFileReplacement {
+        transaction: TransactionId::from_raw(2),
+        topology_epoch: 4,
+    };
+    assert_eq!(
+        journal
+            .prepare_proposal(3, TransactionId::from_raw(3), Some(replacement))
+            .err(),
+        Some(sophia_9p::Errno::EAGAIN)
+    );
+    assert_eq!(state.used_transaction_count(), 2);
+    journal
+        .acknowledge(OutputFileAck {
+            connection_epoch: 7,
+            sequence: 2,
+        })
+        .unwrap();
+    let prepared = journal
+        .prepare_proposal(3, TransactionId::from_raw(3), Some(replacement))
+        .unwrap();
+    let admission = state
+        .admit_proposal(
+            TransactionId::from_raw(3),
+            proposal(7, OutputId::from_raw(1)),
+            &snapshot,
+        )
+        .unwrap();
+    assert!(
+        matches!(admission, OutputProposalAdmission::Queued { replaced: Some(old) } if old.transaction == replacement.transaction)
+    );
+    prepared.commit();
+    for id in [1, 3] {
+        let tx = TransactionId::from_raw(id);
+        assert_eq!(state.active().unwrap().transaction, tx);
+        journal
+            .finish(
+                tx,
+                OutputV1Outcome {
+                    connection_epoch: 7,
+                    topology_epoch: 4,
+                    kind: OutputV1OutcomeKind::Validated,
+                    reason: 0,
+                },
+            )
+            .unwrap();
+        state.settle_active(tx).unwrap();
+    }
+    journal
+        .acknowledge(OutputFileAck {
+            connection_epoch: 7,
+            sequence: 6,
+        })
+        .unwrap();
+    let before = journal.position();
+    let prepared = journal
+        .prepare_proposal(4, TransactionId::from_raw(4), None)
+        .unwrap();
+    assert_eq!(
+        state.admit_proposal(
+            TransactionId::from_raw(4),
+            proposal(7, OutputId::from_raw(1)),
+            &snapshot
+        ),
+        Err(OutputTransferError::TransactionCapacityExceeded)
+    );
+    drop(prepared);
+    assert_eq!(journal.position(), before);
+    assert_eq!(journal.reserved_outcomes(), 0);
+    assert_eq!(state.used_transaction_count(), 3);
+}

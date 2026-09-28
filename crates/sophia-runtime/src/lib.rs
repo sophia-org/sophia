@@ -13,6 +13,7 @@ mod host_domain;
 #[cfg(target_os = "linux")]
 pub mod inspection;
 mod output_connection;
+mod output_file_journal;
 #[cfg(target_os = "linux")]
 mod output_service;
 #[cfg(target_os = "linux")]
@@ -56,6 +57,7 @@ pub use error::*;
 #[cfg(target_os = "linux")]
 pub use inspection::SOPHIA_WM_INSPECT_SOCKET_ENV;
 pub use output_connection::*;
+pub use output_file_journal::*;
 #[cfg(target_os = "linux")]
 pub use output_service::*;
 #[cfg(target_os = "linux")]

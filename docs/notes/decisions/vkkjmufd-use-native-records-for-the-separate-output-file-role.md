@@ -36,16 +36,20 @@ operations. Neither is proposed.
 
 ## Consequences
 
-The codec can be tested without an IPC module or display. It does not yet settle
-export custody. Before the export lands, specify bounded journal reservations
-for every accepted proposal's terminal outcome, immutable topology retention,
-terminal negotiation-refusal draining, and bounded command/event channels.
+The codec and custody primitives can be tested without an IPC module or
+display. Each accepted proposal reserves one terminal event (56 bytes), with
+at most one active and one queued proposal. Receipts and immediate consequences
+publish as atomic batches. The export must still join this custody to its
+submission/acknowledgement lifecycle, immutable topology retention, terminal
+negotiation-refusal draining, and bounded command/event channels.
 
-The current owner remembers every domain transaction ID in an epoch. Journal
-acknowledgement does not bound that history. The export must explicitly bound
-this history without losing accepted outcomes or silently imposing a monotonic
-transaction-ID rule on existing clients. Submission replay and domain replay
-remain distinct concerns.
+The proposed Limits record advertises at most 4,096 domain transactions per
+epoch. The bounded owner constructor enforces that history independently of
+journal acknowledgements, preserving arbitrary domain-ID order. A new identity
+at capacity is refused before mutation; accepted work may still settle. Only a
+newer connection epoch clears history. The client drains accepted outcomes
+before reconnecting; the export must not revoke those outcomes on exhaustion.
+Submission replay and domain replay remain distinct concerns.
 
 ## Acceptance and connections
 

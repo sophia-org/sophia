@@ -11,6 +11,95 @@ const WIDE: JournalBounds = JournalBounds {
     bytes: 64,
 };
 
+#[test]
+fn batches_publish_all_records_or_spend_nothing() {
+    let mut journal = Journal::new(7);
+    let before = journal.position();
+    let records = vec![record(8, 1), record(12, 2), record(16, 3)];
+    drop(journal.prepare_batch(records.clone(), WIDE).unwrap());
+    assert_eq!(journal.position(), before);
+    for bounds in [
+        JournalBounds {
+            records: 2,
+            bytes: 64,
+        },
+        JournalBounds {
+            records: 4,
+            bytes: 35,
+        },
+    ] {
+        assert_eq!(
+            journal.prepare_batch(records.clone(), bounds).err(),
+            Some(Errno::EAGAIN)
+        );
+        assert_eq!(journal.position(), before);
+    }
+    assert_eq!(
+        journal.prepare_batch(Vec::new(), WIDE).err(),
+        Some(Errno::EINVAL)
+    );
+    assert_eq!(
+        journal
+            .prepare_batch(records.clone(), WIDE)
+            .unwrap()
+            .commit(),
+        3
+    );
+    assert_eq!(
+        journal.position(),
+        JournalPosition {
+            next_sequence: 4,
+            tail: 36,
+            records: 3,
+            bytes: 36
+        }
+    );
+    let before = journal.position();
+    // Even an empty payload cannot fit a bound below existing retention.
+    assert_eq!(
+        journal
+            .prepare_batch(
+                vec![Vec::new()],
+                JournalBounds {
+                    records: 4,
+                    bytes: 35
+                }
+            )
+            .err(),
+        Some(Errno::EAGAIN)
+    );
+    assert_eq!(journal.position(), before);
+    assert_eq!(ready(journal.read(0, 64).unwrap()), records.concat());
+    assert_eq!(ready(journal.read(6, 17).unwrap()), records.concat()[6..23]);
+    assert_eq!(journal.ack(7, 2), Ok(true));
+    assert_eq!(journal.read(19, 1), Err(Errno::ESTALE));
+    assert_eq!(ready(journal.read(20, 64).unwrap()), records[2]);
+    assert_eq!(journal.prepare(record(8, 4), WIDE).unwrap().commit(), 4);
+}
+
+#[test]
+fn batch_sequence_and_offset_exhaustion_never_publish_a_prefix() {
+    for (next, tail) in [(u64::MAX - 1, 0), (1, u64::MAX - 8)] {
+        let mut journal = Journal::starting_at(7, next, tail);
+        let before = journal.position();
+        assert_eq!(
+            journal
+                .prepare_batch(vec![record(8, 1), record(8, 2)], WIDE)
+                .err(),
+            Some(Errno::ENOSPC)
+        );
+        assert_eq!(journal.position(), before);
+        assert_eq!(journal.read(tail, 16), Ok(ReadOutcome::Pending));
+        assert_eq!(
+            journal
+                .prepare_batch(vec![record(8, 1)], WIDE)
+                .unwrap()
+                .commit(),
+            next
+        );
+    }
+}
+
 /// A length-prefixed record of `size` bytes filled with `fill`.
 fn record(size: usize, fill: u8) -> Vec<u8> {
     let mut bytes = vec![fill; size];

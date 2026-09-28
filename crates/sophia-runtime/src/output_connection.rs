@@ -22,6 +22,7 @@ pub enum OutputTransferError {
     InvalidConnectionEpoch,
     InvalidTransaction,
     ReusedTransaction,
+    TransactionCapacityExceeded,
     UnsupportedCapability,
     WrongActiveTransaction,
     InvalidCandidate(OutputTopologyCandidateError),
@@ -61,11 +62,28 @@ pub struct OutputConnectionState {
     connection_epoch: u64,
     selected_capabilities: u64,
     used_transactions: BTreeSet<TransactionId>,
+    transaction_limit: Option<usize>,
     active: Option<AdmittedOutputProposal>,
     queued: Option<AdmittedOutputProposal>,
 }
 
 impl OutputConnectionState {
+    /// Bound replay history without requiring ordered domain transaction IDs.
+    /// The file export advertises this per-epoch limit. At exhaustion, new
+    /// identities are refused before custody changes; already accepted work
+    /// can still settle. A newer connection epoch starts a fresh history.
+    /// The retiring socket adapter retains its existing default behavior.
+    pub fn with_transaction_limit(limit: usize) -> Self {
+        Self {
+            transaction_limit: Some(limit),
+            ..Self::default()
+        }
+    }
+
+    pub fn used_transaction_count(&self) -> usize {
+        self.used_transactions.len()
+    }
+
     pub fn connect(&mut self, connection_epoch: u64) -> Result<(), OutputTransferError> {
         if self.connected {
             return Err(OutputTransferError::AlreadyConnected);
@@ -129,9 +147,16 @@ impl OutputConnectionState {
         if !transaction.is_valid() {
             return Err(OutputTransferError::InvalidTransaction);
         }
-        if !self.used_transactions.insert(transaction) {
+        if self.used_transactions.contains(&transaction) {
             return Err(OutputTransferError::ReusedTransaction);
         }
+        if self
+            .transaction_limit
+            .is_some_and(|limit| self.used_transactions.len() >= limit)
+        {
+            return Err(OutputTransferError::TransactionCapacityExceeded);
+        }
+        self.used_transactions.insert(transaction);
         message
             .candidate
             .validate_against(snapshot)

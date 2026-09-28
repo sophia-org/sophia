@@ -1581,6 +1581,56 @@ error in the four-member case, corrected without changing its assertions.
 These checks do not provide an independent-language client exchange or a live
 output export. They leave the remaining t253/t272 acceptance scope unchanged.
 
+### Bounded output custody primitives (t253/t272, 2026-09-28)
+
+The native Limits codec completes the record vocabulary and explicitly binds
+domain replay history: default/ceiling 4,096 IDs per epoch, independent of
+journal acknowledgement. `OutputConnectionState::with_transaction_limit`
+preserves arbitrary ID order and counts semantically rejected IDs. Capacity
+refusal changes no custody; accepted active/queued proposals still settle, and
+only a newer connection epoch clears history. The retiring socket adapter
+continues using its unchanged default. The file export must use the bounded
+constructor and enforce the advertised deadline fields.
+
+The shared 9P journal now prepares nonempty batches atomically, with checked
+record/byte/sequence/offset bounds and no mutation on refusal or guard drop.
+`OutputFileJournal` reserves one 56-byte terminal record for each of at most
+two pending proposals. Publication cannot consume those credits. Queued
+replacement batches the new receipt with the old Stale outcome; immediate
+semantic refusal batches its receipt with Rejected without borrowing another
+proposal's credit. Refused negotiation remains readable until acknowledged;
+the export's terminal drain deadline is not implemented yet.
+
+The domain owner and journal are exercised together through the public APIs,
+including journal refusal before domain mutation, replacement, settlement,
+history exhaustion and a dropped reservation. No served export or live service
+selection is claimed by these primitives.
+
+Evidence under `development-evidence/ipc-retirement`:
+
+- `t272-custody-9p-final.log`: all 106 9P crate checks pass, including atomic batch
+  capacity refusal, guard drop, partial reads, acknowledgements and overflow.
+- `t272-custody-codec.log`: 23 native output codec checks pass, including the
+  literal Limits record and every interval/truncation refusal.
+- `t272-custody-final-2.log`: 31 runtime owner/journal/service/transport checks
+  pass after clearing the private runtime build artifacts used by the mutants.
+- `t272-custody-noipc-final.log`: 41 codec and owner/custody checks pass with the
+  protocol IPC module excluded. The disposable probe points at the production
+  owner/journal sources and adds only test import aliases.
+- `t272-custody-clippy-final.log` and `t272-custody-{fmt,layout}.log`: strict
+  checks pass. Final batch review also added a refusal for a byte bound below
+  existing retention even if the new payload is empty; the final 9P gate covers
+  that edge.
+- `t272-custody-mutants.log`: a read-only overlay disabling the replay ceiling
+  fails three owner checks; independently removing terminal byte reservations
+  fails the byte-budget test. Four failures are expected. The source tree was
+  not changed by either mutant.
+
+The [implementation draft](../../sophia-output-files.md) records limits and
+custody rules. File-node lifetime, immutable snapshot retention, exact
+submission replay, deadline enforcement, service-channel bounds and protected
+transport integration remain required before t253/t272 can close.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

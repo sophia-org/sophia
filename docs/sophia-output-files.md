@@ -8,10 +8,10 @@ records the design and unresolved custody bounds. The existing
 
 The records use little-endian integers and native rows. They do not contain a
 socket frame. `sophia_protocol::output_files` currently implements envelopes,
-submit/ack controls, Topology, Negotiate, Negotiated, Refused, Submitted,
-ObjectPublished, Proposal and Outcome bodies. The Limits body and the export
-are subsequent work. Envelope decoding alone never validates a typed body or
-grants authority.
+submit/ack controls and every body described below. Runtime custody primitives
+reserve terminal outcomes and bound domain replay history; the file export and
+its service adapter are subsequent work. Envelope decoding alone never validates
+a typed body or grants authority.
 
 ## Identity and bounds
 
@@ -37,13 +37,71 @@ Proposal=257. Unknown kinds and versions are refused.
 
 A whole record is at most 65,536 bytes. A candidate is at most 1,784 bytes.
 Complete-record decoders refuse truncation, trailing data and total-length
-mismatches; they are not stream assemblers. Export assembly limits, deadlines
-and publication retention remain to be specified.
+mismatches; they are not stream assemblers. The Limits object supplies assembly
+and acknowledgement deadlines. Export enforcement, immutable publication
+retention and bounded service-channel integration remain to be implemented.
 
 `submit` is exactly 24 bytes: epoch u64, submission ID u64, candidate length
 u32, reserved u32=0. Both identities are nonzero; length is 48..1,784. This
 interval is an assembly bound; the typed candidate decoder enforces its exact
 shape. `ack` is exactly 16 bytes: nonzero epoch u64 and sequence u64.
+
+## Limits and replay history
+
+Limits has a 40-byte body. The first seven u16 fields are fixed for revision 1:
+interface revision=1, heads=16, groups=16, modes per head=128, members per
+group=4, label bytes=64, total modes=2,048. The u16 at offset 14 is zero.
+The remaining fields are:
+
+| Offset | Type | Resource | Default / ceiling | Allowed minimum |
+| --- | --- | --- | --- | --- |
+| 16 | u32 | Journal records | 64 | 8 |
+| 20 | u32 | Retained journal bytes | 16,384 | 2,048 |
+| 24 | u32 | One candidate's staging bytes | 1,784 | 1,784 (fixed) |
+| 28 | u32 | Assembly deadline in milliseconds | 12,000 | 1 |
+| 32 | u32 | Acknowledgement-progress deadline in milliseconds | 2,000 | 1 |
+| 36 | u32 | Domain transactions per connection epoch | 4,096 | 1 |
+
+The decoder refuses zero, under-minimum and over-ceiling values. Offset 36
+is an explicit replay-history bound; the earlier evidence-only draft's unused
+reserved tail is superseded. Acknowledging a journal event does not remove its
+domain transaction from replay history. Domain IDs may arrive in any order.
+A candidate rejected by semantic validation still consumes its domain ID, as
+on the current output owner.
+
+`OutputConnectionState::with_transaction_limit` enforces the finite history.
+Exhaustion refuses a new identity before mutation, preserves both accepted
+proposals for settlement and leaves old identities recognizable as reused.
+Disconnect does not permit reuse in the same epoch; only a newer connection
+epoch starts an empty history. The retiring socket adapter's default behavior
+is unchanged. The file export must use the advertised bound and map exhaustion
+to ENOSPC without cancelling accepted work. A client drains its accepted
+outcomes before deliberately reconnecting. File-submission replay is a separate
+export obligation; it is not implemented by this domain-ID bound.
+
+## Journal custody
+
+The output journal reserves one record and 56 bytes for each pending proposal's
+terminal Outcome. At most two proposals are pending: one active and one queued.
+Every publication subtracts these reservations from available capacity, and
+also preserves their sequence/offset space. Acknowledgements release retained
+records, not terminal reservations. Wrong identities or epochs cannot spend a
+reservation. An outcome spends exactly its matching reservation.
+
+`Journal::prepare_batch` checks a whole batch before changing the journal.
+Dropping a prepared batch publishes nothing and consumes no identity.
+The output-specific admission guard reserves Submitted plus a terminal credit
+before domain admission. Replacing the queued proposal batches the new
+Submitted with the old proposal's Stale outcome and transfers its credit to
+the new identity. An immediate semantic rejection batches Submitted and
+Rejected without borrowing either existing proposal's credit. Negotiation
+batches Submitted, Negotiated and ObjectPublished; refusal batches Submitted
+and Refused. Capacity refusal cannot leave a published prefix of these batches.
+
+These primitives are tested together with the real domain owner, but are not
+yet joined to a served export. The export must decide domain admission before
+committing the corresponding prepared batch and must still enforce staging,
+submission replay, acknowledgement deadlines and terminal refusal draining.
 
 ## Negotiation and submission receipt
 
