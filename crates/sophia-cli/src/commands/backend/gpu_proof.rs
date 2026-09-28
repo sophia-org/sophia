@@ -89,6 +89,18 @@ fn parse(
         "denied" => false,
         other => return Err(format!("unknown --discrete-input {other:?}").into()),
     };
+    // The proof serves only the 9P file wire. The flag stays accepted with
+    // that one value for existing callers; the retired socket wire is refused.
+    match arg_value(args, "--transport").as_deref() {
+        None | Some("9p2000.L") => {}
+        Some("current-ipc") => {
+            return Err(format!(
+                "{COMMAND} no longer serves the retired current-ipc wire; omit --transport or pass --transport=9p2000.L"
+            )
+            .into());
+        }
+        Some(other) => return Err(format!("unknown --transport {other:?}").into()),
+    }
     let timeout = match arg_value(args, "--timeout-ms") {
         Some(value) => Duration::from_millis(
             value
@@ -98,11 +110,6 @@ fn parse(
         None => SHELL_GPU_PROOF_DEFAULT_TIMEOUT,
     };
     Ok(ShellGpuContentProof {
-        transport: sophia_config::ShellTransportSelection::parse(&required(
-            args,
-            "--transport",
-            "current-ipc|9p2000.L",
-        )?)?,
         client: PathBuf::from(client),
         client_args: client_args(args),
         config: arg_value(args, "--config").map(PathBuf::from),

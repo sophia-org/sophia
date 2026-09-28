@@ -4,7 +4,8 @@
 
 `sophia shell-gpu-content-proof` accepts an explicit client, geometry, outcome
 sequence and pixel policy. It exercises the protected render-device grant and
-content protocol without acquiring DRM master. The `contract` pixel policy
+the 9P2000.L content file wire without acquiring DRM master; the retired socket
+wire is refused. The `contract` pixel policy
 checks transport validation; `full-surface-raster` additionally requires the
 declared raster pattern. Neither proves GPU execution by itself. Client adapter
 and rendering evidence belongs to the external client verifier, and the proof

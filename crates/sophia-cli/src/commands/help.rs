@@ -80,7 +80,7 @@ pub(crate) fn print(verbose: bool) {
     println!("commands: live-session-composition-smoke");
     #[cfg(feature = "native-session")]
     println!(
-        "commands: shell-gpu-content-proof --transport=current-ipc|9p2000.L --client=/absolute/client [--client-arg=ARG]... [--config=/absolute/file] [--seat=seat0] [--render-node=/dev/dri/renderD128] --output=WxH --surface=WxH --edge=top|bottom|left|right --outcomes=presented|renderer-failed[,...] --end=client-exits|stop-client --pixels=contract|full-surface-raster --discrete-input=granted|denied [--timeout-ms=15000] (needs SOPHIA_SHELL_GPU_PROOF_ARM=1; optional SOPHIA_SHELL_GPU_EXPECTED_DEVICE=MAJOR:MINOR@PCI)"
+        "commands: shell-gpu-content-proof [--transport=9p2000.L] --client=/absolute/client [--client-arg=ARG]... [--config=/absolute/file] [--seat=seat0] [--render-node=/dev/dri/renderD128] --output=WxH --surface=WxH --edge=top|bottom|left|right --outcomes=presented|renderer-failed[,...] --end=client-exits|stop-client --pixels=contract|full-surface-raster --discrete-input=granted|denied [--timeout-ms=15000] (needs SOPHIA_SHELL_GPU_PROOF_ARM=1; optional SOPHIA_SHELL_GPU_EXPECTED_DEVICE=MAJOR:MINOR@PCI)"
     );
     #[cfg(feature = "native-session")]
     println!("commands: atomic-scanout-preflight");

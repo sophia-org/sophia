@@ -75,7 +75,6 @@ fn an_unarmed_proof_refuses() {
 #[test]
 fn every_required_flag_is_named_when_missing() {
     for flag in [
-        "--transport=",
         "--client=",
         "--output=",
         "--surface=",
@@ -97,7 +96,12 @@ fn every_required_flag_is_named_when_missing() {
 #[test]
 fn malformed_values_are_refused() {
     for (flag, value, expected) in [
-        ("--transport=", "auto", "shell transport must be"),
+        ("--transport=", "auto", "unknown --transport"),
+        (
+            "--transport=",
+            "current-ipc",
+            "no longer serves the retired current-ipc wire",
+        ),
         ("--output=", "800", "--output must be WxH"),
         (
             "--output=",
@@ -122,6 +126,20 @@ fn malformed_values_are_refused() {
     let mut args = with("--client=", Some("/absent/shell-client"));
     args.push("--timeout-ms=soon".into());
     assert!(refuse(true, &args).contains("--timeout-ms is not a number"));
+}
+
+/// The file wire is the only wire, so the flag may be omitted; parsing then
+/// reaches validation, which refuses this surface without device access.
+#[test]
+fn the_transport_flag_is_optional_and_names_only_the_file_wire() {
+    let mut args = with("--transport=", None);
+    args.retain(|arg| !arg.starts_with("--surface="));
+    args.push("--surface=0x24".into());
+    let stderr = refuse(true, &args);
+    assert!(
+        stderr.contains("invalid shell-gpu-content-proof parameters"),
+        "{stderr}"
+    );
 }
 
 #[test]

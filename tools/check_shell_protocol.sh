@@ -79,11 +79,23 @@ cargo run --offline -q -p sophia-runtime \
     --example shell_descriptor_conformance_host -- \
     "$build_dir/sophia-shell-v1-c-client"
 
+# The content host serves only 9P2000.L. Its independent peer links the pinned
+# C SDK, built by the SDK's own makefile without the IPC library, and no Rust.
+make -s -C vendor/c-desktop-sdk/source BUILD="$build_dir/c-desktop-sdk" WITH_IPC=0 all
+${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic -Ivendor/c-desktop-sdk/source/src \
+    crates/sophia-conformance/tests/support/shell_content_file_peer.c \
+    -L"$build_dir/c-desktop-sdk" -lsophia-desktop -lsophia-9p \
+    -o "$build_dir/shell-content-file-peer"
+cargo run --offline -q -p sophia-runtime --example shell_content_conformance_host -- \
+    "$build_dir/shell-content-file-peer"
+# Red mutations, retired-selection refusals and the hand-encoded boundary
+# controls against the production file export.
+cargo test --offline -q -p sophia-conformance --test shell_content_files
+# The protected popout lifecycle test still uses the socket wire (t252 item);
+# it keeps the vendored IPC client in its content-lifecycle mode.
 ${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
     vendor/c-desktop-sdk/source/src/tests/sophia_shell_content_live_client.c \
     -o "$build_dir/sophia-shell-content-live-c-client"
-cargo run --offline -q -p sophia-runtime --example shell_content_conformance_host -- \
-    "$build_dir/sophia-shell-content-live-c-client"
 SOPHIA_CONTENT_LIFECYCLE_CLIENT="$build_dir/sophia-shell-content-live-c-client" \
     cargo test --offline -q -p sophia-backend-live --all-features --lib \
     protected_popout_client -- --ignored
@@ -143,11 +155,10 @@ if [ -n "$content_client" ]; then
         echo "Content lifecycle client is not executable: $content_client" >&2
         exit 2
     fi
+    # A supplied client speaks the 9P content-proof scenario; the socket-wire
+    # popout lifecycle above keeps its own vendored client.
     cargo run --offline -q -p sophia-runtime \
         --example shell_content_conformance_host -- "$content_client"
-    SOPHIA_CONTENT_LIFECYCLE_CLIENT="$content_client" \
-        cargo test --offline -q -p sophia-backend-live --all-features --lib \
-        protected_popout_client -- --ignored
     content_lifecycle=complete
 else
     printf '%s\n' \
@@ -155,4 +166,4 @@ else
 fi
 
 printf '%s\n' \
-    "sophia_shell_behavior_corpus schema=2 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1 content_lifecycle=$content_lifecycle"
+    "sophia_shell_behavior_corpus schema=2 status=complete clients=rust,c,nim protected=true live_serve=true descriptors=2 activations=1 withdrawn=true reservations=1 content_host_wire=9p2000.L content_lifecycle=$content_lifecycle"

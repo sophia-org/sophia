@@ -753,11 +753,14 @@ refused at configuration time. Independent components must select the wire in
 their own profile instead of using this flag. Both paths pass exactly one
 socket variable and retain the same protected-peer admission and content owners.
 
-The generic `shell-gpu-content-proof` requires
-`--transport=current-ipc|9p2000.L`; its completion record includes `wire`.
-`shell_content_conformance_host CLIENT --transport=9p2000.L` exercises allocation,
-upload, candidate refusal and lease-backed retirement without a display or GPU.
-Omitting the host's transport flag preserves its existing IPC peer interface.
+The generic `shell-gpu-content-proof` and `shell_content_conformance_host CLIENT`
+serve only `sophia_shell_fs_v1` over 9P2000.L, and their records name
+`wire=9p2000.L`. Both still accept `--transport=9p2000.L` for existing callers.
+They refuse `--transport=current-ipc` and a set `SOPHIA_SHELL_SOCKET`; there is
+no socket fallback. The proof's client receives only `SOPHIA_SHELL_9P_SOCKET`.
+The host exercises allocation, upload, candidate refusal and lease-backed
+retirement without a display or GPU, and passes the client
+`content-proof --socket PATH` naming its 9P export.
 
 This is implemented selection/configuration, not completed native acceptance.
 The attended launcher and multi-component desktop smoke tests belong to
