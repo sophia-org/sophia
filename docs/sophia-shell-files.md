@@ -405,15 +405,13 @@ shared 4 MiB build scratch.
 | Bar (r6) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `upload/N`; `indicators` with bit 9 | outputs 1 KiB; indicators 32 KiB | AllocationResult, 200 B (32-byte header + 168-byte body) | 65,536 (256 x 200 = 51,200, rounded) | 12,800 | 4,261,888 |
 | Launcher (r7) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB | NativeInput, 430 B (32-byte header + 398-byte body) | 131,072 (256 x 430 = 110,080, rounded) | 27,520 | 12,584,960 |
 | Dock (r8) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`, `outputs`, `catalog`, `upload/N` | outputs 1 KiB; catalog 4 MiB with r8 identities | AllocationResult, 200 B | 65,536 | 12,800 | 12,584,960 |
-| Legacy descriptor (Narthex, r1-r8) | `api`, `events`, `transaction`, `submit`, `ack`, `descriptors`, `tabs`, `shortcuts`; `catalog` when r4 and bit 5 are selected | descriptors 4 KiB; tabs 1 MiB; shortcuts 128 KiB; catalog 4 MiB when selected | LauncherRequest, 342 B (`crates/sophia-protocol/src/ipc/shell_launcher.rs:130-146`; query at most 256 B, `crates/sophia-protocol/src/packets/shell_launcher.rs:8`) | 131,072 (256 x 342 = 87,552, rounded) | 21,888 | 6,561,792; 14,950,400 with catalog |
+| Descriptor (r1-r8) | `api`, `limits`, `events`, `transaction`, `submit`, `ack`; selected `descriptors`, `tabs`, `shortcuts`, `catalog`, `indicators` feeds | descriptors 4 KiB; tabs 1 MiB; shortcuts 128 KiB; catalog 4 MiB; indicators 32 KiB | LauncherRequest, 352 B | 131,072 (256 x 352 = 90,112, rounded) | 22,528 | 6,561,792 with descriptors, tabs and shortcuts; add 8,388,608 for catalog and 65,536 for indicators |
 
-The three content profiles use the exact native record sizes above. The legacy
-descriptor row remains a provisional socket-derived estimate until t271 defines
-its file layouts; it is not an implemented file profile. For that profile, the records that become snapshot objects
-(descriptor snapshots of at most 3,084 bytes framed, tabs, shortcut and application
-entries, catalog identities) are excluded; the largest record that stays a journal
-event is the launcher request. Its reserve is sized on that record rather than on a
-separately derived terminal record, which over-reserves.
+All rows use native file record sizes. Descriptor feed disclosure, selected-feed
+accounting and combined descriptor/content grants follow
+[the descriptor contract](sophia-shell-descriptors.md). Snapshot objects do not
+consume journal bytes. The descriptor terminal reserve uses its largest event,
+LauncherRequest, conservatively exceeding the actual terminal-record size.
 
 Note: The component bar's inert bit 0 discloses no descriptor, tab, or shortcut feed.
 
@@ -895,25 +893,24 @@ unchanged and still cannot retract an already-open render-node descriptor.
 
 ## Compatibility and revision skew
 
-| Client | Role | Revision | Codec and transport seam | Notes |
-| --- | --- | --- | --- | --- |
-| Lom | bar | r6 | Sophia's `sophia-shell-client`, pinned to git `2e569301` | Moving that crate's transport moves Lom; not independent evidence |
-| Bemenu (`bemenu-sophia`) | launcher | r7 | Vendored Sophia C `shell_wire`, manifest-pinned to `sophia-stack` `c2ff3fcd`; I/O in `shell_wire/io.c` and `frame.c` | Frame kinds are hard-coded in `connection_receive.c` |
-| Provlita | dock | r8 | Sophia's `sophia-shell-client` through path dependencies on `../sophia-stack` | **Cannot build as-is**: that directory does not exist |
-| Narthex | legacy descriptor reference | r1-r9 | Its own Nim codec in `src/wire/*`; socket I/O in four procedures in `src/narthex.nim` | Independent, but sends no content, allocations or resources |
+| Role | Revision | Client boundary |
+| --- | --- | --- |
+| Bar | r6 | Standalone desktop SDK content session |
+| Native launcher | r7 | Standalone desktop SDK native launcher session |
+| Dock | r8 | Standalone desktop SDK persistent catalog session |
+| Descriptor | r1-r8 | Standalone desktop SDK descriptor session |
 
-Narthex offers revision 9 with overview capability bit 13 (`src/types/shell_overview.nim:2-3`).
-That capability exists only on Sophia's unmerged `overview` branch
-(`cf1c33ed2`, `46dfc4da8`), not in this base. Against this base, Narthex must
-negotiate at most r8. The file profile carries the same per-role revisions as
-today, so skew is resolved by the same negotiation, not by the transport.
+The C and Rust desktop SDKs expose native records over standard 9P2000.L.
+Client implementations and their dependency pins belong in their repositories.
+Revision 9 and overview capability bit 13 are not part of this accepted contract.
+Skew is resolved by revision and capability negotiation, with no wire fallback.
+Supervisor replacement starts a fresh process and epoch; reconnect never replays
+unsettled submissions.
 
-No client reconnects in-process. Each relies on supervisor restart with a
-fresh process, which matches one attach per epoch.
-
-Current IPC remains the default. Session-owned configuration selects transport
-per component at startup; the mutually exclusive legacy descriptor shell has
-its own selection. Clients and inherited environment do not choose the
+Current IPC remains the default for independent content components until t269.
+Session-owned configuration selects their transport at startup. A descriptor
+component requires explicit `9p2000.L` and excludes other shell components;
+the single-shell CLI selectors are retired. Clients and inherited environment do not choose the
 server's protocol, and there is no sniffing or fallback. Mixed transports can
 use the same one `ContentEpochRegistry`; selection neither creates another
 budget nor changes a role's grants.
@@ -927,11 +924,10 @@ installed-default change remains a separate acceptance decision.
 
 ## Independent clients and evidence
 
-No independent client covers content today. Lom and Provlita use Sophia's own
-library, Bemenu uses Sophia's own C binding, and Narthex covers descriptors
-only. t252 therefore needs one independently written file client for the
-content profiles. Upload alone (r5) is not enough; it must cover both the r7
-launcher and the r8 dock profiles:
+Independent checks include the Go file oracle and the C desktop SDK peer,
+implemented separately from the server's Rust codecs. Product integration is
+separate evidence in client repositories and desktop tooling. Upload alone (r5)
+is not enough; content-profile evidence must also cover the r7 launcher and r8 dock:
 
 - negotiation for each exact profile;
 - allocation;
@@ -942,17 +938,12 @@ launcher and the r8 dock profiles:
 - r8: catalog snapshot with identities, and catalog activation by generation
   and slot.
 
-The independent Go oracle will carry these scenarios, written from
-this file contract alone (amendment 1), without Sophia codec reuse.
-Its test admission is supplied, so it cannot prove supervisor authentication.
-The product clients then prove integration, not independence; Narthex remains
-the descriptor reference rather than acquiring content work for this gate.
-Because Provlita cannot build as-is (due to missing `../sophia-stack` path
-dependencies), its r8 dock bounds (catalog with r8 identities at the 4 MiB cap,
-per-output allocations and reservations, journal and snapshot bounds) are proven first through the
-independent Go oracle's r8 profile. Provlita's own integration evidence requires
-repairing its dependency pin, which is a prerequisite recorded here and not a
-transport change.
+The Go oracle's admission is supplied, so that fixture does not prove supervisor
+authentication. Protected C descriptor and content peers exercise the production
+launch and presentation owners separately. Each test's limits remain explicit;
+codec independence alone establishes neither physical presentation nor a product
+client's behavior. The descriptor proof includes work-area changes only after
+the matching presentation, tabs, shortcuts and launcher exchanges.
 
 Required evidence follows the control bus's five retirement criteria, per
 profile:
