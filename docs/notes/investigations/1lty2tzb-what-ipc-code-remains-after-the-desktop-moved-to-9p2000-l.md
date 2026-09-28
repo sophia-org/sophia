@@ -352,6 +352,33 @@ tests then pass, including the independent client's checks against the
 production export (`t267-go-oracle-readonly.log`). This is a test-harness
 correction; the export and oracle assertions are unchanged.
 
+### Combined relocation gate (t267, 2026-09-28)
+
+Candidate `54a9aca0333387bbf7392e0c5f237dfae5f7bcc9` passes the full
+`cargo xtask check` in the isolated, offline runner: 443 test-result groups,
+6,396 passed, zero failed and 62 ignored, followed by strict clippy, snapshot,
+layout and verifier checks. The terminal exit was zero. The complete log is
+`ipc-retirement/t267-combined-full-54a9aca03-2.log` in development evidence.
+The SDK dependencies were published first: C `4a90120a` on `origin/master`
+and Rust `aa388e25` on `origin/main`; existing release tags are unchanged.
+
+The preceding run passed the tests and clippy but stopped in the archive
+self-test because the isolated home had no public signing key. The final
+runner mounts a public-only keyring read-only. It neither accesses private
+keys nor changes the signing agent. The failed log and the passing focused
+archive control are retained alongside the final gate.
+
+The fixed rows, semantic records, scalar validation, codec error, endpoint
+admission and shared profile I/O now have neutral owners. The file contract
+owns its row layouts; both generators check legacy compatibility separately.
+The old C bindings and WM golden corpora remain byte-identical to `d29f7ed84`.
+The independent file-module build and its 43 tests also pass without compiling
+the IPC module. These results satisfy the relocation scope; the retained
+socket adapters, their defaults and SDK compatibility features still await
+the separate retirement tasks. No installed or running component changed.
+The gate hides devices and has no real archive corpus, so it claims neither
+hardware acceptance nor re-verification of operator archives.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
