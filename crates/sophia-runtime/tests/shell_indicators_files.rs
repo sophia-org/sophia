@@ -3,6 +3,7 @@
 //! `EBUSY` for a second pin, a fresh qid on republish), and `IndicatorActivate`
 //! to its outcome for both an accepted and a stale case (status/reason per
 //! docs/sophia-shell-files.md "Role family outcomes (normative)").
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use sophia_protocol::shell_files::*;
@@ -23,12 +24,30 @@ const EPOCH: u64 = 1;
 const INDICATOR_CAPS: u64 =
     SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION;
 
+static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+/// A directory name no earlier test in this process used. Parallel tests
+/// take distinct atomic suffixes; a path left by an earlier process with the
+/// same PID (a crash, or a reused namespace PID) is skipped, never removed.
+/// The bind below still reports every endpoint refusal.
+fn fresh_directory() -> std::path::PathBuf {
+    for _ in 0..64 {
+        let directory = std::env::temp_dir().join(format!(
+            "shell-indicators-files-{}-{}",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        match std::fs::symlink_metadata(&directory) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return directory,
+            Err(error) => panic!("inspect {}: {error}", directory.display()),
+            Ok(_) => {}
+        }
+    }
+    panic!("no fresh indicator test directory in 64 attempts");
+}
+
 fn transport() -> (ShellComponentTransport, std::path::PathBuf) {
-    let directory = std::env::temp_dir().join(format!(
-        "shell-indicators-files-{}-{}",
-        std::process::id(),
-        Instant::now().elapsed().as_nanos()
-    ));
+    let directory = fresh_directory();
     let transport = ShellComponentTransport::bind_for_supervised_uid(
         &directory,
         rustix::process::geteuid().as_raw(),
