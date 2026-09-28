@@ -469,6 +469,42 @@ This is deterministic SDK/export evidence, with devices, display and network
 hidden. It does not claim a live component update or completion of t268's
 remaining descriptor work.
 
+### Output-owner isolation and combined gate (t268/t272, 2026-09-28)
+
+The output owner now retires only the offending connection after a malformed
+frame, leaving the listener available for the admitted process to reconnect.
+Session profile reloads use the output owner's epoch and retain their private
+transaction identity through settlement. They no longer send an outcome to an
+output client that did not submit the reload. Signed commits `a5ebb4b49`,
+`d88b13d41` and `834cfc693` were reviewed and merged at
+`1669b308545024731120339729260e633382cdbd`.
+
+The focused gate passed eight runtime and three Session tests, strict clippy,
+layout and formatting. Three mutations restored the old behaviors and each
+failed its regression: listener loss, unsolicited client settlement, and a
+reload rejected when WM and output epochs differ. The first epoch mutation
+invocation reused a cached binary and is not evidence; the second forced a
+rebuild and failed the assertion as intended. Logs are
+`ipc-retirement/t272-output-owner-focused.log`, `t272-mutant-malformed.log`,
+`t272-mutant-settlement.log` and `t272-mutant-epoch2.log`.
+
+The full `cargo xtask check` at `1669b3085` exited zero: 476 test groups,
+6,538 passed, zero failed and 62 ignored, followed by strict clippy and the
+offline tool verifiers. The private sandbox hid devices, display and network.
+Device pixel proofs were explicitly unproved and the direct-scanout archive
+corpus was absent. Evidence: `ipc-retirement/t268-t272-combined-1669b3085.log`.
+
+The SDK upload fix was also adopted and published by Lom `2fb451d5` and
+Provlita `1444ebb1`, both pinned to Rust SDK `c1323401`. Their full offline
+checks passed (64 Rust and 17 tooling tests for Lom, with one ignored Rust
+test; 26 Rust tests for Provlita), including formatting and strict clippy.
+Their logs are `t268-lom-c132340-check.log` and
+`t268-provlita-c132340-check.log` under `ipc-retirement/`.
+
+These results do not implement the output file role or complete t268/t272.
+The descriptor replacement, other output-owner findings and output acceptance
+remain. No installed component, live process or display configuration changed.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
