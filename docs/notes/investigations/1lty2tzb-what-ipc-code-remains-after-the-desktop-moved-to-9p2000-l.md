@@ -517,6 +517,36 @@ and included those feeds in snapshot accounting. These are design checks;
 the production export, both SDK roles and independent commit-boundary peer
 remain required. The current descriptor socket and its tests stay in place.
 
+The first implementation slice moves the passive descriptor, tab, reference,
+shortcut and revision-4 launcher model into Rust SDK
+`9fafa9176f8c828f2aad6fa2855964fd36101dd9`. Sophia's historical packet paths
+re-export those same types. Socket validators delegate to the SDK while
+retaining their public error facade; frame encodings and contract copies are
+unchanged. Tab validation no longer constructs a temporary standalone snapshot
+per row, and its total-entry check cannot overflow before comparing the cap.
+
+The SDK's default and all-feature suites passed 594 tests, with strict clippy
+in both configurations and formatting clean. Fourteen new model tests exercise
+boundary values, selection and reservation coherence, scoped action identity,
+different text rules and outcome epochs. Independent mutation runs rejected
+an accidental sixteen-row tab cap, reuse of launcher text rules for descriptor
+labels, and removal of the action's target-generation check. They used separate
+targets and read-only source overlays; each compiled and failed its assertion.
+
+Sophia's existing protocol suite passed 325 tests, and eight Engine suites
+passed another 53, including descriptor presentation, tabs, work areas,
+reference sheets and the launcher. Strict clippy for protocol/Engine, the
+vendored SDK gate, formatting and layout passed. The first follow-on command
+named a nonexistent Engine test target; the corrected invocation passed its
+tests, then clippy found an obsolete import. Removing that import completed
+the checks. No test assertion or socket vector was changed.
+
+Evidence: `ipc-retirement/t271-sdk-model-{focused,full}.log`,
+`t271-sdk-model-mutant-{tab-cap,label-rule,target-generation}.log`, and
+`t271-sdk-model-sophia-{focused,focused2,checks}.log`. This slice establishes
+shared types and validation only. Native descriptor file codecs and the
+production export remain to be implemented; no descriptor client is switched.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

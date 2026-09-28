@@ -27,6 +27,12 @@ pub use cursor::*;
 pub use geometry::*;
 pub use ids::*;
 pub use ipc::*;
+// Preserve the retiring socket facade's error type while the SDK exposes
+// the same structural validators independently of a wire.
+pub use ipc::{
+    validate_shell_launcher_candidate, validate_shell_reference_candidate,
+    validate_shell_shortcut_catalog, validate_shell_tab_snapshot,
+};
 pub use packets::*;
 pub use policy_behavior::*;
 pub use policy_profile::*;

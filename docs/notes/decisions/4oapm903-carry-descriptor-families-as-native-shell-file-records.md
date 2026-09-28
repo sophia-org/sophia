@@ -146,7 +146,8 @@ as an empty Some. The old shortcut validator already refuses Some("").
 DescriptorEntry's label_present=false requires label_redacted=false and empty
 text. Present labels retain redacted state. Trust values are 0 unknown,
 1 trusted, 2 untrusted, 3 isolated; attention is 0 none, 1 notice, 2 critical.
-Descriptor slots and generations are nonzero and distinct within a snapshot.
+Descriptor slots and generations are nonzero; slots are distinct within a
+snapshot. Different slots may have the same generation.
 Each action token and epoch is nonzero; target_slot equals the descriptor slot,
 target_generation equals its generation, recipient_epoch equals the connection,
 and issuer epochs match the Descriptors prefix. Tabs may carry distinct broker

@@ -1,15 +1,13 @@
-tree 4d9cb494f21b0f7b6b35365ae63515b4d9520954
-parent f92902e434f347d3d0dab1ce50b2c85a0cee9414
-author Mason Green <mason@greenm01.net> 1790572189 -0400
-committer Mason Green <mason@greenm01.net> 1790572189 -0400
+tree 6dce29de308980b462840ad6e98dd44a141396df
+parent c1323401b7e336606408499b13097d1270a2319d
+author Mason Green <mason@greenm01.net> 1790574491 -0400
+committer Mason Green <mason@greenm01.net> 1790574491 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHQEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarn2nQAKCRBXGEu2KoAA
- YtUfAQCNjs5hXKYNkblbm6m5a28oXdNYyKZkFryBge1XBwtiKQD1Fg6a2ho6hO+S
- lQZIbf64rMa6L4tVREkIdX0sar47Dw==
- =FDZR
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarn/mwAKCRBXGEu2KoAA
+ YnlpAQDdIeUQWM2/zkxsbKHYDsyKc90LSBcKBpadL++wdllhwgEAt96ZELSAImI+
+ zF09uNOTP5v6L7FXOm1JKi8WIyCC9gk=
+ =hxWP
  -----END PGP SIGNATURE-----
 
-Validate file upload counts against the negotiated grant
-
-Keep structural description checks in the neutral codec and exact chunk layout in the content owner. The retiring socket codec retains its existing prototype check. Cover reduced-chunk uploads, owner refusal and malformed records.
+Share passive descriptor family records and structural validation

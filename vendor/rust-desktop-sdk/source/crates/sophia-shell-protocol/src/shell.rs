@@ -14,18 +14,28 @@ pub mod applications;
 pub mod catalog_actions;
 pub mod catalog_transaction;
 pub mod content;
+pub mod descriptor;
 pub mod encoding;
 pub mod hello;
 pub mod indicators;
+pub mod launcher;
+pub mod metadata;
 pub mod native_launcher;
+pub mod reference;
+pub mod tabs;
 
 pub use applications::*;
 pub use catalog_actions::*;
 pub use catalog_transaction::*;
 pub use content::*;
+pub use descriptor::*;
 pub use hello::*;
 pub use indicators::*;
+pub use launcher::*;
+pub use metadata::*;
 pub use native_launcher::*;
+pub use reference::*;
+pub use tabs::*;
 
 /// A validation failure in the typed record model, independent of any codec.
 ///

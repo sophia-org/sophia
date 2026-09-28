@@ -22,8 +22,8 @@ pub struct ShellApplicationCatalog {
     pub entries: Vec<ShellApplicationDescriptor>,
 }
 
-/// Rejects control characters and bidi override characters from any shell
-/// text field. A pure value check, shared by every text-carrying record.
+/// Rejects control characters and bidi override characters from launcher,
+/// catalog and reference text. Descriptor labels have their own older rule.
 pub fn shell_launcher_text_valid(s: &str, max: usize) -> bool {
     s.len() <= max
         && !s.chars().any(|c| {

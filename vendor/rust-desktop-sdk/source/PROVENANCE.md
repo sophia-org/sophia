@@ -50,3 +50,19 @@ byte-exact distinct identity names when a catalog discloses identities. This
 documents the existing persistent identity bijection; labels may still repeat
 and plain launcher catalogs have no identities. No layout or code changes
 accompany this reference update. Other contract copies keep their earlier pins.
+
+## Descriptor record model
+
+The `shell::{descriptor,tabs,reference,launcher}` passive records and the
+sanitized label/trust/attention values in `shell::metadata` are extracted from
+Sophia `262eb82bcf2ce87401ba82dc17cc832952046e43`, under
+`crates/sophia-protocol/src/packets/{shell_v1,shell_tabs,shell_reference,shell_launcher,chrome}.rs`.
+The field shapes and enum values are unchanged. Their pure validators preserve
+the corresponding `ipc/shell_*` structural checks, with tab counts checked by
+subtraction and each tab entry validated directly instead of constructing a
+temporary standalone snapshot. Owner checks and transport are not included.
+
+This model prepares the descriptor file role; it does not add that role to
+the served contract or enable it in the client. The spec copies and wire kinds
+are unchanged. The new model tests cover cardinalities, exact action identity,
+family-specific text and selection rules, style bounds and outcome epochs.

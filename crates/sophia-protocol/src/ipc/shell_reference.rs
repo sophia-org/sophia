@@ -9,10 +9,7 @@ fn require(ok: bool) -> Result<(), IpcCodecError> {
     if ok { Ok(()) } else { Err(bad()) }
 }
 fn text_valid(s: &str, max: usize) -> bool {
-    s.len() <= max
-        && !s.chars().any(|c| {
-            c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-        })
+    shell_launcher_text_valid(s, max)
 }
 fn put_text(b: &mut Vec<u8>, s: &str, max: usize) -> Result<(), IpcCodecError> {
     require(text_valid(s, max))?;
@@ -47,27 +44,7 @@ fn payload(f: &[u8], kind: IpcMessageKind) -> Result<(TransactionId, Cursor<'_>)
 }
 
 pub fn validate_shell_shortcut_catalog(s: &ShellShortcutCatalog) -> Result<(), IpcCodecError> {
-    require(
-        s.connection_epoch > 0 && s.generation > 0 && s.entries.len() <= SOPHIA_SHELL_MAX_SHORTCUTS,
-    )?;
-    let mut slots = std::collections::BTreeSet::new();
-    for e in &s.entries {
-        require(
-            e.slot > 0
-                && slots.insert(e.slot)
-                && !e.chord.is_empty()
-                && !e.action.is_empty()
-                && text_valid(&e.chord, 64)
-                && text_valid(&e.action, 128)
-                && e.label
-                    .as_ref()
-                    .is_none_or(|v| !v.is_empty() && text_valid(v, 128))
-                && e.group
-                    .as_ref()
-                    .is_none_or(|v| !v.is_empty() && text_valid(v, 64)),
-        )?;
-    }
-    Ok(())
+    sophia_shell_protocol::shell::reference::validate_shell_shortcut_catalog(s).map_err(Into::into)
 }
 pub fn encode_shell_shortcut_catalog(
     tx: TransactionId,
@@ -181,39 +158,8 @@ pub fn decode_shell_reference_request(
 pub fn validate_shell_reference_candidate(
     r: &ShellReferenceCandidate,
 ) -> Result<(), IpcCodecError> {
-    let s = &r.style;
-    require(
-        r.connection_epoch > 0
-            && r.catalog_generation > 0
-            && r.request_generation > 0
-            && r.candidate_generation > 0
-            && r.output.is_valid()
-            && r.entries.len() <= SOPHIA_SHELL_MAX_SHORTCUTS
-            && (1..=4).contains(&s.columns)
-            && (8..=32).contains(&s.body_size)
-            && (8..=48).contains(&s.title_size)
-            && s.padding <= 64
-            && s.row_gap <= 32
-            && s.key_gap <= 64
-            && s.column_gap <= 64
-            && s.border <= 16
-            && s.margin <= 128
-            && s.colors[1..].iter().all(|c| c >> 24 == 255)
-            && !s.title.is_empty()
-            && text_valid(&s.title, 128),
-    )?;
-    let mut slots = std::collections::BTreeSet::new();
-    for entry in &r.entries {
-        require(
-            entry.slot > 0
-                && slots.insert(entry.slot)
-                && !entry.key.is_empty()
-                && text_valid(&entry.key, 64)
-                && !entry.label.is_empty()
-                && text_valid(&entry.label, 128),
-        )?;
-    }
-    Ok(())
+    sophia_shell_protocol::shell::reference::validate_shell_reference_candidate(r)
+        .map_err(Into::into)
 }
 pub fn encode_shell_reference_candidate(
     tx: TransactionId,

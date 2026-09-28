@@ -17,6 +17,11 @@ Only the shell role is here today. WM, output and admin modules arrive as their
 file contracts are implemented; nothing here claims a contract Sophia does not
 serve.
 
+The protocol crate also carries the descriptor, tabs, shortcut/reference and
+revision-4 launcher record model and pure validation. Their native file codecs
+and client role are still being implemented; these types do not enable a
+descriptor file connection yet.
+
 ## Contracts
 
 `spec/sophia-shell-files-v1.kdl` is a pinned copy of the file contract Sophia

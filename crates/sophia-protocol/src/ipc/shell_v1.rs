@@ -1,10 +1,10 @@
 use crate::{
     AttentionState, DisplayLabel, MAX_CHROME_LABEL_LEN, OutputId, SOPHIA_SHELL_MAX_DESCRIPTORS,
-    SOPHIA_SHELL_MAX_RESERVATION_THICKNESS_PX, ShellV1Activation, ShellV1ActivationAck,
-    ShellV1ActivationDisposition, ShellV1Candidate, ShellV1CandidateEntry, ShellV1CandidateOutcome,
-    ShellV1CandidateOutcomeKind, ShellV1ClientHello, ShellV1Descriptor, ShellV1DescriptorSnapshot,
-    ShellV1ReservationEdge, ShellV1ServerWelcome, ShellV1WorkAreaReservation,
-    ToplevelActionCapabilityRef, TransactionId, TrustLevel,
+    ShellV1Activation, ShellV1ActivationAck, ShellV1ActivationDisposition, ShellV1Candidate,
+    ShellV1CandidateEntry, ShellV1CandidateOutcome, ShellV1CandidateOutcomeKind,
+    ShellV1ClientHello, ShellV1Descriptor, ShellV1DescriptorSnapshot, ShellV1ReservationEdge,
+    ShellV1ServerWelcome, ShellV1WorkAreaReservation, ToplevelActionCapabilityRef, TransactionId,
+    TrustLevel,
 };
 
 use super::cursor::{Cursor, push_u8, push_u16, push_u64};
@@ -368,78 +368,13 @@ fn validate_welcome(welcome: ShellV1ServerWelcome) -> Result<(), IpcCodecError> 
 }
 
 pub(super) fn validate_snapshot(snapshot: &ShellV1DescriptorSnapshot) -> Result<(), IpcCodecError> {
-    if snapshot.connection_epoch == 0
-        || snapshot.snapshot_generation == 0
-        || !snapshot.output.is_valid()
-        || snapshot.output_generation == 0
-        || snapshot.broker_epoch == 0
-        || snapshot.broker_revocation_epoch == 0
-        || snapshot.descriptors.len() > SOPHIA_SHELL_MAX_DESCRIPTORS
-    {
-        return Err(IpcCodecError::InvalidRecord("shell_descriptor_snapshot"));
-    }
-    let mut slots = std::collections::BTreeSet::new();
-    for descriptor in &snapshot.descriptors {
-        if descriptor.slot == 0
-            || descriptor.generation == 0
-            || !slots.insert(descriptor.slot)
-            || descriptor.action.issuer_epoch != snapshot.broker_epoch
-            || descriptor.action.issuer_revocation_epoch != snapshot.broker_revocation_epoch
-            || descriptor.action.recipient_epoch != snapshot.connection_epoch
-            || descriptor.action.target_generation != descriptor.generation
-        {
-            return Err(IpcCodecError::InvalidRecord("shell_descriptor"));
-        }
-        validate_action(descriptor.action, descriptor.slot)?;
-        if let Some(label) = &descriptor.label {
-            validate_label(label)?;
-        }
-    }
-    Ok(())
+    sophia_shell_protocol::shell::descriptor::validate_shell_descriptor_snapshot(snapshot)
+        .map_err(Into::into)
 }
 
 fn validate_candidate(candidate: &ShellV1Candidate) -> Result<(), IpcCodecError> {
-    if candidate.connection_epoch == 0
-        || candidate.snapshot_generation == 0
-        || candidate.candidate_generation == 0
-        || !candidate.output.is_valid()
-        || candidate.entries.len() > SOPHIA_SHELL_MAX_DESCRIPTORS
-    {
-        return Err(IpcCodecError::InvalidRecord("shell_candidate"));
-    }
-    if candidate.visible == candidate.entries.is_empty() {
-        return Err(IpcCodecError::InvalidRecord("shell_candidate_visibility"));
-    }
-    if let Some(reservation) = candidate.reservation {
-        // An invisible candidate reserving space would exclude a strip the
-        // shell presents nothing into; refuse it where it is decoded.
-        if !candidate.visible {
-            return Err(IpcCodecError::InvalidRecord(
-                "shell_candidate_hidden_reservation",
-            ));
-        }
-        if reservation.thickness_px == 0
-            || reservation.thickness_px > SOPHIA_SHELL_MAX_RESERVATION_THICKNESS_PX
-        {
-            return Err(IpcCodecError::InvalidRecord(
-                "shell_candidate_reservation_thickness",
-            ));
-        }
-    }
-    let mut slots = std::collections::BTreeSet::new();
-    for entry in &candidate.entries {
-        if entry.slot == 0 || entry.generation == 0 || !slots.insert(entry.slot) {
-            return Err(IpcCodecError::InvalidRecord("shell_candidate_entry"));
-        }
-    }
-    if candidate.visible != candidate.selected_slot.is_some()
-        || candidate
-            .selected_slot
-            .is_some_and(|selected| !slots.contains(&selected))
-    {
-        return Err(IpcCodecError::InvalidRecord("shell_candidate_selection"));
-    }
-    Ok(())
+    sophia_shell_protocol::shell::descriptor::validate_shell_descriptor_candidate(candidate)
+        .map_err(Into::into)
 }
 
 fn encode_descriptor(
@@ -493,16 +428,6 @@ fn decode_descriptor(cursor: &mut Cursor<'_>) -> Result<ShellV1Descriptor, IpcCo
     })
 }
 
-fn validate_label(label: &DisplayLabel) -> Result<(), IpcCodecError> {
-    if label.text.is_empty()
-        || label.text.len() > MAX_CHROME_LABEL_LEN
-        || label.text.chars().any(char::is_control)
-    {
-        return Err(IpcCodecError::InvalidRecord("shell_descriptor_label"));
-    }
-    Ok(())
-}
-
 fn encode_action(action: ToplevelActionCapabilityRef, payload: &mut Vec<u8>) {
     push_u64(payload, action.token);
     push_u64(payload, action.issuer_epoch);
@@ -532,14 +457,8 @@ fn validate_action(
     action: ToplevelActionCapabilityRef,
     expected_slot: u16,
 ) -> Result<(), IpcCodecError> {
-    if action.token == 0
-        || action.issuer_epoch == 0
-        || action.issuer_revocation_epoch == 0
-        || action.recipient_epoch == 0
-        || action.target_slot == 0
-        || action.target_slot != expected_slot
-        || action.target_generation == 0
-    {
+    sophia_shell_protocol::validate_toplevel_action(action)?;
+    if action.target_slot != expected_slot {
         return Err(IpcCodecError::InvalidRecord("shell_toplevel_action"));
     }
     Ok(())

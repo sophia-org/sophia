@@ -5,7 +5,11 @@ use crate::ids::{IconTokenId, SurfaceId};
 /// One bound shared by the authority that reduces, the broker that rules, and the
 /// engine that stores. Three copies of a limit is three chances for a label to be
 /// valid at one hop and rejected at the next.
-pub const MAX_CHROME_LABEL_LEN: usize = 128;
+// Sanitized presentation values are shared with descriptor clients through
+// the SDK. They carry no application identity or disclosure authority.
+pub use sophia_shell_protocol::shell::metadata::{
+    AttentionState, DisplayLabel, MAX_CHROME_LABEL_LEN, TrustLevel,
+};
 
 /// How much of a surface's own identity an authority may put in a label.
 ///
@@ -108,27 +112,6 @@ pub struct ChromeDescriptor {
     pub trust_level: TrustLevel,
     pub attention: AttentionState,
     pub generation: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DisplayLabel {
-    pub text: String,
-    pub redacted: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TrustLevel {
-    Unknown,
-    Trusted,
-    Untrusted,
-    Isolated,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AttentionState {
-    None,
-    Notice,
-    Critical,
 }
 
 pub const SOPHIA_BROKER_HEALTH_MAX_MESSAGE_LEN: usize = 128;

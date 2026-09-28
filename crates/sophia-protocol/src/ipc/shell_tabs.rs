@@ -165,44 +165,7 @@ pub fn decode_shell_tab_snapshot(
 }
 
 pub fn validate_shell_tab_snapshot(s: &ShellTabSnapshot) -> Result<(), IpcCodecError> {
-    if s.connection_epoch == 0
-        || s.generation == 0
-        || s.groups.len() > SOPHIA_SHELL_MAX_TAB_GROUPS
-        || s.groups.iter().map(|g| g.entries.len()).sum::<usize>() > SOPHIA_SHELL_MAX_TAB_ENTRIES
-    {
-        return Err(invalid());
-    }
-    let mut groups = std::collections::BTreeSet::new();
-    let mut slots = std::collections::BTreeSet::new();
-    for g in &s.groups {
-        if g.slot == 0
-            || !g.output.is_valid()
-            || !groups.insert(g.slot)
-            || g.entries.is_empty() != g.selected_slot.is_none()
-        {
-            return Err(invalid());
-        }
-        if g.selected_slot
-            .is_some_and(|slot| !g.entries.iter().any(|d| d.slot == slot))
-        {
-            return Err(invalid());
-        }
-        for d in &g.entries {
-            super::shell_v1::validate_snapshot(&ShellV1DescriptorSnapshot {
-                connection_epoch: s.connection_epoch,
-                snapshot_generation: s.generation,
-                output: g.output,
-                output_generation: 1,
-                broker_epoch: d.action.issuer_epoch,
-                broker_revocation_epoch: d.action.issuer_revocation_epoch,
-                descriptors: vec![d.clone()],
-            })?;
-            if !slots.insert(d.slot) || d.action.recipient_epoch != s.connection_epoch {
-                return Err(invalid());
-            }
-        }
-    }
-    Ok(())
+    sophia_shell_protocol::shell::tabs::validate_shell_tab_snapshot(s).map_err(Into::into)
 }
 
 pub fn encode_shell_tab_candidate(

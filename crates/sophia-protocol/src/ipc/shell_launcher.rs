@@ -153,23 +153,7 @@ pub fn decode_shell_launcher_request(
     Ok((tx, r))
 }
 pub fn validate_shell_launcher_candidate(r: &ShellLauncherCandidate) -> Result<(), IpcCodecError> {
-    require(
-        r.connection_epoch > 0
-            && r.catalog_generation > 0
-            && r.request_generation > 0
-            && r.candidate_generation > 0
-            && r.output.is_valid()
-            && r.entries.len() <= SOPHIA_SHELL_MAX_LAUNCHER_ROWS
-            && (10..=32).contains(&r.font_size)
-            && r.colors[1..].iter().all(|c| c >> 24 == 255),
-    )?;
-    let mut slots = std::collections::BTreeSet::new();
-    for slot in &r.entries {
-        require(
-            *slot > 0 && usize::from(*slot) <= SOPHIA_SHELL_MAX_APPLICATIONS && slots.insert(*slot),
-        )?;
-    }
-    require(r.selected == 0 || slots.contains(&r.selected))
+    sophia_shell_protocol::shell::launcher::validate_shell_launcher_candidate(r).map_err(Into::into)
 }
 pub fn encode_shell_launcher_candidate(
     tx: TransactionId,
