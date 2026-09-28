@@ -4,7 +4,7 @@ int sf_api_profile(const uint8_t *b, size_t n, enum sophia_sf_profile profile)
 {
     const char *name = profile == SOPHIA_SF_BAR        ? "bar"
                        : profile == SOPHIA_SF_LAUNCHER ? "launcher"
-                                                       : "dock";
+                       : profile == SOPHIA_SF_DOCK ? "dock" : "descriptor";
     const size_t start = sizeof("sophia-shell-files version=1 role=") - 1;
     size_t size = strlen(name);
     return n > start + size && !memcmp(b + start, name, size) && b[start + size] == ' '

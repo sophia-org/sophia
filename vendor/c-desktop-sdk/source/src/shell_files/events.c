@@ -15,6 +15,9 @@ int sf_session_event_parse(struct sophia_sf_client *c)
     if (sophia_sf_decode(c->event_bytes, n, r) || r->header.epoch != c->epoch ||
         r->header.kind < 16 || r->header.kind >= 256 || r->header.sequence <= c->sequence)
         return SOPHIA_9P_INVALID;
+    /* An inert bit 0 on a content role never grants descriptor disclosure. */
+    if (!sf_session_event_allowed(c, r))
+        return SOPHIA_9P_INVALID;
     switch (r->header.kind) {
     case SOPHIA_SF_NEGOTIATED: {
         const struct sophia_sf_negotiated *v = &r->value.negotiated;
@@ -22,10 +25,14 @@ int sf_session_event_parse(struct sophia_sf_client *c)
             v->selected_revision > c->offer.maximum_revision ||
             (v->capabilities & c->offer.required_capabilities) != c->offer.required_capabilities)
             return SOPHIA_9P_INVALID;
-        if (c->profile != SOPHIA_SF_BAR &&
+        if (v->connection_epoch != c->epoch ||
+            (c->profile == SOPHIA_SF_DESCRIPTOR && !sf_descriptor_welcome(c, v)))
+            return SOPHIA_9P_INVALID;
+        if ((c->profile == SOPHIA_SF_LAUNCHER || c->profile == SOPHIA_SF_DOCK) &&
             (v->selected_revision != (c->profile == SOPHIA_SF_LAUNCHER ? 7 : 8) ||
              v->capabilities != c->offer.required_capabilities))
             return SOPHIA_9P_INVALID;
+        c->welcome = *v;
         c->negotiated = 1;
         if (v->limits_published) {
             status = sophia_sf_client_object(c, SOPHIA_SF_LIMITS, 0, 0);
@@ -41,7 +48,7 @@ int sf_session_event_parse(struct sophia_sf_client *c)
         /* Custody cannot follow a definitive refusal of the same submission. */
         if (!c->submit_stage || c->submitted || c->submit_error ||
             r->value.submitted.submission_id != c->next_submission - 1 ||
-            r->value.submitted.candidate_kind != sf_get(c->tx + 6, 2))
+            r->value.submitted.candidate_kind != sf_get(c->tx_storage + 6, 2))
             return SOPHIA_9P_INVALID;
         c->submitted = 1;
         c->submitted_sequence = r->header.sequence;
@@ -76,6 +83,11 @@ int sophia_sf_client_event_consume(struct sophia_sf_client *c)
     if (!c || !c->event_ready)
         return SOPHIA_9P_ARGUMENT;
     n = (size_t)sf_get(c->event_bytes, 4);
+    if (c->event.header.kind == SOPHIA_SF_SUBMITTED &&
+        c->event.value.submitted.submission_id == 1)
+        c->bootstrap_custody_consumed = 1;
+    if (c->event.header.kind == SOPHIA_SF_NEGOTIATED)
+        c->welcome_consumed = 1;
     c->consumed_sequence = c->event.header.sequence;
     c->event_used -= n;
     memmove(c->event_bytes, c->event_bytes + n, c->event_used);

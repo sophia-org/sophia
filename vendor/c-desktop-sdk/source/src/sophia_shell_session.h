@@ -11,7 +11,8 @@
 #define SOPHIA_SS_OUTCOMES 256u
 #define SOPHIA_SS_REQUESTS 8u
 #define SOPHIA_SS_FIDS 32u
-/* The file client's single transaction buffer bounds one encoded record. */
+/* Default inline transaction capacity. Larger descriptor candidates require
+ * explicit caller-owned staging through open_fd_staging. */
 #define SOPHIA_SS_RECORD_BYTES 8192u
 /* journal_ack_progress_timeout from the shell files contract. */
 #define SOPHIA_SS_ACK_PROGRESS_MS 2000u
@@ -88,7 +89,7 @@ struct sophia_ss {
     uint8_t flight, waiting, progress, object_requested, refused, reserved;
     struct sophia_ss_entry entries[SOPHIA_SS_SLOTS];
     /* holds: announcements owed a fetch; seen: the last verified fetch. */
-    struct sophia_ss_hold holds[4], seen[4];
+    struct sophia_ss_hold holds[7], seen[7];
     struct sophia_ss_ticket tickets[SOPHIA_SS_OUTCOMES];
 };
 /* 9P request storage plus the encoded queue; 0 for invalid sizes. */
@@ -98,6 +99,15 @@ size_t sophia_ss_storage_bytes(uint32_t msize, size_t queue_bytes);
  * session and outlive it. Starts version, attach and negotiation. */
 int sophia_ss_open_fd(struct sophia_ss *, int fd, const struct sophia_ss_config *, void *storage,
                       size_t bytes);
+/* As open_fd, with a separate transaction buffer of RECORD_BYTES through
+ * SOPHIA_SF_MAX_TRANSACTION bytes. NULL/0 selects the inline buffer.
+ * The transaction, optional object scratch, session and storage regions must
+ * be disjoint and outlive the session. Admission copies borrowed record data
+ * into the queue; hand-off copies it into transaction storage before moving
+ * the queue. Per-kind wire limits still apply. Invalid buffer arguments do
+ * not modify the session or start I/O. */
+int sophia_ss_open_fd_staging(struct sophia_ss *, int fd, const struct sophia_ss_config *,
+                              void *storage, size_t bytes, void *transaction, size_t capacity);
 int sophia_ss_poll_fd(const struct sophia_ss *);
 /* POLLIN while live, plus POLLOUT only while 9P output is queued; 0 when final. */
 short sophia_ss_poll_events(const struct sophia_ss *);
@@ -117,10 +127,15 @@ int sophia_ss_dispatch(struct sophia_ss *, short revents, size_t byte_budget, ui
 enum sophia_ss_state sophia_ss_state(const struct sophia_ss *);
 /* The live epoch after negotiation, and the granted limits; else 0 and NULL. */
 uint64_t sophia_ss_epoch(const struct sophia_ss *);
+/* Validated selected revision/capabilities, or NULL before negotiation. */
+const struct sophia_sf_negotiated *sophia_ss_welcome(const struct sophia_ss *);
 const struct sophia_sf_limits *sophia_ss_limits(const struct sophia_ss *);
 /* AGAIN unless a Refused event was received; its reason and denied bits. */
 int sophia_ss_refusal(const struct sophia_ss *, uint16_t *reason, uint64_t *denied);
-/* Encoded size of one candidate record, 0 when invalid or not a candidate. */
+/* Encoded size of one candidate record, 0 when invalid or not a candidate.
+ * Ignores its header, as admission does. Descriptor body identities are
+ * validated here; their connection epoch must also match the live session
+ * at admission. The size does not imply queue or transaction capacity. */
 size_t sophia_ss_record_bytes(const struct sophia_sf_record *);
 /* READY only. Validates and encodes every record (header epoch, submission
  * and sequence are assigned here and at hand-off) before any state changes:

@@ -104,3 +104,34 @@ byte-exact distinct identity names when a catalog discloses identities. This
 documents the existing persistent identity bijection; labels may still repeat
 and plain launcher catalogs have no identities. No layout or code changes
 accompany this reference update. Other contract copies keep their earlier pins.
+
+## Proposed descriptor records (development only)
+
+`spec/proposed/descriptor-layout.kdl` and `descriptor-records.md` are unmodified
+copies of Sophia's proposed ADR `4oapm903` and its layout fragment from signed
+commit `0cbb7ea5b3aade7fee6ee271fe03e57e3cf2e78f`. Their original paths are
+`docs/notes/decisions/4oapm903-descriptor-layout-proposal.kdl` and
+`docs/notes/decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md`.
+`spec/proposed/SHA256SUMS` binds these development inputs separately from the
+published contracts; `make check-spec` checks both sets. Relative links and the
+proposal's historical implementation status are preserved in the copied ADR.
+
+The ADR copy is subsequently refreshed from signed Sophia
+`348dee082260706158447bc2e65745992a071423`. It clarifies that hidden descriptor
+candidates have no entries and that generations may repeat across distinct
+slots. The KDL is byte-identical; no field layout changes.
+
+The ADR is refreshed again from signed Sophia
+`731c5295bb2bf5bc875a1704a27f76a9e44e5086` to state shortcut slot uniqueness and
+mandatory chord/action text explicitly. This preserves the prior shortcut
+validator's rules; the proposed byte layout is still unchanged.
+
+The descriptor codec implements all seventeen proposed envelopes: three whole
+objects, eight event bodies, two activation acknowledgements and four
+presentation candidates. Literal native file vectors test them independently
+of the Rust codec and the old socket frames. Development profile selection,
+metadata/combined readiness and snapshot fetch/ack holds have scripted-peer
+coverage. Large queued candidates use explicit caller-owned staging with
+scripted capacity, reservation and custody controls. Real-export conformance
+remains pending in the C SDK path. This is not acceptance of the contract or a
+release claim.

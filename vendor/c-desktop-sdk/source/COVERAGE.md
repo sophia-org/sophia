@@ -32,6 +32,29 @@ continues to describe implemented support until the relevant gates pass.
 
 ## Parity gate
 
+Development descriptor work covers all seventeen proposed native envelopes:
+three whole objects, eight events, two activation acknowledgements and four
+presentation candidates in `spec/proposed/`. It validates envelopes, identities,
+bounded text, row counts and uniqueness, action/connection bindings, style and
+outcome relationships using literal vectors. Snapshots and larger candidate
+rows borrow caller-owned encoded storage; fixed candidate arrays remain bounded.
+The development descriptor profile validates its explicit api role and exact
+selected capabilities, supports metadata-only and combined content readiness,
+and tracks fetch/ack holds for every disclosed feed. Scripted tests exercise
+partial reads, EOF, supersession, qid/generation matching and capability
+refusals. Existing content roles refuse descriptor disclosure before consumption.
+The low-level file client accepts caller-owned transaction scratch through
+`sophia_sf_client_init_buffers`; scripted tests send complete maximum tab and
+reference candidates, preserving custody and explicit same-id EAGAIN retry.
+The queued session accepts separate caller-owned transaction storage through
+`sophia_ss_open_fd_staging`. Scripted tests cover maximum tab/reference groups,
+fragmented writes, immutable hand-off, atomic refusal, reservations, paced
+same-id retry and disconnect custody. Existing initializers retain 8 KiB inline
+staging; per-kind codec limits and the total queue bound remain unchanged.
+No descriptor conformance peer or production-export result is claimed yet.
+The proposal remains separate from the published API-1 contract and does not
+change `compatibility.json`.
+
 For each role, inventory every former IPC request, response, event, capability,
 resource grant and terminal outcome against a named file-contract operation.
 The inventory must include negative behavior: refusal, backpressure, stale

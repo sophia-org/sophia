@@ -7,6 +7,7 @@ static inline int sf_role_kind(unsigned k)
 }
 int sf_text_check(struct sophia_sf_text, size_t);
 int sf_launcher_text_check(struct sophia_sf_text, size_t);
+int sf_descriptor_text_check(struct sophia_sf_text, size_t);
 int sf_text_take(const uint8_t *, size_t, struct sophia_sf_text *);
 void sf_text_put(uint8_t *, size_t, struct sophia_sf_text);
 size_t sf_role_size(const struct sophia_sf_record *);

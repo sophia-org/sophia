@@ -1,13 +1,13 @@
-tree 3f2634b41360fd502caf8270608dc84372764418
-parent 4690786c929e3a221ee5d2793708fe4b43870c5b
-author Mason Green <mason@greenm01.net> 1790570221 -0400
-committer Mason Green <mason@greenm01.net> 1790570221 -0400
+tree 72116c3cade2ee57e3bd5b96addae35b5d2b4a56
+parent 4816e5e9c275a30efca2a218a427c5ab6c2e2a8e
+author Mason Green <mason@greenm01.net> 1790587990 -0400
+committer Mason Green <mason@greenm01.net> 1790587990 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarnu7QAKCRBXGEu2KoAA
- YuadAP4oA1/cESnJn1AOrMV148SXSHNozAjSc1D/GPPIPLRZPAD9Eqf433ZmJbXv
- IeFkpOiczQEIUaPK9mRFzZZdlJhR9Ag=
- =JSzz
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCaro0VgAKCRBXGEu2KoAA
+ Yl1MAQCqvlfzoa907e19hGvmAE4r5APGz+Ixpy6+EiUB03O9MwEAqK+U/Q3YKYoI
+ U0do7knKj4+nFBJ5HRig4OTTwOsEfAE=
+ =yYG1
  -----END PGP SIGNATURE-----
 
-Pin the explicit persistent identity contract
+Support large queued descriptor records with caller-owned staging

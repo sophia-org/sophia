@@ -5,8 +5,9 @@
 
 /* The caller explicitly chooses this native file backend and supplies the
  * admitted fd through wire. No discovery, protocol sniffing or fallback.
- * Role-aware initialization supports bar, native launcher and persistent dock. */
-enum sophia_sf_profile { SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK };
+ * The descriptor profile is development-only (spec/proposed). */
+enum sophia_sf_profile { SOPHIA_SF_BAR, SOPHIA_SF_LAUNCHER, SOPHIA_SF_DOCK,
+                         SOPHIA_SF_DESCRIPTOR };
 /* Progress of the most recent submission. STAGED: its Tsubmit is not queued or
  * outstanding (transaction writes, or deferred after EAGAIN, which transferred
  * nothing). ISSUED: a Tsubmit is queued, outstanding or accepted without an
@@ -25,6 +26,12 @@ struct sophia_sf_operation {
     struct sophia_9p_handle handle;
     uint8_t active;
 };
+struct sophia_sf_buffers {
+    void *objects;
+    size_t object_capacity;
+    void *transaction;
+    size_t transaction_capacity;
+};
 struct sophia_sf_client {
     struct sophia_9p_client *wire;
     uint64_t epoch, next_submission, sequence, consumed_sequence, acked_sequence;
@@ -32,15 +39,19 @@ struct sophia_sf_client {
     /* Retained custody blocks the next transaction open until this is acked. */
     uint64_t submitted_sequence;
     struct sophia_sf_negotiate offer;
+    struct sophia_sf_negotiated welcome;
     enum sophia_sf_profile profile;
     uint8_t *object_storage;
     size_t object_capacity;
+    uint8_t *tx_storage;
+    size_t tx_capacity;
     struct sophia_sf_limits limits;
     uint32_t root, fids[4], object_fid, upload_fid, api_fid, api_iounit;
     uint32_t iounit[4], object_iounit, upload_iounit;
     uint16_t object_kind;
     int terminal, object_status;
     uint8_t bootstrap, negotiated, have_limits, event_ready, object_ready;
+    uint8_t bootstrap_custody_consumed, welcome_consumed;
     uint8_t submit_stage, submitted, submit_replied, object_stage, upload_stage, refused,
         upload_closing;
     /* stale: ESTALE answered events, submit or ack (not object/upload).
@@ -68,12 +79,29 @@ int sophia_sf_client_init(struct sophia_sf_client *, struct sophia_9p_client *,
  * views survive until the next object fetch.
  * NULL with capacity 0 selects the inline 1 KiB buffer. The base initializer
  * selects BAR with that buffer. Launcher/dock offers require their exact masks
- * and a revision range containing 7/8. No implicit role/protocol fallback. */
+ * and a revision range containing 7/8. No implicit role/protocol fallback.
+ * Descriptor offers require bit 0 and the proposed revision/dependency rules.
+ * The api must explicitly name descriptor. Metadata-only readiness requires
+ * consumption of bootstrap Submitted and Negotiated, without a Limits fetch;
+ * combined content additionally waits for valid Limits. */
 int sophia_sf_client_init_profile(struct sophia_sf_client *, struct sophia_9p_client *,
                                   struct sophia_sf_negotiate, enum sophia_sf_profile, void *storage,
                                   size_t capacity);
+/* Optional caller-owned scratch for both objects and the outgoing transaction.
+ * NULL buffers or a NULL/0 pair selects that inline buffer (1 KiB / 8 KiB).
+ * External object capacity is 296..SOPHIA_SF_MAX_RECORD; transaction capacity
+ * is 8192..SOPHIA_SF_MAX_RECORD. All buffers must be disjoint from each other,
+ * client, wire and wire storage, and remain exclusive until disposal. Larger
+ * scratch changes no negotiated role or capability. Submit copies the record
+ * before returning, so input rows may be released after successful admission.
+ * Failed validation/capacity checks queue nothing and allocate no id. */
+int sophia_sf_client_init_buffers(struct sophia_sf_client *, struct sophia_9p_client *,
+                                  struct sophia_sf_negotiate, enum sophia_sf_profile,
+                                  const struct sophia_sf_buffers *);
 int sophia_sf_client_service(struct sophia_sf_client *, size_t byte_budget);
 int sophia_sf_client_ready(const struct sophia_sf_client *);
+/* Validated welcome, or NULL before negotiation. Borrowed until disposal. */
+const struct sophia_sf_negotiated *sophia_sf_client_welcome(const struct sophia_sf_client *);
 /* Copies one whole value; header epoch/submission are assigned here. Return
  * BUSY preserves caller ownership. Submitted means custody only. The next
  * transaction stays unavailable until the caller acknowledges that Submitted;

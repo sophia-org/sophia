@@ -3,9 +3,13 @@
 int sophia_sf_client_object(struct sophia_sf_client *c, uint16_t kind, uint64_t generation,
                             uint64_t qid)
 {
-    if (!c || kind < SOPHIA_SF_LIMITS || kind > SOPHIA_SF_INDICATORS)
+    if (!c || kind < SOPHIA_SF_LIMITS || kind > SOPHIA_SF_SHORTCUTS)
         return SOPHIA_9P_ARGUMENT;
-    if ((kind == SOPHIA_SF_CATALOG && c->profile == SOPHIA_SF_BAR) ||
+    if (c->profile == SOPHIA_SF_DESCRIPTOR) {
+        if (!sf_descriptor_object_allowed(c, kind))
+            return SOPHIA_9P_ARGUMENT;
+    } else if (kind > SOPHIA_SF_INDICATORS ||
+        (kind == SOPHIA_SF_CATALOG && c->profile == SOPHIA_SF_BAR) ||
         (kind == SOPHIA_SF_INDICATORS &&
          (c->profile != SOPHIA_SF_BAR || !(c->offer.required_capabilities & (1u << 9)))))
         return SOPHIA_9P_ARGUMENT;
@@ -24,7 +28,8 @@ int sophia_sf_client_object(struct sophia_sf_client *c, uint16_t kind, uint64_t 
 }
 int sf_session_object_drive(struct sophia_sf_client *c)
 {
-    static const char *const names[] = {"limits", "outputs", "catalog", "indicators"};
+    static const char *const names[] = {"limits", "outputs", "catalog", "indicators",
+                                       "descriptors", "tabs", "shortcuts"};
     const char *name;
     int r;
     uint32_t count = (uint32_t)(c->object_capacity - c->object_used);
@@ -108,7 +113,10 @@ int sf_session_object_reply(struct sophia_sf_client *c, const struct sophia_9p_r
             return 0;
         n = (size_t)sf_get(c->object_storage, 4);
         if (n < 32 || n > c->object_capacity || c->object_used > n ||
-            (c->object_kind == SOPHIA_SF_INDICATORS && n > 32768))
+            (c->object_kind == SOPHIA_SF_INDICATORS && n > 32768) ||
+            (c->object_kind == SOPHIA_SF_DESCRIPTORS && n > 4096) ||
+            (c->object_kind == SOPHIA_SF_TABS && n > 1048576) ||
+            (c->object_kind == SOPHIA_SF_SHORTCUTS && n > 131072))
             return object_finish(c, SOPHIA_9P_INVALID);
         if (c->object_used < n)
             return 0;
@@ -132,13 +140,20 @@ int sf_session_object_reply(struct sophia_sf_client *c, const struct sophia_9p_r
             return object_finish(c, SOPHIA_9P_INVALID);
         generation = c->object.value.outputs.facts_generation;
     } else if (c->object_kind == SOPHIA_SF_CATALOG) {
-        if (c->object.value.catalog.connection_epoch != c->epoch)
+        if (c->object.value.catalog.connection_epoch != c->epoch ||
+            (c->profile == SOPHIA_SF_DESCRIPTOR && c->object.value.catalog.identities_present))
             return object_finish(c, SOPHIA_9P_INVALID);
         generation = c->object.value.catalog.generation;
-    } else {
+    } else if (c->object_kind == SOPHIA_SF_INDICATORS) {
         if (c->object.value.indicators.connection_epoch != c->epoch)
             return object_finish(c, SOPHIA_9P_INVALID);
         generation = c->object.value.indicators.generation;
+    } else if (c->object_kind == SOPHIA_SF_DESCRIPTORS) {
+        generation = c->object.value.descriptors.snapshot_generation;
+    } else if (c->object_kind == SOPHIA_SF_TABS) {
+        generation = c->object.value.tabs.generation;
+    } else {
+        generation = c->object.value.shortcuts.generation;
     }
     return object_finish(
         c, c->object_generation && generation != c->object_generation ? SOPHIA_9P_AGAIN : 0);

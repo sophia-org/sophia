@@ -12,7 +12,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-enum { F_NONE, F_ROOT, F_API, F_EVENTS, F_TX, F_SUBMIT, F_ACK, F_LIMITS, F_OUTPUTS, F_UPLOAD };
+enum { F_NONE, F_ROOT, F_API, F_EVENTS, F_TX, F_SUBMIT, F_ACK, F_LIMITS, F_OUTPUTS, F_UPLOAD,
+       F_CATALOG, F_INDICATORS, F_DESCRIPTORS, F_TABS, F_SHORTCUTS };
 /* ACCEPT: Rwrite then Submitted. SILENT: Rwrite only. HOLD: no reply.
  * ERROR: Rlerror. CUSTODY: Submitted journaled while the Rwrite is held. */
 enum { P_ACCEPT, P_SILENT, P_HOLD, P_ERROR, P_CUSTODY };
@@ -35,7 +36,7 @@ struct peer {
     uint16_t event_tag, tx_tag, submit_tag;
     uint32_t event_count, event_error, tx_count, error;
     uint64_t event_offset;
-    uint8_t staged[8192], last_submit[24];
+    uint8_t staged[65536], last_submit[24];
     size_t staged_used;
     unsigned tx_writes, submits, acks, upload_bytes;
     uint64_t outputs_generation;
@@ -44,7 +45,29 @@ struct peer {
     /* outputs: append one trailing byte; cap each Rread (0: no cap). */
     int object_trailing;
     uint32_t object_read_max;
+    /* Descriptor tests select this role explicitly; ordinary rigs remain bars. */
+    int descriptor, hold_bootstrap_submitted, wrong_welcome_epoch;
+    const char *api_override;
+    const struct sophia_sf_negotiated *welcome_override;
+    const uint8_t *object_data[8];
+    size_t object_bytes[8];
+    uint64_t object_qids[8];
+    unsigned object_walks[8];
+    unsigned object_eofs[8];
 };
+static inline unsigned peer_object_kind(uint8_t file)
+{
+    switch (file) {
+    case F_LIMITS: return SOPHIA_SF_LIMITS;
+    case F_OUTPUTS: return SOPHIA_SF_OUTPUTS;
+    case F_CATALOG: return SOPHIA_SF_CATALOG;
+    case F_INDICATORS: return SOPHIA_SF_INDICATORS;
+    case F_DESCRIPTORS: return SOPHIA_SF_DESCRIPTORS;
+    case F_TABS: return SOPHIA_SF_TABS;
+    case F_SHORTCUTS: return SOPHIA_SF_SHORTCUTS;
+    default: return 0;
+    }
+}
 static inline uint64_t peer_get(const uint8_t *p, size_t n)
 {
     size_t i;
@@ -232,7 +255,8 @@ static inline void peer_submit(struct peer *p, uint16_t tag, const uint8_t *b)
     if (kind == SOPHIA_SF_NEGOTIATE) {
         struct sophia_sf_record r = {0};
         peer_count(p, tag, 24);
-        peer_submitted(p, id, kind);
+        if (!p->hold_bootstrap_submitted)
+            peer_submitted(p, id, kind);
         if (p->refuse_negotiation) {
             r.header.kind = SOPHIA_SF_REFUSED;
             r.value.refused.reason = 4;
@@ -246,8 +270,19 @@ static inline void peer_submit(struct peer *p, uint16_t tag, const uint8_t *b)
             r.value.negotiated.max_label_bytes = 128;
             r.value.negotiated.max_pending_activations = 16;
             r.value.negotiated.limits_published = 1;
+            if (p->descriptor) {
+                uint16_t max = (uint16_t)peer_get(p->staged + 34, 2);
+                r.value.negotiated.selected_revision = max < 8 ? max : 8;
+                r.value.negotiated.capabilities = peer_get(p->staged + 40, 8) | 2u;
+                r.value.negotiated.limits_published =
+                    !!(r.value.negotiated.capabilities & (1u << 7));
+            }
+            if (p->welcome_override)
+                r.value.negotiated = *p->welcome_override;
         }
         peer_record(p, &r);
+        if (p->wrong_welcome_epoch && r.header.kind == SOPHIA_SF_NEGOTIATED)
+            peer_put(p->journal + p->journal_used - 64 + 36, PEER_EPOCH + 1, 8);
         return;
     }
     if (p->once)
@@ -266,9 +301,12 @@ static inline void peer_submit(struct peer *p, uint16_t tag, const uint8_t *b)
 }
 static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
 {
-    static const char api[] = "sophia-shell-files version=1 role=bar epoch=17 fd_transfer=none\n";
+    const char *api = p->api_override ? p->api_override :
+        p->descriptor ? "sophia-shell-files version=1 role=descriptor epoch=17 fd_transfer=none\n" :
+                        "sophia-shell-files version=1 role=bar epoch=17 fd_transfer=none\n";
     static const char *const names[] = {"",       "",       "api",  "events", "transaction",
-                                        "submit", "ack",    "limits", "outputs"};
+                                        "submit", "ack",    "limits", "outputs", "upload",
+                                        "catalog", "indicators", "descriptors", "tabs", "shortcuts"};
     uint8_t type = m[4], b[16384], file;
     uint16_t tag = (uint16_t)peer_get(m + 5, 2);
     const uint8_t *body = m + 7;
@@ -300,7 +338,9 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             if (strlen(names[i]) == n && !memcmp(body + 12, names[i], n))
                 file = (uint8_t)i;
         assert(file != F_NONE);
-        if (file == F_OUTPUTS && p->object_error) {
+        if (peer_object_kind(file))
+            p->object_walks[peer_object_kind(file)]++;
+        if (peer_object_kind(file) && p->object_error) {
             peer_error(p, tag, p->object_error);
             return;
         }
@@ -321,7 +361,10 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             peer_error(p, tag, 16);
             return;
         }
-        peer_qid(b, peer_file(p, (uint32_t)peer_get(body, 4)));
+        file = peer_file(p, (uint32_t)peer_get(body, 4));
+        peer_qid(b, file);
+        if (peer_object_kind(file) && p->object_qids[peer_object_kind(file)])
+            peer_put(b + 5, p->object_qids[peer_object_kind(file)], 8);
         peer_put(b + 13, 0, 4);
         peer_send(p, 13, tag, b, 17);
         return;
@@ -345,8 +388,22 @@ static inline void peer_request(struct peer *p, const uint8_t *m, size_t size)
             return;
         }
         if (file == F_API) {
-            n = sizeof(api) - 1;
+            n = strlen(api);
             memcpy(b + 4, api, n);
+        } else if (p->object_data[peer_object_kind(file)]) {
+            unsigned kind = peer_object_kind(file);
+            size_t bytes = p->object_bytes[kind];
+            size_t full = bytes + !!p->object_trailing;
+            n = offset >= full ? 0 : full - (size_t)offset;
+            if (n > count) n = count;
+            if (p->object_read_max && n > p->object_read_max) n = p->object_read_max;
+            assert(n <= sizeof(b) - 4);
+            for (size_t at = 0; at < n; at++)
+                b[4 + at] = offset + at < bytes ? p->object_data[kind][offset + at] : 0xee;
+            if (!n) p->object_eofs[kind]++;
+            peer_put(b, n, 4);
+            peer_send(p, 117, tag, b, 4 + n);
+            return;
         } else {
             n = peer_object(p, file, b + 4, sizeof(b) - 5);
             if (file == F_OUTPUTS && p->object_trailing)

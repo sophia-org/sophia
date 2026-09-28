@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "../shell_files/session_internal.h"
 
 /* Encode with the live epoch and submission 0; a stand-in id satisfies
  * validation and hand-off assigns the real one. BUSY: no room. */
@@ -13,8 +14,6 @@ static int encode(const struct sophia_sf_record *record, uint64_t epoch, uint8_t
     r.header.epoch = epoch;
     r.header.submission = 1;
     r.header.sequence = 0;
-    if (capacity > SOPHIA_SS_RECORD_BYTES)
-        capacity = SOPHIA_SS_RECORD_BYTES;
     status = sophia_sf_encode(dst, capacity, &r, n);
     if (status)
         return status == -1 ? SOPHIA_9P_INVALID : SOPHIA_9P_BUSY;
@@ -23,9 +22,34 @@ static int encode(const struct sophia_sf_record *record, uint64_t epoch, uint8_t
 }
 size_t sophia_ss_record_bytes(const struct sophia_sf_record *record)
 {
-    uint8_t scratch[SOPHIA_SS_RECORD_BYTES];
-    size_t n;
-    return record && !encode(record, 1, scratch, sizeof(scratch), &n) ? n : 0;
+    struct sophia_sf_record r;
+    if (!record || record->header.kind <= SOPHIA_SF_NEGOTIATE)
+        return 0;
+    r = *record;
+    r.header.epoch = 1;
+    r.header.submission = 1;
+    r.header.sequence = 0;
+    switch (r.header.kind) {
+    case SOPHIA_SF_DESCRIPTOR_CANDIDATE:
+        r.header.epoch = r.value.descriptor_candidate.connection_epoch;
+        break;
+    case SOPHIA_SF_DESCRIPTOR_ACTIVATION_ACK:
+        r.header.epoch = r.value.descriptor_activation_ack.connection_epoch;
+        break;
+    case SOPHIA_SF_TABS_CANDIDATE:
+        r.header.epoch = r.value.tabs_candidate.connection_epoch;
+        break;
+    case SOPHIA_SF_REFERENCE_CANDIDATE:
+        r.header.epoch = r.value.reference_candidate.connection_epoch;
+        break;
+    case SOPHIA_SF_DESCRIPTOR_LAUNCHER_CANDIDATE:
+        r.header.epoch = r.value.descriptor_launcher_candidate.connection_epoch;
+        break;
+    case SOPHIA_SF_DESCRIPTOR_LAUNCHER_ACTIVATION_ACK:
+        r.header.epoch = r.value.descriptor_launcher_activation_ack.grant.connection_epoch;
+        break;
+    }
+    return sophia_sf_record_bytes(&r);
 }
 /* Encode the whole group into free queue bytes before any state changes.
  * Bytes past queue_used are scratch, so a refused group leaves no trace. */
@@ -39,11 +63,19 @@ static int admit(struct sophia_ss *s, const struct sophia_sf_record *records, si
     if (count > slots)
         return reserved ? SOPHIA_9P_ARGUMENT : SOPHIA_9P_BUSY;
     for (i = 0; i < count; i++) {
-        status = encode(&records[i], s->files.epoch, s->queue + s->queue_used + used, room - used,
+        size_t capacity = room - used;
+        if (!sf_session_candidate_allowed(&s->files, records[i].header.kind))
+            return SOPHIA_9P_ARGUMENT;
+        if (capacity > s->files.tx_capacity)
+            capacity = s->files.tx_capacity;
+        status = encode(&records[i], s->files.epoch, s->queue + s->queue_used + used, capacity,
                         &n);
         /* Only a record that could never fit, or overruns a reservation, is
          * an argument error; otherwise the queue is merely full now. */
-        if (status == SOPHIA_9P_BUSY && (reserved || room - used >= SOPHIA_SS_RECORD_BYTES))
+        if (status == SOPHIA_9P_BUSY &&
+            (reserved || room - used >= s->files.tx_capacity ||
+             sophia_ss_record_bytes(&records[i]) > s->files.tx_capacity ||
+             sophia_ss_record_bytes(&records[i]) > s->queue_capacity))
             status = SOPHIA_9P_ARGUMENT;
         if (status)
             return status;

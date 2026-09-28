@@ -50,6 +50,28 @@ its pin without overflowing the buffer or terminating the session. Storage must
 remain alive and separate from client/wire state until disposal; returned views
 remain borrowed until the next fetch.
 
+The development `SOPHIA_SF_DESCRIPTOR` profile uses `spec/proposed/`. Its api
+must name `descriptor`, and its offer must obey that proposal's revision and
+capability dependencies. `sophia_ss_welcome` exposes the validated selection.
+Metadata-only sessions become ready after bootstrap Submitted and Negotiated
+are consumed, with no Limits request; combined content also needs valid Limits.
+Unselected object and record families are refused locally. Descriptor, tab and
+shortcut announcements participate in the same fetch/ack holds as other feeds:
+full decode, matching qid/generation and an EOF probe precede release.
+`sophia_sf_client_init_buffers` and `sophia_ss_open_fd_staging` support caller-owned
+large transaction scratch. A 52,488-byte transaction buffer accommodates all
+proposed candidates (including 8,260-byte maximum tab candidates); provide
+separate queue capacity for the desired admission group. The queue retains its
+512 KiB total bound and 64-slot bound. The transaction buffer must be separate
+from queue storage, object scratch and the session; the initializer checks all
+regions before starting I/O. Records are copied on admission, then copied into
+transaction storage before queue compaction. The inline initializer still uses
+8 KiB and refuses records that can never fit without issuing a ticket or
+submission. `sophia_ss_record_bytes` validates and measures candidates without
+allocating encoded scratch; it does not promise admission capacity. This
+development path has scripted-peer coverage, not production-export
+qualification yet.
+
 Reference inputs are the shell file KDL at `bae4ec4a9` (including the Limits
 rules from `f64d670e0` and conditional-bound correction `6bb0c8f2e`), extended
 with role layouts and normative value rules from `ee5e7f809` and the validation

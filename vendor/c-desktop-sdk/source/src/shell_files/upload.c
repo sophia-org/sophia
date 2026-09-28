@@ -17,6 +17,9 @@ int sophia_sf_client_upload_begin(struct sophia_sf_client *c, struct sophia_sf_r
     int status;
     if (!c)
         return SOPHIA_9P_ARGUMENT;
+    if (c->profile == SOPHIA_SF_DESCRIPTOR &&
+        !sf_descriptor_record_allowed(c, SOPHIA_SF_RESOURCE_BEGIN))
+        return SOPHIA_9P_ARGUMENT;
     if (!sophia_sf_client_ready(c) || c->upload_stage)
         return SOPHIA_9P_BUSY;
     row = (uint64_t)v.width_px * 4;

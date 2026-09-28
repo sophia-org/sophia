@@ -1,6 +1,7 @@
 #include "roles_internal.h"
 
-static int text_valid(struct sophia_sf_text text, size_t maximum, int restricted)
+enum text_restriction { NO_CONTROLS = 1, NO_BIDI = 2 };
+static int text_valid(struct sophia_sf_text text, size_t maximum, unsigned restrictions)
 {
     size_t at = 0;
     if (text.size > maximum || (text.size && !text.data))
@@ -33,8 +34,10 @@ static int text_valid(struct sophia_sf_text text, size_t maximum, int restricted
         }
         if (cp < minimum || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff))
             return -1;
-        if (restricted && (cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f) ||
-                           (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)))
+        if ((restrictions & NO_CONTROLS) && (cp <= 0x1f || (cp >= 0x7f && cp <= 0x9f)))
+            return -1;
+        if ((restrictions & NO_BIDI) &&
+            ((cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)))
             return -1;
     }
     return 0;
@@ -45,7 +48,11 @@ int sf_text_check(struct sophia_sf_text text, size_t maximum)
 }
 int sf_launcher_text_check(struct sophia_sf_text text, size_t maximum)
 {
-    return text_valid(text, maximum, 1);
+    return text_valid(text, maximum, NO_CONTROLS | NO_BIDI);
+}
+int sf_descriptor_text_check(struct sophia_sf_text text, size_t maximum)
+{
+    return text_valid(text, maximum, NO_CONTROLS);
 }
 int sf_text_take(const uint8_t *b, size_t maximum, struct sophia_sf_text *out)
 {

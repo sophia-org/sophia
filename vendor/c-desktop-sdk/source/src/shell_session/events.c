@@ -25,7 +25,7 @@ int sophia_ss_consume(struct sophia_ss *s)
     before = s->last_consumed;
     if (e->header.kind == SOPHIA_SF_OBJECT_PUBLISHED &&
         e->value.object_published.object_kind >= SOPHIA_SF_LIMITS &&
-        e->value.object_published.object_kind <= SOPHIA_SF_INDICATORS) {
+        e->value.object_published.object_kind <= SOPHIA_SF_SHORTCUTS) {
         const struct sophia_sf_object_published *v = &e->value.object_published;
         struct sophia_ss_hold *h = &s->holds[v->object_kind - 1];
         const struct sophia_ss_hold *seen = &s->seen[v->object_kind - 1];
@@ -51,7 +51,7 @@ uint64_t sophia_ss_ack_limit(const struct sophia_ss *s)
     if (!s)
         return 0;
     limit = s->last_consumed;
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < 7; i++)
         if (s->holds[i].active && s->holds[i].before < limit)
             limit = s->holds[i].before;
     return limit;
@@ -94,6 +94,12 @@ static uint64_t generation_of(const struct sophia_sf_record *o)
         return o->value.outputs.facts_generation;
     case SOPHIA_SF_CATALOG:
         return o->value.catalog.generation;
+    case SOPHIA_SF_DESCRIPTORS:
+        return o->value.descriptors.snapshot_generation;
+    case SOPHIA_SF_TABS:
+        return o->value.tabs.generation;
+    case SOPHIA_SF_SHORTCUTS:
+        return o->value.shortcuts.generation;
     default:
         return o->value.indicators.generation;
     }

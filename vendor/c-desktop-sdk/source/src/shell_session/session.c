@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "../shell_files/session_internal.h"
 #include <limits.h>
 #include <poll.h>
 
@@ -22,22 +23,44 @@ size_t sophia_ss_storage_bytes(uint32_t msize, size_t queue_bytes)
 int sophia_ss_open_fd(struct sophia_ss *s, int fd, const struct sophia_ss_config *config,
                       void *storage, size_t bytes)
 {
+    return sophia_ss_open_fd_staging(s, fd, config, storage, bytes, NULL, 0);
+}
+static int disjoint(const void *left, size_t n, const void *right, size_t m)
+{
+    uintptr_t a = (uintptr_t)left, b = (uintptr_t)right;
+    return !n || !m ||
+           (a <= UINTPTR_MAX - n && b <= UINTPTR_MAX - m && (a + n <= b || b + m <= a));
+}
+int sophia_ss_open_fd_staging(struct sophia_ss *s, int fd, const struct sophia_ss_config *config,
+                              void *storage, size_t bytes, void *transaction, size_t capacity)
+{
     size_t needed, wire;
-    uintptr_t a = (uintptr_t)s, b = (uintptr_t)storage;
+    struct sophia_sf_buffers buffers;
     int r;
     if (!s || !config || !storage || !config->queue_slots || config->queue_slots > SOPHIA_SS_SLOTS)
         return SOPHIA_9P_ARGUMENT;
     needed = sophia_ss_storage_bytes(config->msize, config->queue_bytes);
-    if (!needed || bytes < needed || a > UINTPTR_MAX - sizeof(*s) || b > UINTPTR_MAX - needed ||
-        !(a + sizeof(*s) <= b || b + needed <= a))
+    if (!needed || bytes < needed || !disjoint(s, sizeof(*s), storage, needed) ||
+        ((!transaction) != (!capacity)) ||
+        (transaction && (capacity < SOPHIA_SS_RECORD_BYTES || capacity > SOPHIA_SF_MAX_TRANSACTION)) ||
+        ((!config->object_storage) != (!config->object_capacity)) ||
+        (config->object_storage &&
+         (config->object_capacity < 296 || config->object_capacity > SOPHIA_SF_MAX_RECORD)) ||
+        !disjoint(transaction, capacity, s, sizeof(*s)) ||
+        !disjoint(transaction, capacity, storage, needed) ||
+        !disjoint(config->object_storage, config->object_capacity, s, sizeof(*s)) ||
+        !disjoint(config->object_storage, config->object_capacity, storage, needed) ||
+        !disjoint(config->object_storage, config->object_capacity, transaction, capacity))
         return SOPHIA_9P_ARGUMENT;
+    buffers = (struct sophia_sf_buffers){config->object_storage, config->object_capacity,
+                                       transaction, capacity};
     wire = sophia_9p_storage_bytes(config->msize, SOPHIA_SS_REQUESTS);
     memset(s, 0, sizeof(*s));
     r = sophia_9p_init(&s->wire, fd, config->msize, SOPHIA_SS_REQUESTS, SOPHIA_SS_FIDS, storage,
                        wire);
     if (!r)
-        r = sophia_sf_client_init_profile(&s->files, &s->wire, config->offer, config->profile,
-                                          config->object_storage, config->object_capacity);
+        r = sophia_sf_client_init_buffers(&s->files, &s->wire, config->offer, config->profile,
+                                          &buffers);
     if (r) {
         s->state = SOPHIA_SS_FAILED;
         return r;
@@ -70,12 +93,13 @@ static int received_custody(const struct sophia_ss *s)
         n = (size_t)ss_get(c->event_bytes + at, 4);
         if (n < SOPHIA_SF_HEADER_BYTES || n > c->event_used - at ||
             sophia_sf_decode(c->event_bytes + at, n, &r) || r.header.epoch != c->epoch ||
+            !sf_session_event_allowed(c, &r) ||
             r.header.kind < 16 || r.header.kind >= 256 || r.header.sequence <= sequence ||
             r.header.kind == SOPHIA_SF_NEGOTIATED || r.header.kind == SOPHIA_SF_RESOURCE_STATUS)
             return 0;
         if (r.header.kind == SOPHIA_SF_SUBMITTED)
             return r.value.submitted.submission_id == s->flight_id &&
-                   r.value.submitted.candidate_kind == ss_get(c->tx + 6, 2);
+                   r.value.submitted.candidate_kind == ss_get(c->tx_storage + 6, 2);
         sequence = r.header.sequence;
         at += n;
     }
@@ -145,8 +169,8 @@ static int drain(struct sophia_ss *s)
         s->ack_clock = s->now_ms;
         s->progress = 1;
     }
-    /* Negotiation's own Limits fetch; without limits the session cannot
-     * become ready, so a failed fetch fails closed. */
+    /* A negotiated content grant requires its bootstrap Limits fetch.
+     * Metadata-only descriptor sessions never issue that fetch. */
     if (s->files.object_ready && !s->object_requested &&
         sophia_sf_client_object_result(&s->files, &e) && !s->files.have_limits)
         r = SOPHIA_9P_INVALID;
@@ -250,6 +274,10 @@ const struct sophia_sf_limits *sophia_ss_limits(const struct sophia_ss *s)
 {
     return s && s->files.have_limits ? &s->files.limits : NULL;
 }
+const struct sophia_sf_negotiated *sophia_ss_welcome(const struct sophia_ss *s)
+{
+    return s ? sophia_sf_client_welcome(&s->files) : NULL;
+}
 int sophia_ss_refusal(const struct sophia_ss *s, uint16_t *reason, uint64_t *denied)
 {
     if (!s || !reason || !denied)
@@ -273,7 +301,7 @@ int sophia_ss_obligations(const struct sophia_ss *s, struct sophia_ss_obligation
         o->ack_due_ms = s->ack_clock > UINT64_MAX - SOPHIA_SS_ACK_PROGRESS_MS
                             ? UINT64_MAX
                             : s->ack_clock + SOPHIA_SS_ACK_PROGRESS_MS;
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < 7; i++)
         if (s->holds[i].active)
             o->objects |= (uint8_t)(1u << i);
     o->blocked = o->consumed > o->ack_limit;

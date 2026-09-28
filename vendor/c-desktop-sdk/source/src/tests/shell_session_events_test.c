@@ -504,6 +504,28 @@ static void transaction_reopen_waits_for_object_hold(void)
     assert(!r.p.transaction_busy);
     rig_close(&r);
 }
+static void unsupported_descriptor_publications_cannot_be_acknowledged(void)
+{
+    for (uint16_t kind = SOPHIA_SF_DESCRIPTORS; kind <= SOPHIA_SF_SHORTCUTS; kind++) {
+        struct rig r;
+        rig_ready(&r, &rig_config);
+        peer_published(&r.p, kind, 1, 1234);
+        rig_run(&r, 8);
+        assert(sophia_ss_state(&r.s) == SOPHIA_SS_FAILED);
+        assert(sophia_ss_ack_limit(&r.s) == 2 && r.s.files.consumed_sequence == 2);
+        assert(sophia_ss_ack(&r.s) == SOPHIA_9P_INVALID && r.p.acked == 2);
+        rig_close(&r);
+    }
+    struct rig r;
+    struct sophia_sf_record event = {{SOPHIA_SF_DESCRIPTOR_OUTCOME, PEER_EPOCH, 0, 1},
+        .value.descriptor_outcome = {1, PEER_EPOCH, 1, 0, 1}};
+    rig_ready(&r, &rig_config);
+    peer_record(&r.p, &event);
+    rig_run(&r, 8);
+    assert(sophia_ss_state(&r.s) == SOPHIA_SS_FAILED);
+    assert(sophia_ss_ack_limit(&r.s) == 2 && r.p.acked == 2);
+    rig_close(&r);
+}
 int main(void)
 {
     ack_bounded_by_undelivered_events();
@@ -520,6 +542,7 @@ int main(void)
     outcome_eviction();
     transaction_reopen_waits_for_custody_ack();
     transaction_reopen_waits_for_object_hold();
+    unsupported_descriptor_publications_cannot_be_acknowledged();
     puts("shell session: ack bounds, object obligations, poll, uploads, node ESTALE, refusal, "
          "outcome ring passed");
     return 0;
