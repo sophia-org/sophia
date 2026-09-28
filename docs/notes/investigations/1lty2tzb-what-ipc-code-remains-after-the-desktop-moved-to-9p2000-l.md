@@ -315,6 +315,34 @@ target; it was cleaned before the ordinary combined test run to avoid any
 overlay fingerprint reuse. SDK contract alignment and the full combined
 gate remain prerequisites to the main merge.
 
+### SDK alignment and independent file tests (t267, 2026-09-27)
+
+The contract copies now come from signed SDK revisions: C
+`4a90120a268b1b4846338adeb3b55790f289cd94` and Rust
+`aa388e2561bd73e07f6a4f1c46028813188ab029`, vendored by `4fdd033aa`.
+Both snapshot checks pass. The C row generator reads the file-owned layouts
+and checks compatibility with the old rows; its generated executable code
+is unchanged. The standalone C gates pass with and without IPC, and the Rust
+SDK gates pass with default and all features. These revisions retain the
+legacy adapters; removing them remains t270.
+
+The fixture split `75308a64d`, merged as `6e336f724`, moves legacy frame
+construction into explicit IPC test companions. All old golden assertions
+remain. With the protocol IPC module and its re-export excluded by a
+read-only mount, all 43 selected file and neutral profile tests pass on the
+combined branch. This probe uses a separate target directory. The ordinary
+protocol suite at the fixture commit passes 272 tests (269 before the split,
+plus two neutral profile tests and one relocated golden test).
+
+The first combined workspace gate at `4fdd033aa` stopped in
+`normal_session_lifecycle` with `RuntimeDirUnset`: the isolated runner had
+cleared the environment without supplying a private runtime directory. The
+corrected runner creates a private mode-0700 `/run/user/1000` and sets
+`XDG_RUNTIME_DIR` to it. The failed test then passes without any product-code
+change. The failed gate log is retained; a complete combined gate is still
+required before promotion. Evidence is under `ipc-retirement/`, including
+`t267-runtime-dir-control.log` and `t267-combined-noipc-6e336f724.log`.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
@@ -332,7 +360,8 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
 - t268: per-record budgets and a typed outbox in the shell owners (B).
 - t269: flip the WM and shell transport defaults to 9p2000.L, then delete the
   WM and shell IPC paths, codecs, generator, bindings, archive, scripts and
-  gates (B, after t250, t252, t267, t268).
+  gates (B, after t250, t252, t267, t268 and t271). The descriptor shell still
+  uses the socket adapter, so its file replacement must precede deletion.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.
 - t271: the Narthex descriptor profile and single-process metadata shell (C).
