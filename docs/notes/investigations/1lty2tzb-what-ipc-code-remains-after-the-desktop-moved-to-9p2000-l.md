@@ -595,6 +595,26 @@ C SDK peer must precede acceptance of the contract and retirement of socket
 tests. Neither candidate is published or installed, and this evidence makes no
 claim about the running desktop or independent descriptor interoperability.
 
+The next candidate, `cabedd5880f1db2628345a8981d1af081154e68e`, adds explicit
+runtime descriptor-file negotiation. It selects the descriptor API role and
+352-byte journal sizing before accepting the peer, admits revisions 1–8 with
+only requested optional families, and rejects attempts to reuse native-launcher
+or persistent-catalog stores. The Rust SDK connects to the production export
+for both metadata-only and combined content grants. The raw 9P control also
+checks that content names are hidden before and after metadata-only negotiation.
+Protection identity is supplied for the test process; this is not a protected
+child launch or a Session profile-selection test.
+
+The gate passes 29 file-path tests (seven new admission tests, twelve existing
+file-transport tests, nine B6c tests and the existing C-role test), followed by
+strict runtime clippy, layout, formatting and diff checks. Another sixteen
+existing transport/negotiation tests pass. A compiled mutation lowering the
+descriptor revision ceiling to 6 fails the revision 1–8 bootstrap control.
+Logs are `ipc-retirement/t271-descriptor-admission-{gate,legacy,mutant-revision}.log`.
+The production Session still does not select this role. Descriptor footprint
+reservation, neutral owner routing, presentation-commit evidence and the
+independent C peer remain required before the socket can be retired.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
