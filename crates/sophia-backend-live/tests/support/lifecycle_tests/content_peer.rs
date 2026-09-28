@@ -1,8 +1,16 @@
 //! Protected cross-language client joined to production projection/composition.
 //! Device completion is supplied by Target; this never opens a live device.
+//!
+//! One lifecycle runs over either wire through the same connection view, with
+//! the same owner calls and assertions: the socket wire with an externally
+//! supplied client, and 9P2000.L with the independent C peer built here from
+//! the pinned C SDK (without its IPC library) and a real component owner.
 use super::*;
 use sophia_runtime::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+#[path = "../../../../sophia-conformance/tests/support/c_content_peer.rs"]
+mod c_content_peer;
 
 // Exercise the very same allocation-to-frame mapping used by the session,
 // without creating a production API solely for an integration fixture.
@@ -13,16 +21,68 @@ const DRM_FORMAT_ARGB8888: u32 = u32::from_le_bytes(*b"AR24");
 #[test]
 #[ignore = "requires an explicitly supplied independent content-lifecycle client"]
 fn protected_popout_client_uses_composition_and_retirement_owners() {
-    run(false).unwrap();
+    run(&socket_client().unwrap(), Wire::Socket, false).unwrap();
 }
 
 #[test]
 #[ignore = "requires an explicitly supplied independent content-lifecycle client"]
 fn protected_popout_client_refuses_an_action_with_the_wrong_receipt() {
-    run(true).unwrap();
+    run(&socket_client().unwrap(), Wire::Socket, true).unwrap();
 }
 
-fn run(wrong_action_epoch: bool) -> Result<(), Box<dyn std::error::Error>> {
+#[test]
+fn protected_popout_file_client_uses_composition_and_retirement_owners() {
+    let scratch = PeerScratch::new();
+    run(&scratch.peer(0), Wire::Files, false).unwrap();
+}
+
+#[test]
+fn protected_popout_file_client_refuses_an_action_with_the_wrong_receipt() {
+    let scratch = PeerScratch::new();
+    run(&scratch.peer(0), Wire::Files, true).unwrap();
+}
+
+/// Receipt and custody mutants of the file peer. Each must fail the shared
+/// lifecycle's own assertions, not merely stop early.
+#[test]
+fn protected_popout_file_client_mutants_fail_their_receipt_and_custody_checks() {
+    let scratch = PeerScratch::new();
+    // An early exit is refused by whichever lifecycle rule sees it first: the
+    // supervisor's exit check, or a lost peer outside the settled disconnect.
+    let unsettled: &[&str] = &[
+        "peer exited before full lifecycle and lease release",
+        "NotConnected",
+    ];
+    for (mutation, expected) in [
+        // The first action's receipt names another event.
+        (4, &["assertion `left == right` failed"][..]),
+        // A second receipt for the dismissal has no action to settle.
+        (5, &["unexpected action receipt"][..]),
+        // The dismissal is never acknowledged.
+        (6, unsettled),
+        // The resource is never retired after the parent loss.
+        (7, unsettled),
+    ] {
+        let peer = scratch.peer(mutation);
+        let failure = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run(&peer, Wire::Files, false)
+        })) {
+            Ok(Ok(())) => panic!("mutant {mutation} completed the lifecycle"),
+            Ok(Err(error)) => error.to_string(),
+            Err(panic) => panic
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| panic.downcast_ref::<&str>().map(|text| (*text).to_owned()))
+                .unwrap_or_default(),
+        };
+        assert!(
+            expected.iter().any(|text| failure.contains(text)),
+            "mutant {mutation}: {failure}"
+        );
+    }
+}
+
+fn socket_client() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let client = PathBuf::from(
         std::env::var_os("SOPHIA_CONTENT_LIFECYCLE_CLIENT")
             .ok_or("SOPHIA_CONTENT_LIFECYCLE_CLIENT is required")?,
@@ -30,6 +90,73 @@ fn run(wrong_action_epoch: bool) -> Result<(), Box<dyn std::error::Error>> {
     if !client.is_absolute() || !client.is_file() {
         return Err("absolute client required".into());
     }
+    Ok(client)
+}
+
+struct PeerScratch(PathBuf);
+
+impl PeerScratch {
+    fn new() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "sophia-popout-file-peer-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path)
+    }
+
+    fn peer(&self, mutation: u32) -> PathBuf {
+        c_content_peer::build(&self.0, mutation)
+    }
+}
+
+impl Drop for PeerScratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Wire {
+    Socket,
+    Files,
+}
+
+/// The actual owners behind the shared connection view.
+enum Owner {
+    Socket(ShellSessionTransport),
+    Files(ShellComponentTransport, ContentEpochRegistry),
+}
+
+impl Owner {
+    fn connection(&mut self) -> ShellTransportConnection<'_> {
+        match self {
+            Self::Socket(transport) => transport.connection(),
+            Self::Files(transport, registry) => transport.connection(registry),
+        }
+    }
+
+    /// The socket façade's disconnect also collects; the file owner does the
+    /// same through its registry.
+    fn disconnect(&mut self) -> Result<(), ShellTransportError> {
+        match self {
+            Self::Socket(transport) => transport.disconnect(),
+            Self::Files(transport, registry) => {
+                let result = transport.disconnect(registry);
+                registry.collect();
+                result
+            }
+        }
+    }
+}
+
+fn run(
+    client: &Path,
+    wire: Wire,
+    wrong_action_epoch: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let directory = std::env::temp_dir().join(format!(
         "sophia-popout-peer-{}-{}",
         std::process::id(),
@@ -37,14 +164,24 @@ fn run(wrong_action_epoch: bool) -> Result<(), Box<dyn std::error::Error>> {
             .duration_since(std::time::UNIX_EPOCH)?
             .as_nanos()
     ));
-    let mut transport = ShellSessionTransport::bind_for_supervised_uid(
-        &directory,
-        rustix::process::geteuid().as_raw(),
-    )?;
-    let socket = transport.socket_path().to_path_buf();
+    let euid = rustix::process::geteuid().as_raw();
+    let mut owner = match wire {
+        Wire::Socket => Owner::Socket(ShellSessionTransport::bind_for_supervised_uid(
+            &directory, euid,
+        )?),
+        Wire::Files => Owner::Files(
+            ShellComponentTransport::bind_for_supervised_uid(&directory, euid)?,
+            ContentEpochRegistry::new(64 * 1024 * 1024).map_err(ShellTransportError::from)?,
+        ),
+    };
+    let socket = match &owner {
+        Owner::Socket(transport) => transport.socket_path(),
+        Owner::Files(transport, _) => transport.socket_path(),
+    }
+    .to_path_buf();
     let domain = ProtectionDomainSpec::bubblewrap([ProtectionDomainRole::MetadataShell])?
         .path(ProtectionPath::read_only(&directory))?;
-    let spec = ProcessLaunchSpec::new(client)
+    let spec = ProcessLaunchSpec::new(client.to_path_buf())
         .arg("content-lifecycle")
         .arg("--socket")
         .arg(socket)
@@ -55,18 +192,31 @@ fn run(wrong_action_epoch: bool) -> Result<(), Box<dyn std::error::Error>> {
         process: SupervisedProcessKind::Shell,
         delay: Duration::ZERO,
     })?;
-    transport.authorize_protected_peer(
-        supervisor
-            .protection_evidence()
-            .ok_or("no protection evidence")?,
-    )?;
-    transport.accept_and_negotiate_with_content_policy(
-        1,
-        Duration::from_secs(5),
-        ShellContentAdmissionPolicy::Granted {
-            discrete_input: true,
-        },
-    )?;
+    let evidence = supervisor
+        .protection_evidence()
+        .ok_or("no protection evidence")?;
+    let policy = ShellContentAdmissionPolicy::Granted {
+        discrete_input: true,
+    };
+    match &mut owner {
+        Owner::Socket(transport) => {
+            transport.authorize_protected_peer(evidence)?;
+            transport.accept_and_negotiate_with_content_policy(
+                1,
+                Duration::from_secs(5),
+                policy,
+            )?;
+        }
+        Owner::Files(transport, registry) => {
+            transport.authorize_protected_peer(evidence)?;
+            transport.begin_file_negotiation(registry, 1, Duration::from_secs(5), policy)?;
+            // The owner's negotiation deadline bounds this; each visit is 64 KiB.
+            while transport.poll_negotiation(registry, 64 * 1024)?.is_none() {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+    }
+    let mut transport = owner.connection();
     let grant = transport.content_grant().ok_or("no grant")?;
     let head = HeadlessOutput {
         id: OutputId::from_raw(2),
@@ -113,6 +263,7 @@ fn run(wrong_action_epoch: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut dismissed = false;
     let mut parent_lost = false;
     let mut retained = None;
+    let mut negative = false;
     loop {
         if started.elapsed() > Duration::from_secs(10) {
             return Err("lifecycle deadline expired".into());
@@ -120,12 +271,8 @@ fn run(wrong_action_epoch: bool) -> Result<(), Box<dyn std::error::Error>> {
         let now = started.elapsed().as_millis() as u64;
         if supervisor.poll()? == Some(SupervisorEvent::ProcessExited) {
             if wrong_action_epoch && candidate == 2 && expected_action.is_some() {
-                target.teardown();
-                transport.disconnect()?;
-                println!(
-                    "protected_popout_negative status=complete mutation=action_epoch peer_closed_without_ack=true"
-                );
-                return Ok(());
+                negative = true;
+                break;
             }
             if !parent_lost
                 || !dismissed
@@ -436,10 +583,21 @@ fn run(wrong_action_epoch: bool) -> Result<(), Box<dyn std::error::Error>> {
         std::thread::yield_now();
     }
     target.teardown();
+    let wire_name = match wire {
+        Wire::Socket => "current-ipc",
+        Wire::Files => "9p2000.L",
+    };
+    if negative {
+        owner.disconnect()?;
+        println!(
+            "protected_popout_negative status=complete mutation=action_epoch peer_closed_without_ack=true wire={wire_name}"
+        );
+        return Ok(());
+    }
     assert_eq!(target.backing_owners.get(), 0);
-    transport.disconnect()?;
+    owner.disconnect()?;
     println!(
-        "protected_popout_lifecycle status=complete candidates=4 action=1 dismissal=1 parent_loss=1 leases=released device_completion=simulated native_acceptance=false"
+        "protected_popout_lifecycle status=complete candidates=4 action=1 dismissal=1 parent_loss=1 leases=released device_completion=simulated native_acceptance=false wire={wire_name}"
     );
     Ok(())
 }
