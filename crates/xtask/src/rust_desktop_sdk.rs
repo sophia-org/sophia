@@ -23,6 +23,10 @@ pub const CONTRACTS: &[(&str, &str)] = &[
     ),
     ("spec/sophia-shell-v1.kdl", "protocol/sophia-shell-v1.kdl"),
     ("spec/sophia-shell-files.md", "docs/sophia-shell-files.md"),
+    (
+        "spec/sophia-shell-descriptors.md",
+        "docs/sophia-shell-descriptors.md",
+    ),
     // The shell contract adopts the WM envelope, custody and retry rules
     // (the bounded EAGAIN backoff, no exactly-once across disconnect) that
     // the client implements.

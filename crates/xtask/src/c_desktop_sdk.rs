@@ -64,12 +64,8 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
     crate::git_tree::verify_commit(&commit, &manifest.revision, &inventory.tree)?;
     for (local, authoritative) in [
         (
-            "spec/proposed/descriptor-layout.kdl",
-            "docs/notes/decisions/4oapm903-descriptor-layout-proposal.kdl",
-        ),
-        (
-            "spec/proposed/descriptor-records.md",
-            "docs/notes/decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md",
+            "spec/sophia-shell-descriptors.md",
+            "docs/sophia-shell-descriptors.md",
         ),
         (
             "spec/sophia-shell-files-v1.kdl",

@@ -776,8 +776,9 @@ The descriptor component always uses 9P and admits its vocabulary before
 negotiating the peer. Metadata-only shells need no content grant; combined
 descriptor/content shells retain normal content policy and limits. A client's
 capability bits cannot choose its role. Independent C interoperability and
-protected CPU presentation tests pass; the contract remains proposed under
-t271 pending normative acceptance and the remaining migration gates.
+protected CPU presentation tests pass; the accepted
+[descriptor contract](sophia-shell-descriptors.md) defines the file role.
+The remaining compatibility retirement is tracked under t271 and t269.
 Selection applies at startup and does not alter a running connection's vocabulary.
 
 The generic `shell-gpu-content-proof` and `shell_content_conformance_host CLIENT`

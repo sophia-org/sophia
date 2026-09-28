@@ -131,9 +131,7 @@ fn pinned_source_and_contract_are_both_required() {
     std::fs::write(&manifest_path, manifest_bytes).unwrap();
 
     let mut contracts = vec![
-        "docs/notes/decisions/4oapm903-descriptor-layout-proposal.kdl".to_owned(),
-        "docs/notes/decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md"
-            .to_owned(),
+        "docs/sophia-shell-descriptors.md".to_owned(),
         "protocol/sophia-shell-files-v1.kdl".to_owned(),
         "protocol/sophia-shell-v1.kdl".to_owned(),
         "docs/sophia-9p-profile.md".to_owned(),

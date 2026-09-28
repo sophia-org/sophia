@@ -1,59 +1,17 @@
----
-id: 4oapm903
-date: 2026-09-28
-kind: adr
-status: accepted
-tags: [adr, shell, protocol]
----
-# Carry descriptor families as native shell file records
+# Descriptor shell files
 
-## Context and decision
+This is the descriptor profile of `sophia_shell_fs_v1` over standard 9P2000.L.
+Its byte layouts are part of [the shell file KDL](../protocol/sophia-shell-files-v1.kdl).
+The [shell file lifecycle](sophia-shell-files.md) supplies the envelope, custody,
+acknowledgement, immutable object and retry rules. This profile changes no
+Engine presentation or work-area authority.
 
-The existing descriptor socket carries functions that the content file roles
-do not replace: sanitized window descriptors, tab groups, shortcut catalogs,
-reference sheets, the descriptor launcher and work-area reservations. Retiring
-the socket must preserve those functions. Use whole typed objects and native
-candidates/events within the existing shell 9P export, with a separately
-admitted descriptor role and the same authority owners.
-
-Accepted on 2026-09-28 for the operator-requested descriptor migration.
-Implementation and evidence are recorded below; this is contract acceptance,
-not completion of every IPC-retirement task or physical desktop acceptance.
-The normative layouts are now in [the shell file KDL](../../../protocol/sophia-shell-files-v1.kdl)
-and the rules in [descriptor shell files](../../sophia-shell-descriptors.md).
-The [original layout fragment](4oapm903-descriptor-layout-proposal.kdl) remains
-historical design evidence and is no longer an SDK build input.
-
-## Alternatives
-
-- Dropping descriptor clients would remove existing features and is outside
-  the requested migration.
-- Wrapping socket frames in files would preserve the dependency being retired
-  and leave stream-fragment assembly inside an immutable-object interface.
-- Forbidding combined descriptor/content grants would simplify the adapter
-  but remove an already supported, explicitly authorized combination.
-- A separate descriptor SDK would duplicate transport and custody machinery.
-  Both language SDKs instead expose this role alongside the existing roles.
-
-## Consequences
-
-The file adapter needs native codecs, feed accounting, typed owner intake and
-terminal-response credits for every family. These are additions to transport;
-they do not move disclosure, activation, presentation or work-area authority.
-The current socket remains until equivalent file coverage and client migration
-are established. The proposed byte layouts deliberately remove transfer
-fragment headers, so they require independent vectors rather than renamed
-socket tests.
+The [acceptance decision](notes/decisions/4oapm903-carry-descriptor-families-as-native-shell-file-records.md)
+records implementation and independent-client evidence. The desktop profile
+selects a sole `shell-component` with role `descriptor`; it cannot be mixed
+with independently owned content components. Its own content grant is optional.
 
 ## Scope and identity
-
-Preserve descriptor switching and work-area reservations, tabs, shortcuts,
-reference sheets and the revision-4 launcher. Preserve a combined descriptor
-and content client when Session explicitly grants both. The baseline product
-is Narthex master 50b9014d96f675f515b5e092c071427fb8e34423; the unmerged
-overview branch is outside this contract. SDK APIs and conformance peers remain
-generic. Narthex consumes the C SDK through thin Nim bindings; no second Nim
-protocol implementation is introduced. Both language SDKs receive the role.
 
 Session assigns `role=descriptor` before negotiation. A client cannot acquire
 that role by a capability bit, file name, qid, attach name or body field.
@@ -62,7 +20,7 @@ The new fixed nodes use distinct qid indices 15/16/17; the implementation's
 reserved node span becomes 32. Numeric qid values are not client ABI.
 
 Object kinds: Descriptors=5, Tabs=6, Shortcuts=7. Event kinds 46–53 and
-candidate kinds 273–278 are as listed in the KDL. `Submitted.candidate_kind`
+candidate kinds 273–278 are listed in the KDL. `Submitted.candidate_kind`
 and `ObjectPublished.object_kind` must accept the new declared values; old
 record layouts remain unchanged. No IPC frame or transfer fragment is a file
 body. Tab groups precede a contiguous descriptor array, partitioned in group
@@ -93,7 +51,7 @@ negotiation; a revision number alone does not select an optional family.
 | 10 indicator activation | 6 | Only when requested | Bit 9 |
 | 11 native launcher, 12 persistent catalog | — | Refused for descriptor role | Separate pre-admitted component profiles |
 
-This table follows `shell_transport/negotiation_policy.rs` at `6403c80e9`.
+The table preserves the admitted descriptor role's negotiation policy.
 Do not impose an exact required mask of bits 0 and 1: r1 clients historically
 request only bit 0 and receive both. Content denial preserves refusal reason
 1 for policy denial and 4 for unavailable implementation or registry budget;
@@ -208,9 +166,7 @@ capability is EACCES. Capacity refusal is EAGAIN before changing owner state;
 the established same-ID retry and acknowledgement ordering rules apply.
 
 After Submitted, stale semantic work is answered by its family, rather than
-being treated as malformed bytes. The following owner outcomes are the chosen
-file semantics; places where the socket adapter instead returned a transport
-error must gain explicit regression tests when callers are converted:
+being treated as malformed bytes. The following owner outcomes define semantic refusal after file custody:
 
 | Input | Semantic refusal after custody | Result |
 | --- | --- | --- |
@@ -272,61 +228,3 @@ unchanged. File acknowledgement releases retention only; pin holds protect
 unfetched objects. An unacknowledged Submitted prevents the next transaction
 open. There is no implicit acknowledgement or object-fetch skip.
 
-## Required evidence before retirement
-
-Both SDKs: strict codecs, all family boundaries, malformed and literal vectors,
-metadata readiness without Limits and combined readiness with them, refusal
-of content methods without a grant, object pins/ack holds, partial reads and
-bounded custody. C independently encodes the same contract; the conformance
-peer uses that SDK, not a second ad hoc C protocol stack.
-
-Sophia: typed in/out owners on both paths during migration; no frame encoding
-inside the file adapter; production export tests, reservation-at-commit with
-the independent C SDK peer, complete host proof/serve/bar-proof, loss and
-supersession, bounded journal pressure and quiescence. Literal malformed
-peer writes remain useful controls. Rust using the same SDK as the server
-is not independent encoding evidence.
-
-Then migrate Narthex through the C ABI and gate every current r1–r8 family;
-preserve its policy behavior. Only after that remove --shell-process and its
-default launcher plumbing, descriptor IPC and the compatibility tests. No
-current green content gate substitutes for these descriptor exits.
-
-## Review evidence and acceptance
-
-The layout fragment was parsed with the repository's KDL library and checked
-independently of its disposable drafting script: 17 kind declarations,
-24 bodies/prefixes/rows, contiguous field offsets, exact sizes, unique kinds,
-full-record maxima and transaction/object caps. Mutating a field offset,
-reducing the reference candidate cap to 8192 or duplicating a kind each failed
-the checker. Evidence is in `ipc-retirement/t271-kdl-layout-check.log` and
-`t271-kdl-layout-mutants.log` under the development-evidence directory.
-
-That initial check validated syntax and arithmetic only. Subsequent evidence
-now includes the native C and Rust SDK codecs, the production file export, a
-protected C peer through Session's CPU presentation boundary, all three
-descriptor conformance modes with an independent C SDK peer, and Narthex's thin
-C SDK migration. The [investigation](../investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
-records the exact candidates, negative controls and limits. At `6fdee6049`, descriptor selection is an explicit component role, legacy
-CLI/profile selectors are refused, and production descriptor startup is fixed
-to 9P. The protected C work-area test and the 704-test Session suite pass.
-The independent C production export covers all seventeen kinds; Narthex
-`c49dd92` uses the C SDK through thin bindings and passes its four host modes.
-These results support contract acceptance. SDK publication, residual runtime
-compatibility retirement and the combined gate remain separately tracked.
-
-The capability table was read against `shell_transport/negotiation_policy.rs`;
-the bounds and text rules were compared with the existing packet types and
-socket validators. The descriptor, tabs, reference and launcher owner regressions exercise the
-semantic refusals above through the production export, including supersession,
-credit refusal and presentation boundaries. Task status remains in
-`todo.md`; the full exit is t271, not this document's publication.
-
-Related records:
-
-- [IPC retirement inventory](../investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md)
-  owns the migration's evidence and task mapping.
-- [Shell file contract](../../sophia-shell-files.md) remains authoritative
-  for the implemented export.
-- [9P desktop role plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
-  owns the broader acceptance criteria.
