@@ -11,7 +11,7 @@ fn retired_shell_wire_selection_is_refused() {
 }
 
 #[test]
-fn wm_transport_is_an_explicit_opt_in_with_current_ipc_default() {
+fn wm_transport_defaults_to_files_and_refuses_retired_ipc() {
     use crate::live_session::WmTransportSelection;
     let base = vec![
         "--wm-process=/usr/bin/true".to_owned(),
@@ -19,20 +19,15 @@ fn wm_transport_is_an_explicit_opt_in_with_current_ipc_default() {
     ];
     assert_eq!(
         isolated_session_config(&base).unwrap().wm_transport,
-        WmTransportSelection::CurrentIpc
+        WmTransportSelection::NineP2000L
     );
-    for (flag, expected) in [
-        ("current-ipc", WmTransportSelection::CurrentIpc),
-        ("9p2000.L", WmTransportSelection::NineP2000L),
-    ] {
-        let mut args = base.clone();
-        args.push(format!("--wm-transport={flag}"));
-        assert_eq!(
-            isolated_session_config(&args).unwrap().wm_transport,
-            expected
-        );
-    }
-    for flag in ["auto", "9p", "sophia_wm_v1", ""] {
+    let mut args = base.clone();
+    args.push("--wm-transport=9p2000.L".into());
+    assert_eq!(
+        isolated_session_config(&args).unwrap().wm_transport,
+        WmTransportSelection::NineP2000L
+    );
+    for flag in ["current-ipc", "auto", "9p", "sophia_wm_v1", ""] {
         let mut args = base.clone();
         args.push(format!("--wm-transport={flag}"));
         assert!(
@@ -57,7 +52,7 @@ fn wm_transport_is_an_explicit_opt_in_with_current_ipc_default() {
 fn selected_wm_socket_does_not_change_profile_output_or_checkpoint_grants() {
     use crate::live_session::WmTransportSelection;
     let mut config = isolated_session_config(&["--wm-process=/usr/bin/true".to_owned()]).unwrap();
-    let ipc = public_policy_launch_spec(
+    let default = public_policy_launch_spec(
         &config,
         "/usr/bin/true",
         std::path::Path::new("/tmp/wm-endpoint/wm.sock"),
@@ -78,16 +73,15 @@ fn selected_wm_socket_does_not_change_profile_output_or_checkpoint_grants() {
         Some(std::path::Path::new("/tmp/output-endpoint/output.sock")),
     )
     .unwrap();
-    assert_eq!(ipc.protection_domain, files.protection_domain);
-    assert_eq!(ipc.args, files.args);
-    let mut expected = ipc.environment.clone();
-    assert!(!expected.iter().any(|(key, _)| key == "SOPHIA_WM_9P_SOCKET"));
-    expected
-        .iter_mut()
-        .find(|(key, _)| key == "SOPHIA_WM_SOCKET")
-        .unwrap()
-        .0 = "SOPHIA_WM_9P_SOCKET".into();
-    assert_eq!(files.environment, expected);
+    assert_eq!(default.protection_domain, files.protection_domain);
+    assert_eq!(default.args, files.args);
+    assert_eq!(files.environment, default.environment);
+    assert!(
+        files
+            .environment
+            .iter()
+            .any(|(key, _)| key == "SOPHIA_WM_9P_SOCKET")
+    );
     assert!(
         !files
             .environment

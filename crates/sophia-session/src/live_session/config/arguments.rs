@@ -509,9 +509,8 @@ impl PersistentXtermSessionConfig {
             return Err("--wm-interface=sophia_wm_v1 requires --wm-process".into());
         }
         let wm_transport = match arg_value(args, "--wm-transport").as_deref() {
-            None | Some("current-ipc") => WmTransportSelection::CurrentIpc,
-            Some("9p2000.L") => WmTransportSelection::NineP2000L,
-            Some(other) => return Err(format!("--wm-transport expects current-ipc or 9p2000.L, got {other:?}").into()),
+            None | Some("9p2000.L") => WmTransportSelection::NineP2000L,
+            Some(other) => return Err(format!("--wm-transport expects 9p2000.L; current-ipc is retired, got {other:?}").into()),
         };
         if arg_value(args, "--wm-transport").is_some()
             && (wm_process.is_none() || wm_interface != sophia_config::ExternalWmInterface::SophiaWmV1)

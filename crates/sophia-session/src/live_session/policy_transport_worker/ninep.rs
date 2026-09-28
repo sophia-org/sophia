@@ -112,6 +112,7 @@ const REVOKE_TURNS: usize = 4;
 pub(super) struct NinePReactor<C: PolicyFileCodec> {
     server: Server<WmFiles<C>>,
     stopped: Arc<AtomicBool>,
+    #[cfg(test)]
     cancellation: Arc<NinePCancellation>,
 }
 
@@ -179,6 +180,7 @@ impl PolicyAdapterStop for NinePStop {
 }
 
 impl<C: PolicyFileCodec> NinePReactor<C> {
+    #[cfg(test)]
     pub(super) fn adopt(stream: UnixStream, owner: WmFiles<C>) -> Result<Self, String> {
         Self::adopt_with_cancellation(stream, owner, NinePCancellation::new())
     }
@@ -204,9 +206,11 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
         Ok(Self {
             server,
             stopped: cancellation.stopped.clone(),
+            #[cfg(test)]
             cancellation,
         })
     }
+    #[cfg(test)]
     pub(super) fn stop_handle(&self) -> Box<dyn PolicyAdapterStop> {
         self.cancellation.handle()
     }
@@ -290,6 +294,7 @@ impl<C: PolicyFileCodec> NinePReactor<C> {
 
     /// Caller retains its single in-flight semantic command throughout this
     /// borrowed send. No journal bytes or sequence are spent before capacity.
+    #[cfg(test)]
     pub(super) fn send_event(&mut self, kind: WmFileKind, body: &[u8]) -> Result<(), String> {
         self.send_encoded(kind, |header| {
             encode_wm_file_record(header, body).map_err(|_| Errno::EINVAL)

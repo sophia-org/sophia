@@ -168,6 +168,7 @@ impl<C: PolicyFileCodec> WmFiles<C> {
         self.staging = None;
         self.accepted = None;
     }
+    #[cfg(test)]
     pub(super) fn publish_snapshot(&mut self, bytes: Vec<u8>) -> Result<u64, Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);
@@ -193,6 +194,7 @@ impl<C: PolicyFileCodec> WmFiles<C> {
     pub(super) fn take_delivery(&mut self) -> Option<PolicyAdapterEvent> {
         self.delivery.take()
     }
+    #[cfg(test)]
     pub(super) fn append_event(&mut self, kind: WmFileKind, body: &[u8]) -> Result<u64, Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);

@@ -8,15 +8,15 @@ use std::time::{Duration, Instant};
 const CHILD: &str = "live_session::reload::tests::desktop_launch_reload::policy_transport_selection::selected_transport_child";
 
 #[test]
-fn endpoint_factory_preserves_default_ipc_and_requires_explicit_files() {
+fn endpoint_factory_defaults_to_protected_files() {
     let source = ConfigFixture::new(&[]);
-    assert_eq!(source.config.wm_transport, WmTransportSelection::CurrentIpc);
+    assert_eq!(source.config.wm_transport, WmTransportSelection::NineP2000L);
     let key = sophia_config::DesktopProfileActivationKey::from(&source.config.desktop_profile);
     let directory = PreparedPublicPolicyLaunch::new(&source.config).unwrap();
     let transport =
         bind_public_policy_transport(&directory.directory, Some(key), source.config.wm_transport)
             .unwrap();
-    assert!(matches!(transport, PublicPolicyTransport::CurrentIpc(_)));
+    assert!(matches!(transport, PublicPolicyTransport::Files(_)));
     drop(transport);
     let transport = bind_public_policy_transport(
         &directory.directory,

@@ -10,10 +10,7 @@ use sophia_protocol::{
     PolicySessionOperationRequest, TransactionId,
 };
 mod adapter;
-mod current_ipc;
 mod driver;
-// File transport remains explicitly selected by the Session owner.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) mod ninep;
 use adapter::{PolicyAdapter, PolicyAdapterCommandWake, PolicyAdapterStop, PolicyProfileAdmission};
 use driver::run_policy_transport;

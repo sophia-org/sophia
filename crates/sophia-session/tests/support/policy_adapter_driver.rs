@@ -293,9 +293,6 @@ fn semantic_adapter_preserves_cycle_operation_receipt_and_stop_order() {
     h.cycle();
     h.incoming.send(PolicyAdapterEvent::Dirty(dirty())).unwrap();
     h.incoming
-        .send(PolicyAdapterEvent::ProjectionPending)
-        .unwrap();
-    h.incoming
         .send(PolicyAdapterEvent::Projection(Box::new(proposal())))
         .unwrap();
     assert!(matches!(h.event(), PolicyTransportEvent::Dirty(d) if d == dirty()));
@@ -363,10 +360,7 @@ fn semantic_adapter_preserves_cycle_operation_receipt_and_stop_order() {
             (PolicyReceiveKind::Configuration, true),
             (PolicyReceiveKind::DirtyOnly, true),
             (PolicyReceiveKind::Projection { allow_dirty: true }, true),
-            // Legacy IPC can expose an incomplete transfer marker; a complete
-            // submit permit never admits such a marker as a semantic candidate.
-            (PolicyReceiveKind::Projection { allow_dirty: true }, false),
-            (PolicyReceiveKind::Projection { allow_dirty: false }, true),
+            (PolicyReceiveKind::Projection { allow_dirty: true }, true),
             (PolicyReceiveKind::SessionOperation, true),
         ]
     );
@@ -384,26 +378,30 @@ fn semantic_adapter_refuses_profile_before_negotiated() {
 }
 
 #[test]
-fn semantic_adapter_preserves_transfer_phase_refusals() {
-    for discarded in [false, true] {
+fn semantic_adapter_refuses_control_records_during_projection() {
+    for configuration_record in [false, true] {
         let h = Harness::new(false);
         h.configure();
         h.cycle();
         h.incoming
-            .send(PolicyAdapterEvent::ProjectionPending)
-            .unwrap();
-        h.incoming
-            .send(if discarded {
-                PolicyAdapterEvent::ProjectionDiscarded
+            .send(if configuration_record {
+                PolicyAdapterEvent::Configuration {
+                    transaction: tx(3),
+                    configuration: configuration(),
+                }
             } else {
-                PolicyAdapterEvent::Dirty(dirty())
+                PolicyAdapterEvent::SessionOperation {
+                    transaction: tx(9),
+                    request: PolicySessionOperationRequest {
+                        connection_epoch: 9,
+                        request_id: 8,
+                        operation: 12,
+                        target: None,
+                    },
+                }
             })
             .unwrap();
-        let expected = if discarded {
-            "policy projection transfer was discarded"
-        } else {
-            "policy client sent a control message during projection transfer"
-        };
+        let expected = "policy client sent a control message during projection transfer";
         assert!(matches!(h.event(), PolicyTransportEvent::Failed(e) if e == expected));
         assert_eq!(h.trace(), Trace::Disconnected);
     }
@@ -448,7 +446,7 @@ fn semantic_adapter_shutdown_disconnects_its_blocked_producer() {
 }
 
 #[test]
-fn semantic_adapter_preserves_out_of_phase_decode_error_precedence() {
+fn semantic_adapter_refuses_projection_before_configuration_or_cycle() {
     for before_configuration in [true, false] {
         let h = Harness::new(false);
         if before_configuration {
@@ -457,9 +455,7 @@ fn semantic_adapter_preserves_out_of_phase_decode_error_precedence() {
             h.configure();
         }
         h.incoming
-            .send(PolicyAdapterEvent::MalformedProjection(
-                "malformed body".into(),
-            ))
+            .send(PolicyAdapterEvent::Projection(Box::new(proposal())))
             .unwrap();
         let expected = if before_configuration {
             "policy client did not configure before its first snapshot"
@@ -469,16 +465,6 @@ fn semantic_adapter_preserves_out_of_phase_decode_error_precedence() {
         assert!(matches!(h.event(), PolicyTransportEvent::Failed(error) if error == expected));
         assert_eq!(h.trace(), Trace::Disconnected);
     }
-    let h = Harness::new(false);
-    h.configure();
-    h.cycle();
-    h.incoming
-        .send(PolicyAdapterEvent::MalformedProjection(
-            "malformed body".into(),
-        ))
-        .unwrap();
-    assert!(matches!(h.event(), PolicyTransportEvent::Failed(error) if error == "malformed body"));
-    assert_eq!(h.trace(), Trace::Disconnected);
 }
 
 #[test]

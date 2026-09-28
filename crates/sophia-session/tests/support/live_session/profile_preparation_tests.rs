@@ -320,7 +320,7 @@ fn pregraphics_policy_launch_failure_rolls_back_before_returning() {
     };
 
     assert!(
-        error.contains("AcceptTimedOut"),
+        error == "policy profile admission timed out",
         "unexpected error: {error}"
     );
     assert!(started.elapsed() < Duration::from_secs(8));

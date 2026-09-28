@@ -495,31 +495,40 @@ fn stop_wakes_offer_receive_and_closes_the_adopted_stream() {
 }
 
 #[test]
-fn a_wrong_profile_identity_is_refused_by_the_existing_reducer_and_closes() {
-    let caps = SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION;
-    let (mut startup, mut peer) = pair(true, caps);
-    let thread = std::thread::spawn(move || {
-        let result = startup.admit(admission(), Some(profile()));
-        (result, startup)
-    });
-    negotiate(&mut peer, caps);
-    let bytes = peer.next_event();
-    let command = decode_wm_file_profile_command(&bytes, WmFileKind::ProfilePrepare, caps).unwrap();
-    peer.ack(&bytes);
-    let completion = encode_wm_file_profile_completion(
-        header(WmFileKind::ProfilePrepared, 2),
-        PolicyProfileCompletion {
-            transaction: TransactionId::from_raw(command.transaction.raw() + 1),
-            identity: command.identity,
-            outcome: PolicyProfileOutcome::Accepted,
-        },
-        caps,
-    )
-    .unwrap();
-    let _ = peer.submit(&completion);
-    let (result, startup) = thread.join().unwrap();
-    assert!(result.is_err());
-    assert!(startup.reactor.is_none());
+fn profile_identity_mismatch_or_peer_refusal_closes_admission() {
+    for refused in [false, true] {
+        let caps = SOPHIA_WM_CAPABILITY_PROFILE_ACTIVATION;
+        let (mut startup, mut peer) = pair(true, caps);
+        let thread = std::thread::spawn(move || {
+            let result = startup.admit(admission(), Some(profile()));
+            (result, startup)
+        });
+        negotiate(&mut peer, caps);
+        let bytes = peer.next_event();
+        let command =
+            decode_wm_file_profile_command(&bytes, WmFileKind::ProfilePrepare, caps).unwrap();
+        peer.ack(&bytes);
+        let completion = encode_wm_file_profile_completion(
+            header(WmFileKind::ProfilePrepared, 2),
+            PolicyProfileCompletion {
+                transaction: TransactionId::from_raw(
+                    command.transaction.raw() + u64::from(!refused),
+                ),
+                identity: command.identity,
+                outcome: if refused {
+                    PolicyProfileOutcome::RejectedIdentity
+                } else {
+                    PolicyProfileOutcome::Accepted
+                },
+            },
+            caps,
+        )
+        .unwrap();
+        let _ = peer.submit(&completion);
+        let (result, startup) = thread.join().unwrap();
+        assert!(result.is_err());
+        assert!(startup.reactor.is_none());
+    }
 }
 
 #[test]

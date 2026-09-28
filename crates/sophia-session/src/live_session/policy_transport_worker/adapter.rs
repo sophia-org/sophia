@@ -18,12 +18,7 @@ pub(super) enum PolicyAdapterEvent {
         kind: sophia_runtime::PolicyProfileHandoffKind,
         completion: sophia_protocol::PolicyProfileCompletion,
     },
-    ProjectionPending,
     Projection(Box<PolicyProjectionProposal>),
-    /// Completed bytes failed semantic decoding. The driver still owns phase
-    /// refusal precedence, just as it did before decoding moved to the adapter.
-    MalformedProjection(String),
-    ProjectionDiscarded,
     Configuration {
         transaction: TransactionId,
         configuration: PolicyConfiguration,
@@ -33,7 +28,6 @@ pub(super) enum PolicyAdapterEvent {
         transaction: TransactionId,
         request: PolicySessionOperationRequest,
     },
-    UnexpectedProfileCompletion,
 }
 
 pub(super) trait PolicyAdapter: Send + 'static {
@@ -57,13 +51,12 @@ pub(super) trait PolicyAdapter: Send + 'static {
     ) -> Result<Option<PolicyAdapterEvent>, String>;
     fn send(&mut self, command: &PolicyTransportCommand) -> Result<(), String>;
     /// Optional transport wakeup, never a second phase/settlement owner.
-    /// Existing IPC retains its socket-bound shutdown behavior.
     fn stop_handle(&self) -> Option<Box<dyn PolicyAdapterStop>> {
         None
     }
     /// Opts into socket/readiness-driven idle service. The bell only wakes
     /// the driver; accepted commands remain in its existing bounded queue.
-    /// None preserves current IPC's recv_timeout/try_receive path.
+    /// None uses bounded channel polling for adapters without a wake handle.
     /// Returning Some requires overriding idle_receive with a blocking single
     /// turn. An incomplete opt-in fails closed instead of busy-polling.
     fn command_wake_handle(&self) -> Option<Box<dyn PolicyAdapterCommandWake>> {

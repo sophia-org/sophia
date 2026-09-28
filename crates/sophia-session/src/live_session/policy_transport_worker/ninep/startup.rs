@@ -48,6 +48,7 @@ impl FileStartup {
         }
         self.endpoint.take();
     }
+    #[cfg(test)]
     pub(super) fn adopt(
         stream: UnixStream,
         epoch: u64,

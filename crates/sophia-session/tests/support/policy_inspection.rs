@@ -54,13 +54,10 @@ fn install(fixture: &mut ReloadFixture) {
 }
 
 #[test]
-fn safe_owner_view_and_reported_outcomes_do_not_depend_on_wm_wire() {
+fn safe_owner_view_and_reported_outcomes_use_the_wm_file_wire() {
     // Owner-command evidence with a capture worker, not a real WM settlement
     // or a second reducer. The inspector reaches the real admitted service.
-    for (wire, expected) in [
-        (WmTransportSelection::CurrentIpc, InspectionWire::CurrentIpc),
-        (WmTransportSelection::NineP2000L, InspectionWire::Files),
-    ] {
+    for (wire, expected) in [(WmTransportSelection::NineP2000L, InspectionWire::Files)] {
         let mut fixture = ReloadFixture::new();
         install(&mut fixture);
         let public = fixture.wm.public.as_mut().unwrap();

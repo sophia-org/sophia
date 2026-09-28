@@ -1750,6 +1750,53 @@ Evidence under `development-evidence/ipc-retirement/`:
 These checks extend the full repository gate at `6df3602d8`; they do not
 claim a second full repository run. No installed or running session changed.
 
+### Session WM IPC worker retirement (t269, 2026-09-28)
+
+Following the accepted source-retirement decision, Session now defaults to
+9P2000.L and refuses `--wm-transport=current-ipc`. The socket worker and its
+selection branches are deleted. Restart, profile rollback and inspection use
+the same file endpoint owner as initial startup. Output and administrative
+transports are unchanged. Runtime compatibility libraries and the shell socket
+path are subsequent cuts; this slice does not close t269.
+
+Coverage for the deleted worker tests is retained as follows:
+
+| Retired assertion | Retained file/owner check |
+| --- | --- |
+| Admission before internal Negotiated and Configuration | `supplied_stream_orders_negotiated_before_exact_profile_reducer_exchange`, `full_worker_transports_all_commands_without_owning_their_outcomes` |
+| Rejected profile closes before internal Negotiated | `profile_identity_mismatch_or_peer_refusal_closes_admission` (now both wrong identity and exact client refusal), `semantic_adapter_refuses_profile_before_negotiated` |
+| IPC partial-transfer markers and discarded frames | Retired with the IPC worker. The file export validates complete candidates before semantic delivery; typed out-of-phase Configuration/SessionOperation and premature Projection refusals remain in `policy_adapter_driver` |
+| Protected startup, restart and recovery | `policy_transport_selection`, the independent C SDK `live_control` and `policy_recovery` fixtures |
+
+The pregraphics failure test now expects the file admission timeout rather than
+the retired socket's `AcceptTimedOut`; its deadline, participant rollback and
+directory-removal assertions are unchanged.
+
+Evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-wm-retirement-session-2.log`: all-feature Session tests pass. The first
+  run's timeout-string mismatch is retained in `t269-wm-retirement-session-1.log`.
+- `t269-wm-retirement-clippy-2.log`: strict Session/CLI clippy passes. The first
+  run caught a one-element test loop; its log is retained.
+- `t269-rollback-current-verify.json` and `t269-rollback-previous-verify.json`:
+  niltempus `b21eb20` verifies both installed releases read-only. The explicit
+  retained target is `niltempus-4f498ff25c3a6d89c16f` (Sophia `2d69924a9`), whose
+  activation ledger binds manifest `6c0de096e50eac78739d64c44aada29a832fcab45271c99cd7803419f2f7091d`
+  and SHA256SUMS `1c7740f1cdd30e45848e85f8172c8d147c77270fba922f53773e0439b0c6494b`.
+- `t269-rollback-private-mounts-2.log`: the real installer performs initial and
+  repeat installation, selects a distinct release, rolls back, and preserves
+  the user WM in private `/opt` and display-manager mounts. The first attempt
+  used an artifact path hidden by that private `/opt`; it failed before install
+  and is retained. The rerun binds the same artifact at `/rollback-release`.
+- `t269-rollback-private-tests.log`: selection damage, missing selection,
+  activation-history and release-tamper checks pass separately from that first
+  private-mount fixture failure.
+
+Whole-release rollback remains an explicit subsequent-login operation, never a
+failed-negotiation fallback. No host installation, selection or running session
+was changed by these checks. SDK contract copies must be refreshed before the
+combined repository gate and publication.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
@@ -1772,7 +1819,7 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
 - t268: per-record budgets and a typed outbox in the shell owners (B).
 - t269: flip the WM and shell transport defaults to 9p2000.L, then delete the
   WM and shell IPC paths, codecs, generator, bindings, archive, scripts and
-  gates (B, after t250, t252, t267, t268 and t271). Descriptor production startup
+  gates (B, after t267, t268 and t271, under the accepted retirement decision). Descriptor production startup
   now uses files; the remaining generic socket adapter still needs deletion.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.
@@ -1793,5 +1840,5 @@ compatibility retirement umbrella is t255.
   asks for.
 - [Shell file contract](../../sophia-shell-files.md) records the purge table
   and the rule that shared codecs are relocated, not deleted.
-- [WM file contract](../../sophia-wm-files.md) still states that omission
-  selects current-ipc; that line changes with t269.
+- [WM file contract](../../sophia-wm-files.md) now specifies the file-only
+  Session launch and whole-release rollback.

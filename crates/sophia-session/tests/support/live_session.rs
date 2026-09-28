@@ -161,8 +161,6 @@ mod metadata_shell_tests;
 mod output_proof_tests;
 #[path = "live_session/output_topology_owner_tests.rs"]
 mod output_topology_owner_tests;
-#[path = "live_session/policy_transport_worker_tests.rs"]
-mod policy_transport_worker_tests;
 #[path = "live_session/present_retirement_tests.rs"]
 mod present_retirement_tests;
 #[path = "live_session/presentation_role_tests.rs"]

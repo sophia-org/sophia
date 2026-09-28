@@ -29,6 +29,7 @@ impl NinePPolicyAdapter {
             startup: FileStartup::pending(endpoint, supervisor, epoch, limits, qids)?,
         })
     }
+    #[cfg(test)]
     pub(super) fn supplied(
         stream: UnixStream,
         epoch: u64,

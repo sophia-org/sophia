@@ -192,27 +192,19 @@ pub(super) fn run_policy_transport(
                 }
             }
             PolicyTransportCommand::Cycle { .. } => {
-                let mut projection_started = false;
                 let proposal =
                     loop {
                         match transport.receive_within(
                             PolicyReceivePermit {
-                                kind: PolicyReceiveKind::Projection {
-                                    allow_dirty: !projection_started,
-                                },
+                                kind: PolicyReceiveKind::Projection { allow_dirty: true },
                             },
                             POLICY_CLIENT_RESPONSE_DEADLINE,
                         )? {
-                            PolicyAdapterEvent::ProjectionPending => projection_started = true,
                             PolicyAdapterEvent::Projection(projection) => break projection,
-                            PolicyAdapterEvent::MalformedProjection(error) => return Err(error),
-                            PolicyAdapterEvent::Dirty(request) if !projection_started => {
+                            PolicyAdapterEvent::Dirty(request) => {
                                 events.send(PolicyTransportEvent::Dirty(request)).map_err(
                                     |_| "policy owner event channel disconnected".to_owned(),
                                 )?;
-                            }
-                            PolicyAdapterEvent::ProjectionDiscarded => {
-                                return Err("policy projection transfer was discarded".to_owned());
                             }
                             _ => return Err(
                                 "policy client sent a control message during projection transfer"

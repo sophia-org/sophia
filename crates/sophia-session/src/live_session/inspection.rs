@@ -245,7 +245,6 @@ fn inspection_snapshot(
             0
         },
         wire: match public.wm_transport {
-            WmTransportSelection::CurrentIpc => InspectionWire::CurrentIpc,
             WmTransportSelection::NineP2000L => InspectionWire::Files,
         },
         state: if !available || public.transport_unavailable {

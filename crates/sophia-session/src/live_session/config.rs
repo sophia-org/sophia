@@ -21,16 +21,14 @@ use input_profile::PreparedInputProfile;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum WmTransportSelection {
     #[default]
-    CurrentIpc,
     NineP2000L,
 }
 impl WmTransportSelection {
     const fn wire_name(self) -> &'static str {
-        match self { Self::CurrentIpc => "sophia_wm_v1", Self::NineP2000L => "sophia_wm_fs_v1" }
+        match self { Self::NineP2000L => "sophia_wm_fs_v1" }
     }
     const fn socket_env(self) -> &'static str {
         match self {
-            Self::CurrentIpc => sophia_runtime::SOPHIA_WM_SOCKET_ENV,
             Self::NineP2000L => "SOPHIA_WM_9P_SOCKET",
         }
     }

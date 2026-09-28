@@ -1,22 +1,21 @@
 # WM files over 9P2000.L
 
 Status: implementation contract for the t249 and Hagia h006 development
-candidates; full role acceptance remains open. The existing WM IPC remains
-the default. This document specifies the WM role only;
+candidates; latency qualification remains open. Session uses only the WM file
+transport. This document specifies the WM role only;
 output control still uses its separately admitted existing IPC connection.
 The first checkpoint is a direct Unix socket, not a kernel mount.
 
 ## Explicit Session selection
 
 Session selects the WM transport with
-`--wm-transport=current-ipc|9p2000.L`. Omission selects `current-ipc`; an
+`--wm-transport=9p2000.L`. Omission selects 9P2000.L; `current-ipc` is refused. An
 explicit selection requires a configured WM using the existing
 `sophia_wm_v1` semantic interface. The interface name does not select the wire.
 The profile schema and output-role transport are unchanged.
 
-A protected launch receives only the selected WM socket variable:
-`SOPHIA_WM_SOCKET` for current IPC or `SOPHIA_WM_9P_SOCKET` for files. The
-existing cleared launch environment removes inherited alternatives. The
+A protected launch receives `SOPHIA_WM_9P_SOCKET`. The cleared launch environment
+removes the retired `SOPHIA_WM_SOCKET` and inherited alternatives. The
 output socket, staged policy candidate and checkpoint keep their existing
 grants. The WM must not sniff the protocol or fall back to the other socket;
 ambiguous client selection refuses.
@@ -28,10 +27,12 @@ across those replacements; recreating a socket never resets it. Exhaustion
 refuses allocation. The existing output acceptance pause and supervised-PID
 replacement barrier still precede the replacement worker.
 
-Rollback to current IPC is an explicit subsequent launch selection with its
-compatible WM and profile. A failed file negotiation or profile activation
-does not select another transport. File diagnostics identify
-`sophia_wm_fs_v1`; current-IPC diagnostics retain `sophia_wm_v1`.
+Rollback selects a previously verified complete release with its compatible WM
+and profile for a subsequent login. It does not select an IPC backend in this
+build. A failed file negotiation or profile activation closes the attempt;
+diagnostics identify `sophia_wm_fs_v1`. See the accepted
+[source-retirement decision](notes/decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md).
+The latency budgets and failed qualification campaign remain unchanged.
 
 The Session production entrypoints have focused protected-child checks. The
 independent production Hagia loop, combined output restart and real Session/
@@ -44,7 +45,7 @@ for exact checkpoints and limits.
 Session creates the endpoint for one supervised, protected WM launch. The
 existing admission owner binds the accepted peer and connection epoch before
 the export becomes accessible. There is one WM writer. The endpoint cannot be
-used alongside a current-IPC WM writer or acquire authority from `uname`,
+used alongside another WM writer or acquire authority from `uname`,
 `aname`, a numeric UID, a fid or a qid. An unauthorized second attach refuses;
 cloning the admitted root does not create another role or epoch.
 
