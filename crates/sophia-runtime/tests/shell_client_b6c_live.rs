@@ -408,7 +408,9 @@ fn indicator_activation(generation: u64, event_id: u64) -> ShellIndicatorActivat
 fn maximal_catalog(generation: u64) -> ShellPersistentCatalog {
     let label = format!("{generation}").repeat(128)[..128].to_owned();
     let keywords = "K".repeat(256);
-    let tail = "I".repeat(SOPHIA_SHELL_CATALOG_IDENTITY_MAX_BYTES - "registered:".len());
+    // Keep every identity at the maximum byte length while preserving the
+    // persistent catalog's one-name-per-slot rule.
+    let tail = "I".repeat(SOPHIA_SHELL_CATALOG_IDENTITY_MAX_BYTES - "registered:".len() - 4);
     let entries: Vec<ShellApplicationDescriptor> = (1..=SOPHIA_SHELL_MAX_APPLICATIONS as u16)
         .map(|slot| ShellApplicationDescriptor {
             slot,
@@ -419,7 +421,7 @@ fn maximal_catalog(generation: u64) -> ShellPersistentCatalog {
         .collect();
     let identities = entries
         .iter()
-        .map(|entry| (entry.slot, format!("registered:{tail}")))
+        .map(|entry| (entry.slot, format!("registered:{:04}{tail}", entry.slot)))
         .collect();
     ShellPersistentCatalog {
         catalog: ShellApplicationCatalog {

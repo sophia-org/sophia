@@ -214,6 +214,12 @@ The r8 catalog maximum is 3,014,740 bytes in old framing, and 3,145,876 bytes
 conservative with headers, which fits the 4 MiB cap. The new codec must
 enforce count, row, and header bounds independently.
 
+When a catalog carries persistent identities (`identities_present=1`), each
+entry has one nonempty identity name and those names are distinct by exact
+UTF-8 bytes. Distinct slots cannot name the same persistent application.
+Display labels and keywords do not establish identity and may repeat. A plain
+launcher catalog (`identities_present=0`) carries no identity names.
+
 ### Negotiation is a candidate, not a node
 
 The WM contract negotiates through a submitted candidate. This draft does the

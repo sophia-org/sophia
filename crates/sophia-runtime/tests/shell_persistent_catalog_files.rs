@@ -794,7 +794,8 @@ fn a_stale_catalog_generation_catalog_candidate_is_rejected_once_and_the_connect
 fn maximal_catalog() -> ShellPersistentCatalog {
     let label = "L".repeat(128);
     let keywords = "K".repeat(256);
-    let identity_tail = "I".repeat(SOPHIA_SHELL_CATALOG_IDENTITY_MAX_BYTES - "registered:".len());
+    // Distinct names retain the maximum encoded size on every row.
+    let identity_tail = "I".repeat(SOPHIA_SHELL_CATALOG_IDENTITY_MAX_BYTES - "registered:".len() - 4);
     let entries: Vec<ShellApplicationDescriptor> = (1..=SOPHIA_SHELL_MAX_APPLICATIONS as u16)
         .map(|slot| ShellApplicationDescriptor {
             slot,
@@ -805,7 +806,7 @@ fn maximal_catalog() -> ShellPersistentCatalog {
         .collect();
     let identities = entries
         .iter()
-        .map(|entry| (entry.slot, format!("registered:{identity_tail}")))
+        .map(|entry| (entry.slot, format!("registered:{:04}{identity_tail}", entry.slot)))
         .collect();
     ShellPersistentCatalog {
         catalog: ShellApplicationCatalog {

@@ -560,7 +560,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // descriptor profiles, or with an r8 identity carried on every entry for
     // the dock. `identities_present` names which shape a reader is holding
     // without inspecting every row; when nonzero every entry below carries a
-    // nonempty identity, and when zero none does (no partial catalog). When
+    // nonempty identity, and when zero none does (no partial catalog).
+    // Disclosed identity names are byte-exact and distinct across entries;
+    // distinct slots must not name the same persistent identity. When
     // `entry_count` is 0 this flag carries no meaning: a writer may set it
     // either way and a reader must accept either.
     body-prefix "Catalog" size=32 {
