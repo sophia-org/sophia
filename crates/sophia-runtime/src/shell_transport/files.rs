@@ -34,6 +34,9 @@ pub(super) const ALLOCATION_RESULT_RECORD_BYTES: usize =
     sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES + 168;
 pub(super) const NATIVE_INPUT_RECORD_BYTES: usize =
     sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES + 398;
+/// LauncherRequest is the largest descriptor-family event, including its
+/// domain transaction and file header. Combined base content is smaller.
+pub(super) const DESCRIPTOR_RECORD_BYTES: usize = 352;
 
 /// The journal byte bounds for a role whose largest record is `record`:
 /// 256 of them rounded up to a power of two (at most 1 MiB), with 64 of them,

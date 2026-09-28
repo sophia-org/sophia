@@ -21,6 +21,8 @@ pub(super) struct PendingNegotiation {
     pub(super) refusal: Option<ContentAdmissionRefused>,
     /// Session selected the file wire for this component at startup.
     file: bool,
+    /// Host-selected metadata role. A bar's compatibility bit 0 cannot select it.
+    pub(super) descriptor: bool,
 }
 
 pub(super) enum Stage {
@@ -33,6 +35,28 @@ pub(super) enum Stage {
 }
 
 impl ShellComponentTransport {
+    /// Admits the descriptor file profile explicitly, before accepting a peer.
+    /// Metadata requires no content reservation. Combined content still needs
+    /// the normal policy grant; native-launcher and persistent-catalog stores
+    /// belong to different profiles and cannot be reused for descriptors.
+    pub fn begin_descriptor_file_negotiation(
+        &mut self,
+        epochs: &crate::ContentEpochRegistry,
+        connection_epoch: u64,
+        timeout: Duration,
+        policy: ShellContentAdmissionPolicy,
+    ) -> Result<(), ShellTransportError> {
+        if epochs
+            .profile(self.store_grant)
+            .is_some_and(|profile| profile != crate::ContentStoreProfile::Legacy)
+        {
+            return Err(ShellTransportError::WrongContentGrant);
+        }
+        self.begin_selected_negotiation(epochs, connection_epoch, timeout, policy, true)?;
+        self.negotiation.as_mut().expect("just started").descriptor = true;
+        Ok(())
+    }
+
     /// Start without accepting or contacting a peer, over `sophia_shell_fs_v1`:
     /// the admitted
     /// stream is served as this component's 9P export, and negotiation is
@@ -78,6 +102,7 @@ impl ShellComponentTransport {
             selected: None,
             refusal: None,
             file,
+            descriptor: false,
         });
         Ok(())
     }
@@ -181,7 +206,14 @@ impl ShellComponentTransport {
             else {
                 unreachable!("matched above");
             };
-            let (role, bounds) = super::files::role_bounds(profile);
+            let (role, bounds) = if pending.descriptor {
+                (
+                    "descriptor",
+                    super::files::journal_bounds(super::files::DESCRIPTOR_RECORD_BYTES),
+                )
+            } else {
+                super::files::role_bounds(profile)
+            };
             // The launcher/dock profile discloses `catalog`; the bar's Legacy
             // profile never does, no matter which capabilities it negotiates.
             let catalog_allowed = matches!(

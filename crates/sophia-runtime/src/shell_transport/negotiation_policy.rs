@@ -9,6 +9,15 @@ impl ShellComponentTransport {
         content_policy: ShellContentAdmissionPolicy,
         hello: ShellV1ClientHello,
     ) -> Result<(ShellV1ServerWelcome, Option<ContentLimits>), ShellTransportError> {
+        let maximum_revision = if self
+            .negotiation
+            .as_ref()
+            .is_some_and(|pending| pending.descriptor)
+        {
+            8
+        } else {
+            sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION
+        };
         if epochs.profile(self.store_grant) == Some(crate::ContentStoreProfile::PersistentCatalog) {
             return self.select_catalog_negotiation(connection_epoch, content_policy, hello);
         }
@@ -21,16 +30,14 @@ impl ShellComponentTransport {
         }
         if hello.minimum_revision == 0
             || hello.minimum_revision > hello.maximum_revision
-            || hello.minimum_revision > sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION
+            || hello.minimum_revision > maximum_revision
         {
             return Err(ShellTransportError::UnsupportedRevision);
         }
         if hello.required_capabilities & SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER == 0 {
             return Err(ShellTransportError::MissingCapability);
         }
-        let revision = hello
-            .maximum_revision
-            .min(sophia_protocol::SOPHIA_SHELL_INDICATOR_REVISION);
+        let revision = hello.maximum_revision.min(maximum_revision);
         let capabilities = SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
             | sophia_protocol::SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
             | if revision >= 2 {
