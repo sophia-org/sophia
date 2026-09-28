@@ -60,6 +60,21 @@ current client is the in-repository proof client. t254 retains its t249
 dependency until qualification closes or a separate scope decision changes it.
 Application frontend and broker/portal work remain outside this implementation.
 
+## Source retirement amendment (2026-09-28)
+
+The operator accepted [separate WM/shell source retirement with whole-release
+rollback](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md).
+t269/t270 may finish after equivalent independent 9P coverage, complete code
+gates, exact published identities and verified rollback to an unchanged,
+compatible release. They no longer wait for t250/t252 performance or physical
+qualification. Those tasks remain open, numeric budgets remain unchanged and
+the failed t249 campaign remains refused. The resulting default is experimental.
+The earlier IPC-rollback language below records the earlier milestone; future
+source-retirement rollback uses a whole compatible release, not an IPC selector
+or mixed-wire component substitution in a new build. No installation or live
+session change is authorized by this amendment. Output and administrative
+migration prerequisites are unchanged.
+
 ## Starting evidence, September 26
 
 | Area | Established boundary | Remaining acceptance |
@@ -133,6 +148,11 @@ this successor plan exists. Finish remaining t249 joins and reproducible
 transport measurements, preserving the exact native/simulated distinction.
 
 ### t250 — Qualify the WM daily configuration
+
+The source-retirement amendment above separates t269 from this qualification.
+After retirement, the rollback deliverable is a verified whole release; the
+historical same-binary current-IPC selection remains evidence of the earlier
+milestone and is not a required selector in new 9P-only builds.
 
 After t249, assemble a pinned Sophia/Hagia candidate and explicit 9P launcher or
 package configuration with a documented current-IPC rollback. Installed entries
@@ -249,6 +269,12 @@ Companion repositories allocate their own task IDs; Sophia does not invent
 them here.
 
 ### t252 — Join and accept the shell path
+
+The source-retirement amendment separates compatibility removal from the
+remaining measured and physical acceptance here. Independent lifecycle and
+semantic coverage remains mandatory. Narthex rollback means a compatible
+release or verified 9P component selection after descriptor migration; it does
+not require restoring product IPC code.
 
 **Content host selection (2026-09-27).** The single-shell owner now selects
 9P explicitly with `--shell-transport=9p2000.L`; independent components retain
@@ -439,6 +465,11 @@ This task owns administrative default selection and its separately authorized
 rollout after its own gates.
 
 ### t255 — Finish per-role default and compatibility retirement
+
+For WM and shell, apply the accepted source-retirement amendment above:
+experimental default/source removal may precede final performance qualification,
+with verified whole-release rollback. Output and administrative roles retain
+their own acceptance requirements.
 
 Record the selected transport and exact accepted clients for every desktop
 role. Tasks t250, t252, t253 and t254 own their respective default decisions;

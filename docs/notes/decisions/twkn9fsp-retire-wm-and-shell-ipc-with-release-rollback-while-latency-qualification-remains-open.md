@@ -2,7 +2,7 @@
 id: twkn9fsp
 date: 2026-09-28
 kind: adr
-status: proposed
+status: accepted
 tags: [adr, protocol, compatibility]
 ---
 # Retire WM and shell IPC with release rollback while latency qualification remains open
@@ -23,7 +23,7 @@ without treating ordinary-use reports as latency measurements.
 
 ## Decision
 
-**Proposed, not authorized:** permit t269 to remove core WM and shell IPC once
+Permit t269 to remove core WM and shell IPC once
 its independent 9P coverage, publication and rollback requirements below pass,
 while leaving t249/t250 and any outstanding t252 qualification open.
 
@@ -54,16 +54,15 @@ physical acceptance row, authorize a new installation, or change a running
 desktop. Numeric latency budgets remain unchanged. A later campaign requires
 a declared method and its own evidence.
 
-On acceptance, amend t269's dependency description to distinguish completed
-implementation/coverage from still-open daily-driver qualification. Update the
-t250/t252/t255 plan links and rollback wording together. Until then, the current
-task dependencies and defaults retain their authority.
+The t269 dependency description now distinguishes completed implementation and
+coverage from still-open daily-driver qualification. Defaults change with the
+tested implementation, not with this documentation amendment.
 
 ## Alternatives
 
 - **Keep the current dependency:** retain core IPC until a new declared campaign
-  and the remaining attended/physical checks qualify the migration. This is the
-  current rule; it requires further acceptance work before t269/t270 can close.
+  and the remaining attended/physical checks qualify the migration. This was
+  the previous rule; the operator selected separate source retirement instead.
 - **Treat the earlier live session as qualification:** rejected. Operator
   observations do not supply the missing paired measurements or change the
   recorded failure.
@@ -72,7 +71,7 @@ task dependencies and defaults retain their authority.
 
 ## Consequences
 
-This would unblock the requested WM/shell source purge without misreporting the
+This unblocks the requested WM/shell source purge without misreporting the
 latency verdict. It also makes current builds unable to launch legacy WM/shell
 clients; compatibility would require the documented older release as a whole.
 The documentation must label the default as experimental while qualification
@@ -84,8 +83,11 @@ consumer, or close t272. It also does not implement the broker/portal designs.
 
 ## Acceptance and connections
 
-Acceptance is pending an explicit operator decision. No dependency, threshold
-or runtime default was changed when writing this proposal.
+Accepted by niltempus on 2026-09-28 after the proposed decision was presented
+in full. The operator approved source retirement with verified whole-release
+rollback while latency qualification remains open. This changes the retirement
+prerequisite; it does not change a numeric threshold or itself alter runtime
+defaults. Installation and running-session changes remain separate actions.
 
 - [Daily-driver migration plan](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
   owns the t249 refusal, t250/t252 qualification and t255 retirement policy.

@@ -102,6 +102,12 @@ whole-candidate acceptance remain separate.
 
 ### t249
 
+The [2026-09-28 retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
+allows experimental WM/shell source retirement before this qualification is
+complete. It supersedes only the source/default-retirement dependency below.
+The failed campaign, numeric budgets and remaining acceptance requirements
+remain unchanged; they cannot be reported as passed through that decision.
+
 The [driver-idle investigation](../investigations/87juczar-wm-file-reactor-waits-behind-the-driver-command-channel.md)
 records the first accounted drag smoke, its failed budgets and the bounded
 reactor-servicing correction. The smoke does not satisfy the release gate.
