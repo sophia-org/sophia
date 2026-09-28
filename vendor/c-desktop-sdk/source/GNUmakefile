@@ -2,7 +2,7 @@ PREFIX ?= /usr/local
 LIBDIR ?= $(PREFIX)/lib
 INCLUDEDIR ?= $(PREFIX)/include/sophia-desktop
 BUILD ?= build
-VERSION = 0.1.0-dev
+VERSION = 0.1.0
 WITH_IPC ?= 1
 CC ?= cc
 AR ?= ar
@@ -21,7 +21,7 @@ LIBRARIES += $(BUILD)/libsophia-desktop-ipc.a
 PACKAGES += sophia-desktop-ipc
 endif
 
-.PHONY: all check check-files check-ipc check-spec install clean
+.PHONY: all check check-files check-ipc check-spec check-generator install clean
 all: $(LIBRARIES) $(addprefix $(BUILD)/,$(addsuffix .pc,$(PACKAGES)))
 
 $(BUILD)/src/%.o: src/%.c
@@ -70,6 +70,10 @@ check-ipc: $(addprefix $(BUILD)/ipc-,$(IPC_TESTS))
 
 check-spec:
 	sha256sum --check spec/SHA256SUMS
+# Needs python3; not part of check because Python is not a build dependency.
+check-generator:
+	python3 -B tools/generate_wm_rows.py --check
+	cd tools && python3 -B test_generate_wm_rows.py
 check: check-spec check-files
 ifeq ($(WITH_IPC),1)
 check: check-ipc

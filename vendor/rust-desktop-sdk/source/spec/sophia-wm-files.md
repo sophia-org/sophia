@@ -78,9 +78,18 @@ cannot activate a profile.
 API-1 Limits publishes fixed file custody bounds. Role maxima remain the
 compile-time record contract: 16 outputs, 1024 surfaces/placements and 256
 actions or presentation bindings. The remaining per-kind maxima and row layouts
-are the shared records in [the WM schema](../protocol/sophia-wm-v1.kdl), enforced
+are the `row-layouts` in [the WM file schema](../protocol/sophia-wm-files-v1.kdl), enforced
 by the neutral `policy_record_layout` owner and `POLICY_MAX_*` constants. Limits
 does not renegotiate those maxima or change active connection bounds.
+
+The file schema owns these complete row layouts, their extension capability
+gates and their scalar constants. Ordinary row disclosure and additional
+capability dependencies remain enforced by the typed file validators described
+below; the row declarations do not replace those checks.
+The generated `wm_rows` codec has no socket framing
+dependency. While the frozen socket adapter remains, generation checks that
+its historical rows agree with this contract; the socket schema does not
+define the file codec's rows.
 
 Revocation invalidates every operation through retained fids immediately.
 Clunk and disconnect still release their local resources. Reconnect creates a

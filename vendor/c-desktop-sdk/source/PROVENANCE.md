@@ -54,10 +54,29 @@ The WM file layer uses these additional unmodified contract inputs from Sophia
 - `protocol/golden/sophia-wm-v1.records` → `spec/golden/sophia-wm-v1.records`
 - `docs/sophia-wm-api.md` → `spec/sophia-wm-api.md`
 
-The fixed rows in the older WM schema are neutral values also used by the file
-contract. Importing those rows does not import its socket framing into the file
-library. The row corpus tests those values independently of the file encoder.
 The WM file KDL, rows, corpus and WM file lifecycle document are byte-identical
-between Sophia `9fcaec782` and this revision. The existing lifecycle copy retains
-its earlier provenance above. These pinned documents still describe transitional
-IPC support in Sophia; they do not weaken this SDK's complete 9P migration target.
+between Sophia `9fcaec782` and this revision. These pinned documents still
+describe transitional IPC support in Sophia; they do not weaken this SDK's
+complete 9P migration target.
+
+## WM file row layouts
+
+`spec/sophia-wm-files-v1.kdl` is copied unmodified from Sophia
+`264080faeeabb1df69765a1c3cb26eb1bd30d265` (signed), which moves the 8 ordinary
+and 14 extension fixed row layouts, the extension capability gates and scalar
+constants into the file contract's `row-layouts` block and spells its booleans
+`#true`. `spec/sophia-wm-files.md` is copied unmodified from the later signed
+Sophia `4a03927421d13a9084295c5ace62c6d9de81d381`, which only narrows that
+document's claim: the schema owns extension gates, while ordinary row
+disclosure and additional capability dependencies stay in the typed file
+validators. The KDL is identical at both commits. The copies at `264080fae`'s
+parent were byte-identical to the previous pins, so these two files replace the
+`de776c68a` and `e9750572` copies above; no other contract input changes.
+Widths, kinds, maxima and values are unchanged.
+
+`tools/generate_wm_rows.py` now takes rows only from that block. The generated
+`src/sophia_wm_records.h` and `src/wm_files/rows.c` are byte-identical to the
+previous output except for the first comment line naming the source. The
+socket schema stays pinned while the compatibility library remains; the
+generator refuses any drift between its rows and the file rows, but it no
+longer defines the file codec. The golden row corpus still tests the row codecs.

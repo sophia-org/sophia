@@ -104,7 +104,9 @@ identity/EOF/pin release, the full retained journal and local deadlines.
 
 The peer supplies outcomes and uses the same WM encoder; this is not an
 independent encoder or a production-export proof. Literal codec vectors and the
-pinned row corpus are separate tests. The WM production-export conformance gate,
-Hagia's thin bindings and product tests remain required before advertising
-`wm_files` support. No physical rendering, profile activation or live desktop
-claim follows from these unit tests.
+pinned row corpus are separate tests. The production-export proof is Sophia's
+generic C peer against the real WM file export (Sophia `c4e17899e`, bound to
+this session at `b5be29db0`). Hagia's thin bindings and 449 product tests use it
+(Hagia `b3d8496`). Together those gates support advertising `wm_files`.
+No physical rendering, profile activation or live desktop claim follows from
+these unit tests.

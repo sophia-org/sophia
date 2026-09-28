@@ -1,13 +1,23 @@
-tree 04c3cc178d2bc0c8688b71003791a9c60d46da9a
-parent 93bdf3c3b47c837af79023bec482760e1f1ceb80
-author Mason Green <mason@greenm01.net> 1790546557 -0400
-committer Mason Green <mason@greenm01.net> 1790546557 -0400
+tree 6a3dc2c1a4cffe1bdb6200b22a2ebd35c3e50fbf
+parent fb8a0549b2d819f09bb6102a69cc82940f8834d7
+author Mason Green <mason@greenm01.net> 1790566098 -0400
+committer Mason Green <mason@greenm01.net> 1790566098 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarmSfQAKCRBXGEu2KoAA
- YlFtAQDHvXfvMWxCdsP8Ok0jUVgRXtzO5vEK2d5g/NQ6l3oRxwEA1dw2EE58kOtq
- zXp4U5jrkmstc+OP4bQQ+W3H+KEq+gE=
- =8a53
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarne0gAKCRBXGEu2KoAA
+ YidsAPsG9eZSzNE/wbqAKZ5ZYBmV3k70JizTAR9ndfgvZbNswwEArglgPNEPxKUJ
+ 1i6vkwHrdB4GE3vNc+9AGwicV6qk9QE=
+ =bI5I
  -----END PGP SIGNATURE-----
 
-Wake WM polling after staging local session work
+Narrow the WM lifecycle reference to extension capability gates
+
+Copy docs/sophia-wm-files.md unmodified from signed Sophia
+4a03927421d13a9084295c5ace62c6d9de81d381. It now says the file schema owns the
+row layouts, extension capability gates and scalar constants, while ordinary
+row disclosure and additional capability dependencies stay in the typed file
+validators. The row KDL stays pinned at 264080fae; it is identical at both
+commits. No source, generator or generated file changes.
+
+Validation: sha256sum --check spec/SHA256SUMS; the copy equals the Sophia
+object. Earlier binary gates still apply because no build input changed.

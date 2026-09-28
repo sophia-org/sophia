@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "sdk": "sophia-desktop-sdk-c",
-  "version": "0.1.0-dev",
-  "release": false,
+  "version": "0.1.0",
+  "release": true,
   "dialect": "9P2000.L",
   "shell_file_api": 1,
   "shell_file_profiles": {
@@ -11,7 +11,8 @@
     "persistent_catalog": { "revision": 8, "required_capabilities": "0x11a2" }
   },
   "ipc_compatibility": "optional",
-  "wm_files": false,
+  "wm_files": true,
+  "wm_file_api": 1,
   "output_files": false,
   "admin_files": false,
   "tested_platforms": ["linux"],

@@ -15,7 +15,7 @@ merge). Later changes are made here first; Sophia vendors a pinned snapshot.
 | `spec/sophia-shell-files-v1.kdl` | `protocol/sophia-shell-files-v1.kdl` |
 | `spec/sophia-shell-v1.kdl` | `protocol/sophia-shell-v1.kdl` |
 | `spec/sophia-shell-files.md` | `docs/sophia-shell-files.md` (the normative shell file contract) |
-| `spec/sophia-wm-files.md` | `docs/sophia-wm-files.md` (the custody and retry rules the shell contract adopts) |
+| `spec/sophia-wm-files.md` | `docs/sophia-wm-files.md` at `4a03927421d13a9084295c5ace62c6d9de81d381` (the custody and retry rules the shell contract adopts) |
 | `spec/sophia-9p-profile.md` | `docs/sophia-9p-profile.md` |
 | `spec/references/diod-9p2000L-protocol.md` | `docs/references/diod-9p2000L-protocol.md` (GPL; reference only, see its notice) |
 | `spec/golden/sophia-shell-*.frames` | `protocol/golden/` (content, content-malformed, catalog-actions, indicators, launcher, v1, v1-malformed) |
@@ -23,3 +23,11 @@ merge). Later changes are made here first; Sophia vendors a pinned snapshot.
 Edits made on extraction: crate paths, crate roots and manifests, doc links
 that named server modules, the socket wire behind `ipc-compat`, and the KDL
 path in the conformance tests.
+
+`spec/sophia-wm-files.md` was refreshed unmodified from Sophia
+`4a03927421d13a9084295c5ace62c6d9de81d381` (signed). Since the earlier pin, the
+document points the WM row layouts at the file schema's `row-layouts` block
+(`264080fae`), says the socket schema no longer defines them, and says the
+schema owns only extension capability gates, with ordinary row disclosure left
+to the typed file validators. The custody and retry rules this SDK adopts are
+unchanged. This SDK has no WM client and copies no WM schema.
