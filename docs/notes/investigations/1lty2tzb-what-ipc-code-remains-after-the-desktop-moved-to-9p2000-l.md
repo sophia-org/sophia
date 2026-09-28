@@ -379,6 +379,76 @@ the separate retirement tasks. No installed or running component changed.
 The gate hides devices and has no real archive corpus, so it claims neither
 hardware acceptance nor re-verification of operator archives.
 
+### Content hosts and combined owner gate (t265/t266/t268, 2026-09-28)
+
+Candidate `bf9ba4093f2db596392ae4c3f3c4d7c42d4e8405` passes the full
+`cargo xtask check`: 470 test-result groups, 6,515 passed, zero failed and
+62 ignored. Strict clippy, SDK snapshots, layout and tool verifiers also
+pass; the terminal exit is zero. The log is
+`ipc-retirement/t265-t266-t268-combined-full-settlement.log` in development
+evidence. The runner is offline, device-hidden, with private targets, no
+display or session sockets, and a read-only public signing keyring.
+
+The content conformance host and `shell-gpu-content-proof` now serve only
+9P2000.L. Their CLI rejects `current-ipc` and the retired socket environment
+variable. The content portion of `check_shell_protocol.sh` builds the
+independent C SDK peer without its IPC library and runs it against the real
+export. It proves allocation, upload, candidate, renderer refusal, retirement
+and release; malformed-record controls prove no owner delivery or custody on
+refusal. The backend popout tests also have file twins covering stale parent
+receipts, anchoring, input acknowledgement, invalidation and retirement. The
+proof-loop tests run without a GPU and explicitly report
+`native_presentation=false`. This satisfies t266's host and wire migration;
+it does not claim GPU execution or a full Narthex protocol-family run. The
+descriptor portion of that script remains part of t271.
+
+The migrated protocol tests also pass with `pub mod ipc` and its re-export
+hidden: 25 selected binaries, 163 tests. The log is
+`ipc-retirement/t265-neutral-protocol-noipc-bf9ba4093-2.log`. SDK compatibility
+dev-dependencies still build in that experiment; this proves independence
+of those test bodies, not deletion of the dependency graph. The preceding
+probe could not execute rustc inside its nested sandbox. Its failed log is
+retained; the passing run uses the existing single sandbox with a read-only
+source overlay.
+
+Shell output ownership now uses typed records and native body charges.
+Socket encoding lives in the socket adapter. Settlement includes accepted
+file input, partially consumed candidates and socket publications waiting
+outside the FIFO; accounting counts the latter once without charging
+admission twice. The settlement follow-up `fb987d9c5` has seven assertion-killed
+mutants and 1,431 focused tests. Evidence is in
+`ipc-removal-inventory/t268-settlement-followup.md` and `t268-logs/`.
+
+The vendored SDKs are C `1526a30bec4dacb19e7e285f3c1ada0704472fdc` and
+Rust `f92902e434f347d3d0dab1ce50b2c85a0cee9414`, both published before this
+checkpoint. Native uploads use `max_chunk_bytes` directly; existing Limits
+validation and wire layout remain unchanged. The removed frame-derived
+minimum was equal on every admitted Limits, so restoring it is not a failing
+mutation. SDK validation now also enforces welcome bounds and distinct
+persistent catalog identities. Maximal-catalog fixtures were corrected to
+use distinct equal-length identities; their size and acknowledgement
+assertions remain unchanged. The initial combined test failure and the
+17-test export retest are retained in development evidence.
+
+This checkpoint does not close t265 or t268. Descriptor families still need
+file records. A newly confirmed Rust SDK defect validates ResourceBegin's
+chunk count against prototype Limits rather than the negotiated grant;
+reduced-chunk upload tests and a fix are being developed separately. The
+socket ordering counter's overflow and optional EINTR retry also remain
+reported. No installed or running component changed, no hardware acceptance
+was run, and no operator archive corpus was available to re-verify.
+
+### Broker and portal survey correction (t273, 2026-09-28)
+
+The production statement in section 8 applies to the metadata broker only.
+The portal socket server and the X clipboard coordinator are exercised by
+tests; production does not bind a portal endpoint or admit multiple X
+namespaces. Broker and portal file-contract drafts are under review, with
+separate admission and no new authority inferred from a path or attach.
+They are not implemented exports. Existing wire values and implemented
+operations must be retained; absent portal executors must not be described
+as live capabilities.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
