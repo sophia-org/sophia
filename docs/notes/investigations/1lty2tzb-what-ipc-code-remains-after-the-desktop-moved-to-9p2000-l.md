@@ -650,6 +650,39 @@ launcher owner routing, independent C SDK peer and descriptor client migration
 remain required. The proposal and SDK candidate remain unpublished; descriptor
 IPC has not been removed.
 
+### Selected snapshot custody (t271, 2026-09-28)
+
+Sophia candidate `7401f8115` records each file export's encoded snapshot
+ceiling when negotiation selects its feeds: two copies of each disclosed
+feed's cap plus one shared 4 MiB build scratch. It derives the union from the
+same root vocabulary used for lookup, including `outputs` on a combined
+descriptor/content connection and `indicators` only when selected. The
+content registry's existing storage reservation remains separately accounted.
+This ceiling is a per-component protocol bound; it does not preallocate heap
+memory or establish a process-wide RSS limit.
+
+The export observes pinned objects through weak references while open fids
+retain ownership. Accounting counts a current object shared with its pin once,
+and an older pin plus a replacement separately. Replacing the unpinned current
+object releases that predecessor; closing the old fid releases its pin. Both
+snapshot fields become zero after transport disconnect, and quiescence now
+includes them. Publication refuses every undisclosed feed before decoding or
+allocating a replacement, including a bar's unselected catalog, and checks
+the whole encoded cap before creating the new buffer.
+
+The final focused gate passes 89 tests, strict runtime clippy, layout,
+formatting and diff checks. Fourteen additional launcher, dock, indicator,
+C-role, socket-publication and output-custody controls pass. Logs are
+`ipc-retirement/t271-descriptor-snapshots-{final,roles}.log`. Compiled mutations
+omitting indicator capacity and old-pin retention fail the expected assertions
+(`t271-descriptor-snapshots-mutant-{indicators,pin}.log`). The initial invocation
+used the nonexistent test target `shell_files_transport` and stopped before
+building; its log is retained. The corrected target is `shell_file_transport`.
+
+The typed tabs/reference/launcher owner paths, production Session selector,
+independent C peer and descriptor client migration remain open. No descriptor
+IPC was removed and neither candidate branch was published.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
