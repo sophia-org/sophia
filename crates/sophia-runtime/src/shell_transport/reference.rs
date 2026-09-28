@@ -34,10 +34,11 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::MissingCapability);
         }
         if !self.file_descriptor() {
-            for frame in encode_shell_shortcut_catalog(transaction, catalog)? {
-                self.send_async(epochs, frame)?;
-            }
-            return Ok(());
+            return self.send_socket_descriptor(
+                epochs,
+                transaction,
+                ShellDescriptorRecord::Shortcuts(catalog.clone()),
+            );
         }
         if self.reference_state.request.is_some() || self.reference_state.pending.is_some() {
             return Err(ShellTransportError::WrongCandidate);
@@ -63,9 +64,10 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::MissingCapability);
         }
         if !self.file_descriptor() {
-            return self.send_async(
+            return self.send_socket_descriptor(
                 epochs,
-                encode_shell_reference_request(transaction, request)?,
+                transaction,
+                ShellDescriptorRecord::ReferenceRequest(request),
             );
         }
         if self.reference_state.catalog != Some(request.catalog_generation)
@@ -108,16 +110,9 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<ShellReferenceCandidateEvent>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self
-                .poll_kind(epochs, IpcMessageKind::ShellReferenceCandidate)?
-                .map(|frame| {
-                    decode_shell_reference_candidate(&frame)
-                        .map(|(tx, candidate)| {
-                            ShellReferenceCandidateEvent::Candidate(tx, candidate)
-                        })
-                        .map_err(Into::into)
-                })
-                .transpose();
+            return Ok(self
+                .poll_socket_reference_candidate(epochs)?
+                .map(|(tx, candidate)| ShellReferenceCandidateEvent::Candidate(tx, candidate)));
         }
         self.poll_io(epochs)?;
         let Some(value) = self
@@ -200,9 +195,10 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_async(
+            return self.send_socket_descriptor(
                 epochs,
-                encode_shell_reference_outcome(transaction, outcome)?,
+                transaction,
+                ShellDescriptorRecord::ReferenceOutcome(outcome),
             );
         }
         let (tx, candidate, prepared) = self

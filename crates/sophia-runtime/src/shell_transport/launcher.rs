@@ -74,7 +74,11 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::ActivationQueueSaturated);
         }
         if !self.file_descriptor() {
-            return self.send_async(epochs, encode_shell_launcher_request(transaction, request)?);
+            return self.send_socket_descriptor(
+                epochs,
+                transaction,
+                ShellDescriptorRecord::LauncherRequest(request.clone()),
+            );
         }
         if self
             .launcher_state
@@ -121,16 +125,9 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<ShellLauncherCandidateEvent>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self
-                .poll_kind(epochs, IpcMessageKind::ShellLauncherCandidate)?
-                .map(|frame| {
-                    decode_shell_launcher_candidate(&frame)
-                        .map(|(tx, candidate)| {
-                            ShellLauncherCandidateEvent::Candidate(tx, candidate)
-                        })
-                        .map_err(Into::into)
-                })
-                .transpose();
+            return Ok(self
+                .poll_socket_launcher_candidate(epochs)?
+                .map(|(tx, candidate)| ShellLauncherCandidateEvent::Candidate(tx, candidate)));
         }
         self.poll_io(epochs)?;
         let Some(value) = self
@@ -213,7 +210,11 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_async(epochs, encode_shell_launcher_outcome(transaction, outcome)?);
+            return self.send_socket_descriptor(
+                epochs,
+                transaction,
+                ShellDescriptorRecord::LauncherOutcome(outcome),
+            );
         }
         let (tx, candidate, prepared) = self
             .launcher_state
@@ -266,9 +267,10 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(activation.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_async(
+            return self.send_socket_descriptor(
                 epochs,
-                encode_shell_launcher_activation(transaction, activation)?,
+                transaction,
+                ShellDescriptorRecord::LauncherActivation(activation),
             );
         }
         let valid = self
@@ -310,10 +312,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellLauncherActivationAck)>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self
-                .poll_kind(epochs, IpcMessageKind::ShellLauncherActivationAck)?
-                .map(|frame| decode_shell_launcher_activation_ack(&frame).map_err(Into::into))
-                .transpose();
+            return self.poll_socket_launcher_ack(epochs);
         }
         self.poll_io(epochs)?;
         while let Some(value) = self
@@ -351,7 +350,11 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.activation.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_async(epochs, encode_shell_launch_outcome(transaction, outcome)?);
+            return self.send_socket_descriptor(
+                epochs,
+                transaction,
+                ShellDescriptorRecord::LaunchOutcome(outcome),
+            );
         }
         let valid = self
             .launcher_state

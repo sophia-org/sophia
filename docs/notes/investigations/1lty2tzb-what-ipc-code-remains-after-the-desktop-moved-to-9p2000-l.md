@@ -1347,6 +1347,24 @@ checks now bind the descriptor rules document and full KDL, removing the ADR
 drift identified above. The full repository gate is being rerun against those
 snapshots; no full-gate, publication or task-completion claim is made here.
 
+The first full rerun reached the runtime tests and caught a boundary regression:
+descriptor, tab, reference and launcher owners still named socket codecs. The
+existing `shell_owner_wire_neutrality` check failed without being changed.
+Those codecs now sit behind typed calls in `socket/descriptor_records.rs`.
+Owner presentation state and file custody are unchanged. The guard also names
+the legacy codecs whose names lack a `_frame` suffix, closing that blind spot.
+The focused runtime gate passes 42 tests across both wires, including the
+independent C descriptor exchange and the original socket lifecycle tests.
+Logs: `descriptor-contract-full-check-1.log` (failed boundary check) and
+`descriptor-adapter-focused-3.log` (pass). Two earlier focused invocations
+failed before tests: a support module was named as a test binary, then the new
+adapter imported a type from the wrong module. Both logs are retained.
+
+Narthex `dc34720` now pins the accepted C SDK. Its 20 local checks and all four
+protected 9P host modes pass again, with the same development-build limits.
+Evidence: `narthex-descriptor-9p/accepted-contract-{local,build,conformance}.log`.
+The full Sophia gate is rerunning after the adapter correction.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

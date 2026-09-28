@@ -5,9 +5,7 @@ use super::outbound::OutboundRecord;
 use super::*;
 use sophia_protocol::shell_files::*;
 use sophia_protocol::{
-    IpcMessageKind, ShellTabCandidate, ShellTabSnapshot, ShellV1CandidateOutcome,
-    ShellV1CandidateOutcomeKind, decode_shell_tab_candidate, encode_shell_tab_snapshot,
-    encode_shell_v1_candidate_outcome_frame,
+    ShellTabCandidate, ShellTabSnapshot, ShellV1CandidateOutcome, ShellV1CandidateOutcomeKind,
 };
 
 impl ShellComponentTransport {
@@ -19,9 +17,10 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(activation.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_async(
+            return self.send_socket_descriptor(
                 epochs,
-                sophia_protocol::encode_shell_v1_activation_frame(transaction, activation)?,
+                transaction,
+                ShellDescriptorRecord::DescriptorActivation(activation),
             );
         }
         if self.tab_state.presented_candidate
@@ -49,14 +48,7 @@ impl ShellComponentTransport {
         transaction: TransactionId,
     ) -> Result<Option<sophia_protocol::ShellV1ActivationAck>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self
-                .poll_transaction(epochs, IpcMessageKind::ShellV1ActivationAck, transaction)?
-                .map(|frame| {
-                    sophia_protocol::decode_shell_v1_activation_ack_frame(&frame)
-                        .map(|(_, ack)| ack)
-                        .map_err(Into::into)
-                })
-                .transpose();
+            return self.poll_socket_descriptor_ack(epochs, transaction);
         }
         let index = self
             .tab_state
@@ -86,10 +78,11 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::MissingCapability);
         }
         if !self.file_descriptor() {
-            for frame in encode_shell_tab_snapshot(transaction, snapshot)? {
-                self.send_async(epochs, frame)?;
-            }
-            return Ok(());
+            return self.send_socket_descriptor(
+                epochs,
+                transaction,
+                ShellDescriptorRecord::Tabs(snapshot.clone()),
+            );
         }
         if self.tab_state.pending_candidate.is_some() {
             return Err(ShellTransportError::WrongCandidate);
@@ -123,10 +116,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellTabCandidate)>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self
-                .poll_kind(epochs, IpcMessageKind::ShellTabsCandidate)?
-                .map(|frame| decode_shell_tab_candidate(&frame).map_err(Into::into))
-                .transpose();
+            return self.poll_socket_tabs_candidate(epochs);
         }
         self.poll_io(epochs)?;
         let Some(value) = self
@@ -210,9 +200,10 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_async(
+            return self.send_socket_descriptor(
                 epochs,
-                encode_shell_v1_candidate_outcome_frame(transaction, outcome)?,
+                transaction,
+                ShellDescriptorRecord::DescriptorOutcome(outcome),
             );
         }
         let mut pending = self

@@ -14,6 +14,18 @@ const SOCKET_ONLY: &[&str] = &[
     "_frame(",
     "max_frame_payload",
     "max_input_queue_bytes",
+    "encode_shell_tab_snapshot(",
+    "decode_shell_tab_candidate(",
+    "encode_shell_shortcut_catalog(",
+    "encode_shell_reference_request(",
+    "decode_shell_reference_candidate(",
+    "encode_shell_reference_outcome(",
+    "encode_shell_launcher_request(",
+    "decode_shell_launcher_candidate(",
+    "encode_shell_launcher_outcome(",
+    "encode_shell_launcher_activation(",
+    "decode_shell_launcher_activation_ack(",
+    "encode_shell_launch_outcome(",
 ];
 
 fn sources(directory: &Path, found: &mut Vec<PathBuf>) {

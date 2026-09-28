@@ -3,12 +3,11 @@
 //! until the socket profile is retired.
 use super::descriptor_state::{DescriptorState, PendingShellCandidate};
 use super::{ShellComponentTransport, ShellTransportError};
+use sophia_protocol::shell_files::ShellDescriptorRecord;
 use sophia_protocol::{
-    IpcMessageKind, SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS, ShellV1Activation, ShellV1ActivationAck,
+    SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS, ShellV1Activation, ShellV1ActivationAck,
     ShellV1Candidate, ShellV1CandidateOutcome, ShellV1CandidateOutcomeKind,
-    ShellV1DescriptorSnapshot, TransactionId, decode_shell_v1_activation_ack_frame,
-    decode_shell_v1_candidate_frame, encode_shell_v1_activation_frame,
-    encode_shell_v1_candidate_outcome_frame, encode_shell_v1_descriptor_snapshot_frame,
+    ShellV1DescriptorSnapshot, TransactionId,
 };
 use std::time::Duration;
 const DESCRIPTOR_TIMEOUT: Duration = Duration::from_secs(5);
@@ -59,9 +58,7 @@ impl ShellComponentTransport {
         if self.file_descriptor() {
             return self.begin_file_descriptor_request(epochs, transaction, snapshot);
         }
-        let frame = encode_shell_v1_descriptor_snapshot_frame(transaction, snapshot)?;
-        self.descriptor_mut()?.requested_candidate = Some((transaction, snapshot.clone()));
-        self.send_async(epochs, frame)
+        self.begin_socket_descriptor_request(epochs, transaction, snapshot)
     }
 
     pub fn poll_candidate(
@@ -77,11 +74,11 @@ impl ShellComponentTransport {
         else {
             return Ok(None);
         };
-        let Some(frame) = self.poll_kind(epochs, IpcMessageKind::ShellV1Candidate)? else {
+        let Some((response_transaction, candidate)) =
+            self.poll_socket_descriptor_candidate(epochs)?
+        else {
             return Ok(None);
         };
-        self.descriptor_mut()?.requested_candidate = None;
-        let (response_transaction, candidate) = decode_shell_v1_candidate_frame(&frame)?;
         if response_transaction != transaction {
             return Err(ShellTransportError::WrongTransaction);
         }
@@ -139,8 +136,11 @@ impl ShellComponentTransport {
                 self.descriptor_state.response_credits -= 1;
             }
         } else {
-            let frame = encode_shell_v1_candidate_outcome_frame(transaction, outcome)?;
-            self.send_async(epochs, frame)?;
+            self.send_socket_descriptor(
+                epochs,
+                transaction,
+                ShellDescriptorRecord::DescriptorOutcome(outcome),
+            )?;
         }
         let descriptor = self.descriptor_mut()?;
         match outcome.kind {
@@ -192,8 +192,11 @@ impl ShellComponentTransport {
         if self.file_descriptor() {
             self.file_descriptor_activation(epochs, transaction, activation)?;
         } else {
-            let frame = encode_shell_v1_activation_frame(transaction, activation)?;
-            self.send_async(epochs, frame)?;
+            self.send_socket_descriptor(
+                epochs,
+                transaction,
+                ShellDescriptorRecord::DescriptorActivation(activation),
+            )?;
         }
         self.descriptor_mut()?
             .pending_activations
@@ -232,15 +235,9 @@ impl ShellComponentTransport {
         else {
             return Ok(None);
         };
-        let Some(frame) = self.poll_transaction(
-            epochs,
-            IpcMessageKind::ShellV1ActivationAck,
-            expected_transaction,
-        )?
-        else {
+        let Some(ack) = self.poll_socket_descriptor_ack(epochs, expected_transaction)? else {
             return Ok(None);
         };
-        let (_, ack) = decode_shell_v1_activation_ack_frame(&frame)?;
         self.require_epoch(ack.connection_epoch)?;
         if ack.activation != expected_activation {
             return Err(ShellTransportError::WrongActivation);

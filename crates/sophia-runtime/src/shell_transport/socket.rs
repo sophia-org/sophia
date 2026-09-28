@@ -26,6 +26,7 @@ use super::outbox::ShellOutbox;
 
 mod client;
 pub(super) mod descriptor;
+mod descriptor_records;
 mod inbound;
 pub(super) mod negotiation;
 
