@@ -104,8 +104,6 @@ struct PersistentXtermSessionConfig {
     wm_process_args: Vec<String>,
     wm_process_executable_grants: Vec<std::path::PathBuf>,
     shell_process: Option<String>,
-    shell_transport: sophia_config::ShellTransportSelection,
-    shell_file_profile: sophia_config::ShellFileProfile,
     /// Resolved provider capability shared by startup and launch-only reloads.
     shell_shortcuts_enabled: bool,
     shell_config: Option<std::path::PathBuf>,

@@ -8,7 +8,7 @@ use sophia_backend_live::{
     LiveProductionAuthorityBatch, LiveProductionCpuScene, LiveProductionCursorPresentation,
     LiveProductionCycleRequest, LiveProductionVisualRuntime,
 };
-use sophia_config::{ShellFileProfile, ShellGpuMode, ShellTransportSelection};
+use sophia_config::ShellGpuMode;
 use sophia_engine::{DescriptorOverlayProjection, HeadlessOutput, reduce_output_work_areas};
 use sophia_protocol::Rect;
 
@@ -121,16 +121,12 @@ fn protected_c_descriptor_work_area_changes_only_after_matching_presentation() {
         "--no-input".into(),
     ])
     .unwrap();
-    assert_eq!(config.shell_transport, ShellTransportSelection::NineP2000L);
-    assert_eq!(config.shell_file_profile, ShellFileProfile::Descriptor);
     assert_eq!(config.shell_gpu_mode, ShellGpuMode::Denied);
     let (content_owner, directory) =
         crate::live_session::component_lifecycle::prepare(&config, None).unwrap();
     assert!(content_owner.is_none() && directory.is_none());
     let mut shell = LiveMetadataShell::start(
         config.shell_process.as_deref().unwrap(),
-        config.shell_transport,
-        config.shell_file_profile,
         config.shell_panel_thickness,
         config.shell_content_enabled,
         config.shell_content_input_enabled,

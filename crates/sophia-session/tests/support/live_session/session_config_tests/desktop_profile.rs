@@ -47,8 +47,6 @@ session { terminal "terminal"; browser "browser"; }
     assert_eq!(config.shell_process.as_deref(), Some("/srv/shell"));
     assert_eq!(config.shell_config, None);
     assert_eq!(config.shell_proof_restart_after_visible, Some(2));
-    assert_eq!(config.shell_transport, sophia_config::ShellTransportSelection::NineP2000L);
-    assert_eq!(config.shell_file_profile, sophia_config::ShellFileProfile::Descriptor);
     assert!(!config.shell_content_enabled);
     let content_profile = profile.replace("shell { enabled #true; }", "shell { enabled #true; content #true; panel 24; }");
     std::fs::write(&path, content_profile).unwrap();

@@ -13,27 +13,18 @@ fn capture_success(line: &str) {
 }
 
 #[test]
-fn single_shell_wire_selects_exactly_one_endpoint_without_changing_grants() {
-    use sophia_config::ShellTransportSelection;
-    let make = |wire| {
-        LiveMetadataShell::prepare(
+fn descriptor_launch_uses_only_files_without_changing_content_grants() {
+    for content in [false, true] {
+        let shell = LiveMetadataShell::prepare(
             "/bin/false",
-            wire,
-            sophia_config::ShellFileProfile::Content,
             Some(24),
-            true,
-            true,
+            content,
+            content,
             sophia_config::ShellGpuMode::Denied,
             None,
             None,
         )
-        .unwrap()
-    };
-    for wire in [
-        ShellTransportSelection::CurrentIpc,
-        ShellTransportSelection::NineP2000L,
-    ] {
-        let shell = make(wire);
+        .unwrap();
         let endpoints = shell
             .base_launch_spec
             .environment
@@ -41,11 +32,20 @@ fn single_shell_wire_selects_exactly_one_endpoint_without_changing_grants() {
             .filter(|(name, _)| name == "SOPHIA_SHELL_SOCKET" || name == "SOPHIA_SHELL_9P_SOCKET")
             .collect::<Vec<_>>();
         assert_eq!(endpoints.len(), 1);
-        assert_eq!(endpoints[0].0, wire.socket_env());
+        assert_eq!(endpoints[0].0, "SOPHIA_SHELL_9P_SOCKET");
         assert_eq!(endpoints[0].1, shell.transport.socket_path());
-        assert_eq!(shell.wire, wire);
         assert!(shell.presentation_paused);
         assert!(!shell.connected);
+        assert_eq!(
+            shell.content.admission_policy(),
+            if content {
+                sophia_runtime::ShellContentAdmissionPolicy::Granted {
+                    discrete_input: true,
+                }
+            } else {
+                sophia_runtime::ShellContentAdmissionPolicy::Denied
+            }
+        );
     }
 }
 
@@ -54,8 +54,6 @@ fn deferred_first_negotiation_is_ready_and_only_later_connection_is_reconnected(
     crate::install_session_output(crate::SessionOutput::new(capture_success, |_| {})).unwrap();
     let mut shell = LiveMetadataShell::prepare(
         "/bin/false",
-        sophia_config::ShellTransportSelection::CurrentIpc,
-        sophia_config::ShellFileProfile::Content,
         None,
         false,
         false,
@@ -84,19 +82,41 @@ fn deferred_first_negotiation_is_ready_and_only_later_connection_is_reconnected(
             .unwrap();
         let socket = shell.transport.socket_path().to_path_buf();
         let (release, wait) = std::sync::mpsc::channel();
+        let (ready, observed) = std::sync::mpsc::channel();
         let peer = std::thread::spawn(move || {
-            let client = sophia_runtime::ShellClientTransport::connect(socket).unwrap();
-            assert_eq!(client.connection_epoch(), epoch);
+            let client = sophia_shell_client::ShellConnection::connect_files(
+                socket,
+                sophia_shell_client::ShellClientOptions {
+                    minimum_revision: 8,
+                    maximum_revision: 8,
+                    required_capabilities: 1,
+                    handshake_timeout: Duration::from_secs(5),
+                },
+            )
+            .unwrap();
+            assert_eq!(client.welcome().connection_epoch, epoch);
+            ready.send(()).unwrap();
             wait.recv_timeout(Duration::from_secs(5)).unwrap();
         });
         let welcome = shell
             .transport
-            .accept_and_negotiate_with_content_policy(
+            .accept_descriptor_files_with_content_policy(
                 epoch,
                 Duration::from_secs(5),
                 shell.content.admission_policy(),
             )
             .unwrap();
+        // Server negotiation completes before the file client has consumed
+        // its bootstrap custody and acknowledgement replies.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while observed.try_recv().is_err() {
+            assert!(
+                Instant::now() < deadline,
+                "descriptor client readiness timed out"
+            );
+            shell.transport.poll_io().unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
         let result = shell
             .finish_negotiation(
                 std::process::id(),
@@ -154,12 +174,10 @@ fn deferred_first_negotiation_is_ready_and_only_later_connection_is_reconnected(
 const DESCRIPTOR_PEER: &str =
     "live_session::metadata_shell::launch::tests::protected_descriptor_peer";
 
-fn protected_descriptor_shell(profile: sophia_config::ShellFileProfile) -> LiveMetadataShell {
+fn protected_descriptor_shell() -> LiveMetadataShell {
     let executable = std::env::current_exe().unwrap();
     let mut shell = LiveMetadataShell::prepare(
         executable.to_str().unwrap(),
-        sophia_config::ShellTransportSelection::NineP2000L,
-        profile,
         None,
         false,
         false,
@@ -185,7 +203,7 @@ fn protected_descriptor_shell(profile: sophia_config::ShellFileProfile) -> LiveM
 #[test]
 fn protected_descriptor_files_select_the_role_and_reconnect_with_a_new_epoch() {
     use sophia_protocol::*;
-    let mut shell = protected_descriptor_shell(sophia_config::ShellFileProfile::Descriptor);
+    let mut shell = protected_descriptor_shell();
     for epoch in 1..=2 {
         let (pid, revision, selected_epoch) = shell.launch_and_negotiate().unwrap();
         assert_ne!(pid, std::process::id());
@@ -246,8 +264,32 @@ fn protected_descriptor_files_select_the_role_and_reconnect_with_a_new_epoch() {
 
 #[test]
 fn the_content_profile_cannot_admit_a_descriptor_child() {
-    let mut shell = protected_descriptor_shell(sophia_config::ShellFileProfile::Content);
-    assert!(shell.launch_and_negotiate().is_err());
+    let mut shell = protected_descriptor_shell();
+    // This negative intentionally binds the content-only export instead of
+    // the descriptor owner's fixed negotiation path. The same protected peer
+    // must be refused before it gains descriptor authority.
+    shell
+        .supervisor
+        .apply(sophia_runtime::SupervisorCommand::StartProcess {
+            process: SupervisedProcessKind::Shell,
+            delay: Duration::ZERO,
+        })
+        .unwrap();
+    shell
+        .transport
+        .authorize_protected_peer(shell.supervisor.protection_evidence().unwrap())
+        .unwrap();
+    assert!(
+        shell
+            .transport
+            .accept_files_with_content_policy(
+                1,
+                Duration::from_secs(5),
+                shell.content.admission_policy(),
+            )
+            .is_err()
+    );
+    shell.supervisor.terminate().unwrap();
     assert!(!shell.connected);
     assert_eq!(shell.next_connection_epoch, 1);
 }

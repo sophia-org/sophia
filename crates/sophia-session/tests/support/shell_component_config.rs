@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn descriptor_profile_selects_only_its_file_role_and_explicit_grants() {
-    use sophia_config::{ShellFileProfile, ShellGpuMode, ShellTransportSelection};
+    use sophia_config::ShellGpuMode;
     let root = std::env::temp_dir().join(format!(
         "descriptor-component-config-{}",
         std::process::id()
@@ -33,8 +33,6 @@ fn descriptor_profile_selects_only_its_file_role_and_explicit_grants() {
         let config = PersistentXtermSessionConfig::from_args(&args).unwrap();
         assert_eq!(config.shell_process.as_deref(), Some("/bin/false"));
         assert_eq!(config.shell_config.as_ref(), Some(&private));
-        assert_eq!(config.shell_transport, ShellTransportSelection::NineP2000L);
-        assert_eq!(config.shell_file_profile, ShellFileProfile::Descriptor);
         assert_eq!(config.shell_gpu_mode, ShellGpuMode::Denied);
         assert_eq!(config.shell_content_enabled, combined);
         assert_eq!(config.shell_content_input_enabled, combined);

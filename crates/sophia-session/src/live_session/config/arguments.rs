@@ -570,8 +570,6 @@ impl PersistentXtermSessionConfig {
             }
             None
         };
-        let shell_transport = sophia_config::ShellTransportSelection::NineP2000L;
-        let shell_file_profile = sophia_config::ShellFileProfile::Descriptor;
         // Private configuration comes only from the selected component.
         let shell_config = descriptor_component.and_then(|entry| entry.config.clone());
         if let Some(path) = &shell_config {
@@ -863,8 +861,6 @@ impl PersistentXtermSessionConfig {
             wm_process_args,
             wm_process_executable_grants,
             shell_process,
-            shell_transport,
-            shell_file_profile,
             shell_shortcuts_enabled: live_shell_enabled,
             shell_config,
             shell_panel_thickness,

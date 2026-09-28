@@ -455,8 +455,6 @@ pub(crate) fn run_persistent_xterm_session(
             };
             construct(
                 process,
-                config.shell_transport,
-                config.shell_file_profile,
                 config.shell_panel_thickness,
                 config.shell_content_enabled,
                 config.shell_content_input_enabled,

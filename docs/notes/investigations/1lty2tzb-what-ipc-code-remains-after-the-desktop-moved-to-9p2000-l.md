@@ -1299,6 +1299,31 @@ must resolve it. The descriptor owner's internal socket branch and its remaining
 socket fixtures still await retirement. No task completion or live acceptance
 is claimed by this configuration cut.
 
+### Descriptor owner startup fixed to 9P (t271, 2026-09-28)
+
+After selector retirement at `ac54c1504`, the descriptor owner's constructor
+has no wire or file-profile argument. Its production startup always uses the
+descriptor file negotiation and emits only `SOPHIA_SHELL_9P_SOCKET`. The unused
+`ShellFileProfile` configuration enum and stored selections are removed.
+Content-only independent components continue through their own owner.
+
+The deferred-ready/reconnected reporting test now uses the Rust SDK over 9P.
+Its first run exposed a fixture error: returning from server negotiation does
+not mean the client has consumed its bootstrap custody and acknowledgement
+replies. The corrected fixture services those replies until bounded client
+readiness. The protected descriptor reconnect test and the negative that a
+content-only export cannot admit the same descriptor child retain their
+assertions. The independent C work-area test still uses the fixed production
+startup path. Session passes 704 tests (22 ignored); focused clippy passes.
+Evidence: `descriptor-only-session-2.log` and `descriptor-only-clippy.log`.
+The first misfiltered run ran zero tests and is not evidence.
+
+The runtime compatibility adapter remains for the broader IPC retirement, as
+does a combined-content disconnect fixture that injects the old wire directly.
+Neither is selectable by production descriptor startup. Their removal belongs
+with the remaining owner/fixture migration; this does not close t271 or repair
+the SDK contract-drift failure recorded above.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

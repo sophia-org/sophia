@@ -52,25 +52,6 @@ pub enum ShellTransportSelection {
     NineP2000L,
 }
 
-/// Host-selected single-shell file vocabulary, fixed before peer admission.
-/// Content-only clients cannot acquire descriptor authority by setting bit 0.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ShellFileProfile {
-    #[default]
-    Content,
-    Descriptor,
-}
-
-impl ShellFileProfile {
-    pub fn parse(value: &str) -> Result<Self, &'static str> {
-        match value {
-            "content" => Ok(Self::Content),
-            "descriptor" => Ok(Self::Descriptor),
-            _ => Err("shell file profile must be content or descriptor"),
-        }
-    }
-}
-
 impl ShellTransportSelection {
     pub fn parse(value: &str) -> Result<Self, &'static str> {
         match value {
