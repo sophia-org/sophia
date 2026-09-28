@@ -1774,10 +1774,19 @@ directory-removal assertions are unchanged.
 
 Evidence under `development-evidence/ipc-retirement/`:
 
-- `t269-wm-retirement-session-2.log`: all-feature Session tests pass. The first
+- `t269-wm-retirement-session-2.log`: all-feature Session tests pass (1,060
+  reported passes including child fixtures, zero failures, 39 ignored). The first
   run's timeout-string mismatch is retained in `t269-wm-retirement-session-1.log`.
 - `t269-wm-retirement-clippy-2.log`: strict Session/CLI clippy passes. The first
   run caught a one-element test loop; its log is retained.
+- `t269-wm-retirement-control.log`: the independent C SDK protected control
+  startup/restart test passes, 1/1.
+- `t269-wm-retirement-full.log`: workspace and SDK tests and clippy pass; layout
+  then refuses four production files containing test-only constructors. Those
+  helpers were moved to their existing `tests/support` modules without changing
+  their assertions. `t269-wm-retirement-layout-2.log` passes, and
+  `t269-wm-retirement-helper-tests.log` passes 59 tests with three opt-in peers
+  ignored. The layout debt ledger is unchanged.
 - `t269-rollback-current-verify.json` and `t269-rollback-previous-verify.json`:
   niltempus `b21eb20` verifies both installed releases read-only. The explicit
   retained target is `niltempus-4f498ff25c3a6d89c16f` (Sophia `2d69924a9`), whose
@@ -1794,8 +1803,18 @@ Evidence under `development-evidence/ipc-retirement/`:
 
 Whole-release rollback remains an explicit subsequent-login operation, never a
 failed-negotiation fallback. No host installation, selection or running session
-was changed by these checks. SDK contract copies must be refreshed before the
-combined repository gate and publication.
+was changed by these checks. The detailed [recovery recipe in niltempus](https://github.com/sophia-org/niltempus/blob/ff6da98a20cb584cf17dba53a322683b003389bd/docs/release-recovery.md)
+distinguishes ordinary rollback, which preserves personal component selections,
+from explicitly using the retained release's sealed WM and desktop profile.
+The latter command has source/identity evidence, not a new graphical run.
+
+SDK contract copies are refreshed and re-vendored from signed C SDK
+`0670e68b6425cdd4623f383bc368690d3f8a0b5c` and Rust SDK
+`d0ac4111a47da3396e0f10fbcbbf0fbf6d878fb5`. Both revisions change only the WM
+lifecycle reference, its digest and provenance; executable SDK sources are
+unchanged. The Rust checksum list is relative to `spec/`, unlike the C list's
+repository-relative paths; the initial wrong-directory check was corrected in
+`t269-wm-rust-sdk-contract-2.log` before vendoring.
 
 ## Validation and remaining work
 

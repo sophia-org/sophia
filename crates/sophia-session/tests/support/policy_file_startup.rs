@@ -12,6 +12,30 @@ use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::sync::mpsc::sync_channel;
 
+impl FileStartup {
+    pub(in crate::live_session::policy_transport_worker::ninep) fn adopt(
+        stream: UnixStream,
+        epoch: u64,
+        limits: WmFileLimits,
+        qids: WmQids,
+    ) -> Result<Self, String> {
+        let owner = WmFiles::awaiting_negotiation(epoch, limits, qids, TypedFileCodec)
+            .map_err(|e| format!("WM file limits: {e:?}"))?;
+        let cancellation = NinePCancellation::new();
+        Ok(Self {
+            reactor: Some(NinePReactor::adopt_with_cancellation(
+                stream,
+                owner,
+                cancellation.clone(),
+            )?),
+            endpoint: None,
+            cancellation,
+            epoch,
+            limits,
+        })
+    }
+}
+
 #[path = "policy_file_idle.rs"]
 mod idle_tests;
 

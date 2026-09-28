@@ -1,13 +1,13 @@
-tree ef0b63234fee4efaa44fe448a975dc8b9566af38
-parent 88347eb7b37816450863e4de582f1c01e80d446a
-author Mason Green <mason@greenm01.net> 1790597944 -0400
-committer Mason Green <mason@greenm01.net> 1790597944 -0400
+tree 9b9810edcc3c438f749a80f3491c634ab9d5cd09
+parent 74498734f314c0e9847fb01991e83eed35930833
+author Mason Green <mason@greenm01.net> 1790635825 -0400
+committer Mason Green <mason@greenm01.net> 1790635825 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarpbOAAKCRBXGEu2KoAA
- YuDEAP98Z/WLVaOy6DTG1tPnhc+r7lWDiLMptvJ/Q7/6CRiEHgEAu4jqLyau0CMV
- DLkqPtxCEdSxnF2CHKp6vo6M8poyHQw=
- =msFO
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarrvMQAKCRBXGEu2KoAA
+ YhgCAP4kMvrSe5kihK/atrk31hesfmu2/dnrYDvBlGEo6t2g5AD9G9oouXGgi3kd
+ 7ifz2cFWFCdP9FsDncDSJXiaf9jvMgI=
+ =ZyfO
  -----END PGP SIGNATURE-----
 
-Refresh accepted shell contract bounds and migration notes
+Record Session WM file default and release rollback contract

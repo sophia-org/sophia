@@ -168,16 +168,6 @@ impl<C: PolicyFileCodec> WmFiles<C> {
         self.staging = None;
         self.accepted = None;
     }
-    #[cfg(test)]
-    pub(super) fn publish_snapshot(&mut self, bytes: Vec<u8>) -> Result<u64, Errno> {
-        if self.revoked {
-            return Err(Errno::ESTALE);
-        }
-        object(&bytes, self.epoch, WmFileKind::Snapshot)?;
-        let qid = self.qids.allocate(1)?;
-        self.snapshot = Some(Arc::new(Snapshot { qid, bytes }));
-        Ok(qid)
-    }
     pub(super) fn offer(&mut self, permit: PolicyReceivePermit) -> Result<(), Errno> {
         if self.revoked {
             return Err(Errno::ESTALE);
@@ -193,13 +183,6 @@ impl<C: PolicyFileCodec> WmFiles<C> {
     }
     pub(super) fn take_delivery(&mut self) -> Option<PolicyAdapterEvent> {
         self.delivery.take()
-    }
-    #[cfg(test)]
-    pub(super) fn append_event(&mut self, kind: WmFileKind, body: &[u8]) -> Result<u64, Errno> {
-        if self.revoked {
-            return Err(Errno::ESTALE);
-        }
-        self.journal.append(kind, body)
     }
     pub(super) fn append_encoded_event_checked(
         &mut self,

@@ -7,6 +7,31 @@ use sophia_protocol::*;
 
 use super::super::startup::tests::array_fixture as fixture;
 
+impl<C: PolicyFileCodec> WmFiles<C> {
+    pub(in crate::live_session::policy_transport_worker::ninep) fn publish_snapshot(
+        &mut self,
+        bytes: Vec<u8>,
+    ) -> Result<u64, Errno> {
+        if self.revoked {
+            return Err(Errno::ESTALE);
+        }
+        object(&bytes, self.epoch, WmFileKind::Snapshot)?;
+        let qid = self.qids.allocate(1)?;
+        self.snapshot = Some(Arc::new(Snapshot { qid, bytes }));
+        Ok(qid)
+    }
+    pub(in crate::live_session::policy_transport_worker::ninep) fn append_event(
+        &mut self,
+        kind: WmFileKind,
+        body: &[u8],
+    ) -> Result<u64, Errno> {
+        if self.revoked {
+            return Err(Errno::ESTALE);
+        }
+        self.journal.append(kind, body)
+    }
+}
+
 fn values() -> (WmFileSnapshot, WmFileCycle) {
     let snapshot = WmFileSnapshot {
         transaction: TransactionId::from_raw(10),

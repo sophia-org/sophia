@@ -149,3 +149,11 @@ no installed-desktop or physical GPU claim is added by this contract update.
 The role table now uses the accepted native descriptor sizes and feed bounds,
 and removes superseded client-migration observations. Wire layouts, library
 sources and tests are unchanged from the accepted-contract revision above.
+
+## WM Session source retirement
+
+`spec/sophia-wm-files.md` is copied unmodified from signed Sophia
+`8c4c58d6e99ac98b59d5f0d4d07e9e11bee2c2fe`. Session now defaults to WM files and refuses
+current-ipc selection. Rollback selects a previously verified compatible release;
+latency qualification stays open. Wire layouts, custody rules and SDK library
+sources are unchanged. SDK compatibility removal is a separate follow-up.

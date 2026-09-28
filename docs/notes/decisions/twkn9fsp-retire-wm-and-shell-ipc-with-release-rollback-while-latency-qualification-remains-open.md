@@ -99,6 +99,11 @@ defaults. Installation and running-session changes remain separate actions.
   contracts must reflect the actual selectors and compatibility window when
   implementation lands.
 
-Inspected recovery mechanism: niltempus `installer/install.go::rollback`
-selects the verified previous release for the next login, leaving running
-sessions unchanged. This source inspection is not an installed rollback test.
+Recovery mechanism: niltempus `installer/install.go::rollback` selects the
+verified previous release for the next login, leaving running sessions unchanged.
+The [retirement investigation](../investigations/1lty2tzb-what-ipc-code-remains-after-the-desktop-moved-to-9p2000-l.md#session-wm-ipc-worker-retirement-t269-2026-09-28)
+records the installed release and activation identities verified read-only,
+private-mount selection and tamper tests, and the external recovery recipe.
+Ordinary rollback preserves personal component choices; the recipe separately
+selects the sealed components when the complete older set is needed. No graphical
+recovery run or host selection was performed.

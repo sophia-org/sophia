@@ -7,6 +7,19 @@ use crate::live_session::policy_transport_worker::{PolicyTransportEvent, PolicyT
 use sophia_protocol::*;
 use std::sync::mpsc::sync_channel;
 
+impl NinePPolicyAdapter {
+    pub(in crate::live_session::policy_transport_worker::ninep) fn supplied(
+        stream: UnixStream,
+        epoch: u64,
+        limits: WmFileLimits,
+        qids: WmQids,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            startup: FileStartup::adopt(stream, epoch, limits, qids)?,
+        })
+    }
+}
+
 use super::super::startup::tests::array_fixture as fixture;
 
 #[path = "policy_file_c_sdk.rs"]

@@ -29,17 +29,6 @@ impl NinePPolicyAdapter {
             startup: FileStartup::pending(endpoint, supervisor, epoch, limits, qids)?,
         })
     }
-    #[cfg(test)]
-    pub(super) fn supplied(
-        stream: UnixStream,
-        epoch: u64,
-        limits: WmFileLimits,
-        qids: WmQids,
-    ) -> Result<Self, String> {
-        Ok(Self {
-            startup: FileStartup::adopt(stream, epoch, limits, qids)?,
-        })
-    }
     fn run<T>(
         &mut self,
         operation: impl FnOnce(&mut NinePReactor<TypedFileCodec>) -> Result<T, String>,

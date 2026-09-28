@@ -48,28 +48,6 @@ impl FileStartup {
         }
         self.endpoint.take();
     }
-    #[cfg(test)]
-    pub(super) fn adopt(
-        stream: UnixStream,
-        epoch: u64,
-        limits: WmFileLimits,
-        qids: WmQids,
-    ) -> Result<Self, String> {
-        let owner = WmFiles::awaiting_negotiation(epoch, limits, qids, TypedFileCodec)
-            .map_err(|e| format!("WM file limits: {e:?}"))?;
-        let cancellation = NinePCancellation::new();
-        Ok(Self {
-            reactor: Some(NinePReactor::adopt_with_cancellation(
-                stream,
-                owner,
-                cancellation.clone(),
-            )?),
-            endpoint: None,
-            cancellation,
-            epoch,
-            limits,
-        })
-    }
     pub(super) fn stop_handle(&self) -> Box<dyn PolicyAdapterStop> {
         self.cancellation.handle()
     }

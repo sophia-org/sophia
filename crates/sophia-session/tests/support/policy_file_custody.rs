@@ -10,6 +10,29 @@ use super::*;
 use sophia_protocol::{PolicyConfiguration, TransactionId, WmChromePolicy};
 use std::sync::mpsc::sync_channel;
 
+impl<C: PolicyFileCodec> NinePReactor<C> {
+    pub(in crate::live_session::policy_transport_worker) fn adopt(
+        stream: UnixStream,
+        owner: WmFiles<C>,
+    ) -> Result<Self, String> {
+        Self::adopt_with_cancellation(stream, owner, NinePCancellation::new())
+    }
+    pub(in crate::live_session::policy_transport_worker) fn stop_handle(
+        &self,
+    ) -> Box<dyn PolicyAdapterStop> {
+        self._cancellation.handle()
+    }
+    pub(in crate::live_session::policy_transport_worker) fn send_event(
+        &mut self,
+        kind: WmFileKind,
+        body: &[u8],
+    ) -> Result<(), String> {
+        self.send_encoded(kind, |header| {
+            encode_wm_file_record(header, body).map_err(|_| Errno::EINVAL)
+        })
+    }
+}
+
 struct Codec;
 impl PolicyFileCodec for Codec {
     fn decode_candidate(&self, bytes: &[u8], _: u64) -> Result<DecodedFileCandidate, Errno> {

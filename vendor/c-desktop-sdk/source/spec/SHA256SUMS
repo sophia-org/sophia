@@ -17,5 +17,5 @@ fe56ea5fd77b7ef79e1a101cae2d3fdc38ca7055f9e654628ce31a44ac6dbe87  spec/sophia-sh
 1d4346b30f1ce40b7ad7a0ff04a3e9cd0f0b9c8489a463d070d52974648617e3  spec/sophia-shell-v1.kdl
 76bf784e2fb15b38e6fc8a3b7c352ffa8d91bcb8d8b8b0516989d31bc6c66238  spec/sophia-wm-api.md
 a85f85b7331dba6bbf3bbe50549ce8d3ccaefa4ff42519bec7b13ba4b5ed13fb  spec/sophia-wm-files-v1.kdl
-b1ff1286f7e7c7282e626302584f852b87c6770d1f9859fd03b0f94373ea7202  spec/sophia-wm-files.md
+936b9dfacc28c9c261abd29be353d5c996bc5633700e113bf0f5fe64b2257fe6  spec/sophia-wm-files.md
 54d1568c37c6ea8694ebf905311c3fd2f39c36506748dc760dcc2319575c0c31  spec/sophia-wm-v1.kdl
