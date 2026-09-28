@@ -2,6 +2,12 @@
 
 [Notebook guide](../README.md) · [ADRs](decisions.md) · [Historical topics](topic.md)
 
+## Namespace composition
+
+[Adopting the Plan 9 namespace model](../investigations/kcfh2hdg-adopting-the-plan-9-namespace-model-in-sophia.md)
+investigates composable per-process file and service views, their Linux mapping,
+and their relationship to Sophia's admission and isolation contracts.
+
 ## Desktop startup
 
 The [panel-only startup investigation](../investigations/startup-panel-only-startup-physical-acceptance.md)
