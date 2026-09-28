@@ -556,6 +556,45 @@ clean during the gate. Its sandbox hid devices, networking, displays and live
 session sockets. No installed component changed, and no hardware or operator
 archive acceptance is claimed.
 
+### Descriptor file client and export custody candidate (t271)
+
+Rust SDK candidate `33e01b3d4102350dbc6c7918de22922e07ab8402` implements
+the seventeen proposed native values and envelopes and the descriptor client
+role. The client checks the admitted role separately from capability bit 0,
+holds acknowledgements until snapshot reads finish, and uses the existing
+typed submission/custody lane. Metadata-only readiness never fetches Limits;
+combined content admission binds both Limits epochs to the attach. The
+default and all-feature suites pass 664 tests in total, with strict clippy and
+formatting clean. Three compiled mutants fail the role, unfinished-read ack
+and Limits grant-epoch assertions. The published contract copies are unchanged;
+the layout proposal remains a separate file and the SDK branch is unpublished.
+
+Sophia `70a0c9aa63bf8837f54c82be17791edba6011e30` imports that exact signed
+snapshot. `bf78aa404a3cf48d65d94c3b96101fb19cd7261c` adds the private export
+support: capability-gated Descriptors, Tabs and Shortcuts nodes, immutable
+pins, typed descriptor candidate custody and validated event publication. The
+qid span grows to 32 to cover the fixed nodes without overlapping allocations.
+Refusals leave the qid, journal and submission watermark unchanged. The
+export fixture controls saturation and pinned-object replacement directly;
+its narrow private mount is documented in the style guide.
+
+The focused run passed 35 runtime tests (seven new export controls, five
+journal tests, twelve file-transport tests, nine B6c tests and the existing
+output-custody and C-role tests), plus the 664 vendored SDK tests and runtime
+strict clippy. That run stopped at layout because the new private mount was
+not yet recorded. After documenting the mount, the twelve file-owner tests,
+strict clippy, layout, formatting and diff checks passed. A compiled export
+role-guard mutant admits a bar's descriptor candidate and fails the exact
+EACCES assertion. Failed and successful logs are retained under
+`ipc-retirement/t271-{sdk-descriptor-*,descriptor-export-*}`.
+
+These commits do not expose descriptor admission through Session, route the
+new typed inputs into the existing presentation and action owners, or reserve
+the proposed descriptor snapshot footprint. Those changes and an independent
+C SDK peer must precede acceptance of the contract and retirement of socket
+tests. Neither candidate is published or installed, and this evidence makes no
+claim about the running desktop or independent descriptor interoperability.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
