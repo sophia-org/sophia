@@ -343,6 +343,15 @@ change. The failed gate log is retained; a complete combined gate is still
 required before promotion. Evidence is under `ipc-retirement/`, including
 `t267-runtime-dir-control.log` and `t267-combined-noipc-6e336f724.log`.
 
+The next full gate at `79c4dc876` reached the independent Go oracle and
+stopped because its default build cache was inside the read-only checkout.
+The helper now defaults to its caller-owned scratch directory, preserving
+an explicit `GOCACHE` override. The isolated runner mounts the already
+provisioned Go modules read-only and keeps networking disabled. Both oracle
+tests then pass, including the independent client's checks against the
+production export (`t267-go-oracle-readonly.log`). This is a test-harness
+correction; the export and oracle assertions are unchanged.
+
 ## Validation and remaining work
 
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK

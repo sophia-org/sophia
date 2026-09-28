@@ -68,7 +68,9 @@ pub fn build(repo: &Path, dir: &Path) -> PathBuf {
                 "GOCACHE",
                 std::env::var_os("GOCACHE")
                     .map(PathBuf::from)
-                    .unwrap_or_else(|| repo.join("target/shell-oracle-go-cache")),
+                    // The checkout may be read-only. The caller owns this
+                    // scratch directory and removes it after the test.
+                    .unwrap_or_else(|| dir.join("go-cache")),
             )
             .stdout(Stdio::from(std::fs::File::create(&log).unwrap()))
             .stderr(Stdio::from(
