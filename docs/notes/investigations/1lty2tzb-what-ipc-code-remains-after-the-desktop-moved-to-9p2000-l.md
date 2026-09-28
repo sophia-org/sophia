@@ -842,6 +842,49 @@ Nothing was retried against a live session. Independent C descriptor peers,
 protected presentation/action acceptance, pending reference invalidation review
 and Narthex migration still precede t271 completion and IPC deletion.
 
+### Independent C descriptor controls (t271, 2026-09-28)
+
+C SDK candidate `fb2b701136363b7b223525bce53bb82b58708d8e` implements the
+eight descriptor control events and two activation acknowledgements. It pins
+the proposed KDL and ADR from Sophia `0cbb7ea5b` under `spec/proposed/`, with
+separate checked digests. Published contract copies and compatibility claims
+remain unchanged. This is the first C implementation slice, not descriptor
+session support or contract acceptance.
+
+The codec uses native file envelopes and passive typed values. It checks the
+body/envelope epoch, nonzero identities, exact size, reserved fields, query
+UTF-8/control/bidi rules and per-family outcome relationships. Descriptor
+outcomes require zero presentation epoch except Presented; reference and
+launcher outcomes preserve their specified non-Presented epoch allowance.
+Activation acknowledgements validate their shape without creating authority.
+Their Submitted receipts are recognized; unimplemented descriptor kinds still
+refuse. Encoding and decoding leave caller output unchanged on failure.
+
+Evidence under `development-evidence/ipc-retirement/`:
+
+- `t271-c-descriptor-controls-check1.log` and
+  `t271-c-descriptor-controls-final.log`: full C SDK strict checks pass with
+  `WITH_IPC=0` and `WITH_IPC=1`. The new test covers ten independent literal
+  vectors and 1,295 malformed-wire refusals, plus invalid-value and capacity
+  checks. Vectors come from the proposed file layout, not a Rust encoder or
+  old socket corpus.
+- `t271-c-descriptor-mutant-epoch.log` and
+  `t271-c-descriptor-mutant-boolean.log`: separately compiled read-only
+  overlays accepting mismatched epochs or `consumed=2` each fail assertions.
+  Fresh private build directories prevent reuse of unmutated objects.
+- `t271-c-descriptor-controls-ubsan-trap.log`: the focused test passes with
+  undefined-behavior instrumentation in trap mode. The preceding
+  `t271-c-descriptor-controls-sanitized.log` failed at link because this host
+  lacks `libasan_preinit.o`, `libasan` and `libubsan`; no address-sanitizer
+  result is claimed and no packages were installed.
+
+All builds ran with hidden devices, no network/display, read-only source,
+private outputs and nice 19/j2. The C SDK branch is signed but unpublished;
+Sophia is not re-vendored yet. The three whole objects, four presentation
+candidates, descriptor negotiation and independent C production-export peer
+remain next. Protected Engine presentation/work-area acceptance and Narthex
+thin bindings are also outstanding. No socket path is removed by this slice.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
