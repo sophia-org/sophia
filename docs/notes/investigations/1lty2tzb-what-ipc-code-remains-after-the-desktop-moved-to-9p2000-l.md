@@ -683,6 +683,44 @@ The typed tabs/reference/launcher owner paths, production Session selector,
 independent C peer and descriptor client migration remain open. No descriptor
 IPC was removed and neither candidate branch was published.
 
+### Typed tab presentation and acknowledgement routing (t271, 2026-09-28)
+
+Candidate `e14706b22` gives tabs their own snapshot, candidate, presentation
+and activation state in the shared transport owner. File publication reserves
+Prepared and terminal response credits before exposing a snapshot. Replacing an
+unanswered snapshot reuses those credits; a candidate already handed to Session
+must receive its terminal outcome first. Stale snapshot identities, reordered
+groups, non-increasing generations and the reserved generation bit receive
+Superseded without replacing a newer request. Metadata and combined content
+connections account for tab credits alongside descriptor credits.
+
+Session's tab path now uses typed transport methods. A scene change revokes tab
+interaction without emitting a second terminal outcome for an already Presented
+candidate. Base descriptors and tabs share one acknowledgement record kind;
+the transport preserves acknowledgements belonging to the other owner and
+consumes only an exact pending transaction/activation pair. Unknown pairs are
+counted and cannot authorize an action.
+
+The final runtime gate passed 99 tests and strict runtime/Session clippy across
+all targets and features, layout, formatting and whitespace checks. Its Session
+test filter initially selected zero tests because `native-session` was absent;
+the corrected invocation passed 94 metadata-shell tests. Logs are
+`ipc-retirement/t271-tabs-owner-final.log` and
+`ipc-retirement/t271-tabs-session-native.log`. These 193 tests do not establish
+an actual protected Session tab scene commit over the new file role.
+
+Compiled mutations removing the reserved-generation check and allowing one
+owner to discard another owner's acknowledgement failed their named controls
+(`t271-tabs-mutant-high-bit.log` and
+`t271-tabs-mutant-ack-owner-rebuilt.log`). The first acknowledgement mutation
+attempt reused a cached artifact and is not counted as evidence. Cleaning only
+the private mutant target's runtime package forced compilation of the recorded
+overlay, after which the control failed. Repository sources were unchanged.
+
+Reference and launcher owners, production descriptor role selection, the
+independent C SDK peer and Narthex migration remain unfinished. This candidate
+is unpublished; no live session was changed and t271 remains open.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
