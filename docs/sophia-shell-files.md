@@ -227,6 +227,14 @@ limits generation, or a `Refused` event with the current reason (1 permission
 denied, 2 unsupported, 3 invalid dependencies, 4 unavailable) followed by
 revocation.
 
+The `Negotiated` body preserves the shell role's welcome limits:
+`max_descriptors` is 1–16, `max_label_bytes` is 1–128 UTF-8 bytes, and
+`max_pending_activations` is 1–16. These bounds apply to every selected profile,
+including a content profile that does not consume descriptors. Both encoders
+and decoders refuse values outside these ranges; a zero value is not an
+unused-field marker. This makes the existing role maxima explicit on the file
+wire without changing the body layout.
+
 There is exactly one selection per epoch. Replaying the same submission ID
 replays its Submitted custody and cannot negotiate again. A separate node
 would have to repeat the WM's custody, replay and epoch rules for a single
