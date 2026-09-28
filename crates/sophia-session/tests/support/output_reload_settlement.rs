@@ -10,7 +10,6 @@ use sophia_protocol::{
     OutputAuthoritySnapshot, OutputHeadTargetProposal, OutputLogicalGroupProposal,
     OutputTopologyCandidate, OutputTopologyIntent, OutputTransform, OutputVrrPolicy,
 };
-use std::io::{Read as _, Write as _};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
