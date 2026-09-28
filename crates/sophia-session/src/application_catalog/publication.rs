@@ -1,6 +1,6 @@
 use super::*;
 use sophia_protocol::{
-    IpcCodecError, ShellApplicationCatalog, ShellPersistentCatalog,
+    BinaryCodecError, ShellApplicationCatalog, ShellPersistentCatalog,
     validate_shell_application_catalog,
 };
 use std::sync::Arc;
@@ -18,7 +18,7 @@ impl PublishedApplicationCatalog {
         connection_epoch: u64,
         generation: u64,
         source: ApplicationCatalog,
-    ) -> Result<Self, IpcCodecError> {
+    ) -> Result<Self, BinaryCodecError> {
         let wire = ShellApplicationCatalog {
             connection_epoch,
             generation,
@@ -42,7 +42,7 @@ impl PublishedApplicationCatalog {
     /// catalog when `persistent` is false (the native launcher's r4 view),
     /// or the catalog with one r8 identity per entry when it is true (the
     /// dock's persistent view). Duplicate identities are refused.
-    pub fn value(&self, persistent: bool) -> Result<ShellPersistentCatalog, IpcCodecError> {
+    pub fn value(&self, persistent: bool) -> Result<ShellPersistentCatalog, BinaryCodecError> {
         if !persistent {
             return Ok(ShellPersistentCatalog {
                 catalog: self.wire.clone(),
@@ -53,7 +53,9 @@ impl PublishedApplicationCatalog {
         let mut identities = std::collections::BTreeMap::new();
         for entry in &self.source.entries {
             if !seen.insert(&entry.identity) {
-                return Err(IpcCodecError::InvalidRecord("duplicate catalog identity"));
+                return Err(BinaryCodecError::InvalidRecord(
+                    "duplicate catalog identity",
+                ));
             }
             identities.insert(entry.descriptor.slot, entry.identity.clone());
         }

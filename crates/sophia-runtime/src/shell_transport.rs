@@ -3,14 +3,14 @@ use std::path::Path;
 use std::time::Duration;
 
 use sophia_protocol::{
-    ContentAdmissionRefused, ContentGrant, ContentLimits, IpcCodecError,
+    BinaryCodecError, ContentAdmissionRefused, ContentGrant, ContentLimits,
     SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER, SOPHIA_SHELL_MAX_DESCRIPTORS,
     SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS, ShellV1ClientHello, ShellV1ServerWelcome, TransactionId,
 };
 
 use crate::{
     ContentAllocationError, ContentCandidateError, ContentStoreError, PolicyRole,
-    PolicyRoleEndpoint, PolicyRoleEndpointError, ProtectionDomainEvidence,
+    ProtectionDomainEvidence, RoleEndpoint, RoleEndpointError,
 };
 
 mod accounting;
@@ -46,9 +46,9 @@ pub use socket::ShellClientTransport;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellTransportError {
-    Endpoint(PolicyRoleEndpointError),
+    Endpoint(RoleEndpointError),
     Io(String),
-    Codec(IpcCodecError),
+    Codec(BinaryCodecError),
     UnsupportedRevision,
     MissingCapability,
     ContentAdmissionRefused(ContentAdmissionRefused),
@@ -74,14 +74,14 @@ impl core::fmt::Display for ShellTransportError {
 
 impl std::error::Error for ShellTransportError {}
 
-impl From<PolicyRoleEndpointError> for ShellTransportError {
-    fn from(error: PolicyRoleEndpointError) -> Self {
+impl From<RoleEndpointError> for ShellTransportError {
+    fn from(error: RoleEndpointError) -> Self {
         Self::Endpoint(error)
     }
 }
 
-impl From<IpcCodecError> for ShellTransportError {
-    fn from(error: IpcCodecError) -> Self {
+impl From<BinaryCodecError> for ShellTransportError {
+    fn from(error: BinaryCodecError) -> Self {
         Self::Codec(error)
     }
 }
@@ -105,7 +105,7 @@ impl From<ContentAllocationError> for ShellTransportError {
 }
 
 pub struct ShellComponentTransport {
-    endpoint: PolicyRoleEndpoint,
+    endpoint: RoleEndpoint,
     /// The one wire of the current epoch, socket or files.
     wire: Option<wire::Wire>,
     /// The component's next logical qid, continued across file epochs.
@@ -132,7 +132,7 @@ impl ShellComponentTransport {
         expected_uid: u32,
     ) -> Result<Self, ShellTransportError> {
         Ok(Self {
-            endpoint: PolicyRoleEndpoint::bind_role_for_supervised_uid(
+            endpoint: RoleEndpoint::bind_role_for_supervised_uid(
                 directory,
                 PolicyRole::Shell,
                 expected_uid,

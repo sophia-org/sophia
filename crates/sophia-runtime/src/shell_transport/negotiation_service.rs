@@ -110,7 +110,7 @@ impl ShellComponentTransport {
             .as_mut()
             .ok_or(ShellTransportError::NotConnected)?;
         if Instant::now() >= pending.deadline {
-            return Err(PolicyRoleEndpointError::AcceptTimedOut.into());
+            return Err(RoleEndpointError::AcceptTimedOut.into());
         }
         if budget == 0 {
             return Ok(None);
