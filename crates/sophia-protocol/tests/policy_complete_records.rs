@@ -1,9 +1,10 @@
-use sophia_protocol::wm_files::*;
+//! The shared WM snapshot, projection and configuration records without the
+//! socket codecs: complete round trips, section preflight, aggregate bounds,
+//! cross-array identities and ordering. The legacy socket parity of these
+//! records is in `policy_complete_records_ipc_compat.rs`.
 use sophia_protocol::*;
 #[path = "support/policy_record_fixture.rs"]
 mod fixture;
-#[path = "support/policy_record_ipc_fixture.rs"]
-mod fixture_ipc;
 fn refs(sections: &[PolicyRecordSection]) -> Vec<PolicyRecordSectionRef<'_>> {
     sections.iter().map(PolicyRecordSection::as_ref).collect()
 }
@@ -51,60 +52,6 @@ fn complete_snapshot_and_all_projection_extensions_roundtrip() {
     );
 }
 #[test]
-fn current_ipc_bytes_equal_the_separately_built_pre_extraction_source() {
-    assert_eq!(
-        fixture_ipc::legacy_bytes(),
-        include_bytes!("fixtures/policy-records-95b39662.bin").as_slice()
-    );
-}
-/// Moved from `wm_file_arrays.rs`, whose file-only binary must build without
-/// the socket codecs: new file envelopes do not change the old scalar/chunk
-/// encodings.
-#[test]
-fn file_envelopes_leave_the_legacy_record_bytes_unchanged() {
-    let header = |kind| WmFileHeader {
-        kind,
-        connection_epoch: 2,
-        submission_id: if wm_file_class(kind) == WmFileClass::Candidate {
-            81
-        } else {
-            0
-        },
-        sequence: 0,
-    };
-    let snapshot = WmFileSnapshot {
-        transaction: TransactionId::from_raw(9),
-        snapshot: PolicyDecodedSnapshot {
-            scene: fixture::scene(),
-            actions: fixture::actions(),
-            classifications: fixture::classifications(),
-            launch_origins: fixture::origins(),
-        },
-    };
-    let configuration = WmFileConfiguration {
-        transaction: TransactionId::from_raw(23),
-        configuration: PolicyConfiguration {
-            connection_epoch: 2,
-            generation: 3,
-            actions: fixture::actions(),
-            chrome: WmChromePolicy::default(),
-        },
-    };
-    encode_wm_file_snapshot(header(WmFileKind::Snapshot), &snapshot, u64::MAX).unwrap();
-    encode_wm_file_projection(
-        header(WmFileKind::Projection),
-        &fixture::proposal(),
-        u64::MAX,
-    )
-    .unwrap();
-    encode_wm_file_configuration(header(WmFileKind::Configuration), &configuration, u64::MAX)
-        .unwrap();
-    assert_eq!(
-        fixture_ipc::legacy_bytes(),
-        include_bytes!("fixtures/policy-records-95b39662.bin").as_slice()
-    );
-}
-#[test]
 fn every_section_checks_length_count_and_unknown_kind_before_decode() {
     for (context, sections) in [
         (PolicyRecordContext::Snapshot, snapshot()),
@@ -130,7 +77,7 @@ fn coalescing_checks_aggregate_not_only_individual_chunks() {
     let repeated = vec![s.as_ref(); 17];
     assert!(matches!(
         coalesce_policy_record_sections(PolicyRecordContext::Snapshot, &repeated),
-        Err(IpcCodecError::CountTooLarge { count: 17, max: 16 })
+        Err(BinaryCodecError::CountTooLarge { count: 17, max: 16 })
     ));
     assert!(decode_policy_snapshot_records(snapshot_meta(), &repeated).is_err());
     let joined =
@@ -151,7 +98,7 @@ fn maximum_u32_count_with_four_row_bytes_is_refused_before_row_allocation() {
     // Pin the neutral preflight error, not a downstream array decoder error.
     // Both coalescing and domain conversion must take this path before sizing
     // any row vector from the untrusted count.
-    let expected = IpcCodecError::InvalidEnum {
+    let expected = BinaryCodecError::InvalidEnum {
         field: "policy_record_section",
         value: u32::from(SNAPSHOT_OUTPUT_RECORD_KIND),
     };
@@ -229,9 +176,6 @@ fn configuration_records_share_catalog_and_chrome_validation() {
         decode_policy_configuration_records(metadata, &refs(&sections)).unwrap(),
         configuration
     );
-    let legacy = encode_wm_v1_policy_configuration(&configuration).unwrap();
-    assert_eq!(legacy.actions, sections[0].bytes);
-    assert_eq!(u32::from(legacy.action_count), sections[0].count);
     let mut duplicate = sections.clone();
     duplicate[0].count *= 2;
     duplicate[0].bytes.extend_from_slice(&sections[0].bytes);

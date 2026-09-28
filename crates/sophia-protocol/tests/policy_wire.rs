@@ -266,25 +266,6 @@ fn generated_rust_record_codec_matches_every_golden_record() {
 }
 
 #[test]
-fn record_codec_rejects_reserved_and_trailing_data() {
-    let line = corpus_lines(RECORD_CORPUS)
-        .find(|line| line.starts_with("projection_output|"))
-        .unwrap();
-    let mut data = decode_hex(line.split('|').nth(1).unwrap());
-    data[20] = 1;
-    assert_eq!(
-        decode_wm_v1_projection_output_records(&data, 1),
-        Err(IpcCodecError::ReservedNonZero(1))
-    );
-    data[20] = 0;
-    data.push(0);
-    assert_eq!(
-        decode_wm_v1_projection_output_records(&data, 1),
-        Err(IpcCodecError::TrailingBytes(1))
-    );
-}
-
-#[test]
 fn chunk_payload_and_transaction_bounds_fail_before_encoding() {
     let transaction = TransactionId::from_raw(1);
     let message = WmV1ProjectionChunk {

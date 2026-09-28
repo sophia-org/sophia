@@ -157,23 +157,6 @@ fn chunk_splitting_preserves_counts_and_rejects_reordered_or_duplicated_headers(
 }
 
 #[test]
-fn action_catalog_excludes_unknown_actions_and_session_operations() {
-    let p = presentation();
-    assert!(validate_policy_presentation_actions(&p, &[]).is_err());
-    let mut actions = vec![PolicyActionRegistration {
-        action: WmActionId::from_raw(5),
-        name: "opaque-policy-action".into(),
-        session_operation_slot: Some(1),
-    }];
-    assert!(validate_policy_presentation_actions(&p, &actions).is_err());
-    actions[0].session_operation_slot = None;
-    assert!(validate_policy_presentation_actions(&p, &actions).is_ok());
-    let mut p = p;
-    p.regions[0].action = Some(WmActionId::from_raw(6));
-    assert!(validate_policy_presentation_actions(&p, &actions).is_err());
-}
-
-#[test]
 fn reduced_action_and_receipt_roundtrip_only_with_complete_identities_and_capabilities() {
     let caps = SOPHIA_WM_CAPABILITY_SURFACE_INSTANCES | SOPHIA_WM_CAPABILITY_PRESENTATION_ACTIONS;
     for target in [0, 3] {

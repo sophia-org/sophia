@@ -1,5 +1,6 @@
-//! The tab group selected surface on both wires (legacy projection chunks and
-//! the WM file projection), which share `decode_policy_tab_groups_records`.
+//! The tab group selected surface in the shared records and on the WM file
+//! projection, which share `decode_policy_tab_groups_records`. The legacy
+//! projection chunks' half of each case is in `tab_group_selection_ipc_compat.rs`.
 //!
 //! It follows the strict optional-surface contract: no selection is exactly
 //! (0, 0); a selection is any index but u32::MAX with a nonzero generation,
@@ -21,10 +22,6 @@ fn group(selected: Option<SurfaceId>, members: Vec<SurfaceId>) -> PolicyTabGroup
     group.selected = selected;
     group.members = members;
     group
-}
-
-fn legacy(groups: Vec<PolicyTabGroup>) -> Result<Vec<PolicyTabGroup>, IpcCodecError> {
-    decode_wm_tab_groups(&encode_wm_tab_groups(&groups, 2, 0)?)
 }
 
 fn file(groups: Vec<PolicyTabGroup>) -> Result<Vec<PolicyTabGroup>, WmFilePayloadError> {
@@ -72,7 +69,7 @@ fn raw_group(index: u32, generation: u32) -> Vec<u8> {
     bytes
 }
 
-fn decode_raw(index: u32, generation: u32) -> Result<Vec<PolicyTabGroup>, IpcCodecError> {
+fn decode_raw(index: u32, generation: u32) -> Result<Vec<PolicyTabGroup>, BinaryCodecError> {
     let bytes = raw_group(index, generation);
     decode_policy_tab_groups_records(&[PolicyRecordSectionRef {
         kind: PROJECTION_TAB_GROUP_RECORD_KIND,
@@ -82,27 +79,21 @@ fn decode_raw(index: u32, generation: u32) -> Result<Vec<PolicyTabGroup>, IpcCod
 }
 
 #[test]
-fn a_zero_index_member_round_trips_on_both_wires() {
+fn a_zero_index_member_round_trips_on_the_file_wire() {
     let groups = vec![group(
         Some(SurfaceId::new(3, 1)),
         vec![SurfaceId::new(0, 1), SurfaceId::new(3, 1)],
     )];
-    assert_eq!(legacy(groups.clone()).unwrap(), groups);
     assert_eq!(file(groups.clone()).unwrap(), groups);
 }
 
 #[test]
-fn a_zero_generation_selection_is_refused() {
+fn a_zero_generation_selection_record_is_refused() {
     assert!(decode_raw(5, 0).is_err());
-    let groups = vec![group(
-        Some(SurfaceId::new(5, 0)),
-        vec![SurfaceId::new(5, 1)],
-    )];
-    assert!(legacy(groups).is_err());
 }
 
 #[test]
-fn a_zero_index_selection_and_no_selection_round_trip_on_both_wires() {
+fn a_zero_index_selection_and_no_selection_round_trip_in_records_and_files() {
     assert_eq!(
         encoded_selected(group(
             Some(SurfaceId::new(0, 1)),
@@ -119,13 +110,12 @@ fn a_zero_index_selection_and_no_selection_round_trip_on_both_wires() {
         )],
         vec![group(None, Vec::new())],
     ] {
-        assert_eq!(legacy(groups.clone()).unwrap(), groups);
         assert_eq!(file(groups.clone()).unwrap(), groups);
     }
 }
 
 #[test]
-fn an_all_ones_or_zero_generation_selection_is_refused_in_both_directions() {
+fn an_all_ones_or_zero_generation_selection_is_refused_by_records_and_files() {
     for (index, generation) in [(u32::MAX, 1), (u32::MAX, 0), (5, 0)] {
         assert!(
             decode_raw(index, generation).is_err(),
@@ -136,7 +126,6 @@ fn an_all_ones_or_zero_generation_selection_is_refused_in_both_directions() {
             vec![SurfaceId::new(3, 1)],
         )];
         assert!(encode_policy_tab_groups_records(&groups).is_err());
-        assert!(legacy(groups.clone()).is_err());
         assert!(file(groups).is_err());
     }
 }
