@@ -161,9 +161,11 @@ a boolean, not an extra authority check. The sum of group entry counts equals
 the prefix count, at most 2048, with at most 1024 groups. No 16-entry per-group
 limit is added: the old codec imposed 16 only on standalone snapshots.
 
-DescriptorCandidate entries have distinct nonzero slots and generations.
-visible is true precisely when entries are nonempty and selected_slot names
-an entry. Hidden candidates have selected_slot=0 and no reservation. Edge 0
+DescriptorCandidate entry slots are nonzero and distinct. Their generations
+are nonzero but may repeat for different slots, as in the source snapshot.
+visible is true precisely when entries are nonempty; a visible candidate's
+selected_slot names an entry. Hidden candidates have no entries,
+selected_slot=0 and no reservation. Edge 0
 requires thickness 0; edges 1 top, 2 bottom, 3 left, 4 right require thickness
 1..512. The owner separately checks its profile's reservation limit.
 
