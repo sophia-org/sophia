@@ -86,6 +86,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
     // max_frame_payload, max_input_queue_bytes and the +24/+48 terms describe
     // the socket wire's frames; they are carried unchanged for now and are
     // listed for removal from this object when the socket wire is purged.
+    // File upload chunks use max_chunk_bytes directly. This equals the old
+    // min(max_frame_payload - 48, max_chunk_bytes) for every valid object;
+    // the relationships above remain mandatory until a contract revision.
     body "Limits" size=264 {
         field "grant_connection_epoch" type="u64" offset=0 nonzero=#true
         field "grant_content_epoch" type="u64" offset=8 nonzero=#true
@@ -172,7 +175,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "required_capabilities" type="u64" offset=8
     }
     // Normative: selected_revision != 0; connection_epoch != 0 and equal to
-    // the record header's epoch; limits_published is 0 or 1. The CLIENT also
+    // the record header's epoch; limits_published is 0 or 1. Descriptor,
+    // label and pending-activation limits retain the shell role bounds below,
+    // including for content profiles that do not use descriptors. The CLIENT also
     // refuses a selection outside the range it offered, or capabilities that
     // lack a bit it required; the exact role profile is Session's decision.
     body "Negotiated" size=32 {
@@ -180,9 +185,9 @@ protocol "sophia_shell_fs_v1" api-version=1 byte-order="little" max-object-bytes
         field "reserved" type="u16" offset=2 value=0
         field "connection_epoch" type="u64" offset=4 nonzero=#true
         field "capabilities" type="u64" offset=12
-        field "max_descriptors" type="u16" offset=20
-        field "max_label_bytes" type="u16" offset=22
-        field "max_pending_activations" type="u16" offset=24
+        field "max_descriptors" type="u16" offset=20 min=1 max=16
+        field "max_label_bytes" type="u16" offset=22 min=1 max=128
+        field "max_pending_activations" type="u16" offset=24 min=1 max=16
         field "limits_published" type="u16" offset=26 min=0 max=1
         field "reserved_tail" type="u32" offset=28 value=0
     }

@@ -1,7 +1,7 @@
 //! Wire-neutral typed model for the atomic revision-8 persistent catalog:
 //! no partial catalog ever becomes current.
 use crate::{InvalidRecord, ShellApplicationCatalog};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShellPersistentCatalog {
@@ -13,8 +13,9 @@ pub struct ShellPersistentCatalog {
 /// `sophia_protocol::ipc::shell_catalog_transaction::decode_shell_persistent_catalog`
 /// used to check inline after reassembling its Begin/Identity/Entry/End
 /// transaction: no partial catalog, so every entry carries an identity or
-/// none does (including the trivial case of no entries at all), and a
-/// present identity is a well-formed `registered:`/`desktop:` name. The
+/// none does (including the trivial case of no entries at all), a present
+/// identity is a well-formed `registered:`/`desktop:` name, and no two slots
+/// share one name. The
 /// transfer-only half of that check -- that every identity frame in one
 /// transaction named the same connection epoch and catalog generation --
 /// has nothing left to check once the catalog is one assembled value, so it
@@ -35,6 +36,12 @@ pub(crate) fn validate(value: &ShellPersistentCatalog) -> Result<(), InvalidReco
     crate::validate_shell_application_catalog(&value.catalog)?;
     let bad = InvalidRecord("persistent catalog identity bijection");
     if value.identities.len() != value.catalog.entries.len() {
+        return Err(bad);
+    }
+    // One name identifies one application: distinct slots never share it.
+    // The socket decoder refused a repeated name the same way.
+    let mut names = BTreeSet::new();
+    if !value.identities.values().all(|name| names.insert(name)) {
         return Err(bad);
     }
     for entry in &value.catalog.entries {

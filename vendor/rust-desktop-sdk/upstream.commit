@@ -1,22 +1,30 @@
-tree 96b8098366c4da96fe79c18ba6eab3f61df8364f
-parent b4e63f792014d3c949b3b475d28245f7572a41c5
-author Mason Green <mason@greenm01.net> 1790566098 -0400
-committer Mason Green <mason@greenm01.net> 1790566098 -0400
+tree a9af9918bd089da7eb994eb09d353b60cc2c0bfa
+parent 06c4fa6af54f1eb3bba380a7bfa6e6c8d0cdcc3b
+author Mason Green <mason@greenm01.net> 1790569644 -0400
+committer Mason Green <mason@greenm01.net> 1790569644 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarne0gAKCRBXGEu2KoAA
- Yig1AP9bnPRPpbaPuS3mBqeXeHvGWtpD+InKDipXJKpklZdMfwEAmREtLbp27FDS
- f4RxPyZ3bvLKzej9bnU+S3F1HZadHAg=
- =GJQu
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarnsrAAKCRBXGEu2KoAA
+ Yix3AQDkhpc7pVTAV+xApRhl8WaBPv2Wh+Qn8hgG9LvBmqz9rAEA77Ii9Faz0DJa
+ js+EGSKaQpNkGJAcVmmAK+ifQPeoEQg=
+ =a1M8
  -----END PGP SIGNATURE-----
 
-Narrow the WM lifecycle reference to extension capability gates
+Use max_chunk_bytes as the canonical upload chunk (t268 stage 1)
 
-Copy docs/sophia-wm-files.md unmodified from signed Sophia
-4a03927421d13a9084295c5ace62c6d9de81d381. It now says the file schema owns
-only extension capability gates, with ordinary row disclosure and additional
-dependencies left to the typed file validators. Custody and retry rules are
-unchanged. No code changes.
+The shell file contract (Sophia d040013bb) defines the upload chunk as
+max_chunk_bytes directly. ContentResourceBegin::layout no longer derives
+it from the socket frame, min(max_frame_payload - 48, max_chunk_bytes).
 
-Validation: sha256sum --check spec/SHA256SUMS; the copy equals the Sophia
-object. Earlier gates still apply because no build input changed.
+The two expressions are equal on every valid Limits object, because
+ContentLimits::validate still requires max_chunk_bytes + 48 <=
+max_frame_payload, and max_input_queue_bytes >= max_frame_payload + 24.
+Both relations, the scalar bounds and the encoded Limits bytes are
+unchanged. The IPC crate is untouched.
+
+tests/upload_chunk_layout.rs pins the rule. It checks one fixed chunk
+under frame caps at the +48 boundary, one past it and at the cap, with
+exact-row and single-row chunks. It checks the canonical chunk counts
+through the file upload record, the mandatory +24/+48 relations at their
+boundaries, and the golden Limits bytes. It passes with either expression
+by design.

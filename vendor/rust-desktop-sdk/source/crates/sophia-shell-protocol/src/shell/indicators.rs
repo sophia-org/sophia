@@ -83,11 +83,12 @@ fn require(ok: bool, field: &'static str) -> Result<(), InvalidRecord> {
     }
 }
 
-/// The bound check `sophia_protocol::ipc::shell_indicators` used to run
-/// inline before building its Begin/OutputStatus/Entry/End transfer: a
-/// snapshot's indicator and output-status counts stay within the granted
-/// maxima. Label bounds are enforced by the fixed-width text encoding
-/// itself, not restated here.
+/// The bound checks `sophia_protocol::ipc::shell_indicators` ran before
+/// building its Begin/OutputStatus/Entry/End transfer: the indicator and
+/// output-status counts stay within the granted maxima, and every label and
+/// layout fits its fixed field of [`SOPHIA_SHELL_MAX_INDICATOR_LABEL_BYTES`]
+/// UTF-8 bytes. The fixed-width writer relies on this check; the decoder's
+/// own field bound refuses longer text before it reaches here.
 pub(crate) fn validate(snapshot: &ShellIndicatorSnapshot) -> Result<(), InvalidRecord> {
     require(
         snapshot.indicators.len() <= SOPHIA_SHELL_MAX_INDICATORS,
@@ -96,5 +97,18 @@ pub(crate) fn validate(snapshot: &ShellIndicatorSnapshot) -> Result<(), InvalidR
     require(
         snapshot.statuses.len() <= SOPHIA_SHELL_MAX_OUTPUT_STATUS,
         "shell indicator output status count",
-    )
+    )?;
+    for status in &snapshot.statuses {
+        require(
+            status.layout.len() <= SOPHIA_SHELL_MAX_INDICATOR_LABEL_BYTES,
+            "shell indicator layout",
+        )?;
+    }
+    for indicator in &snapshot.indicators {
+        require(
+            indicator.label.len() <= SOPHIA_SHELL_MAX_INDICATOR_LABEL_BYTES,
+            "shell indicator label",
+        )?;
+    }
+    Ok(())
 }

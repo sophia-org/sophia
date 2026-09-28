@@ -216,7 +216,8 @@ fn maximal_r8_catalog_fits_within_4_mib() {
         })
         .collect();
     let identities: BTreeMap<u16, String> = (1..=SOPHIA_SHELL_MAX_APPLICATIONS as u16)
-        .map(|slot| (slot, format!("registered:{}", "i".repeat(245))))
+        // Distinct names (one per slot), each still the full 256 bytes.
+        .map(|slot| (slot, format!("registered:{slot:04}{}", "i".repeat(241))))
         .collect();
     let catalog = ShellPersistentCatalog {
         catalog: ShellApplicationCatalog {

@@ -392,11 +392,11 @@ impl ContentResourceBegin {
             total_bytes <= limits.max_resource_bytes && self.total_bytes == total_bytes,
             "content resource byte count",
         )?;
-        let payload = limits
-            .max_frame_payload
-            .saturating_sub(48)
-            .min(limits.max_chunk_bytes);
-        let rows_per_chunk = payload / row_bytes;
+        // The canonical upload chunk is `max_chunk_bytes` (shell file contract,
+        // d040013bb). It equals the earlier min(max_frame_payload - 48,
+        // max_chunk_bytes) on every valid Limits object, because
+        // `ContentLimits::validate` still requires chunk + 48 <= frame.
+        let rows_per_chunk = limits.max_chunk_bytes / row_bytes;
         require(rows_per_chunk > 0, "content row does not fit chunk")?;
         let chunk_count = self.height_px.div_ceil(rows_per_chunk);
         require(
