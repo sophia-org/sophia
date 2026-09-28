@@ -35,9 +35,9 @@ fn floor(epoch: u64) -> ContentLimits {
 
 /// One full-size resource: 1024 x 1024 ARGB is exactly the 4 MiB bound,
 /// chunked by the protocol's own whole-row layout for these limits.
-fn full_size(grant: ContentGrant, id: u64, value: u8) -> Vec<ShellContentRecord> {
+fn full_size(limits: &ContentLimits, id: u64, value: u8) -> Vec<ShellContentRecord> {
+    let grant = limits.grant;
     let resource = ContentResourceId { id, generation: 1 };
-    let limits = floor(grant.connection_epoch);
     // The canonical chunk. Valid limits keep `max_chunk_bytes + 48` within
     // the legacy frame payload, so this equals the SDK's layout rule.
     let payload = limits.max_chunk_bytes;
@@ -53,7 +53,7 @@ fn full_size(grant: ContentGrant, id: u64, value: u8) -> Vec<ShellContentRecord>
         chunk_count: 1024_u32.div_ceil(payload / 4096),
         total_bytes: 4 * MIB,
     };
-    let layout = begin.layout(&limits).unwrap();
+    let layout = begin.layout(limits).unwrap();
     let mut records = vec![ShellContentRecord::ResourceBegin(begin)];
     let row_bytes = u64::from(layout.row_bytes);
     for ordinal in 0..layout.chunk_count {
@@ -116,9 +116,104 @@ fn floor_limits_reach_the_file_client_as_its_first_welcome_record() {
 
 #[test]
 fn floor_limits_hold_two_full_size_file_uploads_resident() {
+    full_size_uploads_with_limits(floor(1));
+}
+
+#[test]
+fn reduced_chunk_limits_hold_two_full_size_file_uploads_resident() {
+    let mut limits = floor(1);
+    limits.max_chunk_bytes = 32768;
+    limits.validate().unwrap();
+    // 1024-pixel rows: eight fit this grant, rather than the prototype's
+    // fifteen. Both the SDK and the real export must use the granted layout.
+    assert_eq!(limits.max_chunk_bytes / 4096, 8);
+    assert_eq!(
+        ContentLimits::prototype(limits.grant).max_chunk_bytes / 4096,
+        15
+    );
+    full_size_uploads_with_limits(limits);
+}
+
+#[test]
+fn a_reduced_grant_refuses_a_prototype_count_then_admits_the_granted_count() {
+    let mut limits = floor(1);
+    limits.max_chunk_bytes = 32768;
+    limits.validate().unwrap();
     let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
     let mut component = Component::new();
-    let limits = floor(1);
+    component
+        .transport
+        .reserve_content(&mut registry, limits.clone())
+        .unwrap();
+    component.connect(&mut registry, limits.clone());
+
+    // Both counts are structurally valid records. Only four fits the actual
+    // grant: two 16 KiB rows per chunk for this eight-row resource.
+    for (id, chunks, expected_status, expected_reason) in [
+        (1, 3, 3, ContentReason::Malformed),
+        (2, 4, 1, ContentReason::None),
+    ] {
+        let transaction = TransactionId::from_raw(id);
+        let resource = ContentResourceId { id, generation: 1 };
+        component
+            .client
+            .as_mut()
+            .unwrap()
+            .enqueue_content(
+                transaction,
+                &ShellContentRecord::ResourceBegin(ContentResourceBegin {
+                    grant: limits.grant,
+                    resource,
+                    width_px: 4096,
+                    height_px: 8,
+                    rendered_scale_numerator: 1,
+                    rendered_scale_denominator: 1,
+                    pixel_format: 1,
+                    chunk_count: chunks,
+                    total_bytes: 4096 * 8 * 4,
+                }),
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            component
+                .transport
+                .service_content_resources(&mut registry, 0)
+                .unwrap();
+            if let Some((received_transaction, record)) =
+                component.client.as_mut().unwrap().poll_content().unwrap()
+            {
+                let ShellContentRecord::ResourceStatus(status) = record else {
+                    panic!("expected resource status, got {record:?}");
+                };
+                assert_eq!(received_transaction, transaction);
+                assert_eq!(status.resource, resource);
+                assert_eq!(status.status, expected_status);
+                assert_eq!(status.reason, expected_reason as u16);
+                break;
+            }
+            assert!(Instant::now() < deadline, "resource status deadline");
+            std::thread::yield_now();
+        }
+        assert_eq!(registry.accounting().memory.resident, 0);
+        assert_eq!(
+            registry.accounting().memory.staging,
+            if expected_status == 1 {
+                4096 * 8 * 4
+            } else {
+                0
+            },
+            "a refused description must not reserve staging"
+        );
+    }
+    component.disconnect(&mut registry);
+    registry.collect();
+    assert!(registry.accounting().quiescent());
+}
+
+fn full_size_uploads_with_limits(limits: ContentLimits) {
+    let mut registry = ContentEpochRegistry::new(64 * MIB).unwrap();
+    let mut component = Component::new();
     component
         .transport
         .reserve_content(&mut registry, limits.clone())
@@ -126,13 +221,14 @@ fn floor_limits_hold_two_full_size_file_uploads_resident() {
     component.connect(&mut registry, limits.clone());
     let mut client = component.client.take().unwrap();
     let grant = limits.grant;
+    let upload_limits = limits.clone();
     // The client writes on its own thread so its pipelined writes and the
     // owner's service turns progress independently; it returns its statuses.
     let peer = std::thread::spawn(move || {
         let mut pending: VecDeque<_> = [(1, 30), (2, 90)]
             .into_iter()
             .flat_map(|(id, value)| {
-                full_size(grant, id, value)
+                full_size(&upload_limits, id, value)
                     .into_iter()
                     .map(move |record| (TransactionId::from_raw(id), record))
             })

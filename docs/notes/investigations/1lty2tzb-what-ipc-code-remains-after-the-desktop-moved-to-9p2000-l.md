@@ -438,6 +438,37 @@ socket ordering counter's overflow and optional EINTR retry also remain
 reported. No installed or running component changed, no hardware acceptance
 was run, and no operator archive corpus was available to re-verify.
 
+### Negotiated resource upload validation (t268, 2026-09-28)
+
+The reduced-chunk defect above is fixed in Rust SDK
+`c1323401b7e336606408499b13097d1270a2319d`. The file codec checks the
+description's structural bounds. The content owner checks the exact chunk
+count against the admitted grant. The retiring socket codec retains its
+previous prototype-layout check; no wire field or normative contract changed.
+
+Before the fix, the new real-export regression failed in the SDK's enqueue
+path with `InvalidRecord("content resource chunk count")`, before sending
+the upload. After re-vendoring, two 4 MiB resources uploaded using 32 KiB
+chunks and retained the expected pixels and accounting. A separate real-export
+test sends the prototype count under reduced limits: the owner refuses it
+without reserving staging, then admits the correct count on the same connection.
+
+The SDK's default and all-feature suites passed 566 tests. Strict clippy in
+both configurations, formatting and all 13 spec digests passed. Sophia's
+focused gate passed six reduced-limit tests, all nine B6c custody tests, the
+vendored SDK suites, focused strict clippy, layout and formatting. Evidence:
+`ipc-retirement/t268-reduced-upload-production-before.log` (expected red),
+`t268-reduced-sdk-full.log`, `t268-reduced-sdk-final.log`,
+`t268-reduced-sdk-checks.log`, and `t268-reduced-upload-production-after2.log`.
+The first SDK clippy run found a test type-complexity warning; the follow-up
+uses a named type. One spec check ran from the wrong directory; the corrected
+check passed. The first Sophia launcher invocation lacked script execute
+permission and ran no tests; the explicit bash invocation passed.
+
+This is deterministic SDK/export evidence, with devices, display and network
+hidden. It does not claim a live component update or completion of t268's
+remaining descriptor work.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.

@@ -1,13 +1,15 @@
-tree 87200d1bef4977c8aeb495d7165570b2cd1001ea
-parent 69faf39a427934e4cbf79d685c0c3cd0ea33c9e6
-author Mason Green <mason@greenm01.net> 1790570238 -0400
-committer Mason Green <mason@greenm01.net> 1790570238 -0400
+tree 4d9cb494f21b0f7b6b35365ae63515b4d9520954
+parent f92902e434f347d3d0dab1ce50b2c85a0cee9414
+author Mason Green <mason@greenm01.net> 1790572189 -0400
+committer Mason Green <mason@greenm01.net> 1790572189 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarnu/gAKCRBXGEu2KoAA
- YreJAP9Fi/wUSmFsfbzM0Lmjk9SB6iFwWEsaxN9oEXraA+G7DgD/crS3DH9MsGQ1
- +oomvJA0OG3+8fTvTklJX84AtqGw+gw=
- =Qox5
+ iHQEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarn2nQAKCRBXGEu2KoAA
+ YtUfAQCNjs5hXKYNkblbm6m5a28oXdNYyKZkFryBge1XBwtiKQD1Fg6a2ho6hO+S
+ lQZIbf64rMa6L4tVREkIdX0sar47Dw==
+ =FDZR
  -----END PGP SIGNATURE-----
 
-Refresh spec-relative digest entries for the identity rule
+Validate file upload counts against the negotiated grant
+
+Keep structural description checks in the neutral codec and exact chunk layout in the content owner. The retiring socket codec retains its existing prototype check. Cover reduced-chunk uploads, owner refusal and malformed records.

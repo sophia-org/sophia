@@ -19,6 +19,7 @@ pub(crate) fn decode_shell_content_payload(
     let record = parse_shell_content_value(value_kind, payload)?;
     validate_transaction(transaction, &record)?;
     crate::shell::content::validate_shell_content_record(&record)?;
+    prototype_layout(&record)?;
     Ok(record)
 }
 
@@ -36,6 +37,7 @@ pub(crate) fn encode_shell_content_payload(
 ) -> Result<(IpcMessageKind, Vec<u8>), IpcCodecError> {
     validate_transaction(transaction, record)?;
     let bytes = encode_shell_content_value(record)?;
+    prototype_layout(record)?;
     let kind = value_kind_to_ipc(shell_content_value_kind(record));
     Ok((kind, bytes))
 }
@@ -46,6 +48,17 @@ pub fn encode_shell_content_frame(
 ) -> Result<Vec<u8>, IpcCodecError> {
     let (kind, bytes) = encode_shell_content_payload(transaction, record)?;
     encode_frame(kind, transaction, &bytes)
+}
+
+/// The socket wire keeps the layout check its codec always made: a
+/// `ResourceBegin` frame must carry the prototype grant's chunk count. The
+/// neutral record validator checks only what every grant shares, since the
+/// file wire lays out the negotiated grant's `max_chunk_bytes`.
+fn prototype_layout(record: &ShellContentRecord) -> Result<(), IpcCodecError> {
+    if let ShellContentRecord::ResourceBegin(begin) = record {
+        begin.layout(&crate::ContentLimits::prototype(begin.grant))?;
+    }
+    Ok(())
 }
 
 fn validate_transaction(

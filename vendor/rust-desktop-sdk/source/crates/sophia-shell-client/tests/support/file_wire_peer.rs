@@ -175,6 +175,8 @@ pub struct Peer {
     pub held_replies: Vec<(u8, u16, Vec<u8>)>,
     /// The `Negotiate` record the handshake received.
     pub negotiate: Option<Vec<u8>>,
+    /// Bytes written to each `upload/N` slot, at the offsets written.
+    pub uploads: HashMap<String, Vec<u8>>,
     limits: Vec<u8>,
     /// Replies collected for one write, between [`Peer::begin_batch`] and
     /// [`Peer::end_batch`].
@@ -206,6 +208,19 @@ impl Peer {
     /// submission (answered by `Submitted` then `Negotiated`), their acks,
     /// and the `limits` object when the profile publishes it.
     pub fn handshake(listener: UnixListener, profile: Profile) -> Self {
+        let limits = ContentLimits::prototype(ContentGrant {
+            connection_epoch: EPOCH,
+            content_grant_epoch: CONTENT_GRANT_EPOCH,
+        });
+        Self::handshake_with_limits(listener, profile, limits)
+    }
+
+    /// As [`Self::handshake`], publishing `limits` as the `limits` object.
+    pub fn handshake_with_limits(
+        listener: UnixListener,
+        profile: Profile,
+        limits: ContentLimits,
+    ) -> Self {
         let deadline = Instant::now() + WAIT;
         listener.set_nonblocking(true).unwrap();
         let stream = loop {
@@ -225,10 +240,7 @@ impl Peer {
                 submission_id: 0,
                 sequence: 0,
             },
-            ContentLimits::prototype(ContentGrant {
-                connection_epoch: EPOCH,
-                content_grant_epoch: CONTENT_GRANT_EPOCH,
-            }),
+            limits,
         )
         .unwrap();
         let mut peer = Self {
@@ -263,6 +275,7 @@ impl Peer {
             hold_transaction_walks: false,
             held_replies: Vec::new(),
             negotiate: None,
+            uploads: HashMap::new(),
             limits,
             batch: None,
         };
@@ -530,6 +543,14 @@ impl Peer {
                         self.answer_write(tag, count);
                     }
                     "submit" => self.submits.push_back(Held { tag, data }),
+                    slot if slot.starts_with("upload/") => {
+                        // Slot bytes land at the written offset, in order.
+                        let offset = u64_at(&body, 4) as usize;
+                        let upload = self.uploads.entry(node.clone()).or_default();
+                        assert_eq!(upload.len(), offset, "slot writes arrive in order");
+                        upload.extend_from_slice(&data);
+                        self.answer_write(tag, count);
+                    }
                     "ack" => {
                         let ack = decode_shell_file_ack(&data).expect("an ack");
                         assert_eq!(ack.connection_epoch, EPOCH, "ack epoch");
@@ -603,6 +624,9 @@ impl Peer {
             "ack" => 13,
             "transaction" => 14,
             "limits" => 15,
+            slot if slot.starts_with("upload/") => {
+                20 + slot["upload/".len()..].parse::<u64>().unwrap_or(0)
+            }
             _ => 99,
         };
         qid(0, path)

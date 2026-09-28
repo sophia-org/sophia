@@ -109,10 +109,12 @@ fn a_row_exactly_the_chunk_is_one_row_per_chunk() {
     assert!(narrow.validate().is_err(), "chunk below one full row");
 }
 
-/// The worked examples, through the real file upload record, which checks the
-/// declared chunk count against the prototype profile.
+/// The worked examples, through the real file upload record. The record
+/// carries the canonical count for the grant; which count is exact is the
+/// negotiated grant's `layout`, and the record codec refuses only counts no
+/// grant could lay out (more chunks than rows).
 #[test]
-fn file_upload_records_admit_exactly_the_canonical_chunk_count() {
+fn file_upload_records_defer_the_exact_chunk_count_to_the_granted_layout() {
     let header = ShellFileHeader {
         kind: ShellFileKind::ResourceBegin,
         connection_epoch: 11,
@@ -141,8 +143,13 @@ fn file_upload_records_admit_exactly_the_canonical_chunk_count() {
             decode_shell_file_resource_begin(&bytes).unwrap(),
             record(width, height, chunks)
         );
+        assert!(begin(width, height, chunks + 1).layout(&prototype).is_err());
+        if chunks > 1 {
+            assert!(begin(width, height, chunks - 1).layout(&prototype).is_err());
+        }
         assert!(
-            encode_shell_file_resource_begin(header, &record(width, height, chunks + 1)).is_err()
+            encode_shell_file_resource_begin(header, &record(width, height, height + 1)).is_err(),
+            "more chunks than rows"
         );
     }
 }

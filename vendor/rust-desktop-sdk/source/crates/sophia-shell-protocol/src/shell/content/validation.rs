@@ -188,7 +188,7 @@ pub(crate) fn validate(record: &ShellContentRecord) -> Result<(), InvalidRecord>
             v.grant
         }
         ResourceBegin(v) => {
-            v.layout(&ContentLimits::prototype(v.grant))?;
+            v.description()?;
             v.grant
         }
         ResourceStatus(v) => {
@@ -366,10 +366,35 @@ pub struct ContentResourceLayout {
 }
 
 impl ContentResourceBegin {
-    pub fn layout(&self, limits: &ContentLimits) -> Result<ContentResourceLayout, InvalidRecord> {
+    /// The record's own terms, which every valid grant shares: the shape
+    /// fits the contract's ceilings (every valid Limits is at or below the
+    /// prototype in each bound), and the chunk count falls within necessary
+    /// bounds -- at least the count at the largest chunk any grant allows,
+    /// at most one chunk per row, since every grant's chunk holds a whole row
+    /// of any width it admits. These bounds do not establish a valid layout.
+    /// The exact count is the negotiated grant's,
+    /// checked by [`Self::layout`] where that grant is known.
+    pub(crate) fn description(&self) -> Result<(), InvalidRecord> {
+        let ceiling = ContentLimits::prototype(self.grant);
+        let (row_bytes, _) = self.shape(&ceiling)?;
+        let widest_rows = ceiling.max_chunk_bytes / row_bytes;
+        require(
+            widest_rows > 0
+                && self.chunk_count >= self.height_px.div_ceil(widest_rows)
+                && self.chunk_count <= self.height_px,
+            "content resource chunk count",
+        )
+    }
+
+    /// Everything but the chunk count, under `limits`: identities, dimensions,
+    /// format, canonical scale and the exact byte total. Returns the row and
+    /// total byte counts.
+    fn shape(&self, limits: &ContentLimits) -> Result<(u32, u64), InvalidRecord> {
         resource(self.resource)?;
         require(
             self.grant == limits.grant
+                && self.grant.connection_epoch != 0
+                && self.grant.content_grant_epoch != 0
                 && self.width_px > 0
                 && self.width_px <= limits.max_width_px
                 && self.height_px > 0
@@ -392,6 +417,13 @@ impl ContentResourceBegin {
             total_bytes <= limits.max_resource_bytes && self.total_bytes == total_bytes,
             "content resource byte count",
         )?;
+        Ok((row_bytes, total_bytes))
+    }
+
+    /// The negotiated grant's exact layout: [`Self::shape`] under `limits`,
+    /// then the chunk count `limits.max_chunk_bytes` gives.
+    pub fn layout(&self, limits: &ContentLimits) -> Result<ContentResourceLayout, InvalidRecord> {
+        let (row_bytes, total_bytes) = self.shape(limits)?;
         // The canonical upload chunk is `max_chunk_bytes` (shell file contract,
         // d040013bb). It equals the earlier min(max_frame_payload - 48,
         // max_chunk_bytes) on every valid Limits object, because
