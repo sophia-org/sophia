@@ -1816,6 +1816,16 @@ unchanged. The Rust checksum list is relative to `spec/`, unlike the C list's
 repository-relative paths; the initial wrong-directory check was corrected in
 `t269-wm-rust-sdk-contract-2.log` before vendoring.
 
+The final `cargo xtask check` at signed `e72fa171b` passes in
+`t269-wm-retirement-full-2.log`: exit 0, 496 reported result groups, 6,715
+reported passes, zero failures and 63 ignored tests. SDK snapshot checks,
+workspace/SDK tests, clippy, layout and the remaining offline verifiers pass.
+The device-hidden gate reports buffer-age and GLX/EGL hardware evidence as not
+proved here; no physical result is inferred. The combined private installer
+selection, rollback and tamper run also passes in
+`t269-rollback-private-final.log`. This completes the Session WM worker slice;
+the remaining runtime and shell compatibility source is still tracked by t269.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
