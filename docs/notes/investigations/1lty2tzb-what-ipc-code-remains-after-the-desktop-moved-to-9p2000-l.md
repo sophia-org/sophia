@@ -1434,6 +1434,43 @@ test dependency scope of t265. It does not remove Sophia's production socket
 adapters or the SDKs' standalone compatibility targets. Devices and display
 were hidden, and the archive corpus was absent; no live acceptance is claimed.
 
+### Shell owner and outbox completion (t268, 2026-09-28)
+
+The accepted descriptor records complete the native vocabulary used by the
+typed output FIFO. Content, native launcher, catalog, indicator and descriptor
+records have native body charges; control credits cover whole native records.
+Snapshot objects remain separately bounded. Socket framing, message kinds and
+frame-shaped bounds are confined to `shell_transport/socket.rs` and its
+children. The strengthened `shell_owner_wire_neutrality` test enforces this
+across the transport and content owners. Compatibility dispatch remains until
+t269; retiring that dispatch no longer requires replacing owner encodings or
+budget arithmetic.
+
+`c82553a59` fixes the previously reported internal admission-counter overflow.
+These stamps only merge two bounded queues; they are not protocol identities.
+The shared record cap is at most u32-sized (64 without content), and output
+never skips a retained earlier record. Thus their live span is less than half
+the u64 range. Wrapping increment plus modular comparison preserves that order
+without changing file journal sequences, transaction IDs or custody.
+
+The new real-socket regression starts immediately before each wrap boundary.
+The original increment panics (`t268-order-wrap-before.log`); increment-only
+repair produces the wrong observed record order
+(`t268-order-wrap-comparison-before.log`). The complete fix passes all 56
+runtime library tests and 45 focused transport tests, including the independent
+C descriptor exchange, native record bounds and owner isolation. Strict runtime
+clippy for all targets/features, formatting and layout pass. Logs are
+`ipc-retirement/t268-order-wrap-after.log` and `t268-final-{focused,clippy,fmt,layout}.log`.
+
+The preceding full gate at `680f0516e` passed 6,671 tests and all offline checks.
+Only the counter/comparison repair and its regression changed executable code
+after that gate. Earlier credit/settlement mutations and the reduced-upload
+regression remain part of the evidence above. These results satisfy t268's
+owner-budget and typed-output scope. Optional socket EINTR retry was not added;
+it is not needed for this separation and the adapter remains slated for t269.
+No production transport default, SDK release, installed component or live
+session changed.
+
 ### Broker and portal survey correction (t273, 2026-09-28)
 
 The production statement in section 8 applies to the metadata broker only.
