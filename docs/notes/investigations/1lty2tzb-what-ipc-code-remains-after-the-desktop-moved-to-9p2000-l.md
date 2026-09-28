@@ -1752,6 +1752,11 @@ claim a second full repository run. No installed or running session changed.
 
 ## Validation and remaining work
 
+The [source-retirement proposal](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
+asks whether WM/shell compatibility removal may proceed with verified whole-release
+rollback while latency qualification stays open. It is proposed only; current
+dependencies and acceptance requirements are unchanged until a decision.
+
 Each removal is gated by the existing checks (`cargo xtask check`, the SDK
 `same_contract` digests, the native protocol-family gates) and, for default
 flips, by a published rollback recipe. The inventory maps to these task IDs;
