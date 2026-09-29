@@ -2060,6 +2060,15 @@ refuses the old key, and permits a fresh SDK connection with newer epochs.
 `t269-component-owners-files-3.log` passes six file tests and seven remaining
 tests; `t269-component-owners-clippy-3.log` passes strict clippy.
 
+The complete isolated `cargo xtask check` passes at signed `ffcfdfdcc`:
+`t269-shell-process-and-custody-full.log` reports 478 test groups, 6,633
+reported passes, zero failures and 63 ignored tests, plus the strict clippy and
+repository verifier stages. Counts include nested fixtures, not unique tests.
+The two protected-process controls were explicitly run separately as recorded
+above. Device-backed pixel and native acceptance claims remain unavailable in
+this sandbox. The source is clean; t269 remains open for the remaining socket
+controls and production adapters.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
