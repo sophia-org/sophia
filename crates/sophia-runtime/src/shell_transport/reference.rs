@@ -25,7 +25,7 @@ pub enum ShellReferenceCandidateEvent {
 impl ShellComponentTransport {
     pub fn publish_shortcuts(
         &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
+        _epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         catalog: &ShellShortcutCatalog,
     ) -> Result<(), ShellTransportError> {
@@ -34,11 +34,7 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::MissingCapability);
         }
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::Shortcuts(catalog.clone()),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         if self.reference_state.request.is_some() || self.reference_state.pending.is_some() {
             return Err(ShellTransportError::WrongCandidate);
@@ -64,11 +60,7 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::MissingCapability);
         }
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::ReferenceRequest(request),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         if self.reference_state.catalog != Some(request.catalog_generation)
             || self.reference_state.request.is_some()
@@ -110,9 +102,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<ShellReferenceCandidateEvent>, ShellTransportError> {
         if !self.file_descriptor() {
-            return Ok(self
-                .poll_socket_reference_candidate(epochs)?
-                .map(|(tx, candidate)| ShellReferenceCandidateEvent::Candidate(tx, candidate)));
+            return Err(ShellTransportError::NotConnected);
         }
         self.poll_io(epochs)?;
         let Some(value) = self
@@ -189,17 +179,13 @@ impl ShellComponentTransport {
 
     pub fn send_reference_outcome(
         &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
+        _epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         outcome: ShellReferenceOutcome,
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::ReferenceOutcome(outcome),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         let (tx, candidate, prepared) = self
             .reference_state

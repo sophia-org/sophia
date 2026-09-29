@@ -15,7 +15,7 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::WrongActivation);
         }
-        self.poll_io_bounded(epochs, 64 * 1024)?;
+        self.poll_io(epochs)?;
         epochs
             .active_candidates_mut(self.store_grant)
             .ok_or(ShellTransportError::MissingCapability)?
@@ -34,7 +34,6 @@ impl ShellComponentTransport {
             .ok_or(ShellTransportError::MissingCapability)?;
         let maximum = limits.max_frames_per_service_tick.min(32) as usize;
         let mut processed = 0;
-        self.begin_inbound_visit();
         while processed < maximum {
             let Some((transaction, record)) = self.peek_native_content()? else {
                 break;
@@ -67,8 +66,7 @@ impl ShellComponentTransport {
         Ok(processed)
     }
 
-    /// The wire-agnostic effect of one decoded record after Closed: reject or
-    /// tail it, exactly as the socket path applies inline.
+    /// Apply the rejection or retirement tail of one decoded record after Closed.
     fn apply_closed_native_content_record(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,

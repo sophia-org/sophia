@@ -185,7 +185,7 @@ pub(super) fn service_components(
                     return Err("native component role mismatch".into());
                 };
                 let complete = catalog.publish(transport)?;
-                transport.poll_io_bounded(64 * 1024)?;
+                transport.poll_io()?;
                 if complete {
                     catalog.service_actions(
                         actions,

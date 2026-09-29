@@ -91,14 +91,6 @@ cargo test --offline -q -p sophia-conformance --test shell_content_files
 # The same composition, action-receipt and retirement assertions also run
 # over files, with the independent SDK peer and no IPC library.
 cargo test --offline -q -p sophia-backend-live --all-features --lib protected_popout_file_client
-# The protected popout lifecycle test still uses the socket wire (t252 item);
-# it keeps the vendored IPC client in its content-lifecycle mode.
-${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
-    vendor/c-desktop-sdk/source/src/tests/sophia_shell_content_live_client.c \
-    -o "$build_dir/sophia-shell-content-live-c-client"
-SOPHIA_CONTENT_LIFECYCLE_CLIENT="$build_dir/sophia-shell-content-live-c-client" \
-    cargo test --offline -q -p sophia-backend-live --all-features --lib \
-    protected_popout_client -- --ignored
 
 # An independent decoder written from the schema, not from the Rust. It must
 # also refuse malformed frames itself: a second implementation that accepts
@@ -125,8 +117,7 @@ if [ -n "$content_client" ]; then
         echo "Content lifecycle client is not executable: $content_client" >&2
         exit 2
     fi
-    # A supplied client speaks the 9P content-proof scenario; the socket-wire
-    # popout lifecycle above keeps its own vendored client.
+    # A supplied client speaks the 9P content-proof scenario.
     cargo run --offline -q -p sophia-runtime \
         --example shell_content_conformance_host -- "$content_client"
     content_lifecycle=complete

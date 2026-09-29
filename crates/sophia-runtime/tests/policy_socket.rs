@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use sophia_runtime::{
     PolicyPeerIdentity, PolicyRole, PolicyRoleEndpoint, PolicyRoleEndpointError,
-    ProtectionBackendKind, ProtectionDomainEvidence, ProtectionDomainRole, SOPHIA_WM_SOCKET_ENV,
+    ProtectionBackendKind, ProtectionDomainEvidence, ProtectionDomainRole, SOPHIA_WM_9P_SOCKET_ENV,
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(1);
@@ -18,7 +18,7 @@ fn endpoint_is_owner_only_and_admits_only_the_supervised_peer() {
     let directory = unique_directory("admission");
     let peer = current_peer();
     let mut endpoint = PolicyRoleEndpoint::bind(&directory, peer).unwrap();
-    assert_eq!(SOPHIA_WM_SOCKET_ENV, "SOPHIA_WM_SOCKET");
+    assert_eq!(SOPHIA_WM_9P_SOCKET_ENV, "SOPHIA_WM_9P_SOCKET");
     assert_eq!(
         fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
         0o700
@@ -309,6 +309,8 @@ fn every_role_has_its_own_socket_and_environment_variable() {
     envs.sort_unstable();
     envs.dedup();
     assert_eq!(envs.len(), roles.len(), "socket env vars must be distinct");
+    assert_eq!(PolicyRole::Wm.socket_env(), "SOPHIA_WM_9P_SOCKET");
+    assert_eq!(PolicyRole::Shell.socket_env(), "SOPHIA_SHELL_9P_SOCKET");
 
     assert_eq!(PolicyRole::Broker.socket_file_name(), "broker.sock");
     assert_eq!(PolicyRole::Broker.socket_env(), "SOPHIA_BROKER_SOCKET");

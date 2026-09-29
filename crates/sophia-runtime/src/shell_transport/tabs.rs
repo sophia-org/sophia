@@ -17,11 +17,7 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(activation.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::DescriptorActivation(activation),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         if self.tab_state.presented_candidate
             != Some((
@@ -48,7 +44,7 @@ impl ShellComponentTransport {
         transaction: TransactionId,
     ) -> Result<Option<sophia_protocol::ShellV1ActivationAck>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self.poll_socket_descriptor_ack(epochs, transaction);
+            return Err(ShellTransportError::NotConnected);
         }
         let index = self
             .tab_state
@@ -78,11 +74,7 @@ impl ShellComponentTransport {
             return Err(ShellTransportError::MissingCapability);
         }
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::Tabs(snapshot.clone()),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         if self.tab_state.pending_candidate.is_some() {
             return Err(ShellTransportError::WrongCandidate);
@@ -116,7 +108,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellTabCandidate)>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self.poll_socket_tabs_candidate(epochs);
+            return Err(ShellTransportError::NotConnected);
         }
         self.poll_io(epochs)?;
         let Some(value) = self
@@ -194,17 +186,13 @@ impl ShellComponentTransport {
 
     pub fn send_tabs_outcome(
         &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
+        _epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         outcome: ShellV1CandidateOutcome,
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::DescriptorOutcome(outcome),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         let mut pending = self
             .tab_state

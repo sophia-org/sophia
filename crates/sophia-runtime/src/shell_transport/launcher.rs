@@ -70,15 +70,8 @@ impl ShellComponentTransport {
         if !self.supports_launcher() {
             return Err(ShellTransportError::MissingCapability);
         }
-        if self.launcher_catalog_pending() {
-            return Err(ShellTransportError::ActivationQueueSaturated);
-        }
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::LauncherRequest(request.clone()),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         if self
             .launcher_state
@@ -113,21 +106,12 @@ impl ShellComponentTransport {
         self.launcher_state.presented = None;
     }
 
-    /// A socket catalog may span several bounded I/O visits. File snapshots
-    /// publish atomically, so their announcement is already ahead of a request.
-    pub fn launcher_catalog_pending(&self) -> bool {
-        self.socket()
-            .is_some_and(|socket| socket.publication_pending())
-    }
-
     pub fn poll_launcher_candidate(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<ShellLauncherCandidateEvent>, ShellTransportError> {
         if !self.file_descriptor() {
-            return Ok(self
-                .poll_socket_launcher_candidate(epochs)?
-                .map(|(tx, candidate)| ShellLauncherCandidateEvent::Candidate(tx, candidate)));
+            return Err(ShellTransportError::NotConnected);
         }
         self.poll_io(epochs)?;
         let Some(value) = self
@@ -204,17 +188,13 @@ impl ShellComponentTransport {
 
     pub fn send_launcher_outcome(
         &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
+        _epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         outcome: ShellLauncherOutcome,
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::LauncherOutcome(outcome),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         let (tx, candidate, prepared) = self
             .launcher_state
@@ -267,11 +247,7 @@ impl ShellComponentTransport {
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(activation.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::LauncherActivation(activation),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         let valid = self
             .launcher_state
@@ -312,7 +288,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, ShellLauncherActivationAck)>, ShellTransportError> {
         if !self.file_descriptor() {
-            return self.poll_socket_launcher_ack(epochs);
+            return Err(ShellTransportError::NotConnected);
         }
         self.poll_io(epochs)?;
         while let Some(value) = self
@@ -344,17 +320,13 @@ impl ShellComponentTransport {
 
     pub fn send_launch_outcome(
         &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
+        _epochs: &mut crate::ContentEpochRegistry,
         transaction: TransactionId,
         outcome: ShellLaunchOutcome,
     ) -> Result<(), ShellTransportError> {
         self.require_epoch(outcome.activation.connection_epoch)?;
         if !self.file_descriptor() {
-            return self.send_socket_descriptor(
-                epochs,
-                transaction,
-                ShellDescriptorRecord::LaunchOutcome(outcome),
-            );
+            return Err(ShellTransportError::NotConnected);
         }
         let valid = self
             .launcher_state
@@ -427,9 +399,6 @@ macro_rules! facade {
             }
             pub fn revoke_launcher(&mut self) {
                 self.state.revoke_launcher();
-            }
-            pub fn launcher_catalog_pending(&self) -> bool {
-                self.state.launcher_catalog_pending()
             }
             pub fn poll_launcher_candidate(
                 &mut self,

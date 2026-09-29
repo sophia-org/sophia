@@ -90,7 +90,6 @@ impl ShellComponentTransport {
             .expire(now)?;
         self.flush_content_candidate_events(epochs)?;
         let mut processed = 0;
-        self.begin_inbound_visit();
         while processed < max_records {
             if !self.control_capacity_available(epochs, 0) {
                 break;
@@ -173,7 +172,7 @@ impl ShellTransportConnection<'_> {
         if !self.supports_persistent_catalog() {
             return Err(ShellTransportError::MissingCapability);
         }
-        self.state.poll_io_bounded(self.content_epochs, 64 * 1024)?;
+        self.state.poll_io(self.content_epochs)?;
         self.state
             .service_catalog_candidates(self.content_epochs, contexts, catalog, now)
     }

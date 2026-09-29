@@ -1,5 +1,5 @@
 //! Descriptor request, presentation and activation state belongs to the
-//! component epoch. Neither a socket nor a file decoder commits this state.
+//! component epoch. The file decoder cannot commit this state.
 use sophia_protocol::{
     SOPHIA_SHELL_MAX_PENDING_ACTIVATIONS, ShellV1DescriptorSnapshot, TransactionId,
 };

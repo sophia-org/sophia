@@ -2,25 +2,18 @@ use std::collections::VecDeque;
 
 use super::outbound::{Admitted, OutboundRecord};
 
-/// One FIFO owns every admitted typed record until a wire takes custody of it
-/// whole: the file journal's append, or the socket's last written byte. A
-/// record leaves only through `pop_front`; a refused or partial transfer leaves
+/// One FIFO owns every admitted typed record until the export takes custody
+/// whole. A record leaves only through `pop_front`; a refused transfer leaves
 /// it here, still charged, for a later service turn.
-///
-/// Each record carries its admission sequence. A wire that also queues records
-/// of its own (the socket's legacy frames) stamps them from the same counter,
-/// so the order the component observes is exactly the order of admission.
 #[derive(Default)]
 pub(super) struct ShellOutbox {
     records: VecDeque<Queued>,
     charged: usize,
     bulk: usize,
     controls: usize,
-    next_sequence: u64,
 }
 
 pub(super) struct Queued {
-    pub(super) sequence: u64,
     pub(super) record: OutboundRecord,
     pub(super) control: bool,
     pub(super) charge: usize,
@@ -51,20 +44,9 @@ impl ShellOutbox {
         self.controls = 0;
     }
 
-    /// Reserves an internal position in the component's single output order.
-    /// This is not a protocol identity. The two queues retain at most a u32
-    /// record limit (64 without content), so their span is below half the u64
-    /// range and the socket can compare these stamps across wraparound.
-    pub(super) fn next_sequence(&mut self) -> u64 {
-        let sequence = self.next_sequence;
-        self.next_sequence = self.next_sequence.wrapping_add(1);
-        sequence
-    }
-
     /// The custody transfer. Admission already checked encoding, wire bounds
     /// and capacity, so nothing here can refuse.
     pub(super) fn push(&mut self, admitted: Admitted) {
-        let sequence = self.next_sequence();
         self.charged += admitted.charge;
         if admitted.control {
             self.controls += 1;
@@ -72,7 +54,6 @@ impl ShellOutbox {
             self.bulk += admitted.charge;
         }
         self.records.push_back(Queued {
-            sequence,
             record: admitted.record,
             control: admitted.control,
             charge: admitted.charge,

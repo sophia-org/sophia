@@ -103,7 +103,7 @@ impl ShellTransportConnection<'_> {
     pub fn poll_catalog_activation(
         &mut self,
     ) -> Result<Option<(TransactionId, CatalogActivation)>, ShellTransportError> {
-        self.state.poll_io_bounded(self.content_epochs, 64 * 1024)?;
+        self.state.poll_io(self.content_epochs)?;
         self.state.take_catalog_request(self.content_epochs)
     }
     pub fn finish_catalog_activation(

@@ -1,7 +1,6 @@
 use sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES;
 
 use super::outbound::{Admitted, OutboundRecord};
-use super::wire::Wire;
 use super::{ShellComponentTransport, ShellTransportError};
 
 /// The byte charge of one control credit. Every fixed r5 lifecycle response
@@ -39,23 +38,22 @@ impl ShellComponentTransport {
         }
     }
 
-    /// Records in the output order: the typed FIFO and, on the socket, the
-    /// frames only it carries.
+    /// Records in the typed FIFO, before the file export takes custody.
     pub(super) fn fifo_records(&self) -> usize {
-        self.output.records() + self.socket().map_or(0, |socket| socket.lane_records())
+        self.output.records()
     }
 
     pub(super) fn fifo_controls(&self) -> usize {
-        self.output.controls() + self.socket().map_or(0, |socket| socket.lane_controls())
+        self.output.controls()
     }
 
     pub(super) fn fifo_bulk_bytes(&self) -> usize {
-        self.output.bulk_bytes() + self.socket().map_or(0, |socket| socket.lane_bulk_bytes())
+        self.output.bulk_bytes()
     }
 
     /// Every retained output charge, control and bulk.
     pub(super) fn fifo_bytes(&self) -> usize {
-        self.output.charged() + self.socket().map_or(0, |socket| socket.lane_bytes())
+        self.output.charged()
     }
 
     pub(super) fn fifo_is_empty(&self) -> bool {
@@ -74,15 +72,10 @@ impl ShellComponentTransport {
             Class::Bulk => (false, None),
             Class::Control { limit, oversize } => (true, Some((limit, oversize))),
         };
-        match self.wire.as_ref() {
-            Some(Wire::Socket(socket)) => socket.admits(&record, limit)?,
-            Some(Wire::Files(_)) | None => {
-                if let Some((limit, oversize)) = limit
-                    && SHELL_FILE_HEADER_BYTES + body.len() > limit
-                {
-                    return Err(oversize);
-                }
-            }
+        if let Some((limit, oversize)) = limit
+            && SHELL_FILE_HEADER_BYTES + body.len() > limit
+        {
+            return Err(oversize);
         }
         Ok(Admitted {
             record,

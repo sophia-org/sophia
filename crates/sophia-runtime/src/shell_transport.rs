@@ -45,12 +45,10 @@ mod outbox;
 mod publication;
 mod reference;
 pub use reference::ShellReferenceCandidateEvent;
-mod socket;
 mod tabs;
 mod wire;
 pub use accounting::{ShellContentAccounting, ShellContentShutdown};
 pub use content_admission::ShellContentAdmissionPolicy;
-pub use socket::ShellClientTransport;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellTransportError {
@@ -114,8 +112,8 @@ impl From<ContentAllocationError> for ShellTransportError {
 
 pub struct ShellComponentTransport {
     endpoint: RoleEndpoint,
-    /// The one wire of the current epoch, socket or files.
-    wire: Option<wire::Wire>,
+    /// The current epoch's protected 9P connection.
+    wire: Option<Box<files::ShellFileWire>>,
     /// The component's next logical qid, continued across file epochs.
     file_qids: u64,
     negotiation: Option<negotiation_service::PendingNegotiation>,
@@ -195,7 +193,7 @@ impl ShellComponentTransport {
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<(), ShellTransportError> {
-        if let Some(wire::Wire::Files(mut files)) = self.wire.take() {
+        if let Some(mut files) = self.wire.take() {
             self.file_qids = files.export().next_qid();
             files.revoke();
         }
@@ -302,20 +300,10 @@ impl ShellComponentTransport {
             .map_err(Into::into)
     }
 
-    /// Bounded, nonblocking I/O shared by persistent tabs and the r1 facade.
+    /// Bounded, nonblocking 9P turns around FIFO-to-journal handoff.
     pub fn poll_io(
         &mut self,
         epochs: &mut crate::ContentEpochRegistry,
-    ) -> Result<(), ShellTransportError> {
-        self.poll_io_bounded(epochs, 256 * 1024)
-    }
-
-    /// Bound each I/O direction, preserving partial framing and FIFO custody.
-    /// Legacy service keeps its previous 256 KiB limits; native visits use 64 KiB.
-    pub(super) fn poll_io_bounded(
-        &mut self,
-        epochs: &mut crate::ContentEpochRegistry,
-        byte_budget: usize,
     ) -> Result<(), ShellTransportError> {
         if self.wire.is_none() {
             return Err(ShellTransportError::NotConnected);
@@ -325,11 +313,9 @@ impl ShellComponentTransport {
         self.flush_native_activation(epochs)?;
         self.flush_native_close(epochs)?;
         self.flush_native_accept(epochs)?;
-        self.flush_publication(epochs);
         let closed = match self.wire.as_mut() {
             None => return Err(ShellTransportError::NotConnected),
-            Some(wire::Wire::Socket(socket)) => socket.turn(&mut self.output, byte_budget)?,
-            Some(wire::Wire::Files(files)) => Self::turn_files(files, &mut self.output)?,
+            Some(files) => Self::turn_files(files, &mut self.output)?,
         };
         if closed {
             self.peer_closed = true;

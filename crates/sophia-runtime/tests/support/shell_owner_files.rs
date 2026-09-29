@@ -4,7 +4,6 @@ use crate::ContentStoreProfile;
 use crate::shell_transport::ShellComponentTransport;
 use crate::shell_transport::files::{ShellFileWire, ShellFiles, role_bounds};
 use crate::shell_transport::outbound::OutboundRecord;
-use crate::shell_transport::wire::Wire;
 use sophia_protocol::shell_files::*;
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
@@ -47,9 +46,7 @@ impl Peer {
             (bytes, limits)
         });
         export.complete_negotiation(limits, t.capabilities).unwrap();
-        t.wire = Some(Wire::Files(Box::new(
-            ShellFileWire::adopt(local, export).unwrap(),
-        )));
+        t.wire = Some(Box::new(ShellFileWire::adopt(local, export).unwrap()));
         let mut peer = Self {
             raw: raw::Peer::from_stream(remote),
             epoch: t.connection_epoch,
@@ -128,7 +125,7 @@ impl Peer {
 
     /// Every queued record stays charged until the production drain succeeds.
     pub fn drain(t: &mut ShellComponentTransport) -> bool {
-        let Some(Wire::Files(files)) = t.wire.as_mut() else {
+        let Some(files) = t.wire.as_mut() else {
             panic!("file wire required")
         };
         ShellComponentTransport::drain_file_output(files, &mut t.output).unwrap()

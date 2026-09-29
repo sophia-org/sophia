@@ -1,11 +1,11 @@
 //! Retained protected handshake. No sleep or blocking socket operation here.
-//! Admission and the reset of the connection's state are shared; each wire
-//! only carries the Hello and its answer.
+//! Admission and the reset of connection state surround one submitted
+//! Negotiate record and its journaled answer.
 use super::*;
 use std::time::Instant;
 
 /// One pending handshake reserves two answer records within this many bytes
-/// (the welcome and the limits, or the refusal) on either wire.
+/// (the welcome and the limits, or the refusal).
 pub(super) const REPLY_BYTES: usize = 512;
 pub(super) const REPLY_RECORDS: usize = 2;
 
@@ -17,10 +17,7 @@ pub(super) struct PendingNegotiation {
     pub(super) epoch: u64,
     pub(super) policy: ShellContentAdmissionPolicy,
     pub(super) stage: Stage,
-    pub(super) selected: Option<(ShellV1ServerWelcome, Option<ContentLimits>)>,
     pub(super) refusal: Option<ContentAdmissionRefused>,
-    /// Session selected the file wire for this component at startup.
-    file: bool,
     /// Host-selected metadata role. A bar's compatibility bit 0 cannot select it.
     pub(super) descriptor: bool,
 }
@@ -30,7 +27,6 @@ pub(super) enum Stage {
     Waiting,
     /// A file peer accepted but not yet served as an export.
     Accepted(UnixStream),
-    Socket(Box<socket::negotiation::Handshake>),
     Files(Box<files::ShellFileWire>),
 }
 
@@ -52,7 +48,7 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::WrongContentGrant);
         }
-        self.begin_selected_negotiation(epochs, connection_epoch, timeout, policy, true)?;
+        self.begin_file_negotiation(epochs, connection_epoch, timeout, policy)?;
         self.negotiation.as_mut().expect("just started").descriptor = true;
         Ok(())
     }
@@ -67,17 +63,6 @@ impl ShellComponentTransport {
         connection_epoch: u64,
         timeout: Duration,
         policy: ShellContentAdmissionPolicy,
-    ) -> Result<(), ShellTransportError> {
-        self.begin_selected_negotiation(epochs, connection_epoch, timeout, policy, true)
-    }
-
-    pub(super) fn begin_selected_negotiation(
-        &mut self,
-        epochs: &crate::ContentEpochRegistry,
-        connection_epoch: u64,
-        timeout: Duration,
-        policy: ShellContentAdmissionPolicy,
-        file: bool,
     ) -> Result<(), ShellTransportError> {
         if connection_epoch == 0 || connection_epoch <= self.connection_epoch {
             return Err(ShellTransportError::InvalidConnectionEpoch);
@@ -99,20 +84,16 @@ impl ShellComponentTransport {
             epoch: connection_epoch,
             policy,
             stage: Stage::Waiting,
-            selected: None,
             refusal: None,
-            file,
             descriptor: false,
         });
         Ok(())
     }
 
-    /// At most one accept. A positive budget runs bounded 9P server turns on
-    /// files; the compatibility socket shares up to 64 KiB across at most 32
-    /// read/write attempts. Zero performs no I/O, but still checks the deadline.
+    /// At most one accept. A positive budget runs bounded 9P server turns.
+    /// Zero performs no I/O, but still checks the deadline.
     /// None means pending. Welcome is returned exactly once after output
-    /// custody: journal admission on files, written welcome/limit bytes on the
-    /// compatibility socket. Neither means peer receipt.
+    /// custody: journal admission, which does not imply peer receipt.
     /// On returned failure, the exact reservation/socket is revoked; neighbors
     /// remain owned by the registry. Interruption/unwind is not a terminal ACK.
     pub fn poll_negotiation(
@@ -148,32 +129,19 @@ impl ShellComponentTransport {
             };
             let pending = self.negotiation.as_mut().expect("visit retains handshake");
             // Store before the fallible mode change. Returned-error cleanup owns it.
-            pending.stage = if pending.file {
-                Stage::Accepted(stream)
-            } else {
-                Stage::Socket(Box::new(socket::negotiation::Handshake::new(stream)))
-            };
+            pending.stage = Stage::Accepted(stream);
             let stream = match &pending.stage {
                 Stage::Accepted(stream) => stream,
-                Stage::Socket(handshake) => handshake.stream(),
                 Stage::Waiting | Stage::Files(_) => unreachable!("just accepted"),
             };
             stream
                 .set_nonblocking(true)
                 .map_err(|error| ShellTransportError::Io(error.to_string()))?;
         }
-        if self
-            .negotiation
-            .as_ref()
-            .is_some_and(|pending| pending.file)
-        {
-            return self.visit_file_negotiation(epochs);
-        }
-        self.visit_socket_negotiation(epochs, budget)
+        self.visit_file_negotiation(epochs)
     }
 
-    /// Resets connection state for a freshly selected epoch. Both wires use
-    /// it after their last fallible step, then install themselves.
+    /// Resets connection state after the export's last fallible admission step.
     pub(super) fn install_negotiated(
         &mut self,
         welcome: ShellV1ServerWelcome,
@@ -292,7 +260,7 @@ impl ShellComponentTransport {
                     unreachable!("a file handshake is served as an export");
                 };
                 self.install_negotiated(welcome, limits);
-                self.wire = Some(super::wire::Wire::Files(wire));
+                self.wire = Some(wire);
                 Ok(Some(welcome))
             }
             Err(ShellTransportError::ContentAdmissionRefused(refusal)) => {
@@ -323,13 +291,8 @@ impl PendingNegotiation {
         }
     }
 
-    /// Input this handshake holds for its Hello: the socket's fixed Hello
-    /// buffer, or the file peer's one Negotiate record.
+    /// Input this handshake holds for the peer's one Negotiate record.
     pub(super) fn input_bytes(&self) -> usize {
-        if self.file {
-            sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES + NEGOTIATE_BODY_BYTES
-        } else {
-            socket::negotiation::HELLO_BYTES
-        }
+        sophia_protocol::shell_files::SHELL_FILE_HEADER_BYTES + NEGOTIATE_BODY_BYTES
     }
 }

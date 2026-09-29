@@ -2596,6 +2596,75 @@ not a physical or latency qualification. The runtime socket implementation is
 still present for remaining compatibility callers; t269 is not complete. No
 installed selection or running process changes.
 
+## Runtime shell socket adapter retirement (t269, 2026-09-29)
+
+After the default change at `761943412`, the runtime shell owner now holds
+only `ShellFileWire`. The socket module and its five implementation files are
+removed, together with the public `ShellClientTransport`, blocking socket
+negotiation and raw frame methods. The owned single-shell and borrowed Session
+facades retain their typed file APIs. The role endpoint's WM and shell socket
+environment names now identify their 9P endpoints; output and broker names are
+unchanged.
+
+The typed FIFO hands records to the file journal as before. Removing the
+second, socket-only output lane also removes its internal ordering counter;
+the FIFO's order, credit charges and journal handoff remain. The two tests
+`a_wire_lane_stamp_takes_the_next_position_in_the_single_order` and
+`file_admission_order_survives_outbox_counter_wrap` retire with that counter.
+`records_leave_whole_in_admission_order_with_their_exact_charges` and
+`the_file_journal_takes_typed_records_in_admission_order` retain their exact
+transaction/order and accounting assertions. This counter was not a protocol
+sequence or identity.
+
+Session's `application_catalog/socket_frames.rs` and the unused
+`shell_indicator_conformance_host` example are removed. Catalog tests now
+round-trip the whole native file object, refuse every truncated prefix and
+invalid identity bijections, and retain plain versus persistent publication.
+Separate socket identity-phase ordering and per-frame header checks retire with
+that encoding. The panel ceiling test round-trips the whole file descriptor
+candidate. Indicator coverage remains in the six `metadata_shell_tests`
+projection controls, `component_publication_files`' actual Session publication,
+`shell_component_connections_files`, and runtime `shell_indicators_files`.
+
+The two ignored backend socket lifecycle tests retire. Their three non-ignored
+file counterparts still build an independent C SDK peer without IPC and exercise
+the same production composition, action receipt, dismissal, parent loss and
+lease retirement owners. Receipt and custody mutants remain in that suite.
+`check_shell_protocol.sh` runs those tests and the independent file conformance
+hosts, with its obsolete socket-client build removed. Protocol frame corpora
+and SDK compatibility source are still present for the next removal slice.
+
+Focused evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-socket-removal-runtime-2.log`: 114 passes across the runtime owner,
+  endpoint, admission, descriptor negotiation and negotiation service tests.
+- `t269-socket-removal-session-2.log`: application catalog 5/5, component
+  connections 13/13 and panel configuration 2/2.
+- `t269-socket-removal-backend.log`: the three independent file lifecycle tests
+  pass, including their negative controls.
+- `t269-socket-removal-clippy.log`: strict all-target/all-feature clippy passes
+  for runtime, Session and backend-live.
+
+The first runtime test compile exposed a remaining test assignment to the
+removed internal counter. The first Session run exposed an incorrect new test
+expectation: the whole-record codec does not compare its catalog epoch to the
+outer header. Consumer/export checks own that comparison. The codec test now
+checks an invalid zero catalog epoch. Both failed logs are retained alongside
+the passing reruns. Neither failure required changing production behavior.
+
+`t269-socket-removal-full.log` records the complete isolated `cargo xtask check`
+exit zero: 476 result groups, 6,626 reported passes, none failed and 61 ignored,
+plus workspace clippy, formatting, SDK snapshots and tool verifiers. The two
+fewer passes and two fewer ignored tests correspond to the internal counter
+tests and backend socket twins retired above. Device-dependent graphics claims
+remain unproved in this sandbox. No installed selection or live process changes.
+
+`t269-socket-removal-protocol.log` separately records
+`tools/check_shell_protocol.sh` exit zero, including independent C descriptor
+modes, the content host, backend lifecycle mutants and the retained frame
+corpora. Its optional operator-supplied lifecycle client is explicitly
+unavailable; the built-in independent C file peers ran and passed.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
@@ -2619,7 +2688,8 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
 - t269: flip the WM and shell transport defaults to 9p2000.L, then delete the
   WM and shell IPC paths, codecs, generator, bindings, archive, scripts and
   gates (B, after t267, t268 and t271, under the accepted retirement decision). Descriptor production startup
-  now uses files; the remaining generic socket adapter still needs deletion.
+  now uses files and its runtime socket adapter is removed; protocol codecs,
+  generated bindings and obsolete corpus tooling still need retirement.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.
 - t271: the Narthex descriptor profile and single-process metadata shell (C).

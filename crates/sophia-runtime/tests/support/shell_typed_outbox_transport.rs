@@ -539,20 +539,9 @@ fn a_permit_and_an_allocation_answer_need_their_credits_before_the_owner_changes
 
 #[test]
 fn the_file_journal_takes_typed_records_in_admission_order() {
-    file_admission_order(0);
-}
-
-#[test]
-fn file_admission_order_survives_outbox_counter_wrap() {
-    file_admission_order(u64::MAX - 1);
-    file_admission_order(u64::MAX);
-}
-
-fn file_admission_order(first_sequence: u64) {
     let mut epochs = registry();
     let mut owner = Owner::new(&mut epochs, 1, 64);
     let mut peer = owner.attach_files();
-    owner.transport.output.next_sequence = first_sequence;
     let records = [90, 7, 91].map(|id| {
         let OutboundRecord::Content(_, value) = rejected_allocation(owner.transport.store_grant)
         else {

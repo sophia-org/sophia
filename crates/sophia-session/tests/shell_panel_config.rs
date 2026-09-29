@@ -44,12 +44,22 @@ fn the_compiled_switcher_reserves_nothing_and_the_configured_ceiling_round_trips
             generation: 1,
         }],
     };
-    let frame = sophia_protocol::encode_shell_v1_candidate_frame(
-        sophia_protocol::TransactionId::from_raw(1),
-        &candidate,
+    use sophia_protocol::shell_files::*;
+    let record = ShellFileDescriptorRecord {
+        transaction: sophia_protocol::TransactionId::from_raw(1),
+        record: ShellDescriptorRecord::DescriptorCandidate(candidate),
+    };
+    let frame = encode_shell_file_descriptor(
+        ShellFileHeader {
+            kind: ShellFileKind::DescriptorCandidate,
+            connection_epoch: 1,
+            submission_id: 1,
+            sequence: 0,
+        },
+        &record,
     )
     .expect("the compiled panel encodes");
-    let (_, decoded) =
-        sophia_protocol::decode_shell_v1_candidate_frame(&frame).expect("and decodes back");
-    assert_eq!(decoded.reservation, candidate.reservation);
+    let decoded = decode_shell_file_descriptor(&frame, ShellFileKind::DescriptorCandidate)
+        .expect("and decodes back");
+    assert_eq!(decoded, record);
 }

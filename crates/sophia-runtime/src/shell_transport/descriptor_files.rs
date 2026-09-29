@@ -57,7 +57,7 @@ impl ShellComponentTransport {
         expected: Option<(TransactionId, u64)>,
     ) -> Result<Option<sophia_protocol::ShellV1ActivationAck>, ShellTransportError> {
         self.poll_io(epochs)?;
-        let Some(wire::Wire::Files(files)) = self.wire.as_mut() else {
+        let Some(files) = self.wire.as_mut() else {
             return Err(ShellTransportError::NotConnected);
         };
         let descriptors = &self.descriptor_state.pending_activations;
@@ -95,7 +95,7 @@ impl ShellComponentTransport {
     }
 
     pub(super) fn file_descriptor(&self) -> bool {
-        matches!(&self.wire, Some(wire::Wire::Files(files)) if files.export().is_descriptor())
+        matches!(&self.wire, Some(files) if files.export().is_descriptor())
     }
 
     pub(super) fn descriptor_capacity(

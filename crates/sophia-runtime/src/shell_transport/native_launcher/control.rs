@@ -278,8 +278,7 @@ impl ShellComponentTransport {
         if self.content_limits.is_none() {
             return Err(ShellTransportError::WrongContentRecord);
         }
-        // The text bound is the record's own; each wire checks its frame or
-        // record bounds, then the credit's size, before custody.
+        // Check the record's text bound and the credit's size before custody.
         let admitted = self.native_control_record(transaction, record)?;
         if !self.record_capacity_available(epochs, admitted.charge, true, transfer) {
             return Err(ShellTransportError::ContentQueueSaturated);
@@ -345,7 +344,7 @@ impl ShellComponentTransport {
         epochs: &mut crate::ContentEpochRegistry,
     ) -> Result<Option<(TransactionId, NativeLauncherInputAck, bool)>, ShellTransportError> {
         self.require_native_launcher(epochs)?;
-        self.poll_io_bounded(epochs, 64 * 1024)?;
+        self.poll_io(epochs)?;
         self.take_native_launcher_input_ack()
     }
 

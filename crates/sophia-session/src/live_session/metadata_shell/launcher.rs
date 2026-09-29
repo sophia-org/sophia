@@ -549,10 +549,8 @@ impl LiveMetadataShell {
         {
             return Err("launcher peer timed out".into());
         }
-        // The transport owns the bounded catalog transfer. A request cannot
-        // overtake its final frame or its atomic file announcement.
-        if self.transport.launcher_catalog_pending()
-            || self.launcher.request.is_some()
+        // Catalog publication has already admitted its atomic announcement.
+        if self.launcher.request.is_some()
             || self.launcher.pending.is_some()
             || self.launcher.revoked
         {

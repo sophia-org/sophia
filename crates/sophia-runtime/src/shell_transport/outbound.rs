@@ -1,10 +1,9 @@
 //! Session-to-client obligations as typed values. The shared FIFO holds these,
-//! never wire bytes: each wire encodes a record only when it takes custody.
+//! never wire bytes: the export encodes a record when it takes custody.
 //!
 //! A record's queue charge is its body in the surviving native encoding
-//! (`sophia-shell-files-v1.kdl`), without any wire header. Both wires and the
-//! content registry charge that one unit, so no owner sizes a record in a
-//! particular wire's framing.
+//! (`sophia-shell-files-v1.kdl`), without any wire header. The FIFO and content
+//! registry charge that same unit.
 use sophia_protocol::shell_files::{
     ShellFileCatalogActionRecord, ShellFileIndicatorActivationOutcome, ShellFileKind,
     ShellFileNativeLauncherRecord, ShellFileTransactionRecord,

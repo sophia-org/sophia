@@ -2,7 +2,7 @@
 use super::*;
 
 impl ShellComponentTransport {
-    /// Inspect actual retained stores and FIFO, including partial writes.
+    /// Inspect actual retained stores and FIFO, including blocked handoffs.
     /// High-water identities remain retained. This does not prove peer receipt
     /// or exclude additional old records still in the socket or peer outbox.
     pub fn closed_native_owners_settled(
@@ -37,8 +37,7 @@ impl ShellComponentTransport {
             && self.inbound_idle()
             && self.action_cancellations.is_empty()
             && self.indicator_response.is_none()
-            && self.fifo_is_empty()
-            && self.pending_publication().0 == 0)
+            && self.fifo_is_empty())
     }
 }
 

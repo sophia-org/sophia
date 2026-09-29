@@ -40,7 +40,6 @@ fn records_leave_whole_in_admission_order_with_their_exact_charges() {
     assert_eq!(outbox.controls(), 2);
     assert_eq!(outbox.bulk_bytes(), 680);
     assert_eq!(outbox.charged(), 856);
-    let first = outbox.front().unwrap().sequence;
     assert_eq!(transaction(outbox.front().unwrap()), 1);
     let released = outbox.pop_front();
     assert_eq!(transaction(&released), 1);
@@ -48,23 +47,11 @@ fn records_leave_whole_in_admission_order_with_their_exact_charges() {
     assert_eq!(outbox.charged(), 736);
     let released = outbox.pop_front();
     assert_eq!(transaction(&released), 2);
-    assert!(released.sequence > first);
     assert_eq!(outbox.bulk_bytes(), 0);
     assert_eq!(transaction(&outbox.pop_front()), 3);
     assert_eq!(outbox.records(), 0);
     assert_eq!(outbox.charged(), 0);
     assert_eq!(outbox.controls(), 0);
-}
-
-#[test]
-fn a_wire_lane_stamp_takes_the_next_position_in_the_single_order() {
-    let mut outbox = ShellOutbox::default();
-    outbox.push(record(1, true, 8));
-    let lane = outbox.next_sequence();
-    outbox.push(record(2, true, 8));
-    let first = outbox.pop_front().sequence;
-    let second = outbox.pop_front().sequence;
-    assert!(first < lane && lane < second);
 }
 
 #[test]

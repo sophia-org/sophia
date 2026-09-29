@@ -16,7 +16,7 @@ impl ShellComponentTransport {
         {
             return Err(ShellTransportError::WrongActivation);
         }
-        self.poll_io_bounded(epochs, 64 * 1024)?;
+        self.poll_io(epochs)?;
         let maximum = self
             .content_limits
             .as_ref()
