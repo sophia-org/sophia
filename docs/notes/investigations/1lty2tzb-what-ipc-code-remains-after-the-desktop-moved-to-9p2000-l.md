@@ -2032,6 +2032,28 @@ Evidence in `development-evidence/ipc-retirement/`:
 sandbox setup failures, the initial stale-assertion failure and the callback
 compile error are preserved. No installed or live component was changed.
 
+## Session connection budget controls on files
+
+Five existing connection-owner tests now use `shell_component_connections_files`
+and the public SDK against the production 9P export. The admission, retained
+launcher bytes, final consumer transfer, three-role catalog isolation and
+reservation-diagnostic assertions are retained from `9f562e44e`. The diagnostic
+test still pins sixteen old consumers, proves capacity refusal without changing
+accounting, and reopens a slot only after releasing the exact lease. The dock
+control checks revision 8, its exact capabilities, wrong-grant service refusal
+and uploads by both surviving neighbors after the dock closes.
+
+Only the transport fixture changes: negotiation and Limits fetching interleave
+with owner visits, and uploads use typed SDK submissions and bounded status
+polling. Protection evidence is supplied in this target; it does not replace
+the separate protected-process tests or independent C peer gates. Socket-only
+negotiation/publication controls remain in the original target for the next cut.
+
+`t269-component-owners-files-2.log` passes all five moved tests and the eight
+remaining tests; `t269-component-owners-clippy-2.log` passes strict clippy for
+both targets. These logs live under `development-evidence/ipc-retirement/`.
+No production transport default or installed release changes in this slice.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
