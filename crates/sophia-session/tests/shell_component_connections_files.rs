@@ -226,3 +226,58 @@ fn three_roles_negotiate_independent_profiles_and_catalog_service_borrows_only_i
     drop((bar_pixels, menu_pixels));
     assert!(h.owner.collect().quiescent());
 }
+
+#[test]
+fn failed_launcher_attempt_burns_epochs_without_resetting_bar() {
+    let mut h = Harness::new();
+    let panel = h.owner.reserve_attempt(0).unwrap();
+    let _bar = h.connect(panel);
+    let first = h.owner.reserve_attempt(1).unwrap();
+    h.owner
+        .begin_negotiation(
+            first,
+            &evidence(),
+            Duration::from_secs(2),
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        )
+        .unwrap();
+    let mut menu =
+        std::os::unix::net::UnixStream::connect(h.owner.socket_path(1).unwrap()).unwrap();
+    // Invalid 9P frame size. This burns only the launcher's exact attempt.
+    std::io::Write::write_all(&mut menu, &[0; 24]).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    let events = loop {
+        let events = h.owner.poll_negotiations(65536);
+        if events.iter().any(Option::is_some) {
+            break events;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "malformed frame not refused"
+        );
+        std::thread::yield_now();
+    };
+    assert_eq!(events.iter().flatten().count(), 1);
+    assert!(events.into_iter().flatten().next().unwrap().1.is_err());
+    assert_eq!(h.owner.phase(first), Ok(ComponentConnectionPhase::Revoked));
+    assert_eq!(
+        h.owner.phase(panel),
+        Ok(ComponentConnectionPhase::Connected)
+    );
+    assert!(h.owner.poll_negotiations(65536).iter().all(Option::is_none));
+    let second = h.owner.reserve_attempt(1).unwrap();
+    assert!(second.grant.connection_epoch > first.grant.connection_epoch);
+    assert!(second.grant.content_grant_epoch > first.grant.content_grant_epoch);
+    assert_eq!(
+        h.owner.close(first),
+        Err(ComponentConnectionError::StaleAttempt)
+    );
+    let _new = h.connect(second);
+    assert_eq!(h.owner.accounting().active_epochs, 2);
+    h.owner.close(panel).unwrap();
+    h.owner.close(second).unwrap();
+    h.owner.close(second).unwrap();
+    assert!(h.owner.collect().quiescent());
+}

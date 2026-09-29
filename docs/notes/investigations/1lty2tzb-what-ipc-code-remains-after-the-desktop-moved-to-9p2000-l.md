@@ -2054,6 +2054,12 @@ remaining tests; `t269-component-owners-clippy-2.log` passes strict clippy for
 both targets. These logs live under `development-evidence/ipc-retirement/`.
 No production transport default or installed release changes in this slice.
 
+The malformed-launcher attempt control also moves to files: an invalid 9P
+frame size revokes and burns only that attempt, leaves the bar connected,
+refuses the old key, and permits a fresh SDK connection with newer epochs.
+`t269-component-owners-files-3.log` passes six file tests and seven remaining
+tests; `t269-component-owners-clippy-3.log` passes strict clippy.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

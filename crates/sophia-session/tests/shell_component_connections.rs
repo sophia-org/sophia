@@ -150,38 +150,6 @@ fn read_frame(client: &mut UnixStream) -> Vec<u8> {
 }
 
 #[test]
-fn failed_launcher_attempt_burns_epochs_without_resetting_bar() {
-    let mut h = Harness::new();
-    let panel = h.owner.reserve_attempt(0).unwrap();
-    let _bar = h.connect(panel);
-    let first = h.owner.reserve_attempt(1).unwrap();
-    let mut menu = h.begin(first);
-    menu.write_all(&[0; 24]).unwrap();
-    let events = h.owner.poll_negotiations(65536);
-    assert_eq!(events.iter().flatten().count(), 1);
-    assert!(events.into_iter().flatten().next().unwrap().1.is_err());
-    assert_eq!(h.owner.phase(first), Ok(ComponentConnectionPhase::Revoked));
-    assert_eq!(
-        h.owner.phase(panel),
-        Ok(ComponentConnectionPhase::Connected)
-    );
-    assert!(h.owner.poll_negotiations(65536).iter().all(Option::is_none));
-    let second = h.owner.reserve_attempt(1).unwrap();
-    assert!(second.grant.connection_epoch > first.grant.connection_epoch);
-    assert!(second.grant.content_grant_epoch > first.grant.content_grant_epoch);
-    assert_eq!(
-        h.owner.close(first),
-        Err(ComponentConnectionError::StaleAttempt)
-    );
-    let _new = h.connect(second);
-    assert_eq!(h.owner.accounting().active_epochs, 2);
-    h.owner.close(panel).unwrap();
-    h.owner.close(second).unwrap();
-    h.owner.close(second).unwrap();
-    assert!(h.owner.collect().quiescent());
-}
-
-#[test]
 fn bounded_negotiation_visits_both_peers_and_alternates_first_owner() {
     let mut h = Harness::new();
     let a = h.owner.reserve_attempt(0).unwrap();
