@@ -152,7 +152,7 @@ run_alloy OutputTopologyPublication.als ReusedOutputGenerationAttack sat
 run_alloy OutputTopologyPublication.als EmptyPublishedTopologyAttack sat
 
 run_smt TargetGeometryAndDisclosure
-run_smt WmV1WireBounds
+run_smt WmFileRowsBounds
 run_smt PolicyPresentationGeometry
 run_smt OutputTopologyGeometry
 
@@ -168,7 +168,7 @@ if [ -n "${SOPHIA_Z3_DIFFERENTIAL:-}" ]; then
     stable_z3=$z3_bin
     z3_bin=$SOPHIA_Z3_DIFFERENTIAL
     run_smt TargetGeometryAndDisclosure
-    run_smt WmV1WireBounds
+    run_smt WmFileRowsBounds
     run_smt PolicyPresentationGeometry
     run_smt OutputTopologyGeometry
     z3_bin=$stable_z3

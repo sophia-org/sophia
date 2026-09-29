@@ -2,16 +2,20 @@
 
 **Role:** normative common wire, lifecycle, and evolution contract for
 replaceable native desktop roles.
-**Status:** the 24-byte frame envelope and `sophia_wm_v1` major 1 revision 3
-are stable. Other interfaces retain the individual status recorded below; this
-document does not promote an experimental role by grouping it into the family.
+**Status:** the 24-byte frame envelope remains in use by output, administrative
+control and the internal broker. WM and shell socket implementations are retired;
+their sections below describe the frozen compatibility wire. Current WM and
+shell clients use the [WM file contract](sophia-wm-files.md) and
+[shell file contract](sophia-shell-files.md). Other interfaces retain their
+individual status; grouping them here does not promote an experimental role.
 
 **Migration direction:** [9P2000.L public interfaces](sophia-9p-control-bus.md)
 are the accepted target for progressive replacement of the custom public desktop
-protocols. Their file API remains open. This document remains the current wire
-and compatibility contract until equivalent clients, lifecycle behavior and
-performance have been demonstrated and a deprecation path is published. Shared
-9P transport will preserve the role and disclosure boundaries below.
+protocols. WM/shell source retirement follows the
+[accepted retirement decision](notes/decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md),
+with whole-release rollback and performance qualification still open. The
+remaining socket roles keep this wire contract until their own migration gates
+pass. Shared 9P transport preserves the role and disclosure boundaries below.
 
 Sophia exposes replaceable desktop components through local, language-neutral
 IPC. The protocol family is the public extension point. Hagia, shells, and
@@ -189,12 +193,13 @@ of its handwritten codec. `output_schema` tests their equivalence. Extraction
 does not promote the experimental interface or supply independent lifecycle
 evidence by itself.
 
-The WM [wire tables](generated/sophia-wm-v1-wire.md), Rust and C99 codecs, and
-valid and malformed corpora are one generated unit. The shell schema is checked
-against its maintained codecs, independent clients and corpora; it is not a
-second fully generated codec. `tools/check_policy_protocol.sh`
-and `tools/check_shell_protocol.sh` exercise the current role implementations
-against their shared bytes. The canonical
+The WM [socket wire tables](generated/sophia-wm-v1-wire.md), C99 bindings and
+socket corpora are frozen compatibility artifacts pending SDK retirement.
+The Rust socket codecs and WM/shell socket generation paths are removed.
+The shared generator now reads the WM file schema for neutral row codecs,
+record samples and arithmetic facts; it also retains output/control tooling.
+`tools/check_policy_protocol.sh` and `tools/check_shell_protocol.sh` exercise
+the current file implementations and independent C SDK peers. The canonical
 [family conformance command](native-protocol-conformance.md) runs them together
 with owner tests; separate scripts do not define separate protocol semantics.
 

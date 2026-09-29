@@ -2783,6 +2783,55 @@ Cargo targets for retries and early executable identity diagnostics. Its
 installer/tooling tests. This does not change Sophia's release pin or activate
 a desktop. The source-retirement and SDK/output qualification limits remain.
 
+## WM and shell socket generation retirement (t269, 2026-09-29)
+
+Starting from `d6d772ef5`, the shared generator no longer reads the WM or shell
+socket schemas. WM C frame generation, socket samples, wire tables and shell
+socket-schema validation are removed. The two unused C socket clients under
+`bindings/c/tests` retire with the already removed compatibility gate. Their
+SDK copies remain inside the unchanged signed snapshot.
+
+The surviving generator reads `sophia-wm-files-v1.kdl` for neutral Rust rows,
+the shared record corpus and arithmetic facts. Regeneration changes no Rust row
+codec, record-corpus bytes, or output/control artifacts. The file-row parser
+retains fixed-width, reserved-field, sample-range, extension-kind, gate and
+duplicate-layout checks. The frozen-socket equivalence tests retire; their
+replacements check the independent record corpus and invalid file-row shapes.
+The two shell socket-schema tests retire with their schema validator.
+
+`WmFileRowsBounds` replaces the old socket envelope proof. Its generated facts
+include ordinary and extension rows; it checks count representability and wide
+record multiplication, retaining the unchecked narrow-product negative control.
+Socket chunk-prefix and payload-envelope claims retire with those codecs.
+Complete file-record admission remains covered by `wm_file_*` and independent
+C export tests. The focused SMT run uses installed Z3 5.1.0; it is not the full
+architecture gate, which requires Alloy 6.2.0 and Z3 4.16.0.
+
+Focused protocol/generator tests, generator `--check`, strict generator clippy
+and the new SMT expected results pass in device-hidden isolation:
+`development-evidence/ipc-retirement/t269-generator-focused.log`. A separate
+read-only overlay replaces both retired socket schemas with empty files and
+still passes generator `--check`; evidence is
+`t269-generator-no-socket-schema.log`. The first focused test run found a
+fixture typo (`reserved=true` instead of KDL's `reserved=#true`); correcting
+the fixture restored its intended malformed-input check.
+
+`t269-generator-full.log` records the complete isolated `cargo xtask check`,
+exit zero: 470 result groups, 6,590 reported passes, no failures and 61 ignored,
+plus strict workspace clippy, formatting, SDK snapshot/export checks and tool
+verifiers. `t269-generator-independent.log` records the independent WM file
+gate passing, including protected C SDK recovery and supervised replacement.
+Focused tests report 266 passes. Task IDs remain unique and changed Markdown
+targets resolve; the notebook still reports 21 other notes with broken links.
+Device-dependent graphics evidence remains explicitly unclaimed.
+
+Frozen C bindings, socket schemas/corpora and the old wire reference still
+required by SDK pins remain for coordinated SDK retirement. The shared tool
+remains because file rows and output/control still use it. This slice does not
+close t269 or t270 and changes no installed release or running process. The
+operator's successful login after the installer permission repair is an
+ordinary-use report; it does not change the open latency or physical verdicts.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
@@ -2807,7 +2856,8 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
   WM and shell IPC paths, codecs, generator, bindings, archive, scripts and
   gates (B, after t267, t268 and t271, under the accepted retirement decision). Descriptor production startup
   now uses files; Rust WM/shell socket codecs and the revision-3 archive are
-  removed. The generator, current C bindings and SDK-bound compatibility
+  removed. WM/shell socket generation is removed; the shared generator remains
+  for file rows and output/control. Frozen C bindings and SDK-bound compatibility
   artifacts still need coordinated retirement.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.

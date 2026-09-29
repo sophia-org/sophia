@@ -34,12 +34,13 @@ unmodeled concurrency is safe.
 | `PolicyPresentationGeometry.smt2` | Do fullscreen, ordinary, and minimized placement rules keep geometry and focus consistent with output/work-area facts? | Canonical policy-projection validation: fullscreen is exactly output bounds, nonfullscreen geometry is within the work area, and minimized surfaces cannot hold focus. |
 | `OutputTopologyPublication.als` | Can a release-ready scanout, pointer, RandR, and policy bundle contain different topology epochs, or can input resume before current policy and presentation? | The native session owner's fail-closed topology transition and complete publication barrier. Intermediate IPC settlement is sequential and remains quarantined; this is bounded decision evidence, not a Rust refinement proof. |
 | `OutputTopologyGeometry.smt2` | Does a complete positive-width horizontal output sequence produce nonoverlapping contiguous bounds and the exact root width without overflow? | `output_topology_from_engine_outputs_at_generation`, pointer output bounds, and X frontend root geometry. |
-| `WmV1WireBounds.smt2` | Do current schema maxima fit the envelope, field widths, and checked record arithmetic? | `protocol/sophia-wm-v1.kdl`, the generated Rust/C99 codecs, and bounded begin/chunk/end transfer assemblers. |
+| `WmFileRowsBounds.smt2` | Do file row counts fit their fields and row products fit wide arithmetic? | `protocol/sophia-wm-files-v1.kdl` row layouts, including capability-gated rows, and the neutral record codecs. |
 
-`sophia-wm-v1-facts.smt2` is generated from the KDL schema by
+`sophia-wm-file-rows-facts.smt2` is generated from the WM file schema by
 `sophia-policy-protocol-gen`. The SMT proof names those facts but does not copy
-their numeric values. Envelope constants that belong to the common IPC frame,
-rather than the KDL interface schema, remain explicit in the proof.
+their numeric values. Socket envelope and chunk-prefix claims retired with
+the WM socket codec; file admission and complete-record bounds are exercised
+by the protocol tests and independent WM file peer.
 
 ## Positive properties and negative controls
 
@@ -65,8 +66,7 @@ queries must be `sat`. The retained negative controls cover:
   unbounded target partitioning;
 - fullscreen geometry that is merely contained, ordinary geometry outside the
   work area, and minimized focus; and
-- omitted chunk prefixes, unchecked narrow multiplication, record maxima used
-  as per-chunk counts, and variable fields that ignore their fixed prefix.
+- unchecked narrow multiplication of record counts and widths.
 
 These attacks are satisfiable states in the weakened models, not unreachable
 branches hidden behind the property being checked. A property is promoted only

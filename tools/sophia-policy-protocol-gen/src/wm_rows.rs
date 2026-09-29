@@ -1,11 +1,10 @@
-//! Fixed rows belong to the file contract. The frozen socket schema is only
-//! checked for compatibility while that adapter remains in the repository.
+//! Fixed rows and their generator inputs belong to the WM file contract.
 use std::path::Path;
 
 use kdl::KdlDocument;
 
 use crate::{
-    ExtensionRecord, NamedValue, Protocol, Record, integer_property, parse_record, string_arg,
+    ExtensionRecord, NamedValue, Record, integer_property, parse_record, string_arg,
     string_property, validate_rows,
 };
 
@@ -79,20 +78,4 @@ pub(super) fn parse(text: &str) -> Result<Rows, String> {
     }
     validate_rows(&rows.capabilities, &rows.records, &rows.extension_records)?;
     Ok(rows)
-}
-
-pub(super) fn check_legacy(rows: &Rows, legacy: &Protocol) -> Result<(), String> {
-    if rows.interface_major != legacy.interface_major
-        || rows.interface_revision != legacy.interface_revision
-        || rows.max_outputs != legacy.max_outputs
-        || rows.max_surfaces != legacy.max_surfaces
-        || rows.max_bindings != legacy.max_bindings
-        || rows.capabilities != legacy.capabilities
-        || rows.outcomes != legacy.outcomes
-        || rows.records != legacy.records
-        || rows.extension_records != legacy.extension_records
-    {
-        return Err("frozen WM socket rows differ from the authoritative WM file rows".into());
-    }
-    Ok(())
 }

@@ -1,7 +1,6 @@
-use super::{parse_schema, render_rust_rows, wm_rows};
+use super::{render_record_golden, render_rust_rows, wm_rows};
 
 const FILES: &str = include_str!("../../../../protocol/sophia-wm-files-v1.kdl");
-const SOCKET: &str = include_str!("../../../../protocol/sophia-wm-v1.kdl");
 
 #[test]
 fn file_rows_generate_without_a_socket_schema_or_envelope() {
@@ -27,38 +26,31 @@ fn file_rows_generate_without_a_socket_schema_or_envelope() {
 }
 
 #[test]
-fn frozen_socket_layouts_match_the_file_contract() {
-    wm_rows::check_legacy(
-        &wm_rows::parse(FILES).unwrap(),
-        &parse_schema(SOCKET).unwrap(),
-    )
-    .unwrap();
+fn file_rows_preserve_the_independent_record_corpus() {
+    let rows = wm_rows::parse(FILES).unwrap();
+    assert_eq!(
+        render_record_golden(&rows).unwrap(),
+        include_str!("../../../../protocol/golden/sophia-wm-v1.records")
+    );
 }
 
 #[test]
-fn drift_in_each_row_contract_dimension_is_refused() {
-    let socket = parse_schema(SOCKET).unwrap();
+fn invalid_file_row_shapes_are_refused() {
     for (before, after) in [
-        ("max-outputs=16", "max-outputs=15"),
-        ("interface-revision=3", "interface-revision=4"),
+        ("interface-major=1", "interface-major=0"),
+        ("kind=1 max=16", "kind=0 max=16"),
+        ("kind=1 max=16", "kind=65280 max=16"),
+        ("kind=1 max=16", "kind=1 max=0"),
         (
-            "capability \"actions\" bit=1",
-            "capability \"actions\" bit=20",
+            "field \"focus_index\" type=\"u32\" sample=3",
+            "field \"focus_index\" type=\"u16\" sample=65536",
         ),
-        (
-            "outcome \"committed\" value=1",
-            "outcome \"committed\" value=6",
-        ),
-        (
-            "field \"focus_index\" type=\"u32\"",
-            "field \"focus_index\" type=\"u64\"",
-        ),
-        ("gate=\"launch_placement\"", "gate=\"actions\""),
+        ("reserved=#true sample=0", "reserved=#true sample=1"),
+        ("count=128", "count=127"),
     ] {
-        assert!(FILES.contains(before));
-        let changed = wm_rows::parse(&FILES.replacen(before, after, 1)).unwrap();
+        assert!(FILES.contains(before), "missing fixture input: {before}");
         assert!(
-            wm_rows::check_legacy(&changed, &socket).is_err(),
+            wm_rows::parse(&FILES.replacen(before, after, 1)).is_err(),
             "accepted {after}"
         );
     }
