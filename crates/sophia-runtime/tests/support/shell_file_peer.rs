@@ -165,19 +165,21 @@ impl Peer {
     }
 
     pub fn read(&mut self, fid: u32, offset: u64) -> Vec<u8> {
-        let (kind, body) = self
-            .rpc(
-                116,
-                &[
-                    fid.to_le_bytes().as_slice(),
-                    &offset.to_le_bytes(),
-                    &65500u32.to_le_bytes(),
-                ]
-                .concat(),
-            )
-            .unwrap();
+        self.try_read(fid, offset).unwrap()
+    }
+
+    pub fn try_read(&mut self, fid: u32, offset: u64) -> io::Result<Vec<u8>> {
+        let (kind, body) = self.rpc(
+            116,
+            &[
+                fid.to_le_bytes().as_slice(),
+                &offset.to_le_bytes(),
+                &65500u32.to_le_bytes(),
+            ]
+            .concat(),
+        )?;
         assert_eq!(kind, 117);
-        body[4..].to_vec()
+        Ok(body[4..].to_vec())
     }
 
     /// Stages `bytes` in a fresh transaction fid and submits them. Returns
@@ -200,10 +202,16 @@ impl Peer {
     }
 
     pub fn next_event(&mut self) -> Vec<u8> {
+        self.try_next_event().unwrap()
+    }
+
+    /// Refusal tests may observe export teardown before its final read reply.
+    /// Return I/O errors so the caller can check them against the owner's result.
+    pub fn try_next_event(&mut self) -> io::Result<Vec<u8>> {
         if let Some(bytes) = self.queued.pop_front() {
-            return bytes;
+            return Ok(bytes);
         }
-        let bytes = self.read(2, self.offset);
+        let bytes = self.try_read(2, self.offset)?;
         self.offset += bytes.len() as u64;
         let mut rest = &bytes[..];
         while !rest.is_empty() {
@@ -211,17 +219,32 @@ impl Peer {
             self.queued.push_back(rest[..size].to_vec());
             rest = &rest[size..];
         }
-        self.queued.pop_front().expect("nonempty read")
+        Ok(self.queued.pop_front().expect("nonempty read"))
     }
 
     pub fn ack(&mut self, bytes: &[u8]) {
+        self.try_ack(bytes).unwrap();
+    }
+
+    pub fn try_ack(&mut self, bytes: &[u8]) -> io::Result<()> {
         let record = decode_shell_file_record(bytes, ShellFileClass::Event).unwrap();
         let ack = encode_shell_file_ack(ShellFileAck {
             connection_epoch: record.header.connection_epoch,
             sequence: record.header.sequence,
         })
         .unwrap();
-        assert_eq!(self.write(4, &ack).0, 119);
+        let reply = self.rpc(
+            118,
+            &[
+                4u32.to_le_bytes().as_slice(),
+                &0u64.to_le_bytes(),
+                &(ack.len() as u32).to_le_bytes(),
+                &ack,
+            ]
+            .concat(),
+        )?;
+        assert_eq!(reply.0, 119);
+        Ok(())
     }
 
     /// Submits, reads and acknowledges the custody record, clears the fid.

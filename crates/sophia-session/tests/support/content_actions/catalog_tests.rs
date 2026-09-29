@@ -1,14 +1,13 @@
 //! Real r8 handshake, action FIFO and launch queue; supplied presentation and
 //! protection evidence. No supervised child, process execution or native display.
 use super::super::*;
+use super::files;
 use crate::application_catalog::*;
 use crate::session_actions::{CatalogLaunchCause, SessionLaunchQueue};
+use files::{GRANT, Peer, tx};
+use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
-use std::io::Write;
-#[path = "catalog_socket.rs"]
-mod socket;
-use socket::{GRANT, Peer, tx};
 
 const CAPS: u64 = SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
     | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
@@ -82,21 +81,13 @@ struct Harness {
 }
 impl Harness {
     fn new() -> Self {
-        let mut epochs = socket::empty();
+        let mut epochs = files::empty();
         let mut peer = Peer::new(&mut epochs, ContentStoreProfile::PersistentCatalog);
         let welcome = peer
-            .negotiate(&mut epochs, hello(), socket::granted())
+            .negotiate(&mut epochs, hello(), files::granted())
             .unwrap();
         assert_eq!(welcome.selected_revision, 8);
         assert_eq!(welcome.capabilities, CAPS);
-        assert_eq!(
-            decode_shell_v1_server_welcome_frame(&peer.read()).unwrap(),
-            welcome
-        );
-        assert!(matches!(
-            decode_shell_content_frame(&peer.read()).unwrap().1,
-            ShellContentRecord::Limits(_)
-        ));
         assert!(
             peer.transport
                 .connection(&mut epochs)
@@ -113,7 +104,7 @@ impl Harness {
             .issue_bound(
                 target.clone(),
                 0,
-                &socket::limits(),
+                &files::limits(),
                 tx(1),
                 &mut peer.transport.connection(&mut epochs),
                 ActionAuthority::Catalog(8),
@@ -121,8 +112,10 @@ impl Harness {
             .unwrap()
             .unwrap();
         peer.transport.poll_io(&mut epochs).unwrap();
-        let (transaction, ShellContentRecord::Action(action)) =
-            decode_shell_content_frame(&peer.read()).unwrap()
+        let ShellFileTransactionRecord {
+            transaction,
+            record: ShellContentRecord::Action(action),
+        } = decode_shell_file_transaction(&peer.read(&mut epochs), ShellFileKind::Action).unwrap()
         else {
             panic!("issued action")
         };
@@ -155,16 +148,7 @@ impl Harness {
         activation: CatalogActivation,
         active: usize,
     ) -> CatalogActivationOutcome {
-        self.peer
-            .client
-            .write_all(
-                &encode_shell_catalog_action_frame(
-                    tx(9),
-                    &ShellCatalogActionRecord::Activate(activation.clone()),
-                )
-                .unwrap(),
-            )
-            .unwrap();
+        self.peer.activate(&mut self.epochs, activation.clone());
         assert!(
             self.ledger
                 .service_catalog_request(
@@ -179,8 +163,14 @@ impl Harness {
                 .unwrap()
         );
         self.peer.transport.poll_io(&mut self.epochs).unwrap();
-        let (transaction, ShellCatalogActionRecord::ActivationOutcome(outcome)) =
-            decode_shell_catalog_action_frame(&self.peer.read()).unwrap()
+        let ShellFileCatalogActionRecord {
+            transaction,
+            record: ShellCatalogActionRecord::ActivationOutcome(outcome),
+        } = decode_shell_file_catalog_action(
+            &self.peer.read(&mut self.epochs),
+            ShellFileKind::CatalogActivationOutcome,
+        )
+        .unwrap()
         else {
             panic!("outcome")
         };
@@ -190,8 +180,10 @@ impl Harness {
     }
     fn ack(&mut self) {
         let a = &self.activation.action;
-        self.peer
-            .send_content(ShellContentRecord::ActionAck(ContentActionAck {
+        self.peer.send_content(
+            &mut self.epochs,
+            tx(10),
+            ShellContentRecord::ActionAck(ContentActionAck {
                 grant: a.grant,
                 output: a.output,
                 candidate_generation: a.candidate_generation,
@@ -203,7 +195,8 @@ impl Harness {
                 action_id: a.action_id,
                 event_id: a.event_id,
                 disposition: 1,
-            }));
+            }),
+        );
         assert_eq!(
             self.ledger
                 .service_acks(&mut self.peer.transport.connection(&mut self.epochs), 1, 32)
@@ -294,7 +287,7 @@ fn unchanged_presented_target_survives_new_raster_but_not_catalog_revision() {
 #[test]
 fn catalog_negotiation_requires_exact_role_and_explicit_input_policy() {
     for mode in 0..8 {
-        let mut epochs = socket::empty();
+        let mut epochs = files::empty();
         let profile = if mode == 7 {
             ContentStoreProfile::Legacy
         } else {
@@ -302,7 +295,7 @@ fn catalog_negotiation_requires_exact_role_and_explicit_input_policy() {
         };
         let mut peer = Peer::new(&mut epochs, profile);
         let mut request = hello();
-        let mut policy = socket::granted();
+        let mut policy = files::granted();
         match mode {
             0 => request.required_capabilities |= SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER,
             1 => request.required_capabilities |= SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER,
@@ -320,10 +313,16 @@ fn catalog_negotiation_requires_exact_role_and_explicit_input_policy() {
             6 => policy = ShellContentAdmissionPolicy::Unavailable,
             _ => {}
         }
-        assert!(
-            peer.negotiate(&mut epochs, request, policy).is_err(),
-            "mode={mode}"
-        );
+        let error = peer.negotiate(&mut epochs, request, policy).unwrap_err();
+        match mode {
+            0..=2 => assert!(matches!(error, ShellTransportError::MissingCapability)),
+            3 | 7 => assert!(matches!(error, ShellTransportError::UnsupportedRevision)),
+            4..=6 => assert!(matches!(
+                error,
+                ShellTransportError::ContentAdmissionRefused(_)
+            )),
+            _ => unreachable!(),
+        }
         assert!(
             !peer
                 .transport

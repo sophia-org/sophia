@@ -2149,6 +2149,47 @@ The complete Session library suite passes 702 tests with zero failures and
 whole-repository or installed-release verdict.
 The other internal action fixtures and the runtime socket adapter remain.
 
+### Action ledger and catalog controls over files
+
+The eight controls in Session's `content_actions/transport_tests.rs` and
+`catalog_tests.rs` now use the production file export. `catalog_socket.rs` is
+removed; `action_files.rs` drives the existing raw 9P peer. This deliberately
+keeps activation and acknowledgement separately sendable: the Rust SDK's
+combined catalog response cannot exercise activation-before-ack. File payloads
+use public Rust codecs, so this is not independent record-codec evidence.
+
+The controls retain exact launch origin, single dispatch, both acknowledgement
+orders, stale catalog and target refusal, capacity refusal without replay,
+action cancellation credit, dismissal under a full queue, and the rule that
+acknowledgement cannot renew a dismissal deadline. Welcome and exact Limits
+are checked inside the file handshake. The eight negotiation refusal modes now
+require their specific production errors; disconnect or timeout alone cannot
+pass. The supplied protection and presentation evidence remain fixture inputs;
+this is not a protected child or native display run.
+
+Empty event reads wait for data. Absence checks therefore submit an unrelated
+demand cancellation without servicing that owner and require its `Submitted`
+to be the next journal record. They send no action acknowledgement. An extra
+Action inserted just before this check fails the custody decoder in
+`t269-ledger-extra-event-mutant.log`; the mutation was an isolated read-only
+overlay and never changed the checkout. Endpoint removal is still checked
+after transport destruction, without fixture-side directory cleanup.
+
+`t269-ledger-actions-files-2.log` passes all eight controls. Earlier logs are
+retained: the initial catalog helper did not handle teardown during a rejected
+handshake, and the initial absence check expected an empty read to return
+EAGAIN rather than wait. The raw peer now exposes fallible reads and ACKs so
+the refusal fixture can compare teardown with the owner's actual result.
+Successful paths retain the original checked wrappers.
+
+The complete isolated `cargo xtask check` passes in
+`t269-action-files-full.log`, including the shared raw peer's other callers,
+all eight action controls, Session's 702 passing library tests, formatting,
+clippy and the tool verifiers. The sandbox has no display, network or devices;
+the gate explicitly does not prove native pixels or an installed release.
+
+The native launcher fixture and runtime socket adapter still need migration.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
