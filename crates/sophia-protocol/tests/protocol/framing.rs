@@ -1,4 +1,19 @@
 #[test]
+fn retired_shell_message_numbers_are_not_reinterpreted_as_other_roles() {
+    let original = encode_frame(IpcMessageKind::BrokerHealth, TransactionId::INVALID, &[]).unwrap();
+    let retired: Vec<u16> = (96..=122).chain(160..=202).collect();
+    assert_eq!(retired.len(), 70);
+    for kind in retired {
+        let mut frame = original.clone();
+        frame[6..8].copy_from_slice(&kind.to_le_bytes());
+        assert_eq!(
+            decode_frame(&frame),
+            Err(IpcCodecError::UnknownMessageKind(kind))
+        );
+    }
+}
+
+#[test]
 fn broker_health_frame_roundtrips() {
     let packet = BrokerHealthPacket::new(
         BrokerKind::Portal,
@@ -125,13 +140,8 @@ fn oversized_payload_is_rejected_before_allocation() {
 fn malformed_frames_fail_closed() {
     assert_eq!(decode_frame(&[]), Err(IpcCodecError::Truncated));
 
-    let packet = BrokerHealthPacket::new(
-        BrokerKind::Portal,
-        BrokerHealthState::Ready,
-        1,
-        None,
-    )
-    .unwrap();
+    let packet =
+        BrokerHealthPacket::new(BrokerKind::Portal, BrokerHealthState::Ready, 1, None).unwrap();
     let mut frame = encode_broker_health_frame(&packet).unwrap();
     frame[0] = 0;
     assert_eq!(decode_frame(&frame), Err(IpcCodecError::BadMagic));

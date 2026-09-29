@@ -3,9 +3,9 @@
 //! file records, without the socket codecs. The socket frame is only a header
 //! around the same value bytes, so the value offsets are the frame payload
 //! offsets. The message kinds, frame prefixes, the kind-173 rewrite and the
-//! CandidateBegin/CandidateChunk transfer stay in the socket test and retire
-//! with the socket wire (t269); files carry one whole `NativeCandidate`.
-#[path = "../examples/support/native_launcher_fixtures.rs"]
+//! CandidateBegin/CandidateChunk transfer retired with the socket test (t269);
+//! files carry one whole `NativeCandidate`.
+#[path = "support/native_launcher_fixtures.rs"]
 mod fixtures;
 
 use sophia_protocol::shell::encoding::ValueError;

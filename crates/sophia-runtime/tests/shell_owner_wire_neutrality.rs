@@ -1,7 +1,5 @@
-//! The shell owners stay wire-neutral: only the socket adapter
-//! (`shell_transport/socket.rs` and `shell_transport/socket/`) may name the
-//! IPC frame header, its message kinds, frame codecs or the socket-shaped
-//! limits. Deleting that adapter must not require editing an owner.
+//! The shell owners cannot reintroduce the retired socket frame codecs or
+//! socket-shaped limits. There is no adapter exception after its removal.
 use std::path::{Path, PathBuf};
 
 /// Names that belong to the socket wire alone.
@@ -39,19 +37,14 @@ fn sources(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-fn socket_adapter(path: &Path) -> bool {
-    path.components().any(|part| part.as_os_str() == "socket")
-        || path.file_name().is_some_and(|name| name == "socket.rs")
-}
-
 #[test]
-fn shell_owners_name_no_socket_framing_outside_the_socket_adapter() {
+fn shell_owners_name_no_socket_framing() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = vec![root.join("shell_transport.rs")];
     sources(&root.join("shell_transport"), &mut files);
     sources(&root.join("shell_content"), &mut files);
     let mut violations = Vec::new();
-    for path in files.iter().filter(|path| !socket_adapter(path)) {
+    for path in &files {
         let text = std::fs::read_to_string(path).unwrap();
         for (number, line) in text.lines().enumerate() {
             let code = line.split("//").next().unwrap_or_default();
@@ -68,7 +61,7 @@ fn shell_owners_name_no_socket_framing_outside_the_socket_adapter() {
     }
     assert!(
         violations.is_empty(),
-        "socket framing outside the socket adapter:\n{}",
+        "retired socket framing in shell owners:\n{}",
         violations.join("\n")
     );
     assert!(files.len() > 40, "the owner sources were found");

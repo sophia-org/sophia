@@ -2665,6 +2665,73 @@ modes, the content host, backend lifecycle mutants and the retained frame
 corpora. Its optional operator-supplied lifecycle client is explicitly
 unavailable; the built-in independent C file peers ran and passed.
 
+## Shell protocol codec retirement (t269, 2026-09-29)
+
+The `sophia-protocol::ipc::shell_*` modules and their public frame APIs are
+removed after the runtime adapter removal at `d13464500`. All 70 shell frame
+message numbers (96–122 and 160–202) now return `UnknownMessageKind` in the
+remaining IPC decoder; a test checks every retired number. They are not reused
+for another role. WM, output, broker and control framing are unchanged by this
+slice. Engine callers now receive the SDK's neutral shell validators directly,
+without the deleted wrapper's conversion to the legacy IPC error alias.
+
+The seven shell corpus-generator examples, their frame-mutation helper and
+`mutate_shell_indicator_corpus.py` retire with those codecs. Passive native
+launcher and catalog-action fixtures move unchanged to `tests/support`.
+Committed golden bytes and schema copies still bound by the C SDK's snapshot
+manifest remain until its compatibility retirement; they are not regenerated
+through the deleted Rust codecs. The protocol gate continues to check that SDK
+snapshot and runs its tests while it is still the pin.
+
+Coverage follows the values and owners:
+
+| Retired socket test | Retained semantic coverage |
+| --- | --- |
+| `shell_content_wire` | `shell_content_values`: exact value sizes, format masks, chunk arithmetic, allocation bounds, presentation and error ordering |
+| `shell_native_launcher_wire` | `shell_native_launcher_values`: native identities, rows, input, outcomes, reserved tails and file transaction rules |
+| `shell_catalog_actions`, `shell_catalog_transaction` | `shell_catalog_files`: catalog identity bijection, empty catalogs, activation values and all truncations |
+| `shell_indicators` | `shell_indicator_files`: empty/absent active output, counts, labels, activation and outcome validation |
+| `protocol/shell_v1` | new `shell_descriptor_files`: full lifecycle, selection/visibility, recipient identity, duplicate slots, reservation and reserved fields |
+| Old `shell_tabs`, `shell_reference`, `shell_launcher` bodies | Same test binaries now use whole file objects/candidates/events: tab occurrence identity and selection, 256-entry shortcuts, 4096-entry applications, every request operation, receipts and outcomes |
+| `shell_wire` and reference golden-frame comparison | Frame-specific bytes, phase ordering and IPC error spellings retire with their codec; independent C file hosts remain in `shell_descriptor_modes` and `shell_content_files` |
+
+The new descriptor file helper compares the whole record and domain transaction,
+rejects every truncated prefix and trailing bytes, and keeps submission IDs and
+journal sequences distinct. The descriptor tests also refuse a missing domain
+transaction, wrong file kind and mismatched header/value epochs. The tab tests
+check the native focused boolean and reserved field at their file offsets.
+Catalogs no longer have a multi-frame identity phase, so deleting/reordering an
+old phase is not presented as a property of the file format.
+
+Focused evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-shell-codec-values.log`: all 11 descriptor, tab, shortcut and launcher
+  file tests pass before removing the IPC codecs.
+- `t269-shell-codec-removal-protocol-tests.log`: the protocol crate passes with
+  the socket modules and corpus examples removed.
+- `t269-codec-mutant-epoch.log`: compiled removal of the file epoch comparison
+  fails `file_identity_fields_cannot_replace_the_domain_transaction`.
+- `t269-codec-mutant-tab-selection.log`: compiled removal of selected-tab
+  membership validation fails `bounds_and_occurrence_identity_are_enforced`.
+
+Both mutants were read-only sandbox overlays. The vendored SDK source remains
+byte-identical to its pin; the ordinary build is restored after the controls.
+The shell owner source check also loses its old socket-adapter exemption, so
+the deleted adapter directory cannot silently regain permission to frame IPC.
+
+`t269-shell-codec-removal-full.log` records the complete isolated
+`cargo xtask check` exit zero: 471 result groups, 6,593 reported passes,
+none failed and 61 ignored, plus workspace clippy, formatting, SDK snapshots
+and tool verifiers. The reduced count reflects the retired socket codec
+tests and their retained value/file counterparts above. No physical or latency
+qualification follows, and no installed release or process changes.
+
+`t269-shell-codec-removal-independent.log` records
+`tools/check_shell_protocol.sh` exit zero with the new value/file tests and the
+independent C descriptor and content peers. The optional operator-supplied
+lifecycle executable remains explicitly unavailable; the built-in protected C
+file lifecycle and its negative controls passed.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
@@ -2688,8 +2755,9 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
 - t269: flip the WM and shell transport defaults to 9p2000.L, then delete the
   WM and shell IPC paths, codecs, generator, bindings, archive, scripts and
   gates (B, after t267, t268 and t271, under the accepted retirement decision). Descriptor production startup
-  now uses files and its runtime socket adapter is removed; protocol codecs,
-  generated bindings and obsolete corpus tooling still need retirement.
+  now uses files and its runtime/socket codecs are removed; the WM generated
+  codec, generator, bindings and remaining compatibility artifacts still need
+  retirement.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.
 - t271: the Narthex descriptor profile and single-process metadata shell (C).

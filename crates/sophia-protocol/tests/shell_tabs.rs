@@ -1,4 +1,7 @@
+use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
+#[path = "support/descriptor_file.rs"]
+mod file;
 
 fn snapshot() -> ShellTabSnapshot {
     ShellTabSnapshot {
@@ -34,41 +37,30 @@ fn snapshot() -> ShellTabSnapshot {
 }
 #[test]
 fn complete_transfer_and_candidate_round_trip() {
-    let snapshot = snapshot();
-    let tx = TransactionId::from_raw(8);
-    let frames = encode_shell_tab_snapshot(tx, &snapshot).unwrap();
-    assert_eq!(decode_shell_tab_snapshot(&frames).unwrap(), (tx, snapshot));
+    file::round_trip(ShellDescriptorRecord::Tabs(snapshot()));
     let c = ShellTabCandidate {
         connection_epoch: 5,
         snapshot_generation: 6,
         candidate_generation: 7,
         groups: vec![1],
     };
-    assert_eq!(
-        decode_shell_tab_candidate(&encode_shell_tab_candidate(tx, &c).unwrap()).unwrap(),
-        (tx, c)
-    );
+    file::round_trip(ShellDescriptorRecord::TabsCandidate(c));
 }
 #[test]
-fn malformed_and_mixed_transfers_fail_closed() {
-    let frames = encode_shell_tab_snapshot(TransactionId::from_raw(8), &snapshot()).unwrap();
-    for index in 0..frames.len() {
-        let mut changed = frames.clone();
-        changed.remove(index);
-        assert!(decode_shell_tab_snapshot(&changed).is_err());
-        let mut changed = frames.clone();
-        changed[index][24] ^= 1;
-        assert!(decode_shell_tab_snapshot(&changed).is_err());
+fn malformed_whole_objects_fail_closed() {
+    let bytes = file::encode(ShellDescriptorRecord::Tabs(snapshot())).unwrap();
+    // File header + domain transaction + 24-byte table header. The first
+    // group's focused boolean and reserved u16 remain strict on files.
+    let group = SHELL_FILE_HEADER_BYTES + 8 + 24;
+    for (offset, byte) in [(group + 18, 2), (group + 22, 1)] {
+        let mut changed = bytes.clone();
+        changed[offset] = byte;
+        assert!(decode_shell_file_descriptor(&changed, ShellFileKind::Tabs).is_err());
     }
-    let mut changed = frames.clone();
-    changed[1][24 + 34] = 2;
-    assert!(decode_shell_tab_snapshot(&changed).is_err());
-    let mut changed = frames.clone();
-    changed[1][24 + 38] = 1;
-    assert!(decode_shell_tab_snapshot(&changed).is_err());
-    let mut changed = frames.clone();
-    changed.swap(1, 2);
-    assert!(decode_shell_tab_snapshot(&changed).is_err());
+    // A file object has one epoch, rather than one header per old phase.
+    let mut changed = bytes;
+    changed[SHELL_FILE_HEADER_BYTES + 8] ^= 1;
+    assert!(decode_shell_file_descriptor(&changed, ShellFileKind::Tabs).is_err());
 }
 #[test]
 fn bounds_and_occurrence_identity_are_enforced() {

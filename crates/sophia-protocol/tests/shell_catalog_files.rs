@@ -3,13 +3,11 @@
 //! `shell_launcher.rs`, on the SDK's neutral value codec, validators and
 //! catalog file records, without the socket codecs. Frame prefixes,
 //! family isolation between socket message kinds, identity-phase framing and
-//! the exact legacy error spellings stay in the socket tests and retire with
-//! the socket wire (t269). The legacy application-launcher records
-//! (candidate, request, activation, ack, outcome) have no neutral codec or
-//! file contract; they stay on the socket with the descriptor profile (t271).
-#[path = "../examples/support/catalog_action_fixtures.rs"]
+//! the exact legacy error spellings retired with the socket tests (t269).
+//! Application-launcher file records are exercised in shell_launcher.rs.
+#[path = "support/catalog_action_fixtures.rs"]
 mod fixtures;
-#[allow(dead_code)] // The legacy launcher candidate has no neutral consumer.
+#[allow(dead_code)] // This test uses the catalog; shell_launcher uses the candidate.
 #[path = "support/launcher_fixture.rs"]
 mod launcher;
 

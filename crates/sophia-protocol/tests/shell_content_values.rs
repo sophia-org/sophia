@@ -2,8 +2,8 @@
 //! neutral value codec and validators, without the socket codecs. A socket
 //! frame is a 24-byte header around these value bytes, so every frame offset
 //! mutation below is the frame offset less 24. The 24-byte header, the frame
-//! transaction rule and header length rewrites stay in the socket test and
-//! retire with the socket wire (t269).
+//! transaction rule and header length rewrites retired with the socket test
+//! (t269).
 #[path = "support/shell_content_records.rs"]
 mod fixtures;
 

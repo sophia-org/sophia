@@ -8,67 +8,15 @@ trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 
 cd "$root"
 sh tools/check_shell_c_wire.sh
-cargo run --offline -q -p sophia-protocol --example shell_catalog_action_corpus >"$build_dir/catalog-actions.frames"
-cmp "$build_dir/catalog-actions.frames" protocol/golden/sophia-shell-catalog-actions.frames
-cargo run --offline -q -p sophia-protocol --example shell_catalog_action_corpus -- --mutations >"$build_dir/catalog-action-mutations.frames"
-"${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
-    vendor/c-desktop-sdk/source/src/shell_wire/frame.c vendor/c-desktop-sdk/source/src/shell_wire/catalog_actions.c \
-    vendor/c-desktop-sdk/source/src/tests/sophia_shell_wire_catalog_actions_test.c -o "$build_dir/catalog-action-decoder"
-"$build_dir/catalog-action-decoder" "$build_dir/catalog-actions.frames"
-"$build_dir/catalog-action-decoder" "$build_dir/catalog-action-mutations.frames"
-cargo test --offline -q -p sophia-protocol --test shell_catalog_actions
-cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus >"$build_dir/native-launcher.frames"
-cmp "$build_dir/native-launcher.frames" protocol/golden/sophia-shell-native-launcher.frames
-cargo run --offline -q -p sophia-protocol --example shell_native_launcher_corpus -- --mutations >"$build_dir/native-launcher-mutations.frames"
-"${CC:-cc}" -std=c99 -Wall -Wextra -Werror -pedantic \
-    vendor/c-desktop-sdk/source/src/shell_wire/frame.c vendor/c-desktop-sdk/source/src/shell_wire/native_launcher.c \
-    vendor/c-desktop-sdk/source/src/tests/sophia_shell_wire_native_test.c -o "$build_dir/native-launcher-decoder"
-"$build_dir/native-launcher-decoder" "$build_dir/native-launcher-mutations.frames"
-
-cargo run --offline -q -p sophia-protocol --example shell_content_corpus \
-    >"$build_dir/sophia-shell-content.frames"
-cargo run --offline -q -p sophia-protocol --example shell_content_corpus -- --malformed \
-    >"$build_dir/sophia-shell-content-malformed.frames"
-cmp "$build_dir/sophia-shell-content.frames" protocol/golden/sophia-shell-content.frames
-cmp "$build_dir/sophia-shell-content-malformed.frames" protocol/golden/sophia-shell-content-malformed.frames
-cargo test --offline -q -p sophia-protocol --test shell_content_wire
+# Whole file records and neutral values retain the semantics of the retired
+# socket corpora. Socket frame layout/order tests retired with their codecs.
+cargo test --offline -q -p sophia-protocol \
+    --test shell_catalog_files --test shell_indicator_files \
+    --test shell_content_values --test shell_native_launcher_values \
+    --test shell_descriptor_files --test shell_tabs --test shell_reference --test shell_launcher
 cargo test --offline -q -p sophia-runtime --test shell_content_resources
 cargo test --offline -q -p sophia-runtime --test shell_content_admission
 cargo test --offline -q -p sophia-runtime --test shell_content_session_files
-cc -std=c11 -Wall -Wextra -Werror -pedantic \
-    vendor/c-desktop-sdk/source/src/tests/sophia_shell_content_client.c -o "$build_dir/content-client"
-"$build_dir/content-client" --valid protocol/golden/sophia-shell-content.frames
-"$build_dir/content-client" --malformed protocol/golden/sophia-shell-content-malformed.frames
-# These inverse expectations prove the independent reader rejects invalid bytes
-# and does not implement a success-only corpus printer.
-if "$build_dir/content-client" --valid protocol/golden/sophia-shell-content-malformed.frames; then
-    echo 'content C decoder accepted malformed records' >&2
-    exit 1
-fi
-if "$build_dir/content-client" --malformed protocol/golden/sophia-shell-content.frames; then
-    echo 'content C decoder rejected every valid record' >&2
-    exit 1
-fi
-cargo run --offline -q -p sophia-protocol --example shell_v1_corpus -- --valid \
-    >"$build_dir/sophia-shell-v1.frames"
-cargo run --offline -q -p sophia-protocol --example shell_v1_corpus -- --malformed \
-    >"$build_dir/sophia-shell-v1-malformed.frames"
-cargo run --offline -q -p sophia-protocol --example shell_tab_corpus >"$build_dir/sophia-shell-tabs.frames"
-cmp "$build_dir/sophia-shell-tabs.frames" protocol/golden/sophia-shell-tabs.frames
-cargo run --offline -q -p sophia-protocol --example shell_indicator_corpus >"$build_dir/sophia-shell-indicators.frames"
-cmp "$build_dir/sophia-shell-indicators.frames" protocol/golden/sophia-shell-indicators.frames
-cmp "$build_dir/sophia-shell-v1.frames" protocol/golden/sophia-shell-v1.frames
-cmp "$build_dir/sophia-shell-v1-malformed.frames" \
-    protocol/golden/sophia-shell-v1-malformed.frames
-cargo run --offline -q -p sophia-protocol --example shell_launcher_corpus >"$build_dir/sophia-shell-launcher.frames"
-cmp "$build_dir/sophia-shell-launcher.frames" protocol/golden/sophia-shell-launcher.frames
-cargo test --offline -q -p sophia-protocol --test shell_launcher
-cargo test --offline -q -p sophia-protocol --test shell_wire
-cargo test --offline -q -p sophia-protocol --test shell_tabs
-cargo test --offline -q -p sophia-protocol --test shell_indicators
-# The reference codec had golden frames and a test target but no invocation
-# here, so its coverage was retained without ever being run.
-cargo test --offline -q -p sophia-protocol --test shell_reference
 cargo test --offline -q -p sophia-runtime --test shell_negotiation_service
 cargo test --offline -q -p sophia-runtime --test shell_file_descriptor_negotiation
 
@@ -91,21 +39,6 @@ cargo test --offline -q -p sophia-conformance --test shell_content_files
 # The same composition, action-receipt and retirement assertions also run
 # over files, with the independent SDK peer and no IPC library.
 cargo test --offline -q -p sophia-backend-live --all-features --lib protected_popout_file_client
-
-# An independent decoder written from the schema, not from the Rust. It must
-# also refuse malformed frames itself: a second implementation that accepts
-# everything proves nothing about the format being described well enough.
-${CC:-cc} -std=c11 -Wall -Wextra -Werror -pedantic \
-    vendor/c-desktop-sdk/source/src/tests/sophia_shell_indicator_client.c -o "$build_dir/sophia-shell-indicator-c-client"
-"$build_dir/sophia-shell-indicator-c-client" protocol/golden/sophia-shell-indicators.frames
-for mutation in stale-active label-padding bad-count; do
-    python3 tools/mutate_shell_indicator_corpus.py "$mutation" \
-        protocol/golden/sophia-shell-indicators.frames "$build_dir/bad-$mutation.frames"
-    if "$build_dir/sophia-shell-indicator-c-client" "$build_dir/bad-$mutation.frames" >/dev/null 2>&1; then
-        echo "independent C decoder accepted a $mutation corpus" >&2
-        exit 1
-    fi
-done
 
 content_lifecycle=unavailable
 if [ -n "$content_client" ]; then
