@@ -73,6 +73,8 @@ can implement the published file contract in any language. The independent
 [C](https://github.com/sophia-org/sophia-desktop-sdk-c) and
 [Rust](https://github.com/sophia-org/sophia-desktop-sdk-rs) desktop SDKs provide
 clients and codecs; neither requires linking Sophia's implementation crates.
+The C SDK covers WM and shell files; the Rust SDK currently provides the shell
+client and generic 9P transport.
 
 Hagia and Narthex are separate Nim clients. Sophia's conformance gates also
 compile independent C peers and exercise them against its file exports,
@@ -192,7 +194,7 @@ unadvertised future work.
 using the [WM file contract](sophia-wm-files.md). Negotiate the capabilities
 your policy needs. A minimal tiler is a reducer: snapshot in, projection out.
 The session separately selects its shell and portal services. Start with the
-C or Rust desktop SDK's WM files client; Hagia is the full reference WM.
+C desktop SDK's WM files client; Hagia is the full reference WM.
 `docs/sophia-wm-api.md` describes the policy semantics, and
 `protocol/sophia-wm-files-v1.kdl` defines their file representation.
 
@@ -471,7 +473,7 @@ anybody:
 
 | You want to build | Read next | Copy from |
 | --- | --- | --- |
-| A window manager | `docs/sophia-wm-api.md`, `docs/sophia-wm-files.md` | the desktop SDK WM files clients, then Hagia |
+| A window manager | `docs/sophia-wm-api.md`, `docs/sophia-wm-files.md` | the C desktop SDK WM files client, then Hagia |
 | A shell | `docs/sophia-shell-v1-direction.md`, `protocol/sophia-shell-v1.kdl`, [paired plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md) | Narthex for descriptors; Lom for the developing content adapter |
 | A full desktop | this document, then both of the above | Hagia and Narthex, as the split to imitate |
 | Portal-using apps | `docs/namespaces-and-portals.md` | — |
