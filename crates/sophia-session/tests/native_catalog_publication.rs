@@ -1,23 +1,20 @@
 #![cfg(feature = "native-session")]
-//! Real private transport, supplied protection and real bounded FIFO ownership.
+//! Real file transport, supplied protection and bounded publication ownership.
 //! No supervised child, display, native renderer or application execution.
 use sophia_protocol::shell_files::*;
 use sophia_protocol::*;
 use sophia_runtime::*;
 use sophia_session::application_catalog::*;
-use std::io::Read;
 #[allow(dead_code)]
-#[path = "../../sophia-runtime/tests/support/native_launcher_socket.rs"]
-mod socket;
-use socket::*;
+#[path = "../../sophia-runtime/tests/support/native_files_peer.rs"]
+mod files;
+use files::*;
 #[path = "../../sophia-runtime/tests/support/shell_file_peer.rs"]
 mod shell_file_peer;
 
 fn connected(epochs: &mut ContentEpochRegistry, limits: ContentLimits) -> Peer {
     let mut peer = Peer::with_limits(epochs, ContentStoreProfile::NativeLauncher, limits);
-    peer.negotiate(epochs, hello(), granted()).unwrap();
-    peer.read(); // actual Welcome
-    peer.read(); // actual Limits
+    peer.negotiate(epochs);
     peer
 }
 fn publication(epoch: u64, count: usize) -> PublishedApplicationCatalog {
@@ -51,158 +48,100 @@ fn publication(epoch: u64, count: usize) -> PublishedApplicationCatalog {
     PublishedApplicationCatalog::new(epoch, 8, source).unwrap()
 }
 
-/// One length-prefixed IPC frame from `client`, or `None` if none has
-/// arrived within a short read timeout. `read_exact`'s first underlying
-/// read either returns the whole header at once or times out having
-/// consumed nothing (the sender, `poll_io`, writes each turn's whole flush
-/// synchronously before returning, so a header is never split across
-/// turns): only that first read is short-timed, so a `None` never loses
-/// bytes already on the wire.
-fn try_read_frame(client: &mut std::os::unix::net::UnixStream) -> Option<Vec<u8>> {
-    client
-        .set_read_timeout(Some(std::time::Duration::from_millis(200)))
-        .unwrap();
-    let mut bytes = vec![0u8; SOPHIA_IPC_HEADER_LEN];
-    let header = client.read_exact(&mut bytes);
-    client
-        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
-        .unwrap();
-    match header {
-        Ok(()) => {
-            let n = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
-            assert!(n <= 65536);
-            bytes.resize(SOPHIA_IPC_HEADER_LEN + n, 0);
-            client
-                .read_exact(&mut bytes[SOPHIA_IPC_HEADER_LEN..])
-                .unwrap();
-            Some(bytes)
-        }
-        Err(e)
-            if matches!(
-                e.kind(),
-                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-            ) =>
+fn filler() -> ShellContentRecord {
+    ShellContentRecord::ResourceStatus(ContentResourceStatus {
+        grant: GRANT,
+        resource: ContentResourceId {
+            id: 99,
+            generation: 1,
+        },
+        status: 3,
+        reason: ContentReason::Stale as u16,
+        next_ordinal: 0,
+        admitted_bytes: 0,
+    })
+}
+
+fn saturate(peer: &mut Peer, epochs: &mut ContentEpochRegistry) -> usize {
+    for count in 0..4096 {
+        match peer
+            .transport
+            .send_content_record(epochs, tx(99), &filler())
         {
-            None
+            Ok(()) => peer.transport.poll_io(epochs).unwrap(),
+            Err(ShellTransportError::ContentQueueSaturated) => {
+                assert!(count > 0);
+                return count;
+            }
+            Err(error) => panic!("unexpected pressure failure: {error}"),
         }
-        Err(e) => panic!("{e}"),
+    }
+    panic!("journal and outbox did not saturate");
+}
+
+fn drain_filler(peer: &mut Peer, epochs: &mut ContentEpochRegistry, count: usize) {
+    for _ in 0..count {
+        assert_eq!(peer.read_content(epochs), (tx(99), filler()));
     }
 }
 
-/// Drives `poll_io` until exactly `count` frames have arrived, without
-/// assuming how many the transport's bulk budget lets through on any one
-/// turn: a publication larger than the budget now drains across however
-/// many turns that takes, decided by the transport, not by this test.
-fn drain_frames(
-    peer: &mut Peer,
-    epochs: &mut ContentEpochRegistry,
-    count: usize,
-    deadline: std::time::Instant,
-) -> Vec<Vec<u8>> {
-    let mut received = Vec::with_capacity(count);
-    while received.len() < count {
-        peer.transport.poll_io(epochs).unwrap();
-        while received.len() < count
-            && let Some(frame) = try_read_frame(&mut peer.client)
-        {
-            received.push(frame);
-        }
-        if received.len() < count {
-            assert!(std::time::Instant::now() < deadline, "drain timed out");
-            std::thread::yield_now();
-        }
-    }
-    received
-}
-
-/// t252 B5 (corrected transport semantics, `shell_transport/publication.rs`
-/// `queue_publication`/`flush_publication`): `publish_catalog` takes custody
-/// of the whole publication whenever no earlier one is still draining, even
-/// if the output queue has no room for any of it yet, and pushes what fits
-/// now, draining the rest across later `poll_io` turns. A publication still
-/// draining refuses a competing one and changes nothing.
+/// File publication takes no custody under pressure. Session retains the
+/// exact whole catalog for retry; its announcement cannot overtake old output.
 #[test]
-fn catalog_publication_is_accepted_under_saturation_drains_whole_and_in_order_and_precedes_opening()
-{
+fn catalog_publication_retries_whole_under_saturation_and_precedes_opening() {
     let mut epochs = empty();
     let mut peer = connected(&mut epochs, limits());
-    // Larger than one visit's bulk budget: several `poll_io` turns are
-    // needed to drain it, decided by the transport now, not by Session.
-    let source = publication(GRANT.connection_epoch, 70);
-    let expected = source.frames(tx(50)).unwrap();
+    let source = publication(GRANT.connection_epoch, 1000);
+    let expected = ShellFileCatalog {
+        transaction: tx(50),
+        catalog: source.value(false).unwrap(),
+    };
+    assert!(
+        encode_shell_file_catalog_body(&expected).unwrap().len() > 65536,
+        "catalog must require multiple reads"
+    );
     let mut transfer =
         NativeCatalogPublication::new(&peer.transport.connection(&mut epochs), tx(50), source)
             .unwrap();
-    assert!(transfer.published().is_none());
-
-    let filler = publication(GRANT.connection_epoch, 0)
-        .frames(tx(99))
-        .unwrap()
-        .remove(0);
-    let mut queued = 0;
-    loop {
-        match peer.transport.enqueue_async(&epochs, filler.clone()) {
-            Ok(()) => queued += 1,
-            Err(ShellTransportError::ActivationQueueSaturated) => break,
-            Err(error) => panic!("{error}"),
-        }
-        assert!(queued <= 1024);
+    let queued = saturate(&mut peer, &mut epochs);
+    for _ in 0..2 {
+        assert!(
+            !transfer
+                .service(&mut peer.transport.connection(&mut epochs))
+                .unwrap()
+        );
+        assert!(transfer.published().is_none());
     }
-    assert!(queued > 0);
-
-    // The output queue is fully saturated by filler, yet the publication is
-    // still accepted: custody moves to the transport immediately, before a
-    // single byte of it can be written.
-    assert!(
-        transfer
-            .service(&mut peer.transport.connection(&mut epochs))
-            .unwrap()
-    );
-    assert!(transfer.published().is_some());
-
-    // A competing publish while this one is still draining is refused and
-    // takes nothing: what eventually arrives is exactly the first catalog.
     let competing = publication(GRANT.connection_epoch, 0).value(false).unwrap();
     assert!(matches!(
         peer.transport.publish_catalog(&epochs, tx(60), &competing),
         Err(ShellTransportError::ActivationQueueSaturated)
     ));
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-
-    // Only the filler comes off the wire until it is fully drained: the
-    // catalog has had no room to start writing yet.
-    for frame in drain_frames(&mut peer, &mut epochs, queued, deadline) {
-        assert_eq!(frame, filler);
-    }
-
-    // Once capacity frees, the whole catalog drains -- across however many
-    // `poll_io` turns the transport's bulk budget takes -- whole, in order,
-    // and byte-identical to the direct encoder.
-    let received = drain_frames(&mut peer, &mut epochs, expected.len(), deadline);
-    assert_eq!(received, expected, "byte-identical to the direct encoder");
-
-    // A second visit after publication is a harmless no-op.
+    // Checking every old record also refuses a catalog announcement that
+    // bypassed the saturated outbox. No caller has successfully published yet.
+    drain_filler(&mut peer, &mut epochs, queued);
+    peer.no_event(&mut epochs);
     assert!(
         transfer
             .service(&mut peer.transport.connection(&mut epochs))
             .unwrap()
     );
-
-    // The catalog precedes the Opening it gates on the same FIFO: it is
-    // read out here only after every catalog byte already has been.
+    assert!(transfer.published().is_some());
+    assert!(
+        transfer
+            .service(&mut peer.transport.connection(&mut epochs))
+            .unwrap()
+    );
     peer.transport
         .publish_native_launcher_opening(&epochs, tx(51), opening())
         .unwrap();
-    let opening_frame = drain_frames(&mut peer, &mut epochs, 1, deadline)
-        .pop()
-        .unwrap();
+    assert_eq!(peer.read_catalog_object(&mut epochs), expected);
     assert_eq!(
-        decode_shell_native_launcher_frame(&opening_frame)
-            .unwrap()
-            .1,
-        ShellNativeLauncherRecord::Opening(opening())
+        peer.read_native(&mut epochs),
+        (tx(51), ShellNativeLauncherRecord::Opening(opening()))
     );
+    peer.no_event(&mut epochs);
 }
 
 #[test]
@@ -229,9 +168,13 @@ fn catalog_transfer_requires_exact_current_grant_not_just_connection_epoch() {
             .service(&mut old.transport.connection(&mut old_epochs))
             .unwrap()
     );
-    old.transport.poll_io(&mut old_epochs).unwrap();
-    let actual = vec![old.read(), old.read()];
-    assert_eq!(decode_shell_application_catalog(&actual).unwrap().0, tx(50));
+    assert_eq!(
+        old.read_catalog_object(&mut old_epochs),
+        ShellFileCatalog {
+            transaction: tx(50),
+            catalog: publication(GRANT.connection_epoch, 0).value(false).unwrap(),
+        }
+    );
     assert!(matches!(
         NativeCatalogPublication::new(
             &new.transport.connection(&mut new_epochs),
@@ -298,36 +241,17 @@ fn opening_waits_for_publication_and_retains_exact_transfer_under_saturation() {
             &mut next,
         )
         .unwrap();
-    peer.transport.poll_io(&mut epochs).unwrap();
-    let frames = vec![peer.read(), peer.read()];
     assert_eq!(
-        decode_shell_application_catalog(&frames)
-            .unwrap()
-            .1
-            .entries
-            .len(),
-        0
-    );
-    assert!(matches!(
-        decode_shell_content_frame(&peer.read()).unwrap().1,
-        ShellContentRecord::OutputFacts(_)
-    ));
-    let filler = publication
-        .published()
-        .unwrap()
-        .frames(tx(99))
-        .unwrap()
-        .remove(0);
-    let mut queued = 0;
-    loop {
-        match peer.transport.enqueue_async(&epochs, filler.clone()) {
-            Ok(()) => queued += 1,
-            Err(ShellTransportError::ActivationQueueSaturated) => break,
-            Err(e) => panic!("{e}"),
+        peer.read_catalog_object(&mut epochs),
+        ShellFileCatalog {
+            transaction: tx(50),
+            catalog: publication.published().unwrap().value(false).unwrap(),
         }
-        assert!(queued <= 1024);
-    }
-    assert!(queued > 0);
+    );
+    assert!(
+        matches!(peer.read_content(&mut epochs), (transaction, ShellContentRecord::OutputFacts(_)) if transaction == tx(101))
+    );
+    let queued = saturate(&mut peer, &mut epochs);
     assert!(
         !content
             .service_open_request(
@@ -349,12 +273,7 @@ fn opening_waits_for_publication_and_retains_exact_transfer_under_saturation() {
             .unwrap()
     );
     assert!(peer.transport.native_launcher_state().is_none());
-    for group in (0..queued).collect::<Vec<_>>().chunks(32) {
-        peer.transport.poll_io(&mut epochs).unwrap();
-        for _ in group {
-            assert_eq!(peer.read(), filler);
-        }
-    }
+    drain_filler(&mut peer, &mut epochs, queued);
     assert!(
         content
             .service_open_request(
@@ -381,8 +300,7 @@ fn opening_waits_for_publication_and_retains_exact_transfer_under_saturation() {
             .unwrap()
     );
     assert!(peer.transport.native_launcher_focus().is_none());
-    peer.transport.poll_io(&mut epochs).unwrap();
-    let (transaction, record) = decode_shell_native_launcher_frame(&peer.read()).unwrap();
+    let (transaction, record) = peer.read_native(&mut epochs);
     assert_eq!(
         transaction,
         tx(102),

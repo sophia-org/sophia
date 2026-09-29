@@ -20,6 +20,10 @@ pub struct Peer {
 impl Peer {
     pub fn connect(path: &std::path::Path) -> Self {
         let stream = UnixStream::connect(path).unwrap();
+        Self::from_stream(stream)
+    }
+
+    pub fn from_stream(stream: UnixStream) -> Self {
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .unwrap();

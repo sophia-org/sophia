@@ -157,6 +157,9 @@ impl Peer {
         (tx, value)
     }
     pub fn read_catalog(&mut self, r: &mut ContentEpochRegistry) -> ShellApplicationCatalog {
+        self.read_catalog_object(r).catalog.catalog
+    }
+    pub fn read_catalog_object(&mut self, r: &mut ContentEpochRegistry) -> ShellFileCatalog {
         let Observation::Catalog(value) = self.drive(r, Client::next) else {
             panic!("catalog object");
         };

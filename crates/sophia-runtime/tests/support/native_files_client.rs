@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 pub(super) enum Observation {
     Content(TransactionId, ShellContentRecord),
     Native(TransactionId, ShellNativeLauncherRecord),
-    Catalog(ShellApplicationCatalog),
+    Catalog(ShellFileCatalog),
 }
 
 pub(super) struct Client {
@@ -99,7 +99,7 @@ impl Client {
                     let value = decode_shell_file_outputs(&value).unwrap();
                     Observation::Content(value.transaction, value.record)
                 } else {
-                    Observation::Catalog(decode_shell_file_catalog(&value).unwrap().catalog.catalog)
+                    Observation::Catalog(decode_shell_file_catalog(&value).unwrap())
                 }
             }
             ShellFileKind::NativeInput => {

@@ -2341,6 +2341,78 @@ runtime socket-publication parity tests. The private native activation-owner
 socket controls and the generic socket adapter also remain. This slice does
 not close t269, t270 or t272 and prepares no installation.
 
+## Catalog publication and activation custody over files (t269, 2026-09-28)
+
+Session's remaining three socket catalog controls now use the native file
+peer. The existing fourth test, an r8 dock publication with identities, stays.
+The shared peer now exposes the catalog transaction and identities as well as
+its application rows, so the tests compare the whole decoded object.
+
+The pressure control fills both the journal and outbox. Two publication
+attempts return false and retain the unpublished catalog; a competing publish
+is refused. Every filler is checked before retry. Retry publishes an exact
+1,000-entry catalog requiring multiple reads, and the following Opening cannot
+overtake it. Repeating a completed transfer produces no duplicate event.
+This follows the documented file contract: pressure takes nothing, rather
+than accepting a socket publication whose frames drain later. The other
+controls retain exact-grant refusal across equal connection epochs, failure
+after disconnect, and the original Opening transaction across repeated
+pressure refusals. The opening cannot become active before publication.
+
+The four `shell_publication_socket_parity` tests retire with their explicit
+socket-encoder equality assertions. Their product-neutral behavior remains:
+
+- indicators: `indicators_object_publish_pin_republish_and_activate_cross_the_file_wire`;
+- plain catalogs and pressure: the Session tests above;
+- r8 identities: `catalog_object_candidate_and_activate_cross_the_file_wire`
+  and `a_file_wire_dock_receives_the_catalog_object_with_identities_when_session_publishes`;
+- large catalogs: `a_maximal_r8_catalog_publishes_on_the_file_wire_and_reads_back_exactly`,
+  plus the Session multi-read control above.
+
+`native_launcher_socket.rs` has no remaining callers and is removed. The
+three private activation-owner tests now use a real file server/raw peer
+with supplied negotiation and focus facts. They preserve request take-once,
+exact response identity, immutable first outcome, and a late outcome that
+must not disarm a newer opening. A full journal leaves the outcome charged
+to the outbox. ACKing an older event allows whole-record transfer to the
+journal and releases that charge before peer receipt; every outcome is then
+read back exactly, followed by a fenced quiet check. This replaces the
+socket-specific partial-write/final-byte accounting assertion.
+
+The former pending-socket-publication settlement test now blocks a typed
+record behind a full journal and checks that local settlement waits for its
+transfer. Once the journal takes custody, local settlement is true while
+the peer can still read the retained event. File publication has no separate
+partially drained socket-publication owner; its refusal/retry behavior is
+covered by Session above. Settlement remains a local-owner fact, not a
+receipt acknowledgement.
+
+Evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-catalog-publication-files.log`: all four Session controls pass.
+- `t269-publication-retained-files.log`: retained indicator, persistent
+  catalog and native launcher file tests pass.
+- `t269-catalog-custody-mutant.log`: a false success on saturated
+  publication fails the pressure control.
+- `t269-native-activation-files-2.log`: all three private owner controls pass.
+- `t269-journal-credit-mutant.log`: dropping an outbox record before journal
+  acceptance fails the response-credit control.
+- `t269-native-activation-restored.log` and
+  `t269-catalog-publication-restored.log`: all seven controls pass after
+  removing the mutation overlays.
+- `t269-publication-clippy.log`: runtime and Session clippy passes for all
+  targets and features.
+- `t269-publication-files-full.log`: the complete isolated `cargo xtask check`
+  exits zero, including workspace tests, clippy, formatting and tool checks.
+  Device-dependent pixel proofs remain explicitly unclaimed.
+
+Both mutations used isolated source overlays only. The first private-fixture
+compile failure is retained: the Closed record needs its own grant, opening
+and reason value rather than an Opening value. No production code, protocol
+or SDK changes in this slice. Other generic socket-admission, negotiation,
+content and descriptor controls still block removal of the common adapter;
+t269, t270 and t272 remain open. No installation is prepared or activated.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
