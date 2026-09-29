@@ -1983,6 +1983,28 @@ remain with the frozen generator and SDK contract copies for the coordinated
 t269/t270 cut. The shared row golden corpus is retained. Neither output-role
 IPC nor shell socket adapters are removed by this slice.
 
+Signed candidate `025bb0f2710b10cdefe69a51804d4b6cbfa89418` passes the full
+isolated `cargo xtask check`: 478 reported result groups, 6,634 reported passes,
+zero failures and 63 ignored entries, followed by strict clippy and repository
+verifiers. Nested fixture reports are included in those totals. The first run
+caught a leftover reference to a removed Begin count in an error payload; the
+second caught its formatting. Both failed logs are retained. The correction
+keeps the file path's previous zero error value and its refusal assertion.
+
+The separate native-protocol family gate passes all eight phases at the same
+clean head, with unchanged before/after identity. Its independent C SDK peer
+proves protected WM recovery and replacement against the production file owner.
+The retained output peer passes eight tests. Output remains IPC and that peer
+is not independent. The optional external shell content-lifecycle client was
+not supplied; its unavailable result and `native_acceptance=false` are explicit.
+No hardware, latency or installed-session qualification is claimed.
+
+Evidence under `development-evidence/ipc-retirement/`:
+`t269-wm-adapters-full-3.log`, `t269-wm-adapters-family.log` and
+`family-025bb0f27/report.json` with its per-phase logs. The earlier focused
+protocol and Session runs are preserved as well. No running process, installed
+release, component selection or rollback target was changed.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
