@@ -2841,8 +2841,8 @@ Starting from signed Sophia `2ea546bac`, the integrated SDK candidates are:
 - Rust 0.2.0: `a0dc13da70ad7ba34406e6c84531cbb2ffd6b52b`.
 
 Both commits and their published `v0.2.0` tags are signed:
-[C release](https://github.com/sophia-org/sophia-desktop-sdk-c/releases/tag/v0.2.0)
-and [Rust release](https://github.com/sophia-org/sophia-desktop-sdk-rs/releases/tag/v0.2.0).
+[C release](https://github.com/sophia-org/sophia-desktop-sdk-c/tree/v0.2.0)
+and [Rust release](https://github.com/sophia-org/sophia-desktop-sdk-rs/tree/v0.2.0).
 Sophia imports exact Git archives, records their raw
 commits and inventories, and verifies the source tree against those identities.
 The C SDK removes the IPC library, headers, `WITH_IPC`, socket tests, frame
@@ -2930,6 +2930,12 @@ no installed release, component selection or running process and make no
 latency, physical presentation or output-role acceptance claim.
 
 ### Output prerequisite and cleanup audit
+
+Signed Sophia `88b812468b0c22f8f757a947df4b9b0cb835c32f` publishes the integrated
+source retirement on master. Together with both published SDK tags, the full
+gate, independent export checks and unchanged verified rollback target, this
+satisfies the amended t269/t270 exits. The task ledger owns their completion;
+t250/t252 latency and physical qualification retain their separate limits.
 
 The t253 plan still requires a real output-role product peer before
 implementation. The source review identifies only the in-repository proof
