@@ -1,7 +1,8 @@
 # Output file records — implementation draft
 
-This document describes the codec foundation for t253. There is no output 9P
-export or SDK output client yet, and no transport default changes here. The
+This document describes the native records and export under development for
+t253. The export is not wired into the live service, and no transport default
+changes here. The
 [proposed decision](notes/decisions/vkkjmufd-use-native-records-for-the-separate-output-file-role.md)
 records the design and unresolved custody bounds. The existing
 [output authority contract](sophia-output-v1.md) still governs live service.
@@ -9,8 +10,8 @@ records the design and unresolved custody bounds. The existing
 The records use little-endian integers and native rows. They do not contain a
 socket frame. `sophia_protocol::output_files` currently implements envelopes,
 submit/ack controls and every body described below. Runtime custody primitives
-reserve terminal outcomes and bound domain replay history; the file export and
-its service adapter are subsequent work. Envelope decoding alone never validates
+reserve terminal outcomes and bound domain replay history; the export joins
+these with file custody. Service integration remains pending. Envelope decoding alone never validates
 a typed body or grants authority.
 
 ## Identity and bounds
@@ -38,8 +39,9 @@ Proposal=257. Unknown kinds and versions are refused.
 A whole record is at most 65,536 bytes. A candidate is at most 1,784 bytes.
 Complete-record decoders refuse truncation, trailing data and total-length
 mismatches; they are not stream assemblers. The Limits object supplies assembly
-and acknowledgement deadlines. Export enforcement, immutable publication
-retention and bounded service-channel integration remain to be implemented.
+and acknowledgement deadlines. The export enforces them and retains immutable
+publications. A bounded worker serves the adapter; live Session integration
+remains pending.
 
 `submit` is exactly 24 bytes: epoch u64, submission ID u64, candidate length
 u32, reserved u32=0. Both identities are nonzero; length is 48..1,784. This
@@ -79,6 +81,74 @@ to ENOSPC without cancelling accepted work. A client drains its accepted
 outcomes before deliberately reconnecting. File-submission replay is a separate
 export obligation; it is not implemented by this domain-ID bound.
 
+## File lifecycle
+
+The root contains `api`, `limits`, `topology`, `events`, `transaction`,
+`submit` and `ack`. `api` reads `sophia-output-files version=1\n`, with an actual
+newline. `limits` and `topology` are complete Object records, including their
+32-byte headers. The limits header supplies the admitted epoch for candidates,
+submit controls and acknowledgements. Discovery uses `SOPHIA_OUTPUT_9P_SOCKET`;
+clients refuse the retired `SOPHIA_OUTPUT_SOCKET` variable, even when empty.
+An endpoint must admit the supervised peer before binding its connection to
+the export. Attach strings confer no authority. Only one attach is admitted
+per epoch; version reset does not renew that grant.
+
+`transaction` opens read/write, `submit` and `ack` write-only, and all other
+files read-only. Append and truncate are refused. Only one staging handle and
+one topology handle may be open. An unsubmitted staging handle expires at the
+advertised assembly deadline from its first byte; further use returns ESTALE.
+Clunk discards unsubmitted staging without transferring custody. Staging writes
+append contiguously or repeat an already-written range exactly; holes and
+changed overlaps are refused. Controls are complete writes at offset zero.
+
+Submit must name exactly the staged candidate's epoch, submission ID and byte
+length. Its successful Submitted receipt transfers file custody. The next
+transaction requires both clunk of the old staging handle and acknowledgement
+covering that receipt. Repeating the last accepted candidate bytes has no new
+receipt, owner delivery or domain mutation. Lower submission IDs are stale;
+changed bytes under the same ID are refused. EAGAIN transfers nothing and can
+be retried after progress; domain-history ENOSPC leaves accepted outcomes
+settleable. Negotiation and configure capability refusals use EACCES; malformed
+controls and records use EINVAL; wrong epochs use ESTALE.
+
+`events` uses persistent byte offsets. Reads may split records arbitrarily;
+tail reads wait, offsets beyond tail return EINVAL, and released offsets return
+ESTALE. A cumulative ack may release only fully read records. Read coverage
+includes partial, repeated and out-of-order reads; a hole prevents release and
+returns EAGAIN. Repeating the last ack succeeds without extending the progress
+deadline. While records remain, only an advancing ack resets that deadline.
+Expiry revokes the connection, including pending reads and open fids.
+
+Topology open returns EAGAIN before successful negotiation. Afterwards it pins
+the current immutable bytes; its Qid equals the announcement's Qid. At most one
+ObjectPublished may remain unacknowledged. A subsequent publication returns
+EAGAIN before replacing the object, so the client can always open the exact
+announced object. Its ack requires a complete read of that object through a
+topology handle; EOF is not required. An early ack returns EAGAIN without
+releasing anything. A previously open pin remains immutable after replacement;
+publication also waits if replacement would retain a third version. Clunk
+releases the pin. Qid paths are never reused across connection epochs.
+
+A negotiation Refused is terminal but remains readable. The peer acknowledges
+it and closes; new proposals are refused. The export revokes after its final
+ack or the acknowledgement-progress deadline, whichever comes first.
+
+The worker has eight command slots and eight owner-event slots, plus at most
+two locally pending events (an unsent event and a disconnect). Snapshot commands
+must pass the owner's finite snapshot bounds before entering the queue. A full
+command queue returns the command without custody. The export holds one pending
+delivery and returns EAGAIN for new submissions until that slot is free; exact
+replay does not require another slot. Physical settlement spends the reserved
+Outcome credit. Queue replacement already journals its Stale outcome atomically,
+so the worker has no separate uncredited reply command. The Session owner must
+revalidate a promoted candidate against its current physical topology.
+
+Pause acceptance uses a separate one-slot control and returns abandoned work
+before the caller spawns or authorizes a replacement PID. Stop uses an atomic
+flag independent of full queues. The worker polls in bounded nonblocking turns;
+absence of a peer does not block pause or shutdown. These are custody and
+supervision mechanisms, not physical rollback or display acceptance evidence.
+
 ## Journal custody
 
 The output journal reserves one record and 56 bytes for each pending proposal's
@@ -98,10 +168,10 @@ Rejected without borrowing either existing proposal's credit. Negotiation
 batches Submitted, Negotiated and ObjectPublished; refusal batches Submitted
 and Refused. Capacity refusal cannot leave a published prefix of these batches.
 
-These primitives are tested together with the real domain owner, but are not
-yet joined to a served export. The export must decide domain admission before
-committing the corresponding prepared batch and must still enforce staging,
-submission replay, acknowledgement deadlines and terminal refusal draining.
+The export joins these primitives to the real domain owner. It performs trial
+domain admission before committing the corresponding prepared batch; capacity
+refusal leaves the live domain identity unchanged. Its supervised transport is
+tested through actual 9P requests, separately from live Session integration.
 
 ## Negotiation and submission receipt
 
@@ -121,8 +191,8 @@ Refused has an 8-byte body: reason u16 (1 unsupported revision, 2 observation
 required), six zero reserved bytes. It is a negotiation refusal, separate from
 a topology Outcome. The export must keep the terminal record readable until
 acknowledgement or its bounded refusal-drain deadline; appending it and
-immediately revoking reads would lose the refusal. That lifecycle is not yet
-implemented by this codec.
+immediately revoking reads would lose the refusal. This lifecycle belongs to
+the export rather than the codec.
 
 Submitted has a 16-byte body: nonzero submission ID u64, candidate kind u16
 (256 or 257), six zero reserved bytes. This receipt identifies file custody.
@@ -133,8 +203,8 @@ It does not mean a topology transaction was validated or committed.
 ObjectPublished has a 24-byte body: object kind u16=2 (Topology), six zero
 reserved bytes, nonzero topology epoch u64, nonzero Qid path u64. The topology
 epoch identifies the domain generation; the Qid path identifies the exact
-immutable bytes retained by the export. Publication retention and read/ack
-dependencies remain part of the export work.
+immutable bytes retained by the export. The file lifecycle above defines
+publication retention and read/ack dependencies.
 
 The Topology body contains a 24-byte prefix, head rows (104 bytes each), mode
 rows (24 bytes each), then group rows (84 bytes each):
@@ -170,11 +240,34 @@ A group row contains output identity u64, generation u64, x/y/width/height i32,
 member count u16 (1..4), reserved u16=0, then four 12-byte member slots with
 the same layout as Proposal. Unused slots are zero.
 
-Both encoding and decoding apply `OutputAuthoritySnapshot::validate`: unique
-heads, per-head unique modes, valid current modes for enabled heads, valid
-groups and membership, an existing primary output, and every enabled head
-grouped. Disabled heads may have no current mode. The encoder refuses
-`Some(INVALID)` rather than silently converting it to `None`.
+Both encoding and decoding apply `OutputAuthoritySnapshot::validate`:
+
+- The topology epoch is nonzero. Head IDs are nonzero and unique; head
+  generations are nonzero, labels contain 1..64 UTF-8 bytes, and each head has
+  1..128 modes. Mode IDs are unique within each head; mode IDs, dimensions and
+  refresh are positive.
+- An enabled head is connected and its current mode belongs to its own mode
+  table. A disabled head may have zero or any nonzero current-mode identity;
+  the owner does not check membership for disabled heads. The encoder refuses
+  `Some(INVALID)` rather than silently converting it to `None`.
+- Group output IDs are nonzero and unique; generations are nonzero. Logical
+  x/y are nonnegative and width/height positive. Each group contains 1..4
+  existing heads, and each head appears in at most one group across all groups.
+- The primary output names a group, and every enabled head is grouped.
+
+The row counts, enum values, flags, transform masks and reserved bytes must
+also satisfy the wire rules above. Snapshot validation does not reject group
+overlap; proposal validation separately rejects overlapping proposed groups.
+
+Revision 1 reports supported transforms and VRR capability, but does not expose
+the head's current transform or VRR policy. A proposal is a complete target
+configuration: connected heads omitted from it are disabled, and each included
+head carries explicit transform and VRR values. A client cannot infer those
+current values when changing only a mode. Clients must require explicit values
+for each included head rather than guess normal rotation or disabled VRR.
+Inspection must distinguish unavailable current settings from supported values.
+Adding observable current settings requires a separately specified owner and
+contract change; the reserved bytes remain zero in revision 1.
 
 The largest body is 24 + 16×104 + 2,048×24 + 16×84 = 52,184 bytes; its complete
 record is 52,216 bytes. Counts and exact total length are checked before row

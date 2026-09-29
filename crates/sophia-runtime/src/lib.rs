@@ -13,7 +13,14 @@ mod host_domain;
 #[cfg(target_os = "linux")]
 pub mod inspection;
 mod output_connection;
+mod output_file_admission;
+mod output_file_export;
 mod output_file_journal;
+mod output_file_reads;
+#[cfg(target_os = "linux")]
+mod output_file_service;
+#[cfg(target_os = "linux")]
+mod output_file_transport;
 #[cfg(target_os = "linux")]
 mod output_service;
 #[cfg(target_os = "linux")]
@@ -55,7 +62,13 @@ pub use error::*;
 #[cfg(target_os = "linux")]
 pub use inspection::SOPHIA_WM_INSPECT_SOCKET_ENV;
 pub use output_connection::*;
+pub use output_file_admission::*;
+pub use output_file_export::*;
 pub use output_file_journal::*;
+#[cfg(target_os = "linux")]
+pub use output_file_service::*;
+#[cfg(target_os = "linux")]
+pub use output_file_transport::*;
 #[cfg(target_os = "linux")]
 pub use output_service::*;
 #[cfg(target_os = "linux")]

@@ -39,9 +39,10 @@ operations. Neither is proposed.
 The codec and custody primitives can be tested without an IPC module or
 display. Each accepted proposal reserves one terminal event (56 bytes), with
 at most one active and one queued proposal. Receipts and immediate consequences
-publish as atomic batches. The export must still join this custody to its
+publish as atomic batches. The export now joins this custody to its
 submission/acknowledgement lifecycle, immutable topology retention, terminal
-negotiation-refusal draining, and bounded command/event channels.
+negotiation-refusal draining, and bounded command/event channels. Session
+integration and physical-owner recovery remain separate gates.
 
 The proposed Limits record advertises at most 4,096 domain transactions per
 epoch. The bounded owner constructor enforces that history independently of
@@ -52,6 +53,14 @@ before reconnecting; the export must not revoke those outcomes on exhaustion.
 Submission replay and domain replay remain distinct concerns.
 
 ## Acceptance and connections
+
+On 2026-09-29 niltempus approved the standalone `sophia-output` CLI as the
+product consumer and authorized proceeding with the output migration. The CLI
+uses the public desktop SDK, with product behavior tested in its own repository.
+This resolves the missing consumer choice. Deterministic export custody and
+supervised 9P tests now pass; independent-client recovery, live Session
+integration and the plan's native acceptance gates still need implementation
+and evidence. The record design remains subject to those checks.
 
 Proposed. This codec work is not acceptance of the export, protected admission,
 performance or native topology behavior. The

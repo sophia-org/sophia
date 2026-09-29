@@ -55,8 +55,13 @@ Source integration: signed master merge `987cfd39` incorporates t252 at
 master's corrected verdict text differs. The branch's six classified full-suite
 failures remain failures, with their retained baseline evidence below.
 
-t253 requires a real output-role product peer before implementation: the only
-current client is the in-repository proof client. t254 retains its t249
+t253 requires a real output-role product peer. On 2026-09-29 niltempus approved
+building a standalone monitor-configuration CLI as that consumer. The product,
+`sophia-output`, will inspect outputs and request validation or application of
+mode, layout and mirroring changes through the output role. It lives outside
+Sophia and uses the public desktop SDK; generic independent-peer conformance
+stays in Sophia. This authorizes its implementation and the output file export,
+not native acceptance, installation or live monitor changes. t254 retains its t249
 dependency until qualification closes or a separate scope decision changes it.
 Application frontend and broker/portal work remain outside this implementation.
 

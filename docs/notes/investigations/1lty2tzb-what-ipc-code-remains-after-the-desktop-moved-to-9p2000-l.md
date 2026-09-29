@@ -3011,6 +3011,52 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
 The administrative commands are already t254, and the per-role default and
 compatibility retirement umbrella is t255.
 
+## 2026-09-29 — Output file export and supervised worker foundation
+
+The candidate based on Sophia `58380b87b1db06cd9d80f7840ceed6ef76ba4222`
+adds native output admission, a seven-file export, a supervised-PID 9P
+transport and a bounded worker. It also adds the independent-client KDL layout
+contract and schema mutation tests. The
+[output file contract](../../sophia-output-files.md) records the namespace,
+immutable topology/read-ack rules, staging/replay behavior, deadlines and
+command/event bounds. Its current-setting limitation is explicit: revision 1
+does not report current transform or VRR policy, so clients must obtain those
+values explicitly for every head they include in a complete proposal.
+
+Admission commits domain identity only after receipt and terminal custody fit.
+Queued replacement emits its Stale outcome atomically; acknowledgements cannot
+spend terminal credits. An acknowledgment cannot skip unread bytes or release
+an unread topology announcement. Publication waits for the previous announcement
+to be acknowledged, and existing open pins remain immutable. Exact replay also
+works after clunk/reopen while the original owner delivery is pending.
+
+Evidence is under
+`~/.local/state/sophia/development-evidence/ipc-retirement/`:
+
+- `t253-file-service-tests-final.log`: 22 admission/export/journal tests pass,
+  including an actual 9P exchange, wrong supervised PID refusal, fresh epoch/Qid
+  after reconnect, worker proposal settlement and bounded pause/shutdown.
+- `t253-output-schema-tests.log`: seven KDL schema checks and eight native
+  codec tests pass. The schema checks mutate encoded records and preserve
+  unconstrained semantic fields for the existing domain owner.
+- `t253-file-service-clippy-final.log`: strict clippy for the runtime library
+  and new admission/export tests passes.
+
+Checks run with devices and session sockets hidden, network disabled, nice 19,
+one build job and two test threads. Earlier failed logs are retained: one
+compile type annotation, two clippy style findings and a test that redundantly
+removed the endpoint's already-cleaned directory were corrected. These are
+deterministic custody and supervised transport results, not native display or
+latency qualification. Claude's C codec/session checks are separate SDK evidence;
+the independent C exchange against this export is still pending.
+
+The live Session still selects the existing socket output role. Its current
+launch grants output to the WM PID; a standalone client needs an explicit
+independent supervised launch and recovery path. t253 remains open for that
+integration, independent-client recovery, performance bounds and native
+acceptance. t272 remains dependent on t253; no output socket source, WM API
+indicator or accepted rollback release is removed by this foundation.
+
 ## Connections
 
 - [Migrate desktop roles to a daily-driver 9P control bus](../plans/jlftaw00-migrate-desktop-roles-to-a-daily-driver-9p-control-bus.md)
