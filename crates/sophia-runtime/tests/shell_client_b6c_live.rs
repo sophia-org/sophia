@@ -704,13 +704,13 @@ fn indicator_activations_reach_custody_and_their_outcomes_arrive_typed() {
     assert_eq!(live.settle(alone.first), Custody::Submitted);
 
     let paired = indicator_activation(4, 12);
+    let mut consumed = action(paired.event_id);
+    consumed.output.id = paired.output.raw();
+    consumed.target_id = paired.indicator;
+    consumed.action_id = paired.action;
     let response = live
         .client
-        .enqueue_indicator_action_response_tracked(
-            tx(10),
-            &ack(&action(12)),
-            Some((tx(11), &paired)),
-        )
+        .enqueue_indicator_action_response_tracked(tx(10), &ack(&consumed), Some((tx(11), &paired)))
         .unwrap();
     settle_pair(&mut live, response);
     let kinds: Vec<ShellFileKind> = live

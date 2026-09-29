@@ -26,7 +26,7 @@ cargo test --offline -q -p sophia-conformance --test shell_descriptor_modes
 
 # The content host serves only 9P2000.L. Its independent peer links the pinned
 # C SDK, built by the SDK's own makefile without the IPC library, and no Rust.
-make -s -C vendor/c-desktop-sdk/source BUILD="$build_dir/c-desktop-sdk" WITH_IPC=0 all
+make -s -C vendor/c-desktop-sdk/source BUILD="$build_dir/c-desktop-sdk" all
 ${CC:-cc} -std=c99 -Wall -Wextra -Werror -pedantic -Ivendor/c-desktop-sdk/source/src \
     crates/sophia-conformance/tests/support/shell_content_file_peer.c \
     -L"$build_dir/c-desktop-sdk" -lsophia-desktop -lsophia-9p \

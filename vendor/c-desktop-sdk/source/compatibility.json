@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "sdk": "sophia-desktop-sdk-c",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "release": true,
   "dialect": "9P2000.L",
   "shell_file_api": 1,
@@ -10,7 +10,7 @@
     "native_launcher": { "revision": 7, "required_capabilities": "0x9a0" },
     "persistent_catalog": { "revision": 8, "required_capabilities": "0x11a2" }
   },
-  "ipc_compatibility": "optional",
+  "ipc_compatibility": "removed",
   "wm_files": true,
   "wm_file_api": 1,
   "output_files": false,

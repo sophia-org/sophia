@@ -4,7 +4,7 @@
 
 Sophia's ordinary conformance tests exercise all three descriptor host modes
 with `shell_descriptor_file_peer.c`, an independent C SDK peer over 9P2000.L.
-It links the pinned SDK with `WITH_IPC=0`, without any Rust codec:
+It links the pinned C SDK's file libraries, without any Rust codec:
 
 ```sh
 cargo test --offline --locked -p sophia-conformance --test shell_descriptor_modes
@@ -82,17 +82,17 @@ target is refused. Output's owner phase explicitly enables `native-session`.
 The C peers remain independently implemented and do not acquire a Sophia Rust
 codec dependency. Product shell checks run in their own repositories; the
 shell script no longer reads or builds a sibling Narthex checkout. The combined
-runner still has legacy product identity options pending relocation. WM revision 3 is the stable role;
-its immutable client is mandatory on every run. Shell and output remain
-experimental. Corpus readers prove byte agreement; protected socket clients
+runner records Sophia and its pinned SDKs. The WM role retains revision-3
+semantics; its independent C file peer is mandatory on every run. Shell and
+output remain experimental. Record readers prove byte agreement; protected clients
 prove admitted lifecycles. Hosts supply presentation completions, topology and
 activation facts where documented by their scenarios, so neither proves native
 scanout, physical input, GPU execution permission or installed-session acceptance.
 The shell phase's content host serves only 9P2000.L. It runs an independent C
 peer linked against the pinned C SDK built without its IPC library, together
 with red mutations and hand-encoded malformed-record controls against the
-production file export. The protected popout lifecycle test still uses the
-socket wire and its vendored client until that path moves. An optional
+production file export. The protected popout lifecycle test uses the same file
+contract and independent C SDK peer. An optional
 externally supplied 9P content client is selected by the absolute
 `SOPHIA_CONTENT_LIFECYCLE_CLIENT` path, run against the host and reported
 separately; its absence does not erase the required independent C evidence.

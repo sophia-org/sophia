@@ -13,8 +13,6 @@ sophia-desktop-ids = { workspace = true }
 
 [dev-dependencies]
 kdl = { workspace = true }
-# Parity: a file body's value bytes equal the retiring socket frame's payload.
-sophia-shell-ipc = { workspace = true }
 
 [lints]
 workspace = true

@@ -17,9 +17,10 @@ contract in the [control bus](sophia-9p-control-bus.md).
 
 ### Protocol and revisions
 
-`protocol/sophia-shell-v1.kdl:1` declares frame-version 1, interface-major 1,
-interface-revision 8, max-descriptors 16, max-label-bytes 128,
-max-pending-activations 16 and max-shortcuts 256. The content design is ADR
+`protocol/sophia-shell-files-v1.kdl` defines the file records and objects.
+The role retains interface-major 1, interface-revision 8, max-descriptors 16,
+max-label-bytes 128, max-pending-activations 16 and max-shortcuts 256. The
+retired socket envelope has no role in file encoding. The content design is ADR
 [6ndjwffd](notes/decisions/6ndjwffd-content-capability-design-for-sophia_shell_v1.md).
 The GPU permission is ADR
 [mn4mzcnf](notes/decisions/mn4mzcnf-separate-shell-presentation-from-gpu-execution-permission.md). Capability bits are revision-gated:
@@ -1010,23 +1011,21 @@ alive as the file format, so it is replaced before more families build on it:
   writes its last byte. A refused or partial transfer never releases custody.
 - **Clients seam at typed values.** `sophia-shell-client` queues typed
   records and objects; each wire encodes natively. No frame translation.
-- **The independent oracle is written from this contract alone**, never
-  from `protocol/sophia-shell-v1.kdl`.
+- **The independent oracle is written from this file contract alone.**
 
 The per-role behaviour, owners, bounds and budgets above are unchanged.
 
 ### IPC purge inventory (t255)
 
-Nothing new may depend on these; each is deleted when its role's file wire
-is the accepted default:
+WM and shell socket implementations and SDK compatibility retire under t269
+and t270. The file contract keeps its existing Limits layout: removing a client
+adapter does not authorize changing negotiated fields or validation relations.
+The remaining public IPC is tracked separately:
 
 | Area | IPC code |
 | --- | --- |
-| Shell | socket transport (`shell_transport` socket branch, inbox/outbox frames), `ipc::shell_*` codecs (`fields.rs`, `codec.rs`), `packets/shell_*` |
-| Shell clients | Rust desktop SDK `sophia-shell-client` socket wire; C desktop SDK `src/shell_wire` socket half (Sophia pins the latter under `vendor/c-desktop-sdk/source`) |
-| Shell file contract | the socket-shaped `Limits` fields (`max_frame_payload`, `max_input_queue_bytes`) and their +24/+48 validation relations remain until coordinated SDK retirement. Owners already charge native record-body bytes and per-record control credits; `max_output_queue_bytes` and the control reserve remain Session retention bounds. Only the socket adapter uses the two socket fields to bound I/O |
-| WM | `policy_transport_worker/current_ipc.rs`, `ipc::wm_v1*` and `ipc::policy_*` codecs, Hagia's legacy policy wire |
-| WM file wire (retained) | `wm_records`, `wm_rows`, `policy_scalars` and `BinaryCodecError` are neutral owners; `sophia-wm-files-v1.kdl` owns the fixed row layouts. The old IPC adapter imports these; deleting that adapter does not delete the file codecs |
+| Shell file contract (retained) | `Limits` fields `max_frame_payload`, `max_input_queue_bytes` and their +24/+48 validation relations remain wire-compatible. Owners charge native record-body bytes and per-record control credits; `max_output_queue_bytes` and the control reserve remain Session retention bounds. A layout change needs a separate coordinated contract amendment |
+| WM file wire (retained) | `wm_records`, `wm_rows`, `policy_scalars` and `BinaryCodecError` are neutral owners; `sophia-wm-files-v1.kdl` owns the fixed row layouts |
 | Output | output socket role (`ipc::output_v1`), migrated by t253 |
 | Control | control socket (`ipc::control_v1`), per the control-bus plan |
 | Broker/portal | `ipc::broker*`, `ipc::portal` (t254 inventory) |

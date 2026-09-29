@@ -1,13 +1,14 @@
-tree 3ade83a52cd3bf30f29eb9d881b4356947b47b4f
-parent 0670e68b6425cdd4623f383bc368690d3f8a0b5c
-author Mason Green <mason@greenm01.net> 1790652607 -0400
-committer Mason Green <mason@greenm01.net> 1790652607 -0400
+tree e3917b80228142975abc7a6a0365e9ddf4e79d59
+parent 2a0f7d883eee344ecab9e4ef015186eec187f42e
+author Mason Green <mason@greenm01.net> 1790682524 -0400
+committer Mason Green <mason@greenm01.net> 1790682524 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarswvwAKCRBXGEu2KoAA
- Ygh2AQCATv/Iu7478RHLMqfrYtZD9t8HWFl9dZB5RA2GZuC1hAD+K/MjU2Erglap
- FMCtFKkhk2VMAIjzlcDlAwJ9A1lMRA0=
- =eL2D
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarulnBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGLcrQEAlzmiXblDQjqlU30NETIG
+ eE2f/cZRwX8BG8ydFpSU1yUA/izG64MI7d0dv+/amJjlGeVa/fNyiql7OijA4anF
+ 8p0J
+ =LwJQ
  -----END PGP SIGNATURE-----
 
-Document the 9P-only Session shell default
+Import shell file contract retirement clarification

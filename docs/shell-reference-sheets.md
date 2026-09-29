@@ -29,11 +29,11 @@ and fallback presentation.
 
 ## Wire and lifetime
 
-The schema is [sophia-shell-v1.kdl](../protocol/sophia-shell-v1.kdl); the shared
-Rust/Nim corpus is
-[sophia-shell-reference.frames](../protocol/golden/sophia-shell-reference.frames).
-Frame version and interface major remain 1. Revision 1 switcher/reservation and
-revision 2 tab clients retain their existing message layouts and limits.
+The [shell file schema](../protocol/sophia-shell-files-v1.kdl) defines the
+Shortcuts object, ReferenceRequest and ReferenceOutcome events, and complete
+ReferenceCandidate record. The [file contract](sophia-shell-files.md) retains
+interface major 1 and revision-gated capabilities and limits. Socket frames
+and counted catalog transfers have retired.
 
 | Capability | Bit | Meaning |
 | --- | --- | --- |

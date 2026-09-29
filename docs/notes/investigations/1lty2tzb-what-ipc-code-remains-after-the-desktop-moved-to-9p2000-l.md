@@ -2832,6 +2832,121 @@ close t269 or t270 and changes no installed release or running process. The
 operator's successful login after the installer permission repair is an
 ordinary-use report; it does not change the open latency or physical verdicts.
 
+## SDK compatibility retirement (t269/t270, 2026-09-29)
+
+Starting from signed Sophia `2ea546bac`, the integrated SDK candidates are:
+
+- C 0.2.0: `5975b181e848dd463bbbc97e6a3205fbedc0347f` (source removal at
+  `2a0f7d8`, followed by the file-contract documentation correction).
+- Rust 0.2.0: `a0dc13da70ad7ba34406e6c84531cbb2ffd6b52b`.
+
+Both commits and their published `v0.2.0` tags are signed:
+[C release](https://github.com/sophia-org/sophia-desktop-sdk-c/releases/tag/v0.2.0)
+and [Rust release](https://github.com/sophia-org/sophia-desktop-sdk-rs/releases/tag/v0.2.0).
+Sophia imports exact Git archives, records their raw
+commits and inventories, and verifies the source tree against those identities.
+The C SDK removes the IPC library, headers, `WITH_IPC`, socket tests, frame
+corpora and schemas. Its WM row generator now consumes only the file schema.
+The Rust SDK removes `sophia-shell-ipc`, `ipc-compat`, the socket connection API,
+partial-frame outbox state and socket parity tests. Environment selection in
+both SDKs requires the file endpoint and refuses any retired socket variable,
+including an empty one. Recovery uses the complete retained desktop release.
+
+Sophia prunes the retired contract comparisons, frozen WM C bindings, WM/shell
+socket schemas and frame corpora, generated WM socket reference, and C socket
+inventory checker. The shared generator remains for neutral WM file rows and
+output/control. Independent C file-peer builds no longer pass `WITH_IPC=0`.
+The family report now correctly records only 9P for shells. File contract
+layouts, retained WM rows and output's `output_transport=current_ipc` discovery
+remain unchanged. The Limits fields and validation relations remain part of
+the negotiated file contract; adapter retirement does not authorize changing
+them. Public references now point to file schemas.
+
+### Retained coverage and corrections
+
+Rust's native file round trips, offsets, malformed records, bounds, complete
+catalog publication, fragmented reads, epoch fencing and mixed events remain.
+Candidate saturation/refusal/retry, catalog queue atomicity and exact action
+echo checks now run against the scripted file peer. A fixed neutral Limits
+fixture retains the old payload bytes without the frame envelope. Handshake,
+partial-frame writes and counted socket catalog assembly retire with those
+encodings.
+
+The migrated controls found a real omission: the file client accepted catalog
+and indicator activation pairs with acknowledgements for a different action.
+Both helpers now reject mismatched identity/disposition before acquiring queue
+or submission custody. The tests vary each compared field, prove no ticket was
+spent, then observe the correct ordered pair. This also exposed inconsistent
+indicator fixtures in the SDK and Sophia's `shell_client_b6c_live`; both now
+acknowledge the action they activate. Other response-pair call sites already
+carry matching identities.
+
+Evidence is under `~/.local/state/sophia/development-evidence/ipc-retirement/`:
+
+- `t270-c-sdk-2.log`: isolated C build, all 15 file test binaries, spec digests
+  and six generator controls pass. The first checksum-pruning failure is
+  retained in `t270-c-sdk.log` and explained in the SDK provenance.
+- `t270-c-install.log` and `t270-c-installed-consumer.log`: the installed
+  public headers and libraries compile/link a consumer; both pkg-config
+  packages identify 0.2.0 and the IPC package is absent.
+- `t270-rust-tests-4.log` and `t270-rust-clippy.log`: isolated workspace tests
+  and strict all-target/all-feature Clippy pass. Earlier runs retain the
+  response-echo defect and fixture corrections.
+- `t270-full.log` refused a stale lockfile on the read-only source mount;
+  refreshing it changes only the five SDK package versions to 0.2.0.
+  `t270-full-2.log` exposed the Sophia indicator fixture mismatch;
+  `t270-indicator-fixture.log` passes all nine corrected tests.
+  `t270-full-3.log` reached the snapshot checks, where an old assertion still
+  expected 14 contracts. It now expects six retained file contracts, each
+  still tested for drift; the removed eight were the socket schema and frame
+  corpora.
+- `t270-xtask-tests.log`: all 84 executed tooling tests pass (four opt-in
+  tests ignored), including each retained contract drift and snapshot tamper
+  control. `t270-full-4.log`: complete isolated `cargo xtask check`, exit zero;
+  429 result groups, 6,250 reported passes, zero failures and 61 ignored,
+  followed by strict Clippy and the remaining repository verifiers. The SDK
+  suite runs once now that its compatibility feature has retired; its direct
+  run reports 324 passes. Graphics and device acceptance remain unclaimed.
+- `t270-independent-wm.log`: the complete independent C SDK WM gate passes,
+  including protected stale/timeout recovery and supervised replacement.
+  `t270-independent-shell.log`: descriptor, reservation, launcher, content
+  and protected popout file peers pass with malformed and action-receipt
+  negative controls. The optional externally supplied content client is absent
+  and reported unavailable; required C SDK evidence remains complete.
+  `t270-generator-check.log`: generation matches the checked-in artifacts
+  with the retired socket schemas removed.
+
+The installed current release `niltempus-932fe18006b8d7617cb6` and retained
+rollback release `niltempus-4f498ff25c3a6d89c16f` both pass read-only verification
+again with published niltempus `f9bec5181f408244fa7cb08b13324ecb5dfedab0`.
+The verifier binary SHA-256 is
+`85ea702f6a0cf62d78be735d6885e6f8b2f83d629d8deb494e0fdf516a8ee255`.
+The retained target's manifest and SHA256SUMS still match the exact identities
+in the [published recovery recipe](https://github.com/sophia-org/niltempus/blob/f9bec5181f408244fa7cb08b13324ecb5dfedab0/docs/release-recovery.md).
+Logs are `t270-current-release-verify.log`, `t270-rollback-release-verify.log`
+and `t270-rollback-identities.sha256`. The earlier private installer selection
+and tamper controls remain the rollback behavior evidence. These checks change
+no installed release, component selection or running process and make no
+latency, physical presentation or output-role acceptance claim.
+
+### Output prerequisite and cleanup audit
+
+The t253 plan still requires a real output-role product peer before
+implementation. The source review identifies only the in-repository proof
+client; the named desktop components supply no replacement consumer. Selecting
+the application that should own output configuration remains a product decision.
+The output IPC and advertised `output_transport=current_ipc` therefore remain;
+the WM/shell retirement amendment does not authorize removing them.
+
+The cleanup inventory records 75 unique worktrees across the related
+repositories (90 entries before shared repositories were deduplicated), in
+`development-evidence/ipc-retirement/cleanup-inventory-unique.json`. It includes
+dirty checkouts, unmerged commits, and Narthex's main checkout on its `overview`
+branch. The niltempus configuration also names `sophia-final-9p` as its Sophia
+source path. Removing these directories without preserving unique work and
+repointing that path would lose work or break the next build. This audit removes
+no worktree or branch.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
@@ -2857,8 +2972,8 @@ flips, by a published rollback recipe. The inventory maps to these task IDs;
   gates (B, after t267, t268 and t271, under the accepted retirement decision). Descriptor production startup
   now uses files; Rust WM/shell socket codecs and the revision-3 archive are
   removed. WM/shell socket generation is removed; the shared generator remains
-  for file rows and output/control. Frozen C bindings and SDK-bound compatibility
-  artifacts still need coordinated retirement.
+  for file rows and output/control. The coordinated SDK source slice removes
+  the remaining frozen C bindings and compatibility artifacts.
 - t270: SDK releases without `sophia-shell-ipc`, `ipc-compat` and
   `WITH_IPC`; re-vendor and prune the `same_contract` lists.
 - t271: the Narthex descriptor profile and single-process metadata shell (C).

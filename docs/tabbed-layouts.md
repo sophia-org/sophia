@@ -10,10 +10,10 @@ Hagia–Narthex socket and no application metadata in the WM protocol.
 ## Committed layout facts
 
 WM capability `tab_groups` (bit 11) admits projection record kinds `0xff01`
-and `0xff02`. Their fixed layouts are in the [generated wire reference](generated/sophia-wm-v1-wire.md).
-They follow the complete ordinary chunk prefix, use consecutive ordinals, and
-are excluded from revision-3 begin/end chunk and item counts. Existing revision-3
-record sizes and message numbers remain unchanged.
+and `0xff02`. Their fixed row layouts are in the
+[WM file schema](../protocol/sophia-wm-files-v1.kdl). They travel in counted
+sections of one complete projection candidate, under the
+[WM file contract](sophia-wm-files.md).
 
 A group names an opaque output, a WM-local group identity, a logical rectangle,
 focus state, selected member, and ordered generational surface handles. The

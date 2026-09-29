@@ -72,12 +72,11 @@ telemetry. Action identity and a sufficiently fine target partition can reveal
 user choices, which is why count, precision, and rate remain part of the
 budget.
 
-The wire SMT model consumes constants generated from
-`protocol/sophia-wm-v1.kdl`. It checks every current maximum payload, chunk
-prefix accounting, schema count representability, record-product width, and
-exact chunk-length arithmetic. Rust/C99 golden vectors and malformed-frame
-tests remain the executable codec evidence; the SMT result does not replace
-them.
+The WM file-row SMT model consumes constants generated from
+`protocol/sophia-wm-files-v1.kdl`. It checks count representability and bounded
+row products, with a negative control for unchecked 32-bit multiplication.
+Rust/C99 file codec tests and neutral row vectors remain the executable
+evidence; the SMT result does not replace them.
 
 ## Security debt the models do not close
 

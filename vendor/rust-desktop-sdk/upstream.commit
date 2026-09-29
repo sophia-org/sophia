@@ -1,13 +1,14 @@
-tree 1570a6789844aadf100598cafbf2fe1989ce0b57
-parent d0ac4111a47da3396e0f10fbcbbf0fbf6d878fb5
-author Mason Green <mason@greenm01.net> 1790652608 -0400
-committer Mason Green <mason@greenm01.net> 1790652608 -0400
+tree d11106d11d53489321d273cb417480a4f9191fd8
+parent bd0be72112465c8d4790787027f15232c472de64
+author Mason Green <mason@greenm01.net> 1790682524 -0400
+committer Mason Green <mason@greenm01.net> 1790682524 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarswwAAKCRBXGEu2KoAA
- YkR3AQDQKUEJi1L6mMGfLdC9aNwd2v/iCqtXqG/lzSWLl7Hr5AD/UA1mbV5Mx7KA
- L1yDkQGiYjttJQ4EapUg31mcfvX88Ao=
- =bCh2
+ iJEEABYIADkWIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarulnBsUgAAAAAAEAA5t
+ YW51MiwyLjUrMS4xMiwyLDIACgkQVxhLtiqAAGJK+wD9EGyxAJx/N98FwRJdirjK
+ V6dV2WSwCkcTct40LOqkSOEBAL21gdVN7NTnPbL0PtXIQVuBfHlxjQHzCvw1cgJj
+ S3kA
+ =MBsT
  -----END PGP SIGNATURE-----
 
-Document the 9P-only Session shell default
+Release Rust SDK 0.2.0 without socket compatibility

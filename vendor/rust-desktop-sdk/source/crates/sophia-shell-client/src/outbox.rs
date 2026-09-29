@@ -17,7 +17,6 @@ pub(crate) struct ClientOutbox {
 }
 struct Frame {
     bytes: Box<[u8]>,
-    offset: usize,
     control: bool,
     ticket: u64,
 }
@@ -60,7 +59,6 @@ impl ClientOutbox {
             .zip(first..)
             .map(|(bytes, ticket)| Frame {
                 bytes: bytes.into_boxed_slice(),
-                offset: 0,
                 control,
                 ticket,
             })
@@ -79,35 +77,14 @@ impl ClientOutbox {
         Ok(ledger.issue(records))
     }
     pub(crate) fn front(&self) -> Option<&[u8]> {
-        self.frames
-            .front()
-            .map(|frame| &frame.bytes[frame.offset..])
+        self.frames.front().map(|frame| frame.bytes.as_ref())
     }
     /// The front unit's ticket.
     pub(crate) fn front_ticket(&self) -> Option<u64> {
         self.frames.front().map(|frame| frame.ticket)
     }
 
-    /// Accounts `count` more bytes of the front unit as written, returning
-    /// its ticket once the whole unit has been (the socket wire's progress).
-    #[cfg(any(test, feature = "ipc-compat"))]
-    pub(crate) fn written(&mut self, count: usize) -> Option<u64> {
-        let frame = self
-            .frames
-            .front_mut()
-            .expect("write requires an owned frame");
-        assert!(count <= frame.bytes.len() - frame.offset);
-        frame.offset += count;
-        if frame.offset < frame.bytes.len() {
-            return None;
-        }
-        let ticket = frame.ticket;
-        self.retire_front();
-        Some(ticket)
-    }
-
-    /// Releases the front unit whole, whatever was written of it: the file
-    /// wire keeps a unit queued until its custody is settled.
+    /// Releases the front unit after the file wire settles its custody.
     pub(crate) fn retire_front(&mut self) {
         let frame = self
             .frames

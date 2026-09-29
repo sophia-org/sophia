@@ -29,9 +29,10 @@ fn bulk_cannot_spend_action_pair_capacity_and_pairs_enqueue_atomically() {
     );
     assert_eq!(outbox.frames.len(), records);
     assert_eq!(outbox.front().unwrap(), [1; 100]);
-    assert_eq!(outbox.written(99), None);
+    assert_eq!(outbox.front_ticket(), Some(1));
     assert_eq!(outbox.frames.len(), records);
-    assert_eq!(outbox.written(1), Some(1));
+    outbox.retire_front();
+    assert_eq!(outbox.frames.len(), records - 1);
     let pair = outbox
         .enqueue(vec![vec![6], vec![7]], true, &mut ledger)
         .unwrap();

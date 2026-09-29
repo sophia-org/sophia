@@ -3,7 +3,6 @@
 //! transaction kinds (`FrameDemand`, `FrameDemandCancel`, `ActionAck`,
 //! `CandidateOutcome`, `FramePermit`, `Action`) and the composite `Candidate`
 //! record (Begin + one Chunk + End under one transaction).
-use sophia_shell_ipc::{SOPHIA_IPC_HEADER_LEN, encode_shell_content_frame};
 use sophia_shell_protocol::shell::encoding::ValueError;
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::*;
@@ -138,7 +137,7 @@ fn allocation_request_record() -> ShellContentRecord {
 
 /// Round-trips one single-payload transaction record and checks the body
 /// layout `encode_shell_file_transaction_body` promises: `tx.to_le_bytes()`
-/// followed by the unchanged IPC payload.
+/// followed by the native record body.
 fn assert_transaction_round_trips(
     header: ShellFileHeader,
     kind: ShellFileKind,
@@ -157,8 +156,6 @@ fn assert_transaction_round_trips(
         &body[..8],
         tx_record.transaction.raw().to_le_bytes().as_slice()
     );
-    let frame = encode_shell_content_frame(tx_record.transaction, &tx_record.record).unwrap();
-    assert_eq!(&body[8..], &frame[SOPHIA_IPC_HEADER_LEN..]);
 
     assert_eq!(shell_file_transaction_kind(&tx_record.record), Some(kind));
 }

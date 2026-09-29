@@ -67,7 +67,7 @@ pub fn run(repo: &Path, arguments: &[String]) -> Result<Vec<String>, String> {
             "identity_error": final_identity.as_ref().err(), "phases": phases,
             "device_hidden": true, "native_acceptance": false,
             "supplied_facts": ["presentation completions", "output topology", "input activations"],
-            "wm_transport": "9p2000.L", "shell_transports": ["9p2000.L", "current_ipc"], "output_transport": "current_ipc",
+            "wm_transport": "9p2000.L", "shell_transports": ["9p2000.L"], "output_transport": "current_ipc",
             "output_independent_lifecycle": false,
         }),
     )?;

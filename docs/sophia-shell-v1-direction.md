@@ -15,7 +15,9 @@ Vello dependency is required by Sophia. The
 [paired Lom/Sophia plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md)
 owns remaining integration. The surveys below retain historical design evidence.
 
-The experimental role schema is `protocol/sophia-shell-v1.kdl`. This note
+The current role schema is `protocol/sophia-shell-files-v1.kdl`, with transport,
+negotiation and custody defined by the [shell file contract](sophia-shell-files.md).
+The socket framing discussed below is historical and has retired. This note
 records how broader shell vocabulary will be derived, the external evidence
 that method draws on, and where the work sits in the roadmap. Revision 1 is a
 falsifiable title-only slice, not a compatibility promise. `docs/architecture.md`,

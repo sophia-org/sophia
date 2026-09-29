@@ -5,7 +5,6 @@ import unittest
 import generate_wm_rows as gen
 
 FILES = (gen.ROOT / gen.SCHEMA).read_text()
-SOCKET = (gen.ROOT / gen.LEGACY).read_text()
 
 
 def rows(text):
@@ -28,8 +27,6 @@ class GeneratedRows(unittest.TestCase):
         for retired in ("sophia_wm_v1", "SOPHIA_WM_V1", "frame"):
             self.assertNotIn(retired, header + source)
 
-    def test_frozen_socket_rows_match_the_file_contract(self):
-        gen.check_legacy(rows(FILES), SOCKET)
 
 
 class RefusedSchemas(unittest.TestCase):
@@ -84,28 +81,6 @@ class RefusedSchemas(unittest.TestCase):
         self.refuse(self.edit('reserved=#true sample=0', 'reserved=true sample=0'))
         self.refuse(self.edit('offset=8 nonzero=#true', 'offset=8 nonzero=true'))
 
-    def test_drift_in_each_row_contract_dimension_is_refused(self):
-        for before, after in [
-            ("max-outputs=16", "max-outputs=15"),
-            ("interface-revision=3", "interface-revision=4"),
-            ('capability "actions" bit=1', 'capability "actions" bit=20'),
-            ('outcome "committed" value=1', 'outcome "committed" value=6'),
-            ('gate="launch_placement"', 'gate="actions"'),
-            ('kind=1 max=16 {\n            field "output" type="u64" sample=1\n'
-             '            field "generation"',
-             'kind=1 max=15 {\n            field "output" type="u64" sample=1\n'
-             '            field "generation"'),
-            ('field "work_y" type="i32" sample=24', 'field "work_y" type="i32" sample=25'),
-            ('field "focus_index" type="u32"', 'field "focus_index" type="u64"'),
-        ]:
-            with self.subTest(after=after):
-                changed = rows(self.edit(before, after))
-                with self.assertRaises(gen.SchemaError):
-                    gen.check_legacy(changed, SOCKET)
-
-    def test_missing_legacy_rows_are_refused(self):
-        with self.assertRaises(gen.SchemaError):
-            gen.check_legacy(rows(FILES), SOCKET.replace('"sophia_wm_v1"', '"other"', 1))
 
 
 if __name__ == "__main__":

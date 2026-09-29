@@ -1,4 +1,3 @@
-use sophia_shell_ipc::{SOPHIA_IPC_HEADER_LEN, encode_shell_content_frame};
 use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::*;
 
@@ -456,10 +455,6 @@ fn allocation_request_result_round_trips_and_bounds() {
         decode_shell_file_allocation_request(&encoded_req).unwrap(),
         tx_record_req
     );
-    // After the 32-byte header and 8-byte transaction, the body is exactly
-    // the existing IPC payload of the same record.
-    let frame = encode_shell_content_frame(tx, &allocation_request()).unwrap();
-    assert_eq!(&encoded_req[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
     assert_eq!(
         u64::from_le_bytes(encoded_req[32..40].try_into().unwrap()),
         99
@@ -510,7 +505,7 @@ fn allocation_request_result_round_trips_and_bounds() {
 }
 
 #[test]
-fn limits_round_trips_and_byte_identity() {
+fn limits_round_trips() {
     let h = ShellFileHeader {
         kind: ShellFileKind::Limits,
         connection_epoch: 1,
@@ -520,10 +515,6 @@ fn limits_round_trips_and_byte_identity() {
     let limits = ContentLimits::prototype(grant());
     let encoded = encode_shell_file_limits(h, limits.clone()).unwrap();
     assert_eq!(decode_shell_file_limits(&encoded).unwrap(), limits);
-    let frame =
-        encode_shell_content_frame(TransactionId::INVALID, &ShellContentRecord::Limits(limits))
-            .unwrap();
-    assert_eq!(&encoded[32..], &frame[SOPHIA_IPC_HEADER_LEN..]);
 }
 
 #[test]
@@ -605,8 +596,6 @@ fn outputs_object_round_trips_within_its_cap() {
     let bytes = encode_shell_file_outputs(header, &value).unwrap();
     assert!(bytes.len() <= SHELL_FILE_OUTPUTS_MAX_BYTES);
     assert_eq!(decode_shell_file_outputs(&bytes).unwrap(), value);
-    let frame = encode_shell_content_frame(value.transaction, &value.record).unwrap();
-    assert_eq!(&bytes[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
     assert_eq!(encode_shell_file_outputs_body(&value).unwrap(), bytes[32..]);
     let mut zero = bytes.clone();
     zero[32..40].fill(0);
@@ -753,8 +742,6 @@ fn resource_end_round_trips_and_bounds() {
         encode_shell_file_resource_end_body(&tx_record).unwrap(),
         encoded[32..]
     );
-    let frame = encode_shell_content_frame(tx, &resource_end_record()).unwrap();
-    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
 
     // transaction 0 refused
     let mut zero_tx = tx_record.clone();
@@ -806,8 +793,6 @@ fn resource_cancel_round_trips_and_bounds() {
         encode_shell_file_resource_cancel_body(&tx_record).unwrap(),
         encoded[32..]
     );
-    let frame = encode_shell_content_frame(tx, &resource_cancel_record()).unwrap();
-    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
 
     // transaction 0 refused
     let mut zero_tx = tx_record.clone();
@@ -859,8 +844,6 @@ fn resource_retire_round_trips_and_bounds() {
         encode_shell_file_resource_retire_body(&tx_record).unwrap(),
         encoded[32..]
     );
-    let frame = encode_shell_content_frame(tx, &resource_retire_record()).unwrap();
-    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
 
     // transaction 0 refused
     let mut zero_tx = tx_record.clone();
@@ -912,8 +895,6 @@ fn resource_status_round_trips_and_bounds() {
         encode_shell_file_resource_status_body(&tx_record).unwrap(),
         encoded[32..]
     );
-    let frame = encode_shell_content_frame(tx, &resource_status_record()).unwrap();
-    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
 
     // transaction 0 refused
     let mut zero_tx = tx_record.clone();
@@ -965,8 +946,6 @@ fn resource_released_round_trips_and_bounds() {
         encode_shell_file_resource_released_body(&tx_record).unwrap(),
         encoded[32..]
     );
-    let frame = encode_shell_content_frame(tx, &resource_released_record()).unwrap();
-    assert_eq!(&encoded[40..], &frame[SOPHIA_IPC_HEADER_LEN..]);
 
     // transaction 0 refused
     let mut zero_tx = tx_record.clone();
@@ -1018,8 +997,6 @@ fn resource_begin_round_trips_and_bounds() {
     );
     // After the 32-byte header and the 16-byte transaction/slot/reserved
     // prefix, the body is exactly the existing IPC payload of the record.
-    let frame = encode_shell_content_frame(tx, &resource_begin_record()).unwrap();
-    assert_eq!(&encoded[48..], &frame[SOPHIA_IPC_HEADER_LEN..]);
     assert_eq!(u64::from_le_bytes(encoded[32..40].try_into().unwrap()), 16);
     assert_eq!(u16::from_le_bytes(encoded[40..42].try_into().unwrap()), 0);
 

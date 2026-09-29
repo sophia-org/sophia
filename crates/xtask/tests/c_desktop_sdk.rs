@@ -130,35 +130,17 @@ fn pinned_source_and_contract_are_both_required() {
     }
     std::fs::write(&manifest_path, manifest_bytes).unwrap();
 
-    let mut contracts = vec![
+    let contracts = [
         "docs/sophia-shell-descriptors.md".to_owned(),
         "protocol/sophia-shell-files-v1.kdl".to_owned(),
-        "protocol/sophia-shell-v1.kdl".to_owned(),
         "docs/sophia-9p-profile.md".to_owned(),
         "docs/sophia-shell-files.md".to_owned(),
         "docs/sophia-wm-files.md".to_owned(),
         "protocol/sophia-wm-files-v1.kdl".to_owned(),
-        "protocol/sophia-wm-v1.kdl".to_owned(),
         "docs/sophia-wm-api.md".to_owned(),
         "protocol/golden/sophia-wm-v1.records".to_owned(),
         "docs/references/diod-9p2000L-protocol.md".to_owned(),
-        "bindings/c/sophia_wm_v1.c".to_owned(),
-        "bindings/c/sophia_wm_v1.h".to_owned(),
     ];
-    for name in [
-        "catalog-actions",
-        "content-malformed",
-        "content",
-        "indicators",
-        "launcher",
-        "native-launcher",
-        "reference",
-        "tabs",
-        "v1-malformed",
-        "v1",
-    ] {
-        contracts.push(format!("protocol/golden/sophia-shell-{name}.frames"));
-    }
     for name in &contracts {
         let path = root.0.join(name);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

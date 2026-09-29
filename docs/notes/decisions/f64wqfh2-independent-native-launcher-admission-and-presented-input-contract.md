@@ -223,7 +223,8 @@ surface; that remains a measured later option.
 
 Tracks [t104–t108](../plans/ptil1ejw-modular-native-shell-components-and-independent-launcher-critical-path.md)
 and the [component concept](../concepts/k2d9l42p-native-shell-components-compose-through-explicit-scoped-grants.md).
-Normative shipped behavior remains [shell_v1](../../../protocol/sophia-shell-v1.kdl)
+Normative shipped behavior at this proposal's source checkpoint is recorded in
+the [retired shell schema](https://github.com/sophia-org/sophia/blob/2d69924a9cac3ed1164089c7d1fae23b46d19d71/protocol/sophia-shell-v1.kdl)
 and the [descriptor launcher](../../application-launcher.md); this proposed ADR
 must not be cited as current multi-client support.
 

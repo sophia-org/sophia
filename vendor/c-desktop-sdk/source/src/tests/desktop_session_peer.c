@@ -61,7 +61,7 @@ int main(int argc, char **argv)
     config.offer.required_capabilities = strtoull(argv[2], NULL, 10);
     assert(getchar() == 'G');
     deadline = now_ms() + 8000;
-    assert(!sophia_desktop_select_shell(argv[1], NULL, &endpoint));
+    assert(!sophia_desktop_select_shell(argv[1], &endpoint));
     result = sophia_desktop_connection_begin(&connection, endpoint.path);
     while (result > 0) {
         assert(now_ms() < deadline);

@@ -14,22 +14,21 @@ static int valid_path(const char *path)
     return path && path[0] == '/' && strlen(path) < sizeof(address.sun_path);
 }
 
-int sophia_desktop_select_shell(const char *files, const char *ipc,
-                                struct sophia_desktop_endpoint *out)
+int sophia_desktop_select_shell(const char *files, struct sophia_desktop_endpoint *out)
 {
     struct sophia_desktop_endpoint selected;
-    if (!out || (!!files == !!ipc) || !valid_path(files ? files : ipc))
+    if (!out || !valid_path(files))
         return SOPHIA_DESKTOP_CONNECT_ARGUMENT;
-    selected.wire = files ? SOPHIA_DESKTOP_FILES : SOPHIA_DESKTOP_IPC;
-    selected.path = files ? files : ipc;
+    selected.wire = SOPHIA_DESKTOP_FILES;
+    selected.path = files;
     *out = selected;
     return SOPHIA_DESKTOP_CONNECTED;
 }
 
 int sophia_desktop_shell_environment(struct sophia_desktop_endpoint *out)
 {
-    return sophia_desktop_select_shell(getenv("SOPHIA_SHELL_9P_SOCKET"),
-                                       getenv("SOPHIA_SHELL_SOCKET"), out);
+    if (getenv("SOPHIA_SHELL_SOCKET")) return SOPHIA_DESKTOP_CONNECT_ARGUMENT;
+    return sophia_desktop_select_shell(getenv("SOPHIA_SHELL_9P_SOCKET"), out);
 }
 
 static int fail(struct sophia_desktop_connection *c, int result, int error)

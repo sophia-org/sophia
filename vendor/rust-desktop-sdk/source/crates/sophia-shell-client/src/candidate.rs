@@ -60,7 +60,3 @@ pub(crate) fn metadata(
     }
     Ok(candidate)
 }
-
-#[cfg(all(test, feature = "ipc-compat"))]
-#[path = "../tests/support/candidate.rs"]
-mod tests;

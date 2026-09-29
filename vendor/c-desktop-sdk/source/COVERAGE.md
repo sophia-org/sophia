@@ -17,7 +17,7 @@ Clients retain their own policy and UI logic. No missing file operation falls
 back to IPC. Former descriptor-based operations require a reviewed file or
 protected-grant contract, rather than a hidden ancillary-data channel.
 
-## Release 0.1.0
+## Release 0.2.0
 
 | Role | File contract | Client status |
 | --- | --- | --- |
@@ -56,8 +56,7 @@ production export, all three descriptor host modes and the launcher host.
 Its protected CPU presentation test checks reservation changes only after
 matching presentation. These are deterministic gates, not physical GPU or
 installed-desktop acceptance.
-The proposal remains separate from the published API-1 contract and does not
-change `compatibility.json`.
+These descriptor records are part of the published API-1 contract.
 
 For each role, inventory every former IPC request, response, event, capability,
 resource grant and terminal outcome against a named file-contract operation.

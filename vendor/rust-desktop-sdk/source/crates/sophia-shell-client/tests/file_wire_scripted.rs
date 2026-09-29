@@ -22,6 +22,8 @@ use sophia_shell_protocol::shell_files::*;
 use sophia_shell_protocol::*;
 
 const EAGAIN: u32 = 11;
+#[path = "support/file_wire_admission.rs"]
+mod admission;
 const EINVAL: u32 = 22;
 const EALREADY: u32 = 114;
 /// The first `EAGAIN` backoff the client documents (`RETRY_FIRST`): a pass
@@ -1322,12 +1324,18 @@ fn indicator_activation_and_action_response_are_written_as_their_records_in_orde
         }
     );
 
-    let acknowledged = ack(&action());
+    let activation = indicator_activation(12);
+    let mut consumed = action();
+    consumed.output.id = activation.output.raw();
+    consumed.target_id = activation.indicator;
+    consumed.action_id = activation.action;
+    consumed.event_id = activation.event_id;
+    let acknowledged = ack(&consumed);
     let pair = connection
         .enqueue_indicator_action_response_tracked(
             tx(10),
             &acknowledged,
-            Some((tx(11), &indicator_activation(12))),
+            Some((tx(11), &activation)),
         )
         .unwrap();
     let tickets: Vec<Ticket> = pair.tickets().collect();

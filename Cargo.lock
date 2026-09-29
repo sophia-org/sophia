@@ -952,7 +952,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rustix",
  "sophia-9p-records",
@@ -960,7 +960,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-9p-records"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "sophia-backend-live"
@@ -1037,7 +1037,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-desktop-ids"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "sophia-drm-out-fence"
@@ -1168,7 +1168,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-shell-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rustix",
  "sophia-9p-client",
@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "sophia-shell-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "sophia-desktop-ids",
 ]

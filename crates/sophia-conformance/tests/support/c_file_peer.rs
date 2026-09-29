@@ -1,6 +1,6 @@
 //! Builds independent C file peers against the pinned C desktop SDK.
 //!
-//! The SDK is built by its own vendored makefile with `WITH_IPC=0`, so the
+//! The SDK is built by its own vendored makefile with only file clients, so the
 //! peer can link only `libsophia-desktop` and `libsophia-9p`: no IPC library
 //! and no Rust encoder is available to it.
 use std::path::{Path, PathBuf};
@@ -41,7 +41,6 @@ pub fn build(directory: &Path, source: &str, mutation: u32) -> PathBuf {
                 .arg("-C")
                 .arg(&sdk)
                 .arg(format!("BUILD={}", libraries.display()))
-                .arg("WITH_IPC=0")
                 .arg("all"),
             "pinned C desktop SDK build",
         );

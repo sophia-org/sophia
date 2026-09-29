@@ -2,7 +2,7 @@
 #define SOPHIA_DESKTOP_CONNECTION_H
 #include <poll.h>
 
-enum sophia_desktop_wire { SOPHIA_DESKTOP_FILES = 1, SOPHIA_DESKTOP_IPC = 2 };
+enum sophia_desktop_wire { SOPHIA_DESKTOP_FILES = 1 };
 enum sophia_desktop_connect_result {
     SOPHIA_DESKTOP_CONNECTED = 0,
     SOPHIA_DESKTOP_CONNECTING = 1,
@@ -18,10 +18,9 @@ struct sophia_desktop_endpoint {
     /* Borrowed from the selection arguments/environment. */
     const char *path;
 };
-/* Exactly one endpoint must be supplied, absolute and nonempty. A supplied
- * empty value is an error. Selection never tries the other backend. */
-int sophia_desktop_select_shell(const char *files, const char *ipc,
-                                struct sophia_desktop_endpoint *out);
+/* The file endpoint must be absolute and nonempty. Environment selection
+ * requires SOPHIA_SHELL_9P_SOCKET and refuses any SOPHIA_SHELL_SOCKET value. */
+int sophia_desktop_select_shell(const char *files, struct sophia_desktop_endpoint *out);
 int sophia_desktop_shell_environment(struct sophia_desktop_endpoint *out);
 
 /* Initialize to { .fd = -1 } before begin. The helper owns fd until take or

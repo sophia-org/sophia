@@ -16,6 +16,6 @@ Then replace `source/` from `git archive <exact revision>`, save
 SHA-256 file manifest with that revision, and run the snapshot check and C gates.
 Do not edit the snapshot or use a moving branch as its identity.
 
-The initial pin is a local signed extraction commit; publication awaits GitHub
-authentication. This snapshot does not require network access. Generated WM
-socket binding checks remain under bindings/c until WM SDK integration.
+The 0.2.0 pin contains only file clients. Its checks compare the retained file
+contracts and neutral WM rows; socket schemas, bindings and corpora have retired.
+The snapshot and its checks require no network access.

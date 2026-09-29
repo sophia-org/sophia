@@ -474,7 +474,7 @@ anybody:
 | You want to build | Read next | Copy from |
 | --- | --- | --- |
 | A window manager | `docs/sophia-wm-api.md`, `docs/sophia-wm-files.md` | the C desktop SDK WM files client, then Hagia |
-| A shell | `docs/sophia-shell-v1-direction.md`, `protocol/sophia-shell-v1.kdl`, [paired plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md) | Narthex for descriptors; Lom for the developing content adapter |
+| A shell | `docs/sophia-shell-files.md`, `protocol/sophia-shell-files-v1.kdl`, [paired plan](notes/plans/1m3z9q0j-lom-and-sophia-portable-gpu-shell-critical-path.md) | Narthex for descriptors; Lom for the developing content adapter |
 | A full desktop | this document, then both of the above | Hagia and Narthex, as the split to imitate |
 | Portal-using apps | `docs/namespaces-and-portals.md` | — |
 

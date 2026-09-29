@@ -25,7 +25,7 @@ int __wrap_getsockopt(int fd, int level, int option, void *value, socklen_t *len
 
 int main(void)
 {
-    struct sophia_desktop_endpoint endpoint = { SOPHIA_DESKTOP_IPC, "unchanged" };
+    struct sophia_desktop_endpoint endpoint = { SOPHIA_DESKTOP_FILES, "unchanged" };
     struct sophia_desktop_connection connection = { .fd = -1 };
     struct sophia_desktop_connection zero = {0};
     char directory[] = "/tmp/sophia-sdk-connect-XXXXXX";
@@ -36,18 +36,29 @@ int main(void)
     sophia_desktop_connection_close(&zero);
     assert(fcntl(STDIN_FILENO, F_GETFD) == stdin_flags);
     assert(sophia_desktop_connection_finish(&connection, 0) == SOPHIA_DESKTOP_CONNECT_ARGUMENT);
-    assert(sophia_desktop_select_shell(NULL, NULL, &endpoint) < 0);
-    assert(sophia_desktop_select_shell("/files", "/ipc", &endpoint) < 0);
-    assert(sophia_desktop_select_shell("", NULL, &endpoint) < 0);
-    assert(sophia_desktop_select_shell("relative", NULL, &endpoint) < 0);
+    assert(sophia_desktop_select_shell(NULL, &endpoint) < 0);
+    assert(sophia_desktop_select_shell("", &endpoint) < 0);
+    assert(sophia_desktop_select_shell("relative", &endpoint) < 0);
     memset(oversized, 'x', sizeof(oversized));
     oversized[0] = '/'; oversized[sizeof(oversized)-1] = 0;
-    assert(sophia_desktop_select_shell(oversized, NULL, &endpoint) < 0);
+    assert(sophia_desktop_select_shell(oversized, &endpoint) < 0);
     assert(!strcmp(endpoint.path, "unchanged"));
-    assert(!sophia_desktop_select_shell("/files", NULL, &endpoint));
+    assert(!sophia_desktop_select_shell("/files", &endpoint));
     assert(endpoint.wire == SOPHIA_DESKTOP_FILES);
-    assert(!sophia_desktop_select_shell(NULL, "/ipc", &endpoint));
-    assert(endpoint.wire == SOPHIA_DESKTOP_IPC);
+    assert(!unsetenv("SOPHIA_SHELL_9P_SOCKET"));
+    assert(!unsetenv("SOPHIA_SHELL_SOCKET"));
+    assert(sophia_desktop_shell_environment(&endpoint) < 0);
+    assert(!setenv("SOPHIA_SHELL_SOCKET", "/ipc", 1));
+    assert(sophia_desktop_shell_environment(&endpoint) < 0);
+    assert(!setenv("SOPHIA_SHELL_9P_SOCKET", "/files", 1));
+    assert(sophia_desktop_shell_environment(&endpoint) < 0);
+    assert(!setenv("SOPHIA_SHELL_SOCKET", "", 1));
+    assert(sophia_desktop_shell_environment(&endpoint) < 0);
+    assert(!unsetenv("SOPHIA_SHELL_SOCKET"));
+    assert(!sophia_desktop_shell_environment(&endpoint));
+    assert(endpoint.wire == SOPHIA_DESKTOP_FILES);
+    assert(!strcmp(endpoint.path, "/files"));
+    assert(!unsetenv("SOPHIA_SHELL_9P_SOCKET"));
     assert(mkdtemp(directory));
     assert(snprintf(address.sun_path, sizeof(address.sun_path), "%s/socket", directory) > 0);
     listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);

@@ -21,7 +21,6 @@ pub const CONTRACTS: &[(&str, &str)] = &[
         "spec/sophia-shell-files-v1.kdl",
         "protocol/sophia-shell-files-v1.kdl",
     ),
-    ("spec/sophia-shell-v1.kdl", "protocol/sophia-shell-v1.kdl"),
     ("spec/sophia-shell-files.md", "docs/sophia-shell-files.md"),
     (
         "spec/sophia-shell-descriptors.md",
@@ -35,34 +34,6 @@ pub const CONTRACTS: &[(&str, &str)] = &[
     (
         "spec/references/diod-9p2000L-protocol.md",
         "docs/references/diod-9p2000L-protocol.md",
-    ),
-    (
-        "spec/golden/sophia-shell-content.frames",
-        "protocol/golden/sophia-shell-content.frames",
-    ),
-    (
-        "spec/golden/sophia-shell-content-malformed.frames",
-        "protocol/golden/sophia-shell-content-malformed.frames",
-    ),
-    (
-        "spec/golden/sophia-shell-catalog-actions.frames",
-        "protocol/golden/sophia-shell-catalog-actions.frames",
-    ),
-    (
-        "spec/golden/sophia-shell-indicators.frames",
-        "protocol/golden/sophia-shell-indicators.frames",
-    ),
-    (
-        "spec/golden/sophia-shell-launcher.frames",
-        "protocol/golden/sophia-shell-launcher.frames",
-    ),
-    (
-        "spec/golden/sophia-shell-v1.frames",
-        "protocol/golden/sophia-shell-v1.frames",
-    ),
-    (
-        "spec/golden/sophia-shell-v1-malformed.frames",
-        "protocol/golden/sophia-shell-v1-malformed.frames",
     ),
 ];
 
@@ -83,39 +54,26 @@ pub fn run(repo: &Path) -> Result<Vec<String>, String> {
     let target =
         target_root(repo, std::env::var_os("CARGO_TARGET_DIR").as_deref()).join("rust-desktop-sdk");
     let target = target.to_str().ok_or("non-UTF-8 target path")?;
-    for arguments in [
-        &[
-            "test",
-            "--offline",
-            "--locked",
-            "--workspace",
-            "--manifest-path",
-            manifest,
-            "--target-dir",
-            target,
-        ][..],
-        &[
-            "test",
-            "--offline",
-            "--locked",
-            "--workspace",
-            "--all-features",
-            "--manifest-path",
-            manifest,
-            "--target-dir",
-            target,
-        ],
-    ] {
-        let status = std::process::Command::new("cargo")
-            .current_dir(repo)
-            .args(arguments)
-            .status()
-            .map_err(|error| format!("could not run cargo: {error}"))?;
-        if !status.success() {
-            return Err(format!(
-                "Rust desktop SDK tests {arguments:?} exited with {status}"
-            ));
-        }
+    let arguments = [
+        "test",
+        "--offline",
+        "--locked",
+        "--workspace",
+        "--all-features",
+        "--manifest-path",
+        manifest,
+        "--target-dir",
+        target,
+    ];
+    let status = std::process::Command::new("cargo")
+        .current_dir(repo)
+        .args(arguments)
+        .status()
+        .map_err(|error| format!("could not run cargo: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "Rust desktop SDK tests {arguments:?} exited with {status}"
+        ));
     }
     Ok(vec![format!(
         "rust_desktop_sdk status=pass revision={revision}"

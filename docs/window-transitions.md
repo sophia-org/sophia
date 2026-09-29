@@ -8,12 +8,11 @@ There are no per-frame WM requests or client resize transactions for translation
 ## Negotiation and authority
 
 `sophia_wm_v1` revision 3 optionally negotiates `translation_groups` (bit 12).
-The frozen counted records and begin/end counts are unchanged. Two extension
-record kinds follow the ordinary projection prefix, with continuous chunk
-ordinals: `ProjectionTranslationGroup` (`0xFF03`, 32 bytes) and
-`ProjectionTranslationMember` (`0xFF04`, 24 bytes). The
-[generated wire reference](generated/sophia-wm-v1-wire.md#projectiontranslationgroup)
-and `protocol/sophia-wm-v1.kdl` define their offsets.
+The complete projection candidate contains counted sections of
+`ProjectionTranslationGroup` (`0xFF03`, 32 bytes) and
+`ProjectionTranslationMember` (`0xFF04`, 24 bytes) rows. The
+[WM file schema](../protocol/sophia-wm-files-v1.kdl) defines their offsets;
+the [WM file contract](sophia-wm-files.md) defines submission and custody.
 
 A group carries an output, nonzero opaque group ID, signed final x/y translation,
 member count and zero reserved word. Members repeat output/group and name opaque

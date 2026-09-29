@@ -71,7 +71,6 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             "spec/sophia-shell-files-v1.kdl",
             "protocol/sophia-shell-files-v1.kdl",
         ),
-        ("spec/sophia-shell-v1.kdl", "protocol/sophia-shell-v1.kdl"),
         ("spec/sophia-9p-profile.md", "docs/sophia-9p-profile.md"),
         ("spec/sophia-shell-files.md", "docs/sophia-shell-files.md"),
         ("spec/sophia-wm-files.md", "docs/sophia-wm-files.md"),
@@ -79,7 +78,6 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             "spec/sophia-wm-files-v1.kdl",
             "protocol/sophia-wm-files-v1.kdl",
         ),
-        ("spec/sophia-wm-v1.kdl", "protocol/sophia-wm-v1.kdl"),
         ("spec/sophia-wm-api.md", "docs/sophia-wm-api.md"),
         (
             "spec/golden/sophia-wm-v1.records",
@@ -89,28 +87,8 @@ pub fn verify(snapshot: &Path, repo: &Path) -> Result<String, String> {
             "spec/references/diod-9p2000L-protocol.md",
             "docs/references/diod-9p2000L-protocol.md",
         ),
-        ("src/sophia_wm_v1.c", "bindings/c/sophia_wm_v1.c"),
-        ("src/sophia_wm_v1.h", "bindings/c/sophia_wm_v1.h"),
     ] {
         same_contract(&source.join(local), &repo.join(authoritative))?;
-    }
-    for name in [
-        "catalog-actions",
-        "content-malformed",
-        "content",
-        "indicators",
-        "launcher",
-        "native-launcher",
-        "reference",
-        "tabs",
-        "v1-malformed",
-        "v1",
-    ] {
-        let file = format!("sophia-shell-{name}.frames");
-        same_contract(
-            &source.join("spec/golden").join(&file),
-            &repo.join("protocol/golden").join(&file),
-        )?;
     }
     Ok(manifest.revision)
 }

@@ -10,7 +10,7 @@ roles. Role modules share standard 9P2000.L transport, bounded I/O and custody
 rules; they are not separate SDK repositories. Nim uses this SDK through thin C
 bindings. The target is the complete functionality of the former IPC APIs over
 Sophia's admitted file contracts, without IPC fallback or private 9P opcodes.
-Existing compatibility code is transitional, not part of that target.
+WM and shell clients use file contracts exclusively.
 
 [COVERAGE.md](COVERAGE.md) distinguishes that requirement from implemented and
 tested support. A missing server file contract is a migration gap, not permission
@@ -18,10 +18,10 @@ to tunnel the old socket protocol through a file.
 
 ## Current coverage
 
-Release 0.1.0 provides a generic nonblocking 9P2000.L client, shell file
+Release 0.2.0 provides a generic nonblocking 9P2000.L client, shell file
 records and sessions for bar (r6), native launcher (r7) and persistent
-catalog/dock (r8), and the WM file codec and session. The existing shell IPC backend remains available for rollback
-and comparison. The imported WM socket codec is compatibility code.
+catalog/dock (r8), and the WM file codec and session. WM and shell socket
+compatibility is removed; recovery uses a complete compatible older desktop release.
 WM file record codecs and a bounded WM session pass scripted-peer tests and
 Sophia's production WM export gate, and Hagia uses them through thin Nim
 bindings. Output authority and admin file clients are not implemented yet.
@@ -40,8 +40,7 @@ framing. These enforce structural wire rules; Session still validates scene,
 geometry, policy phase and authority. The focused codec test uses literal
 bodies and the pinned golden row corpus, not a live export. The fixed rows are
 generated from the `row-layouts` block of the WM file KDL with
-`python3 tools/generate_wm_rows.py`, which refuses drift from the frozen socket
-schema while that compatibility remains. `make check-generator` checks the
+`python3 tools/generate_wm_rows.py`. `make check-generator` checks the
 generated files and the generator's parser controls; Python is not a library
 build dependency. `compatibility.json` sets `wm_files=true` because the
 production WM export gate has passed (Sophia `c4e17899e`).
@@ -63,9 +62,9 @@ Permit deadlines are advisory and cannot guarantee server validity at ingest.
 
 The record-level API and explicit nonblocking connection helper
 (`sophia_desktop_connection.h`) are also available. The helper
-requires exactly one of Session's two shell socket variables, authenticates the
-same-user peer and transfers its fd to the chosen backend. The caller polls and
-enforces a connection deadline; there is no automatic backend fallback. See
+requires `SOPHIA_SHELL_9P_SOCKET`, refuses the retired `SOPHIA_SHELL_SOCKET`,
+authenticates the same-user peer and transfers its fd to the file client.
+The caller polls and enforces a connection deadline. See
 [the shell API notes](src/README-shell.md) for buffer lifetimes and wire behavior.
 
 ## Build and test
@@ -79,17 +78,16 @@ nice -n 19 make -j2 check
 make install PREFIX=/usr/local DESTDIR=/path/to/staging
 ```
 
-`make WITH_IPC=0` omits the compatibility library. The static libraries are:
+The static libraries are:
 
 - `libsophia-9p.a`: generic transport, link with `-lsophia-9p`.
 - `libsophia-desktop.a`: WM and shell file codecs/sessions; link with
   `-lsophia-desktop -lsophia-9p`.
-- `libsophia-desktop-ipc.a`: optional shell and WM socket compatibility.
 
 Headers install under `include/sophia-desktop`; pkg-config packages are
-`sophia-9p`, `sophia-desktop`, and optional `sophia-desktop-ipc`.
+`sophia-9p` and `sophia-desktop`.
 The package name uses SDK terminology; `-dev` is reserved for a distribution's
-development package. 0.1.0 is the first release. It is consumed as a pinned source revision; no
+development package. Releases are consumed as pinned source revisions; no
 stable ABI is promised across 0.x releases.
 The machine-readable coverage declaration is [compatibility.json](compatibility.json).
 
@@ -98,7 +96,7 @@ The machine-readable coverage declaration is [compatibility.json](compatibility.
 Sophia owns the normative contracts. `spec/` holds immutable copies pinned in
 [PROVENANCE.md](PROVENANCE.md) and checked by `make check-spec`. Changes require
 an explicit source revision and digest update. Local tests cover literal file
-vectors, pipeline failure sequences, and the legacy frame corpus. Sophia owns
+vectors, pipeline failure sequences, and neutral WM row corpora. Sophia owns
 the real-export integration tests and the independent Go oracle.
 
 Local queue admission, server Submitted custody, and semantic outcomes are

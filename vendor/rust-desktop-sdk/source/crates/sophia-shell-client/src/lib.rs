@@ -2,9 +2,7 @@
 //!
 //! The client speaks the `sophia_shell_fs_v1` file contract over 9P2000.L
 //! (`files`). It grants no authority, renders no pixels and opens no X11 or
-//! Wayland connection. Internals hold whole typed values (see `wire`); the
-//! retiring Unix-socket wire (`socket`, feature `ipc-compat`) is the only
-//! module that knows a socket frame exists.
+//! Wayland connection. Internals hold whole typed values (see `wire`).
 
 mod candidate;
 mod custody;
@@ -17,8 +15,6 @@ pub use descriptor::DescriptorObservation;
 mod lifecycle;
 mod outbox;
 pub use lifecycle::*;
-#[cfg(feature = "ipc-compat")]
-mod socket;
 mod wire;
 
 use std::collections::VecDeque;
@@ -30,9 +26,7 @@ use sophia_shell_protocol::{
     ShellIndicatorActivationOutcome, ShellIndicatorSnapshot, ShellV1ServerWelcome, TransactionId,
 };
 
-#[cfg(feature = "ipc-compat")]
-use sophia_shell_ipc::IpcCodecError;
-use wire::{Inbound, Outbound, Wire};
+use wire::{Inbound, Outbound};
 
 const MAX_QUEUED_BYTES: usize = 2 * 1024 * 1024;
 const MAX_QUEUED_FRAMES: usize = 64;
@@ -51,9 +45,6 @@ pub struct ShellClientOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ShellClientError {
     Io(String),
-    /// A `sophia_shell_v1` socket frame failed to encode/decode.
-    #[cfg(feature = "ipc-compat")]
-    Codec(IpcCodecError),
     /// A `sophia_shell_fs_v1` envelope or record failed to encode/decode.
     FileCodec(sophia_shell_protocol::shell_files::ShellFilePayloadError),
     /// The underlying 9P pipeline failed (I/O, or a protocol violation it
@@ -86,13 +77,6 @@ impl core::fmt::Display for ShellClientError {
 
 impl std::error::Error for ShellClientError {}
 
-#[cfg(feature = "ipc-compat")]
-impl From<IpcCodecError> for ShellClientError {
-    fn from(error: IpcCodecError) -> Self {
-        Self::Codec(error)
-    }
-}
-
 impl From<sophia_shell_protocol::shell_files::ShellFilePayloadError> for ShellClientError {
     fn from(error: sophia_shell_protocol::shell_files::ShellFilePayloadError) -> Self {
         Self::FileCodec(error)
@@ -114,7 +98,7 @@ impl From<sophia_9p_client::pipeline::PipelineError> for ShellClientError {
 /// One admitted shell connection. Calls other than `wait_for_io` are
 /// nonblocking after negotiation.
 pub struct ShellConnection {
-    wire: Wire,
+    wire: Box<files::FileWire>,
     welcome: ShellV1ServerWelcome,
     output: outbox::ClientOutbox,
     inbox: VecDeque<Inbound>,
@@ -122,40 +106,8 @@ pub struct ShellConnection {
 }
 
 impl ShellConnection {
-    /// Connect over the retiring `sophia_shell_v1` socket wire, send exactly
-    /// one Hello and validate the selected contract. Built only with the
-    /// `ipc-compat` feature, as the rollback path until that wire is removed.
-    #[cfg(feature = "ipc-compat")]
-    pub fn connect(
-        path: impl AsRef<Path>,
-        options: ShellClientOptions,
-    ) -> Result<Self, ShellClientError> {
-        if options.minimum_revision == 0
-            || options.minimum_revision > options.maximum_revision
-            || options.handshake_timeout.is_zero()
-        {
-            return Err(ShellClientError::UnsupportedRevision);
-        }
-        let (socket, welcome) = socket::SocketWire::connect(path, options)?;
-        if welcome.selected_revision < options.minimum_revision
-            || welcome.selected_revision > options.maximum_revision
-        {
-            return Err(ShellClientError::UnsupportedRevision);
-        }
-        if welcome.capabilities & options.required_capabilities != options.required_capabilities {
-            return Err(ShellClientError::MissingCapability);
-        }
-        Ok(Self {
-            wire: Wire::Socket(socket),
-            welcome,
-            output: outbox::ClientOutbox::default(),
-            inbox: VecDeque::new(),
-            ledger: custody::Ledger::default(),
-        })
-    }
-
     /// Connect over the native 9P file wire: Pipeline connect, attach, open
-    /// the fixed nodes, then negotiate exactly as `connect` does. The
+    /// the fixed nodes, then validate the selected contract. The
     /// attach's connection epoch (every record header must carry it) is read
     /// from `api` right after attach; see [`parse_shell_files_api_line`].
     pub fn connect_files(
@@ -170,7 +122,7 @@ impl ShellConnection {
         }
         let (wire, welcome, inbox) = files::FileWire::connect(path.as_ref(), &options)?;
         Ok(Self {
-            wire: Wire::Files(Box::new(wire)),
+            wire: Box::new(wire),
             welcome,
             output: outbox::ClientOutbox::default(),
             inbox,
@@ -178,22 +130,14 @@ impl ShellConnection {
         })
     }
 
-    /// Selects a wire from the environment: exactly one of
-    /// `SOPHIA_SHELL_9P_SOCKET` (file wire) or `SOPHIA_SHELL_SOCKET` (socket
-    /// wire) must be set. Neither, or both, is refused outright: there is no
-    /// fallback and no sniffing.
+    /// Requires `SOPHIA_SHELL_9P_SOCKET`; any retired `SOPHIA_SHELL_SOCKET`
+    /// value is refused before connecting.
     pub fn connect_from_env(options: ShellClientOptions) -> Result<Self, ShellClientError> {
         let selection = select_env_wire(
             std::env::var_os("SOPHIA_SHELL_SOCKET"),
             std::env::var_os("SOPHIA_SHELL_9P_SOCKET"),
         )?;
         match selection {
-            #[cfg(feature = "ipc-compat")]
-            EnvWireSelection::Socket(path) => Self::connect(path, options),
-            #[cfg(not(feature = "ipc-compat"))]
-            EnvWireSelection::Socket(_) => Err(ShellClientError::Environment(
-                "SOPHIA_SHELL_SOCKET needs the ipc-compat feature",
-            )),
             EnvWireSelection::Files { socket } => Self::connect_files(socket, options),
         }
     }
@@ -275,7 +219,7 @@ impl ShellConnection {
         let maximum = self.wake_deadline().map_or(maximum, |deadline| {
             maximum.min(deadline.saturating_duration_since(std::time::Instant::now()))
         });
-        self.wire.wait_for_io(maximum, &self.output)
+        self.wire.wait_for_io(maximum)
     }
 
     /// Atomically own a bounded group of bulk content records (for example a
@@ -354,6 +298,16 @@ impl ShellConnection {
         ack: &sophia_shell_protocol::ContentActionAck,
         activation: Option<(TransactionId, &ShellIndicatorActivation)>,
     ) -> Result<Admission, ShellClientError> {
+        if let Some((_, activation)) = activation
+            && (ack.disposition != 1
+                || ack.event_id != activation.event_id
+                || ack.grant.connection_epoch != activation.connection_epoch
+                || ack.output.id != activation.output.raw()
+                || ack.target_id != activation.indicator
+                || ack.action_id != activation.action)
+        {
+            return Err(ShellClientError::WrongDirection);
+        }
         let outbound = Outbound::ActionResponse {
             transaction,
             ack: ack.clone(),
@@ -515,11 +469,6 @@ fn server_record(record: &ShellContentRecord) -> bool {
     )
 }
 
-#[cfg(feature = "ipc-compat")]
-fn io_error(error: std::io::Error) -> ShellClientError {
-    ShellClientError::Io(error.to_string())
-}
-
 /// What [`ShellConnection::connect_from_env`] selects and what it needs to
 /// open it. Exposed so the selection rule below is testable directly, with
 /// no process-global environment mutation: `std::env::set_var`/`remove_var`
@@ -527,12 +476,11 @@ fn io_error(error: std::io::Error) -> ShellClientError {
 /// outright.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EnvWireSelection {
-    Socket(std::ffi::OsString),
     Files { socket: std::ffi::OsString },
 }
 
 /// The pure selection rule behind [`ShellConnection::connect_from_env`]:
-/// exactly one of `socket` (the `SOPHIA_SHELL_SOCKET` value) or
+/// `socket` (the retired `SOPHIA_SHELL_SOCKET` value) must be absent and
 /// `files_socket` (`SOPHIA_SHELL_9P_SOCKET`) must be given. Kept apart from
 /// actually reading the environment so it is directly testable; see this
 /// crate's `tests/connection.rs`.
@@ -541,13 +489,12 @@ pub fn select_env_wire(
     files_socket: Option<std::ffi::OsString>,
 ) -> Result<EnvWireSelection, ShellClientError> {
     match (socket, files_socket) {
-        (Some(_), Some(_)) => Err(ShellClientError::Environment(
-            "both SOPHIA_SHELL_SOCKET and SOPHIA_SHELL_9P_SOCKET are set",
+        (Some(_), _) => Err(ShellClientError::Environment(
+            "SOPHIA_SHELL_SOCKET is retired; use SOPHIA_SHELL_9P_SOCKET",
         )),
         (None, None) => Err(ShellClientError::Environment(
-            "neither SOPHIA_SHELL_SOCKET nor SOPHIA_SHELL_9P_SOCKET is set",
+            "SOPHIA_SHELL_9P_SOCKET is missing",
         )),
-        (Some(path), None) => Ok(EnvWireSelection::Socket(path)),
         (None, Some(path)) => Ok(EnvWireSelection::Files { socket: path }),
     }
 }

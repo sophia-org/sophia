@@ -181,6 +181,27 @@ impl ShellConnection {
         if ack.grant.connection_epoch != self.connection_epoch() {
             return Err(ShellClientError::WrongDirection);
         }
+        if let Some((_, activation)) = activation {
+            let action = &activation.action;
+            let expected = ContentActionAck {
+                grant: action.grant,
+                output: action.output,
+                candidate_generation: action.candidate_generation,
+                presentation_epoch: action.presentation_epoch,
+                interaction_generation: action.interaction_generation,
+                allocation: action.allocation,
+                target_id: action.target_id,
+                target_generation: action.target_generation,
+                action_id: action.action_id,
+                event_id: action.event_id,
+                disposition: 1,
+            };
+            // The response pair must name the same presented action before
+            // either record can acquire queue or submission custody.
+            if *ack != expected {
+                return Err(ShellClientError::WrongDirection);
+            }
+        }
         self.admit(
             Outbound::CatalogActionResponse {
                 transaction,

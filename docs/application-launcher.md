@@ -104,30 +104,29 @@ can still replace files or executables around a launch.
 
 ## Wire and presentation
 
-The frame version remains 1. Revision 4 adds capability bits 5
+Revision 4 adds capability bits 5
 (`application_catalog`) and 6 (`application_launcher`); bit 6 requires bit 5.
-The existing revision 1–3 messages and negotiation remain compatible. The
-normative field order is in [`sophia-shell-v1.kdl`](../protocol/sophia-shell-v1.kdl),
-and byte fixtures are in
-[`sophia-shell-launcher.frames`](../protocol/golden/sophia-shell-launcher.frames).
-All integers are little endian. Every new message has a nonzero transaction.
+The file transport preserves these capabilities. Native layouts are in
+[`sophia-shell-files-v1.kdl`](../protocol/sophia-shell-files-v1.kdl), with
+admission and custody defined by the [shell file contract](sophia-shell-files.md).
+All integers are little endian. Each action record has a nonzero transaction.
 
 | Kind | Direction | Meaning |
 | --- | --- | --- |
-| 114–116 | Session → shell | Atomic catalog begin, entries, end |
-| 117 | Session → shell | Open, committed query, navigation or dismissal |
-| 118 | Shell → session | Ordered slots, selection and bounded appearance |
-| 119 | Session → shell | Prepared, presented, rejected or superseded candidate |
-| 120 | Session → shell | One Engine-issued activation of a presented target |
-| 121 | Shell → session | Exact activation tuple echoed with consumed 0 or 1 |
-| 122 | Session → shell | Started 1, rejected 2 or failed 3 |
+| Catalog object | Session → shell | Complete immutable application catalog |
+| 50 | Session → shell | Open, committed query, navigation or dismissal |
+| 277 | Shell → session | Ordered slots, selection and bounded appearance |
+| 51 | Session → shell | Prepared, presented, rejected or superseded candidate |
+| 52 | Session → shell | One Engine-issued activation of a presented target |
+| 278 | Shell → session | Exact activation tuple echoed with consumed 0 or 1 |
+| 53 | Session → shell | Started 1, rejected 2 or failed 3 |
 
 An entry contains a nonzero slot, availability, a label and search keywords.
 There are at most 4,096 entries; slots are 1–4,096 and unique. Labels are nonempty
 UTF-8 of at most 128 bytes; keywords and queries allow 256 bytes. Text excludes
 control characters and bidirectional formatting controls. The transfer is
-complete only after its matching end. Other message families may interleave;
-receivers assemble the catalog without publishing partial entries.
+complete only after the whole pinned object has been read and validated;
+receivers never publish partial entries.
 
 Operations are Open 0, Query 1, Next 2, Previous 3 and Dismiss 4. Requests carry
 connection, catalog, request, output and output-generation identities, the last

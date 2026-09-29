@@ -179,18 +179,11 @@ fn decode_hex(text: &str) -> Vec<u8> {
         .collect()
 }
 
-/// The Limits bytes are unchanged: the golden Limits value (the socket
-/// corpus frame less its 24-byte header) decodes and re-encodes identically,
-/// as the file `limits` object body, with both socket fields intact.
+/// The neutral Limits value retains its frozen bytes after socket retirement.
 #[test]
 fn limits_bytes_are_unchanged() {
-    let corpus = include_str!("../../../spec/golden/sophia-shell-content.frames");
-    let frame = corpus
-        .lines()
-        .find_map(|line| line.strip_prefix("content-161 "))
-        .map(decode_hex)
-        .unwrap();
-    let value = &frame[24..];
+    let bytes = decode_hex(include_str!("fixtures/limits.value").trim());
+    let value = bytes.as_slice();
     let decoded = decode_shell_content_value(ShellContentValueKind::Limits, value).unwrap();
     let ShellContentRecord::Limits(limits) = &decoded else {
         panic!("limits");

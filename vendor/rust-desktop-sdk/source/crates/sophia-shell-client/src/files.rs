@@ -1,5 +1,5 @@
 //! The native 9P2000.L file wire for `sophia_shell_fs_v1`: the second
-//! [`crate::wire::Wire`] variant. It speaks the shell file contract directly
+//! connection. It speaks the shell file contract directly
 //! over [`sophia_9p_client::pipeline::Pipeline`] -- no IPC frame, `IpcMessageKind` or
 //! frame codec ever appears here.
 //!

@@ -167,3 +167,34 @@ owner's 9P endpoint; recovery uses a compatible older whole release. The
 default remains experimental while latency and physical qualification are
 open. This reference update changes no library source, wire layout or custody
 rule. SDK compatibility source removal remains a separate follow-up.
+
+## Release 0.2.0: socket compatibility retirement
+
+Following signed Sophia `5b1d9ac4e`, the SDK removes `sophia-shell-ipc`,
+`ipc-compat`, the socket connection API and socket schemas/corpora. Retained
+file contracts keep their digests. The fixed Limits value in
+`crates/sophia-shell-protocol/tests/fixtures/limits.value` preserves the
+original corpus payload without its retired frame envelope.
+
+Native file round trips, offsets, malformed records and bounds remain in the
+protocol suite; socket/file parity assertions retire with the socket encoder.
+Candidate refusal/retry and catalog response atomicity move to the scripted
+file peer. File object tests retain complete catalog publication, fragmented
+reads, epoch/generation fencing and mixed event handling. The old socket
+handshake and counted catalog assembly tests retire with those encodings.
+
+Migration exposed missing file-client response checks: catalog and indicator
+activation pairs could use an acknowledgement for a different action. Both
+helpers now reject mismatched echoes before acquiring queue or submission
+custody. The file-peer controls vary each identity and disposition field,
+verify refusal spends no ticket, then observe the correct ordered pair.
+Recovery remains a complete compatible older release; no live-session or
+performance claim follows from these source changes.
+
+The release imports `spec/sophia-shell-files.md` from signed Sophia
+`2ea546bac9836aa1aed61ddeb52cc552710a9b8a`. This documentation correction points
+to the file schema and preserves existing Limits fields and validation
+relations; it changes no layout. All other retained spec digests are unchanged.
+The restored indicator check also exposed an inconsistent existing ordering
+fixture, which now acknowledges the same action as its activation. Isolated
+workspace tests and strict all-target, all-feature Clippy pass.

@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
-"""Generate neutral fixed WM rows from the pinned file contract; never IPC frames.
-
-Rows come from the `row-layouts` block of spec/sophia-wm-files-v1.kdl. While
-the socket compatibility library remains, generation also checks that the
-frozen rows in spec/sophia-wm-v1.kdl agree; that schema defines nothing here.
-"""
+"""Generate neutral fixed WM rows from the pinned file contract."""
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCHEMA = "spec/sophia-wm-files-v1.kdl"
-LEGACY = "spec/sophia-wm-v1.kdl"
 HEADER = "src/sophia_wm_records.h"
 SOURCE = "src/wm_files/rows.c"
 ORDINARY_ROWS = 8
@@ -201,11 +195,6 @@ def read_rows(text):
     return rows
 
 
-def check_legacy(rows, text):
-    """Refuse drift between the file rows and the frozen socket compatibility rows."""
-    if collect(protocol(parse(text), "sophia_wm_v1")) != rows:
-        raise SchemaError("frozen WM socket rows differ from the authoritative WM file rows")
-
 
 def snake(value):
     return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower()
@@ -299,7 +288,6 @@ def render(rows):
 
 def generate(root=ROOT):
     rows = read_rows((root / SCHEMA).read_text())
-    check_legacy(rows, (root / LEGACY).read_text())
     return render(rows)
 
 

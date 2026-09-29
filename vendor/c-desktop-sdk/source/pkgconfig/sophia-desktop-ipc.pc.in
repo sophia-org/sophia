@@ -1,9 +1,0 @@
-prefix=@PREFIX@
-libdir=@LIBDIR@
-includedir=@INCLUDEDIR@
-
-Name: sophia-desktop-ipc
-Description: Sophia desktop socket compatibility
-Version: @VERSION@
-Libs: -L${libdir} -lsophia-desktop-ipc
-Cflags: -I${includedir}

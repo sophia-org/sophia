@@ -175,9 +175,10 @@ implicit defaults, or unbounded fields.
 
 The current public role schemas are:
 
-- `protocol/sophia-wm-v1.kdl` for stable `sophia_wm_v1` revision 3;
-- `protocol/sophia-shell-v1.kdl` for experimental `sophia_shell_v1`
-revision 8, retaining revisions 1–7 under their capability gates. Revision 7
+- `protocol/sophia-wm-files-v1.kdl` for the WM file role, retaining revision-3
+capabilities and neutral rows;
+- `protocol/sophia-shell-files-v1.kdl` for the shell file role,
+retaining revisions 1–8 under their capability gates. Revision 7
 adds the native launcher and revision 8 the persistent catalog; neither grants
 arbitrary component roles or general service access. See the
 [capability map](native-desktop-capabilities.md) for source-backed scope; and
@@ -193,9 +194,8 @@ of its handwritten codec. `output_schema` tests their equivalence. Extraction
 does not promote the experimental interface or supply independent lifecycle
 evidence by itself.
 
-The WM [socket wire tables](generated/sophia-wm-v1-wire.md), C99 bindings and
-socket corpora are frozen compatibility artifacts pending SDK retirement.
-The Rust socket codecs and WM/shell socket generation paths are removed.
+The WM and shell socket schemas, wire tables, C99 bindings, codecs and
+socket corpora are removed along with the SDK compatibility libraries.
 The shared generator now reads the WM file schema for neutral row codecs,
 record samples and arithmetic facts; it also retains output/control tooling.
 `tools/check_policy_protocol.sh` and `tools/check_shell_protocol.sh` exercise
