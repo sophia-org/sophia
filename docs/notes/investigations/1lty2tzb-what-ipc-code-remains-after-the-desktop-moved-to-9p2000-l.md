@@ -2114,6 +2114,14 @@ the server's optional capabilities. Native launcher capabilities remain exact.
 Strict clippy passes in `t269-component-services-clippy-3.log` after consolidating
 the peer module import; `t269-component-services-layout.log` passes layout.
 
+The full isolated `cargo xtask check` passes at signed `5a1a4f0f2` in
+`t269-session-file-controls-full.log`: 477 reported groups, 6,633 reported
+passes, zero failures and 63 ignored tests, with workspace clippy and repository
+verifiers passing. The counts include nested fixtures. No device-backed or
+installed-session claim follows. Session's internal action and reconnect
+fixtures still use the socket path; this cut does not yet permit removing the
+production socket branch or completing t269.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
