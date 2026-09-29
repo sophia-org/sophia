@@ -35,6 +35,18 @@ impl Peer {
     }
 
     pub fn rpc(&mut self, kind: u8, body: &[u8]) -> io::Result<(u8, Vec<u8>)> {
+        self.rpc_with_prefix(kind, body, 7 + body.len(), || {})
+    }
+
+    /// Exposes a sent prefix to a test barrier before writing the rest. This
+    /// lets an owner test control fragmentation without scheduling sleeps.
+    pub fn rpc_with_prefix(
+        &mut self,
+        kind: u8,
+        body: &[u8],
+        prefix: usize,
+        sent: impl FnOnce(),
+    ) -> io::Result<(u8, Vec<u8>)> {
         let tag = if kind == 100 {
             u16::MAX
         } else {
@@ -45,7 +57,10 @@ impl Peer {
         bytes.push(kind);
         bytes.extend(tag.to_le_bytes());
         bytes.extend(body);
-        self.stream.write_all(&bytes)?;
+        assert!(prefix <= bytes.len());
+        self.stream.write_all(&bytes[..prefix])?;
+        sent();
+        self.stream.write_all(&bytes[prefix..])?;
         let mut header = [0; 7];
         self.stream.read_exact(&mut header)?;
         assert_eq!(u16::from_le_bytes(header[5..].try_into().unwrap()), tag);

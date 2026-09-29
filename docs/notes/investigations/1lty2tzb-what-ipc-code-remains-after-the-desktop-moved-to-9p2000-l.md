@@ -2069,6 +2069,51 @@ above. Device-backed pixel and native acceptance claims remain unavailable in
 this sandbox. The source is clean; t269 remains open for the remaining socket
 controls and production adapters.
 
+## Remaining Session connection controls on files
+
+The remaining controls from `shell_component_connections.rs` at `90806a8d5`
+now live in `shell_component_connections_files` and its support modules. The
+handwritten socket fixture and original target are removed. All thirteen tests
+remain: the previous six file controls plus the following seven counterparts.
+
+- Descriptor authority is still refused by this content-connection owner.
+- The panel service retains wrong-role and stale-attempt refusal. Its exact
+  snapshot crosses the `Indicators` object. An acknowledged submission acts as
+  a journal barrier on each peer: an extra or cross-role publication before it
+  fails the test. The barrier leaves a resource-retire request unserviced in the
+  export, so it cannot manufacture a resource release or change accounting.
+- Native launcher service keeps placement, no early focus, demand transaction
+  correlation, no invented server transaction, allocation invalidation once,
+  reopening and stale-service refusal. Native events and the outputs object
+  are fetched and acknowledged through real file operations.
+- Frozen three-role inventory and wrong dock profile refusal retain their
+  original accounting and surviving-neighbor assertions.
+- The former mixed-wire test now selects files for both roles and keeps its
+  independent grant/profile assertions. Mixed IPC interoperability retires
+  with that wire; the original raw file indicator-object control is retained.
+- Negotiation fairness uses two staged offers. One peer sends only the first
+  four bytes of its 9P submit request while the other sends the full request.
+  Barriers establish those facts before the owner's zero-credit visit. The
+  first visit rotates, the complete peer progresses, and the partial peer
+  completes after its remainder arrives. Array positions follow the exact
+  cursor even if the writer is not scheduled immediately.
+
+The raw 9P helper gains only a sent-prefix barrier; its normal RPC uses the
+same path with the full request. It uses the public file codecs, so this is not
+an independent Sophia-record codec claim. The SDK and C interoperability gates
+remain separate evidence.
+
+`t269-component-services-restored.log` passes all thirteen controls. The
+rotation mutant, supplied through a read-only source overlay, fails the named
+fairness test at the first expected launcher event
+(`t269-component-rotation-mutant.log`). The production file was never edited;
+the subsequent run rebuilt it without the overlay. Earlier compile/helper
+failures are preserved: the first port used a nonexistent convenience decoder,
+and its bar helper incorrectly required exact capabilities rather than allowing
+the server's optional capabilities. Native launcher capabilities remain exact.
+Strict clippy passes in `t269-component-services-clippy-3.log` after consolidating
+the peer module import; `t269-component-services-layout.log` passes layout.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
