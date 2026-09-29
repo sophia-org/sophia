@@ -18,11 +18,12 @@ fn failed_preparation_and_spawn_burn_exact_epochs_without_losing_neighbor() {
         ("menu", ShellComponentRole::ApplicationLauncher),
     ] {
         owner
-            .add(
+            .add_with_transport(
                 name,
                 role,
                 &directory.join(name),
                 rustix::process::geteuid().as_raw(),
+                sophia_config::ShellTransportSelection::NineP2000L,
             )
             .unwrap();
     }
@@ -102,11 +103,12 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
         ("menu", ShellComponentRole::ApplicationLauncher),
     ] {
         owner
-            .add(
+            .add_with_transport(
                 name,
                 role,
                 &directory.join(name),
                 rustix::process::geteuid().as_raw(),
+                sophia_config::ShellTransportSelection::NineP2000L,
             )
             .unwrap();
     }
@@ -146,17 +148,28 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
         owner.phase(bar).unwrap(),
         ComponentConnectionPhase::Connected
     );
-    // Live bar + full launcher reservation fill the aggregate allowance.
-    // Retained old pixels refuse a reconnect rather than being freed early.
-    assert!(owner.start(1, prepare, policy).is_err());
+    // The successor fits beside the live bar by reducing its retiring budget;
+    // the old lease stays charged until its consumer releases it.
+    let retained = owner.collect();
+    assert_eq!(retained.retired_epochs, 1);
+    assert_eq!(retained.reserved_bytes, 40 * 1024 * 1024 + 4);
     assert_eq!(menu_pixels.bytes(), &[1, 2, 3, 255]);
     assert!(owner.process_retained(bar));
-    drop(menu_pixels);
-    owner.collect();
     let replacement = owner.start(1, prepare, policy).unwrap();
     assert_ne!(replacement.grant, menu.grant);
     let replacement_pixels = peer::receive_resource(&mut owner, replacement);
     assert_eq!(replacement_pixels.bytes(), &[1, 2, 3, 255]);
+    let limits = owner
+        .with_connection(replacement, |t| t.content_limits().unwrap().clone())
+        .unwrap();
+    assert_eq!(limits.max_retiring_bytes, 8 * 1024 * 1024 - 4);
+    assert_eq!(limits.max_resident_bytes, 12 * 1024 * 1024);
+    assert_eq!(owner.accounting().reserved_bytes, 64 * 1024 * 1024);
+    assert_eq!(menu_pixels.bytes(), &[1, 2, 3, 255]);
+    drop(menu_pixels);
+    let released = owner.collect();
+    assert_eq!(released.retired_epochs, 0);
+    assert_eq!(released.reserved_bytes, 64 * 1024 * 1024 - 4);
     assert!(owner.request_stop(menu).is_err());
     for _ in 0..10 {
         owner.visit(1024);
@@ -166,6 +179,7 @@ fn two_protected_processes_retain_independent_stop_and_replacement_custody() {
     }
     owner.request_stop(bar).unwrap();
     owner.request_stop(replacement).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
     while owner.process_retained(bar) || owner.process_retained(replacement) {
         owner.visit(1024);
         assert!(Instant::now() < deadline);
@@ -200,7 +214,7 @@ fn component_scheduler_spaces_a_service_failure_like_a_refused_start() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
-        transport: Default::default(),
+        transport: sophia_config::ShellTransportSelection::NineP2000L,
     };
     let mut owner = ShellComponentSession::prepare(
         &[selection],
@@ -283,11 +297,12 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
     ];
     for (name, role) in selections {
         owner
-            .add(
+            .add_with_transport(
                 name,
                 role,
                 &root.join(name),
                 rustix::process::geteuid().as_raw(),
+                sophia_config::ShellTransportSelection::NineP2000L,
             )
             .unwrap();
     }
@@ -309,7 +324,7 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
                     },
                 ),
                 gpu: sophia_config::ShellGpuMode::Denied,
-                transport: Default::default(),
+                transport: sophia_config::ShellTransportSelection::NineP2000L,
             },
             Some(28),
             None,
@@ -328,7 +343,7 @@ fn selected_component_launches_bind_only_their_socket_and_config() {
                     assert!(
                         spec.environment
                             .iter()
-                            .any(|(k, v)| k == "SOPHIA_SHELL_SOCKET" && v == socket.as_os_str())
+                            .any(|(k, v)| k == "SOPHIA_SHELL_9P_SOCKET" && v == socket.as_os_str())
                     );
                     assert!(
                         spec.environment
@@ -452,7 +467,7 @@ fn component_launch_refuses_unadmitted_gpu_and_unbounded_panel() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
-        transport: Default::default(),
+        transport: sophia_config::ShellTransportSelection::NineP2000L,
     };
     for thickness in [None, Some(0)] {
         assert!(ShellComponentLaunch::new(selection.clone(), thickness, None).is_err());
@@ -490,7 +505,7 @@ fn joined_session_retains_failed_attempt_until_reap_and_exact_cleanup() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
-        transport: Default::default(),
+        transport: sophia_config::ShellTransportSelection::NineP2000L,
     };
     let mut owner = ShellComponentSession::prepare(
         &[selection],
@@ -585,7 +600,7 @@ fn component_scheduler_skips_unready_role_and_bounds_retries() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
-        transport: Default::default(),
+        transport: sophia_config::ShellTransportSelection::NineP2000L,
     });
     let mut owner = ShellComponentSession::prepare(
         &selections,
@@ -676,7 +691,7 @@ fn joined_launcher_evidence_requires_exact_current_negotiation() {
         config: None,
         reservation: None,
         gpu: sophia_config::ShellGpuMode::Denied,
-        transport: Default::default(),
+        transport: sophia_config::ShellTransportSelection::NineP2000L,
     };
     let mut owner = ShellComponentSession::prepare(
         &[selection],
@@ -738,6 +753,31 @@ fn joined_launcher_evidence_requires_exact_current_negotiation() {
         let mut wrong = key;
         wrong.grant.content_grant_epoch += 1;
         assert!(owner.launch_evidence(wrong).is_err());
+        // Connected describes the owner's negotiation. Let the SDK finish
+        // fetching Limits and submit a resource before deliberately stopping
+        // it, so this test does not race the client's handshake acknowledgement.
+        loop {
+            let ready = owner
+                .with_service(key, |_, transport| {
+                    transport.service_content_resources(1).unwrap();
+                    transport.poll_io().unwrap();
+                    transport
+                        .lease_content_resource(
+                            key.grant,
+                            sophia_protocol::ContentResourceId {
+                                id: 1,
+                                generation: 1,
+                            },
+                        )
+                        .is_ok()
+                })
+                .unwrap();
+            if ready {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
         owner.stop(key).unwrap();
         assert!(owner.launch_evidence(key).is_err());
         while owner.process_retained(key) {

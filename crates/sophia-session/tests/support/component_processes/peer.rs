@@ -1,26 +1,23 @@
+//! Protected child for the process-custody and joined-launcher tests. Uses
+//! the public SDK over the production 9P export; resource and owner assertions
+//! are retained from the socket fixture at ef1f93a53.
 use sophia_protocol::*;
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
+use sophia_shell_client::{ShellClientOptions, ShellConnection};
+use std::time::{Duration, Instant};
 
-fn read(stream: &mut UnixStream) -> Vec<u8> {
-    let mut bytes = vec![0; SOPHIA_IPC_HEADER_LEN];
-    stream.read_exact(&mut bytes).unwrap();
-    let length = u32::from_le_bytes(bytes[16..20].try_into().unwrap()) as usize;
-    assert!(length <= 65536);
-    bytes.resize(SOPHIA_IPC_HEADER_LEN + length, 0);
-    stream
-        .read_exact(&mut bytes[SOPHIA_IPC_HEADER_LEN..])
-        .unwrap();
-    bytes
+fn next_content(client: &mut ShellConnection) -> ShellContentRecord {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some((_, record)) = client.poll_content().unwrap() {
+            return record;
+        }
+        assert!(Instant::now() < deadline, "missing content record");
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 pub fn run() {
     let native = std::env::var("SOPHIA_FIXTURE_ROLE").unwrap() == "1";
-    let mut stream =
-        UnixStream::connect(std::env::var_os(sophia_runtime::SOPHIA_SHELL_SOCKET_ENV).unwrap())
-            .unwrap();
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-        .unwrap();
+    assert!(std::env::var_os("SOPHIA_SHELL_SOCKET").is_none());
     let capabilities = if native {
         SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
             | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
@@ -29,21 +26,19 @@ pub fn run() {
     } else {
         SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
     };
-    stream
-        .write_all(
-            &encode_shell_v1_client_hello_frame(ShellV1ClientHello {
-                minimum_revision: if native { 7 } else { 6 },
-                maximum_revision: if native { 7 } else { 6 },
-                required_capabilities: capabilities,
-            })
-            .unwrap(),
-        )
-        .unwrap();
-    let welcome = decode_shell_v1_server_welcome_frame(&read(&mut stream)).unwrap();
+    let mut client = ShellConnection::connect_files(
+        std::env::var_os("SOPHIA_SHELL_9P_SOCKET").unwrap(),
+        ShellClientOptions {
+            minimum_revision: if native { 7 } else { 6 },
+            maximum_revision: if native { 7 } else { 6 },
+            required_capabilities: capabilities,
+            handshake_timeout: Duration::from_secs(5),
+        },
+    )
+    .unwrap();
+    let welcome = client.welcome();
     assert_eq!(welcome.selected_revision, if native { 7 } else { 6 });
-    let (_, ShellContentRecord::Limits(limits)) =
-        decode_shell_content_frame(&read(&mut stream)).unwrap()
-    else {
+    let ShellContentRecord::Limits(limits) = next_content(&mut client) else {
         panic!("limits");
     };
     assert_eq!(welcome.connection_epoch, limits.grant.connection_epoch);
@@ -78,14 +73,12 @@ pub fn run() {
             chunk_count: 1,
         }),
     ] {
-        stream
-            .write_all(&encode_shell_content_frame(TransactionId::from_raw(1), &record).unwrap())
+        client
+            .send_content(TransactionId::from_raw(1), &record)
             .unwrap();
     }
     for expected in [1, 2] {
-        let (_, ShellContentRecord::ResourceStatus(status)) =
-            decode_shell_content_frame(&read(&mut stream)).unwrap()
-        else {
+        let ShellContentRecord::ResourceStatus(status) = next_content(&mut client) else {
             panic!("resource status");
         };
         assert_eq!(status.status, expected);

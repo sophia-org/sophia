@@ -2005,6 +2005,33 @@ Evidence under `development-evidence/ipc-retirement/`:
 protocol and Session runs are preserved as well. No running process, installed
 release, component selection or rollback target was changed.
 
+## Protected shell process fixture on files
+
+The Session process fixture now uses the public Rust SDK against the production
+9P export. All nine parent tests pass, including the two explicitly selected
+protected-process controls. They retain exact launch-evidence checks, stale
+attempt refusal, independent bar custody, process reaping and final accounting.
+The joined test waits for the client's resource submission before stopping it,
+so server-side negotiation completion does not race the SDK's final handshake
+acknowledgement. This is generic SDK interoperability, not an independent codec
+or native presentation proof.
+
+The old ignored reconnect test was already stale at `ef1f93a53`: an isolated
+run of its original IPC source fails the assertion that held old pixels always
+refuse a successor. Production deliberately permits a reduced successor budget.
+The file test now verifies the existing connection-owner contract: four retained
+bytes reduce the successor's retiring allowance by four, the total stays at
+64 MiB, both old and new pixels remain readable, and releasing the old lease
+removes its charge without disturbing the bar. The refusal while the old
+process is still retained remains asserted.
+
+Evidence in `development-evidence/ipc-retirement/`:
+`t269-shell-process-ipc-baseline-4.log` proves the old failure;
+`t269-shell-process-files-4.log` passes 9/9 and
+`t269-shell-process-files-clippy-2.log` passes focused strict clippy. Earlier
+sandbox setup failures, the initial stale-assertion failure and the callback
+compile error are preserved. No installed or live component was changed.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)
