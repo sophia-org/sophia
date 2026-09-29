@@ -65,6 +65,7 @@ fn component_budget_refusal_is_named_and_recovers_after_real_collection() {
                     let pin = wire::upload_maximum(transport, &mut peer, id);
                     if id <= 4 {
                         wire::send(
+                            transport,
                             &mut peer,
                             ShellContentRecord::ResourceRetire(ContentResourceRetire {
                                 grant: old.grant,

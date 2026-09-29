@@ -1,4 +1,4 @@
-//! t100 reconnect join. Real private sockets, registry, Session service order,
+//! t100 reconnect join. Real private 9P endpoints, registry, Session service order,
 //! backend intake/queue and retained byte consumers. Protection evidence and
 //! the concrete native submission boundary are supplied; copy/flip completion
 //! is simulated by the backend's existing Target. No device or protected child.
@@ -15,7 +15,7 @@ use sophia_protocol::*;
 use sophia_runtime::{
     ContentAllocationSnapshot, ContentCandidateContext, ContentRenderBundle, ContentResourceLease,
 };
-use std::os::unix::net::UnixStream;
+use sophia_shell_client::ShellConnection;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -94,7 +94,7 @@ impl Harness {
                         max_thickness: 8,
                     }),
                 gpu: ShellGpuMode::Denied,
-                transport: Default::default(),
+                transport: sophia_config::ShellTransportSelection::NineP2000L,
             })
             .collect();
         let mut owner = ShellComponentSession::prepare(
@@ -127,7 +127,11 @@ impl Harness {
     fn connect(
         &mut self,
         slot: usize,
-    ) -> (ComponentConnectionKey, UnixStream, ContentResourceLease) {
+    ) -> (
+        ComponentConnectionKey,
+        ShellConnection,
+        ContentResourceLease,
+    ) {
         self.connect_extent(slot, 1)
     }
 
@@ -135,7 +139,11 @@ impl Harness {
         &mut self,
         slot: usize,
         extent: u32,
-    ) -> (ComponentConnectionKey, UnixStream, ContentResourceLease) {
+    ) -> (
+        ComponentConnectionKey,
+        ShellConnection,
+        ContentResourceLease,
+    ) {
         let (key, mut peer) = wire::connect(&mut self.owner, slot);
         let lease = self
             .owner
@@ -151,7 +159,12 @@ impl Harness {
         (key, peer, lease)
     }
 
-    fn candidate(&mut self, key: ComponentConnectionKey, peer: &mut UnixStream, generation: u64) {
+    fn candidate(
+        &mut self,
+        key: ComponentConnectionKey,
+        peer: &mut ShellConnection,
+        generation: u64,
+    ) {
         self.owner
             .with_service(key, |service, transport| {
                 let ShellComponentService::Bar(bar) = service else {
@@ -170,7 +183,12 @@ impl Harness {
             .unwrap();
     }
 
-    fn complete(&mut self, key: ComponentConnectionKey, peer: &mut UnixStream, generation: u64) {
+    fn complete(
+        &mut self,
+        key: ComponentConnectionKey,
+        peer: &mut ShellConnection,
+        generation: u64,
+    ) {
         self.backend.simulate_completion(output().id);
         self.owner
             .with_service(key, |service, transport| {
@@ -193,7 +211,7 @@ impl Harness {
     fn issue_current(
         &mut self,
         key: ComponentConnectionKey,
-        peer: &mut UnixStream,
+        peer: &mut ShellConnection,
     ) -> ContentAction {
         let publication = sophia_engine::PolicyIndicatorPublication {
             generation: 1,
@@ -224,9 +242,20 @@ impl Harness {
             Some(output().id),
             key.grant.connection_epoch,
         );
-        for _ in encode_shell_indicator_snapshot(TransactionId::from_raw(1), &snapshot).unwrap() {
-            wire::read(peer);
-        }
+        self.owner
+            .with_service(key, |_, transport| {
+                let deadline = Instant::now() + Duration::from_secs(5);
+                loop {
+                    transport.poll_io().unwrap();
+                    if let Some((_, received)) = peer.poll_indicators().unwrap() {
+                        assert_eq!(received, snapshot);
+                        break;
+                    }
+                    assert!(Instant::now() < deadline, "indicator object missing");
+                    std::thread::yield_now();
+                }
+            })
+            .unwrap();
         let target = self.backend.runtime().input_projections()[0]
             .content
             .iter()
@@ -245,8 +274,10 @@ impl Harness {
         self.owner
             .with_service(key, |_, transport| transport.poll_io().unwrap())
             .unwrap();
-        let (_, ShellContentRecord::Action(action)) =
-            decode_shell_content_frame(&wire::read(peer)).unwrap()
+        let (_, ShellContentRecord::Action(action)) = self
+            .owner
+            .with_service(key, |_, t| wire::read(t, peer))
+            .unwrap()
         else {
             panic!("issued action")
         };
@@ -291,7 +322,7 @@ impl Harness {
     fn debt(
         &mut self,
         key: ComponentConnectionKey,
-        peer: &mut UnixStream,
+        peer: &mut ShellConnection,
         neighbor: ContentResourceLease,
     ) {
         self.candidate(key, peer, 1);
@@ -612,7 +643,6 @@ fn replacement_with_retained_predecessor(has_dock: bool) {
 fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
     use super::super::LiveMetadataShell;
     use sophia_runtime::{ProtectionBackendKind, ProtectionDomainEvidence, ProtectionDomainRole};
-    use std::io::Write;
     let mut h = Harness::new();
     let (_neighbor, _neighbor_peer, neighbor_pixels) = h.connect(1);
     let mut legacy = LiveMetadataShell::prepare(
@@ -636,14 +666,13 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
             roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
         })
         .unwrap();
-    let mut peer = UnixStream::connect(legacy.transport.socket_path()).unwrap();
-    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    peer.write_all(&wire::hello(false)).unwrap();
+    let socket = legacy.transport.socket_path().to_owned();
+    let worker = std::thread::spawn(move || wire::client(socket, 0));
     let welcome = legacy
         .transport
-        .accept_and_negotiate_with_content_policy(
+        .accept_files_with_content_policy(
             9,
-            Duration::from_secs(2),
+            Duration::from_secs(3),
             ShellContentAdmissionPolicy::Granted {
                 discrete_input: true,
             },
@@ -652,8 +681,15 @@ fn legacy_disconnect_keeps_its_distinct_revocation_join_and_deferred_claim() {
     legacy
         .finish_negotiation(std::process::id(), welcome.selected_revision, 9, "fixture")
         .unwrap();
-    wire::read(&mut peer);
-    wire::read(&mut peer);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !worker.is_finished() {
+        legacy.transport.poll_io().unwrap();
+        assert!(Instant::now() < deadline, "legacy file handshake missing");
+        std::thread::yield_now();
+    }
+    let (mut peer, limits) = worker.join().unwrap();
+    assert_eq!(peer.welcome(), welcome);
+    assert_eq!(Some(&limits), legacy.transport.content_limits());
     let retained = wire::upload(&mut legacy.transport.connection(), &mut peer);
     wire::allocate(&mut legacy.transport.connection(), &mut peer);
     for generation in [1, 2] {

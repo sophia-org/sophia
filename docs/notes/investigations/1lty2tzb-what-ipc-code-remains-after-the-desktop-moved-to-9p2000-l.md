@@ -2122,6 +2122,33 @@ installed-session claim follows. Session's internal action and reconnect
 fixtures still use the socket path; this cut does not yet permit removing the
 production socket branch or completing t269.
 
+## Internal reconnect fixture on files
+
+Session's `component_session::reconnect_tests` now drive the public SDK over
+9P for the bar, launcher and dock. The single-shell owner control also selects
+its existing file admission method. Their assertion bodies retain the resource,
+work-area, action, neighbor and deferred native-completion checks from
+`ec56ef5eb`; the backend still simulates submission/completion, so these are not
+physical presentation proofs. Protection evidence is supplied and no child is
+launched by this fixture.
+
+Resource records wait for `Submitted`; resource chunks wait for `Stored` after
+their slot writes. The upload control still exercises its 4 MiB resource and
+69 chunks. Candidate parts become one SDK content group and the owner still
+consumes three typed parts. Server observations are typed SDK records and
+indicator objects, with bounded interleaved owner/client turns. No IPC frame
+encoder, decoder or header remains in `component_reconnect`.
+
+`t269-reconnect-files-2.log` passes all eight reconnect controls and the two
+adjacent scheduler tests. `t269-reconnect-files-clippy.log` passes Session
+library/test clippy with warnings denied. The initial `reconnect_fixture`
+filter selected zero tests; its log is retained and is not qualification.
+The complete Session library suite passes 702 tests with zero failures and
+22 ignored in `t269-reconnect-files-session-lib.log`; layout passes in
+`t269-reconnect-files-layout.log`. These are focused Session gates, not a new
+whole-repository or installed-release verdict.
+The other internal action fixtures and the runtime socket adapter remain.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

@@ -1,59 +1,139 @@
+//! Resource and candidate lifecycle over the public 9P SDK. Assertions from
+//! the IPC fixture at ec56ef5eb are retained; typed custody replaces writes.
 use super::*;
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
+use sophia_shell_client::{Admission, Custody, ShellClientOptions, ShellConnection};
 
-pub(super) fn read(peer: &mut UnixStream) -> Vec<u8> {
-    let mut frame = vec![0; SOPHIA_IPC_HEADER_LEN];
-    peer.read_exact(&mut frame).unwrap();
-    let length = u32::from_le_bytes(frame[16..20].try_into().unwrap()) as usize;
-    assert!(length <= 65536);
-    frame.resize(SOPHIA_IPC_HEADER_LEN + length, 0);
-    peer.read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
-        .unwrap();
-    frame
+pub(super) fn read(
+    transport: &mut ShellTransportConnection<'_>,
+    peer: &mut ShellConnection,
+) -> (TransactionId, ShellContentRecord) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        transport.service_content_resources(0).unwrap();
+        transport.poll_io().unwrap();
+        if let Some(record) = peer.poll_content().unwrap() {
+            return record;
+        }
+        assert!(Instant::now() < deadline, "content observation missing");
+        std::thread::yield_now();
+    }
 }
 
-pub(super) fn send(peer: &mut UnixStream, record: ShellContentRecord) {
-    peer.write_all(&encode_shell_content_frame(TransactionId::from_raw(10), &record).unwrap())
+fn flush(
+    transport: &mut ShellTransportConnection<'_>,
+    peer: &mut ShellConnection,
+    admission: Admission,
+) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        peer.poll_io().unwrap();
+        transport.service_content_resources(0).unwrap();
+        transport.poll_io().unwrap();
+        let mut complete = true;
+        for ticket in admission.tickets() {
+            match peer.custody(ticket).unwrap() {
+                Custody::Submitted | Custody::Stored => {}
+                Custody::Queued | Custody::InFlight => complete = false,
+                other => panic!("file custody failed: {other:?}"),
+            }
+        }
+        if complete {
+            return;
+        }
+        assert!(Instant::now() < deadline, "file custody missing");
+        std::thread::yield_now();
+    }
+}
+
+pub(super) fn send(
+    transport: &mut ShellTransportConnection<'_>,
+    peer: &mut ShellConnection,
+    record: ShellContentRecord,
+) {
+    let admission = peer
+        .enqueue_content_tracked(TransactionId::from_raw(10), &record)
         .unwrap();
+    flush(transport, peer, admission);
+}
+
+pub(super) fn client(socket: std::path::PathBuf, slot: usize) -> (ShellConnection, ContentLimits) {
+    let revision = match slot {
+        0 => 6,
+        1 => 7,
+        2 => 8,
+        _ => panic!("role"),
+    };
+    let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
+        | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
+        | match slot {
+            0 => {
+                SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
+                    | SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
+                    | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION
+            }
+            1 => {
+                SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+                    | SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER
+            }
+            2 => {
+                SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
+                    | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+                    | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
+            }
+            _ => unreachable!(),
+        };
+    let mut peer = ShellConnection::connect_files(
+        socket,
+        ShellClientOptions {
+            minimum_revision: revision,
+            maximum_revision: revision,
+            required_capabilities: capabilities,
+            handshake_timeout: Duration::from_secs(3),
+        },
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some((_, record)) = peer.poll_content().unwrap() {
+            let ShellContentRecord::Limits(limits) = record else {
+                panic!("Limits");
+            };
+            return (peer, limits);
+        }
+        assert!(Instant::now() < deadline, "Limits fetch missing");
+        std::thread::yield_now();
+    }
 }
 
 pub(super) fn connect(
     owner: &mut ShellComponentSession,
     slot: usize,
-) -> (ComponentConnectionKey, UnixStream) {
-    let (key, mut peer) = owner.processes.reconnect_fixture_peer(slot, owner.policy);
-    let native = slot == 1;
-    let greeting = if slot == 2 {
-        encode_shell_v1_client_hello_frame(ShellV1ClientHello {
-            minimum_revision: 8,
-            maximum_revision: 8,
-            required_capabilities: SOPHIA_SHELL_CAPABILITY_PERSISTENT_CATALOG
-                | SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
-                | SOPHIA_SHELL_CAPABILITY_WORK_AREA_RESERVATION
-                | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT,
-        })
-        .unwrap()
-    } else {
-        hello(native)
+) -> (ComponentConnectionKey, ShellConnection) {
+    let (key, socket) = owner
+        .processes
+        .reconnect_fixture_endpoint(slot, owner.policy);
+    let worker = std::thread::spawn(move || client(socket, slot));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let welcome = loop {
+        let visit = owner.poll(65536).unwrap();
+        if let Some((received, result)) = visit.negotiations.into_iter().flatten().next() {
+            assert_eq!(received, key);
+            break result.unwrap();
+        }
+        assert!(Instant::now() < deadline, "negotiation missing");
+        std::thread::yield_now();
     };
-    peer.write_all(&greeting).unwrap();
-    let visit = owner.poll(65536).unwrap();
-    assert_eq!(
-        visit
-            .negotiations
-            .into_iter()
-            .flatten()
-            .next()
-            .unwrap()
-            .1
-            .unwrap()
-            .connection_epoch,
-        key.grant.connection_epoch
-    );
-    read(&mut peer);
-    read(&mut peer);
+    while !worker.is_finished() {
+        owner
+            .with_service(key, |_, t| t.poll_io().unwrap())
+            .unwrap();
+        assert!(Instant::now() < deadline, "client handshake missing");
+        std::thread::yield_now();
+    }
+    let (peer, limits) = worker.join().unwrap();
+    assert_eq!(welcome, peer.welcome());
+    assert_eq!(welcome.connection_epoch, key.grant.connection_epoch);
+    assert_eq!(limits.grant, key.grant);
     assert!(
         owner
             .connected_roles()
@@ -64,34 +144,16 @@ pub(super) fn connect(
     (key, peer)
 }
 
-pub(super) fn hello(native: bool) -> Vec<u8> {
-    let capabilities = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-        | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-        | if native {
-            SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG | SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER
-        } else {
-            SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-                | SOPHIA_SHELL_CAPABILITY_VIEW_INDICATORS
-                | SOPHIA_SHELL_CAPABILITY_INDICATOR_ACTIVATION
-        };
-    encode_shell_v1_client_hello_frame(ShellV1ClientHello {
-        minimum_revision: if native { 7 } else { 6 },
-        maximum_revision: if native { 7 } else { 6 },
-        required_capabilities: capabilities,
-    })
-    .unwrap()
-}
-
 pub(super) fn upload(
     transport: &mut ShellTransportConnection<'_>,
-    peer: &mut UnixStream,
+    peer: &mut ShellConnection,
 ) -> ContentResourceLease {
     upload_id(transport, peer, RESOURCE)
 }
 
 pub(super) fn upload_id(
     transport: &mut ShellTransportConnection<'_>,
-    peer: &mut UnixStream,
+    peer: &mut ShellConnection,
     resource: ContentResourceId,
 ) -> ContentResourceLease {
     let grant = transport.content_grant().unwrap();
@@ -121,14 +183,12 @@ pub(super) fn upload_id(
             chunk_count: 1,
         }),
     ] {
-        send(peer, record);
+        send(transport, peer, record);
     }
     transport.service_content_resources(0).unwrap();
     transport.poll_io().unwrap();
     for status in [1, 2] {
-        let (_, ShellContentRecord::ResourceStatus(value)) =
-            decode_shell_content_frame(&read(peer)).unwrap()
-        else {
+        let (_, ShellContentRecord::ResourceStatus(value)) = read(transport, peer) else {
             panic!("resource status");
         };
         assert_eq!(value.status, status);
@@ -137,13 +197,13 @@ pub(super) fn upload_id(
     transport.lease_content_resource(grant, resource).unwrap()
 }
 
-pub(super) fn allocate(transport: &mut ShellTransportConnection<'_>, peer: &mut UnixStream) {
+pub(super) fn allocate(transport: &mut ShellTransportConnection<'_>, peer: &mut ShellConnection) {
     allocate_extent(transport, peer, 1);
 }
 
 pub(super) fn upload_maximum(
     transport: &mut ShellTransportConnection<'_>,
-    peer: &mut UnixStream,
+    peer: &mut ShellConnection,
     id: u64,
 ) -> ContentResourceLease {
     let grant = transport.content_grant().unwrap();
@@ -161,12 +221,14 @@ pub(super) fn upload_maximum(
     let layout = description
         .layout(transport.content_limits().unwrap())
         .unwrap();
-    send(peer, ShellContentRecord::ResourceBegin(description.clone()));
+    send(
+        transport,
+        peer,
+        ShellContentRecord::ResourceBegin(description.clone()),
+    );
     transport.service_content_resources(0).unwrap();
     transport.poll_io().unwrap();
-    let (_, ShellContentRecord::ResourceStatus(status)) =
-        decode_shell_content_frame(&read(peer)).unwrap()
-    else {
+    let (_, ShellContentRecord::ResourceStatus(status)) = read(transport, peer) else {
         panic!("begin status")
     };
     assert_eq!(status.status, 1);
@@ -175,6 +237,7 @@ pub(super) fn upload_maximum(
         let bytes = (layout.total_bytes - offset)
             .min(u64::from(layout.row_bytes) * u64::from(layout.rows_per_chunk));
         send(
+            transport,
             peer,
             ShellContentRecord::ResourceChunk(ContentResourceChunk {
                 grant,
@@ -189,6 +252,7 @@ pub(super) fn upload_maximum(
         offset += bytes;
     }
     send(
+        transport,
         peer,
         ShellContentRecord::ResourceEnd(ContentResourceEnd {
             grant,
@@ -199,9 +263,7 @@ pub(super) fn upload_maximum(
     );
     transport.service_content_resources(0).unwrap();
     transport.poll_io().unwrap();
-    let (_, ShellContentRecord::ResourceStatus(status)) =
-        decode_shell_content_frame(&read(peer)).unwrap()
-    else {
+    let (_, ShellContentRecord::ResourceStatus(status)) = read(transport, peer) else {
         panic!("end status")
     };
     assert_eq!(status.status, 2);
@@ -212,7 +274,7 @@ pub(super) fn upload_maximum(
 
 pub(super) fn allocate_extent(
     transport: &mut ShellTransportConnection<'_>,
-    peer: &mut UnixStream,
+    peer: &mut ShellConnection,
     extent: u32,
 ) {
     transport
@@ -231,6 +293,7 @@ pub(super) fn allocate_extent(
         .unwrap();
     let grant = transport.content_grant().unwrap();
     send(
+        transport,
         peer,
         ShellContentRecord::AllocationRequest(ContentAllocationRequest {
             grant,
@@ -286,13 +349,13 @@ pub(super) fn allocate_extent(
         .unwrap();
     transport.poll_io().unwrap();
     // Facts and the allocation outcome are the only server frames so far.
-    read(peer);
-    read(peer);
+    read(transport, peer);
+    read(transport, peer);
 }
 
 pub(super) fn candidate(
     transport: &mut ShellTransportConnection<'_>,
-    peer: &mut UnixStream,
+    peer: &mut ShellConnection,
     generation: u64,
 ) -> ContentRenderBundle {
     let grant = transport.content_grant().unwrap();
@@ -307,8 +370,8 @@ pub(super) fn candidate(
         )
         .unwrap();
     transport.poll_io().unwrap();
-    read(peer);
-    for record in [
+    read(transport, peer);
+    let records = [
         ShellContentRecord::CandidateBegin(ContentCandidateBegin {
             grant,
             output: OUTPUT,
@@ -361,9 +424,11 @@ pub(super) fn candidate(
             placement_count: 1,
             target_count: 1,
         }),
-    ] {
-        send(peer, record);
-    }
+    ];
+    let admission = peer
+        .enqueue_content_group_tracked(TransactionId::from_raw(10), &records)
+        .unwrap();
+    flush(transport, peer, admission);
     let allocations = transport.content_allocation_snapshots();
     assert_eq!(
         transport
@@ -386,14 +451,12 @@ pub(super) fn candidate(
 
 pub(super) fn outcome(
     transport: &mut ShellTransportConnection<'_>,
-    peer: &mut UnixStream,
+    peer: &mut ShellConnection,
     generation: u64,
     kind: u16,
 ) {
     transport.poll_io().unwrap();
-    let (_, ShellContentRecord::CandidateOutcome(value)) =
-        decode_shell_content_frame(&read(peer)).unwrap()
-    else {
+    let (_, ShellContentRecord::CandidateOutcome(value)) = read(transport, peer) else {
         panic!("candidate outcome");
     };
     assert_eq!(

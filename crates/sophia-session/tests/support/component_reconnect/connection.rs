@@ -1,14 +1,14 @@
 //! Real connection registry/negotiation, supplied protected-peer evidence.
 //! No process is spawned: this fixture does not prove launch or protection.
 use super::*;
-use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 
 impl ShellComponentProcesses {
-    pub(crate) fn reconnect_fixture_peer(
+    pub(crate) fn reconnect_fixture_endpoint(
         &mut self,
         slot: usize,
         policy: ShellContentAdmissionPolicy,
-    ) -> (ComponentConnectionKey, UnixStream) {
+    ) -> (ComponentConnectionKey, PathBuf) {
         let key = self.connections.reserve_attempt(slot).unwrap();
         self.slots[slot].key = Some(key);
         self.connections
@@ -24,10 +24,6 @@ impl ShellComponentProcesses {
                 policy,
             )
             .unwrap();
-        let peer = UnixStream::connect(self.connections.socket_path(slot).unwrap()).unwrap();
-        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-        peer.set_write_timeout(Some(Duration::from_secs(2)))
-            .unwrap();
-        (key, peer)
+        (key, self.connections.socket_path(slot).unwrap().to_owned())
     }
 }
