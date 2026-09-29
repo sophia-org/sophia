@@ -98,6 +98,10 @@ impl Fixture {
     }
 
     fn connect(&mut self, revision: u16, caps: u64) -> ShellConnection {
+        self.connect_at(revision, caps, EPOCH)
+    }
+
+    fn connect_at(&mut self, revision: u16, caps: u64, epoch: u64) -> ShellConnection {
         let socket = self.transport.socket_path().to_owned();
         let peer = std::thread::spawn(move || {
             ShellConnection::connect_files(
@@ -124,7 +128,7 @@ impl Fixture {
             std::thread::yield_now();
         };
         assert_eq!(welcome.selected_revision, revision);
-        assert_eq!(welcome.connection_epoch, EPOCH);
+        assert_eq!(welcome.connection_epoch, epoch);
         assert_eq!(welcome.capabilities, caps);
         while !peer.is_finished() {
             self.transport.poll_io(&mut self.epochs).unwrap();

@@ -3,6 +3,9 @@
 use super::*;
 use sophia_shell_client::{Custody, DescriptorObservation};
 
+#[path = "shell_file_descriptor_retirement.rs"]
+mod retirement;
+
 fn action() -> ToplevelActionCapabilityRef {
     ToplevelActionCapabilityRef {
         token: 3,

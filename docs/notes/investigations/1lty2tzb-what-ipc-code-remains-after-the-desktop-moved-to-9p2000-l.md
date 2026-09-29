@@ -2475,6 +2475,79 @@ encoders. Public admission, negotiation and descriptor transport tests still
 need migration before removing the common socket adapter. t269/t270/t272 stay
 open; this changes no installed release or live session.
 
+## Public shell admission and descriptor controls over files (t269, 2026-09-28)
+
+The six `shell_content_admission` tests now use the real file export and a raw
+9P peer. Protection evidence is supplied. They check exact Refused records for
+Unavailable versus Denied, the discrete-input capability mask, no content
+record for an invalid dependency or pre-content revision, and two successful
+epochs with exact Limits objects and fresh content grants. Disconnect releases
+the reservation. A Submitted receipt may precede invalid-offer teardown; it
+does not grant a capability or permit a Negotiated/content-refusal record.
+
+The five `shell_negotiation_service` controls now stage real Negotiate
+transactions. Channel barriers hold a four-byte submit prefix while a neighbour
+finishes, then the first peer negotiates and its following FrameDemand reaches
+the owner exactly once. Malformed framing and partial-frame EOF release only
+the failed reservation. Zero-budget visits perform no I/O; duplicate starts
+leave the pending accounting unchanged. Explicit disconnect and the zero
+deadline release the pending owner.
+
+The old negotiation test's final-byte socket rule is retired explicitly.
+With files, a positive visit runs bounded server turns and success means the
+journal owns the whole response. The new control holds the peer before its
+Rwrite read, observes successful negotiation and released handshake credits,
+then lets it read Negotiated and Limits. Refusal has a different terminal rule:
+reading Refused is insufficient; the host retains the reservation until the
+peer acknowledges that event. The public method's rustdoc now distinguishes
+these rules and the compatibility socket's byte budget.
+
+The old `shell_transport` target is removed with this coverage mapping:
+
+| Retired socket assertion | Retained file evidence |
+| --- | --- |
+| Candidate, Prepared/Presented, exact activation and ACK | `prepared_does_not_authorize_activation_and_presented_does`, plus the independent C descriptor modes |
+| Activation count saturation revokes | `activation_limit_revokes_even_when_the_peer_drains_every_journal_event`; journal ACKs cannot substitute for domain ACKs |
+| Exact snapshot and preparation order | `snapshot_refusal_preserves_the_next_candidate_and_its_exact_reservation` and `replacement_preserves_the_presented_generation_until_its_terminal_outcome` |
+| Reconnect burns the old epoch | `reconnect_burns_the_old_epoch_and_negotiates_a_fresh_one` |
+| Reservation survives transport unchanged | the snapshot/reservation control compares the whole candidate, including Bottom/28 |
+
+Files report the stale snapshot as a Rejected outcome and retain a usable
+connection, as the existing descriptor-file contract requires. The old blocking
+socket's local WrongCandidate result is not imposed on that path. The protocol
+gate now invokes the file negotiation and descriptor targets instead of the
+removed socket target. These fixtures use the public Rust codecs and supply
+protection; independent C coverage and production-protected launch remain
+separate evidence.
+
+Evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-public-admission-files.log`: six controls pass on the first compile.
+- `t269-public-negotiation-files-2.log`: five controls pass. The first compile
+  failed because the fixture treated the demand owner's peek as a Result and
+  skipped intake; it now services intake once and checks the retained demand.
+- `t269-public-descriptor-files.log`: all 36 descriptor-family tests pass.
+- `t269-refusal-ack-mutant.log`: revoking before the Refused ACK fails the
+  pending-negotiation assertion, and the peer sees premature closure.
+- `t269-descriptor-limit-mutant.log`: admitting one extra activation fails the
+  saturation refusal. Both mutants compile in isolated read-only overlays.
+- `t269-public-files-restored.log`: all 47 controls pass with original sources.
+- `t269-public-files-clippy.log`: strict runtime all-target/all-feature clippy
+  passes for the migrated fixtures.
+- `t269-public-files-full.log`: the complete isolated `cargo xtask check`
+  exits zero, with 477 result groups, 6,628 passed, none failed and 63 ignored,
+  plus clippy, formatting and tool checks. Device-dependent proofs remain
+  explicitly unclaimed.
+- `t269-public-shell-protocol.log`: the retargeted `check_shell_protocol.sh`
+  exits zero, including independent C descriptor/content peers and retained
+  frame corpora. Its two explicitly supplied legacy popout tests also pass;
+  they have file twins and remain source-retirement work. The optional external
+  content client was not supplied, which the verdict states explicitly.
+
+This is coverage migration, not socket-adapter removal. Session recipe codecs,
+the optional lifecycle peer and indicator host, the compatibility workers and
+protocol/SDK frame code still require retirement. No release is installed.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

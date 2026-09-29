@@ -1,291 +1,289 @@
-use std::io::{Read as _, Write as _};
-use std::os::unix::net::UnixStream;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use sophia_protocol::{
-    IpcMessageKind, SOPHIA_IPC_HEADER_LEN, SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT,
-    SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE, SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER,
-    ShellContentRecord, ShellV1ClientHello, decode_frame, decode_shell_content_frame,
-    decode_shell_v1_server_welcome_frame, encode_shell_v1_client_hello_frame,
-};
-use sophia_runtime::{
-    ProtectionBackendKind, ProtectionDomainEvidence, ProtectionDomainRole,
-    ShellContentAdmissionPolicy, ShellSessionTransport, ShellTransportError,
-};
-
-fn directory(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "sophia-content-admission-{label}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ))
+//! Admission through the production 9P export with supplied protection evidence.
+//! The peer checks actual refusal and limits records; no protected child runs.
+use sophia_protocol::shell_files::*;
+use sophia_protocol::*;
+use sophia_runtime::*;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+#[path = "support/shell_file_peer.rs"]
+mod shell_file_peer;
+use shell_file_peer::Peer;
+const WAIT: Duration = Duration::from_secs(3);
+const CONTENT: u64 = SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE;
+const INPUT: u64 = SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT;
+struct Fixture {
+    transport: ShellComponentTransport,
+    epochs: ContentEpochRegistry,
+    path: std::path::PathBuf,
 }
-
-fn evidence() -> ProtectionDomainEvidence {
-    ProtectionDomainEvidence {
-        backend: ProtectionBackendKind::Bubblewrap,
-        supervisor_pid: std::process::id(),
-        peer_pid: std::process::id(),
-        roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
-    }
-}
-
-fn hello(capabilities: u64) -> ShellV1ClientHello {
-    ShellV1ClientHello {
-        minimum_revision: 5,
-        maximum_revision: 6,
-        required_capabilities: capabilities,
-    }
-}
-
-fn connect(path: std::path::PathBuf, capabilities: u64) -> UnixStream {
-    connect_with_hello(path, hello(capabilities))
-}
-
-fn connect_with_hello(path: std::path::PathBuf, hello: ShellV1ClientHello) -> UnixStream {
-    let mut stream = UnixStream::connect(path).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
+impl Fixture {
+    fn new() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "content-admission-files-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let transport = ShellComponentTransport::bind_for_supervised_uid(
+            &path,
+            rustix::process::geteuid().as_raw(),
+        )
         .unwrap();
-    stream
-        .write_all(&encode_shell_v1_client_hello_frame(hello).unwrap())
-        .unwrap();
-    stream
-}
-
-fn read_frame(stream: &mut UnixStream) -> Vec<u8> {
-    let mut header = [0u8; SOPHIA_IPC_HEADER_LEN];
-    stream.read_exact(&mut header).unwrap();
-    let payload = u32::from_le_bytes(header[16..20].try_into().unwrap()) as usize;
-    let mut frame = header.to_vec();
-    frame.resize(SOPHIA_IPC_HEADER_LEN + payload, 0);
-    stream
-        .read_exact(&mut frame[SOPHIA_IPC_HEADER_LEN..])
-        .unwrap();
-    frame
-}
-
-fn transport(label: &str) -> ShellSessionTransport {
-    let mut transport = ShellSessionTransport::bind_for_supervised_uid(
-        directory(label),
-        rustix::process::geteuid().as_raw(),
-    )
-    .unwrap();
-    transport.authorize_protected_peer(&evidence()).unwrap();
-    transport
-}
-
-#[test]
-fn content_is_unavailable_without_an_explicit_service_policy() {
-    let mut session = transport("unavailable");
-    let socket = session.socket_path().to_path_buf();
-    let client = std::thread::spawn(move || {
-        let mut stream = connect(
-            socket,
-            SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
-        );
-        let frame = read_frame(&mut stream);
-        assert_eq!(
-            decode_frame(&frame).unwrap().0.message_kind,
-            IpcMessageKind::ShellContentAdmissionRefused
-        );
-        let (_, ShellContentRecord::AdmissionRefused(refusal)) =
-            decode_shell_content_frame(&frame).unwrap()
-        else {
-            panic!("expected content refusal");
-        };
-        assert_eq!(refusal.reason, 4);
-        assert_eq!(
-            refusal.denied_capabilities,
-            SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-        );
-        let mut byte = [0u8; 1];
-        assert_eq!(stream.read(&mut byte).unwrap(), 0);
-    });
-    assert!(matches!(
-        session.accept_and_negotiate(1, Duration::from_secs(2)),
-        Err(ShellTransportError::ContentAdmissionRefused(refusal))
-            if refusal.reason == 4
-    ));
-    client.join().unwrap();
-}
-
-#[test]
-fn granted_content_gets_limits_and_a_fresh_epoch_on_replacement() {
-    let mut session = transport("granted");
-    let socket = session.socket_path().to_path_buf();
-    let mut prior_grant_epoch = 0;
-    for connection_epoch in [1, 2] {
-        let client = std::thread::spawn({
-            let socket = socket.clone();
-            move || {
-                let mut stream = connect(
-                    socket,
-                    SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-                        | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                        | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT,
-                );
-                let welcome =
-                    decode_shell_v1_server_welcome_frame(&read_frame(&mut stream)).unwrap();
-                let (_, ShellContentRecord::Limits(limits)) =
-                    decode_shell_content_frame(&read_frame(&mut stream)).unwrap()
-                else {
-                    panic!("expected content limits");
-                };
-                (welcome, limits)
-            }
-        });
-        let welcome = session
-            .accept_and_negotiate_with_content_policy(
-                connection_epoch,
-                Duration::from_secs(2),
-                ShellContentAdmissionPolicy::Granted {
-                    discrete_input: true,
-                },
-            )
-            .unwrap();
-        assert!(session.supports_content());
-        assert_eq!(session.content_reserved_bytes(), 40 * 1024 * 1024);
-        assert_eq!(session.content_backing_reserved_bytes(), 32 * 1024 * 1024);
-        let (client_welcome, limits) = client.join().unwrap();
-        assert_eq!(client_welcome, welcome);
-        assert_eq!(limits.grant.connection_epoch, connection_epoch);
-        assert!(limits.grant.content_grant_epoch > prior_grant_epoch);
-        prior_grant_epoch = limits.grant.content_grant_epoch;
-        assert_eq!(session.content_grant(), Some(limits.grant));
-        session.disconnect().unwrap();
-        assert!(!session.supports_content());
-        assert_eq!(session.content_reserved_bytes(), 0);
-        assert_eq!(session.content_backing_reserved_bytes(), 0);
-        if connection_epoch == 1 {
-            session.authorize_protected_peer(&evidence()).unwrap();
+        Self {
+            transport,
+            epochs: ContentEpochRegistry::new(64 * 1024 * 1024).unwrap(),
+            path,
         }
     }
+    fn start(&mut self, epoch: u64, policy: ShellContentAdmissionPolicy) {
+        self.transport
+            .authorize_protected_peer(&ProtectionDomainEvidence {
+                backend: ProtectionBackendKind::Bubblewrap,
+                supervisor_pid: std::process::id(),
+                peer_pid: std::process::id(),
+                roles: [ProtectionDomainRole::MetadataShell].into_iter().collect(),
+            })
+            .unwrap();
+        self.transport
+            .begin_descriptor_file_negotiation(&self.epochs, epoch, WAIT, policy)
+            .unwrap();
+    }
+    fn welcome(&mut self) -> Result<ShellV1ServerWelcome, ShellTransportError> {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Some(value) = self.transport.poll_negotiation(&mut self.epochs, 65536)? {
+                return Ok(value);
+            }
+            assert!(Instant::now() < deadline, "admission did not settle");
+            std::thread::yield_now();
+        }
+    }
+    fn refusal(&mut self, required: u64, expected: ContentAdmissionRefused) {
+        let socket = self.transport.socket_path().to_owned();
+        let peer_expected = expected.clone();
+        let peer = std::thread::spawn(move || {
+            let mut peer = Peer::connect(&socket);
+            peer.setup();
+            peer.submit_acknowledged(&offer(1, 6, required), 1);
+            let event = peer.next_event();
+            assert_eq!(decode_shell_file_refused(&event).unwrap(), peer_expected);
+            peer.ack(&event);
+        });
+        assert_eq!(
+            self.welcome(),
+            Err(ShellTransportError::ContentAdmissionRefused(expected))
+        );
+        peer.join().unwrap();
+        assert!(!self.transport.supports_content());
+        assert!(self.transport.content_accounting(&self.epochs).quiescent());
+    }
 }
-
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.transport.disconnect(&mut self.epochs).unwrap();
+        assert!(
+            self.transport
+                .collect_content_accounting(&mut self.epochs)
+                .quiescent()
+        );
+        std::fs::remove_dir_all(&self.path).unwrap();
+    }
+}
+fn offer(epoch: u64, revision: u16, required: u64) -> Vec<u8> {
+    encode_shell_file_negotiate(
+        ShellFileHeader {
+            kind: ShellFileKind::Negotiate,
+            connection_epoch: epoch,
+            submission_id: 1,
+            sequence: 0,
+        },
+        ShellV1ClientHello {
+            minimum_revision: revision,
+            maximum_revision: revision,
+            required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER | required,
+        },
+    )
+    .unwrap()
+}
+#[test]
+fn content_is_unavailable_without_an_explicit_service_policy() {
+    let mut f = Fixture::new();
+    f.start(1, ShellContentAdmissionPolicy::Unavailable);
+    f.refusal(
+        CONTENT,
+        ContentAdmissionRefused {
+            reason: 4,
+            denied_capabilities: CONTENT,
+        },
+    );
+}
+#[test]
+fn granted_content_gets_limits_and_a_fresh_epoch_on_replacement() {
+    let mut f = Fixture::new();
+    let mut prior = 0;
+    for epoch in [1, 2] {
+        f.start(
+            epoch,
+            ShellContentAdmissionPolicy::Granted {
+                discrete_input: true,
+            },
+        );
+        let socket = f.transport.socket_path().to_owned();
+        let peer = std::thread::spawn(move || {
+            let mut peer = Peer::connect(&socket);
+            peer.setup();
+            peer.submit_acknowledged(&offer(epoch, 6, CONTENT | INPUT), 1);
+            let event = peer.next_event();
+            let negotiated = decode_shell_file_negotiated(&event).unwrap();
+            assert!(negotiated.limits_published);
+            peer.ack(&event);
+            peer.open(7, b"limits", 0);
+            let mut bytes = Vec::new();
+            loop {
+                let part = peer.read(7, bytes.len() as u64);
+                if part.is_empty() {
+                    break;
+                }
+                bytes.extend(part);
+                assert!(bytes.len() <= 2048);
+            }
+            peer.clunk(7);
+            let limits = decode_shell_file_limits(&bytes).unwrap();
+            (peer, negotiated.welcome, limits)
+        });
+        let welcome = f.welcome().unwrap();
+        let deadline = Instant::now() + WAIT;
+        while !peer.is_finished() {
+            f.transport.poll_io(&mut f.epochs).unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let (_peer, received, limits) = peer.join().unwrap();
+        assert_eq!(received, welcome);
+        assert_eq!(welcome.selected_revision, 6);
+        assert_eq!(welcome.connection_epoch, epoch);
+        assert!(f.transport.supports_content());
+        assert_eq!(
+            f.transport.content_reserved_bytes(&f.epochs),
+            40 * 1024 * 1024
+        );
+        assert_eq!(
+            f.transport.content_backing_reserved_bytes(&f.epochs),
+            32 * 1024 * 1024
+        );
+        assert_eq!(limits.grant.connection_epoch, epoch);
+        assert!(limits.grant.content_grant_epoch > prior);
+        prior = limits.grant.content_grant_epoch;
+        assert_eq!(f.transport.content_grant(), Some(limits.grant));
+        assert_eq!(f.transport.content_limits(), Some(&limits));
+        f.transport.disconnect(&mut f.epochs).unwrap();
+        assert!(!f.transport.supports_content());
+        assert!(
+            f.transport
+                .collect_content_accounting(&mut f.epochs)
+                .quiescent()
+        );
+    }
+}
 #[test]
 fn operator_denial_is_distinct_from_unavailable_implementation() {
-    let mut session = transport("operator-denied");
-    let socket = session.socket_path().to_path_buf();
-    let client = std::thread::spawn(move || {
-        let mut stream = connect(
-            socket,
-            SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
-        );
-        let (_, ShellContentRecord::AdmissionRefused(refusal)) =
-            decode_shell_content_frame(&read_frame(&mut stream)).unwrap()
-        else {
-            panic!("expected content refusal");
-        };
-        refusal
-    });
-    assert!(matches!(
-        session.accept_and_negotiate_with_content_policy(
-            1,
-            Duration::from_secs(2),
-            ShellContentAdmissionPolicy::Denied,
-        ),
-        Err(ShellTransportError::ContentAdmissionRefused(refusal))
-            if refusal.reason == 1
-    ));
-    assert_eq!(client.join().unwrap().reason, 1);
+    let mut f = Fixture::new();
+    f.start(1, ShellContentAdmissionPolicy::Denied);
+    f.refusal(
+        CONTENT,
+        ContentAdmissionRefused {
+            reason: 1,
+            denied_capabilities: CONTENT,
+        },
+    );
 }
-
 #[test]
 fn discrete_input_denial_names_only_that_required_capability() {
-    let mut session = transport("input-denied");
-    let socket = session.socket_path().to_path_buf();
-    let client = std::thread::spawn(move || {
-        let mut stream = connect(
-            socket,
-            SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-                | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
-                | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT,
-        );
-        let (_, ShellContentRecord::AdmissionRefused(refusal)) =
-            decode_shell_content_frame(&read_frame(&mut stream)).unwrap()
-        else {
-            panic!("expected content refusal");
-        };
-        refusal
-    });
-    let result = session.accept_and_negotiate_with_content_policy(
+    let mut f = Fixture::new();
+    f.start(
         1,
-        Duration::from_secs(2),
         ShellContentAdmissionPolicy::Granted {
             discrete_input: false,
         },
     );
-    assert!(matches!(
-        result,
-        Err(ShellTransportError::ContentAdmissionRefused(refusal))
-            if refusal.reason == 1
-                && refusal.denied_capabilities
-                    == SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
-    ));
-    assert_eq!(
-        client.join().unwrap().denied_capabilities,
-        SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
+    f.refusal(
+        CONTENT | INPUT,
+        ContentAdmissionRefused {
+            reason: 1,
+            denied_capabilities: INPUT,
+        },
     );
 }
-
-#[test]
-fn invalid_content_dependencies_receive_no_revision_five_record() {
-    let mut session = transport("invalid-dependency");
-    let socket = session.socket_path().to_path_buf();
-    let client = std::thread::spawn(move || {
-        let mut stream = connect(
-            socket,
-            SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-                | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT,
-        );
-        let mut byte = [0u8; 1];
-        assert_eq!(stream.read(&mut byte).unwrap(), 0);
-    });
-    assert_eq!(
-        session.accept_and_negotiate_with_content_policy(
-            1,
-            Duration::from_secs(2),
-            ShellContentAdmissionPolicy::Granted {
-                discrete_input: true,
-            },
+fn closed(error: std::io::Error) {
+    assert!(
+        matches!(
+            error.kind(),
+            std::io::ErrorKind::UnexpectedEof
+                | std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::ConnectionReset
         ),
-        Err(ShellTransportError::MissingCapability)
+        "{error}"
     );
-    session.disconnect().unwrap();
-    client.join().unwrap();
 }
-
+fn missing_capability(revision: u16, required: u64) {
+    let mut f = Fixture::new();
+    f.start(
+        1,
+        ShellContentAdmissionPolicy::Granted {
+            discrete_input: true,
+        },
+    );
+    let socket = f.transport.socket_path().to_owned();
+    let peer = std::thread::spawn(move || {
+        let mut peer = Peer::connect(&socket);
+        peer.setup();
+        // Submission custody may precede refusal, but neither Negotiated nor
+        // a content Refused record is valid for this malformed capability offer.
+        let bytes = offer(1, revision, required);
+        peer.open(5, b"transaction", 2);
+        assert_eq!(peer.write(5, &bytes).0, 119);
+        let submit = encode_shell_file_submit(ShellFileSubmit {
+            connection_epoch: 1,
+            submission_id: 1,
+            candidate_bytes: bytes.len() as u32,
+        })
+        .unwrap();
+        let reply = peer.rpc(
+            118,
+            &[
+                3u32.to_le_bytes().as_slice(),
+                &0u64.to_le_bytes(),
+                &(submit.len() as u32).to_le_bytes(),
+                &submit,
+            ]
+            .concat(),
+        );
+        match reply {
+            Err(error) => closed(error),
+            Ok(reply) => {
+                assert_eq!(reply.0, 119);
+                match peer.try_next_event() {
+                    Err(error) => closed(error),
+                    Ok(event) => {
+                        assert_eq!(
+                            decode_shell_file_submitted(&event).unwrap().submission_id,
+                            1
+                        );
+                        closed(peer.try_next_event().unwrap_err());
+                    }
+                }
+            }
+        }
+    });
+    assert_eq!(f.welcome(), Err(ShellTransportError::MissingCapability));
+    peer.join().unwrap();
+    assert!(f.transport.content_accounting(&f.epochs).quiescent());
+}
+#[test]
+fn invalid_content_dependencies_receive_no_content_record() {
+    missing_capability(6, INPUT);
+}
 #[test]
 fn pre_revision_five_peer_receives_no_content_record() {
-    let mut session = transport("pre-content-revision");
-    let socket = session.socket_path().to_path_buf();
-    let client = std::thread::spawn(move || {
-        let mut stream = connect_with_hello(
-            socket,
-            ShellV1ClientHello {
-                minimum_revision: 4,
-                maximum_revision: 4,
-                required_capabilities: SOPHIA_SHELL_CAPABILITY_DESCRIPTOR_SWITCHER
-                    | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE,
-            },
-        );
-        let mut byte = [0u8; 1];
-        assert_eq!(stream.read(&mut byte).unwrap(), 0);
-    });
-    assert_eq!(
-        session.accept_and_negotiate_with_content_policy(
-            1,
-            Duration::from_secs(2),
-            ShellContentAdmissionPolicy::Granted {
-                discrete_input: false,
-            },
-        ),
-        Err(ShellTransportError::MissingCapability)
-    );
-    session.disconnect().unwrap();
-    client.join().unwrap();
+    missing_capability(4, CONTENT);
 }

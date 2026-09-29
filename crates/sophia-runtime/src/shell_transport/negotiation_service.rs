@@ -107,10 +107,12 @@ impl ShellComponentTransport {
         Ok(())
     }
 
-    /// At most one accept and 32 read/write attempts, sharing at most 64 KiB
-    /// with this visit's byte budget. Zero bytes performs no socket operation.
-    /// None means still pending, not connected. Welcome is returned exactly
-    /// once, after all welcome/limit bytes have been written (not peer receipt).
+    /// At most one accept. A positive budget runs bounded 9P server turns on
+    /// files; the compatibility socket shares up to 64 KiB across at most 32
+    /// read/write attempts. Zero performs no I/O, but still checks the deadline.
+    /// None means pending. Welcome is returned exactly once after output
+    /// custody: journal admission on files, written welcome/limit bytes on the
+    /// compatibility socket. Neither means peer receipt.
     /// On returned failure, the exact reservation/socket is revoked; neighbors
     /// remain owned by the registry. Interruption/unwind is not a terminal ACK.
     pub fn poll_negotiation(

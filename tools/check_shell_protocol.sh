@@ -69,7 +69,8 @@ cargo test --offline -q -p sophia-protocol --test shell_indicators
 # The reference codec had golden frames and a test target but no invocation
 # here, so its coverage was retained without ever being run.
 cargo test --offline -q -p sophia-protocol --test shell_reference
-cargo test --offline -q -p sophia-runtime --test shell_transport
+cargo test --offline -q -p sophia-runtime --test shell_negotiation_service
+cargo test --offline -q -p sophia-runtime --test shell_file_descriptor_negotiation
 
 # The descriptor, tabs, shortcuts and launcher hosts use an independent C
 # SDK peer over 9P, including reservation commit/withdrawal and refusal cases.
