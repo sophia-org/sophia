@@ -1,13 +1,13 @@
-tree 9b9810edcc3c438f749a80f3491c634ab9d5cd09
-parent 74498734f314c0e9847fb01991e83eed35930833
-author Mason Green <mason@greenm01.net> 1790635825 -0400
-committer Mason Green <mason@greenm01.net> 1790635825 -0400
+tree 3ade83a52cd3bf30f29eb9d881b4356947b47b4f
+parent 0670e68b6425cdd4623f383bc368690d3f8a0b5c
+author Mason Green <mason@greenm01.net> 1790652607 -0400
+committer Mason Green <mason@greenm01.net> 1790652607 -0400
 gpgsig -----BEGIN PGP SIGNATURE-----
  
- iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarrvMQAKCRBXGEu2KoAA
- YhgCAP4kMvrSe5kihK/atrk31hesfmu2/dnrYDvBlGEo6t2g5AD9G9oouXGgi3kd
- 7ifz2cFWFCdP9FsDncDSJXiaf9jvMgI=
- =ZyfO
+ iHUEABYIAB0WIQR+I2QUnoHdebKT6m9XGEu2KoAAYgUCarswvwAKCRBXGEu2KoAA
+ Ygh2AQCATv/Iu7478RHLMqfrYtZD9t8HWFl9dZB5RA2GZuC1hAD+K/MjU2Erglap
+ FMCtFKkhk2VMAIjzlcDlAwJ9A1lMRA0=
+ =eL2D
  -----END PGP SIGNATURE-----
 
-Record Session WM file default and release rollback contract
+Document the 9P-only Session shell default

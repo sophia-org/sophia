@@ -2550,7 +2550,7 @@ protocol/SDK frame code still require retirement. No release is installed.
 
 ## Independent components default to files (t269, 2026-09-28)
 
-Candidate after `444de134b`: `ShellTransportSelection` has only `NineP2000L`.
+Signed candidate `49d63533d`: `ShellTransportSelection` has only `NineP2000L`.
 Omitting the KDL transport selects files for every role; explicit `current-ipc`
 fails profile validation. The content connection owner's default registration
 now uses files, and its negotiation dispatch no longer calls the socket
@@ -2582,10 +2582,19 @@ Focused evidence under `development-evidence/ipc-retirement/`:
 
 The shell contract and configuration guide describe the experimental default
 and whole-release recovery; latency and physical qualification remain open.
-Both SDK contract copies must be refreshed from this signed candidate before
-the combined gate and publication. The runtime socket implementation itself is
-still present for the remaining compatibility callers; t269 is not complete.
-No installed selection or running process changes.
+Both SDK contract copies are refreshed from this signed candidate: C
+`b32f036f37993155c85ecf121ec937bc523172ff` and Rust
+`bd0be72112465c8d4790787027f15232c472de64`. Their library sources and wire
+layouts are unchanged; only the shell lifecycle document, its digest and
+provenance change. Sophia's snapshots contain those exact signed trees.
+
+`t269-shell-default-full.log` records the complete isolated `cargo xtask check`
+exit zero: 476 result groups, 6,628 reported passes, none failed and 63 ignored,
+plus clippy, formatting, SDK snapshot checks and tooling. The explicit protected
+process run above is separate from those totals. This is a code/default gate,
+not a physical or latency qualification. The runtime socket implementation is
+still present for remaining compatibility callers; t269 is not complete. No
+installed selection or running process changes.
 
 ## Validation and remaining work
 

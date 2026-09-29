@@ -157,3 +157,13 @@ sources and tests are unchanged from the accepted-contract revision above.
 current-ipc selection. Rollback selects a previously verified compatible release;
 latency qualification stays open. Wire layouts, custody rules and SDK library
 sources are unchanged. SDK compatibility removal is a separate follow-up.
+
+## Shell Session default retirement
+
+`spec/sophia-shell-files.md` is copied unmodified from signed Sophia
+`49d63533d235d94574f9b32b9cd476cfbdb319b1`. Every Session shell role now defaults to 9P
+and refuses explicit current-ipc selection. Protected launch supplies the
+owner's 9P endpoint; recovery uses a compatible older whole release. The
+default remains experimental while latency and physical qualification are
+open. This reference update changes no library source, wire layout or custody
+rule. SDK compatibility source removal remains a separate follow-up.
