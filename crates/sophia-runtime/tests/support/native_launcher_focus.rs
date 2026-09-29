@@ -31,7 +31,7 @@ fn present(
         .unwrap();
     p.transport.poll_io(r).unwrap();
     assert!(matches!(
-        decode_shell_content_frame(&p.read()).unwrap().1,
+        p.read_content(r).1,
         ShellContentRecord::FramePermit(_)
     ));
     let mut b = begin();
@@ -40,11 +40,7 @@ fn present(
     b.state_revision = revision;
     let mut ch = chunk();
     ch.candidate_generation = generation;
-    let mut e = end();
-    e.candidate_generation = generation;
-    p.send(ShellNativeLauncherRecord::CandidateBegin(b));
-    p.send(ShellNativeLauncherRecord::CandidateChunk(ch));
-    p.send_content(ShellContentRecord::CandidateEnd(e));
+    p.candidate_parts(r, b, ch);
     let current = NativeLauncherCandidateContext {
         state_revision: revision,
         ..native(c)
@@ -75,7 +71,7 @@ fn present(
         p.transport.poll_io(r).unwrap();
         for kind in [1, 2] {
             assert!(
-                matches!(decode_shell_content_frame(&p.read()).unwrap().1,ShellContentRecord::CandidateOutcome(v) if v.kind==kind && v.candidate_generation==generation)
+                matches!(p.read_content(r).1,ShellContentRecord::CandidateOutcome(v) if v.kind==kind && v.candidate_generation==generation)
             );
         }
     }
@@ -92,10 +88,7 @@ fn initial_focus(
         .install_native_launcher_focus(r, tx(30))
         .unwrap();
     p.transport.poll_io(r).unwrap();
-    assert_eq!(
-        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
-        ShellNativeLauncherRecord::Focus(f)
-    );
+    assert_eq!(p.read_native(r).1, ShellNativeLauncherRecord::Focus(f));
     f
 }
 fn input(
@@ -112,9 +105,7 @@ fn input(
         .unwrap()
         .unwrap();
     p.transport.poll_io(r).unwrap();
-    let (_, ShellNativeLauncherRecord::Input(v)) =
-        decode_shell_native_launcher_frame(&p.read()).unwrap()
-    else {
+    let (_, ShellNativeLauncherRecord::Input(v)) = p.read_native(r) else {
         panic!()
     };
     assert_eq!(v.event, expected);
@@ -126,9 +117,10 @@ fn ack(
     event: NativeLauncherEvent,
     disposition: u16,
 ) -> bool {
-    p.send(ShellNativeLauncherRecord::InputAck(
-        NativeLauncherInputAck { event, disposition },
-    ));
+    p.send(
+        r,
+        ShellNativeLauncherRecord::InputAck(NativeLauncherInputAck { event, disposition }),
+    );
     p.transport
         .poll_native_launcher_input_ack(r)
         .unwrap()
@@ -136,14 +128,7 @@ fn ack(
         .2
 }
 fn no_frame(p: &mut Peer, r: &mut ContentEpochRegistry) {
-    p.transport.poll_io(r).unwrap();
-    p.client.set_nonblocking(true).unwrap();
-    let mut byte = [0];
-    assert_eq!(
-        p.client.read(&mut byte).unwrap_err().kind(),
-        std::io::ErrorKind::WouldBlock
-    );
-    p.client.set_nonblocking(false).unwrap();
+    p.no_event(r);
 }
 
 #[test]
@@ -161,13 +146,10 @@ fn presented_outcome_precedes_focus_and_prepared_cannot_install_it() {
     p.transport.poll_io(&mut r).unwrap();
     for kind in [1, 2] {
         assert!(
-            matches!(decode_shell_content_frame(&p.read()).unwrap().1,ShellContentRecord::CandidateOutcome(v) if v.kind==kind)
+            matches!(p.read_content(&mut r).1,ShellContentRecord::CandidateOutcome(v) if v.kind==kind)
         );
     }
-    assert_eq!(
-        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
-        ShellNativeLauncherRecord::Focus(f)
-    );
+    assert_eq!(p.read_native(&mut r).1, ShellNativeLauncherRecord::Focus(f));
     assert_eq!(f.grant, GRANT);
     assert_eq!(f.opening, 7);
     assert_eq!(f.candidate_generation, 1);
@@ -258,15 +240,13 @@ fn enter_waits_for_exact_revision_and_keeps_original_issuance_time() {
     p.transport.poll_io(&mut r).unwrap();
     assert!(current.focus_lease > focus.focus_lease);
     assert!(
-        matches!(decode_shell_native_launcher_frame(&p.read()).unwrap().1,ShellNativeLauncherRecord::FocusRevoked(v) if v.binding==focus)
+        matches!(p.read_native(&mut r).1,ShellNativeLauncherRecord::FocusRevoked(v) if v.binding==focus)
     );
     assert_eq!(
-        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        p.read_native(&mut r).1,
         ShellNativeLauncherRecord::Focus(current)
     );
-    let (transaction, ShellNativeLauncherRecord::Input(enter)) =
-        decode_shell_native_launcher_frame(&p.read()).unwrap()
-    else {
+    let (transaction, ShellNativeLauncherRecord::Input(enter)) = p.read_native(&mut r) else {
         panic!()
     };
     assert_eq!(transaction, tx(41));
@@ -305,11 +285,11 @@ fn a_later_edit_invalidates_unsent_enter_instead_of_retargeting_it() {
         .unwrap();
     p.transport.poll_io(&mut r).unwrap();
     assert!(matches!(
-        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        p.read_native(&mut r).1,
         ShellNativeLauncherRecord::FocusRevoked(_)
     ));
     assert!(
-        matches!(decode_shell_native_launcher_frame(&p.read()).unwrap().1,ShellNativeLauncherRecord::Focus(v) if v.state_revision==3)
+        matches!(p.read_native(&mut r).1,ShellNativeLauncherRecord::Focus(v) if v.state_revision==3)
     );
     no_frame(&mut p, &mut r);
 }
@@ -345,21 +325,27 @@ fn bounded_receipts_refuse_new_input_without_advancing_revision() {
 fn closing_uses_owned_credits_and_disarms_before_more_input() {
     let (mut r, mut p, a, c) = setup();
     let focus = initial_focus(&mut r, &mut p, &a, &c);
-    let frame = encode_shell_content_frame(
-        tx(50),
-        &ShellContentRecord::OutputFacts(ContentOutputFacts {
-            grant: GRANT,
-            facts_generation: 5,
-            outputs: vec![facts()],
-        }),
-    )
-    .unwrap();
+    let filler = ShellContentRecord::ResourceStatus(ContentResourceStatus {
+        grant: GRANT,
+        resource: ContentResourceId {
+            id: 99,
+            generation: 1,
+        },
+        status: 3,
+        reason: ContentReason::Stale as u16,
+        next_ordinal: 0,
+        admitted_bytes: 0,
+    });
     let mut sent = 0;
     let mut saturated = false;
     for _ in 0..4096 {
-        match p.transport.send_async(&mut r, frame.clone()) {
-            Ok(()) => sent += 1,
-            Err(ShellTransportError::ActivationQueueSaturated) => {
+        match p.transport.send_content_record(&mut r, tx(50), &filler) {
+            Ok(()) => {
+                sent += 1;
+                // Fill both the event journal and the pending output queue.
+                p.transport.poll_io(&mut r).unwrap();
+            }
+            Err(ShellTransportError::ContentQueueSaturated) => {
                 saturated = true;
                 break;
             }
@@ -387,18 +373,10 @@ fn closing_uses_owned_credits_and_disarms_before_more_input() {
             .is_err()
     );
     p.transport.poll_io(&mut r).unwrap();
-    let mut terminal = Vec::new();
-    for _ in 0..sent + 2 {
-        p.transport.poll_io(&mut r).unwrap();
-        let bytes = p.read();
-        let kind = u16::from_le_bytes([bytes[6], bytes[7]]);
-        if kind == 192 || kind == 197 {
-            terminal.push(decode_shell_native_launcher_frame(&bytes).unwrap().1);
-        }
-        if kind == 197 {
-            break;
-        }
+    for _ in 0..sent {
+        assert_eq!(p.read_content(&mut r), (tx(50), filler.clone()));
     }
+    let terminal = [p.read_native(&mut r).1, p.read_native(&mut r).1];
     assert!(
         matches!(terminal.as_slice(),[ShellNativeLauncherRecord::FocusRevoked(v),ShellNativeLauncherRecord::Closed(closed)] if v.binding==focus && closed.opening==7)
     );
@@ -493,22 +471,22 @@ fn closed_input_drain_refuses_late_activation_in_both_ack_orders() {
             disposition: 1,
         };
         if ack_first {
-            p.send(ShellNativeLauncherRecord::InputAck(acknowledgement));
+            p.send(&mut r, ShellNativeLauncherRecord::InputAck(acknowledgement));
         }
-        p.send(ShellNativeLauncherRecord::Activate(activate));
+        p.send(&mut r, ShellNativeLauncherRecord::Activate(activate));
         if !ack_first {
-            p.send(ShellNativeLauncherRecord::InputAck(acknowledgement));
+            p.send(&mut r, ShellNativeLauncherRecord::InputAck(acknowledgement));
         }
         p.transport
             .close_native_launcher(&mut r, opening(), tx(80), ContentReason::Cancelled)
             .unwrap();
         p.transport.poll_io(&mut r).unwrap();
         assert!(matches!(
-            decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+            p.read_native(&mut r).1,
             ShellNativeLauncherRecord::FocusRevoked(_)
         ));
         assert!(matches!(
-            decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+            p.read_native(&mut r).1,
             ShellNativeLauncherRecord::Closed(_)
         ));
         let mut wrong = opening();
@@ -526,7 +504,7 @@ fn closed_input_drain_refuses_late_activation_in_both_ack_orders() {
         );
         p.transport.poll_io(&mut r).unwrap();
         let (transaction, ShellNativeLauncherRecord::ActivationOutcome(outcome)) =
-            decode_shell_native_launcher_frame(&p.read()).unwrap()
+            p.read_native(&mut r)
         else {
             panic!()
         };
@@ -558,7 +536,7 @@ fn closed_input_drain_does_not_guess_outcome_of_already_handed_request() {
         slot: 2,
         cause: 1,
     };
-    p.send(ShellNativeLauncherRecord::Activate(activation));
+    p.send(&mut r, ShellNativeLauncherRecord::Activate(activation));
     assert_eq!(
         p.transport.poll_native_launcher_activation(&mut r).unwrap(),
         Some((tx(20), activation))
@@ -568,11 +546,11 @@ fn closed_input_drain_does_not_guess_outcome_of_already_handed_request() {
         .unwrap();
     p.transport.poll_io(&mut r).unwrap();
     assert!(matches!(
-        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        p.read_native(&mut r).1,
         ShellNativeLauncherRecord::FocusRevoked(_)
     ));
     assert!(matches!(
-        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        p.read_native(&mut r).1,
         ShellNativeLauncherRecord::Closed(_)
     ));
     assert_eq!(
@@ -598,9 +576,7 @@ fn closed_input_drain_does_not_guess_outcome_of_already_handed_request() {
             .unwrap(),
         0
     );
-    let (_, ShellNativeLauncherRecord::ActivationOutcome(outcome)) =
-        decode_shell_native_launcher_frame(&p.read()).unwrap()
-    else {
+    let (_, ShellNativeLauncherRecord::ActivationOutcome(outcome)) = p.read_native(&mut r) else {
         panic!()
     };
     assert_eq!(outcome.activation, activation);
@@ -629,14 +605,14 @@ fn closed_input_drain_reports_departed_peer_without_disposing_the_grant() {
         .unwrap();
     p.transport.poll_io(&mut r).unwrap();
     assert!(matches!(
-        decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        p.read_native(&mut r).1,
         ShellNativeLauncherRecord::Closed(_)
     ));
     assert_eq!(
         p.transport.native_launcher_closed_opening(),
         Some(opening())
     );
-    p.client.shutdown(std::net::Shutdown::Both).unwrap();
+    p.shutdown();
     assert_eq!(
         p.transport.service_closed_native_input(&mut r, opening()),
         Err(ShellTransportError::NotConnected)

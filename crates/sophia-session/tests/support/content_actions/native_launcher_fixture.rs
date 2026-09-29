@@ -2,7 +2,7 @@ use super::*;
 use sophia_runtime::*;
 use sophia_session::application_catalog::*;
 #[allow(dead_code)] // Shared file fixture for admission, input and execution.
-#[path = "native_files_peer.rs"]
+#[path = "../../../../sophia-runtime/tests/support/native_files_peer.rs"]
 mod files;
 pub(super) use files::*;
 

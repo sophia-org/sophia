@@ -66,6 +66,11 @@ impl Client {
         self.observe(&event)
     }
 
+    pub fn no_event(&mut self) {
+        assert!(self.pending.is_empty(), "unexpected buffered observation");
+        self.wire.no_event();
+    }
+
     fn observe(&mut self, bytes: &[u8]) -> Observation {
         let kind = decode_shell_file_record(bytes, ShellFileClass::Event)
             .unwrap()

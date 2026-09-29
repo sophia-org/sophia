@@ -318,9 +318,6 @@ fn peer_eof_reports_disconnect_after_buffered_native_request_is_owned() {
     assert!(r.accounting().quiescent());
 }
 
-#[path = "support/native_launcher_focus.rs"]
-mod focus;
-
 #[test]
 fn native_close_cancels_unsubmitted_work_but_retains_submitted_owner() {
     for phase in 0..4 {

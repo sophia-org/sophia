@@ -31,11 +31,13 @@ fn retained_enter_ack_deadline_starts_at_dispatch_but_keeps_original_timestamp()
         .install_native_launcher_focus(&mut r, tx(92))
         .unwrap();
     p.transport.poll_io(&mut r).unwrap();
-    p.read(); // old FocusRevoked
-    p.read(); // new Focus
-    let (_, ShellNativeLauncherRecord::Input(enter)) =
-        decode_shell_native_launcher_frame(&p.read()).unwrap()
-    else {
+    assert!(matches!(p.read_native(&mut r).1,
+        ShellNativeLauncherRecord::FocusRevoked(v) if v.binding == focus));
+    assert_eq!(
+        p.read_native(&mut r).1,
+        ShellNativeLauncherRecord::Focus(newer)
+    );
+    let (_, ShellNativeLauncherRecord::Input(enter)) = p.read_native(&mut r) else {
         panic!();
     };
     assert_eq!(enter.event.binding, newer);
@@ -52,16 +54,12 @@ fn timed_out(p: &mut Peer, r: &mut ContentEpochRegistry, focus: NativeLauncherBi
     assert!(p.transport.native_launcher_state().is_none());
     assert!(p.transport.native_launcher_focus().is_none());
     p.transport.poll_io(r).unwrap();
-    assert!(
-        matches!(decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+    assert!(matches!(p.read_native(r).1,
         ShellNativeLauncherRecord::FocusRevoked(v)
-        if v.binding == focus && v.reason == ContentReason::Timeout as u16)
-    );
-    assert!(
-        matches!(decode_shell_native_launcher_frame(&p.read()).unwrap().1,
+        if v.binding == focus && v.reason == ContentReason::Timeout as u16));
+    assert!(matches!(p.read_native(r).1,
         ShellNativeLauncherRecord::Closed(v)
-        if v.opening == opening().opening && v.reason == ContentReason::Timeout as u16)
-    );
+        if v.opening == opening().opening && v.reason == ContentReason::Timeout as u16));
     no_frame(p, r);
 }
 

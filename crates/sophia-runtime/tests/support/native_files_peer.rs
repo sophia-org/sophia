@@ -6,7 +6,7 @@ use sophia_runtime::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 #[allow(dead_code)]
-#[path = "../../../../sophia-runtime/tests/support/native_launcher_content.rs"]
+#[path = "native_launcher_content.rs"]
 mod support;
 pub(crate) use support::*;
 #[path = "native_files_client.rs"]
@@ -187,9 +187,15 @@ impl Peer {
         });
     }
     pub fn candidate(&mut self, r: &mut ContentEpochRegistry) {
+        self.candidate_parts(r, begin(), chunk());
+    }
+    pub fn candidate_parts(
+        &mut self,
+        r: &mut ContentEpochRegistry,
+        b: NativeLauncherCandidateBegin,
+        c: ContentCandidateChunk,
+    ) {
         self.drive(r, |client| {
-            let b = begin();
-            let c = chunk();
             let candidate = NativeContentCandidate {
                 candidate: ContentCandidate {
                     grant: b.content.grant,
@@ -220,7 +226,10 @@ impl Peer {
         });
     }
     pub fn connected(r: &mut ContentEpochRegistry) -> Self {
-        let mut peer = Self::with_limits(r, ContentStoreProfile::NativeLauncher, limits());
+        Self::connected_with_limits(r, limits())
+    }
+    pub fn connected_with_limits(r: &mut ContentEpochRegistry, limits: ContentLimits) -> Self {
+        let mut peer = Self::with_limits(r, ContentStoreProfile::NativeLauncher, limits);
         peer.negotiate(r);
         assert!(peer.transport.supports_native_launcher());
         assert!(!peer.transport.supports_indicators());
@@ -233,6 +242,12 @@ impl Peer {
             ShellNativeLauncherRecord::Opening(opening())
         );
         peer
+    }
+    pub fn no_event(&mut self, r: &mut ContentEpochRegistry) {
+        self.drive(r, Client::no_event);
+    }
+    pub fn shutdown(&mut self) {
+        self.client.wire.shutdown();
     }
     pub fn allocation(&mut self, r: &mut ContentEpochRegistry) -> Vec<ContentAllocationSnapshot> {
         self.transport

@@ -1,39 +1,46 @@
 use super::*;
 
 #[test]
-fn negotiated_payload_limit_bounds_text_before_receipt_or_revision_transfer() {
+fn native_record_text_limit_bounds_input_before_receipt_or_revision_transfer() {
     let mut r = empty();
     let mut small = limits();
     small.max_width_px = 64;
     small.max_chunk_bytes = 256;
     small.max_frame_payload = 304;
+    // Files use the NativeInput record's 256-byte text field. The retired
+    // socket frame limit (304 - 132 = 172 text bytes) does not size this event.
     let mut p = Peer::connected_with_limits(&mut r, small);
     let a = p.allocation(&mut r);
     p.upload(&mut r);
     let c = catalog();
     let focus = initial_focus(&mut r, &mut p, &a, &c);
+    let receipts = p.transport.content_accounting(&r).response_records;
     assert_eq!(
         p.transport.issue_native_launcher_input(
             &mut r,
             focus,
             tx(79),
             NativeLauncherInputKind::Text,
-            &"a".repeat(173),
+            &"a".repeat(257),
             1
         ),
         Err(ShellTransportError::WrongContentRecord)
     );
     assert_eq!(p.transport.native_launcher_state().unwrap().1, 1);
+    assert_eq!(
+        p.transport.content_accounting(&r).response_records,
+        receipts
+    );
     no_frame(&mut p, &mut r);
     let event = input(
         &mut p,
         &mut r,
         NativeLauncherInputKind::Text,
-        &"a".repeat(172),
+        &"a".repeat(256),
         1,
     );
     assert_eq!(event.event.state_revision, 2);
-    assert_eq!(event.text.len(), 172);
+    assert_eq!(event.text.len(), 256);
 }
 
 #[test]
@@ -170,7 +177,7 @@ fn native_receipts_and_pointer_cancellation_share_the_pending_limit() {
         .unwrap();
     p.transport.poll_io(&mut r).unwrap();
     for kind in [1, 3] {
-        assert!(matches!(decode_shell_content_frame(&p.read()).unwrap().1,
+        assert!(matches!(p.read_content(&mut r).1,
             ShellContentRecord::Action(v) if v.kind == kind));
     }
     let next = input(&mut p, &mut r, NativeLauncherInputKind::Next, "", 12);

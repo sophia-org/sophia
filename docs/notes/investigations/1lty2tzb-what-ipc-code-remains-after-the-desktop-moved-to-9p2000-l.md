@@ -2235,6 +2235,59 @@ codecs remain shared, so this is not independent record-codec evidence.
 
 The runtime native launcher socket fixture and adapter still need migration.
 
+## Runtime native focus and input over files (t269, 2026-09-28)
+
+The 19 focus, input, deadline and input-limit controls formerly included by
+`shell_native_launcher_transport` now run in
+`shell_native_launcher_focus_files` through the production file export.
+The Session file peer and client moved into runtime test support and are shared
+with Session's admission, execution and input-owner tests. Protection evidence
+and renderer completion remain supplied; the peer shares public Rust record
+codecs and is not independent codec or physical evidence.
+
+Preserved controls include Prepared versus Presented focus, exact focus and
+opening identities, deferred Enter's original timestamp, both input ACK orders,
+receipt limits, late activation after close, held activation decisions, peer
+departure without grant disposal, and exact acknowledgement/presentation
+deadlines. Candidates are whole file transactions, then consumed by the real
+candidate owner. The closing-pressure control fills both the file journal and
+the typed outbox, checks every filler record, and observes FocusRevoked before
+Closed without admitting further input.
+
+The old 304-byte socket payload case allowed only 172 text bytes. That framing
+assertion retires with the test's socket path: file NativeInput has a 256-byte
+text field, independent of the compatibility-only `max_frame_payload` field.
+The replacement keeps the small Limits value, refuses 257 text bytes without
+revision or receipt transfer, then delivers exactly 256 bytes. This follows the
+existing shell-file contract; no production limit changed.
+
+Quiet-event assertions issue a Tread followed by Tgetattr on the same connection.
+An unexpected Rread fails reply-tag order; otherwise Rgetattr fences the pending
+read, which Tflush cancels. The check also refuses already buffered observations
+and events. It adds no owner input and uses no scheduling sleep. A production
+mutation that emits a duplicate Focus from the idempotent focus-install path
+fails this check; the source mutation existed only in the isolated bind mount.
+
+Evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-native-focus-files-3.log`: all 19 controls pass.
+- `t269-native-focus-session.log`: the 23 Session launcher controls pass with
+  the shared fixture.
+- `t269-native-focus-extra-event-mutant.log`: the duplicate-Focus mutant fails
+  the named Presented/focus test at the pending-read tag assertion.
+- `t269-native-focus-clippy.log`: runtime and Session library/test clippy passes.
+- `t269-native-focus-full.log`: the restored full isolated `cargo xtask check`
+  exits zero; 479 reported test groups, 6,634 passes, zero failures and 63 ignored.
+  Workspace tests, clippy, formatting and tool checks pass. Device-dependent
+  pixel proofs remain explicitly unclaimed in this device-hidden run.
+
+Earlier failed logs remain: the first compile used two incorrect fixture field
+names; the second run passed 18 controls and exposed the obsolete socket text
+limit assertion described above. The remaining runtime native allocation,
+candidate, resource and internal activation-owner socket controls still need
+migration before removing their adapter. This slice changes tests only and
+does not close t269, t270 or t272 or prepare an installation.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

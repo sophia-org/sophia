@@ -38,6 +38,36 @@ impl Peer {
         self.rpc_with_prefix(kind, body, 7 + body.len(), || {})
     }
 
+    /// An empty event read must remain pending across a following request.
+    /// Rgetattr fences the Tread without adding an owner command; Tflush then
+    /// cancels the pending read. An unexpected Rread fails the tag assertion.
+    pub fn no_event(&mut self) {
+        assert!(self.queued.is_empty(), "unexpected buffered event");
+        self.tag += 1;
+        let read_tag = self.tag;
+        let mut request = 23u32.to_le_bytes().to_vec();
+        request.push(116);
+        request.extend(read_tag.to_le_bytes());
+        request.extend(2u32.to_le_bytes());
+        request.extend(self.offset.to_le_bytes());
+        request.extend(65500u32.to_le_bytes());
+        self.stream.write_all(&request).unwrap();
+        assert_eq!(
+            self.rpc(
+                24,
+                &[1u32.to_le_bytes().as_slice(), &0x7ffu64.to_le_bytes()].concat()
+            )
+            .unwrap()
+            .0,
+            25
+        );
+        assert_eq!(self.rpc(108, &read_tag.to_le_bytes()).unwrap().0, 109);
+    }
+
+    pub fn shutdown(&mut self) {
+        self.stream.shutdown(std::net::Shutdown::Both).unwrap();
+    }
+
     /// Exposes a sent prefix to a test barrier before writing the rest. This
     /// lets an owner test control fragmentation without scheduling sleeps.
     pub fn rpc_with_prefix(
