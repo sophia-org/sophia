@@ -2288,6 +2288,59 @@ candidate, resource and internal activation-owner socket controls still need
 migration before removing their adapter. This slice changes tests only and
 does not close t269, t270 or t272 or prepare an installation.
 
+## Runtime native allocation and resource controls over files (t269, 2026-09-28)
+
+All 12 controls in `shell_native_launcher_transport` now use the production
+file export and the shared native file peer. They cover role/capability
+refusals, encoded operator refusal, exact candidate ownership, a catalog
+change between Begin and End, wrong grants, pacing, closure at four ownership
+stages, late records, reopening, and resource retirement with a held lease.
+The supplied protection evidence and public Rust codecs remain fixture inputs;
+this is neither authenticated launch nor independent codec evidence.
+
+The migration exposed a production error: a base AllocationRequest submitted
+to a native launcher stayed in the file inbox while service returned zero.
+Native allocation requires an opening identity. The owner now returns
+WrongContentRecord without taking that request or changing accounting. The
+negative control checks repeated refusal and unchanged ownership; its earlier
+failure is retained in `t269-native-owner-files-2.log`.
+
+Three socket assertions need explicit file-contract counterparts:
+
+- The socket byte-budget case becomes a real 64 KiB upload in two 32 KiB
+  chunks. With one record allowed per owner visit, each visit consumes exactly
+  one buffered chunk; End publishes the exact concatenated bytes. Removing
+  the visit cap makes this control fail. This checks bounded file intake,
+  not the retired socket framing budget.
+- EOF revokes submissions still held by the file export. Requests already
+  taken by the owner survive until its cleanup. Both cases are checked, with
+  the grant retained until disconnect and quiescent accounting afterward.
+  The socket test's delivery of unread frames after EOF is not a file promise.
+- File intake services candidate parts, pacing and allocation from their
+  respective queues. Late/reopened controls assert the resulting typed
+  outcomes and exact identities in that order, rather than the old socket's
+  single FIFO order. The new opening's permit remains available throughout.
+
+Earlier helper failures are retained: two record families require dedicated
+file encoders, and the upload helper must respect a one-record service limit.
+The corrected tests preserve the allocation, candidate, cancellation and
+held-resource assertions. Quiet checks use the fenced read described above.
+
+Focused evidence under `development-evidence/ipc-retirement/`:
+
+- `t269-native-owner-restored.log`: 12 owner controls, 19 focus/input controls
+  and the independent C SDK native launcher lifecycle control pass.
+- `t269-native-visit-cap-mutant.log`: the upload control fails when the
+  service limit is removed; the mutation existed only in the isolated mount.
+- `t269-native-owner-full.log`: the full isolated `cargo xtask check` exits
+  zero, including workspace tests, clippy, formatting and tool checks.
+  Device-dependent pixel proofs remain explicitly unclaimed.
+
+The old socket helper remains for Session catalog-publication tests and
+runtime socket-publication parity tests. The private native activation-owner
+socket controls and the generic socket adapter also remain. This slice does
+not close t269, t270 or t272 and prepares no installation.
+
 ## Validation and remaining work
 
 The operator accepted the [source-retirement decision](../decisions/twkn9fsp-retire-wm-and-shell-ipc-with-release-rollback-while-latency-qualification-remains-open.md)

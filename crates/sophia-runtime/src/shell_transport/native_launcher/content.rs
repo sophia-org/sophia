@@ -281,6 +281,14 @@ pub(super) fn native_part_record(
 pub(in crate::shell_transport) fn peek_native_file_record(
     export: &mut ShellFiles,
 ) -> Result<Option<(TransactionId, NativeContentRecord)>, ShellTransportError> {
+    // Native allocation carries an opening identity. A base allocation cannot
+    // enter that owner, nor may it remain silently stranded in the file inbox.
+    if export
+        .peek_content(|v| matches!(v, ShellContentRecord::AllocationRequest(_)))
+        .is_some()
+    {
+        return Err(ShellTransportError::WrongContentRecord);
+    }
     if let Some((transaction, part)) = export.peek_native_candidate_part() {
         return Ok(Some((transaction, native_part_record(part))));
     }

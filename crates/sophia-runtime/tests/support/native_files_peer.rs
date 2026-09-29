@@ -12,9 +12,11 @@ pub(crate) use support::*;
 #[path = "native_files_client.rs"]
 mod client;
 use client::{Client, Observation};
+#[path = "native_files_controls.rs"]
+mod controls;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
-const CAPS: u64 = SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
+pub(crate) const CAPS: u64 = SOPHIA_SHELL_CAPABILITY_APPLICATION_CATALOG
     | SOPHIA_SHELL_CAPABILITY_CONTENT_SURFACE
     | SOPHIA_SHELL_CAPABILITY_CONTENT_DISCRETE_INPUT
     | SOPHIA_SHELL_CAPABILITY_NATIVE_LAUNCHER;
@@ -175,13 +177,24 @@ impl Peer {
     }
     pub fn send_content(&mut self, r: &mut ContentEpochRegistry, record: ShellContentRecord) {
         self.drive(r, |client| {
-            let bytes = encode_shell_file_transaction(
-                client.header(shell_file_transaction_kind(&record).unwrap()),
-                &ShellFileTransactionRecord {
-                    transaction: tx(20),
-                    record,
-                },
-            )
+            let value = ShellFileTransactionRecord {
+                transaction: tx(20),
+                record,
+            };
+            let bytes = match &value.record {
+                ShellContentRecord::ResourceRetire(_) => encode_shell_file_resource_retire(
+                    client.header(ShellFileKind::ResourceRetire),
+                    &value,
+                ),
+                ShellContentRecord::AllocationRequest(_) => encode_shell_file_allocation_request(
+                    client.header(ShellFileKind::AllocationRequest),
+                    value,
+                ),
+                _ => encode_shell_file_transaction(
+                    client.header(shell_file_transaction_kind(&value.record).unwrap()),
+                    &value,
+                ),
+            }
             .unwrap();
             client.submit(&bytes);
         });
@@ -331,7 +344,12 @@ impl Peer {
             .unwrap();
             client.submit(&bytes);
         });
-        assert_eq!(self.transport.service_content_resources(r, 0).unwrap(), 2);
+        let mut processed = 0;
+        while processed < 2 {
+            let count = self.transport.service_content_resources(r, 0).unwrap();
+            assert!(count > 0 && processed + count <= 2);
+            processed += count;
+        }
         assert!(
             matches!(self.read_content(r).1, ShellContentRecord::ResourceStatus(v) if v.status == 2)
         );
